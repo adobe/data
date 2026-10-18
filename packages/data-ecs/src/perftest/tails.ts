@@ -24,23 +24,23 @@ declare module "@adobe/data-ecs" {
         tailsBenchmark: true;
     }
     export interface Components {
-        [place]: typeof placeTraits;
-        [pose]: typeof poseTraits;
+        [place]: { type: readonly [number, number, number] };
+        [pose]: { type: readonly [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number] };
     }
     export interface Resources {
-        [surface]: typeof surfaceTraits;
-        [poked]: typeof pokedTraits;
-        [rowWork]: typeof rowWorkTraits;
-        [worldWork]: typeof worldWorkTraits;
+        [surface]: { type: string; thread: "tailsBenchmark" };
+        [poked]: { type: number };
+        [rowWork]: { type: number };
+        [worldWork]: { type: number };
     }
 }
-const placeTraits = Component.register(place, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
-const poseTraits = Component.register(pose, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 16, maxItems: 16 } });
+Component.register(place, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
+Component.register(pose, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 16, maxItems: 16 } });
 /** An object of the joined thread, as a canvas or the DOM is, which places the systems reading it there. */
-const surfaceTraits = Resource.register(surface, { type: { type: "string", default: "surface" }, thread: "tailsBenchmark" });
-const pokedTraits = Resource.register(poked, { type: { type: "integer", default: 0 } });
-const rowWorkTraits = Resource.register(rowWork, { type: { type: "integer", minimum: 0, maximum: 1_000_000, default: 0 } });
-const worldWorkTraits = Resource.register(worldWork, { type: { type: "number", default: 0 } });
+Resource.register(surface, { type: { type: "string", default: "surface" }, thread: "tailsBenchmark" });
+Resource.register(poked, { type: { type: "integer", default: 0 } });
+Resource.register(rowWork, { type: { type: "integer", minimum: 0, maximum: 1_000_000, default: 0 } });
+Resource.register(worldWork, { type: { type: "number", default: 0 } });
 
 /** What the tails read, so their reads aren't dead. */
 export const drawn = { sum: 0 };

@@ -18,34 +18,34 @@ declare module "@adobe/data-ecs" {
         tailsTest: true;
     }
     export interface Components {
-        [stamp]: typeof stampTraits;
-        [spot]: typeof spotTraits;
-        [label]: typeof labelTraits;
+        [stamp]: { type: number };
+        [spot]: { type: readonly [number, number, number] };
+        [label]: { type: string | null; thread: "tailsTest" };
     }
     export interface Resources {
-        [counter]: typeof counterTraits;
-        [stall]: typeof stallTraits;
-        [spawning]: typeof spawningTraits;
-        [failAt]: typeof failAtTraits;
-        [canvas]: typeof canvasTraits;
+        [counter]: { type: number };
+        [stall]: { type: { readonly mode: number; readonly pause: number } };
+        [spawning]: { type: number };
+        [failAt]: { type: number };
+        [canvas]: { type: string; thread: "tailsTest" };
     }
 }
-const stampTraits = Component.register(stamp, { type: { type: "integer" } });
-const spotTraits = Component.register(spot, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
+Component.register(stamp, { type: { type: "integer" } });
+Component.register(spot, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
 /** An object of the tail's thread, which the tail writes. */
-const labelTraits = Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: null }, thread: "tailsTest" });
-const counterTraits = Resource.register(counter, { type: { type: "integer", default: 0 } });
+Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: null }, thread: "tailsTest" });
+Resource.register(counter, { type: { type: "integer", default: 0 } });
 /**
  * How the tails stall, for milliseconds `pause`: `"none"`, `"chunk"` in the watcher at the end of its first chunk, so
  * a writer is ready mid-way, or `"before"` in a tail ahead of it, so the watcher is late.
  */
-const stallTraits = Resource.register(stall, {
+Resource.register(stall, {
     type: { type: "object", properties: { mode: { type: "integer" }, pause: { type: "number" } }, required: ["mode", "pause"], default: { mode: 0, pause: 0 } },
 });
-const spawningTraits = Resource.register(spawning, { type: { type: "integer", default: 0 } });
-const failAtTraits = Resource.register(failAt, { type: { type: "integer", default: -1 } });
+Resource.register(spawning, { type: { type: "integer", default: 0 } });
+Resource.register(failAt, { type: { type: "integer", default: -1 } });
 /** An object resource of the tail's thread, which places the systems reading it there. */
-const canvasTraits = Resource.register(canvas, { type: { type: "string", default: "canvas" }, thread: "tailsTest" });
+Resource.register(canvas, { type: { type: "string", default: "canvas" }, thread: "tailsTest" });
 
 export const noStall = 0;
 export const stallAtChunk = 1;

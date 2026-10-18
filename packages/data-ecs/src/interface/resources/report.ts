@@ -6,13 +6,13 @@ export const report = Symbol("report");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {
-        [report]: typeof reportTraits;
+        [report]: { type: Report };
     }
 }
 
 const text = { type: "string" } as const;
 
-const reportTraits = Resource.register(report, {
+Resource.register(report, {
     type: {
         type: "object",
         properties: {

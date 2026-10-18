@@ -17,11 +17,11 @@ declare module "@adobe/data-ecs" {
         handoffBenchmark: true;
     }
     export interface Resources {
-        [token]: typeof tokenTraits;
+        [token]: { type: { readonly read: () => number } | null; thread: "handoffBenchmark" };
     }
 }
 /** An object of the joined thread, which places the systems reading it there. */
-const tokenTraits = Resource.register(token, { type: Resource.object<{ readonly read: () => number } | null>(), thread: "handoffBenchmark" });
+Resource.register(token, { thread: "handoffBenchmark" });
 
 const here0 = System.create({ name: "handoff/here0" }, () => {});
 const there0 = System.create({ name: "handoff/there0", resources: { read: [token] }, after: [here0] }, ({ resources, commands }) => { void resources[token]; void commands; });

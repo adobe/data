@@ -7,12 +7,12 @@ const position = Symbol("archetypeCreateTest/position");
 const velocity = Symbol("archetypeCreateTest/velocity");
 declare module "@adobe/data-ecs" {
     interface Components {
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
+        [position]: { type: number };
+        [velocity]: { type: number };
     }
 }
-const positionTraits = Component.register(position, { type: { type: "number" } });
-const velocityTraits = Component.register(velocity, { type: { type: "number" } });
+Component.register(position, { type: { type: "number" } });
+Component.register(velocity, { type: { type: "number" } });
 
 describe("Archetype.create", () => {
     it("returns its argument, with a program-wide index of its own", () => {

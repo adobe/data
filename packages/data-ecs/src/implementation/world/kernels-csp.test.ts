@@ -9,11 +9,11 @@ const value = Symbol("kernelsCspTest/value");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [value]: typeof valueTraits;
+        [value]: { type: number };
     }
 }
 
-const valueTraits = Component.register(value, { type: { type: "number", precision: 1 } });
+Component.register(value, { type: { type: "number", precision: 1 } });
 
 const seed = System.create({ name: "kernelsCspTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 10; i++) commands.spawn([value])({ [value]: i });

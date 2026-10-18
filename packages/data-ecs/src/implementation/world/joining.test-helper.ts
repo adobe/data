@@ -13,20 +13,20 @@ export const total = Symbol("joiningTest/total");
 export const names = Symbol("joiningTest/names");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [point]: typeof pointTraits;
-        [label]: typeof labelTraits;
-        [marked]: typeof markedTraits;
+        [point]: { type: readonly [number, number] };
+        [label]: { type: string };
+        [marked]: { type: true };
     }
     export interface Resources {
-        [total]: typeof totalTraits;
-        [names]: typeof namesTraits;
+        [total]: { type: number };
+        [names]: { type: readonly string[] };
     }
 }
-const pointTraits = Component.register(point, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-const labelTraits = Component.register(label, { type: { type: "string" } });
-const markedTraits = Component.register(marked, { type: { const: true } });
-const totalTraits = Resource.register(total, { type: { type: "number", default: 0 } });
-const namesTraits = Resource.register(names, { type: { type: "array", items: { type: "string" }, default: [] } });
+Component.register(point, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
+Component.register(label, { type: { type: "string" } });
+Component.register(marked, { type: { const: true } });
+Resource.register(total, { type: { type: "number", default: 0 } });
+Resource.register(names, { type: { type: "array", items: { type: "string" }, default: [] } });
 
 /** Appends a digit to `total`, so the order of runs shows in it. */
 export const add = System.create({ name: "joiningTest/add", input: { type: "object", properties: { amount: { type: "number" } } }, resources: { write: [total] } }, ({ input, resources }) => {

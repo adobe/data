@@ -11,13 +11,13 @@ const target = Symbol("kernelImports/target");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [velocity]: typeof velocityTraits;
-        [target]: typeof targetTraits;
+        [velocity]: { type: Vec3 };
+        [target]: { type: Entity };
     }
 }
 
-const velocityTraits = Component.register(velocity, { type: Vec3.schema });
-const targetTraits = Component.register(target, { type: Entity.schema });
+Component.register(velocity, { type: Vec3.schema });
+Component.register(target, { type: Entity.schema });
 
 const spawn = System.create({ name: "kernelImports/spawn" }, ({ commands }) => {
     const leader = commands.spawn([position, velocity])({ [position]: [10, 0, 0], [velocity]: [0, 0, 0] });

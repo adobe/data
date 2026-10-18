@@ -20,30 +20,30 @@ declare module "@adobe/data-ecs" {
         typesComponentTest: true;
     }
     export interface Components {
-        [parent]: typeof parentTraits;
-        [count]: typeof countTraits;
-        [label]: typeof labelTraits;
-        [placed]: typeof placedTraits;
-        [position]: typeof positionTraits;
-        [bitmap]: typeof bitmapTraits;
-        [marked]: typeof markedTraits;
-        [slot]: typeof slotTraits;
+        [parent]: { type: Entity; reference: "owner" };
+        [count]: { type: number };
+        [label]: { type: string };
+        [placed]: { type: string; thread: "typesComponentTest" };
+        [position]: { type: readonly [number, number] };
+        [bitmap]: { type: ImageBitmap; transfer: true };
+        [marked]: { type: true; [mark]: true };
+        [slot]: { type: number; derived: true };
     }
-    export interface Traits<N, E> {
+    export interface Traits<N> {
         readonly [mark]: true;
         readonly [late]: true;
     }
 }
 
 Trait.register(mark);
-const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
-const countTraits = Component.register(count, { type: { type: "number" } });
-const labelTraits = Component.register(label, { type: { type: "string" } });
-const placedTraits = Component.register(placed, { type: { type: "string" }, thread: "typesComponentTest" });
-const positionTraits = Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-const bitmapTraits = Component.register(bitmap, { type: Component.object<ImageBitmap>(), transfer: true });
-const markedTraits = Component.register(marked, { type: { const: true }, [mark]: true });
-const slotTraits = Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(count, { type: { type: "number" } });
+Component.register(label, { type: { type: "string" } });
+Component.register(placed, { type: { type: "string" }, thread: "typesComponentTest" });
+Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
+Component.register(bitmap, { transfer: true });
+Component.register(marked, { type: { const: true }, [mark]: true });
+Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
 
 const untyped: (...parameters: never[]) => unknown = Component.register;
 
@@ -99,11 +99,13 @@ describe("Component.register", () => {
         expect(() => register(Symbol("typesComponentTest/dataTransfer"), { type: { type: "string" }, transfer: true })).toThrow("a value with a schema is data, which isn't Transferable");
         expect(() => register(Symbol("typesComponentTest/falseTransfer"), { transfer: false })).toThrow("transfer is true");
     });
-    it("records no type for object<T>(), which only states the value's type", () => {
+    it("records no type for a value that isn't data", () => {
         expect(declarationOf(bitmap)).toEqual({ transfer: true });
         expect(Reflect.has(declarationOf(bitmap) ?? {}, "type")).toBe(false);
-        expect(() => Component.register(bitmap, { type: Component.object<ImageBitmap>(), transfer: true })).not.toThrow();
-        expect(() => register(bitmap, { transfer: true })).not.toThrow();
+        expect(() => Component.register(bitmap, { transfer: true })).not.toThrow();
+    });
+    it("rejects a default beside a component's schema, which holds it", () => {
+        expect(() => register(Symbol("typesComponentTest/defaulted"), { type: { type: "number" }, default: 0 })).toThrow("its schema holds its default");
     });
     it("takes traits other packages register, in the namespace components share", () => {
         const early = Symbol("typesComponentTest/early");

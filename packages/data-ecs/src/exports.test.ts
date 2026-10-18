@@ -32,12 +32,12 @@ import { Archetype, Component, Rule, System, World, gpuDevice } from "@adobe/dat
 export const position = Symbol("exportsTest/position");
 export const element = Symbol("exportsTest/element");
 export const shown = Symbol("exportsTest/shown");
-const positionTraits = Component.register(position, { type: { type: "number" } });
-const elementTraits = Component.register(element, { type: Component.object<HTMLElement>(), thread: "main" });
-const shownTraits = Component.register(shown, { type: { const: true }, derived: true });
 declare module "@adobe/data-ecs" {
-    interface Components { [position]: typeof positionTraits; [element]: typeof elementTraits; [shown]: typeof shownTraits }
+    interface Components { [position]: { type: number }; [element]: { type: HTMLElement; thread: "main" }; [shown]: { type: true; derived: true } }
 }
+Component.register(position, { type: { type: "number" } });
+Component.register(element, { thread: "main" });
+Component.register(shown, { type: { const: true }, derived: true });
 export const Placed = Archetype.create([position, element]);
 export const showing = Rule.create({ components: { has: [element] }, derive: [shown] });
 export const move = System.create({ name: "exportsTest/move", components: { write: [position] } }, row => { row[position] += 1; });
@@ -96,11 +96,11 @@ const compile = (source: string): { readonly messages: string[] } => {
 const stringKeyed = (augmentation: string, registration = ""): string => `
 import { Component, Trait } from "@adobe/data-ecs";
 export const keyed = Symbol("exportsTest/keyed");
-const keyedTraits = Component.register(keyed, { type: { type: "number" } });
 declare module "@adobe/data-ecs" {
-    interface Components { [keyed]: typeof keyedTraits }
+    interface Components { [keyed]: { type: number } }
     ${augmentation}
 }
+Component.register(keyed, { type: { type: "number" } });
 ${registration}
 `;
 
@@ -108,10 +108,10 @@ ${registration}
 const misdeclared = `
 import { Component, System } from "@adobe/data-ecs";
 export const health = Symbol("exportsTest/health");
-const healthTraits = Component.register(health, { type: { type: "number" } });
 declare module "@adobe/data-ecs" {
-    interface Components { [health]: typeof healthTraits }
+    interface Components { [health]: { type: number } }
 }
+Component.register(health, { type: { type: "number" } });
 export const both = System.create({ components: { read: [health], write: [health] } }, () => {});
 const near = System.create({ input: { type: "object", properties: { distance: { type: "number" } } } }, () => {});
 const far = System.create({ input: { type: "object", properties: { distance: { type: "string" } } } }, () => {});
@@ -139,7 +139,7 @@ describe("package exports", () => {
             .toContain(`'{ readonly "component keys must be symbols": "exportsTest/named"; }'`);
         expect(compile(stringKeyed(`interface Resources { "exportsTest/time": { type: number } }`)).messages.join("\n"))
             .toContain(`'{ readonly "resource keys must be symbols": "exportsTest/time"; }'`);
-        const trait = compile(stringKeyed(`interface Traits<N, E> { readonly persisted: true }`, `Trait.register("persisted");`)).messages.join("\n");
+        const trait = compile(stringKeyed(`interface Traits<N> { readonly persisted: true }`, `Trait.register("persisted");`)).messages.join("\n");
         expect(trait).toContain(`'{ readonly "trait keys must be symbols": "persisted"; }'`);
         // Registration takes only symbol keys, so a string-keyed trait can't be registered either.
         expect(trait).toContain(`Argument of type '"persisted"' is not assignable`);

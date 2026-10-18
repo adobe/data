@@ -18,27 +18,27 @@ const page = Symbol("typesFinalizerTest/page");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [node]: typeof nodeTraits;
-        [label]: typeof labelTraits;
-        [slot]: typeof slotTraits;
-        [mark]: typeof markTraits;
-        [other]: typeof otherTraits;
+        [node]: { type: HTMLElement; thread: "main" };
+        [label]: { type: string };
+        [slot]: { type: number; derived: true };
+        [mark]: { type: true; derived: true };
+        [other]: { type: true; derived: true };
     }
     export interface Resources {
-        [total]: typeof totalTraits;
-        [time]: typeof timeTraits;
-        [page]: typeof pageTraits;
+        [total]: { type: number; reduce: "+" };
+        [time]: { type: number };
+        [page]: { type: Document | null; thread: "main" };
     }
 }
 
-const nodeTraits = Component.register(node, { type: Component.object<HTMLElement>(), thread: "main" });
-const labelTraits = Component.register(label, { type: { type: "string" } });
-const slotTraits = Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-const totalTraits = Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-const timeTraits = Resource.register(time, { type: { type: "number", default: 0 } });
-const pageTraits = Resource.register(page, { type: Resource.object<Document | null>(), thread: "main" });
-const markTraits = Component.register(mark, { type: { const: true }, derived: true });
-const otherTraits = Component.register(other, { type: { const: true }, derived: true });
+Component.register(node, { thread: "main" });
+Component.register(label, { type: { type: "string" } });
+Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+Resource.register(time, { type: { type: "number", default: 0 } });
+Resource.register(page, { thread: "main" });
+Component.register(mark, { type: { const: true }, derived: true });
+Component.register(other, { type: { const: true }, derived: true });
 
 /** Declares as an untyped caller would, bypassing the types' checks. */
 const untyped = (constructor: (...parameters: never[]) => unknown, declaration: object): unknown => Reflect.apply(constructor, undefined, [declaration, () => {}]);

@@ -13,11 +13,11 @@ declare module "@adobe/data-ecs" {
         transfersBenchmark: true;
     }
     export interface Resources {
-        [sink]: typeof sinkTraits;
+        [sink]: { type: { readonly read: () => number } | null; thread: "transfersBenchmark" };
     }
 }
 /** An object of the claimed thread, which places the system reading it there. */
-const sinkTraits = Resource.register(sink, { type: Resource.object<{ readonly read: () => number } | null>(), thread: "transfersBenchmark" });
+Resource.register(sink, { thread: "transfersBenchmark" });
 
 /** Bytes `take` took, on the claimed thread. */
 export const taken = { bytes: 0 };

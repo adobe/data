@@ -16,22 +16,28 @@ const label = Symbol("joinTest/label");
 const marked = Symbol("joinTest/marked");
 const total = Symbol("joinTest/total");
 const names = Symbol("joinTest/names");
+const words = Symbol("joinTest/words");
+const counts = Symbol("joinTest/counts");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [point]: typeof pointTraits;
-        [label]: typeof labelTraits;
-        [marked]: typeof markedTraits;
+        [point]: { type: readonly [number, number] };
+        [label]: { type: string };
+        [marked]: { type: true };
+        [words]: { type: ReadonlySet<string> };
     }
     export interface Resources {
-        [total]: typeof totalTraits;
-        [names]: typeof namesTraits;
+        [total]: { type: number };
+        [names]: { type: readonly string[] };
+        [counts]: { type: ReadonlyMap<string, number> };
     }
 }
-const pointTraits = Component.register(point, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-const labelTraits = Component.register(label, { type: { type: "string" } });
-const markedTraits = Component.register(marked, { type: { const: true } });
-const totalTraits = Resource.register(total, { type: { type: "number", default: 0 } });
-const namesTraits = Resource.register(names, { type: { type: "array", items: { type: "string" }, default: [] } });
+Component.register(point, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
+Component.register(label, { type: { type: "string" } });
+Component.register(marked, { type: { const: true } });
+Resource.register(total, { type: { type: "number", default: 0 } });
+Resource.register(names, { type: { type: "array", items: { type: "string" }, default: [] } });
+Component.register(words, { type: { type: "set", items: { type: "string" } } });
+Resource.register(counts, { type: { type: "map", keys: { type: "string" }, values: { type: "number" } }, default: new Map() });
 
 /** Adds its struct input to `total`, and its object input's names to `names`. */
 const add = System.create({ name: "joinTest/add", input: { type: "object", properties: { amount: { type: "number" } } }, resources: { write: [total] } }, ({ input, resources }) => {
@@ -42,6 +48,13 @@ const append = System.create({ name: "joinTest/append", input: { type: "object",
 });
 const spawn = System.create({ name: "joinTest/spawn", input: { type: "object", properties: { x: { type: "number" } } } }, ({ input, commands }) => {
     commands.spawn([point, label, marked])({ [point]: [input.x, -input.x], [label]: `p${input.x}` });
+});
+/** Counts each word of its input's set in `counts`, and spawns an entity holding the set. */
+const tally = System.create({ name: "joinTest/tally", input: { type: "object", properties: { words: { type: "set", items: { type: "string" } } } }, resources: { write: [counts] } }, ({ input, resources, commands }) => {
+    const next = new Map(resources[counts]);
+    for (const word of input.words) next.set(word, (next.get(word) ?? 0) + 1);
+    resources[counts] = next;
+    commands.spawn([words])({ [words]: input.words });
 });
 const fail = System.create({ name: "joinTest/fail" }, () => { throw new Error("joinTest failure"); });
 const idle = System.create({ name: "joinTest/idle" }, () => {});
@@ -91,6 +104,21 @@ describe("joining", () => {
         expect(await Observe.toPromise(world.observe.count({ required: [point] }))).toBe(1);
         await remote.dispose();
         await world.dispose();
+    });
+    it("posts a run's set input to the world as a set, which a map resource and a set component hold", async () => {
+        const { world, remote } = joined();
+        expect(await Observe.toPromise(world.observe.resource(counts))).toEqual(new Map());
+        await remote.run(tally, { words: new Set(["a", "b"]) });
+        await remote.run(tally, { words: new Set(["b"]) });
+        expect(await Observe.toPromise(world.observe.resource(counts))).toEqual(new Map([["a", 1], ["b", 2]]));
+        const held = await Observe.toPromise(world.observe.select({ required: [words] }));
+        const values = await Promise.all(held.map(async entity => (await Observe.toPromise(world.observe.entity(entity, { required: [words] })))?.[words]));
+        expect(values).toEqual([new Set(["a", "b"]), new Set(["b"])]);
+        expect(values.every(value => value instanceof Set)).toBe(true);
+        await remote.dispose();
+        await world.dispose();
+        await using started = createWorld({ [workers]: 0, [counts]: new Map([["z", 1]]) });
+        expect(await Observe.toPromise(started.observe.resource(counts))).toEqual(new Map([["z", 1]]));
     });
     it("keeps runs in call order past the slots it holds room for, and rejects one whose input can't be posted", async () => {
         const { world, remote } = joined();

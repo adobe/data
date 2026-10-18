@@ -5,8 +5,8 @@ export const workers = Symbol("workers");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {
-        [workers]: typeof workersTraits;
+        [workers]: { type: number | null };
     }
 }
 
-const workersTraits = Resource.register(workers, { type: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }], default: null } });
+Resource.register(workers, { type: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }], default: null } });

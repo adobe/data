@@ -19,16 +19,16 @@ const name = Symbol("batchesTest/name");
 const tag = Symbol("batchesTest/tag");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: typeof positionTraits;
-        [score]: typeof scoreTraits;
-        [name]: typeof nameTraits;
-        [tag]: typeof tagTraits;
+        [position]: { type: readonly [number, number, number] };
+        [score]: { type: number };
+        [name]: { type: string };
+        [tag]: { type: true };
     }
 }
-const positionTraits = Component.register(position, { type: vec3 });
-const scoreTraits = Component.register(score, { type: { type: "number", precision: 1 } });
-const nameTraits = Component.register(name, { type: { type: "string" } });
-const tagTraits = Component.register(tag, { type: { const: true } });
+Component.register(position, { type: vec3 });
+Component.register(score, { type: { type: "number", precision: 1 } });
+Component.register(name, { type: { type: "string" } });
+Component.register(tag, { type: { const: true } });
 
 describe("staged spawns", () => {
     it("are seen once by `added` observers in earlier, the same and later tiers, and not before the sync point", async () => {

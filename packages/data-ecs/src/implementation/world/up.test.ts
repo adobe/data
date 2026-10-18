@@ -20,23 +20,23 @@ const anchor = Symbol("upTest/anchor");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [local]: typeof localTraits;
-        [world]: typeof worldTraits;
-        [parent]: typeof parentTraits;
-        [label]: typeof labelTraits;
-        [visible]: typeof visibleTraits;
-        [shown]: typeof shownTraits;
-        [anchor]: typeof anchorTraits;
+        [local]: { type: number };
+        [world]: { type: number };
+        [parent]: { type: Entity; reference: "owner" };
+        [label]: { type: string };
+        [visible]: { type: boolean };
+        [shown]: { type: boolean };
+        [anchor]: { type: true };
     }
 }
 
-const localTraits = Component.register(local, { type: { type: "number" } });
-const worldTraits = Component.register(world, { type: { type: "number" } });
-const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
-const labelTraits = Component.register(label, { type: { type: "string" } });
-const visibleTraits = Component.register(visible, { type: { type: "boolean" } });
-const shownTraits = Component.register(shown, { type: { type: "boolean" } });
-const anchorTraits = Component.register(anchor, { type: { const: true } });
+Component.register(local, { type: { type: "number" } });
+Component.register(world, { type: { type: "number" } });
+Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(label, { type: { type: "string" } });
+Component.register(visible, { type: { type: "boolean" } });
+Component.register(shown, { type: { type: "boolean" } });
+Component.register(anchor, { type: { const: true } });
 
 const ran: string[] = [];
 const propagate = System.create({

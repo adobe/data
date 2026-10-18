@@ -18,21 +18,21 @@ export const enabled = Symbol("perf/enabled");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [color]: typeof colorTraits;
-        [mass]: typeof massTraits;
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
-        [visible]: typeof visibleTraits;
-        [enabled]: typeof enabledTraits;
+        [color]: { type: number };
+        [mass]: { type: number };
+        [position]: { type: readonly [number, number, number] };
+        [velocity]: { type: readonly [number, number, number] };
+        [visible]: { type: true };
+        [enabled]: { type: true };
     }
 }
 
-const colorTraits = Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-const massTraits = Component.register(mass, { type: { type: "number", precision: 1 } });
-const positionTraits = Component.register(position, { type: vec3 });
-const velocityTraits = Component.register(velocity, { type: vec3 });
-const visibleTraits = Component.register(visible, { type: { const: true } });
-const enabledTraits = Component.register(enabled, { type: { const: true } });
+Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(mass, { type: { type: "number", precision: 1 } });
+Component.register(position, { type: vec3 });
+Component.register(velocity, { type: vec3 });
+Component.register(visible, { type: { const: true } });
+Component.register(enabled, { type: { const: true } });
 
 /** Interleaved like ecs2's seedSingle: entity i goes to archetype i % 4. */
 const archetypes = [

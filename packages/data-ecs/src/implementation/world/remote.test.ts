@@ -22,23 +22,23 @@ declare module "@adobe/data-ecs" {
         remoteTestFinalized: true;
     }
     export interface Components {
-        [point]: typeof pointTraits;
-        [caption]: typeof captionTraits;
-        [widget]: typeof widgetTraits;
-        [kept]: typeof keptTraits;
-        [guarded]: typeof guardedTraits;
-        [handle]: typeof handleTraits;
+        [point]: { type: number };
+        [caption]: { type: string | null; thread: "remoteTest" };
+        [widget]: { type: Widget | null; thread: "remoteTest" };
+        [kept]: { type: string };
+        [guarded]: { type: Widget | null; thread: "remoteTestFinalized" };
+        [handle]: { type: Widget | number | null; thread: "remoteTest" };
     }
 }
 /** A value that isn't data. */
 type Widget = { readonly draw: () => string };
-const pointTraits = Component.register(point, { type: { type: "number" } });
-const captionTraits = Component.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "remoteTest" });
-const widgetTraits = Component.register(widget, { type: Component.object<Widget | null>(), thread: "remoteTest" });
-const keptTraits = Component.register(kept, { type: { type: "string" } });
+Component.register(point, { type: { type: "number" } });
+Component.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "remoteTest" });
+Component.register(widget, { thread: "remoteTest" });
+Component.register(kept, { type: { type: "string" } });
 /** A widget, or the number a kernel gives one, which only the world's thread could hold. */
-const handleTraits = Component.register(handle, { type: Component.object<Widget | number | null>(), thread: "remoteTest" });
-const guardedTraits = Component.register(guarded, { type: Component.object<Widget | null>(), thread: "remoteTestFinalized" });
+Component.register(handle, { thread: "remoteTest" });
+Component.register(guarded, { thread: "remoteTestFinalized" });
 
 const spawn = System.create({ name: "remoteTest/spawn", input: { type: "object", properties: { x: { type: "number" } } } }, ({ input, commands }) => {
     commands.spawn([point, caption, widget, kept])({ [point]: input.x, [kept]: `k${input.x}`, [widget]: null });

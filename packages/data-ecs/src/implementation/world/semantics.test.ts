@@ -15,16 +15,16 @@ const score = Symbol("semanticsTest/score");
 const tag = Symbol("semanticsTest/tag");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: typeof positionTraits;
-        [target]: typeof targetTraits;
-        [score]: typeof scoreTraits;
-        [tag]: typeof tagTraits;
+        [position]: { type: readonly [number, number] };
+        [target]: { type: Entity };
+        [score]: { type: number };
+        [tag]: { type: true };
     }
 }
-const positionTraits = Component.register(position, { type: vec2 });
-const targetTraits = Component.register(target, { type: Entity.schema });
-const scoreTraits = Component.register(score, { type: { type: "number" } });
-const tagTraits = Component.register(tag, { type: { const: true } });
+Component.register(position, { type: vec2 });
+Component.register(target, { type: Entity.schema });
+Component.register(score, { type: { type: "number" } });
+Component.register(tag, { type: { const: true } });
 
 const seed = System.create({ name: "semanticsTest/seed" }, ({ commands }) => {
     // @ts-expect-error untyped callers can store any number as an entity

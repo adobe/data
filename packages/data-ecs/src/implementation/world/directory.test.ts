@@ -9,10 +9,10 @@ import { applySync, prepareSync } from "./synchronize.js";
 const gravity = Symbol("directoryTest/gravity");
 declare module "@adobe/data-ecs" {
     export interface Resources {
-        [gravity]: typeof gravityTraits;
+        [gravity]: { type: number };
     }
 }
-const gravityTraits = Resource.register(gravity, { type: { type: "number", default: -9.8 } });
+Resource.register(gravity, { type: { type: "number", default: -9.8 } });
 
 describe("the layout directory", () => {
     it("keeps the structure epoch odd from a sync point's start until its directory writes, and even otherwise, once a thread may read it", () => {

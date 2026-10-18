@@ -27,27 +27,27 @@ const target = Symbol("wasmTest/target");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
-        [bounces]: typeof bouncesTraits;
-        [flipped]: typeof flippedTraits;
-        [score]: typeof scoreTraits;
-        [target]: typeof targetTraits;
+        [position]: { type: readonly [number, number] };
+        [velocity]: { type: readonly [number, number] };
+        [bounces]: { type: number };
+        [flipped]: { type: boolean };
+        [score]: { type: number };
+        [target]: { type: Entity };
     }
     export interface Resources {
-        [seconds]: typeof secondsTraits;
-        [floor]: typeof floorTraits;
+        [seconds]: { type: number };
+        [floor]: { type: number };
     }
 }
 
-const positionTraits = Component.register(position, { type: { ...vec2, layout: "storage" } });
-const velocityTraits = Component.register(velocity, { type: vec2 });
-const bouncesTraits = Component.register(bounces, { type: { type: "integer", minimum: -2147483648, maximum: 2147483647 } });
-const flippedTraits = Component.register(flipped, { type: { type: "boolean" } });
-const scoreTraits = Component.register(score, { type: { type: "number" } });
-const targetTraits = Component.register(target, { type: Entity.schema });
-const secondsTraits = Resource.register(seconds, { type: { type: "number", default: 1 / 60 } });
-const floorTraits = Resource.register(floor, { type: { type: "number", precision: 1, default: -2.5 } });
+Component.register(position, { type: { ...vec2, layout: "storage" } });
+Component.register(velocity, { type: vec2 });
+Component.register(bounces, { type: { type: "integer", minimum: -2147483648, maximum: 2147483647 } });
+Component.register(flipped, { type: { type: "boolean" } });
+Component.register(score, { type: { type: "number" } });
+Component.register(target, { type: Entity.schema });
+Resource.register(seconds, { type: { type: "number", default: 1 / 60 } });
+Resource.register(floor, { type: { type: "number", precision: 1, default: -2.5 } });
 
 const seed = System.create({ name: "wasmTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
     let previous = Entity.none;

@@ -26,40 +26,40 @@ declare module "@adobe/data-ecs" {
         threadSystemsTest: true;
     }
     export interface Components {
-        [uid]: typeof uidTraits;
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
-        [flagged]: typeof flaggedTraits;
-        [caption]: typeof captionTraits;
-        [note]: typeof noteTraits;
-        [kept]: typeof keptTraits;
+        [uid]: { type: number };
+        [position]: { type: readonly [number, number] };
+        [velocity]: { type: number };
+        [flagged]: { type: true };
+        [caption]: { type: string | null; thread: "threadSystemsTest" };
+        [note]: { type: Note | null; thread: "threadSystemsTest" };
+        [kept]: { type: string };
     }
     export interface Resources {
-        [total]: typeof totalTraits;
-        [changes]: typeof changesTraits;
-        [paint]: typeof paintTraits;
-        [painted]: typeof paintedTraits;
-        [enabled]: typeof enabledTraits;
-        [nextUid]: typeof nextUidTraits;
+        [total]: { type: number; reduce: "+" };
+        [changes]: { type: number };
+        [paint]: { type: string; thread: "threadSystemsTest" };
+        [painted]: { type: number };
+        [enabled]: { type: boolean };
+        [nextUid]: { type: number };
     }
 }
 /** A value that isn't data, which only its thread holds. */
 type Note = { readonly text: string; readonly read: () => string };
-const uidTraits = Component.register(uid, { type: { type: "integer" } });
-const positionTraits = Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-const velocityTraits = Component.register(velocity, { type: { type: "number" } });
-const flaggedTraits = Component.register(flagged, { type: { const: true } });
-const captionTraits = Component.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "threadSystemsTest" });
-const noteTraits = Component.register(note, { type: Component.object<Note | null>(), thread: "threadSystemsTest" });
+Component.register(uid, { type: { type: "integer" } });
+Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
+Component.register(velocity, { type: { type: "number" } });
+Component.register(flagged, { type: { const: true } });
+Component.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "threadSystemsTest" });
+Component.register(note, { thread: "threadSystemsTest" });
 /** An object of the world's thread. */
-const keptTraits = Component.register(kept, { type: { type: "string" } });
-const totalTraits = Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-const changesTraits = Resource.register(changes, { type: { type: "integer", default: 0 } });
+Component.register(kept, { type: { type: "string" } });
+Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+Resource.register(changes, { type: { type: "integer", default: 0 } });
 /** An object resource of the thread, which only systems there read and write. */
-const paintTraits = Resource.register(paint, { type: { type: "string", default: "plain" }, thread: "threadSystemsTest" });
-const paintedTraits = Resource.register(painted, { type: { type: "integer", default: 0 } });
-const enabledTraits = Resource.register(enabled, { type: { type: "boolean", default: true } });
-const nextUidTraits = Resource.register(nextUid, { type: { type: "integer", default: 1 } });
+Resource.register(paint, { type: { type: "string", default: "plain" }, thread: "threadSystemsTest" });
+Resource.register(painted, { type: { type: "integer", default: 0 } });
+Resource.register(enabled, { type: { type: "boolean", default: true } });
+Resource.register(nextUid, { type: { type: "integer", default: 1 } });
 
 const makeNote = (text: string): Note => ({ text, read: () => text });
 

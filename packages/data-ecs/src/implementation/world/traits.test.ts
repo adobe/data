@@ -13,17 +13,17 @@ const parent = Symbol("traitsTest/parent");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [score]: typeof scoreTraits;
-        [slot]: typeof slotTraits;
-        [ready]: typeof readyTraits;
-        [parent]: typeof parentTraits;
+        [score]: { type: number };
+        [slot]: { type: number; derived: true };
+        [ready]: { type: true; within: typeof slot };
+        [parent]: { type: Entity; reference: "owner" };
     }
 }
 
-const scoreTraits = Component.register(score, { type: { type: "number" } });
-const slotTraits = Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-const readyTraits = Component.register(ready, { type: { const: true }, within: slot });
-const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(score, { type: { type: "number" } });
+Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+Component.register(ready, { type: { const: true }, within: slot });
+Component.register(parent, { type: Entity.schema, reference: "owner" });
 
 describe("traits", () => {
     it("keep derived components out of commands, for untyped callers too", async () => {

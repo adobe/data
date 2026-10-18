@@ -15,19 +15,19 @@ const hidden = Symbol("upTreeTest/hidden");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [local]: typeof localTraits;
-        [full]: typeof fullTraits;
-        [filtered]: typeof filteredTraits;
-        [parent]: typeof parentTraits;
-        [hidden]: typeof hiddenTraits;
+        [local]: { type: number };
+        [full]: { type: number };
+        [filtered]: { type: number };
+        [parent]: { type: Entity; reference: "weak" };
+        [hidden]: { type: true };
     }
 }
 
-const localTraits = Component.register(local, { type: { type: "number" } });
-const fullTraits = Component.register(full, { type: { type: "number" } });
-const filteredTraits = Component.register(filtered, { type: { type: "number" } });
-const parentTraits = Component.register(parent, { type: Entity.schema, reference: "weak" });
-const hiddenTraits = Component.register(hidden, { type: { const: true } });
+Component.register(local, { type: { type: "number" } });
+Component.register(full, { type: { type: "number" } });
+Component.register(filtered, { type: { type: "number" } });
+Component.register(parent, { type: Entity.schema, reference: "weak" });
+Component.register(hidden, { type: { const: true } });
 
 const propagateFull = System.create({
     name: "upTreeTest/propagateFull",

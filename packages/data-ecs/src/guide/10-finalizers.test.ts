@@ -4,13 +4,13 @@ import { createWorld } from "../implementation/index.js";
 
 const handle = Symbol("handle");
 
-const handleTraits = Component.register(handle, { type: { type: "number" } });
-
 declare module "@adobe/data-ecs" {
     interface Components {
-        [handle]: typeof handleTraits;
+        [handle]: { type: number };
     }
 }
+
+Component.register(handle, { type: { type: "number" } });
 
 /** What handles name outside the world, as GPU buffers and DOM nodes are. */
 const open = new Set<number>();

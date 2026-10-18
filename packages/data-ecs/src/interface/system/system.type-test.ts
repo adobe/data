@@ -15,33 +15,33 @@ const score = Symbol("systemTest/score");
 
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
-        [target]: typeof targetTraits;
-        [player]: typeof playerTraits;
+        [position]: { type: number };
+        [velocity]: { type: number };
+        [target]: { type: Entity };
+        [player]: { type: true };
     }
 }
-const positionTraits = Component.register(position, { type: { type: "number" } });
-const velocityTraits = Component.register(velocity, { type: { type: "number" } });
-const targetTraits = Component.register(target, { type: Entity.schema });
-const playerTraits = Component.register(player, { type: { const: true } });
+Component.register(position, { type: { type: "number" } });
+Component.register(velocity, { type: { type: "number" } });
+Component.register(target, { type: Entity.schema });
+Component.register(player, { type: { const: true } });
 const flagged = Symbol("systemTest/flagged");
 const bounds = Symbol("systemTest/bounds");
 export const total = Symbol("systemTest/total");
 declare module '@adobe/data-ecs' {
     export interface Resources {
-        [time]: typeof timeTraits;
-        [score]: typeof scoreTraits;
-        [flagged]: typeof flaggedTraits;
-        [bounds]: typeof boundsTraits;
-        [total]: typeof totalTraits;
+        [time]: { type: number };
+        [score]: { type: number };
+        [flagged]: { type: boolean; reduce: "|" };
+        [bounds]: { type: readonly [number, number, number]; reduce: "min" };
+        [total]: { type: number; reduce: "+" };
     }
 }
-const boundsTraits = Resource.register(bounds, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3, default: [Infinity, Infinity, Infinity] }, reduce: "min" });
-const timeTraits = Resource.register(time, { type: { type: "number", default: 0 } });
-const scoreTraits = Resource.register(score, { type: { type: "number", default: 0 } });
-const flaggedTraits = Resource.register(flagged, { type: { type: "boolean", default: false }, reduce: "|" });
-const totalTraits = Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+Resource.register(bounds, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3, default: [Infinity, Infinity, Infinity] }, reduce: "min" });
+Resource.register(time, { type: { type: "number", default: 0 } });
+Resource.register(score, { type: { type: "number", default: 0 } });
+Resource.register(flagged, { type: { type: "boolean", default: false }, reduce: "|" });
+Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
 
 // Row: read values are read-only, write values writable, others absent.
 export const integrate = System.create({
@@ -157,16 +157,19 @@ check<Equal<typeof main, System>>();
 const label = Symbol("systemTest/label");
 const path = Symbol("systemTest/path");
 const vector = Symbol("systemTest/vector");
+const marks = Symbol("systemTest/marks");
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [label]: typeof labelTraits;
-        [path]: typeof pathTraits;
-        [vector]: typeof vectorTraits;
+        [label]: { type: string };
+        [path]: { type: readonly number[] };
+        [vector]: { type: readonly [number, number, number] };
+        [marks]: { type: ReadonlySet<number> };
     }
 }
-const labelTraits = Component.register(label, { type: { type: "string" } });
-const pathTraits = Component.register(path, { type: { type: "array", items: { type: "number" } } });
-const vectorTraits = Component.register(vector, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 } });
+Component.register(label, { type: { type: "string" } });
+Component.register(marks, { type: { type: "set", items: { type: "number" } } });
+Component.register(path, { type: { type: "array", items: { type: "number" } } });
+Component.register(vector, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 } });
 
 // Kernels: linear values (numbers, booleans, entities, fixed tuples), read-only resources.
 System.create({
@@ -188,6 +191,13 @@ System.create({
     kernel: "cpu",
     // @ts-expect-error kernel values can't be variable-length arrays
     components: { write: [path] },
+}, () => {});
+
+System.create({
+    name: "test/integrate",
+    kernel: "cpu",
+    // @ts-expect-error kernel values can't be sets or maps
+    components: { read: [marks] },
 }, () => {});
 
 System.create({

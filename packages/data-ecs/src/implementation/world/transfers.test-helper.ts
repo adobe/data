@@ -20,28 +20,28 @@ declare module "@adobe/data-ecs" {
         transfersTest: true;
     }
     export interface Components {
-        [port]: typeof portTraits;
-        [bitmap]: typeof bitmapTraits;
-        [portHere]: typeof portHereTraits;
-        [bitmapHere]: typeof bitmapHereTraits;
-        [parent]: typeof parentTraits;
-        [depth]: typeof depthTraits;
+        [port]: { type: MessagePort; thread: "transfersTest"; transfer: true };
+        [bitmap]: { type: ImageBitmap; thread: "transfersTest"; transfer: true };
+        [portHere]: { type: MessagePort; transfer: true };
+        [bitmapHere]: { type: ImageBitmap; transfer: true };
+        [parent]: { type: Entity; reference: "owner" };
+        [depth]: { type: number };
     }
     export interface Resources {
-        [anchor]: typeof anchorTraits;
-        [order]: typeof orderTraits;
+        [anchor]: { type: string; thread: "transfersTest" };
+        [order]: { type: number };
     }
 }
 /** An object resource of "transfersTest", which places the systems reading it there. */
-const anchorTraits = Resource.register(anchor, { type: { type: "string", default: "anchor" }, thread: "transfersTest" });
+Resource.register(anchor, { type: { type: "string", default: "anchor" }, thread: "transfersTest" });
 /** Counts the runs that read it, in the order they ran. */
-const orderTraits = Resource.register(order, { type: { type: "integer", default: 0 } });
-const portTraits = Component.register(port, { type: Component.object<MessagePort>(), thread: "transfersTest", transfer: true });
-const bitmapTraits = Component.register(bitmap, { type: Component.object<ImageBitmap>(), thread: "transfersTest", transfer: true });
-const portHereTraits = Component.register(portHere, { type: Component.object<MessagePort>(), transfer: true });
-const bitmapHereTraits = Component.register(bitmapHere, { type: Component.object<ImageBitmap>(), transfer: true });
-const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
-const depthTraits = Component.register(depth, { type: { type: "number" } });
+Resource.register(order, { type: { type: "integer", default: 0 } });
+Component.register(port, { thread: "transfersTest", transfer: true });
+Component.register(bitmap, { thread: "transfersTest", transfer: true });
+Component.register(portHere, { transfer: true });
+Component.register(bitmapHere, { transfer: true });
+Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(depth, { type: { type: "number" } });
 
 const any = { allOf: [] } as const;
 

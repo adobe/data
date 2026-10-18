@@ -22,31 +22,31 @@ const tags = [tag0, tag1, tag2, tag3, tag4, tag5, tag6] as const;
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [value]: typeof valueTraits;
-        [target]: typeof targetTraits;
-        [seen]: typeof seenTraits;
-        [child]: typeof childTraits;
-        [tag0]: typeof tag0Traits;
-        [tag1]: typeof tag1Traits;
-        [tag2]: typeof tag2Traits;
-        [tag3]: typeof tag3Traits;
-        [tag4]: typeof tag4Traits;
-        [tag5]: typeof tag5Traits;
-        [tag6]: typeof tag6Traits;
+        [value]: { type: number };
+        [target]: { type: Entity };
+        [seen]: { type: number };
+        [child]: { type: true };
+        [tag0]: { type: true };
+        [tag1]: { type: true };
+        [tag2]: { type: true };
+        [tag3]: { type: true };
+        [tag4]: { type: true };
+        [tag5]: { type: true };
+        [tag6]: { type: true };
     }
 }
 
-const valueTraits = Component.register(value, { type: { type: "number", precision: 1 } });
-const targetTraits = Component.register(target, { type: Entity.schema });
-const seenTraits = Component.register(seen, { type: { type: "number", precision: 1 } });
-const childTraits = Component.register(child, { type: { const: true } });
-const tag0Traits = Component.register(tag0, { type: { const: true } });
-const tag1Traits = Component.register(tag1, { type: { const: true } });
-const tag2Traits = Component.register(tag2, { type: { const: true } });
-const tag3Traits = Component.register(tag3, { type: { const: true } });
-const tag4Traits = Component.register(tag4, { type: { const: true } });
-const tag5Traits = Component.register(tag5, { type: { const: true } });
-const tag6Traits = Component.register(tag6, { type: { const: true } });
+Component.register(value, { type: { type: "number", precision: 1 } });
+Component.register(target, { type: Entity.schema });
+Component.register(seen, { type: { type: "number", precision: 1 } });
+Component.register(child, { type: { const: true } });
+Component.register(tag0, { type: { const: true } });
+Component.register(tag1, { type: { const: true } });
+Component.register(tag2, { type: { const: true } });
+Component.register(tag3, { type: { const: true } });
+Component.register(tag4, { type: { const: true } });
+Component.register(tag5, { type: { const: true } });
+Component.register(tag6, { type: { const: true } });
 
 /** The component lists of 100 archetypes: `value` with each of the first 100 combinations of the tags. */
 const lists = Array.from({ length: 100 }, (_, i): (typeof value | (typeof tags)[number])[] => [value, ...tags.filter((_, bit) => (i & (1 << bit)) !== 0)]);

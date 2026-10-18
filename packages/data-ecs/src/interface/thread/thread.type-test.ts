@@ -37,79 +37,79 @@ const cache = Symbol("threadTypeTest/cache");
 const count = Symbol("threadTypeTest/count");
 const port = Symbol("threadTypeTest/port");
 const text = Symbol("threadTypeTest/text");
+const names = Symbol("threadTypeTest/names");
 
 declare module '@adobe/data-ecs' {
     export interface Components {
         // Objects: on "world" without `thread`, or on the thread they name.
-        [label]: typeof labelTraits;
-        [path]: typeof pathTraits;
-        [handle]: typeof handleTraits;
-        [placedLabel]: typeof placedLabelTraits;
-        [unknownThread]: typeof unknownThreadTraits;
+        [label]: { type: string };
+        [path]: { type: readonly number[]; thread: "threadTypeTest" };
+        [handle]: { type: Map<string, number>; thread: "world" };
+        [placedLabel]: { type: string; thread: "main" };
+        [unknownThread]: { type: string; thread: "elsewhere" };
         // Structs live in shared memory, so they have no thread.
-        [position]: typeof positionTraits;
-        [placedPosition]: typeof placedPositionTraits;
-        [placedTag]: typeof placedTagTraits;
+        [position]: { type: readonly [number, number, number] };
+        [placedPosition]: { type: readonly [number, number, number]; thread: "main" };
+        [placedTag]: { type: true; thread: "world" };
         // A DOM Node lives on "main", and says so.
-        [element]: typeof elementTraits;
-        [unplacedElement]: typeof unplacedElementTraits;
-        [workerElement]: typeof workerElementTraits;
-        [maybeElement]: typeof maybeElementTraits;
+        [element]: { type: HTMLElement; thread: "main" };
+        [unplacedElement]: { type: HTMLElement };
+        [workerElement]: { type: HTMLElement; thread: "threadTypeTest" };
+        [maybeElement]: { type: HTMLCanvasElement | null; thread: "main" };
         // Transferable values may be moved, never copied, to their thread.
-        [bitmap]: typeof bitmapTraits;
-        [buffer]: typeof bufferTraits;
-        [notTransferable]: typeof notTransferableTraits;
+        [bitmap]: { type: ImageBitmap; thread: "threadTypeTest"; transfer: true };
+        [buffer]: { type: ArrayBuffer; transfer: true };
+        [notTransferable]: { type: Map<string, number>; transfer: true };
     }
     export interface Resources {
-        [canvas]: typeof canvasTraits;
-        [cache]: typeof cacheTraits;
-        [count]: typeof countTraits;
-        [port]: typeof portTraits;
-        [text]: typeof textTraits;
+        [canvas]: { type: OffscreenCanvas | null; thread: "threadTypeTest"; transfer: true };
+        [cache]: { type: Map<string, number> | null; thread: "main" };
+        [count]: { type: number; thread: "main" };
+        [port]: { type: MessagePort | null; transfer: true };
+        [text]: { type: string; transfer: true };
+        [names]: { type: Map<string, number>; thread: "main" };
     }
 }
 
-const labelTraits = Component.register(label, { type: { type: "string" } });
-const pathTraits = Component.register(path, { type: { type: "array", items: { type: "number" } }, thread: "threadTypeTest" });
-const handleTraits = Component.register(handle, { type: Component.object<Map<string, number>>(), thread: "world" });
-const placedLabelTraits = Component.register(placedLabel, { type: { type: "string" }, thread: "main" });
-const positionTraits = Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 } });
-const elementTraits = Component.register(element, { type: Component.object<HTMLElement>(), thread: "main" });
-const maybeElementTraits = Component.register(maybeElement, { type: Component.object<HTMLCanvasElement | null>(), thread: "main" });
-const bitmapTraits = Component.register(bitmap, { type: Component.object<ImageBitmap>(), thread: "threadTypeTest", transfer: true });
-const bufferTraits = Component.register(buffer, { type: Component.object<ArrayBuffer>(), transfer: true });
-const canvasTraits = Resource.register(canvas, { type: Resource.object<OffscreenCanvas | null>(), thread: "threadTypeTest", transfer: true });
-const cacheTraits = Resource.register(cache, { type: Resource.object<Map<string, number> | null>(), thread: "main" });
-const portTraits = Resource.register(port, { type: Resource.object<MessagePort | null>(), transfer: true });
+Component.register(label, { type: { type: "string" } });
+Component.register(path, { type: { type: "array", items: { type: "number" } }, thread: "threadTypeTest" });
+Component.register(handle, { thread: "world" });
+Component.register(placedLabel, { type: { type: "string" }, thread: "main" });
+Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 } });
+Component.register(element, { thread: "main" });
+Component.register(maybeElement, { thread: "main" });
+Component.register(bitmap, { thread: "threadTypeTest", transfer: true });
+Component.register(buffer, { transfer: true });
+Resource.register(canvas, { thread: "threadTypeTest", transfer: true });
+Resource.register(cache, { thread: "main" });
+Resource.register(port, { transfer: true });
 
 // @ts-expect-error a thread is a declared one
-const unknownThreadTraits = Component.register(unknownThread, { type: { type: "string" }, thread: "elsewhere" });
+Component.register(unknownThread, { type: { type: "string" }, thread: "elsewhere" });
 // @ts-expect-error a struct lives in shared memory, so it has no thread
-const placedPositionTraits = Component.register(placedPosition, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 }, thread: "main" });
+Component.register(placedPosition, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 }, thread: "main" });
 // @ts-expect-error a tag is a struct too
-const placedTagTraits = Component.register(placedTag, { type: { const: true }, thread: "world" });
+Component.register(placedTag, { type: { const: true }, thread: "world" });
 // @ts-expect-error a struct resource has no thread either
-const countTraits = Resource.register(count, { type: { type: "number", default: 0 }, thread: "main" });
+Resource.register(count, { type: { type: "number", default: 0 }, thread: "main" });
 // @ts-expect-error a DOM Node declares thread: "main"
-const unplacedElementTraits = Component.register(unplacedElement, { type: Component.object<HTMLElement>() });
+Component.register(unplacedElement, {});
 // @ts-expect-error a DOM Node lives on "main", not another thread
-const workerElementTraits = Component.register(workerElement, { type: Component.object<HTMLElement>(), thread: "threadTypeTest" });
+Component.register(workerElement, { thread: "threadTypeTest" });
 // @ts-expect-error only a Transferable value is moved
-const notTransferableTraits = Component.register(notTransferable, { type: Component.object<Map<string, number>>(), transfer: true });
+Component.register(notTransferable, { transfer: true });
 // @ts-expect-error a string is data, copied, never moved
-const textTraits = Resource.register(text, { type: { type: "string", default: "" }, transfer: true });
-// @ts-expect-error a value that's data has a schema, not object<T>()
-Component.register(label, { type: Component.object<string>() });
-// @ts-expect-error an object's default is the declaration's, beside object<T>(): a component's comes from commands
-Component.register(handle, { type: Component.object<Map<string, number>>(), default: new Map(), thread: "world" });
+Resource.register(text, { type: { type: "string", default: "" }, transfer: true });
+// @ts-expect-error a value that's data is registered with its schema
+Component.register(label, {});
+// @ts-expect-error a component's object has no default: its value comes from commands
+Component.register(handle, { default: new Map(), thread: "world" });
 // @ts-expect-error a resource without null starts at a default
-Resource.register(cache, { type: Resource.object<Map<string, number>>(), thread: "main" });
+Resource.register(names, { thread: "main" });
 // @ts-expect-error a default is a value of the type
-Resource.register(cache, { type: Resource.object<Map<string, number>>(), default: "map", thread: "main" });
+Resource.register(names, { default: "map", thread: "main" });
+Resource.register(names, { default: new Map(), thread: "main" });
 
-// An object's entry is the type object<T>() states, with its traits.
-check<Equal<typeof elementTraits, { readonly type: HTMLElement; readonly thread: "main" }>>();
-check<Equal<typeof cacheTraits, { readonly type: Map<string, number> | null; readonly thread: "main" }>>();
 check<Equal<Component.Value<typeof path>, readonly number[]>>();
 
 // The checks resolve to no check where the DOM library isn't loaded: a scope without `Node` has no DOM Node type.

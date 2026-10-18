@@ -278,11 +278,16 @@ export const idOf = (state: State, key: Key): number => {
     return id;
 };
 
-/** What a resource or derived component starts at: its default, or `null` when its type allows leaving it out. */
+/**
+ * What a resource or derived component starts at: its declaration's default or its schema's, or `null` when its type
+ * allows leaving it out.
+ */
 export const defaultOf = (key: Key): unknown => {
     const declaration = declarationOf(key);
-    const source = declaration?.type ?? declaration;
-    return source !== undefined && "default" in source ? source.default : null;
+    if (declaration === undefined) return null;
+    if ("default" in declaration) return declaration.default;
+    const { type } = declaration;
+    return type !== undefined && "default" in type ? type.default : null;
 };
 
 /**

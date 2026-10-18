@@ -9,14 +9,14 @@ const glow = Symbol("importedListsTest/glow");
 export const marked = Symbol("importedListsTest/marked");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [ember]: typeof emberTraits;
-        [glow]: typeof glowTraits;
-        [marked]: typeof markedTraits;
+        [ember]: { type: number };
+        [glow]: { type: true };
+        [marked]: { type: true };
     }
 }
-const emberTraits = Component.register(ember, { type: { type: "number" } });
-const glowTraits = Component.register(glow, { type: { const: true } });
-const markedTraits = Component.register(marked, { type: { const: true } });
+Component.register(ember, { type: { type: "number" } });
+Component.register(glow, { type: { const: true } });
+Component.register(marked, { type: { const: true } });
 
 export const Spark = Archetype.create([ember, glow]);
 export const Marks = [ember, marked] as const;

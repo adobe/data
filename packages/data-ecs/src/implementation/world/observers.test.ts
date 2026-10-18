@@ -16,19 +16,19 @@ const weight = Symbol("observersTest/weight");
 
 declare module "@adobe/data-ecs" {
     interface Resources {
-        [level]: typeof levelTraits;
-        [other]: typeof otherTraits;
-        [total]: typeof totalTraits;
+        [level]: { type: number };
+        [other]: { type: number };
+        [total]: { type: number; reduce: "+" };
     }
     interface Components {
-        [weight]: typeof weightTraits;
+        [weight]: { type: number };
     }
 }
 
-const levelTraits = Resource.register(level, { type: { type: "number", default: 0 } });
-const otherTraits = Resource.register(other, { type: { type: "number", default: 0 } });
-const totalTraits = Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-const weightTraits = Component.register(weight, { type: { type: "number" } });
+Resource.register(level, { type: { type: "number", default: 0 } });
+Resource.register(other, { type: { type: "number", default: 0 } });
+Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+Component.register(weight, { type: { type: "number" } });
 
 const raise = System.create({ name: "observersTest/raise", input: { type: "object", properties: { by: { type: "number" } } }, resources: { write: [level] } }, ({ input, resources }) => {
     resources[level] += input.by;
@@ -108,17 +108,17 @@ const filler = Symbol("observersTest/filler");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [heat]: typeof heatTraits;
-        [tag]: typeof tagTraits;
-        [flag]: typeof flagTraits;
-        [filler]: typeof fillerTraits;
+        [heat]: { type: number };
+        [tag]: { type: true };
+        [flag]: { type: true };
+        [filler]: { type: number };
     }
 }
 
-const heatTraits = Component.register(heat, { type: { type: "number" } });
-const tagTraits = Component.register(tag, { type: { const: true } });
-const flagTraits = Component.register(flag, { type: { const: true } });
-const fillerTraits = Component.register(filler, { type: { type: "number" } });
+Component.register(heat, { type: { type: "number" } });
+Component.register(tag, { type: { const: true } });
+Component.register(flag, { type: { const: true } });
+Component.register(filler, { type: { type: "number" } });
 
 /** The entity the systems below act on, set by `create`. */
 let target = Entity.none;
@@ -291,15 +291,15 @@ const marker = Symbol("observersTest/marker");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [score]: typeof scoreTraits;
-        [benched]: typeof benchedTraits;
-        [marker]: typeof markerTraits;
+        [score]: { type: number };
+        [benched]: { type: true };
+        [marker]: { type: true };
     }
 }
 
-const scoreTraits = Component.register(score, { type: { type: "number" } });
-const benchedTraits = Component.register(benched, { type: { const: true } });
-const markerTraits = Component.register(marker, { type: { const: true } });
+Component.register(score, { type: { type: "number" } });
+Component.register(benched, { type: { const: true } });
+Component.register(marker, { type: { const: true } });
 
 /** Players the systems below act on, in spawn order, set by `players`. */
 let roster: Entity[] = [];
@@ -473,13 +473,13 @@ const second = Symbol("observersTest/second");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [rank]: typeof rankTraits;
-        [second]: typeof secondTraits;
+        [rank]: { type: number };
+        [second]: { type: number };
     }
 }
 
-const rankTraits = Component.register(rank, { type: { type: "number" } });
-const secondTraits = Component.register(second, { type: { type: "number" } });
+Component.register(rank, { type: { type: "number" } });
+Component.register(second, { type: { type: "number" } });
 
 /** What `rankAll` spawns: each entity's rank, second key, and whether it's marked, which puts it in another archetype. */
 let ranks: readonly (readonly [number, number, boolean])[] = [];

@@ -16,17 +16,17 @@ const tag = Symbol("rowsTest/tag");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: typeof positionTraits;
-        [count]: typeof countTraits;
-        [flag]: typeof flagTraits;
-        [tag]: typeof tagTraits;
+        [position]: { type: readonly [number, number, number] };
+        [count]: { type: number };
+        [flag]: { type: boolean };
+        [tag]: { type: true };
     }
 }
 
-const positionTraits = Component.register(position, { type: vec3 });
-const countTraits = Component.register(count, { type: { type: "integer", minimum: 0, maximum: 1000 } });
-const flagTraits = Component.register(flag, { type: { type: "boolean" } });
-const tagTraits = Component.register(tag, { type: { const: true } });
+Component.register(position, { type: vec3 });
+Component.register(count, { type: { type: "integer", minimum: 0, maximum: 1000 } });
+Component.register(flag, { type: { type: "boolean" } });
+Component.register(tag, { type: { const: true } });
 
 const seed = System.create({ name: "rowsTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 4; i++) commands.spawn(i < 2 ? [position, count, flag, tag] : [position, count, flag])({ [position]: [i, i + 0.5, -i], [count]: i, [flag]: i % 2 === 0 });

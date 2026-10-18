@@ -21,33 +21,33 @@ const t3 = Symbol("structural/t3");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [index]: typeof indexTraits;
-        [value]: typeof valueTraits;
-        [flag]: typeof flagTraits;
-        [amount]: typeof amountTraits;
-        [extra]: typeof extraTraits;
-        [spawned]: typeof spawnedTraits;
-        [source1]: typeof source1Traits;
-        [source2]: typeof source2Traits;
-        [t0]: typeof t0Traits;
-        [t1]: typeof t1Traits;
-        [t2]: typeof t2Traits;
-        [t3]: typeof t3Traits;
+        [index]: { type: number };
+        [value]: { type: number };
+        [flag]: { type: true };
+        [amount]: { type: number };
+        [extra]: { type: number };
+        [spawned]: { type: true };
+        [source1]: { type: true };
+        [source2]: { type: true };
+        [t0]: { type: true };
+        [t1]: { type: true };
+        [t2]: { type: true };
+        [t3]: { type: true };
     }
 }
 
-const indexTraits = Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-const valueTraits = Component.register(value, { type: { type: "number", precision: 1 } });
-const amountTraits = Component.register(amount, { type: { type: "number", precision: 1 } });
-const extraTraits = Component.register(extra, { type: { type: "number", precision: 1 } });
-const flagTraits = Component.register(flag, { type: { const: true } });
-const spawnedTraits = Component.register(spawned, { type: { const: true } });
-const source1Traits = Component.register(source1, { type: { const: true } });
-const source2Traits = Component.register(source2, { type: { const: true } });
-const t0Traits = Component.register(t0, { type: { const: true } });
-const t1Traits = Component.register(t1, { type: { const: true } });
-const t2Traits = Component.register(t2, { type: { const: true } });
-const t3Traits = Component.register(t3, { type: { const: true } });
+Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(value, { type: { type: "number", precision: 1 } });
+Component.register(amount, { type: { type: "number", precision: 1 } });
+Component.register(extra, { type: { type: "number", precision: 1 } });
+Component.register(flag, { type: { const: true } });
+Component.register(spawned, { type: { const: true } });
+Component.register(source1, { type: { const: true } });
+Component.register(source2, { type: { const: true } });
+Component.register(t0, { type: { const: true } });
+Component.register(t1, { type: { const: true } });
+Component.register(t2, { type: { const: true } });
+Component.register(t3, { type: { const: true } });
 
 const seeded = [
     Archetype.create([index, value]),

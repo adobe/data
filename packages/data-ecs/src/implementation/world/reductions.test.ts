@@ -26,34 +26,34 @@ const summed = Symbol("reductionsTest/summed");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: typeof positionTraits;
-        [mass]: typeof massTraits;
-        [heavy]: typeof heavyTraits;
+        [position]: { type: Vec3 };
+        [mass]: { type: number };
+        [heavy]: { type: true };
     }
     export interface Resources {
-        [total]: typeof totalTraits;
-        [low]: typeof lowTraits;
-        [bits]: typeof bitsTraits;
-        [least]: typeof leastTraits;
-        [any]: typeof anyTraits;
-        [level]: typeof levelTraits;
-        [seen]: typeof seenTraits;
-        [wrapped]: typeof wrappedTraits;
+        [total]: { type: number; reduce: "+" };
+        [low]: { type: readonly [number, number, number]; reduce: "min" };
+        [bits]: { type: number; reduce: "|" };
+        [least]: { type: number; reduce: "min" };
+        [any]: { type: boolean; reduce: "|" };
+        [level]: { type: number };
+        [seen]: { type: number };
+        [wrapped]: { type: number; reduce: "+" };
         [summed]: { type: boolean; reduce: "|" };
     }
 }
 
-const positionTraits = Component.register(position, { type: Vec3.schema });
-const massTraits = Component.register(mass, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-const heavyTraits = Component.register(heavy, { type: { const: true } });
-const totalTraits = Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-const lowTraits = Resource.register(low, { type: { ...Vec3.schema, default: [0, 0, 0] }, reduce: "min" });
-const bitsTraits = Resource.register(bits, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 }, reduce: "|" });
-const leastTraits = Resource.register(least, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 }, reduce: "min" });
-const anyTraits = Resource.register(any, { type: { type: "boolean", default: false }, reduce: "|" });
-const levelTraits = Resource.register(level, { type: { type: "number", default: 0 } });
-const seenTraits = Resource.register(seen, { type: { type: "number", default: 0 } });
-const wrappedTraits = Resource.register(wrapped, { type: { type: "integer", minimum: -(2 ** 31), maximum: 2 ** 31 - 1, default: 5 }, reduce: "+" });
+Component.register(position, { type: Vec3.schema });
+Component.register(mass, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(heavy, { type: { const: true } });
+Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+Resource.register(low, { type: { ...Vec3.schema, default: [0, 0, 0] }, reduce: "min" });
+Resource.register(bits, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 }, reduce: "|" });
+Resource.register(least, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 }, reduce: "min" });
+Resource.register(any, { type: { type: "boolean", default: false }, reduce: "|" });
+Resource.register(level, { type: { type: "number", default: 0 } });
+Resource.register(seen, { type: { type: "number", default: 0 } });
+Resource.register(wrapped, { type: { type: "integer", minimum: -(2 ** 31), maximum: 2 ** 31 - 1, default: 5 }, reduce: "+" });
 
 const rows = 3000;
 const positionAt = (i: number): Vec3 => [Math.sin(i) * 100, (i % 97) - 50, i / 7];

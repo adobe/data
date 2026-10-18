@@ -21,26 +21,26 @@ declare module "@adobe/data-ecs" {
         remoteFinalizersTest: true;
     }
     export interface Components {
-        [serial]: typeof serialTraits;
-        [place]: typeof placeTraits;
-        [marked]: typeof markedTraits;
-        [flagged]: typeof flaggedTraits;
-        [widget]: typeof widgetTraits;
-        [label]: typeof labelTraits;
+        [serial]: { type: number };
+        [place]: { type: readonly [number, number] };
+        [marked]: { type: true };
+        [flagged]: { type: true };
+        [widget]: { type: Widget | null; thread: "remoteFinalizersTest" };
+        [label]: { type: string | null; thread: "remoteFinalizersTest" };
     }
     export interface Resources {
-        [tone]: typeof toneTraits;
+        [tone]: { type: string; thread: "remoteFinalizersTest" };
     }
 }
 /** A value that isn't data, which only its thread holds. */
 type Widget = { readonly tag: string; readonly draw: () => string };
-const serialTraits = Component.register(serial, { type: { type: "integer" } });
-const placeTraits = Component.register(place, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-const markedTraits = Component.register(marked, { type: { const: true } });
-const flaggedTraits = Component.register(flagged, { type: { const: true } });
-const widgetTraits = Component.register(widget, { type: Component.object<Widget | null>(), thread: "remoteFinalizersTest" });
-const labelTraits = Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "remoteFinalizersTest" });
-const toneTraits = Resource.register(tone, { type: { type: "string", default: "quiet" }, thread: "remoteFinalizersTest" });
+Component.register(serial, { type: { type: "integer" } });
+Component.register(place, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
+Component.register(marked, { type: { const: true } });
+Component.register(flagged, { type: { const: true } });
+Component.register(widget, { thread: "remoteFinalizersTest" });
+Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "remoteFinalizersTest" });
+Resource.register(tone, { type: { type: "string", default: "quiet" }, thread: "remoteFinalizersTest" });
 
 /** A stop as the finalizer saw it, on the thread it ran on. */
 export type Released = { readonly serial: number; readonly place: readonly number[]; readonly marked: boolean; readonly widget: string | null; readonly label: string | null; readonly tone: string };

@@ -10,10 +10,10 @@ import { workers } from "../../interface/resources/workers.js";
 const heat = Symbol("importedListsTest/heat");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [heat]: typeof heatTraits;
+        [heat]: { type: number };
     }
 }
-const heatTraits = Component.register(heat, { type: { type: "number" } });
+Component.register(heat, { type: { type: "number" } });
 
 const seed = System.create({ name: "importedListsTest/seed" }, ({ commands }) => {
     commands.spawn([heat])({ [heat]: 2 });

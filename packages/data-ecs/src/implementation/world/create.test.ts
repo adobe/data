@@ -22,25 +22,25 @@ const marker = Symbol("createTest/marker");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
-        [label]: typeof labelTraits;
-        [frozen]: typeof frozenTraits;
-        [marker]: typeof markerTraits;
+        [position]: { type: readonly [number, number] };
+        [velocity]: { type: number };
+        [label]: { type: string };
+        [frozen]: { type: true };
+        [marker]: { type: number };
     }
     export interface Resources {
-        [spawnCount]: typeof spawnCountTraits;
-        [seen]: typeof seenTraits;
+        [spawnCount]: { type: number };
+        [seen]: { type: number };
     }
 }
 
-const positionTraits = Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-const velocityTraits = Component.register(velocity, { type: { type: "number" } });
-const labelTraits = Component.register(label, { type: { type: "string" } });
-const frozenTraits = Component.register(frozen, { type: { const: true } });
-const markerTraits = Component.register(marker, { type: { type: "number" } });
-const spawnCountTraits = Resource.register(spawnCount, { type: { type: "integer", default: 3 } });
-const seenTraits = Resource.register(seen, { type: { type: "integer", default: 0 } });
+Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
+Component.register(velocity, { type: { type: "number" } });
+Component.register(label, { type: { type: "string" } });
+Component.register(frozen, { type: { const: true } });
+Component.register(marker, { type: { type: "number" } });
+Resource.register(spawnCount, { type: { type: "integer", default: 3 } });
+Resource.register(seen, { type: { type: "integer", default: 0 } });
 
 const spawn = System.create({
     name: "createTest/spawn",

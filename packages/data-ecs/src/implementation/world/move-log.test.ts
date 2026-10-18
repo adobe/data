@@ -25,22 +25,22 @@ declare module "@adobe/data-ecs" {
         moveLogTest: true;
     }
     export interface Components {
-        [uid]: typeof uidTraits;
-        [amount]: typeof amountTraits;
-        [flag]: typeof flagTraits;
-        [label]: typeof labelTraits;
-        [note]: typeof noteTraits;
-        [own]: typeof ownTraits;
+        [uid]: { type: number };
+        [amount]: { type: number };
+        [flag]: { type: true };
+        [label]: { type: string | null; thread: "moveLogTest" };
+        [note]: { type: Note | null; thread: "moveLogTest" };
+        [own]: { type: string };
     }
 }
-const uidTraits = Component.register(uid, { type: { type: "number" } });
-const amountTraits = Component.register(amount, { type: { type: "number" } });
-const flagTraits = Component.register(flag, { type: { const: true } });
+Component.register(uid, { type: { type: "number" } });
+Component.register(amount, { type: { type: "number" } });
+Component.register(flag, { type: { const: true } });
 /** A value that isn't data. */
 type Note = { readonly text: string; readonly read: () => string };
-const labelTraits = Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "moveLogTest" });
-const noteTraits = Component.register(note, { type: Component.object<Note | null>(), thread: "moveLogTest" });
-const ownTraits = Component.register(own, { type: { type: "string" } });
+Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "moveLogTest" });
+Component.register(note, { thread: "moveLogTest" });
+Component.register(own, { type: { type: "string" } });
 
 const remoteKeys = [label, note] as const;
 

@@ -16,16 +16,16 @@ declare module "@adobe/data-ecs" {
         remoteObjects: true;
     }
     export interface Components {
-        [serial]: typeof serialTraits;
-        [phase]: typeof phaseTraits;
-        [flag]: typeof flagTraits;
-        [caption]: typeof captionTraits;
+        [serial]: { type: number };
+        [phase]: { type: number };
+        [flag]: { type: true };
+        [caption]: { type: string | null; thread: "remoteObjects" };
     }
 }
-const serialTraits = Component.register(serial, { type: { type: "number" } });
-const phaseTraits = Component.register(phase, { type: { type: "number" } });
-const flagTraits = Component.register(flag, { type: { const: true } });
-const captionTraits = Component.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "remoteObjects" });
+Component.register(serial, { type: { type: "number" } });
+Component.register(phase, { type: { type: "number" } });
+Component.register(flag, { type: { const: true } });
+Component.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "remoteObjects" });
 
 /** The watched entity, serial 0. */
 export const seed = System.create({ name: "remoteObjectsTest/seed" }, ({ commands }) => {

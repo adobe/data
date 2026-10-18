@@ -12,21 +12,21 @@ export const enabled = Symbol("gpuParticles/enabled");
 
 declare module '@adobe/data-ecs' {
     interface Components {
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
-        [color]: typeof colorTraits;
-        [mass]: typeof massTraits;
-        [visible]: typeof visibleTraits;
-        [enabled]: typeof enabledTraits;
+        [position]: { type: Vec3 };
+        [velocity]: { type: Vec3 };
+        [color]: { type: number };
+        [mass]: { type: number };
+        [visible]: { type: true };
+        [enabled]: { type: true };
     }
 }
 
-const positionTraits = Component.register(position, { type: Vec3.schema });
-const velocityTraits = Component.register(velocity, { type: Vec3.schema });
-const colorTraits = Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-const massTraits = Component.register(mass, { type: { type: "number", precision: 1 } });
-const visibleTraits = Component.register(visible, { type: { const: true } });
-const enabledTraits = Component.register(enabled, { type: { const: true } });
+Component.register(position, { type: Vec3.schema });
+Component.register(velocity, { type: Vec3.schema });
+Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(mass, { type: { type: "number", precision: 1 } });
+Component.register(visible, { type: { const: true } });
+Component.register(enabled, { type: { const: true } });
 
 /** Entity i goes to archetype i % 4. */
 const archetypes = [

@@ -12,10 +12,10 @@ import { simulate } from "./workers.fixture.js";
 const value = Symbol("portsTest/value");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [value]: typeof valueTraits;
+        [value]: { type: number };
     }
 }
-const valueTraits = Component.register(value, { type: { type: "number" } });
+Component.register(value, { type: { type: "number" } });
 
 const seed = System.create({ name: "portsTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 100_000; i++) commands.spawn([value])({ [value]: i });

@@ -17,13 +17,13 @@ declare module "@adobe/data-ecs" {
         finalizedBenchmark: true;
     }
     export interface Components {
-        [spot]: typeof spotTraits;
-        [handle]: typeof handleTraits;
+        [spot]: { type: readonly [number, number, number] };
+        [handle]: { type: { readonly release: () => void } | null; thread: "finalizedBenchmark" };
     }
 }
-const spotTraits = Component.register(spot, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
+Component.register(spot, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
 /** An object of the joined thread, as a DOM node or a GPU handle is. */
-const handleTraits = Component.register(handle, { type: Component.object<{ readonly release: () => void } | null>(), thread: "finalizedBenchmark" });
+Component.register(handle, { thread: "finalizedBenchmark" });
 
 /** Entities each timed sync point despawns. */
 export const despawnedObjects = 10_000;

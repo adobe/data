@@ -5,11 +5,11 @@ import { claimKey, declarationOf, failRegistration, firstKeyOf, kindOf, labelOf,
 import { isReduction } from './reduction.js';
 import { allowsNull, hasBoolean, isEntity, isStruct } from './schemas.js';
 import { isTrait } from './traits.js';
-import { isObjectType, type AnyObjectType } from '../trait/object.js';
 
 /**
  * A registered declaration, as any consumer iterating components or resources sees it: its `type` and other traits.
- * Without `type`, the value isn't data, and `default` is what it starts at.
+ * Without `type`, the value isn't data. A resource's `default`, or a derived object's, is what it starts at, when its
+ * schema has none.
  */
 export type AnyDeclaration = { readonly type?: Schema; readonly default?: unknown } & { readonly [T in TraitKey]?: unknown };
 
@@ -44,7 +44,9 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
         if (trait !== "default" && !isTrait(trait)) fail(`${labelOf(trait)} isn't a registered trait.`);
     }
     const { type } = declaration;
-    if (type !== undefined && "default" in declaration) fail("its schema holds its default.");
+    if (type !== undefined && "default" in declaration && (kind === "component" || "default" in type)) {
+        fail(kind === "component" ? "its schema holds its default." : "its default is given twice, by its schema and its declaration.");
+    }
     try {
         layoutOf(type);
     }
@@ -86,25 +88,14 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
     }
 };
 
-/** A declaration as registration takes it: its `type` may be `object<T>()`, which states a type and records nothing. */
-export type GivenDeclaration = { readonly type?: Schema | AnyObjectType; readonly default?: unknown } & { readonly [T in TraitKey]?: unknown };
-
-/** The declaration registration records: `object<T>()` leaves `type` out. */
-const recorded = (declaration: GivenDeclaration): AnyDeclaration => {
-    const { type, ...rest } = declaration;
-    return type === undefined || isObjectType(type) ? rest : { ...rest, type };
-};
-
 /**
- * Registers a declaration of `kind` under `key`, fixed from then on, and returns it. The same declaration again is
- * accepted, and so is a new symbol with the id of a key of this kind, as a module evaluated again makes it.
+ * Registers a declaration of `kind` under `key`, fixed from then on. The same declaration again is accepted, and so is
+ * a new symbol with the id of a key of this kind, as a module evaluated again makes it.
  */
-export const createRegistry = (kind: "component" | "resource") => (key: unknown, given: GivenDeclaration): GivenDeclaration => {
+export const createRegistry = (kind: "component" | "resource") => (key: unknown, declaration: AnyDeclaration): void => {
     const symbol = requireKey(kind, key);
-    const declaration = recorded(given);
     const existing = kindOf(symbol);
-    if (existing === kind && sameDeclaration(declarationOf(symbol), declaration)) return given;
+    if (existing === kind && sameDeclaration(declarationOf(symbol), declaration)) return;
     if (existing === undefined) check(kind, symbol, declaration);
     claimKey(symbol, kind, declaration);
-    return given;
 };

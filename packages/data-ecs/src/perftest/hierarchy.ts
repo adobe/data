@@ -10,17 +10,17 @@ export const leaf = Symbol("hierarchy/leaf");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [local]: typeof localTraits;
-        [world]: typeof worldTraits;
-        [parent]: typeof parentTraits;
-        [leaf]: typeof leafTraits;
+        [local]: { type: number };
+        [world]: { type: number };
+        [parent]: { type: Entity; reference: "owner" };
+        [leaf]: { type: true };
     }
 }
 
-const localTraits = Component.register(local, { type: { type: "number" } });
-const worldTraits = Component.register(world, { type: { type: "number" } });
-const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
-const leafTraits = Component.register(leaf, { type: { const: true } });
+Component.register(local, { type: { type: "number" } });
+Component.register(world, { type: { type: "number" } });
+Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(leaf, { type: { const: true } });
 
 const root = Archetype.create([local, world]);
 const child = Archetype.create([local, world, parent]);
@@ -99,13 +99,13 @@ export const placed = Symbol("hierarchy/placed");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [offset]: typeof offsetTraits;
-        [placed]: typeof placedTraits;
+        [offset]: { type: number };
+        [placed]: { type: number };
     }
 }
 
-const offsetTraits = Component.register(offset, { type: { type: "number", precision: 1 } });
-const placedTraits = Component.register(placed, { type: { type: "number", precision: 1 } });
+Component.register(offset, { type: { type: "number", precision: 1 } });
+Component.register(placed, { type: { type: "number", precision: 1 } });
 
 const gpuRoot = Archetype.create([offset, placed]);
 const gpuChild = Archetype.create([offset, placed, parent]);

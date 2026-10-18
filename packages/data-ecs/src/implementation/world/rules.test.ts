@@ -27,38 +27,38 @@ const tag = Symbol("rulesTest/tag");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [source]: typeof sourceTraits;
-        [hidden]: typeof hiddenTraits;
-        [sprite]: typeof spriteTraits;
-        [slot]: typeof slotTraits;
-        [visible]: typeof visibleTraits;
-        [ready]: typeof readyTraits;
-        [glow]: typeof glowTraits;
-        [owned]: typeof ownedTraits;
-        [follows]: typeof followsTraits;
-        [mark]: typeof markTraits;
-        [left]: typeof leftTraits;
+        [source]: { type: number };
+        [hidden]: { type: true };
+        [sprite]: { type: true };
+        [slot]: { type: number; derived: true };
+        [visible]: { type: true; derived: true };
+        [ready]: { type: number; within: typeof slot };
+        [glow]: { type: true; within: typeof ready };
+        [owned]: { type: Entity; reference: "owner" };
+        [follows]: { type: Entity; reference: "weak" };
+        [mark]: { type: number };
+        [left]: { type: true; within: typeof right };
         [right]: { type: true; within: typeof left };
-        [late]: typeof lateTraits;
-        [tagged]: typeof taggedTraits;
-        [tag]: typeof tagTraits;
+        [late]: { type: true; derived: true };
+        [tagged]: { type: true };
+        [tag]: { type: true; derived: true };
     }
 }
 
-const sourceTraits = Component.register(source, { type: { type: "number" } });
-const hiddenTraits = Component.register(hidden, { type: { const: true } });
-const spriteTraits = Component.register(sprite, { type: { const: true } });
-const slotTraits = Component.register(slot, { type: { type: "number", default: 7 }, derived: true });
-const visibleTraits = Component.register(visible, { type: { const: true }, derived: true });
-const readyTraits = Component.register(ready, { type: { type: "number" }, within: slot });
-const glowTraits = Component.register(glow, { type: { const: true }, within: ready });
-const ownedTraits = Component.register(owned, { type: Entity.schema, reference: "owner" });
-const followsTraits = Component.register(follows, { type: Entity.schema, reference: "weak" });
-const markTraits = Component.register(mark, { type: { type: "number" } });
-const leftTraits = Component.register(left, { type: { const: true }, within: right });
-const lateTraits = Component.register(late, { type: { const: true }, derived: true });
-const taggedTraits = Component.register(tagged, { type: { const: true } });
-const tagTraits = Component.register(tag, { type: { const: true }, derived: true });
+Component.register(source, { type: { type: "number" } });
+Component.register(hidden, { type: { const: true } });
+Component.register(sprite, { type: { const: true } });
+Component.register(slot, { type: { type: "number", default: 7 }, derived: true });
+Component.register(visible, { type: { const: true }, derived: true });
+Component.register(ready, { type: { type: "number" }, within: slot });
+Component.register(glow, { type: { const: true }, within: ready });
+Component.register(owned, { type: Entity.schema, reference: "owner" });
+Component.register(follows, { type: Entity.schema, reference: "weak" });
+Component.register(mark, { type: { type: "number" } });
+Component.register(left, { type: { const: true }, within: right });
+Component.register(late, { type: { const: true }, derived: true });
+Component.register(tagged, { type: { const: true } });
+Component.register(tag, { type: { const: true }, derived: true });
 
 Rule.create(identify({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
 Rule.create({ name: "rulesTest/visible", components: { has: [slot] }, derive: [visible] });

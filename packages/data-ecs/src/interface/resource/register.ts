@@ -1,20 +1,18 @@
 import type { Component } from "../component/component.js";
-import { createRegistry, type GivenDeclaration } from "../registry/declarations.js";
-import type { ValueOf } from "../trait/entry.js";
+import { createRegistry, type AnyDeclaration } from "../registry/declarations.js";
+import type { Schema } from "../schema/schema.js";
 import type { Key as TraitKey } from "../trait/key.js";
-import type { Shape } from "../trait/shape.js";
 import type { Declaration } from "./declaration.js";
 import type { Key } from "./key.js";
 
 const registry = createRegistry("resource");
 
 /**
- * Registers a resource under `key`, a plain `Symbol(...)` declared in `Resources`, and returns its augment entry, as
- * `Component.register` does: `const gravityTraits = Resource.register(gravity, { type: { type: "number", default: 0 } })`.
- * A resource always has a value: its schema's `default`, or the declaration's beside `object<T>()`, either left out
- * only when its type allows `null`.
+ * Registers the resource `key`, a plain `Symbol(...)` whose traits `Resources` declares, as `Component.register`
+ * does: `Resource.register(gravity, { type: { type: "number", default: -9.8 } })`. A resource always has a value: its
+ * schema's `default` or the declaration's, either left out only when its type allows `null`, which it then starts at.
  */
-export function register<K extends Exclude<Key, Component.Key | TraitKey> & symbol, const D extends Shape>(key: K, declaration: Declaration<K, D>): { readonly [T in keyof D as T extends "default" ? never : T]: T extends "type" ? ValueOf<D[T]> : D[T] };
-export function register(key: unknown, declaration: GivenDeclaration): GivenDeclaration {
-    return registry(key, declaration);
+export function register<K extends Exclude<Key, Component.Key | TraitKey> & symbol, const S extends Schema & { readonly default?: unknown } = never>(key: K, declaration: Declaration<K, S>): void;
+export function register(key: unknown, declaration: AnyDeclaration): void {
+    registry(key, declaration);
 }

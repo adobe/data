@@ -12,11 +12,11 @@ export const cadence = Symbol("cadence");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {
-        [cadence]: typeof cadenceTraits;
+        [cadence]: { type: Cadence };
     }
 }
 
-const cadenceTraits = Resource.register(cadence, {
+Resource.register(cadence, {
     type: {
         anyOf: [
             { type: "object", properties: { kind: { const: "frame" } } },

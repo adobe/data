@@ -15,25 +15,25 @@ const g6 = Symbol("growth/g6");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [value]: typeof valueTraits;
-        [g0]: typeof g0Traits;
-        [g1]: typeof g1Traits;
-        [g2]: typeof g2Traits;
-        [g3]: typeof g3Traits;
-        [g4]: typeof g4Traits;
-        [g5]: typeof g5Traits;
-        [g6]: typeof g6Traits;
+        [value]: { type: number };
+        [g0]: { type: true };
+        [g1]: { type: true };
+        [g2]: { type: true };
+        [g3]: { type: true };
+        [g4]: { type: true };
+        [g5]: { type: true };
+        [g6]: { type: true };
     }
 }
 
-const valueTraits = Component.register(value, { type: { type: "number", precision: 1 } });
-const g0Traits = Component.register(g0, { type: { const: true } });
-const g1Traits = Component.register(g1, { type: { const: true } });
-const g2Traits = Component.register(g2, { type: { const: true } });
-const g3Traits = Component.register(g3, { type: { const: true } });
-const g4Traits = Component.register(g4, { type: { const: true } });
-const g5Traits = Component.register(g5, { type: { const: true } });
-const g6Traits = Component.register(g6, { type: { const: true } });
+Component.register(value, { type: { type: "number", precision: 1 } });
+Component.register(g0, { type: { const: true } });
+Component.register(g1, { type: { const: true } });
+Component.register(g2, { type: { const: true } });
+Component.register(g3, { type: { const: true } });
+Component.register(g4, { type: { const: true } });
+Component.register(g5, { type: { const: true } });
+Component.register(g6, { type: { const: true } });
 
 const tags = [g0, g1, g2, g3, g4, g5, g6] as const;
 /** `value` with each of the first 100 sets of the seven tags, by their bits. */

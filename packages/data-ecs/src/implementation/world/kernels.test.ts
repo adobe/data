@@ -15,20 +15,20 @@ const scale = Symbol("kernelsTest/scale");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [value]: typeof valueTraits;
-        [other]: typeof otherTraits;
-        [label]: typeof labelTraits;
+        [value]: { type: number };
+        [other]: { type: number };
+        [label]: { type: string | null };
     }
     export interface Resources {
-        [scale]: typeof scaleTraits;
+        [scale]: { type: number };
     }
 }
 
 const label = Symbol("kernelsTest/label");
-const valueTraits = Component.register(value, { type: { type: "number" } });
-const otherTraits = Component.register(other, { type: { type: "number" } });
-const labelTraits = Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-const scaleTraits = Resource.register(scale, { type: { type: "number", default: 1 } });
+Component.register(value, { type: { type: "number" } });
+Component.register(other, { type: { type: "number" } });
+Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
+Resource.register(scale, { type: { type: "number", default: 1 } });
 
 /** Reads `value` and `other`, writes nothing, reads no resources. */
 const system = System.create({ name: "kernelsTest/read", kernel: "cpu", components: { read: [value, other] } }, row => {

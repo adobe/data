@@ -16,4 +16,4 @@ export type KeysMustBeSymbols<C, R, T> =
     & Problem<Exclude<keyof T, symbol | BuiltIn>, "trait keys must be symbols">;
 
 /** `KeysMustBeSymbols` of the program's components, resources and traits, computed once. */
-export type SymbolKeys = KeysMustBeSymbols<Components, Resources, Traits<never, never>>;
+export type SymbolKeys = KeysMustBeSymbols<Components, Resources, Traits<never>>;

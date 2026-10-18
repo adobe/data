@@ -12,24 +12,24 @@ export const stats = Symbol("transferSprites/stats");
 
 declare module '@adobe/data-ecs' {
     interface Components {
-        [texture]: typeof textureTraits;
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
+        [texture]: { type: ImageBitmap; transfer: true };
+        [position]: { type: Vec2 };
+        [velocity]: { type: Vec2 };
     }
     interface Resources {
-        [surface]: typeof surfaceTraits;
-        [stats]: typeof statsTraits;
+        [surface]: { type: OffscreenCanvas | null; transfer: true };
+        [stats]: { type: { readonly sprites: number; readonly frames: number } };
     }
 }
 
 /** A decoded texture, moved to the world's thread, where sprites are drawn. */
-const textureTraits = Component.register(texture, { type: Component.object<ImageBitmap>(), transfer: true });
+Component.register(texture, { transfer: true });
 /** In pixels, and pixels per second. */
-const positionTraits = Component.register(position, { type: Vec2.schema });
-const velocityTraits = Component.register(velocity, { type: Vec2.schema });
+Component.register(position, { type: Vec2.schema });
+Component.register(velocity, { type: Vec2.schema });
 /** The canvas main moved to the world's thread. */
-const surfaceTraits = Resource.register(surface, { type: Resource.object<OffscreenCanvas | null>(), transfer: true });
-const statsTraits = Resource.register(stats, {
+Resource.register(surface, { transfer: true });
+Resource.register(stats, {
     type: { type: "object", properties: { sprites: { type: "integer" }, frames: { type: "integer" } }, default: { sprites: 0, frames: 0 } },
 });
 

@@ -21,13 +21,13 @@ export const hits = Symbol("suite/hits");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
-        [target]: typeof targetTraits;
-        [index]: typeof indexTraits;
-        [tag]: typeof tagTraits;
-        [unused]: typeof unusedTraits;
-        [hits]: typeof hitsTraits;
+        [position]: { type: readonly [number, number, number] };
+        [velocity]: { type: readonly [number, number, number] };
+        [target]: { type: Entity };
+        [index]: { type: number };
+        [tag]: { type: true };
+        [unused]: { type: true };
+        [hits]: { type: number };
     }
 }
 
@@ -35,20 +35,20 @@ export const indexSum = Symbol("suite/indexSum");
 export const highest = Symbol("suite/highest");
 declare module "@adobe/data-ecs" {
     export interface Resources {
-        [indexSum]: typeof indexSumTraits;
-        [highest]: typeof highestTraits;
+        [indexSum]: { type: number; reduce: "+" };
+        [highest]: { type: number; reduce: "max" };
     }
 }
-const indexSumTraits = Resource.register(indexSum, { type: { type: "number", default: 0 }, reduce: "+" });
-const highestTraits = Resource.register(highest, { type: { type: "number", default: 0 }, reduce: "max" });
+Resource.register(indexSum, { type: { type: "number", default: 0 }, reduce: "+" });
+Resource.register(highest, { type: { type: "number", default: 0 }, reduce: "max" });
 
-const positionTraits = Component.register(position, { type: vec3 });
-const velocityTraits = Component.register(velocity, { type: vec3 });
-const targetTraits = Component.register(target, { type: Entity.schema });
-const indexTraits = Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-const tagTraits = Component.register(tag, { type: { const: true } });
-const unusedTraits = Component.register(unused, { type: { const: true } });
-const hitsTraits = Component.register(hits, { type: { type: "number", precision: 1 } });
+Component.register(position, { type: vec3 });
+Component.register(velocity, { type: vec3 });
+Component.register(target, { type: Entity.schema });
+Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(tag, { type: { const: true } });
+Component.register(unused, { type: { const: true } });
+Component.register(hits, { type: { type: "number", precision: 1 } });
 
 const moving = Archetype.create([position, velocity, index]);
 const following = Archetype.create([position, velocity, index, target]);

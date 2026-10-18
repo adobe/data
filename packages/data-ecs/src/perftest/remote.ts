@@ -18,18 +18,18 @@ export const rank = Symbol("remote/rank");
 export const order = Symbol("remote/order");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [rank]: typeof rankTraits;
-        [order]: typeof orderTraits;
+        [rank]: { type: number };
+        [order]: { type: number };
     }
     export interface Resources {
-        [counter]: typeof counterTraits;
-        [sign]: typeof signTraits;
+        [counter]: { type: number };
+        [sign]: { type: number };
     }
 }
-const counterTraits = Resource.register(counter, { type: { type: "number", default: 0 } });
-const signTraits = Resource.register(sign, { type: { type: "number", default: 1 } });
-const rankTraits = Component.register(rank, { type: { type: "number" } });
-const orderTraits = Component.register(order, { type: { type: "number" } });
+Resource.register(counter, { type: { type: "number", default: 0 } });
+Resource.register(sign, { type: { type: "number", default: 1 } });
+Component.register(rank, { type: { type: "number" } });
+Component.register(order, { type: { type: "number" } });
 
 /** An empty transaction. */
 export const empty = System.create({ name: "remote/empty" }, () => {});

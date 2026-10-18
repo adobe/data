@@ -15,22 +15,22 @@ const slot = Symbol("commandsTypeTest/slot");
 const time = Symbol("commandsTypeTest/time");
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
-        [label]: typeof labelTraits;
-        [player]: typeof playerTraits;
-        [slot]: typeof slotTraits;
+        [position]: { type: number };
+        [velocity]: { type: number };
+        [label]: { type: string | null };
+        [player]: { type: true };
+        [slot]: { type: number; derived: true };
     }
     export interface Resources {
-        [time]: typeof timeTraits;
+        [time]: { type: number };
     }
 }
-const positionTraits = Component.register(position, { type: { type: "number" } });
-const velocityTraits = Component.register(velocity, { type: { type: "number" } });
-const labelTraits = Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-const playerTraits = Component.register(player, { type: { const: true } });
-const slotTraits = Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-const timeTraits = Resource.register(time, { type: { type: "number", default: 0 } });
+Component.register(position, { type: { type: "number" } });
+Component.register(velocity, { type: { type: "number" } });
+Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
+Component.register(player, { type: { const: true } });
+Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+Resource.register(time, { type: { type: "number", default: 0 } });
 
 const particle = Archetype.create([position, velocity, label, player]);
 

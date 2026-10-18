@@ -9,8 +9,8 @@ export const gpuDevice = Symbol("gpuDevice");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {
-        [gpuDevice]: typeof gpuDeviceTraits;
+        [gpuDevice]: { type: GPUDevice | null };
     }
 }
 
-const gpuDeviceTraits = Resource.register(gpuDevice, { type: Resource.object<GPUDevice | null>() });
+Resource.register(gpuDevice, {});

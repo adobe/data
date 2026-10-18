@@ -13,17 +13,17 @@ const marked = Symbol("upBrowserTest/marked");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [parent]: typeof parentTraits;
-        [offset]: typeof offsetTraits;
-        [placed]: typeof placedTraits;
-        [marked]: typeof markedTraits;
+        [parent]: { type: Entity; reference: "owner" };
+        [offset]: { type: number };
+        [placed]: { type: number };
+        [marked]: { type: true };
     }
 }
 
-const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
-const offsetTraits = Component.register(offset, { type: { type: "number", precision: 1 } });
-const placedTraits = Component.register(placed, { type: { type: "number", precision: 1 } });
-const markedTraits = Component.register(marked, { type: { const: true } });
+Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(offset, { type: { type: "number", precision: 1 } });
+Component.register(placed, { type: { type: "number", precision: 1 } });
+Component.register(marked, { type: { const: true } });
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";
 

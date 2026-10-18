@@ -25,29 +25,29 @@ const ownedBy = Symbol("gpuTest/ownedBy");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
-        [score]: typeof scoreTraits;
-        [tag]: typeof tagTraits;
-        [code]: typeof codeTraits;
-        [amount]: typeof amountTraits;
-        [flag]: typeof flagTraits;
-        [followed]: typeof followedTraits;
-        [bits]: typeof bitsTraits;
-        [sums]: typeof sumsTraits;
-        [ownedBy]: typeof ownedByTraits;
+        [position]: { type: readonly [number, number, number] };
+        [velocity]: { type: readonly [number, number, number] };
+        [score]: { type: number };
+        [tag]: { type: true };
+        [code]: { type: number };
+        [amount]: { type: number };
+        [flag]: { type: boolean };
+        [followed]: { type: Entity };
+        [bits]: { type: Vec3.U32 };
+        [sums]: { type: Vec3.I32 };
+        [ownedBy]: { type: Entity; reference: "owner" };
     }
 }
 
-const positionTraits = Component.register(position, { type: vec3 });
-const velocityTraits = Component.register(velocity, { type: vec3 });
-const scoreTraits = Component.register(score, { type: { type: "number", precision: 1 } });
-const tagTraits = Component.register(tag, { type: { const: true } });
-const codeTraits = Component.register(code, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-const amountTraits = Component.register(amount, { type: { type: "number", precision: 1 } });
-const flagTraits = Component.register(flag, { type: { type: "boolean" } });
-const followedTraits = Component.register(followed, { type: Entity.schema });
-const ownedByTraits = Component.register(ownedBy, { type: Entity.schema, reference: "owner" });
+Component.register(position, { type: vec3 });
+Component.register(velocity, { type: vec3 });
+Component.register(score, { type: { type: "number", precision: 1 } });
+Component.register(tag, { type: { const: true } });
+Component.register(code, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(amount, { type: { type: "number", precision: 1 } });
+Component.register(flag, { type: { type: "boolean" } });
+Component.register(followed, { type: Entity.schema });
+Component.register(ownedBy, { type: Entity.schema, reference: "owner" });
 
 const count = 5000;
 
@@ -161,8 +161,8 @@ const transform = System.create({ name: "gpuTest/transform", kernel: "gpu", comp
     row[position] = Vec3.add(Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, row[position])), Vec3.normalize(row[velocity]));
 });
 
-const bitsTraits = Component.register(bits, { type: Vec3.U32.schema });
-const sumsTraits = Component.register(sums, { type: Vec3.I32.schema });
+Component.register(bits, { type: Vec3.U32.schema });
+Component.register(sums, { type: Vec3.I32.schema });
 
 const spawnIntegers = System.create({ name: "gpuTest/spawnIntegers" }, ({ commands }) => {
     for (let i = 0; i < 100; i++) {

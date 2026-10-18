@@ -9,17 +9,17 @@ const journal = Symbol("changesFinalizers/journal");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [name]: typeof nameTraits;
-        [score]: typeof scoreTraits;
+        [name]: { type: string };
+        [score]: { type: number };
     }
     interface Resources {
-        [journal]: typeof journalTraits;
+        [journal]: { type: readonly string[] };
     }
 }
 
-const nameTraits = Component.register(name, { type: { type: "string" } });
-const scoreTraits = Component.register(score, { type: { type: "number" } });
-const journalTraits = Resource.register(journal, { type: { type: "array", items: { type: "string" }, default: [] } });
+Component.register(name, { type: { type: "string" } });
+Component.register(score, { type: { type: "number" } });
+Resource.register(journal, { type: { type: "array", items: { type: "string" }, default: [] } });
 
 // A changes finalizer sees each sync point's structural changes to the components it watches, grouped by how
 // they changed, with values before and after: for persistence, replication and undo.

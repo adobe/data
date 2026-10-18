@@ -9,18 +9,18 @@ export const element = Symbol("indexTypeTest/element");
 export const scale = Symbol("indexTypeTest/scale");
 declare module "@adobe/data-ecs" {
     interface Components {
-        [position]: typeof positionTraits;
-        [slot]: typeof slotTraits;
-        [element]: typeof elementTraits;
+        [position]: { type: number };
+        [slot]: { type: number; derived: true };
+        [element]: { type: HTMLElement; thread: "main" };
     }
     interface Resources {
-        [scale]: typeof scaleTraits;
+        [scale]: { type: number };
     }
 }
-const positionTraits = Component.register(position, { type: { type: "number" } });
-const slotTraits = Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-const elementTraits = Component.register(element, { type: Component.object<HTMLElement>(), thread: "main" });
-const scaleTraits = Resource.register(scale, { type: { type: "number", default: 1 } });
+Component.register(position, { type: { type: "number" } });
+Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+Component.register(element, { thread: "main" });
+Resource.register(scale, { type: { type: "number", default: 1 } });
 export const move = System.create({ name: "indexTypeTest/move", components: { write: [position] }, resources: { read: [scale] } }, (row, { resources }) => { row[position] += resources[scale]; });
 export const show = System.create({ name: "indexTypeTest/show", components: { read: [position], write: [element] } }, row => { row[element].textContent = String(row[position]); });
 export const all = System.create({ name: "indexTypeTest/all", systems: [move, show] });

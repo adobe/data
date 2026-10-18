@@ -11,30 +11,37 @@ const cache = Symbol("typesResourceTest/cache");
 const port = Symbol("typesResourceTest/port");
 const total = Symbol("typesResourceTest/total");
 const flags = Symbol("typesResourceTest/flags");
+const names = Symbol("typesResourceTest/names");
+const tags = Symbol("typesResourceTest/tags");
 
 declare module "@adobe/data-ecs" {
     export interface Resources {
-        [time]: typeof timeTraits;
-        [symbol]: typeof symbolTraits;
-        [shared]: typeof sharedTraits;
-        [cache]: typeof cacheTraits;
-        [port]: typeof portTraits;
-        [total]: typeof totalTraits;
-        [flags]: typeof flagsTraits;
+        [time]: { type: number };
+        [symbol]: { type: boolean };
+        [shared]: { type: true };
+        [cache]: { type: Map<string, number>; thread: "main" };
+        [port]: { type: MessagePort | null; transfer: true };
+        [total]: { type: number; reduce: "+" };
+        [flags]: { type: boolean; reduce: "|" };
+        [names]: { type: ReadonlyMap<string, number> };
+        [tags]: { type: ReadonlySet<string> };
     }
     export interface Components {
-        [shared]: typeof sharedTraits;
+        [shared]: { type: true };
     }
 }
 
-const timeTraits = Resource.register(time, { type: { type: "number", default: 0 } });
-const symbolTraits = Resource.register(symbol, { type: { type: "boolean", default: false } });
+Resource.register(time, { type: { type: "number", default: 0 } });
+Resource.register(symbol, { type: { type: "boolean", default: false } });
 // @ts-expect-error a key declared as both a component and a resource can't be registered as either
-const sharedTraits = Component.register(shared, { type: { const: true } });
-const cacheTraits = Resource.register(cache, { type: Resource.object<Map<string, number>>(), default: new Map(), thread: "main" });
-const portTraits = Resource.register(port, { type: Resource.object<MessagePort | null>(), transfer: true });
-const totalTraits = Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-const flagsTraits = Resource.register(flags, { type: { type: "boolean", default: false }, reduce: "|" });
+Component.register(shared, { type: { const: true } });
+Resource.register(cache, { default: new Map(), thread: "main" });
+Resource.register(port, { transfer: true });
+Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+Resource.register(flags, { type: { type: "boolean", default: false }, reduce: "|" });
+const namesSchema = { type: "map", keys: { type: "string" }, values: { type: "number" } } as const;
+Resource.register(names, { type: namesSchema, default: new Map([["a", 1]]) });
+Resource.register(tags, { type: { type: "set", items: { type: "string" }, default: new Set(["x"]) } });
 
 const untyped: (...parameters: never[]) => unknown = Resource.register;
 
@@ -60,6 +67,15 @@ describe("Resource.register", () => {
         expect(() => Resource.register(time, { type: { type: "number", default: 1 } })).toThrow(`Cannot register resource "typesResourceTest/time": already registered as a resource, with another declaration.`);
         // @ts-expect-error a key declared as both a component and a resource can't be registered as either
         expect(() => Resource.register(shared, { type: { const: true, default: true } })).toThrow("already registered as a component");
+    });
+    it("takes a resource's default from its declaration or its schema, never both, and compares sets and maps by their entries", () => {
+        expect(declarationOf(names)).toEqual({ type: namesSchema, default: new Map([["a", 1]]) });
+        expect(() => Resource.register(names, { type: namesSchema, default: new Map([["a", 1]]) })).not.toThrow();
+        expect(() => Resource.register(names, { type: namesSchema, default: new Map([["a", 2]]) })).toThrow("with another declaration");
+        expect(() => Resource.register(tags, { type: { type: "set", items: { type: "string" }, default: new Set(["x"]) } })).not.toThrow();
+        expect(() => Resource.register(tags, { type: { type: "set", items: { type: "string" }, default: new Set(["y"]) } })).toThrow("with another declaration");
+        expect(() => register(Symbol("typesResourceTest/twice"), { type: { type: "number", default: 0 }, default: 1 })).toThrow("its default is given twice");
+        expect(threadOfDeclaration(declarationOf(names) ?? {})).toBe("world");
     });
     it("declares gpuDevice on \"world\", and the loop's state as resources", () => {
         expect(declarationOf(gpuDevice)).toEqual({});

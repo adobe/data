@@ -23,23 +23,23 @@ const tagG = Symbol("dispatchTest/g");
 const tags = [tagA, tagB, tagC, tagD, tagE, tagF, tagG] as const;
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: typeof positionTraits;
-        [velocity]: typeof velocityTraits;
-        [offset]: typeof offsetTraits;
-        [tagA]: typeof tagATraits; [tagB]: typeof tagBTraits; [tagC]: typeof tagCTraits; [tagD]: typeof tagDTraits;
-        [tagE]: typeof tagETraits; [tagF]: typeof tagFTraits; [tagG]: typeof tagGTraits;
+        [position]: { type: readonly [number, number] };
+        [velocity]: { type: readonly [number, number] };
+        [offset]: { type: number };
+        [tagA]: { type: true }; [tagB]: { type: true }; [tagC]: { type: true }; [tagD]: { type: true };
+        [tagE]: { type: true }; [tagF]: { type: true }; [tagG]: { type: true };
     }
 }
-const positionTraits = Component.register(position, { type: vec2 });
-const velocityTraits = Component.register(velocity, { type: vec2 });
-const offsetTraits = Component.register(offset, { type: { type: "number", precision: 1 } });
-const tagATraits = Component.register(tagA, { type: { const: true } });
-const tagBTraits = Component.register(tagB, { type: { const: true } });
-const tagCTraits = Component.register(tagC, { type: { const: true } });
-const tagDTraits = Component.register(tagD, { type: { const: true } });
-const tagETraits = Component.register(tagE, { type: { const: true } });
-const tagFTraits = Component.register(tagF, { type: { const: true } });
-const tagGTraits = Component.register(tagG, { type: { const: true } });
+Component.register(position, { type: vec2 });
+Component.register(velocity, { type: vec2 });
+Component.register(offset, { type: { type: "number", precision: 1 } });
+Component.register(tagA, { type: { const: true } });
+Component.register(tagB, { type: { const: true } });
+Component.register(tagC, { type: { const: true } });
+Component.register(tagD, { type: { const: true } });
+Component.register(tagE, { type: { const: true } });
+Component.register(tagF, { type: { const: true } });
+Component.register(tagG, { type: { const: true } });
 
 const scatter = System.create({ name: "dispatchTest/scatter" }, ({ commands }) => {
     for (let i = 0; i < 128 * 64; i++) {

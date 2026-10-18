@@ -20,14 +20,14 @@ declare module "@adobe/data-ecs" {
         logBenchmark: true;
     }
     export interface Components {
-        [serial]: typeof serialTraits;
-        [label]: typeof labelTraits;
-        [moved]: typeof movedTraits;
+        [serial]: { type: number };
+        [label]: { type: string | null; thread: "logBenchmark" };
+        [moved]: { type: true };
     }
 }
-const serialTraits = Component.register(serial, { type: { type: "number" } });
-const labelTraits = Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "logBenchmark" });
-const movedTraits = Component.register(moved, { type: { const: true } });
+Component.register(serial, { type: { type: "number" } });
+Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "logBenchmark" });
+Component.register(moved, { type: { const: true } });
 
 /** Entities moved, and swapped out of the rows they leave, per sync point of `log replay`. */
 export const replayMoves = 10_000;

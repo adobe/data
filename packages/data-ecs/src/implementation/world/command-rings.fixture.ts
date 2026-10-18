@@ -24,28 +24,28 @@ const tally = Symbol("commandRingsTest/tally");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [index]: typeof indexTraits;
-        [weight]: typeof weightTraits;
-        [extent]: typeof extentTraits;
-        [made]: typeof madeTraits;
-        [doomed]: typeof doomedTraits;
-        [target]: typeof targetTraits;
-        [name]: typeof nameTraits;
-        [maybe]: typeof maybeTraits;
-        [tally]: typeof tallyTraits;
+        [index]: { type: number };
+        [weight]: { type: number };
+        [extent]: { type: readonly [number, number, number, number] };
+        [made]: { type: number };
+        [doomed]: { type: true };
+        [target]: { type: Entity };
+        [name]: { type: string | null };
+        [maybe]: { type: string | null };
+        [tally]: { type: number | null };
     }
 }
 
-const indexTraits = Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-const weightTraits = Component.register(weight, { type: { type: "number" } });
-const extentTraits = Component.register(extent, { type: vec4 });
-const madeTraits = Component.register(made, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-const doomedTraits = Component.register(doomed, { type: { const: true } });
-const targetTraits = Component.register(target, { type: Entity.schema });
+Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(weight, { type: { type: "number" } });
+Component.register(extent, { type: vec4 });
+Component.register(made, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(doomed, { type: { const: true } });
+Component.register(target, { type: Entity.schema });
 /** Objects: a nullable string starting at "unnamed", a nullable string, and a nullable number. */
-const nameTraits = Component.register(name, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "unnamed" } });
-const maybeTraits = Component.register(maybe, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-const tallyTraits = Component.register(tally, { type: { anyOf: [{ type: "number" }, { type: "null" }] } });
+Component.register(name, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "unnamed" } });
+Component.register(maybe, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
+Component.register(tally, { type: { anyOf: [{ type: "number" }, { type: "null" }] } });
 
 const seed = System.create({ name: "commandRingsTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([index])({ [index]: i });

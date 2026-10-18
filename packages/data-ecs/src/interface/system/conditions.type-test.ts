@@ -14,22 +14,22 @@ const position = Symbol("conditionsTypeTest/position");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {
-        [paused]: typeof pausedTraits;
-        [level]: typeof levelTraits;
-        [cache]: typeof cacheTraits;
-        [count]: typeof countTraits;
-        [handle]: typeof handleTraits;
+        [paused]: { type: boolean };
+        [level]: { type: { readonly size: number } | null };
+        [cache]: { type: Map<string, number> | null };
+        [count]: { type: number };
+        [handle]: { type: Map<string, number> };
     }
     export interface Components {
-        [position]: typeof positionTraits;
+        [position]: { type: number };
     }
 }
-const handleTraits = Resource.register(handle, { type: Resource.object<Map<string, number>>(), default: new Map() });
-const levelTraits = Resource.register(level, { type: { anyOf: [{ type: "object", properties: { size: { type: "number" } } }, { type: "null" }], default: null } });
-const pausedTraits = Resource.register(paused, { type: { type: "boolean", default: false } });
-const cacheTraits = Resource.register(cache, { type: Resource.object<Map<string, number> | null>() });
-const countTraits = Resource.register(count, { type: { type: "number", default: 0 } });
-const positionTraits = Component.register(position, { type: { type: "number" } });
+Resource.register(handle, { default: new Map() });
+Resource.register(level, { type: { anyOf: [{ type: "object", properties: { size: { type: "number" } } }, { type: "null" }], default: null } });
+Resource.register(paused, { type: { type: "boolean", default: false } });
+Resource.register(cache, {});
+Resource.register(count, { type: { type: "number", default: 0 } });
+Component.register(position, { type: { type: "number" } });
 
 // `is`: runs while each is neither null nor false, and reads it narrowed so.
 System.create({ name: "conditionsTypeTest/loaded", resources: { is: [level, cache] } }, ({ resources }) => {

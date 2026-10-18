@@ -14,15 +14,15 @@ const parent = Symbol("upWorkersTest/parent");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [local]: typeof localTraits;
-        [world]: typeof worldTraits;
-        [parent]: typeof parentTraits;
+        [local]: { type: number };
+        [world]: { type: number };
+        [parent]: { type: Entity; reference: "owner" };
     }
 }
 
-const localTraits = Component.register(local, { type: { type: "number" } });
-const worldTraits = Component.register(world, { type: { type: "number" } });
-const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(local, { type: { type: "number" } });
+Component.register(world, { type: { type: "number" } });
+Component.register(parent, { type: Entity.schema, reference: "owner" });
 
 const propagate = System.create({
     name: "upWorkersTest/propagate",

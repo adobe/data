@@ -12,16 +12,16 @@ const name = Symbol("upTypeTest/name");
 
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [local]: typeof localTraits;
-        [world]: typeof worldTraits;
-        [parent]: typeof parentTraits;
-        [name]: typeof nameTraits;
+        [local]: { type: number };
+        [world]: { type: number };
+        [parent]: { type: Entity; reference: "owner" };
+        [name]: { type: string };
     }
 }
-const localTraits = Component.register(local, { type: { type: "number" } });
-const worldTraits = Component.register(world, { type: { type: "number" } });
-const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
-const nameTraits = Component.register(name, { type: { type: "string" } });
+Component.register(local, { type: { type: "number" } });
+Component.register(world, { type: { type: "number" } });
+Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(name, { type: { type: "string" } });
 
 // `up` reads what `read` lists of the entity `through` names, or null for a row without one; it may read what the system writes.
 System.create({

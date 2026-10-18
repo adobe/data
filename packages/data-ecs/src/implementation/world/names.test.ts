@@ -15,17 +15,17 @@ const second = Symbol("namesTest/second");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [value]: typeof valueTraits;
-        [other]: typeof otherTraits;
-        [first]: typeof firstTraits;
-        [second]: typeof secondTraits;
+        [value]: { type: number };
+        [other]: { type: number };
+        [first]: { type: true; derived: true };
+        [second]: { type: true; derived: true };
     }
 }
 
-const valueTraits = Component.register(value, { type: { type: "number" } });
-const otherTraits = Component.register(other, { type: { type: "number" } });
-const firstTraits = Component.register(first, { type: { const: true }, derived: true });
-const secondTraits = Component.register(second, { type: { const: true }, derived: true });
+Component.register(value, { type: { type: "number" } });
+Component.register(other, { type: { type: "number" } });
+Component.register(first, { type: { const: true }, derived: true });
+Component.register(second, { type: { const: true }, derived: true });
 
 // Two libraries, written apart, both name a rule, a finalizer and a system "linked".
 Rule.create({ name: "namesTest/linked", components: { has: [value] }, derive: [first] });

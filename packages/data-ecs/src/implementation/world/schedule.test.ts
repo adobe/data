@@ -11,13 +11,13 @@ const other = Symbol("scheduleTest/other");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [value]: typeof valueTraits;
-        [other]: typeof otherTraits;
+        [value]: { type: number };
+        [other]: { type: number };
     }
 }
 
-const valueTraits = Component.register(value, { type: { type: "number" } });
-const otherTraits = Component.register(other, { type: { type: "number" } });
+Component.register(value, { type: { type: "number" } });
+Component.register(other, { type: { type: "number" } });
 
 /** Systems built as values, not registered, so each test's are its own. */
 const leaf = (declaration: Declaration & { readonly name: string }): Leaf => ({ kind: "system", name: declaration.name, declaration, body: () => {} });

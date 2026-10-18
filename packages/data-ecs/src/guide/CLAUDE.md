@@ -18,10 +18,11 @@ code it shows: every excerpt comes from a file here that runs as a test, so the 
 
 ## Structure
 
-- **Basics:** resources, then entities and components, which together are the whole data model, then archetypes and
-  systems: everything needed to build and run a world. Topics that belong together share a section; entities are
-  taught with components.
-- **Intermediate:** scheduling and composites, change filters and conditions, rules, finalizers and traits.
+- **Basics:** resources, then entities, components and archetypes, which together are the whole data model, then
+  systems, and ticks and cadence: everything needed to build and run a world and its loop. Topics that belong together
+  share a section; entities are taught with components, and archetypes, named lists of components, with them.
+- **Intermediate:** scheduling and composites, sync points, change filters and conditions, input, rules, finalizers
+  and change sets, and traits with within and references.
 - **Advanced:** placeholders only.
 
 ## Code conventions

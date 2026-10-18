@@ -47,18 +47,13 @@ const count = System.create({ resources: { write: [frames] } }, ({ resources }) 
     resources[frames] += 1;
 });
 
-it("runs a system once, or on every tick", async () => {
+it("runs a system once per entity, or once", async () => {
     await using world = createWorld();
     // run: runs a system once.
     await world.run(spawn);
     await world.run(move);
+    await world.run(count);
     const [moving] = await Observe.toPromise(world.observe.select({ required: [position], not: [frozen] }));
     expect((await Observe.toPromise(world.observe.entity(moving, { required: [position] })))?.[position]).toEqual([1, 0, 0]);
-
-    // add: runs a system on every tick.
-    world.add(count);
-    // An observer is notified when its value changes, at most once per frame.
-    const ticked = new Promise<number>(resolve => world.observe.resource(frames)(value => { if (value > 0) resolve(value); }));
-    await world.run(spawn);
-    expect(await ticked).toBeGreaterThan(0);
+    expect(await Observe.toPromise(world.observe.resource(frames))).toBe(1);
 });

@@ -6,36 +6,33 @@ How to use the ECS. Each excerpt comes from a test in this folder; the link unde
 
 1. [Setup](#1-setup)
 2. [Resources](#2-resources)
-3. [Entities and components](#3-entities-and-components)
-4. [Archetypes](#4-archetypes)
-5. [Systems](#5-systems)
+3. [Entities, components and archetypes](#3-entities-components-and-archetypes)
+4. [Systems](#4-systems)
+5. [Ticks and cadence](#5-ticks-and-cadence)
 
 **Intermediate**
 
 6. [Scheduling and composites](#6-scheduling-and-composites)
-7. [Change filters and conditions](#7-change-filters-and-conditions)
-8. [Rules](#8-rules)
-9. [Finalizers](#9-finalizers)
-10. [Traits](#10-traits)
+7. [Sync points](#7-sync-points)
+8. [Change filters and conditions](#8-change-filters-and-conditions)
+9. [Input](#9-input)
+10. [Rules](#10-rules)
+11. [Finalizers and change sets](#11-finalizers-and-change-sets)
+12. [Traits, within and references](#12-traits-within-and-references)
 
 **Advanced**
 
-11. [Lookups](#11-lookups)
-12. [Input](#12-input)
-13. [Sync points](#13-sync-points)
+13. [Lookups](#13-lookups)
 14. [Kernels](#14-kernels)
 15. [Reductions](#15-reductions)
 16. [GPU kernels and render systems](#16-gpu-kernels-and-render-systems)
-17. [Within and references](#17-within-and-references)
-18. [Hierarchies](#18-hierarchies)
-19. [Change sets](#19-change-sets)
-20. [Ticks and cadence](#20-ticks-and-cadence)
-21. [Identity and ids](#21-identity-and-ids)
+17. [Hierarchies](#17-hierarchies)
+18. [Identity and ids](#18-identity-and-ids)
 
 ## Basics
 
 Resources, values a world holds once, and entities, each holding a set of components, are the whole data model.
-Everything after them is about changing that data or constraining it.
+Systems change that data, once per run or on every tick.
 
 ### 1. Setup
 
@@ -59,7 +56,7 @@ declare module "@adobe/data-ecs" {
     }
 }
 
-// A resource always has a value, so its schema has a default.
+// A resource always has a value, so its schema must provide a default.
 Resource.register(gravity, { type: { type: "number", default: -9.8 } });
 
 await using moon = createWorld({ [gravity]: -1.6 });
@@ -69,27 +66,33 @@ expect(await Observe.toPromise(moon.observe.resource(gravity))).toBe(-1.6);
 
 [`02-resources.test.ts`](02-resources.test.ts#L5-L24)
 
-### 3. Entities and components
+### 3. Entities, components and archetypes
 
 ```ts
 export const position = Symbol("position");
+export const velocity = Symbol("velocity");
 export const enemy = Symbol("enemy");
 
 declare module "@adobe/data-ecs" {
     interface Components {
         [position]: { type: Vec3 };
+        [velocity]: { type: Vec3 };
         // A tag: present or not, with no value.
         [enemy]: { type: true };
     }
 }
 
 Component.register(position, { type: Vec3.schema });
+Component.register(velocity, { type: Vec3.schema });
 Component.register(enemy, { type: { const: true } });
+
+// An archetype names a list of components, once at module scope; it goes wherever a list of components does.
+export const Particle = Archetype.create([position, velocity]);
 
 // Systems spawn entities: name the components, then give their values.
 export const spawn = System.create(({ commands }) => {
     commands.spawn([position, enemy])({ [position]: [0, 10, 0] });
-    commands.spawn([position])({ [position]: [5, 0, 0] });
+    commands.spawn(Particle)({ [position]: [0, 0, 0], [velocity]: [1, 0, 0] });
 });
 
 // Commands also add and remove components, and despawn entities.
@@ -105,27 +108,12 @@ await world.run(spawn);
 const [foe] = await Observe.toPromise(world.observe.select({ required: [enemy] }));
 const values = await Observe.toPromise(world.observe.entity(foe, { required: [position] }));
 expect(values?.[position]).toEqual([0, 10, 0]);
-expect(await Observe.toPromise(world.observe.count({ required: [position] }))).toBe(2);
-```
-
-[`03-entities.test.ts`](03-entities.test.ts#L5-L40)
-
-### 4. Archetypes
-
-```ts
-// A list of components, declared once at module scope; it goes wherever a list of components does.
-export const Particle = Archetype.create([position, velocity]);
-
-export const emit = System.create(({ commands }) => {
-    commands.spawn(Particle)({ [position]: [0, 0, 0], [velocity]: [1, 0, 0] });
-});
-
 expect(await Observe.toPromise(world.observe.count({ required: Particle }))).toBe(1);
 ```
 
-[`04-archetypes.test.ts`](04-archetypes.test.ts#L18-L29)
+[`03-entities.test.ts`](03-entities.test.ts#L5-L46)
 
-### 5. Systems
+### 4. Systems
 
 ```ts
 // Runs once per entity with every component in read and write, and none in not.
@@ -146,13 +134,28 @@ const count = System.create({ resources: { write: [frames] } }, ({ resources }) 
 
 // run: runs a system once.
 await world.run(move);
-// add: runs a system on every tick.
-world.add(count);
-// An observer is notified when its value changes, at most once per frame.
-const ticked = new Promise<number>(resolve => world.observe.resource(frames)(value => { if (value > 0) resolve(value); }));
 ```
 
-[`05-systems.test.ts`](05-systems.test.ts#L34-L64)
+[`04-systems.test.ts`](04-systems.test.ts#L34-L59)
+
+### 5. Ticks and cadence
+
+```ts
+// clock is the current tick's: delta is the milliseconds since the last one.
+const advance = System.create({ resources: { read: [clock], write: [elapsed] } }, ({ resources }) => {
+    resources[elapsed] += resources[clock].delta;
+});
+
+// cadence ticks once per animation frame by default; fixed ticks every step milliseconds, each with that delta.
+// A tick runs only after a run arrives, unless always is set.
+await using world = createWorld({ [cadence]: { kind: "fixed", step: 10 }, [always]: true });
+// add: runs a system on every tick.
+world.add(advance);
+// An observer is notified when its value changes, at most once per frame.
+const ticked = new Promise<number>(resolve => world.observe.resource(elapsed)(value => { if (value >= 30) resolve(value); }));
+```
+
+[`05-ticks.test.ts`](05-ticks.test.ts#L15-L30)
 
 ## Intermediate
 
@@ -187,7 +190,27 @@ const phased = System.composite({ systems: [report, poison, update, render] });
 
 [`06-scheduling.test.ts`](06-scheduling.test.ts#L38-L55)
 
-### 7. Change filters and conditions
+### 7. Sync points
+
+```ts
+// Value writes apply at once; commands wait for the sync point that ends each run, then apply in the order issued.
+const spawn = System.create(({ commands }) => {
+    // spawn gives the entity at once, so later commands can name it.
+    const hero = commands.spawn([health])({ [health]: 3 });
+    commands.add(hero, health, 5);
+    // Spawned and despawned before the sync point, it never exists.
+    commands.despawn(commands.spawn([health])({ [health]: 1 }));
+});
+// A composite is one run with one sync point: count runs after spawn, before its entities exist.
+const count = System.create({ components: { has: [health] }, resources: { write: [seen] }, after: [spawn] }, (row, { resources }) => {
+    resources[seen] += 1;
+});
+const frame = System.composite({ systems: [spawn, count] });
+```
+
+[`07-sync-points.test.ts`](07-sync-points.test.ts#L20-L42)
+
+### 8. Change filters and conditions
 
 ```ts
 // A resource in changed passes the first run and each run after it changes: no run-once flag needed.
@@ -201,7 +224,7 @@ const show = System.create({ components: { read: [score], write: [shown], change
 });
 ```
 
-[`07-change-filters.test.ts`](07-change-filters.test.ts#L35-L58)
+[`08-change-filters.test.ts`](08-change-filters.test.ts#L35-L58)
 
 ```ts
 // Runs only while each resource in is is neither null nor false, and each in not is; is reads it narrowed.
@@ -210,9 +233,26 @@ const step = System.create({ resources: { is: [map], not: [paused], write: [step
 });
 ```
 
-[`07-change-filters.test.ts`](07-change-filters.test.ts#L60-L75)
+[`08-change-filters.test.ts`](08-change-filters.test.ts#L60-L75)
 
-### 8. Rules
+### 9. Input
+
+```ts
+// input is an object schema of named fields; each run passes a value of it.
+const hit = System.create({
+    components: { write: [health] },
+    input: { type: "object", properties: { amount: { type: "number" } } },
+}, (row, { input }) => {
+    row[health] -= input.amount;
+});
+
+// Systems with input are run, not added; a composite's input has every field its members declare.
+await world.run(hit, { amount: 3 });
+```
+
+[`09-input.test.ts`](09-input.test.ts#L17-L32)
+
+### 10. Rules
 
 ```ts
 // Only rules add derived components, starting at their default.
@@ -227,9 +267,9 @@ Rule.create({ components: { has: [sprite], not: [hidden] }, derive: [drawn] });
 Rule.create({ components: { has: [drawn] }, derive: [layer] });
 ```
 
-[`08-rules.test.ts`](08-rules.test.ts#L24-L50)
+[`10-rules.test.ts`](10-rules.test.ts#L24-L50)
 
-### 9. Finalizers
+### 11. Finalizers and change sets
 
 ```ts
 // Runs for each entity that stops matching, whatever the cause, reading its values from before.
@@ -241,27 +281,49 @@ Finalizer.create({ components: { read: [handle] } }, row => {
 await world.dispose();
 ```
 
-[`09-finalizers.test.ts`](09-finalizers.test.ts#L15-L47)
+[`11-finalizers.test.ts`](11-finalizers.test.ts#L15-L47)
 
-### 10. Traits
+```ts
+// Sees each sync point's structural changes to the components it watches, grouped by how entities changed, with
+// values before and after: for saving and undo.
+Finalizer.changes({ watch: [handle] }, changes => {
+    for (const group of changes.groups) {
+        for (const entity of group.entities) saved.push(`${changes.previous(entity, handle)} → ${changes.next(entity, handle)}`);
+    }
+});
+```
+
+[`11-finalizers.test.ts`](11-finalizers.test.ts#L49-L65)
+
+### 12. Traits, within and references
 
 ```ts
 // Traits are the fields of a key's record; type is one. Registration gives them again.
 declare module "@adobe/data-ecs" {
     interface Components {
-        // Only rules add and remove it.
-        [slot]: { type: number; derived: true };
-        // Present only while slot is.
-        [ready]: { type: number; within: typeof slot };
-        // Despawned with the entity it points to ("weak" removes the component instead).
+        // Despawned with the entity it points to.
         [parent]: { type: Entity; reference: "owner" };
-    }
-    interface Resources {
-        // Systems contribute to it with this operator.
-        [total]: { type: number; reduce: "+" };
+        // Removed when the entity it points to despawns.
+        [target]: { type: Entity; reference: "weak" };
+        // Removed with selected.
+        [outline]: { type: number; within: typeof selected };
     }
 }
 
+Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(target, { type: Entity.schema, reference: "weak" });
+Component.register(outline, { type: { type: "number" }, within: selected });
+
+const spawn = System.create(({ commands }) => {
+    const mothership = commands.spawn([ship, selected, outline])({ [outline]: 2 });
+    commands.spawn([parent])({ [parent]: mothership });
+    commands.spawn([target])({ [target]: mothership });
+});
+```
+
+[`12-traits.test.ts`](12-traits.test.ts#L11-L53)
+
+```ts
 // A trait of your own is a member of Traits<N>: the value it allows on key N, or never where it doesn't apply.
 export const instanced = Symbol("instanced");
 declare module "@adobe/data-ecs" {
@@ -272,24 +334,16 @@ declare module "@adobe/data-ecs" {
 Trait.register(instanced);
 
 // Types select components by trait.
-check<Equal<Extract<Component.With<typeof instanced>, Keys>, typeof transform>>();
+check<Equal<Extract<Component.With<typeof instanced>, typeof transform | typeof name>, typeof transform>>();
 ```
 
-[`10-traits.type-test.ts`](10-traits.type-test.ts#L11-L53)
+[`12-traits.type-test.ts`](12-traits.type-test.ts#L6-L27)
 
 ## Advanced
 
-### 11. Lookups
+### 13. Lookups
 
 Reading another entity's components by id, from a system. To be written.
-
-### 12. Input
-
-Values passed to a run, as `world.run(system, input)`. To be written.
-
-### 13. Sync points
-
-When commands apply, and as what net effect. To be written.
 
 ### 14. Kernels
 
@@ -303,22 +357,10 @@ One value computed from many rows. To be written.
 
 Systems that run or draw on the GPU. To be written.
 
-### 17. Within and references
-
-Components that leave with their host or the entity they point to. To be written.
-
-### 18. Hierarchies
+### 17. Hierarchies
 
 Running rows parent first, through a reference. To be written.
 
-### 19. Change sets
-
-Finalizers that see each sync point's changes, for persistence and undo. To be written.
-
-### 20. Ticks and cadence
-
-When added systems run, and the clock they read. To be written.
-
-### 21. Identity and ids
+### 18. Identity and ids
 
 How systems and keys stay the same across reloads. To be written.

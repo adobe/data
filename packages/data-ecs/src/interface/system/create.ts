@@ -59,8 +59,9 @@ type Validate<D extends Declaration> =
     & { readonly shader?: never };
 
 /**
- * Declares a system and returns it; nothing runs. Throws if it lists a key in both `read` and `write`, a lookup reads a
- * component it writes, or its object components and resources live on different threads.
+ * Declares a system and returns it; nothing runs. Throws if it names a key that isn't registered as its kind, lists a
+ * key in both `read` and `write`, writes a reference, a lookup reads a component it writes, its object components and
+ * resources live on different threads, or its reductions, conditions, `up` or placement can't hold.
  */
 export const create = <const D extends Declaration>(declaration: D & Validate<D> & OneThread<ThreadsOf<D>>, body: Body<D>): System<InputOf<D>> => {
     const id = takeIdOfDeclaration(declaration);

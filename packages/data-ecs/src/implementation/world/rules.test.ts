@@ -56,7 +56,6 @@ Component.register(owned, { type: Entity.schema, reference: "owner" });
 Component.register(follows, { type: Entity.schema, reference: "weak" });
 Component.register(mark, { type: { type: "number" } });
 Component.register(left, { type: { const: true }, within: right });
-Component.register(right, { type: { const: true }, within: left });
 Component.register(late, { type: { const: true }, derived: true });
 Component.register(tagged, { type: { const: true } });
 Component.register(tag, { type: { const: true }, derived: true });
@@ -156,13 +155,10 @@ describe("rules", () => {
         // A rejected rule records nothing, so its name labels only the next; a system may share a rule's name.
         expect(labelOfItem(Rule.create({ name: "rulesTest/bad", components: { has: [tagged] }, derive: [late] }))).toBe("rulesTest/bad");
         expect(labelOfItem(System.create({ name: "rulesTest/visible" }, () => {}))).toBe("rulesTest/visible#2");
-        const world = createWorld({ [workers]: 0 });
         // @ts-expect-error a reference changes only through commands
-        const writes = System.create({ name: "rulesTest/writeReference", components: { write: [owned] } }, row => { row[owned] = Entity.none; });
-        await expect(world.run(writes)).rejects.toThrow("a reference, which changes only through commands");
-        const cycle = System.create({ name: "rulesTest/cycle", components: { has: [left] } }, () => {});
-        await expect(world.run(cycle)).rejects.toThrow("within each other in a cycle: rulesTest/left, rulesTest/right");
-        await world.dispose();
+        expect(() => System.create({ name: "rulesTest/writeReference", components: { write: [owned] } }, row => { row[owned] = Entity.none; })).toThrow("a reference, which changes only through commands");
+        // The component closing a cycle of within declarations is rejected when it's registered.
+        expect(() => Component.register(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "rulesTest/right": components are within each other in a cycle: rulesTest/left, rulesTest/right.`);
     });
 });
 

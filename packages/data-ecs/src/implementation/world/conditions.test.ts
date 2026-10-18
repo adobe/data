@@ -89,14 +89,13 @@ describe("resource conditions", () => {
         expect(await readResource(world, total)).toBe(5);
     });
 
-    it("reject conditions that are never null or false, or listed twice, for untyped declarations", async () => {
-        await using world = createWorld({ [workers]: 0 });
+    it("reject conditions that are never null or false, or listed twice, for untyped declarations, when declared", () => {
         // @ts-expect-error a number is never null or false
-        await expect(world.run(System.create({ name: "conditionsTest/number", resources: { is: [count] } }, () => {}))).rejects.toThrow("which is never null or false");
+        expect(() => System.create({ name: "conditionsTest/number", resources: { is: [count] } }, () => {})).toThrow("which is never null or false");
         // @ts-expect-error both is and not
-        await expect(world.run(System.create({ name: "conditionsTest/both", resources: { is: [paused], not: [paused] } }, () => {}))).rejects.toThrow("in both resources is and not");
+        expect(() => System.create({ name: "conditionsTest/both", resources: { is: [paused], not: [paused] } }, () => {})).toThrow("in both resources is and not");
         // @ts-expect-error is already makes it readable
-        await expect(world.run(System.create({ name: "conditionsTest/read", resources: { is: [level], read: [level] } }, ({ resources }) => { void resources[level]; }))).rejects.toThrow("is already makes it readable");
+        expect(() => System.create({ name: "conditionsTest/read", resources: { is: [level], read: [level] } }, ({ resources }) => { void resources[level]; })).toThrow("is already makes it readable");
     });
     it("skip a kernel the same way", async () => {
         await using world = createWorld({ [workers]: 0 });

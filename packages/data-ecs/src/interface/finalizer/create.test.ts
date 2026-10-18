@@ -75,6 +75,8 @@ describe("Finalizer.create and Finalizer.changes", () => {
         expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/span", components: { read: [node, label] } })).toThrow('uses values on threads "main" and "world"');
         expect(() => untyped(Finalizer.changes, { name: "typesFinalizerTest/derived", watch: [slot] })).toThrow("which is derived");
         expect(() => untyped(Finalizer.changes, { name: "typesFinalizerTest/resource", watch: [time] })).toThrow("which isn't a registered component");
+        expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/hasResource", components: { has: [time] } })).toThrow(`Finalizer "typesFinalizerTest/hasResource" uses component "typesFinalizerTest/time", which isn't a registered component`);
+        expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/lookupNot", components: { read: [label] }, lookup: { others: { not: [Symbol("typesFinalizerTest/unregistered")] } } })).toThrow("which isn't a registered component");
         expect(programFinalizers()).toHaveLength(7);
     });
 });

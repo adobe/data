@@ -1,7 +1,7 @@
 import type { Schema } from '../schema/schema.js';
 import type { Key as TraitKey } from '../trait/key.js';
 import { layoutOf } from './layout.js';
-import { claimKey, declarationOf, failRegistration, kindOf, labelOf, requireKey, sameDeclaration } from './names.js';
+import { claimKey, declarationOf, failRegistration, firstKeyOf, kindOf, labelOf, requireKey, sameDeclaration } from './names.js';
 import type { Registry } from './registry.js';
 import { isReduction } from './reduction.js';
 import { allowsNull, hasBoolean, isEntity, isStruct } from './schemas.js';
@@ -52,6 +52,14 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
         fail(error instanceof Error ? error.message : String(error));
     }
     if (declaration.reference !== undefined && !(type !== undefined && isEntity(type))) fail("a reference's type is Entity.schema.");
+    // A cycle of `within` hosts closes when its last component registers, so it's found then.
+    const cycle: symbol[] = [key];
+    for (let host = declaration.within; typeof host === "symbol"; host = declarationOf(host)?.within) {
+        const first = firstKeyOf(host);
+        if (first === firstKeyOf(key)) fail(`components are within each other in a cycle: ${cycle.map(labelOf).sort().join(", ")}.`);
+        if (cycle.includes(first)) break;
+        cycle.push(first);
+    }
     if (declaration.derived !== undefined && kind !== "component") fail("only a component is derived.");
     if (declaration.derived === true && type !== undefined && !("default" in type || "const" in type || allowsNull(type))) {
         fail("a derived component's type has a default, which it starts at.");

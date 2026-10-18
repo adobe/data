@@ -19,6 +19,15 @@ export type Placed = {
     readonly resources?: Lists;
 };
 
+/** Throws unless each key is registered as `kind`. */
+export const requireRegistered = (what: "System" | "Finalizer", name: string, kind: "component" | "resource", keys: readonly Key[] | undefined): void => {
+    for (const key of keys ?? []) {
+        if (declarationOf(key) === undefined || kindOf(key) !== kind) {
+            throw new Error(`${what} "${name}" uses ${kind} "${labelOf(key)}", which isn't a registered ${kind}; import the module that registers it.`);
+        }
+    }
+};
+
 /**
  * The thread a system or finalizer runs on: the one its object components and resources live on, or null when it uses
  * none. Throws when they live on different threads, or a name it's placed by isn't registered as its kind.
@@ -26,12 +35,10 @@ export type Placed = {
 export const threadOf = (declaration: Placed, what: "System" | "Finalizer"): string | null => {
     const threads = new Set<string>();
     const add = (kind: "component" | "resource", keys: readonly Key[] | undefined): void => {
+        requireRegistered(what, declaration.name, kind, keys);
         for (const key of keys ?? []) {
             const found = declarationOf(key);
-            if (found === undefined || kindOf(key) !== kind) {
-                throw new Error(`${what} "${declaration.name}" uses ${kind} "${labelOf(key)}", which isn't a registered ${kind}; import the module that registers it.`);
-            }
-            const thread = threadOfDeclaration(found);
+            const thread = found === undefined ? null : threadOfDeclaration(found);
             if (thread !== null) threads.add(thread);
         }
     };

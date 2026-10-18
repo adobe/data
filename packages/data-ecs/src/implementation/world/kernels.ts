@@ -61,16 +61,12 @@ const leafType = (layout: Layout, path: readonly (number | string)[]): Type | nu
 };
 
 /**
- * Checks the compiler's shape assumptions against the registered schemas.
- * Throws if a column names a missing leaf or a whole-value write doesn't cover every leaf.
+ * Binds a kernel to the world's components and layouts. Registering the kernel checked it against its declaration and
+ * schemas (`checkKernel`), so a mismatch here is an invariant broken.
  */
 export const bindKernel = (state: State, leaf: Leaf, description: KernelDescription): BoundKernel => {
-    const { lookup, components: query, resources } = leaf.declaration;
+    const { lookup, components: query } = leaf.declaration;
     const fail = (message: string): never => { throw new Error(`Kernel "${labelOfItem(leaf)}": ${message}`); };
-    const queried = new Set<Key>([...query?.read ?? [], ...query?.write ?? []]);
-    const written = new Set<Key>(query?.write);
-    const readable = new Set<Key>(resources?.read);
-    for (const key of description.resources) if (!readable.has(key)) fail(`reads resource "${labelOf(key)}", which isn't in resources.read.`);
     const booleans: boolean[] = [];
     // Per column, in elements of its view: entity and tick columns are dense.
     const strides: number[] = [];
@@ -87,10 +83,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             dense();
             return column;
         }
-        if (!queried.has(column.component)) return fail(`"${labelOf(column.component)}" isn't in its components' read or write.`);
         const id = idOf(state, column.component);
         if (column.kind === "changed" || column.kind === "chunks") {
-            if (!written.has(column.component)) return fail(`writes "${labelOf(column.component)}", which isn't in its components' write.`);
             dense();
             return { kind: column.kind, id, leaf: 0 };
         }
@@ -105,22 +99,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         wasmColumns.push({ view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean", component: id });
         return { kind: "field", id, leaf: index };
     });
-    for (const shape of description.shapes) {
-        if (!written.has(shape.component)) fail(`writes "${labelOf(shape.component)}", which isn't in its components' write.`);
-        const layout = state.layouts[idOf(state, shape.component)];
-        const leaves = layout.kind === "linear" ? layout.leaves : [];
-        const exact = leaves.length === shape.leaves.length && leaves.every(leaf => shape.leaves.some(path => samePath(path, leaf.path)));
-        if (!exact) fail(`a whole-value write of "${labelOf(shape.component)}" doesn't match its schema.`);
-    }
     const declaredLookups = description.lookups.map(lookupName => lookup?.[lookupName] ?? fail(`unknown lookup "${lookupName}".`));
-    // Workers read lookups from shared memory, so their values must be linear there too.
-    for (const declared of declaredLookups) {
-        for (const key of declared.read ?? []) {
-            if (state.layouts[idOf(state, key)].kind === "object") fail(`a lookup reads "${labelOf(key)}", which isn't stored in linear memory.`);
-        }
-    }
     const { up } = leaf.declaration;
-    if ((description.up === true) !== (up !== undefined)) fail(description.up === true ? "reads up, which its declaration doesn't declare." : "its declaration declares up, which it doesn't read.");
     // The runner passes `up`'s lookup after these, since it records each row's parent as it orders the rows.
     const lookups = declaredLookups.map(declared => createArrayLookup(state, declared));
     const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => idOf(state, key));
@@ -151,9 +131,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         return columns;
     };
     // A leaf's stride and offset depend only on its component's layout, so they're the same in every parent archetype.
-    const upReadable = new Set<Key>(up?.read);
     const upSources = (description.upColumns ?? []).map(column => {
-        if (column.kind !== "field" || !upReadable.has(column.component)) return fail(`reads "${labelOf(column.kind === "field" ? column.component : column.kind)}" through up, which isn't in up.read.`);
+        if (column.kind !== "field") return fail("reads a column through up that isn't a field.");
         const id = idOf(state, column.component);
         const layout = state.layouts[id];
         if (layout.kind !== "linear") return fail(`up reads "${labelOf(column.component)}", which isn't stored in linear memory.`);

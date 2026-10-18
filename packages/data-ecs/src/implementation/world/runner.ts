@@ -80,7 +80,7 @@ const numberOf = (leaf: Leaf): number => {
     return number;
 };
 
-/** Throws if the leaf is a kernel that wasn't compiled or doesn't match its schemas. */
+/** Throws if the leaf is a kernel that wasn't compiled. */
 export const createRunner = (state: State, leaf: Leaf): Runner => {
     const { declaration } = leaf;
     const leafNumber = numberOf(leaf);
@@ -102,40 +102,20 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     }
     const placement = leaf.kind === "render" ? "render" : declaration.kernel === "gpu" && state.gpu !== null ? "gpu" : "cpu";
     const failPlacement = (message: string): never => { throw new Error(`System "${label}" ${message}.`); };
-    // The build rejects these in compiled kernels; this covers declarations it didn't see.
-    if (declaration.kernel === "gpu") {
-        if (filtered) failPlacement("can't run on the GPU: GPU kernels don't support change filters yet");
-        if (declaration.lookup !== undefined && Object.keys(declaration.lookup).length > 0) failPlacement("can't run on the GPU: GPU kernels don't support lookups yet");
-    }
-    if (declaration.up !== undefined && query === undefined) failPlacement("uses up, which orders rows, without components");
+    // Creating the system and registering its kernel checked its placement, reductions and accessors.
     const up = declaration.up === undefined ? null : createUp(state, declaration.up, filtered);
     const targets = reductionTargets(state, declaration);
-    if (targets.length > 0) {
-        if (declaration.kernel === "gpu") failPlacement("can't run on the GPU: GPU kernels don't support reductions yet");
-        if (leaf.kind === "render") failPlacement("can't reduce: a render system records GPU work rather than running rows");
-    }
     /** For each partial of the kernel, the target and leaf it folds into. */
     const partialLeaves = (kernel?.description.reductions ?? []).map(reduced => {
         const index = targets.findIndex(target => target.key === reduced.resource);
-        const target = targets[index];
-        if (target === undefined || target.operator !== reduced.operator) {
-            return failPlacement(`reduces "${labelOf(reduced.resource)}" with "${reduced.operator}", which its reduce doesn't declare`);
-        }
-        const leaf = target.leaves.findIndex(candidate => samePath(candidate.path, reduced.path));
-        if (leaf < 0) return failPlacement(`contributes to "${labelOf(reduced.resource)}" at [${reduced.path.join(", ")}], which isn't a scalar of its value; destructure tuples and structs or build them`);
-        return { target: index, leaf };
+        const leaf = targets[index]?.leaves.findIndex(candidate => samePath(candidate.path, reduced.path)) ?? -1;
+        return leaf < 0 ? failPlacement(`contributes to "${labelOf(reduced.resource)}", which it doesn't reduce`) : { target: index, leaf };
     });
-    for (const shape of kernel?.description.reducedShapes ?? []) {
-        const target = targets.find(candidate => candidate.key === shape.component);
-        const exact = target !== undefined && target.leaves.length === shape.leaves.length && target.leaves.every(leaf => shape.leaves.some(path => samePath(path, leaf.path)));
-        if (!exact) failPlacement(`contributes a value to "${labelOf(shape.component)}" that doesn't match its schema`);
-    }
     const accessors = declaration.shader === undefined ? [] : accessorsOf(declaration.shader);
     if (typeof accessors === "string") return failPlacement(`can't render: ${accessors}`);
     const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
     const writes = (query?.write ?? []).map(key => idOf(state, key));
     const looks = [...new Set([...Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []), ...declaration.up?.read ?? []])].map(key => idOf(state, key));
-    if ((declaration.shader !== undefined) !== (leaf.kind === "render")) failPlacement("has a shader only when System.render makes it");
     /** Record keys by archetype. */
     const keys = new Map<Archetype, string>();
     const keyOf = (archetype: Archetype): string => {

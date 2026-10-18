@@ -6,6 +6,7 @@ import type { Resource } from '../resource/resource.js';
 import type { ThreadOfResource } from '../resource/value.js';
 import { gpuDevice } from '../resources/gpu-device.js';
 import type { Body } from './body.js';
+import { accessorsOf } from '../gpu/accessors.js';
 import { checkLeaf } from './check.js';
 import type { Leaf } from './leaf.js';
 import type { Name } from './name.js';
@@ -53,7 +54,7 @@ type Rendered<D extends RenderDeclaration> = D & { readonly components: { readon
 /**
  * Declares a render system: it runs once per run on `gpuDevice`'s thread, in schedule order, and records GPU work over
  * the GPU copy of the components its accessors name, which the world uploads first as needed. It runs only while the
- * world has a `gpuDevice`. Throws as `create` does.
+ * world has a `gpuDevice`. Throws as `create` does, and for an accessor its shader can't read on the GPU.
  */
 export const render = <const D extends RenderDeclaration>(
     declaration: D & OneThread<ThreadsOf<D> | ThreadOfResource<typeof gpuDevice>>,
@@ -71,6 +72,8 @@ export const render = <const D extends RenderDeclaration>(
         body,
     };
     checkLeaf(system);
+    const accessors = accessorsOf(declaration.shader);
+    if (typeof accessors === "string") throw new Error(`System "${declaration.name}" can't render: ${accessors}.`);
     claimSystem(system, id);
     return system;
 };

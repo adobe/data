@@ -1,11 +1,9 @@
-import { conditional, declarationOf } from '../../interface/registry/index.js';
-import { kindOf } from '../../interface/registry/index.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import { requireDefinition, type Definition } from '../../interface/registry/index.js';
 import { createRunner, type Runner } from './runner.js';
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, type Key, type State } from './state.js';
-import { labelOf, labelOfItem } from '../../interface/registry/index.js';
+import { labelOfItem } from '../../interface/registry/index.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
 /** `ticked`: components the new systems filter on, which must keep ticks before they run. */
@@ -47,16 +45,6 @@ const keysOf = (leaf: Leaf): { readonly components: readonly Key[]; readonly res
     return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? [], ...reducedBy(leaf)] };
 };
 
-/** Throws if `up.through` isn't a registered reference component. */
-const checkUp = (leaf: Leaf): void => {
-    const { up } = leaf.declaration;
-    const name = labelOfItem(leaf);
-    if (up === undefined) return;
-    if (kindOf(up.through) !== "component" || declarationOf(up.through)?.reference === undefined) {
-        throw new Error(`System "${name}": up.through "${labelOf(up.through)}" isn't a reference component.`);
-    }
-};
-
 /** For a filtered `up` leaf: its parent reference and what it reads of its parent, whose changes also pass a row. */
 const upObserved = (leaf: Leaf): readonly Key[] => {
     const { components, resources, up } = leaf.declaration;
@@ -71,53 +59,6 @@ const tickedBy = (leaf: Leaf): readonly Key[] =>
 /** The components whose `changed` stamps a leaf reads, so kernels writing them must keep their stamps. */
 const observedBy = (leaf: Leaf): readonly Key[] => [...leaf.declaration.components?.changed ?? [], ...upObserved(leaf)];
 
-/** Throws if a key is in both `read` and `write`: `write` already makes it readable. */
-const checkLists = (kind: string, name: string, what: string, lists: { readonly read?: readonly Key[]; readonly write?: readonly Key[] } | undefined): void => {
-    const writes = new Set(lists?.write);
-    const both = (lists?.read ?? []).find(key => writes.has(key));
-    if (both !== undefined) throw new Error(`${kind} "${name}" lists "${labelOf(both)}" in both ${what} read and write; write already makes it readable.`);
-};
-
-/**
- * Throws if a system reduces into a resource with an operator its `reduce` trait doesn't declare, or writes a resource
- * that's reduced, which only its contributors' fold sets.
- */
-const checkReductions = (leaf: Leaf): void => {
-    const { reduce, resources } = leaf.declaration;
-    const name = labelOfItem(leaf);
-    for (const key of reducedBy(leaf)) {
-        const declared = declarationOf(key)?.reduce;
-        const operator: unknown = Reflect.get(reduce ?? {}, key);
-        if (declared === undefined) throw new Error(`System "${name}" reduces "${labelOf(key)}", which has no reduce trait.`);
-        if (declared !== operator) throw new Error(`System "${name}" reduces "${labelOf(key)}" with "${labelOf(operator)}", but it's declared reduce: "${labelOf(declared)}".`);
-    }
-    for (const key of resources?.write ?? []) {
-        if (declarationOf(key)?.reduce !== undefined) throw new Error(`System "${name}" writes "${labelOf(key)}", which is reduced; only its contributors' fold sets it.`);
-    }
-};
-
-/**
- * Throws if a condition isn't a resource whose value can be `null` or `false`, is in both `is` and `not`, or is also
- * read or written: `is` already makes it readable.
- */
-const checkConditions = (leaf: Leaf): void => {
-    const { resources } = leaf.declaration;
-    const name = labelOfItem(leaf);
-    const is = resources?.is ?? [];
-    const not = resources?.not ?? [];
-    const listed = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? []]);
-    for (const key of [...is, ...not]) {
-        const declaration = declarationOf(key);
-        if (kindOf(key) !== "resource" || declaration === undefined) throw new Error(`System "${name}" runs on the condition of "${labelOf(key)}", which isn't a registered resource.`);
-        const { type } = declaration;
-        if (type !== undefined && !conditional(type)) throw new Error(`System "${name}" runs on the condition of "${labelOf(key)}", which is never null or false.`);
-    }
-    for (const key of is) {
-        if (not.includes(key)) throw new Error(`System "${name}" lists "${labelOf(key)}" in both resources is and not.`);
-        if (listed.has(key)) throw new Error(`System "${name}" lists "${labelOf(key)}" in resources is and in read or write; is already makes it readable.`);
-    }
-};
-
 export const createRegistrar = (state: State): Registrar => {
     const schedules = new Map<Definition, Schedule>();
     const runners = new Map<Leaf, Runner>();
@@ -131,17 +72,9 @@ export const createRegistrar = (state: State): Registrar => {
         const resources = new Set<Key>();
         for (const system of systemsOf(root)) {
             if (schedules.has(system)) continue;
-            const name = labelOfItem(system);
             addedSchedules.set(system, scheduleOf(system));
             if (isLeaf(system)) {
-                checkLists("System", name, "components", system.declaration.components);
-                checkLists("System", name, "resources", system.declaration.resources);
-                for (const key of system.declaration.components?.write ?? []) {
-                    if (declarationOf(key)?.reference !== undefined) throw new Error(`System "${name}" writes "${labelOf(key)}", a reference, which changes only through commands.`);
-                }
-                checkReductions(system);
-                checkConditions(system);
-                checkUp(system);
+                // Creating the system checked its declaration; registering it gives its keys ids in this world.
                 const keys = keysOf(system);
                 for (const key of keys.components) idOf(state, key);
                 for (const key of keys.resources) {

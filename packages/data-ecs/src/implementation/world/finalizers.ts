@@ -13,7 +13,7 @@ import { idOf, type Key, type State } from './state.js';
 import type { Queued } from './synchronize.js';
 import type { Essential, ReadonlyValue } from '../../interface/component/value.js';
 import type { Leaf } from '../../interface/finalizer/created.js';
-import { labelOf, labelOfItem, newestKeyOf } from '../../interface/registry/index.js';
+import { newestKeyOf } from '../../interface/registry/index.js';
 
 /** A registered finalizer, resolved for a world: what it matches or watches, its context, and the buffer its commands go to. */
 export type FinalizerRunner = {
@@ -41,11 +41,8 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
     let watches = (id: number): boolean => !state.derived[id] && !state.resources.has(id);
     const watch = finalizer.kind === "changes" ? finalizer.declaration.watch : undefined;
     if (watch !== undefined) {
-        const watched = new Set(watch.map(key => {
-            const id = idOf(state, key);
-            if (state.derived[id]) throw new Error(`Finalizer "${labelOfItem(finalizer)}" watches "${labelOf(key)}", which is derived; it sees only components user code adds and removes.`);
-            return id;
-        }));
+        // `Finalizer.changes` rejected derived components.
+        const watched = new Set(watch.map(key => idOf(state, key)));
         watches = id => watched.has(id);
     }
     const target = { buffer: createBuffer() };

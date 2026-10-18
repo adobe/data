@@ -248,34 +248,29 @@ describe("reductions", () => {
         // @ts-expect-error booleans reduce bitwise
         expect(() => Resource.register(summed, { type: { type: "boolean", default: false }, reduce: "+" })).toThrow(`booleans reduce with "&", "|" or "^"`);
         // @ts-expect-error a contributor repeats its resource's operator
-        const mismatched = System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); });
-        await expect(createWorld({ [workers]: 0 }).run(mismatched)).rejects.toThrow(`reduces "reductionsTest/total" with "max", but it's declared reduce: "+"`);
+        expect(() => System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); })).toThrow(`reduces "reductionsTest/total" with "max", but it's declared reduce: "+"`);
         // @ts-expect-error only a resource with a reduce trait is reduced
-        const plain = System.create({ name: "reductionsTest/other/2", components: { has: [mass] }, reduce: { [level]: "+" } }, (_, { reduce }) => { reduce[level](1); });
-        await expect(createWorld({ [workers]: 0 }).run(plain)).rejects.toThrow(`reduces "reductionsTest/level", which has no reduce trait`);
+        expect(() => System.create({ name: "reductionsTest/other/2", components: { has: [mass] }, reduce: { [level]: "+" } }, (_, { reduce }) => { reduce[level](1); })).toThrow(`reduces "reductionsTest/level", which has no reduce trait`);
         // @ts-expect-error a reduced resource is never written
-        const writing = System.create({ name: "reductionsTest/other/3", resources: { write: [total] } }, ({ resources }) => { resources[total] = 1; });
-        await expect(createWorld({ [workers]: 0 }).run(writing)).rejects.toThrow(`writes "reductionsTest/total", which is reduced`);
+        expect(() => System.create({ name: "reductionsTest/other/3", resources: { write: [total] } }, ({ resources }) => { resources[total] = 1; })).toThrow(`writes "reductionsTest/total", which is reduced`);
         // @ts-expect-error a contributor doesn't read what it reduces into
-        const reading = System.create({ name: "reductionsTest/other/4", components: { has: [mass] }, resources: { read: [total] }, reduce: { [total]: "+" } }, (_, { resources, reduce }) => { reduce[total](resources[total]); });
-        await expect(createWorld({ [workers]: 0 }).run(reading)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
+        expect(() => System.create({ name: "reductionsTest/other/4", components: { has: [mass] }, resources: { read: [total] }, reduce: { [total]: "+" } }, (_, { resources, reduce }) => { reduce[total](resources[total]); })).toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
         // @ts-expect-error nor filters on it
-        const filtering = System.create({ name: "reductionsTest/other/5", components: { has: [mass] }, resources: { changed: [total] }, reduce: { [total]: "+" } }, (_, { reduce }) => { reduce[total](1); });
-        await expect(createWorld({ [workers]: 0 }).run(filtering)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
+        expect(() => System.create({ name: "reductionsTest/other/5", components: { has: [mass] }, resources: { changed: [total] }, reduce: { [total]: "+" } }, (_, { reduce }) => { reduce[total](1); })).toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
     });
 
     it("leave nothing subscribed to sync points from a registration that failed", () => {
         const state = createState(true);
         const registrar = createRegistrar(state);
-        // @ts-expect-error a contributor repeats its resource's operator
-        const mismatched = System.create({ name: "reductionsTest/other/6", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); });
-        const both = System.composite({ name: "reductionsTest/both", systems: [kernel, mismatched] });
+        // A declaration the build doesn't see is a kernel it didn't compile, which only a world's registration finds.
+        const uncompiled = { name: "reductionsTest/other/6", kernel: "cpu", components: { read: [mass] } } as const;
+        const both = System.composite({ name: "reductionsTest/both", systems: [kernel, System.create(uncompiled, row => { void row[mass]; })] });
         const definition = (system: System<unknown>) => {
             const found = definitionOf(system);
             if (found === undefined) throw new Error("not a system");
             return found;
         };
-        expect(() => registrar.register(definition(both))).toThrow(`but it's declared reduce: "+"`);
+        expect(() => registrar.register(definition(both))).toThrow(`is a kernel but wasn't compiled`);
         expect(state.afterSync.size).toBe(0);
         registrar.register(definition(kernel)).rollback();
         expect(state.afterSync.size).toBe(0);

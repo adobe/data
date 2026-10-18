@@ -278,9 +278,7 @@ describe("up", () => {
     });
 
     it("rejects a through that isn't a reference, for untyped declarations", async () => {
-        await using ecs = createWorld({ [workers]: 0 });
         // @ts-expect-error through is a reference component
-        const untyped = System.create({ name: "upTest/untyped", components: { write: [world] }, up: { through: local, read: [world] } }, row => { row[world] = 0; });
-        await expect(ecs.run(untyped)).rejects.toThrow('System "upTest/untyped": up.through "upTest/local" isn\'t a reference component.');
+        expect(() => System.create({ name: "upTest/untyped", components: { write: [world] }, up: { through: local, read: [world] } }, row => { row[world] = 0; })).toThrow('System "upTest/untyped": up.through "upTest/local" isn\'t a reference component.');
     });
 });

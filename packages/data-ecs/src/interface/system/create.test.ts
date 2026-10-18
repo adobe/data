@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../component/component.js";
+import { Entity } from "../entity/entity.js";
 import { definitionOf, firstItemOf, labelOfItem, requireDefinition, sameItem, scheduleOf, threadOf } from "../registry/index.js";
 import { identify } from "../registry/ids.test-helper.js";
 import { Resource } from "../resource/resource.js";
@@ -12,6 +13,10 @@ const node = Symbol("typesSystemTest/node");
 const document = Symbol("typesSystemTest/document");
 const time = Symbol("typesSystemTest/time");
 const unregistered = Symbol("typesSystemTest/unregistered");
+const parent = Symbol("typesSystemTest/parent");
+const total = Symbol("typesSystemTest/total");
+const paused = Symbol("typesSystemTest/paused");
+const height = Symbol("typesSystemTest/height");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -19,10 +24,14 @@ declare module "@adobe/data-ecs" {
         [label]: { type: string };
         [node]: { type: HTMLElement; thread: "main" };
         [unregistered]: { type: number };
+        [parent]: { type: Entity; reference: "weak" };
+        [height]: { type: number };
     }
     export interface Resources {
         [document]: { type: Document | null; thread: "main" };
         [time]: { type: number };
+        [total]: { type: number; reduce: "+" };
+        [paused]: { type: boolean };
     }
 }
 
@@ -31,6 +40,10 @@ Component.register(label, { type: { type: "string" } });
 Component.register(node, { thread: "main" });
 Resource.register(document, { thread: "main" });
 Resource.register(time, { type: { type: "number", default: 0 } });
+Component.register(parent, { type: Entity.schema, reference: "weak" });
+Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+Resource.register(paused, { type: { type: "boolean", default: false } });
+Component.register(height, { type: { type: "number", precision: 1 } });
 
 /** Creates as an untyped caller would, bypassing the types' checks. */
 const create = (declaration: object): unknown => Reflect.apply(System.create, undefined, [declaration, () => {}]);
@@ -79,6 +92,31 @@ describe("System.create", () => {
         expect(() => create({ name: "typesSystemTest/input", input: { type: "number" } })).toThrow("input is an object schema of named fields");
         expect(labelOfItem(System.create({ name: "typesSystemTest/both" }, () => {}))).toBe("typesSystemTest/both");
     });
+    it("rejects at creation what the registry rules out, for untyped callers", () => {
+        const rejected: readonly (readonly [object, string])[] = [
+            [{ components: { read: [position], has: [unregistered] } }, `uses component "typesSystemTest/unregistered", which isn't a registered component`],
+            [{ components: { read: [position] }, lookup: { others: { read: [position], not: [unregistered] } } }, `uses component "typesSystemTest/unregistered", which isn't a registered component`],
+            [{ components: { write: [parent] } }, `writes "typesSystemTest/parent", a reference, which changes only through commands`],
+            [{ components: { has: [position] }, reduce: { [total]: "max" } }, `reduces "typesSystemTest/total" with "max", but it's declared reduce: "+"`],
+            [{ components: { has: [position] }, reduce: { [time]: "+" } }, `reduces "typesSystemTest/time", which has no reduce trait`],
+            [{ resources: { write: [total] } }, `writes "typesSystemTest/total", which is reduced`],
+            [{ components: { has: [position] }, resources: { read: [total] }, reduce: { [total]: "+" } }, `reduces "typesSystemTest/total", so it can't also read, write or filter on it`],
+            [{ resources: { is: [time] } }, `runs on the condition of "typesSystemTest/time", which is never null or false`],
+            [{ resources: { not: [position] } }, `runs on the condition of "typesSystemTest/position", which isn't a registered resource`],
+            [{ resources: { is: [paused], not: [paused] } }, `lists "typesSystemTest/paused" in both resources is and not`],
+            [{ resources: { is: [paused], read: [paused] } }, `lists "typesSystemTest/paused" in resources is and in read or write; is already makes it readable`],
+            [{ components: { write: [position] }, up: { through: position, read: [position] } }, `up.through "typesSystemTest/position" isn't a reference component`],
+            [{ up: { through: parent } }, "uses up, which orders rows, without components"],
+            [{ kernel: "gpu", components: { write: [position], changed: [position] } }, "can't run on the GPU: GPU kernels don't support change filters yet"],
+            [{ kernel: "gpu", components: { read: [position] }, lookup: { others: { read: [position] } } }, "can't run on the GPU: GPU kernels don't support lookups yet"],
+            [{ kernel: "gpu", components: { has: [position] }, reduce: { [total]: "+" } }, "can't run on the GPU: GPU kernels don't support reductions yet"],
+        ];
+        rejected.forEach(([declaration, message], index) => {
+            expect(() => create({ name: `typesSystemTest/rejected/${index}`, ...declaration })).toThrow(message);
+            // A rejected system records nothing, so its name labels only the next.
+            expect(labelOfItem(System.create({ name: `typesSystemTest/rejected/${index}` }, () => {}))).toBe(`typesSystemTest/rejected/${index}`);
+        });
+    });
     it("derives its thread from its object components and resources, and rejects two", () => {
         const show = System.create({ name: "typesSystemTest/show", components: { read: [position, node] }, resources: { read: [time, document] } }, (row, { resources }) => { row[node].textContent = `${row[position]} ${resources[time]} ${resources[document]?.title}`; });
         const count = System.create({ name: "typesSystemTest/count", components: { read: [label], has: [node] } }, row => { void row[label]; });
@@ -123,10 +161,16 @@ describe("System.composite", () => {
 
 describe("System.render", () => {
     it("reads the components its accessors name, once each, and runs only while gpuDevice is set", () => {
-        const draw = System.render({ name: "typesSystemTest/draw", shader: { accessors: { place: position, again: position } } }, () => {});
+        const draw = System.render({ name: "typesSystemTest/draw", shader: { accessors: { place: height, again: height } } }, () => {});
         const definition = definitionOf(draw);
-        expect(definition?.kind === "render" ? [definition.declaration.components, definition.declaration.resources] : null).toEqual([{ read: [position] }, { is: [gpuDevice] }]);
+        expect(definition?.kind === "render" ? [definition.declaration.components, definition.declaration.resources] : null).toEqual([{ read: [height] }, { is: [gpuDevice] }]);
         const render: (declaration: object) => unknown = declaration => Reflect.apply(System.render, undefined, [declaration, () => {}]);
         expect(() => render({ name: "typesSystemTest/drawDocument", resources: { read: [document] }, shader: { accessors: {} } })).toThrow('uses values on threads "main" and "world"');
+    });
+    it("rejects at creation accessors its shader can't read, and reductions", () => {
+        const render: (declaration: object) => unknown = declaration => Reflect.apply(System.render, undefined, [declaration, () => {}]);
+        expect(() => System.render({ name: "typesSystemTest/drawReserved", shader: { accessors: { loop: height } } }, () => {})).toThrow(`System "typesSystemTest/drawReserved" can't render: "loop" isn't usable as a WGSL function name.`);
+        expect(() => render({ name: "typesSystemTest/drawReduced", shader: { accessors: {} }, reduce: { [total]: "+" } })).toThrow("can't reduce: a render system records GPU work rather than running rows");
+        expect(labelOfItem(System.render({ name: "typesSystemTest/drawReserved", shader: { accessors: {} } }, () => {}))).toBe("typesSystemTest/drawReserved");
     });
 });

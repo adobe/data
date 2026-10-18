@@ -17,7 +17,6 @@ const velocity = Symbol("workersTest/velocity");
 const target = Symbol("workersTest/target");
 const offset = Symbol("workersTest/offset");
 const spawned = Symbol("workersTest/spawned");
-const label = Symbol("workersTest/label");
 const tagA = Symbol("workersTest/tag-a");
 const tagB = Symbol("workersTest/tag-b");
 const tagC = Symbol("workersTest/tag-c");
@@ -37,7 +36,6 @@ declare module "@adobe/data-ecs" {
         [target]: { type: Entity };
         [offset]: { type: number };
         [spawned]: { type: true };
-        [label]: { type: string };
         [tagA]: { type: true };
         [tagB]: { type: true };
         [tagC]: { type: true };
@@ -58,7 +56,6 @@ Component.register(velocity, { type: vec2 });
 Component.register(target, { type: Entity.schema });
 Component.register(offset, { type: { type: "number", precision: 1 } });
 Component.register(spawned, { type: { const: true } });
-Component.register(label, { type: { type: "string" } });
 for (const tag of tags) Component.register(tag, { type: { const: true } });
 
 /** 64 entities in each of the 512 archetypes the tags combine into. */
@@ -138,17 +135,6 @@ const unlink = System.create({
 }, (_, { commands }) => {
     // @ts-expect-error an untyped caller can pass any number
     commands.despawn(1);
-});
-
-const labels = System.create({
-    name: "workersTest/labels",
-    kernel: "cpu",
-    components: { read: [target], write: [offset] },
-    // @ts-expect-error kernel lookups must read linear values; registration rejects it too, for untyped callers
-    lookup: { named: { read: [label] } },
-}, (row, { lookup: { named } }) => {
-    const found = named(row[target]);
-    row[offset] = found === null ? 0 : +found[label];
 });
 
 const disposals: World[] = [];
@@ -232,10 +218,6 @@ describe("workers", () => {
         await world.run(unlink);
         await world.run(integrate);
         expect(await readResource(world, seconds)).toBe(0.25);
-    });
-
-    it("rejects kernel lookups of components outside linear memory", async () => {
-        await expect(createWorld({ [workers]: 2 }).run(labels)).rejects.toThrow('"workersTest/label", which isn\'t stored in linear memory');
     });
 
     it("are terminated by dispose", async () => {

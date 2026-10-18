@@ -18,15 +18,16 @@ export type ReductionTarget = {
 const bitwise: ReadonlySet<Reduction> = new Set(["&", "|", "^"]);
 
 
-/** The resources a declaration reduces into, checked against their layouts. Throws for one that can't be reduced. */
-export const reductionTargets = (state: State, { name, reduce, resources }: Pick<Declaration, "name" | "reduce" | "resources">): readonly ReductionTarget[] => {
+/**
+ * The resources a declaration reduces into, with their layouts' leaves. Creating the system checked each against its
+ * `reduce` trait, which registering the resource checked against its schema, so a throw here is an invariant broken.
+ */
+export const reductionTargets = (state: State, { name, reduce }: Pick<Declaration, "name" | "reduce">): readonly ReductionTarget[] => {
     if (reduce === undefined) return [];
-    const others = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? []]);
     return Object.getOwnPropertySymbols(reduce).flatMap((key): ReductionTarget[] => {
         const operator: unknown = Reflect.get(reduce, key);
         if (operator === undefined) return [];
         if (!isReduction(operator)) throw new Error(`System "${name}" reduces "${labelOf(key)}" with "${labelOf(operator)}", which isn't an operator.`);
-        if (others.has(key)) throw new Error(`System "${name}" reduces "${labelOf(key)}", so it can't also read, write or filter on it.`);
         const layout = state.layouts[idOf(state, key)];
         if (layout?.kind !== "linear") throw new Error(`System "${name}" reduces "${labelOf(key)}", which isn't stored in linear memory.`);
         const leaves = layout.leaves.map(leaf => ({ path: leaf.path, view: leaf.view, boolean: leaf.scalar === "boolean" }));

@@ -47,9 +47,10 @@ const checkResources = (name: string, resources: { readonly read?: readonly Key[
 
 /**
  * Declares a finalizer for each entity that stops matching its components, which applies in every world, and returns
- * it. It runs on the thread its object components and resources live on. Throws if it names a component or resource
- * that isn't registered as one, lists a resource in both `read` and `write`, writes a reduced one, uses object values
- * of different threads, or is ordered in a cycle or with a resource conflict.
+ * it. It runs on the thread its object components and resources live on: on another than the world's, after the sync
+ * point, issuing no commands. Throws if it names a component or resource that isn't registered as one, lists a
+ * resource in both `read` and `write`, writes a reduced one, uses object values of different threads, writes resources
+ * or looks up entities on another thread than the world's, or is ordered in a cycle or with a resource conflict.
  */
 export const create = <const D extends Declaration>(
     declaration: D & Validate<D> & OneThread<ThreadsOf<D>> & Remote<D>,
@@ -59,7 +60,12 @@ export const create = <const D extends Declaration>(
     const name = nameOf(declaration.name, id, "finalizer");
     const finalizer: Leaf<D> = { kind: "finalizer", name, declaration, body };
     checkResources(name, declaration.resources);
-    threadOf(declaration, "Finalizer", name);
+    const thread = threadOf(declaration, "Finalizer", name);
+    if (thread !== null && thread !== "world") {
+        const elsewhere = `one on another thread than the world's runs after the sync point, so it`;
+        if ((declaration.resources?.write?.length ?? 0) > 0) throw new Error(`Finalizer "${name}" runs on thread "${thread}" and writes resources; ${elsewhere} writes none.`);
+        if (Object.keys(declaration.lookup ?? {}).length > 0) throw new Error(`Finalizer "${name}" runs on thread "${thread}" and looks up other entities; ${elsewhere} looks up none.`);
+    }
     requireRegistered("Finalizer", name, "component", declaration.components.has);
     requireRegistered("Finalizer", name, "component", declaration.components.not);
     for (const lookupName in declaration.lookup) {
@@ -70,8 +76,9 @@ export const create = <const D extends Declaration>(
 };
 
 /**
- * Declares a finalizer of each sync point's structural changes, which applies in every world, and returns it. Throws
- * as `create` does, and for a watched component that isn't registered or is derived.
+ * Declares a finalizer of each sync point's structural changes, which applies in every world, and returns it. It runs
+ * on the world's thread. Throws as `create` does, for a watched component that isn't registered or is derived, and for
+ * one watching or reading another thread's values.
  */
 export const changes = <const D extends ChangesDeclaration>(
     declaration: D & Validate<D> & OnWorld<D>,
@@ -91,5 +98,7 @@ export const changes = <const D extends ChangesDeclaration>(
         if (kindOf(key) !== "component") throw new Error(`Finalizer "${name}" watches "${labelOf(key)}", which isn't a registered component.`);
         if (declarationOf(key)?.derived === true) throw new Error(`Finalizer "${name}" watches "${labelOf(key)}", which is derived; it sees only components user code adds and removes.`);
     }
+    const thread = threadOf({ components: { read: declaration.watch }, resources: declaration.resources, lookup: declaration.lookup }, "Finalizer", name);
+    if (thread !== null && thread !== "world") throw new Error(`Finalizer "${name}" watches or reads values on thread "${thread}"; a changes finalizer runs on the world's thread, in the sync point.`);
     return addFinalizer(finalizer, id);
 };

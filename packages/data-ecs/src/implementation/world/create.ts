@@ -210,10 +210,10 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     };
 
     /**
-     * Runs a registered system or composite, ending in a sync point, and reads back the GPU values observers need;
-     * delivers nothing.
+     * Runs a registered system or composite, ending in a sync point, then, with `deliver`, delivers to observers. One
+     * async step for both, so a run awaits nothing more.
      */
-    const execution = async (definition: Definition, value: unknown): Promise<Report> => {
+    const perform = async (definition: Definition, value: unknown, deliver: boolean): Promise<Report> => {
         ensureProgramResources(state, ensured);
         if (observers.start()) await reloadObserved();
         if (workersChanged()) await followWorkers();
@@ -230,7 +230,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         // Observers get values a GPU kernel wrote, read back for them.
         const reading = observers.readback();
         if (reading !== null) await reading;
-        return report;
+        return deliver ? delivered(report) : report;
     };
 
     /** Delivers to observers, giving `report` with their failures. */
@@ -238,9 +238,6 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         const failed = observers.deliver();
         return failed === null ? report : { ...report, failures: [...report.failures, ...failed] };
     };
-
-    /** Runs a registered system or composite, ending in a sync point, then delivers to observers. */
-    const perform = async (definition: Definition, value: unknown): Promise<Report> => delivered(await execution(definition, value));
 
     /** Writes a resource only the world writes, stamped with a tick of its own so systems and observers see it. */
     const writeOwn = (key: Key, value: unknown): void => {
@@ -264,7 +261,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 await complete(registrar.register(composite));
             }
             writeOwn(clock, clockValue);
-            report = await execution(composite, undefined);
+            report = await perform(composite, undefined, false);
         }
         catch (error) {
             report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: [], dropped: 0 };
@@ -306,9 +303,9 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             const ran = definition;
             const registering = registration;
             loop.arrived();
-            return enqueue(registering === null ? () => perform(ran, value) : async () => {
+            return enqueue(registering === null ? () => perform(ran, value, true) : async () => {
                 await complete(registering);
-                return perform(ran, value);
+                return perform(ran, value, true);
             });
         },
         add: system => {

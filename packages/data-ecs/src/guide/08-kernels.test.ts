@@ -54,3 +54,19 @@ it("runs systems compiled as kernels", async () => {
     expect((await toPromise(world.observe.entity(follower, { required: [position] })))?.[position][0]).toBeGreaterThan(9);
     expect(await toPromise(world.observe.count({ required: [spark] }))).toBeGreaterThan(0);
 });
+
+// A kernel's `add` and `remove` take an imported `Symbol(...)` as one key, and an imported list as a list.
+const ignite = System.create({ name: "guide/kernels/ignite" }, ({ commands }) => {
+    commands.spawn(sparks)({ [position]: [0, 0, 0] });
+});
+const settle = System.create({ name: "guide/kernels/settle", kernel: "cpu", components: { has: [spark] } }, (row, { commands }) => {
+    commands.remove(row.entity, spark);
+});
+
+it("removes an imported key in a kernel", async () => {
+    await using world = createWorld();
+    await world.run(ignite);
+    await world.run(settle);
+    expect(await toPromise(world.observe.count({ required: [spark] }))).toBe(0);
+    expect(await toPromise(world.observe.count({ required: [position] }))).toBe(1);
+});

@@ -112,7 +112,7 @@ Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L6-L42).
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
 - **Values that aren't data,** such as a `Blob`, an `HTMLElement` or a `GPUDevice`, are declared by their type alone: registration leaves `type` out, as `Component.register(element, {})`, and a resource gives its `default` on the declaration unless its type allows `null`. The world stores them as they are, so only main-thread systems use them.
 - **`World.create()` returns the world,** and `await using` disposes it; the TypeScript `lib` needs `ESNext.Disposable`. `World.create({ [gravity]: -1.6 })` starts resources at other values than their defaults, any but `clock` and `report`, which only the world writes. Built-in resources are imported keys too: `World.create({ [workers]: 0 })`.
-- **Systems are checked when they're created,** against the components and resources they name, which their modules must register first; a world then registers them on their first run there, loading their kernels, and the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 17).
+- **Systems are checked when they're created,** against the components and resources they name, which their modules must register first: every check that needs no world throws at `System.create` or `System.render`, and a compiled kernel is checked against its declaration where its module registers it. A world then registers them on their first run there, giving their keys ids, adding their resources and loading their kernels, and the run rejects if that fails: a kernel the build didn't compile, a kernel module that fails to load, or a GPU kernel whose shader can't be generated. Rules and finalizers apply in every world (sections 13 and 17).
 - **A system is the value `System.create` returns,** typed as its `name` and the input `run` takes with it, nothing more.
 - **Names are labels,** required and not unique: two systems, rules or finalizers may share one and are still two (section 21).
 - **`Entity` is a branded number.** `Entity.none` names no entity: it's what zeroed memory and entity defaults hold, and a lookup of it returns null.
@@ -152,7 +152,7 @@ const count = System.create({ name: "guide/systems/count", resources: { write: [
 Example: [`02-systems.test.ts`](src/guide/02-systems.test.ts#L35-L59).
 
 - **Declarations list exactly what bodies use.** A key the body never uses is a build error, as is one it uses without listing it.
-- **Rejected:** reads of undeclared components or resources, and context keys the declaration doesn't declare (types); unused declared ones (build); a write to a component a system only reads, and a key in both `read` and `write` (types and registration).
+- **Rejected:** reads of undeclared components or resources, and context keys the declaration doesn't declare (types); unused declared ones (build); a write to a component a system only reads, and a key in both `read` and `write` (types and `System.create`).
 
 ## 4. Scheduling and composites
 
@@ -225,7 +225,7 @@ Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L62-L
 
 - **Conditions are resources whose type allows `null` or `false`:** a number or string is never a condition, so `0` and `""` can't turn a system off.
 - **A skipped system keeps its `lastRun`,** so once it runs again it sees every change since it last ran.
-- **Rejected:** a condition that's never `null` or `false`, one in both `is` and `not`, and one in `is` that's also read or written, in types and at registration.
+- **Rejected:** a condition that's never `null` or `false`, one in both `is` and `not`, and one in `is` that's also read or written, in types and at `System.create`.
 
 ## 6. Lookups
 
@@ -246,7 +246,7 @@ const follow = System.create({
 
 Example: [`05-lookups.test.ts`](src/guide/05-lookups.test.ts#L22-L45).
 
-- **Rejected:** a lookup reading a component its own system writes, at registration.
+- **Rejected:** a lookup reading a component its own system writes, at `System.create`.
 
 ## 7. Input
 
@@ -345,9 +345,9 @@ Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L26-L56), with the 
 
 - **The subset** a kernel body may use is in [`src/implementation/compiler/subset.md`](src/implementation/compiler/subset.md). The build rejects anything else, with a message at the code.
 - **Math types:** `Vec2`, `Vec3`, `Vec4` (each F32, with `I32` and `U32`), `Quat`, `Mat4x4`, and the scalars, each with a `schema`, follow WGSL's semantics. See the [`math follows WGSL`](src/interface/math/semantics.test.ts) tests.
-- **Lists in kernels:** a kernel's declaration and commands name components in array literals, or in constants holding one or `Archetype.create` of one, of the kernel's module or imported from any other, through re-exports and namespaces too; the build reads an imported list's keys in its own module. A list it can't read fails the build at the call or declaration naming it: one computed when its module runs, one that isn't a module-scope `const`, and a module namespace. Editing a list's module compiles its kernels again. A kernel calls the spawner where it gets it, as `commands.spawn(components)(values)`.
+- **Lists in kernels:** a kernel's declaration and commands name components in array literals, or in constants holding one or `Archetype.create` of one, of the kernel's module or imported from any other, through re-exports and namespaces too; the build reads an imported list's keys in its own module. A list it can't read fails the build at the call or declaration naming it: one computed when its module runs, one that isn't a module-scope `const`, and a module namespace. Editing a list's module compiles its kernels again. `add` and `remove` take a name as one key when its definition is `Symbol(...)`, as a list when it's a list, and fail the build with the reason otherwise; a name from a package external to the build is one key, and registering the kernel rejects a list there. A kernel calls the spawner where it gets it, as `commands.spawn(components)(values)`.
 - **What a kernel compiles to:** JS, WGSL and WASM output for one system, in [`generated-code.md`](src/implementation/world/generated-code.md).
-- **Rejected:** a kernel that wasn't compiled, at registration; a body outside the subset, at build.
+- **Rejected:** a body outside the subset, at build; a kernel that doesn't match its declaration and schemas, where its module registers it; a kernel that wasn't compiled, at a world's first run of it.
 
 ## 10. Reductions
 
@@ -377,7 +377,7 @@ Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L29-L77).
 - **Several systems may contribute** to one resource in a run. They need no order between them, and any system that reads the resource runs after all of them, so it sees the finished fold.
 - **Change filters pass only some rows,** and the fold covers just those: with `changed: [position]`, a fold over what moved.
 - **A failed or skipped run:** when a contributor fails, or every contributor skips the run, the resource keeps its previous value.
-- **Rejected:** an operator that isn't the resource's, a resource without a `reduce` trait, writing a reduced resource, and a contributor that reads or filters on what it reduces into, in types and at registration; a non-bitwise operator on booleans, at `Resource.register`.
+- **Rejected:** an operator that isn't the resource's, a resource without a `reduce` trait, writing a reduced resource, and a contributor that reads or filters on what it reduces into, in types and at `System.create`; a non-bitwise operator on booleans, at `Resource.register`.
 - **Not yet:** reductions in GPU kernels.
 
 ## 11. GPU kernels and render systems
@@ -472,10 +472,10 @@ despawn or another `within`. One added without its host is dropped.
 Component.register(glow, { type: { type: "number" }, within: body });
 ```
 
-Example: [`13-within.test.ts`](src/guide/13-within.test.ts#L16-L35).
+Example: [`13-within.test.ts`](src/guide/13-within.test.ts#L20-L39).
 
 - **Removing a host and adding it back** in the same sync point still ends its dependents. A derived host that a rule keeps never leaves.
-- **Rejected:** components within each other in a cycle, at registration.
+- **Rejected:** components within each other in a cycle, at `Component.register` of the one closing it.
 
 ## 15. Entity references
 

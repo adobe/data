@@ -5,11 +5,15 @@ import { createWorld } from "../implementation/index.js";
 
 const body = Symbol("guide/within/body");
 const glow = Symbol("guide/within/glow");
+const inner = Symbol("guide/within/inner");
+const outer = Symbol("guide/within/outer");
 
 declare module "@adobe/data-ecs" {
     interface Components {
         [body]: { type: number };
         [glow]: { type: number; within: typeof body };
+        [inner]: { type: true; within: typeof outer };
+        [outer]: { type: true; within: typeof inner };
     }
 }
 
@@ -32,4 +36,9 @@ it("removes a component with its host", async () => {
     expect(await toPromise(world.observe.count({ required: [glow] }))).toBe(1);
     await world.run(strip);
     expect(await toPromise(world.observe.count({ required: [glow] }))).toBe(0);
+});
+
+it("rejects components within each other in a cycle where the one closing it registers", () => {
+    Component.register(inner, { type: { const: true }, within: outer });
+    expect(() => Component.register(outer, { type: { const: true }, within: inner })).toThrow("components are within each other in a cycle: guide/within/inner, guide/within/outer");
 });

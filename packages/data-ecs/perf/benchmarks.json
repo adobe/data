@@ -1049,5 +1049,31 @@
             "bytes": 172,
             "basis": "Each row's 12-byte vec3 and 64-byte mat4 are read and written, and its position, archetype, row and entity, 20 bytes, written."
         }
+    },
+    "tail overlap": {
+        "operation": "Ticks writing every row's place, which the last tick's tail on a joined worker still reads, then working 2 ms, while the tail works about 2.5 ms over 10,000 rows of a place and a pose: main's DOM work and the world's work after its writer that together outlast a frame or a fixed step, though each fits. The writer copies the rows the tail hasn't read, so the tick and the tail overlap.",
+        "per": "ticks",
+        "n": 100,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 1520000,
+            "basis": "The world copies each row's 12-byte vec3 and 64-byte mat4 the tail hasn't read, and the tail reads them, beyond the work each side does."
+        }
+    },
+    "tail overlap waiting": {
+        "operation": "Ticks writing every row's place, which the last tick's tail on a joined worker still reads, then working 2 ms, while the tail works about 2.5 ms over 10,000 rows of a place and a pose: main's DOM work and the world's work after its writer that together outlast a frame or a fixed step, though each fits. The writer waits for the tail to finish instead, the alternative `tail overlap` is measured against.",
+        "per": "ticks",
+        "n": 100,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 760000,
+            "basis": "The tail reads each row's 12-byte vec3 and 64-byte mat4, beyond the work each side does."
+        }
     }
 }

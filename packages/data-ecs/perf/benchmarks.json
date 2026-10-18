@@ -591,5 +591,226 @@
             "bytes": 28,
             "basis": "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result."
         }
+    },
+    "spawn bulk": {
+        "operation": "A main-thread system spawning 100K entities of one archetype, applied by its sync point: loading many of one kind.",
+        "per": "spawns",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 24,
+            "basis": "Each entity writes its 8 bytes of values, its 8-byte entity and its 8-byte location."
+        }
+    },
+    "spawn bulk kernel": {
+        "operation": "A kernel spawning an entity per row over 100K rows: spawns found by a parallel pass, such as debris or hits.",
+        "per": "spawns",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "Each row reads its 4-byte index; each spawn writes its 8 bytes of values, its entity and its location."
+        }
+    },
+    "spawn singles": {
+        "operation": "A run spawning one entity of each of four archetypes: the fixed cost of a few spawns a frame, such as a click or a message.",
+        "per": "spawns",
+        "n": 4,
+        "typical": [
+            1,
+            10
+        ],
+        "best": {
+            "bytes": 40,
+            "basis": "Each entity writes its values, entity and location, and the run reads a cache line of its system's state."
+        }
+    },
+    "spawn sixteen archetypes": {
+        "operation": "Spawns from value objects over sixteen archetypes, more component sets than spawns cache: entities of many kinds, from data.",
+        "per": "spawns",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 24,
+            "basis": "Each entity writes its 8 bytes of values, its 8-byte entity and its 8-byte location."
+        }
+    },
+    "despawn bulk": {
+        "operation": "A main-thread system despawning 100K entities over four archetypes: unloading a level.",
+        "per": "despawns",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each despawn frees its 8-byte location and entity; the archetypes empty, so no row moves."
+        }
+    },
+    "despawn bulk kernel": {
+        "operation": "The same despawns from a kernel.",
+        "per": "despawns",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 20,
+            "basis": "Each row reads its 4-byte index; each despawn frees its location and entity."
+        }
+    },
+    "despawn one": {
+        "operation": "A run despawning one entity of 100K: the fixed cost of a despawn, such as one projectile hitting.",
+        "per": "despawns",
+        "n": 1,
+        "typical": [
+            1,
+            10
+        ],
+        "best": {
+            "bytes": 96,
+            "basis": "The despawn swaps the last row into its hole and frees its location, and the run reads its system's state."
+        }
+    },
+    "add tag": {
+        "operation": "Adding a tag to 100K entities of one archetype: a state flag set on many at once.",
+        "per": "entities moved",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each entity copies its row to the target archetype and its location changes; the source empties, so no row swaps into a hole."
+        }
+    },
+    "add tag kernel": {
+        "operation": "The same adds from a kernel.",
+        "per": "entities moved",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 20,
+            "basis": "Each entity copies its row to the target archetype and its location changes; the source empties, so no row swaps into a hole."
+        }
+    },
+    "add tag from four archetypes": {
+        "operation": "Adding a tag to 100K entities over four archetypes, each moving to its own target.",
+        "per": "entities moved",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each entity copies its row to the target archetype and its location changes; the source empties, so no row swaps into a hole."
+        }
+    },
+    "add value": {
+        "operation": "Adding a valued component to 100K entities of one archetype: attaching data such as a timer or a score.",
+        "per": "entities moved",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 20,
+            "basis": "Each entity copies its row to the target archetype and its location changes; the source empties, so no row swaps into a hole."
+        }
+    },
+    "add several": {
+        "operation": "Adding a tag and two values at once to 100K entities: attaching a bundle of components.",
+        "per": "entities moved",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 24,
+            "basis": "Each entity copies its row to the target archetype and its location changes; the source empties, so no row swaps into a hole."
+        }
+    },
+    "remove tag": {
+        "operation": "Removing a tag from 100K entities of one archetype.",
+        "per": "entities moved",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each entity copies its row to the target archetype and its location changes; the source empties, so no row swaps into a hole."
+        }
+    },
+    "remove tag kernel": {
+        "operation": "The same removes from a kernel.",
+        "per": "entities moved",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 20,
+            "basis": "Each entity copies its row to the target archetype and its location changes; the source empties, so no row swaps into a hole."
+        }
+    },
+    "remove tag from four archetypes": {
+        "operation": "Removing a tag from 100K entities over four archetypes.",
+        "per": "entities moved",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each entity copies its row to the target archetype and its location changes; the source empties, so no row swaps into a hole."
+        }
+    },
+    "remove several": {
+        "operation": "Removing a tag and two values at once from 100K entities.",
+        "per": "entities moved",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each entity copies its row to the target archetype and its location changes; the source empties, so no row swaps into a hole."
+        }
+    },
+    "add replace": {
+        "operation": "Adding a value 100K entities already have: values replaced and marked changed, with no archetype moves.",
+        "per": "entities",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 12,
+            "basis": "Each row reads its 4-byte value and writes 4 bytes, plus its 4-byte location read."
+        }
     }
 }

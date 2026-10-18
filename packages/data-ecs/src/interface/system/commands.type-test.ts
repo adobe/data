@@ -3,6 +3,7 @@ import { Component } from '../component/component.js';
 import { Archetype } from '../archetype/archetype.js';
 import type { Entity } from '../entity/entity.js';
 import type { Commands } from './commands.js';
+import { threadClaims, threadStatus } from '../components/index.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
@@ -89,5 +90,11 @@ export const issue = (commands: Commands, entity: Entity): void => {
     commands.remove(entity, position, velocity);
     // @ts-expect-error commands never remove a derived component
     commands.remove(entity, slot);
+    // @ts-expect-error commands never add a component only the world writes
+    commands.add(entity, threadStatus, "gone");
+    // @ts-expect-error nor spawn one
+    commands.spawn([threadClaims]);
+    // @ts-expect-error nor remove one
+    commands.remove(entity, threadStatus);
     commands.despawn(entity);
 };

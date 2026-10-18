@@ -105,6 +105,7 @@ export const checkLeaf = (leaf: Leaf): void => {
     checkLists(name, "components", components);
     checkLists(name, "resources", resources);
     checkWorldWritten(`System "${name}"`, resources?.write);
+    checkWorldWritten(`System "${name}"`, components?.write);
     const writes = new Set<Key>(components?.write);
     for (const lookupName in lookup) {
         for (const key of lookup[lookupName].read ?? []) {

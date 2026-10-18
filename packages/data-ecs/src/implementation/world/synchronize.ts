@@ -6,7 +6,7 @@ import { readCell, writeCell } from './cells.js';
 import { commitBatches, commitStaged } from './batches.js';
 import { applyIndexChanges, cascadeReferences, indexChangesOf, type IndexChanges, type Written } from './cascade.js';
 import { refreshDirectories } from './directories.js';
-import { flushDirectory } from './layout-directory.js';
+import { beginStructure, endStructure, flushDirectory } from './layout-directory.js';
 import { record } from './journal.js';
 import { indexOf, locate, materialize, recycle, release, reserved, unreserve, type Reserved } from './entities.js';
 import { activate } from './activate.js';
@@ -488,7 +488,8 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     // Systems reuse their buffers next run.
     for (const { buffer } of queued) clearBuffer(buffer);
     refreshDirectories(state);
-    flushDirectory(state.directory, state.bumped, state.archetypes, state.entities);
+    flushDirectory(state.directory, state.bumped, state.archetypes, state.entities, state.resourceEntity);
+    endStructure(state.directory);
     state.syncing = null;
 };
 
@@ -509,6 +510,7 @@ export const prepareSync = (state: State, isolated = false): boolean => {
     plan.spawned = 0;
     plan.dropped = 0;
     let reservations: Reserved | null = null;
+    beginStructure(state.directory);
     try {
         const made = materialize(state.memory, state.entities);
         // Positions blocks left unused name reservations of this sync point's own.

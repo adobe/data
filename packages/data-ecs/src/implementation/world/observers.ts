@@ -605,5 +605,8 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
         }
     };
 
-    return { resource, entity, query, readback, deliver, start, reassert };
+    /** A failure for the next delivery's report. */
+    const defer = (failure: Failure): void => { deferred.push(failure); };
+
+    return { resource, entity, query, readback, deliver, start, reassert, defer };
 };

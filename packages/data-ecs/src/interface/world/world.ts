@@ -1,5 +1,7 @@
+import type { Entity } from '../entity/entity.js';
 import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
+import type { Port } from './join.js';
 import type { Observers } from './observers.js';
 import type { Report } from './report.js';
 
@@ -22,11 +24,21 @@ export type World = {
      * Adds a system to every tick, from the next one on, ordered with those already added by its constraints, as a
      * composite's members are. A tick runs on a beat of the `cadence` resource where `always` is set, `wake` is due or
      * a run arrived since the last tick, and only while some system is added. Throws for a system with no ordering path
-     * to one already added that conflicts with it; failures appear in the `report` resource.
+     * to one already added that conflicts with it, and on a joined thread; failures appear in the `report` resource.
      */
     add(system: System<void>): void;
     readonly observe: Observers;
-    /** Waits for pending runs, then stops ticking and releases memory; the world is unusable afterwards. */
+    /**
+     * Lets another thread join this world through `port`, where it calls `World.join` with the other end. Returns that
+     * thread's entity, spawned at the next sync point, whose `threadStatus` and `threadClaims` show its progress and the
+     * logical threads it claims; a thread claimed twice can't join. Throws on a joined thread, and where memory can't be
+     * shared, as without cross-origin isolation.
+     */
+    share(port: Port): Entity;
+    /**
+     * Waits for pending runs, then stops ticking and releases memory, and joined threads' runs reject; the world is
+     * unusable afterwards. On a joined thread, it disconnects this thread.
+     */
     dispose(): Promise<void>;
     [Symbol.asyncDispose](): Promise<void>;
 };

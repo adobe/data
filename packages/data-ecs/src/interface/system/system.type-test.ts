@@ -2,6 +2,7 @@ import { Resource } from '../resource/resource.js';
 import { Component } from '../component/component.js';
 import { Entity } from '../entity/entity.js';
 import { System } from './system.js';
+import { threadStatus } from '../components/index.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
@@ -64,6 +65,17 @@ System.create({
     name: "test/integrate",
     // @ts-expect-error write already makes it readable
     components: { read: [position], write: [position] },
+}, () => {});
+
+// Components only the world writes are read, never written.
+System.create({ name: "test/status", components: { read: [threadStatus] } }, row => {
+    const status: "joining" | "joined" | "gone" = row[threadStatus];
+    void status;
+});
+System.create({
+    name: "test/writeStatus",
+    // @ts-expect-error only the world writes a thread's status
+    components: { write: [threadStatus] },
 }, () => {});
 
 // Lookups: read-only values by entity, or null.

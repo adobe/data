@@ -2,6 +2,7 @@ import type { ThreadOf } from '../thread/of.js';
 import type { Key as TraitKey } from "../trait/key.js";
 import type { Key } from "./key.js";
 import type { Components } from "./types.js";
+import type { WorldWritten } from "./written.js";
 
 /** Every component's value type, computed once so `Value` is a lookup. */
 type ValueTypes = { readonly [K in Key]: Components[K] extends { readonly type: infer T } ? T : never };
@@ -22,10 +23,10 @@ export type With<T extends TraitKey, V = unknown> = { [K in Key]: Components[K] 
 export type Derived = With<"derived">;
 
 /** Components user code adds and removes: the only ones commands take. */
-export type Essential = Exclude<Key, Derived>;
+export type Essential = Exclude<Key, Derived | WorldWritten>;
 
-/** Components systems may write: every one but references, which change only through commands. */
-export type Writable = Exclude<Key, With<"reference">>;
+/** Components systems may write: every one but references, which change only through commands, and those only the world writes. */
+export type Writable = Exclude<Key, With<"reference"> | WorldWritten>;
 
 /** Every component's thread, computed once so `ThreadOf` is a lookup. */
 type Threads = { readonly [K in Key]: ThreadOf<Components[K], Value<K>> };

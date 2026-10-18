@@ -4,6 +4,7 @@ export { Entity } from './entity/entity.js';
 export { Finalizer } from './finalizer/finalizer.js';
 export { Gpu } from './gpu/gpu.js';
 export * from './math/index.js';
+export * from './components/index.js';
 export * from './resources/index.js';
 export { Resource } from './resource/resource.js';
 export { Rule } from './rule/rule.js';

@@ -12,7 +12,7 @@ type Entry = {
     readonly name: string;
     readonly id: string | undefined;
     readonly numbered: string;
-    readonly first: object;
+    readonly first: Registered;
 };
 
 /** Every system, rule and finalizer, by value: values of one id share an entry. */
@@ -101,3 +101,9 @@ export const nameOf = (name: string | undefined, id: string | undefined, kind: "
     anonymous.set(kind, count);
     return `${kind} #${count}`;
 };
+
+/** The id the plugin gave a system, rule or finalizer, by which other threads name it, if it gave one. */
+export const idOfItem = (item: object): string | undefined => entries.get(item)?.id;
+
+/** The item first registered under an id, or undefined where no module declaring it was imported. */
+export const itemOfId = (id: string): { readonly kind: string; readonly name: string } | undefined => identified.get(id)?.first;

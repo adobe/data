@@ -10,19 +10,11 @@ const check = <_T extends true>() => { };
 
 declare const world: World;
 declare const create: World.Create;
-declare const port: MessagePort;
 
 // Systems added to every tick take no input.
 const added: void = world.add(main);
 // @ts-expect-error a system with input can't be added, since ticks pass none
 world.add(move);
-// Threads can't join a world yet, so it has no share, and World has no Join or Port.
-// @ts-expect-error a world has no share
-world.share(port);
-// @ts-expect-error World.Join isn't public
-export type Join = World.Join;
-// @ts-expect-error World.Port isn't public
-export type Port = World.Port;
 void added;
 
 // Built-in resources.
@@ -41,9 +33,10 @@ check<Equal<[typeof gpuDevice, typeof workers, typeof cadence, typeof always, ty
 // @ts-expect-error a resource key is its imported symbol, never its description
 create({ workers: 2 });
 
-// There are no built-in components: none exported, none registered.
-type Removed = "component" | "persistent" | "shared" | "threadPort" | "threadClaims" | "threadStatus";
+// The built-in components are a joined thread's status and claims, on its entity.
+type Removed = "component" | "persistent" | "shared" | "threadPort";
 check<Equal<Extract<Removed, keyof typeof Ecs | Component.Key>, never>>();
+check<Equal<Extract<"threadStatus" | "threadClaims", keyof typeof Ecs>, "threadStatus" | "threadClaims">>();
 
 // Systems read the loop's state, ask for a wake time and change its cadence.
 System.create({ name: "loopTypeTest/read", resources: { read: [clock, report] } }, ({ resources }) => {

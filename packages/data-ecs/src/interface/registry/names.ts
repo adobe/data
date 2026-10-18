@@ -145,3 +145,13 @@ export const claimKey = (key: unknown, kind: Kind, declaration?: AnyDeclaration)
     if (id !== undefined) identified.set(id, entry);
     entries.set(symbol, entry);
 };
+
+/** The symbol last registered under an id, by which a world gives values, or undefined where none was. */
+export const keyOfId = (id: string): symbol | undefined => identified.get(id)?.newest;
+
+/** Every key of a kind registered under an id, by that id. */
+export const identifiedKeys = (kind: Kind): readonly (readonly [string, symbol])[] => {
+    const found: [string, symbol][] = [];
+    for (const [id, entry] of identified) if (entry.kind === kind) found.push([id, entry.newest]);
+    return found;
+};

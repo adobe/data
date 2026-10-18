@@ -9,12 +9,18 @@ import type { Memory } from './memory.js';
  * 4 GiB. The world's thread keeps its JS fields as the source of truth and writes records only at flushes, each
  * record's version last, with `Atomics.store`; a reader checks a record's version before using what it cached.
  *
- * Header words: the memory's length in pages (`memory.ts`), the table's offset and length, then the entity-table
- * record: its `cursor` offset, which never moves, `free` offset and capacity, `archetype`, `row` and `generation`
- * offsets and their capacity, and its version. The table's length is `cursor[2]`.
+ * Header words: the memory's length in pages (`memory.ts`), the table's offset and length, the structure epoch, then
+ * the entity-table record: its `cursor` offset, which never moves, `free` offset and capacity, `archetype`, `row` and
+ * `generation` offsets and their capacity, and its version; then the resource entity's index plus one, 0 for none. The
+ * table's length is `cursor[2]`.
+ *
+ * The structure epoch is odd from the start of each sync point that applies anything until its directory writes at the
+ * end, and even otherwise. A thread reading entity locations outside a task reads while it's even and checks it again
+ * after, retrying on a change, and waits on it while it's odd; the world notifies it when it turns even.
  */
 export const tableOffsetWord = 1;
 export const tableLengthWord = 2;
+export const structureWord = 3;
 export const entitiesWord = 4;
 export const cursorField = 0;
 export const freeField = 1;
@@ -24,9 +30,10 @@ export const rowField = 4;
 export const generationField = 5;
 export const capacityField = 6;
 export const entitiesVersionField = 7;
+export const resourceEntityWord = 12;
 
 /**
- * An archetype record: its capacity, `entities` offset, storage count and version, then per storage its component
+ * An archetype record: its capacity, `entities` offset, storage count, version and flags, then per storage its component
  * number, flags, column, `added`, `changed`, `chunkAdded` and `chunkChanged` offsets, and chunk count. Offsets a storage
  * doesn't have are 0. A record is allocated once, since an archetype's storages are fixed, and never moves.
  */
@@ -34,7 +41,10 @@ export const recordCapacity = 0;
 export const recordEntities = 1;
 export const recordStorages = 2;
 export const recordVersion = 3;
-export const recordWords = 4;
+export const recordFlags = 4;
+export const recordWords = 5;
+/** Record flags: it's the resource archetype, of the entity resources live on. */
+export const resourceFlag = 1;
 export const storageWords = 8;
 export const storageComponent = 0;
 export const storageFlags = 1;
@@ -52,6 +62,8 @@ export const linearFlag = 2;
 export type LayoutDirectory = {
     readonly memory: Memory;
     readonly header: Uint32Array;
+    /** The header as signed words, which `Atomics.notify` takes. */
+    readonly words: Int32Array;
     table: Uint32Array;
     /** By archetype id, its record, once flushed. */
     readonly records: (Uint32Array | undefined)[];
@@ -68,7 +80,7 @@ export const createLayoutDirectory = (memory: Memory): LayoutDirectory | null =>
     const { header } = memory;
     header[tableOffsetWord] = table.byteOffset;
     header[tableLengthWord] = 0;
-    return { memory, header, table, records: [], entities: -1 };
+    return { memory, header, words: new Int32Array(header.buffer, header.byteOffset, header.length), table, records: [], entities: -1 };
 };
 
 const writeEntities = ({ header }: LayoutDirectory, entities: Entities): void => {
@@ -105,6 +117,7 @@ const writeArchetype = (directory: LayoutDirectory, archetype: Archetype): void 
     record[recordCapacity] = archetype.capacity;
     record[recordEntities] = archetype.entities.byteOffset;
     record[recordStorages] = archetype.storages.length;
+    record[recordFlags] = archetype.resource ? resourceFlag : 0;
     for (let s = 0; s < archetype.storages.length; s++) {
         const storage = archetype.storages[s];
         const base = recordWords + s * storageWords;
@@ -124,11 +137,15 @@ const writeArchetype = (directory: LayoutDirectory, archetype: Archetype): void 
 };
 
 /**
- * Writes the records of archetypes created or bumped since the last flush, and the entity table's if it moved. Runs at
- * the end of each sync point and wherever registration changes layouts; allocates only for new records.
+ * Writes the records of archetypes created or bumped since the last flush, the resource archetype's flagged, and the
+ * entity table's and the resource entity's if they moved. Runs at the end of each sync point and wherever registration
+ * changes layouts; allocates only for new records.
  */
-export const flushDirectory = (directory: LayoutDirectory | null, bumped: Archetype[], archetypes: readonly Archetype[], entities: Entities): void => {
-    if (directory === null || (bumped.length === 0 && entities.version === directory.entities)) return;
+export const flushDirectory = (directory: LayoutDirectory | null, bumped: Archetype[], archetypes: readonly Archetype[], entities: Entities, resourceEntity: number): void => {
+    if (directory === null) return;
+    const resourceWord = resourceEntity < 0 ? 0 : (resourceEntity >>> 0) + 1;
+    if (directory.header[resourceEntityWord] !== resourceWord) Atomics.store(directory.header, resourceEntityWord, resourceWord);
+    if (bumped.length === 0 && entities.version === directory.entities) return;
     if (entities.version !== directory.entities) {
         writeEntities(directory, entities);
         directory.entities = entities.version;
@@ -137,9 +154,20 @@ export const flushDirectory = (directory: LayoutDirectory | null, bumped: Archet
     for (let k = 0; k < bumped.length; k++) {
         const archetype = bumped[k];
         archetype.listed = false;
-        // Workers never touch resources.
-        if (!archetype.resource) writeArchetype(directory, archetype);
+        writeArchetype(directory, archetype);
     }
     bumped.length = 0;
     Atomics.store(directory.header, tableLengthWord, archetypes.length);
+};
+
+/** At the start of a sync point that applies anything: the structure epoch turns odd. */
+export const beginStructure = (directory: LayoutDirectory | null): void => {
+    if (directory !== null) Atomics.add(directory.words, structureWord, 1);
+};
+
+/** Once a sync point's directory writes are done: the structure epoch turns even, waking readers waiting on it. */
+export const endStructure = (directory: LayoutDirectory | null): void => {
+    if (directory === null || (directory.words[structureWord] & 1) === 0) return;
+    Atomics.add(directory.words, structureWord, 1);
+    Atomics.notify(directory.words, structureWord);
 };

@@ -5,6 +5,12 @@ import type { Resource } from '../../interface/resource/resource.js';
 import { requireDefinition, type Definition } from '../../interface/registry/index.js';
 import type { World } from '../../interface/world/world.js';
 import type { Create, InitialResources } from '../../interface/world/create.js';
+import type { Join } from '../../interface/world/join.js';
+import type { Failure } from '../../interface/world/report.js';
+import type { Schedule } from '../../interface/registry/schedule.js';
+import type { CommandBuffer } from './buffer.js';
+import { joinWorld } from './join.js';
+import { createSharing } from './sharing.js';
 import { gpuDevice } from '../../interface/resources/gpu-device.js';
 import { workers } from '../../interface/resources/workers.js';
 import { createGpu } from './gpu.js';
@@ -77,6 +83,10 @@ const loadAll = async (runners: readonly Runner[]): Promise<void> => {
 /** A pool size from the `workers` resource: the platform's for null, else a whole number, at least 0. */
 const workersOf = (platform: WorkerPlatform, value: unknown): number =>
     value === null ? platform.count : typeof value === "number" && value > 0 ? Math.floor(value) : 0;
+
+/** A sync point of the world's own, for changes to joined threads' entities: no systems, so it applies what's queued. */
+const noSystems: Schedule = { tiers: [], reductions: new Map() };
+const ownSyncPoint = { name: "world" };
 
 /** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
 const defaultMinimumChunk = 16384;
@@ -315,27 +325,62 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     });
 
     const observers = createObservers(state, readResource, enqueue);
+
+    /** Runs a system or composite with its input, as `run` does. */
+    const runWith = (system: { readonly name: string }, value: unknown): Promise<Report> => {
+        let registration: Registration | null = null;
+        let definition: Definition | undefined;
+        try {
+            checkLive();
+            definition = requireDefinition(system);
+            // A system registers in the world the first time it runs here.
+            if (registrar.registered(definition) === undefined) registration = registrar.register(definition);
+        }
+        catch (error) {
+            return Promise.reject(error);
+        }
+        const ran = definition;
+        const registering = registration;
+        loop.arrived();
+        return enqueue(registering === null ? () => perform(ran, value, true) : async () => {
+            await complete(registering);
+            return perform(ran, value, true);
+        });
+    };
+
+    /** Whether a sync point of the world's own is queued, for changes to joined threads' entities. */
+    let syncDue = false;
+    const syncOwn = async (): Promise<void> => {
+        syncDue = false;
+        if (disposed || state.queued.length === 0) return;
+        const report = await execute(context, noSystems, undefined, ownSyncPoint);
+        const failed = observers.deliver();
+        // Its failures, as finalizers', go in the next run's report.
+        for (const failure of [...report.failures, ...failed ?? []]) observers.defer(failure);
+    };
+    const sharing = createSharing({
+        state,
+        run: runWith,
+        observers,
+        change: (buffer: CommandBuffer) => {
+            state.queued.push({ buffer, guarded: true });
+            loop.arrived();
+            if (syncDue) return;
+            syncDue = true;
+            void enqueue(syncOwn);
+        },
+        defer: (failure: Failure) => observers.defer(failure),
+    });
+
     const world: World = {
         run: (system, ...args) => {
             const [value]: readonly unknown[] = args;
-            let registration: Registration | null = null;
-            let definition: Definition | undefined;
-            try {
-                checkLive();
-                definition = requireDefinition(system);
-                // A system registers in the world the first time it runs here.
-                if (registrar.registered(definition) === undefined) registration = registrar.register(definition);
-            }
-            catch (error) {
-                return Promise.reject(error);
-            }
-            const ran = definition;
-            const registering = registration;
-            loop.arrived();
-            return enqueue(registering === null ? () => perform(ran, value, true) : async () => {
-                await complete(registering);
-                return perform(ran, value, true);
-            });
+            return runWith(system, value);
+        },
+        share: port => {
+            checkLive();
+            if (!state.memory.shared) throw new Error("Without cross-origin isolation memory can't be shared, so no thread can join.");
+            return sharing.share(port);
         },
         add: system => {
             checkLive();
@@ -345,6 +390,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             disposed = true;
             loop.stop();
             return enqueue(async () => {
+                // Joined threads' runs reject from here on.
+                sharing.close();
                 // Per-query finalizers release what every live entity they match holds, reading the GPU's writes first.
                 let errors: Thrown[] = [];
                 try {
@@ -382,3 +429,6 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
  * systems and `kernel: "gpu"` kernels run on that device.
  */
 export const create: Create = resources => createWorld(resources);
+
+/** Joins a world another thread shared, through the other end of its port. */
+export const join: Join = (port, options) => joinWorld(port, options);

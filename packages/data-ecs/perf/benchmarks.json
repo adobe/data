@@ -1010,5 +1010,18 @@
             "bytes": 256,
             "basis": "One task moves at least its posted, done, payload and completion lines between cores."
         }
+    },
+    "despawn objects 10K": {
+        "operation": "A sync point despawning 10K entities whose objects a joined worker fills, with a finalizer there reading the object and a vec3: releasing DOM nodes or GPU handles, which the world's thread doesn't wait for.",
+        "per": "despawns",
+        "n": 10000,
+        "typical": [
+            1,
+            10000
+        ],
+        "best": {
+            "bytes": 56,
+            "basis": "Each despawn frees its 8-byte location and entity, and writes its stop: its entity, archetype, row and tag, 20 bytes, and its 12-byte vec3, read and written."
+        }
     }
 }

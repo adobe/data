@@ -984,5 +984,31 @@
             "bytes": 60,
             "basis": "Each row reads its 8-byte entity, 4-byte tag and 16 bytes of ticks, and writes its entity, object and ticks."
         }
+    },
+    "handoff": {
+        "operation": "Ticks of ten tiers alternating the world's thread and a joined worker, empty systems: five tasks posted and waited for each tick, as when systems that write a worker's objects sit between the world's.",
+        "per": "ticks",
+        "n": 1000,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 1280,
+            "basis": "Each of five handoffs moves at least the task's posted, done, payload and completion lines between cores."
+        }
+    },
+    "fused tiers": {
+        "operation": "Ticks of ten consecutive tiers on a joined worker, empty systems, which run as one task: a worker filling objects whose systems follow one another.",
+        "per": "ticks",
+        "n": 1000,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 256,
+            "basis": "One task moves at least its posted, done, payload and completion lines between cores."
+        }
     }
 }

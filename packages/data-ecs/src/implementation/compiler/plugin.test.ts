@@ -67,6 +67,38 @@ const doubled = System.create({ name: "doubled", kernel: "cpu", components: { wr
 const tripled = System.create({ name: "tripled", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 3; });
 export const descriptions = [kernelOf(doubled), kernelOf(tripled)];
 `);
+/** A module of keys and what it declares with them, which serving evaluates again under another query. */
+const keys = (declaration: string) => `import { System } from ${source("../../interface/system/system.ts")};
+import { Component } from ${source("../../interface/component/component.ts")};
+import { Finalizer } from ${source("../../interface/finalizer/finalizer.ts")};
+import { Rule } from ${source("../../interface/rule/rule.ts")};
+import { labelOf } from ${source("../../interface/registry/names.ts")};
+export const score = Symbol("score");
+const shown = Symbol("shown");
+Component.register(score, ${declaration});
+Component.register(shown, { type: { const: true }, derived: true });
+Rule.create({ name: "keys/shown", components: { has: [score] }, derive: [shown] });
+Finalizer.create({ name: "keys/release", components: { read: [score] } }, () => {});
+export const system = System.create({ name: "keys/write", components: { write: [score] } }, (row) => { row[score] = 1; });
+export const label = labelOf(score);
+`;
+const evaluated = join(directory, "evaluated.js");
+writeFileSync(evaluated, keys(`{ type: { type: "number" } }`));
+const changed = join(directory, "changed.js");
+writeFileSync(changed, keys(`{ type: { type: "number" } }`));
+/** An application whose keys are its own and a dependency's, and a worker's. */
+const identified = join(directory, "identified.js");
+mkdirSync(join(directory, "node_modules/key-library/dist"), { recursive: true });
+writeFileSync(join(directory, "node_modules/key-library/package.json"), JSON.stringify({ name: "key-library", type: "module", exports: "./dist/index.js" }));
+writeFileSync(join(directory, "node_modules/key-library/dist/index.js"), `export const marker = Symbol("marker");\n`);
+writeFileSync(join(directory, "worker-keys.js"), `export const message = Symbol("message");\nself.postMessage(String(message.description));\n`);
+writeFileSync(identified, `import { labelOf } from ${source("../../interface/registry/names.ts")};
+import { marker } from "key-library";
+export const score = Symbol("score");
+export default Symbol();
+export const labels = [labelOf(score), labelOf(marker)];
+export const worker = () => new Worker(new URL("./worker-keys.js", import.meta.url), { type: "module" });
+`);
 afterAll(() => rmSync(directory, { recursive: true, force: true }));
 
 /** Runs a one-column kernel writing a function of the entity, for entities 3 and 4. */
@@ -182,4 +214,57 @@ test("an application's build compiles the kernels a library ships uncompiled", a
     expect(description).toBeDefined();
     const module: KernelModule = await import(/* @vite-ignore */ description?.url ?? "");
     expect(description === undefined ? [] : runs(module, description)).toEqual([6, 8]);
+});
+
+test("serve accepts a module of keys evaluated again, which makes the same keys", async () => {
+    await serve(async server => {
+        const first = await server.ssrLoadModule(evaluated);
+        const again = await server.ssrLoadModule(`${evaluated}?evaluated=again`);
+        expect(again.score).not.toBe(first.score);
+        expect(again.system).not.toBe(first.system);
+        expect([first.label, again.label]).toEqual(["evaluated.js#score", "evaluated.js#score"]);
+    });
+});
+
+test("serve reports a key evaluated again with another declaration", async () => {
+    await serve(async server => {
+        await server.ssrLoadModule(changed);
+        writeFileSync(changed, keys(`{ type: { type: "string" } }`));
+        await expect(server.ssrLoadModule(`${changed}?evaluated=changed`)).rejects.toThrow(`Cannot register component "changed.js#score": its id is another key's, with another declaration`);
+    });
+});
+
+/** Every id a build's code gives a symbol. */
+const idsIn = (code: string): readonly string[] => [...code.matchAll(/identify\$[$\d]*\(Symbol\([^)]*\), "([^"]*)"\)/g)].map(match => match[1] ?? "");
+
+test("a build gives top-level symbols ids naming no absolute path, also in workers", async () => {
+    const outDir = join(directory, "dist-identified");
+    const output = await build({
+        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        build: { outDir, minify: false, rolldownOptions: { input: identified, preserveEntrySignatures: "strict" } },
+    });
+    const items = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : []);
+    const main = items.find((item): item is Rollup.OutputChunk => item.type === "chunk" && item.facadeModuleId === identified);
+    expect(new Set(idsIn(main?.code ?? ""))).toEqual(new Set(["identified.js#score", "identified.js#default", "key-library/dist/index.js#marker"]));
+    const worker = items.find(item => item.fileName.includes("worker-keys"));
+    expect(idsIn(worker === undefined ? "" : worker.type === "chunk" ? worker.code : String(worker.source))).toEqual(["worker-keys.js#message"]);
+    const ids = items.flatMap(item => idsIn(item.type === "chunk" ? item.code : String(item.source)));
+    expect(ids.filter(id => id.startsWith("/") || id.includes(directory) || id.includes(tmpdir()))).toEqual([]);
+    const { labels }: { labels: readonly string[] } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
+    expect(labels).toEqual(["identified.js#score", "key-library/dist/index.js#marker"]);
+});
+
+test("a second instance of the plugin in one bundle does nothing, as when an application also lists it for workers", async () => {
+    const outDir = join(directory, "dist-twice");
+    const output = await build({
+        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin(), kernelPlugin()],
+        build: { outDir, minify: false, lib: { entry: fixture, formats: ["es"], fileName: "main" } },
+    });
+    const chunks = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
+        .filter((item): item is Rollup.OutputChunk => item.type === "chunk");
+    expect(chunks.filter(chunk => chunk.name.startsWith("kernel-"))).toHaveLength(1);
+    const main = chunks.find(chunk => chunk.facadeModuleId === fixture);
+    expect(idsIn(main?.code ?? "").filter(id => !id.startsWith("../"))).toEqual(["fixture.js#score"]);
+    const { description }: { description: KernelDescription } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
+    expect(runs(await import(/* @vite-ignore */ description.url), description)).toEqual([6, 8]);
 });

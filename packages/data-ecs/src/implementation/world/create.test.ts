@@ -204,7 +204,7 @@ describe("World.create", () => {
     it("rejects a key listed in both read and write, since write already makes it readable", () => {
         // @ts-expect-error write already makes it readable
         expect(() => System.create({ name: "createTest/both", components: { read: [velocity], write: [velocity] } }, row => { row[velocity] += 1; }))
-            .toThrow(`lists "createTest/velocity" in both components read and write`);
+            .toThrow(`lists "src/implementation/world/create.test.ts#velocity" in both components read and write`);
     });
 
     it("reports a system that throws, still applying its commands", async () => {
@@ -344,7 +344,7 @@ describe("World.create", () => {
         expect(await count(world, { required: [velocity] })).toBe(2);
         expect(await readResource(createWorld(), spawnCount)).toBe(3);
         // @ts-expect-error resources takes only resource names
-        expect(() => createWorld({ [velocity]: 1 })).toThrow(`"createTest/velocity" isn't a registered resource`);
+        expect(() => createWorld({ [velocity]: 1 })).toThrow(`"src/implementation/world/create.test.ts#velocity" isn't a registered resource`);
         // A string key is never a resource's, so it's ignored, as in commands.
         const untyped: World = Reflect.apply(createWorld, undefined, [{ "createTest/spawnCount": 5, [spawnCount]: 2 }]);
         expect(await readResource(untyped, spawnCount)).toBe(2);

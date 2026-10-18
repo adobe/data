@@ -249,19 +249,19 @@ describe("reductions", () => {
         expect(() => Resource.register(summed, { type: { type: "boolean", default: false }, reduce: "+" })).toThrow(`booleans reduce with "&", "|" or "^"`);
         // @ts-expect-error a contributor repeats its resource's operator
         const mismatched = System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); });
-        await expect(createWorld({ [workers]: 0 }).run(mismatched)).rejects.toThrow(`reduces "reductionsTest/total" with "max", but it's declared reduce: "+"`);
+        await expect(createWorld({ [workers]: 0 }).run(mismatched)).rejects.toThrow(`reduces "src/implementation/world/reductions.test.ts#total" with "max", but it's declared reduce: "+"`);
         // @ts-expect-error only a resource with a reduce trait is reduced
         const plain = System.create({ name: "reductionsTest/other/2", components: { has: [mass] }, reduce: { [level]: "+" } }, (_, { reduce }) => { reduce[level](1); });
-        await expect(createWorld({ [workers]: 0 }).run(plain)).rejects.toThrow(`reduces "reductionsTest/level", which has no reduce trait`);
+        await expect(createWorld({ [workers]: 0 }).run(plain)).rejects.toThrow(`reduces "src/implementation/world/reductions.test.ts#level", which has no reduce trait`);
         // @ts-expect-error a reduced resource is never written
         const writing = System.create({ name: "reductionsTest/other/3", resources: { write: [total] } }, ({ resources }) => { resources[total] = 1; });
-        await expect(createWorld({ [workers]: 0 }).run(writing)).rejects.toThrow(`writes "reductionsTest/total", which is reduced`);
+        await expect(createWorld({ [workers]: 0 }).run(writing)).rejects.toThrow(`writes "src/implementation/world/reductions.test.ts#total", which is reduced`);
         // @ts-expect-error a contributor doesn't read what it reduces into
         const reading = System.create({ name: "reductionsTest/other/4", components: { has: [mass] }, resources: { read: [total] }, reduce: { [total]: "+" } }, (_, { resources, reduce }) => { reduce[total](resources[total]); });
-        await expect(createWorld({ [workers]: 0 }).run(reading)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
+        await expect(createWorld({ [workers]: 0 }).run(reading)).rejects.toThrow(`reduces "src/implementation/world/reductions.test.ts#total", so it can't also read, write or filter on it`);
         // @ts-expect-error nor filters on it
         const filtering = System.create({ name: "reductionsTest/other/5", components: { has: [mass] }, resources: { changed: [total] }, reduce: { [total]: "+" } }, (_, { reduce }) => { reduce[total](1); });
-        await expect(createWorld({ [workers]: 0 }).run(filtering)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
+        await expect(createWorld({ [workers]: 0 }).run(filtering)).rejects.toThrow(`reduces "src/implementation/world/reductions.test.ts#total", so it can't also read, write or filter on it`);
     });
 
     it("leave nothing subscribed to sync points from a registration that failed", () => {

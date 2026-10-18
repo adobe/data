@@ -30,7 +30,8 @@ with the reasoning behind each rule.
 ## 1. Setup
 
 The Vite plugin compiles kernel systems at build time and checks that every system's declaration lists exactly what
-its body uses: a listed key the body never uses fails the build. Workers share memory, so pages need cross-origin isolation.
+its body uses: a listed key the body never uses fails the build. It also gives every top-level `Symbol(...)` declaration
+an id (section 2), and adds itself to worker bundles. Workers share memory, so pages need cross-origin isolation.
 
 ```ts
 import { kernelPlugin } from "@adobe/data-ecs/compiler";
@@ -51,7 +52,7 @@ same resources.
 
 ## 2. Components and resources
 
-A component or resource is an exported key, a plain `Symbol(...)` whose description, namespaced like `"game/position"`, labels it in errors. Its traits,
+A component or resource is an exported key, a plain `Symbol(...)` declared at the top of its module. Its traits,
 `type` first, come from augmenting `Components` or `Resources`; registering it gives the schema for that type. A resource always has a
 value, so its schema has a `default`, which a type that allows `null` may leave out to start at `null`.
 
@@ -96,10 +97,11 @@ Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L6-L38).
 - **`World.create()` returns the world,** and `await using` disposes it; the TypeScript `lib` needs `ESNext.Disposable`. `World.create({ [gravity]: -1.6 })` starts resources at other values than their defaults, any but `clock` and `report`, which only the world writes. Built-in resources are imported keys too: `World.create({ [workers]: 0 })`.
 - **Systems are checked when they're created,** against the components and resources they name, which their modules must register first; a world then registers them on their first run there, loading their kernels, and the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 16).
 - **A system is its name:** what `System.create` returns is typed as its `name` and the input `run` takes with it, nothing more.
-- **Names are program-wide:** a second system, rule or finalizer with a name throws when it's created, unless its declaration is the same, keys included, as when a module is evaluated again with keys from modules that aren't. A system declared again is a new system; a finalizer keeps its place in every world, with the new body.
+- **Names are program-wide:** a second system, rule or finalizer with a name throws when it's created, unless its declaration is the same, its keys matching by id, as when a module is evaluated again. A system declared again is a new system; a rule declared again is the one already recorded; a finalizer keeps its place in every world, with the new body.
 - **`Entity` is a branded number.** `Entity.none` names no entity: it's what zeroed memory and entity defaults hold, and a lookup of it returns null.
-- **Keys are symbols, compared by identity,** so two keys never collide, even with one description. Strings, `Symbol.for` symbols and well-known symbols aren't keys; a string key in a values object is ignored, and one in a literal spawn or add fails the build.
-- **Rejected:** a key registered again as another kind or with a different declaration, at registration; a string key anywhere in `Components`, `Resources` or `Traits` (but the built-in traits), which makes every registration fail to compile. The same declaration again is accepted.
+- **Keys are symbols,** so two keys never collide, even with one description. Strings, `Symbol.for` symbols and well-known symbols aren't keys; a string key in a values object is ignored, and one in a literal spawn or add fails the build.
+- **Ids:** the plugin gives each top-level `Symbol(...)` declaration (`const`, `let`, `var`, exported or not, and `export default Symbol()`) an id, its module's path from the project root, or a dependency's package name and path, and its binding: `src/keys.ts#position`. A module evaluated again makes new symbols with the same ids; each, registered with the same kind and declaration, is the key already registered, so worlds store both as one component, and give values by the newest. Errors and reports name a key by its id, or without one by its description. Symbols made elsewhere (in functions, blocks, TypeScript namespaces, class fields or CommonJS), or where `Symbol` isn't the global, have no id, and are compared by identity alone.
+- **Rejected:** a key registered again as another kind or with a different declaration, and a symbol whose id is a key's of another kind or declaration, as a module evaluated again after its declaration changed makes it, at registration; a string key anywhere in `Components`, `Resources` or `Traits` (but the built-in traits), which makes every registration fail to compile. The same declaration again is accepted.
 
 ## 3. Systems
 

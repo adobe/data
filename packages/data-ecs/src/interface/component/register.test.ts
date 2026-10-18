@@ -54,7 +54,7 @@ describe("Component.register", () => {
     it("accepts the same declaration again, as a module evaluated again makes it, and rejects a different one or a key of another kind", () => {
         Component.register(count, { type: { type: "number" } });
         expect(() => Component.register(count, { type: { type: "number" } })).not.toThrow();
-        expect(() => register(count, { type: { type: "integer" } })).toThrow(`Cannot register component "typesComponentTest/count": already registered as a component, with another declaration.`);
+        expect(() => register(count, { type: { type: "integer" } })).toThrow(`Cannot register component "src/interface/component/register.test.ts#count": already registered as a component, with another declaration.`);
         expect(declarationOf(count)).toEqual({ type: { type: "number" } });
         const claimed = Symbol("typesComponentTest/claimed");
         register(claimed, { type: { const: true } });
@@ -91,7 +91,7 @@ describe("Component.register", () => {
         expect(declarationOf(bitmap)).toEqual({ transfer: true });
     });
     it("takes traits other packages register, in the namespace components share", () => {
-        expect(() => register(marked, { type: { const: true }, [mark]: true })).toThrow(`typesComponentTest/mark isn't a registered trait`);
+        expect(() => register(marked, { type: { const: true }, [mark]: true })).toThrow(`src/interface/component/register.test.ts#mark isn't a registered trait`);
         Trait.register(mark);
         Component.register(marked, { type: { const: true }, [mark]: true });
         expect(() => Trait.register(mark)).not.toThrow();

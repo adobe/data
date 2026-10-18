@@ -95,7 +95,7 @@ describe("observing resources", () => {
         });
         world.observe.resource(level)(value => seen.push(value));
         const { failures } = await world.run(raise, { by: 1 });
-        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "observer", name: "observersTest/level", message: "observer failed" }]);
+        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "observer", name: "src/implementation/world/observers.test.ts#level", message: "observer failed" }]);
         expect(seen).toEqual([0, 2]);
     });
 });
@@ -459,7 +459,7 @@ describe("observing queries", () => {
         const seen: number[] = [];
         const stop = world.observe.count({ required: [score, benched] })(count => seen.push(count));
         const { failures } = await world.run(bench);
-        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "observer", name: `observersTest/score, observersTest/benched`, message: "observer failed" }]);
+        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "observer", name: `src/implementation/world/observers.test.ts#score, src/implementation/world/observers.test.ts#benched`, message: "observer failed" }]);
         stop();
         await world.run(join);
         await world.run(leave);

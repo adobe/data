@@ -45,7 +45,7 @@ describe("traits", () => {
         });
         const world = createWorld({ [workers]: 0 });
         await world.run(derived);
-        expect(errors).toEqual(Array.from({ length: 3 }, () => `"traitsTest/slot" is derived, so only rules add and remove it.`));
+        expect(errors).toEqual(Array.from({ length: 3 }, () => `"src/implementation/world/traits.test.ts#slot" is derived, so only rules add and remove it.`));
         expect(await count(world, { required: [score] })).toBe(1);
         await world.dispose();
     });

@@ -4,6 +4,7 @@ import { isAbsolute } from 'node:path';
 import type { Plugin, Rollup, ViteDevServer } from 'vite';
 import { estreeOf } from './estree.js';
 import { describeFailure } from './failure.js';
+import { identifySymbols, moduleIdOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
 import { isSystemModule, packageIndex } from './paths.js';
@@ -49,13 +50,21 @@ const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
  * Functions and constants kernels import are read from their files, with types stripped, and inlined (`link.ts`).
  * The application's build compiles every kernel, its dependencies' too: a library ships its kernels uncompiled.
  *
+ * Also gives each top-level `Symbol(...)` declaration an id, its module path from the root and its binding, by which
+ * the registry knows the symbol a module evaluated again makes as the same key (`identify.ts`).
+ *
  * Dev dep pre-bundling bypasses plugins and breaks the runtime's worker url, so `@adobe/data-ecs` is excluded from it.
- * Consumers must also add to `optimizeDeps.exclude` any dependency that defines kernels, imports `@adobe/data-ecs`, or
- * has functions kernels import; otherwise its kernels reach the runtime uncompiled, which fails at registration, or
- * its functions can't be read.
+ * Consumers must also add to `optimizeDeps.exclude` any dependency that defines kernels or keys, imports
+ * `@adobe/data-ecs`, or has functions kernels import; otherwise its kernels reach the runtime uncompiled, which fails
+ * at registration, its keys have no ids, or its functions can't be read.
+ *
+ * The plugin adds itself to worker bundles; an instance after the first in one bundle does nothing.
  */
 export const kernelPlugin = (): Plugin => {
     let serve = true;
+    let root = process.cwd();
+    /** Whether an earlier instance of the plugin is in the same bundle. */
+    let repeated = false;
     let server: ViteDevServer | undefined;
     /**
      * A linker per environment, since client and SSR builds resolve imports under different conditions. Each resolves
@@ -93,13 +102,15 @@ export const kernelPlugin = (): Plugin => {
         chunks.add(referenceId);
         return referenceId;
     };
-    return {
+    const plugin: Plugin = {
         name: `${packageName}/kernel`,
         enforce: "post",
         // Dep pre-bundling breaks the runtime's `new Worker(new URL("./worker.js", import.meta.url))`.
-        config: () => ({ optimizeDeps: { exclude: [packageName] } }),
+        config: () => ({ optimizeDeps: { exclude: [packageName] }, worker: { plugins: () => [kernelPlugin()] } }),
         configResolved: config => {
             serve = config.command === "serve";
+            root = config.root;
+            repeated = config.plugins.find(other => other.name === plugin.name) !== plugin;
         },
         configureServer: devServer => {
             server = devServer;
@@ -110,8 +121,9 @@ export const kernelPlugin = (): Plugin => {
             order: "pre",
             handler: ({ referenceId, relativePath }) => chunks.has(referenceId) ? `new URL(${JSON.stringify(relativePath)}, import.meta.url).href` : null,
         },
-        resolveId: id => parseKernelId(id) === undefined ? null : id,
+        resolveId: id => repeated || parseKernelId(id) === undefined ? null : id,
         async load(id) {
+            if (repeated) return null;
             const kernel = parseKernelId(id);
             if (kernel === undefined) return null;
             // Transforming the parent fills the cache: for a kernel requested first, or after a restart.
@@ -137,10 +149,12 @@ export const kernelPlugin = (): Plugin => {
             }
         },
         async transform(code, id, options) {
-            if (!scripts.test(id.split("?")[0] ?? id)) return null;
+            if (repeated || id.includes("\0") || !scripts.test(id.split("?")[0] ?? id)) return null;
+            const parse = (input: string) => estreeOf(this.parse(input));
+            const identify = (input: string) => identifySymbols(input, moduleIdOf(id, root), parse);
             const linker = linkerFor(options?.ssr === true, this);
             const hashes: string[] = [];
-            const result = await transformKernels(code, id, input => estreeOf(this.parse(input)), async source => {
+            const result = await transformKernels(code, id, parse, async source => {
                 const resolved = await this.resolve(source, id);
                 return resolved !== null && isSystemModule(resolved.id);
             }, (index, identity) => {
@@ -154,13 +168,14 @@ export const kernelPlugin = (): Plugin => {
             if (result === null) {
                 kernels.delete(id);
                 depend(parent, []);
-                return null;
+                return identify(code);
             }
             for (const dependency of result.dependencies) this.addWatchFile(dependency);
             depend(parent, result.dependencies);
             if ("failure" in result) return this.error(describeFailure(result.failure), result.failure.position);
             kernels.set(id, result.kernels.map((source, index) => ({ source, hash: hashes[index] ?? "" })));
-            return { code: result.code, map: null };
+            return identify(result.code) ?? { code: result.code, map: null };
         },
     };
+    return plugin;
 };

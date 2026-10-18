@@ -235,7 +235,7 @@ describe("workers", () => {
     });
 
     it("rejects kernel lookups of components outside linear memory", async () => {
-        await expect(createWorld({ [workers]: 2 }).run(labels)).rejects.toThrow('"workersTest/label", which isn\'t stored in linear memory');
+        await expect(createWorld({ [workers]: 2 }).run(labels)).rejects.toThrow('"src/implementation/world/workers.browser.test.ts#label", which isn\'t stored in linear memory');
     });
 
     it("are terminated by dispose", async () => {

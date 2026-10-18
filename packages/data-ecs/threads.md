@@ -29,8 +29,9 @@ Referenced from `design.md`.
 - **The DOM rule:** a DOM `Node` lives on `main`, the window's thread, and its declaration says so: the types require
   `thread: "main"` where the DOM library is loaded, and registration checks it on values it can see.
 - **Keys are symbols,** so components, resources and traits never collide, but a symbol is a different value on each
-  thread. Threads agree on keys through ids the plugin gives top-level `Symbol(...)` declarations (planned); a threaded
-  world will reject a key without one, at registration or first use.
+  thread. Threads agree on keys through the ids the plugin gives top-level `Symbol(...)` declarations, by which the
+  registry already takes the symbols of one id as one key; a threaded world will reject a key without one, at
+  registration or first use.
 - **Inline is the same layout.** With every logical thread filled by the world's thread, storage and code paths are
   those of today; nothing below adds work to a one-thread world.
 

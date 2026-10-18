@@ -20,6 +20,7 @@ const changedAgain = Symbol("changed");
 const crossed = Symbol("crossed");
 const crossedAgain = Symbol("crossed");
 const unnamed = Symbol("score");
+identify(unnamed, "idsTest/other.ts#score");
 const tagged = Symbol("tagged");
 const taggedAgain = Symbol("tagged");
 
@@ -68,7 +69,7 @@ Trait.register(tagged);
 describe("keys with ids", () => {
     it("labels a key by its id", () => {
         expect(labelOf(score)).toBe("idsTest/keys.ts#score");
-        expect(labelOf(unnamed)).toBe("score");
+        expect(labelOf(Symbol("score"))).toBe("score");
     });
     it("accepts another symbol under a registered key's id with the same declaration, as the same key", () => {
         Component.register(scoreAgain, { type: { type: "number" } });
@@ -86,7 +87,7 @@ describe("keys with ids", () => {
             `Cannot register resource "idsTest/keys.ts#crossed": its id is a component's.`);
         expect([kindOf(changedAgain), kindOf(crossedAgain)]).toEqual([undefined, undefined]);
     });
-    it("keeps keys without ids apart: one description is two keys", () => {
+    it("keeps keys of different ids apart, though their descriptions match", () => {
         Component.register(unnamed, { type: { type: "number" } });
         System.create({ name: "idsTest/unnamed", components: { write: [score] } }, row => { row[score] = 1; });
         expect(() => System.create({ name: "idsTest/unnamed", components: { write: [unnamed] } }, row => { row[unnamed] = 1; })).toThrow("already exists");

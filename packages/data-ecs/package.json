@@ -46,5 +46,8 @@
       "import": "./dist/implementation/compiler/index.js",
       "types": "./dist/implementation/compiler/index.d.ts"
     }
+  },
+  "dependencies": {
+    "magic-string": "^1.4.3"
   }
 }

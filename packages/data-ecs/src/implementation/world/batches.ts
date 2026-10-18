@@ -40,6 +40,9 @@ export type Writer = (row: number, value: unknown) => void;
 
 const initialCapacity = 64;
 
+/** Batches of at most this many rows commit element by element. */
+const smallCopy = 8;
+
 const columnOf = (state: State, id: number, capacity: number): Column => {
     const layout = state.layouts[id];
     const stride = layout.kind === "linear" ? layout.stride : 0;
@@ -154,11 +157,18 @@ export const commitBatches = (state: State, tick: number, born: Map<number, numb
                 if (storage !== undefined) for (let row = start; row < start + n; row++) writeDefault(state, storage, row, tick);
             }
         }
-        target.entities.set(batch.entities.subarray(0, n), start);
+        // A few rows copy element by element: a subarray to copy from costs more than they do.
+        if (n <= smallCopy) for (let i = 0; i < n; i++) target.entities[start + i] = batch.entities[i];
+        else target.entities.set(batch.entities.subarray(0, n), start);
         for (const column of batch.columns) {
             const storage = target.storageById[column.id];
             if (storage === undefined) continue;
-            if (column.layout.kind === "linear") storage.views.u8.set(column.views.u8.subarray(0, n * column.stride), start * column.stride);
+            if (column.layout.kind === "linear") {
+                const bytes = n * column.stride;
+                const offset = start * column.stride;
+                if (n <= smallCopy) for (let i = 0; i < bytes; i++) storage.views.u8[offset + i] = column.views.u8[i];
+                else storage.views.u8.set(column.views.u8.subarray(0, bytes), offset);
+            }
             else if (column.layout.kind === "object") {
                 for (let i = 0; i < n; i++) storage.values[start + i] = column.values[i];
                 column.values.fill(undefined, 0, n);

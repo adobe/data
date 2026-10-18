@@ -3,35 +3,6 @@ import type { Schema } from '../../interface/schema/schema.js';
 import type { CommandBuffer } from './buffer.js';
 import type { WasmScalar } from './wasm.js';
 
-/** Byte offsets into the shared memory; the worker builds its own views over them. */
-export type EntitiesLayout = {
-    readonly cursor: number;
-    readonly free: number;
-    readonly freeCapacity: number;
-    readonly archetype: number;
-    readonly row: number;
-    readonly generation: number;
-    readonly capacity: number;
-    readonly length: number;
-};
-
-/**
- * `column` is the byte offset of the component's interleaved column, or -1 when it stores nothing in linear memory.
- * Tick offsets mean something only when `ticked`.
- */
-export type StorageLayout = {
-    readonly id: number;
-    readonly column: number;
-    readonly ticked: boolean;
-    readonly added: number;
-    readonly changed: number;
-    readonly chunkAdded: number;
-    readonly chunkChanged: number;
-    readonly chunks: number;
-};
-
-export type ArchetypeLayout = { readonly id: number; readonly capacity: number; readonly entities: number; readonly storages: readonly StorageLayout[] };
-
 /** Where a kernel column comes from in any archetype it matches. */
 export type Source = { readonly kind: "entity" } | { readonly kind: "field" | "changed" | "chunks"; readonly id: number; readonly leaf: number };
 
@@ -64,12 +35,17 @@ export type KernelSetup = {
     readonly wasm: { readonly module: WebAssembly.Module; readonly scalars: readonly WasmScalar[]; readonly imports: readonly string[] } | null;
 };
 
-/** Messages are handled in order, so a layout always arrives before the tasks that depend on it. */
+/**
+ * Messages are handled in order, so new components' schemas always arrive before the tasks that use them. Where
+ * archetypes and the entity table are in the memory, workers read from the layout directory, whose header is at byte
+ * `header` (`layout-directory.ts`).
+ */
 export type ToWorker =
-    | { readonly kind: "memory"; readonly memory: WebAssembly.Memory }
+    | { readonly kind: "memory"; readonly memory: WebAssembly.Memory; readonly header: number }
     /** Wait on this worker's task ring in shared memory until asked to leave. Offsets are bytes into the memory. */
     | { readonly kind: "window"; readonly control: number; readonly statuses: number; readonly payloads: number; readonly claims: number; readonly worker: number; readonly epoch: number }
-    | { readonly kind: "layout"; readonly schemas: readonly (readonly [number, Schema | undefined])[]; readonly entities: EntitiesLayout; readonly archetypes: readonly ArchetypeLayout[] }
+    /** New components' schemas; none for a value that isn't data. */
+    | { readonly kind: "layout"; readonly schemas: readonly (readonly [number, Schema | undefined])[] }
     | { readonly kind: "kernels"; readonly task: number; readonly kernels: readonly KernelSetup[] }
     | {
         readonly kind: "run";

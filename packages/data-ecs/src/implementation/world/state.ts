@@ -13,6 +13,7 @@ import { createPlan, type Plan } from './plan.js';
 import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
 import { layoutOf, type Layout } from '../../interface/registry/layout.js';
 import { createMemory, type Memory } from './memory.js';
+import { createLayoutDirectory, type LayoutDirectory } from './layout-directory.js';
 import { createJournal, type Journal } from './journal.js';
 import type { Row } from './rows.js';
 
@@ -23,6 +24,10 @@ export type State = {
     readonly memory: Memory;
     readonly entities: Entities;
     readonly archetypes: Archetype[];
+    /** Archetypes created or bumped since the layout directory's last flush. */
+    readonly bumped: Archetype[];
+    /** Where other threads find archetypes and the entity table in the shared memory; null without shared memory. */
+    readonly directory: LayoutDirectory | null;
     readonly archetypeByKey: Map<string, Archetype>;
     readonly ids: Map<Key, number>;
     readonly keys: Key[];
@@ -117,6 +122,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         memory,
         entities: createEntities(memory),
         archetypes: [],
+        bumped: [],
+        directory: createLayoutDirectory(memory),
         archetypeByKey: new Map(),
         ids: new Map(),
         keys: [],
@@ -242,7 +249,7 @@ export const archetypeOf = (state: State, components: readonly number[]): Archet
     const key = components.join(",");
     const existing = state.archetypeByKey.get(key);
     if (existing !== undefined) return existing;
-    const archetype = createArchetype(state.memory, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)), state.ticked);
+    const archetype = createArchetype(state.memory, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)), state.ticked, state.bumped);
     state.archetypes.push(archetype);
     state.archetypeByKey.set(key, archetype);
     return archetype;

@@ -8,6 +8,12 @@ import { fastest as particlesFastest, move, spawn } from "./particles.js";
 import { chain, fastest, follow, observe, poke, seeded } from "./suite.js";
 import * as structural from "./structural.js";
 import { workers } from "../interface/resources/workers.js";
+import { bumpEach, fillEach, spawnEach } from "./growth.js";
+import { loopTickIdle, loopTicks } from "./loop.js";
+
+/** Doublings `sync point grow 100 archetypes` times, from archetypes of 16 rows, in each of `rounds` worlds. */
+const doublings = 6;
+const rounds = 8;
 
 const threads = navigator.hardwareConcurrency - 1;
 
@@ -206,6 +212,48 @@ const benchmarks = (device: GPUDevice): readonly Benchmark[] => [
             }),
         })),
     ]),
+    ...[main, pooled].map((placement): Benchmark => ({
+        name: `sync point grow 100 archetypes ${placement.label}`,
+        operation: placement.workers === 0
+            ? "A sync point where each of 100 archetypes grows, by one spawn into each: levels and bursts filling many kinds of entities at once."
+            : "A sync point where each of 100 archetypes grows, by one spawn into each, then a kernel over them, so workers take up the new layout.",
+        per: "archetypes grown",
+        n: 100,
+        typical: [1, 100],
+        best: { bytes: 64, basis: "Each archetype that grows writes at least its layout record, a cache line.", on: placement.on },
+        run: async () => {
+            let best = Infinity;
+            for (let round = 0; round < rounds; round++) {
+                const world = createWorld({ [workers]: placement.workers }, { minimumChunk: 16 });
+                try {
+                    // Registers both systems and loads the kernel; then every archetype holds one row of its 16.
+                    await world.run(spawnEach);
+                    await world.run(bumpEach);
+                    let count = 1;
+                    for (let capacity = 16, d = 0; d < doublings; d++, capacity *= 2) {
+                        await world.run(fillEach, { count: capacity - count });
+                        const start = performance.now();
+                        await world.run(spawnEach);
+                        if (placement.workers > 0) await world.run(bumpEach);
+                        best = Math.min(best, performance.now() - start);
+                        count = capacity + 1;
+                    }
+                } finally {
+                    await world.dispose();
+                }
+            }
+            return best;
+        },
+    })),
+    {
+        name: "loop tick idle",
+        operation: "A world's loop ticking with nothing changed, driven back to back with `always` set, counted through an observer of its clock: the fixed cost of every tick.",
+        per: "ticks",
+        n: loopTicks,
+        typical: [1, 1],
+        best: { bytes: 64, basis: "A run reads at least one cache line of its system's state." },
+        run: () => loopTickIdle(),
+    },
     ...[[100_000, 10, "100K chains of 10"], [1_000, 1_000, "1K chains of 1,000"]].map(([roots, depth, chains]): Benchmark => ({
         name: `up depth ${depth} gpu`,
         operation: upOperation(String(chains)),

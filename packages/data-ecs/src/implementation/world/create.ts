@@ -29,7 +29,7 @@ import { report as reportResource } from '../../interface/resources/report.js';
 import { wake } from '../../interface/resources/wake.js';
 import { stampChanged } from './archetype.js';
 import { failureOf } from './failures.js';
-import { createLoop, platformFrame, platformTimer, type Clock } from './loop.js';
+import { createLoop, platformFrame, platformTimer, type Clock, type LoopPlatform } from './loop.js';
 import { createState, idOf, startTicking, type Key } from './state.js';
 import { indexOf } from './entities.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
@@ -47,11 +47,15 @@ const createQueue = (): Queue => {
     };
 };
 
-/** For tests and benchmarks: the chunk size kernels split at, and whether kernels may use WASM and SIMD. */
+/**
+ * For tests and benchmarks: the chunk size kernels split at, whether kernels may use WASM and SIMD, and the loop's
+ * platform, such as `backToBack()` for ticks as fast as tasks run.
+ */
 export type WorldOptions = {
     readonly minimumChunk?: number;
     readonly wasm?: boolean;
     readonly simd?: boolean;
+    readonly loop?: Partial<LoopPlatform>;
 };
 
 /** The loop's state, added to a world when its first tick runs. */
@@ -280,9 +284,9 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             return { cadence: cadenceValue, always: readResource(always) === true, wake: Number(readResource(wake)) };
         },
         tick,
-        now: () => performance.now(),
-        frame: platformFrame,
-        timer: platformTimer,
+        now: options.loop?.now ?? (() => performance.now()),
+        frame: options.loop?.frame ?? platformFrame,
+        timer: options.loop?.timer ?? platformTimer,
     });
 
     const observers = createObservers(state, readResource, enqueue);

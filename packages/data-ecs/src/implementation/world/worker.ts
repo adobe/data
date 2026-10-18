@@ -1,28 +1,47 @@
 import type { Entity } from '../../interface/entity/entity.js';
-import { createBlock, endBlock, locate, reserveFrom, type Block } from './entities.js';
+import { createBlock, endBlock, locate, reserveFrom, tableLength, type Block } from './entities.js';
 import { createBatch, positionalSpawner, postBatch, type Positional, type SpawnBatch } from './staging.js';
 import type { Kernel, KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../interface/registry/layout.js';
 import { emptyViews } from './arrays.js';
 import { claimPiece } from './claims.js';
-import { controlWords, done, epoch, lineWords, posted, ringSize, signal, taskFields, taskWords, type ArchetypeLayout, type EntitiesLayout, type FromWorker, type KernelSetup, type LookupSetup, type PostedSpawns, type ToWorker, type WorkerError } from './protocol.js';
+import { controlWords, done, epoch, lineWords, posted, ringSize, signal, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type PostedSpawns, type ToWorker, type WorkerError } from './protocol.js';
 import { createBuffer, createKernelCommands, type CommandBuffer } from './buffer.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
+import { pageBytes, pagesWord } from './memory.js';
+import {
+    archetypeField, capacityField, cursorField, entitiesVersionField, entitiesWord, freeCapacityField, freeField, generationField, linearFlag,
+    recordCapacity, recordEntities, recordStorages, recordVersion, recordWords, rowField, storageAdded, storageChanged, storageChunkAdded,
+    storageChunkChanged, storageChunks, storageColumn, storageComponent, storageFlags, storageWords, tableLengthWord, tableOffsetWord, tickedFlag,
+} from './layout-directory.js';
 
-/** A worker's views of one archetype's columns in the shared memory. */
+/** One storage's views in a worker. */
+type StorageViews = {
+    readonly views: Views;
+    readonly added: Float64Array;
+    readonly changed: Float64Array;
+    readonly chunkAdded: Float64Array;
+    readonly chunkChanged: Float64Array;
+};
+
+/** A worker's views of one archetype's columns, as of its record's `version`. */
 type ArchetypeViews = {
+    readonly version: number;
     readonly entities: Float64Array;
-    readonly storages: ReadonlyMap<number, {
-        readonly views: Views;
-        readonly added: Float64Array;
-        readonly changed: Float64Array;
-        readonly chunkAdded: Float64Array;
-        readonly chunkChanged: Float64Array;
-    }>;
+    readonly storages: ReadonlyMap<number, StorageViews>;
 };
 
 type EntityViews = { cursor: Int32Array; free: Int32Array; generation: Uint32Array; archetype: Int32Array; row: Uint32Array; length: number };
+
+/** A kernel's columns, change filters and their WASM addresses in one archetype, as of `views`. */
+type Bound = {
+    readonly views: ArchetypeViews;
+    readonly columns: readonly TypedArray[];
+    readonly filters: readonly Filter[];
+    /** Column addresses, then filters' tick and chunk addresses: a WASM kernel's parameters after its first four. */
+    readonly addresses: readonly number[];
+};
 
 type LoadedKernel = {
     readonly setup: KernelSetup;
@@ -31,52 +50,126 @@ type LoadedKernel = {
     readonly lookups: readonly ((entity: Entity) => readonly unknown[] | null)[];
     /** Where its spawns are staged, one batch per set of components its lists name, with its spawners; made on first run. */
     staging: { readonly batches: readonly SpawnBatch[]; readonly spawners: readonly Positional[] } | null;
+    /** By archetype id, what it ran over there, rebuilt when the archetype's record moves on. */
+    readonly bound: (Bound | undefined)[];
 };
 
 let memory: WebAssembly.Memory | null = null;
+/** The memory's buffer and a view of it as words, for the layout directory; rebuilt when the memory grows. */
+let memoryBuffer: ArrayBufferLike = new ArrayBuffer(0);
+let words = new Uint32Array(0);
+/** The memory's length in pages that `buffer` covers, and the header's first word. */
+let pages = -1;
+let header = 0;
 const layouts: Layout[] = [];
-const archetypes = new Map<number, ArchetypeViews>();
+/** By archetype id: its record's first word, once found in the table, and its views. */
+const records: (number | undefined)[] = [];
+const archetypes: (ArchetypeViews | undefined)[] = [];
 let entities: EntityViews | null = null;
+let entitiesVersion = -1;
 const kernels = new Map<number, LoadedKernel>();
-/** Columns per kernel and archetype, rebuilt after every layout change. */
-const columns = new Map<string, readonly TypedArray[]>();
 
 const required = <T>(value: T | null, what: string): T => {
     if (value === null) throw new Error(`Worker received a task before its ${what}.`);
     return value;
 };
 
+const errorOf = (error: unknown): WorkerError =>
+    error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { name: "Error", message: String(error) };
+
+/** Once views may be stale, every later task fails rather than touch memory. */
+let broken: WorkerError | null = null;
+
+/**
+ * At each task's start: rebuilds the whole-buffer view once the memory grew, and marks the worker broken if its buffer
+ * doesn't cover the length the world stored, since typed arrays read out of bounds as `undefined` and drop such writes.
+ */
+const refreshMemory = (): void => {
+    if (broken !== null) throw new Error(`Worker can't run tasks after its layout failed: ${broken.message}`);
+    const shared = required(memory, "memory");
+    const current = Atomics.load(words, header + pagesWord);
+    if (current === pages) return;
+    const latest = shared.buffer;
+    if (latest.byteLength < current * pageBytes) {
+        broken = { name: "Error", message: `The worker's memory is ${latest.byteLength} bytes, short of the ${current * pageBytes} the world stored.` };
+        throw new Error(broken.message);
+    }
+    memoryBuffer = latest;
+    words = new Uint32Array(latest);
+    pages = current;
+};
+
+/** The entity table, its views updated in place when its record moves on, since spawners hold it. */
+const refreshEntities = (): EntityViews => {
+    const record = header + entitiesWord;
+    const version = Atomics.load(words, record + entitiesVersionField);
+    if (entities === null || version !== entitiesVersion) {
+        const capacity = words[record + capacityField];
+        const views: EntityViews = {
+            cursor: new Int32Array(memoryBuffer, words[record + cursorField], 4),
+            free: new Int32Array(memoryBuffer, words[record + freeField], words[record + freeCapacityField]),
+            archetype: new Int32Array(memoryBuffer, words[record + archetypeField], capacity),
+            row: new Uint32Array(memoryBuffer, words[record + rowField], capacity),
+            generation: new Uint32Array(memoryBuffer, words[record + generationField], capacity),
+            length: 0,
+        };
+        if (entities === null) entities = views;
+        else Object.assign(entities, views);
+        entitiesVersion = version;
+    }
+    entities.length = entities.cursor[tableLength];
+    return entities;
+};
+
 /** The tick arrays of a component without ticks. */
 const noTicks = new Float64Array(0);
 
-const viewArchetype = (buffer: ArrayBufferLike, layout: ArchetypeLayout): ArchetypeViews => ({
-    entities: new Float64Array(buffer, layout.entities, layout.capacity),
-    storages: new Map(layout.storages.map(storage => {
-        const componentLayout = layouts[storage.id];
-        return [storage.id, {
-            views: componentLayout.kind === "linear" && storage.column >= 0 ? viewsOf(buffer, storage.column, layout.capacity * componentLayout.stride) : emptyViews,
-            added: storage.ticked ? new Float64Array(buffer, storage.added, layout.capacity) : noTicks,
-            changed: storage.ticked ? new Float64Array(buffer, storage.changed, layout.capacity) : noTicks,
-            chunkAdded: storage.ticked ? new Float64Array(buffer, storage.chunkAdded, storage.chunks) : noTicks,
-            chunkChanged: storage.ticked ? new Float64Array(buffer, storage.chunkChanged, storage.chunks) : noTicks,
-        }];
-    })),
-});
+const viewArchetype = (record: number, version: number): ArchetypeViews => {
+    const capacity = words[record + recordCapacity];
+    const storages = new Map<number, StorageViews>();
+    for (let s = 0; s < words[record + recordStorages]; s++) {
+        const base = record + recordWords + s * storageWords;
+        const component = words[base + storageComponent];
+        const flags = words[base + storageFlags];
+        const layout = layouts[component];
+        const ticked = (flags & tickedFlag) !== 0;
+        storages.set(component, {
+            views: layout.kind === "linear" && (flags & linearFlag) !== 0 ? viewsOf(memoryBuffer, words[base + storageColumn], capacity * layout.stride) : emptyViews,
+            added: ticked ? new Float64Array(memoryBuffer, words[base + storageAdded], capacity) : noTicks,
+            changed: ticked ? new Float64Array(memoryBuffer, words[base + storageChanged], capacity) : noTicks,
+            chunkAdded: ticked ? new Float64Array(memoryBuffer, words[base + storageChunkAdded], words[base + storageChunks]) : noTicks,
+            chunkChanged: ticked ? new Float64Array(memoryBuffer, words[base + storageChunkChanged], words[base + storageChunks]) : noTicks,
+        });
+    }
+    return { version, entities: new Float64Array(memoryBuffer, words[record + recordEntities], capacity), storages };
+};
 
-const viewEntities = (buffer: ArrayBufferLike, layout: EntitiesLayout): EntityViews => ({
-    cursor: new Int32Array(buffer, layout.cursor, 4),
-    free: new Int32Array(buffer, layout.free, layout.freeCapacity),
-    archetype: new Int32Array(buffer, layout.archetype, layout.capacity),
-    row: new Uint32Array(buffer, layout.row, layout.capacity),
-    generation: new Uint32Array(buffer, layout.generation, layout.capacity),
-    length: layout.length,
-});
+/** An archetype's views: one load of its record's version, and new views only once it moved on. */
+const archetypeAt = (id: number): ArchetypeViews | undefined => {
+    let record = records[id];
+    if (record === undefined) {
+        // Records never move, so each is found in the table once.
+        const offset = id < Atomics.load(words, header + tableLengthWord) ? words[(words[header + tableOffsetWord] >> 2) + id] : 0;
+        if (offset === 0) return undefined;
+        record = records[id] = offset >> 2;
+    }
+    const version = Atomics.load(words, record + recordVersion);
+    const cached = archetypes[id];
+    if (cached !== undefined && cached.version === version) return cached;
+    return archetypes[id] = viewArchetype(record, version);
+};
+
+const requiredArchetype = (id: number): ArchetypeViews => {
+    const archetype = archetypeAt(id);
+    if (archetype === undefined) throw new Error(`Worker has no layout for archetype ${id}.`);
+    return archetype;
+};
 
 const createLookup = (lookup: LookupSetup) => (entity: Entity): readonly unknown[] | null => {
-    const table = required(entities, "layout");
+    const table = required(entities, "entity table");
     const index = locate(table, entity);
     if (index < 0) return null;
-    const archetype = archetypes.get(table.archetype[index]);
+    const archetype = archetypeAt(table.archetype[index]);
     if (archetype === undefined) return null;
     for (const id of lookup.read) if (!archetype.storages.has(id)) return null;
     for (const id of lookup.has) if (!archetype.storages.has(id)) return null;
@@ -92,29 +185,6 @@ const createLookup = (lookup: LookupSetup) => (entity: Entity): readonly unknown
 /** The one element a muted tick column's stores land on. */
 const mutedColumn = new Float64Array(1);
 
-const columnsOf = (loaded: LoadedKernel, archetypeId: number): readonly TypedArray[] => {
-    const key = `${loaded.setup.index}:${archetypeId}`;
-    const cached = columns.get(key);
-    if (cached !== undefined) return cached;
-    const archetype = archetypes.get(archetypeId);
-    if (archetype === undefined) throw new Error(`Worker has no layout for archetype ${archetypeId}.`);
-    const built = loaded.setup.sources.map((source, k) => {
-        if (loaded.setup.muted[k]) return mutedColumn;
-        if (source.kind === "entity") return archetype.entities;
-        const storage = archetype.storages.get(source.id);
-        if (storage === undefined) throw new Error(`Archetype ${archetypeId} lacks component ${source.id}.`);
-        if (source.kind === "changed") return storage.changed;
-        if (source.kind === "chunks") return storage.chunkChanged;
-        const layout = layouts[source.id];
-        if (layout.kind !== "linear") throw new Error(`Component ${source.id} isn't linear.`);
-        return storage.views[layout.leaves[source.leaf].view];
-    });
-    columns.set(key, built);
-    return built;
-};
-
-type RunMessage = Extract<ToWorker, { kind: "run" }>;
-
 /** A kernel's change filters in an archetype: `added` then `changed`, rows and chunks. */
 const filtersOf = (loaded: LoadedKernel, archetype: ArchetypeViews): Filter[] => [
     ...loaded.setup.added.flatMap(id => {
@@ -127,6 +197,33 @@ const filtersOf = (loaded: LoadedKernel, archetype: ArchetypeViews): Filter[] =>
     }),
 ];
 
+const bind = (loaded: LoadedKernel, archetypeId: number, archetype: ArchetypeViews): Bound => {
+    const columns = loaded.setup.sources.map((source, k) => {
+        if (loaded.setup.muted[k]) return mutedColumn;
+        if (source.kind === "entity") return archetype.entities;
+        const storage = archetype.storages.get(source.id);
+        if (storage === undefined) throw new Error(`Archetype ${archetypeId} lacks component ${source.id}.`);
+        if (source.kind === "changed") return storage.changed;
+        if (source.kind === "chunks") return storage.chunkChanged;
+        const layout = layouts[source.id];
+        if (layout.kind !== "linear") throw new Error(`Component ${source.id} isn't linear.`);
+        return storage.views[layout.leaves[source.leaf].view];
+    });
+    const filters = filtersOf(loaded, archetype);
+    const addresses = [...columns.map(column => column.byteOffset), ...filters.map(filter => filter.ticks.byteOffset), ...filters.map(filter => filter.chunks.byteOffset)];
+    return { views: archetype, columns, filters, addresses };
+};
+
+/** What a kernel runs over in an archetype, kept until the archetype's record moves on. */
+const boundOf = (loaded: LoadedKernel, archetypeId: number): Bound => {
+    const archetype = requiredArchetype(archetypeId);
+    const cached = loaded.bound[archetypeId];
+    if (cached !== undefined && cached.views === archetype) return cached;
+    return loaded.bound[archetypeId] = bind(loaded, archetypeId, archetype);
+};
+
+type RunMessage = Extract<ToWorker, { kind: "run" }>;
+
 const noPartials = new Float64Array(0);
 
 /** This worker's reservations for kernel spawns, in blocks, so workers spawning together don't contend; ended by each task. */
@@ -135,7 +232,7 @@ let block: Block | null = null;
 /** A kernel's staging, made once its components' layouts are known. */
 const stagingOf = (loaded: LoadedKernel): NonNullable<LoadedKernel["staging"]> => {
     if (loaded.staging !== null) return loaded.staging;
-    const reserving = block ??= createBlock(required(entities, "layout"));
+    const reserving = block ??= createBlock(required(entities, "entity table"));
     const batches: SpawnBatch[] = [];
     const spawners = loaded.setup.spawns.map(ids => {
         const key = [...ids].sort((a, b) => a - b).join(",");
@@ -162,24 +259,19 @@ const noSpawns: readonly PostedSpawns[] = [];
 const run = (message: RunMessage, buffer: CommandBuffer): void => {
     const loaded = kernels.get(message.kernel);
     if (loaded === undefined) throw new Error(`Worker has no kernel ${message.kernel}.`);
-    const archetype = archetypes.get(message.archetype);
-    if (archetype === undefined) throw new Error(`Worker has no layout for archetype ${message.archetype}.`);
+    refreshEntities();
+    const { columns, filters, addresses } = boundOf(loaded, message.archetype);
     const commands = createKernelCommands({ buffer }, loaded.setup.keys, loaded.setup.starts, stagingOf(loaded).spawners);
-    const kernelColumns = columnsOf(loaded, message.archetype);
-    const filters = filtersOf(loaded, archetype);
     const { wasm } = loaded;
     if (wasm !== null && loaded.setup.wasm !== null) {
-        wasm(message.start, message.end, message.tick, message.lastRun,
-            ...kernelColumns.map(column => column.byteOffset),
-            ...filters.map(filter => filter.ticks.byteOffset),
-            ...filters.map(filter => filter.chunks.byteOffset),
+        wasm(message.start, message.end, message.tick, message.lastRun, ...addresses,
             ...scalarValues(loaded.setup.wasm.scalars, message.resources, message.args),
             ...message.partials < 0 ? [] : [message.partials]);
         return;
     }
-    const partials = message.partials < 0 ? noPartials : new Float64Array(required(memory, "memory").buffer, message.partials);
+    const partials = message.partials < 0 ? noPartials : new Float64Array(memoryBuffer, message.partials);
     forEachPassingRange(filters, message.lastRun, message.start, message.end, (start, end) =>
-        loaded.kernel(kernelColumns, start, end, message.resources, loaded.lookups, loaded.setup.keys, message.args, commands, message.tick, partials, 0));
+        loaded.kernel(columns, start, end, message.resources, loaded.lookups, loaded.setup.keys, message.args, commands, message.tick, partials, 0));
 };
 
 const load = async (setups: readonly KernelSetup[]): Promise<void> => {
@@ -189,9 +281,8 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
         const wasm = setup.wasm === null ? null : await instantiateWasm(setup.wasm.module, shared, setup.wasm.imports);
         return { module, wasm };
     }));
-    // A kernel loaded again may have different columns, such as muted ones now stamped.
-    columns.clear();
-    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup), staging: null }));
+    // A kernel loaded again binds its columns again, since they may differ, such as muted ones now stamped.
+    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup), staging: null, bound: [] }));
 };
 
 /** A split's claims, as this worker sees them. */
@@ -204,15 +295,7 @@ type Claims = { readonly words: Int32Array; readonly self: number; readonly part
 const runWasm = (loaded: LoadedKernel, archetypeId: number, start: number, end: number, tick: number, lastRun: number, scalars: readonly number[], claims: Claims | null, grain: number, partials: number, partialBytes: number): void => {
     const { wasm } = loaded;
     if (wasm === null) throw new Error(`Worker kernel ${loaded.setup.index} has no WASM.`);
-    const archetype = archetypes.get(archetypeId);
-    if (archetype === undefined) throw new Error(`Worker has no layout for archetype ${archetypeId}.`);
-    const filters = filtersOf(loaded, archetype);
-    const parameters = [
-        ...columnsOf(loaded, archetypeId).map(column => column.byteOffset),
-        ...filters.map(filter => filter.ticks.byteOffset),
-        ...filters.map(filter => filter.chunks.byteOffset),
-        ...scalars,
-    ];
+    const parameters = [...boundOf(loaded, archetypeId).addresses, ...scalars];
     if (claims === null) {
         if (partials < 0) return void wasm(start, end, tick, lastRun, ...parameters);
         // An even share with reductions runs piece by piece, each into its own partials, as claims would.
@@ -232,6 +315,7 @@ const runWasm = (loaded: LoadedKernel, archetypeId: number, start: number, end: 
  */
 const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
     const buffer = required(memory, "memory").buffer;
+    // The pool's control state never moves, so these views last the window.
     const control = new Int32Array(buffer, message.control + message.worker * controlWords * 4, controlWords);
     const statuses = new Int32Array(buffer, message.statuses + message.worker * ringSize * 4, ringSize);
     const payloads = new Float64Array(buffer, message.payloads + message.worker * ringSize * taskWords * 8, ringSize * taskWords);
@@ -245,8 +329,9 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
             if (payloads[base + 6] !== message.epoch) return;
             let status = next + 1;
             try {
+                refreshMemory();
                 const loaded = kernels.get(payloads[base]);
-                if (loaded === undefined || broken !== null) throw new Error("Worker can't run this task.");
+                if (loaded === undefined) throw new Error("Worker can't run this task.");
                 const line = payloads[base + 8];
                 const participants = payloads[base + 11];
                 const scalarCount = payloads[base + 7];
@@ -274,25 +359,12 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
     }
 };
 
-const applyLayout = (message: Extract<ToWorker, { kind: "layout" }>): void => {
-    const buffer = required(memory, "memory").buffer;
-    for (const [id, schema] of message.schemas) layouts[id] = layoutOf(schema);
-    // Updated in place, since spawners hold the table.
-    if (entities === null) entities = viewEntities(buffer, message.entities);
-    else Object.assign(entities, viewEntities(buffer, message.entities));
-    for (const archetype of message.archetypes) archetypes.set(archetype.id, viewArchetype(buffer, archetype));
-    columns.clear();
-};
-
-const errorOf = (error: unknown): WorkerError =>
-    error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { name: "Error", message: String(error) };
-
-/** Once a layout can't be applied, views may be stale, so every later task fails rather than touch memory. */
-let broken: WorkerError | null = null;
-
 const handle = async (message: ToWorker): Promise<void> => {
     if (message.kind === "memory") {
         memory = message.memory;
+        header = message.header >> 2;
+        memoryBuffer = memory.buffer;
+        words = new Uint32Array(memoryBuffer);
         return;
     }
     if (message.kind === "window") {
@@ -301,7 +373,7 @@ const handle = async (message: ToWorker): Promise<void> => {
     }
     if (message.kind === "layout") {
         try {
-            applyLayout(message);
+            for (const [id, schema] of message.schemas) layouts[id] = layoutOf(schema);
         }
         catch (error) {
             broken ??= errorOf(error);
@@ -312,7 +384,7 @@ const handle = async (message: ToWorker): Promise<void> => {
     const transfer: ArrayBuffer[] = [];
     const unused: number[] = [];
     try {
-        if (broken !== null) throw new Error(`Worker can't run tasks after a layout failed: ${broken.message}`);
+        refreshMemory();
         if (message.kind === "kernels") await load(message.kernels);
         else run(message, buffer);
         self.postMessage({ kind: "done", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer, unused), unused } satisfies FromWorker, { transfer });

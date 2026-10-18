@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { Component, System } from "../../index.js";
 import { requireDefinition, type Composite } from "../../interface/registry/index.js";
 import type { Cadence } from "../../interface/resources/cadence.js";
-import { createLoop, type Clock, type LoopSettings } from "./loop.js";
+import { backToBack, createLoop, type Clock, type LoopSettings } from "./loop.js";
+import { createWorld } from "./create.js";
+import { always } from "../../interface/resources/always.js";
+import { clock } from "../../interface/resources/clock.js";
 
 const count = Symbol("loopTest/count");
 declare module "@adobe/data-ecs" {
@@ -153,5 +156,26 @@ describe("the loop", () => {
         await advance(16);
         expect([ticks.length, pending()]).toEqual([0, 0]);
         expect(() => loop.add(reader)).toThrow("disposed");
+    });
+});
+
+describe("a world's loop platform", () => {
+    it("can be given, so a back-to-back driver ticks as fast as tasks run", async () => {
+        const driver = backToBack();
+        const world = createWorld({ [always]: true }, { loop: driver });
+        world.add(System.create({ name: "loopTest/idle", components: { has: [count] } }, () => {}));
+        const start = performance.now();
+        // At 60 frames a second, a timer's frames would take 1.6 s.
+        await new Promise<void>(resolve => {
+            let ticks = 0;
+            const unobserve = world.observe.resource(clock)(() => {
+                if (++ticks < 100) return;
+                unobserve();
+                resolve();
+            });
+        });
+        expect(performance.now() - start).toBeLessThan(800);
+        await world.dispose();
+        driver.close();
     });
 });

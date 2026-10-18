@@ -19,7 +19,7 @@ export const asEntity = (id: number): Entity => id as Entity;
 /** `cursor` slots. */
 const taken = 0;
 const freeCount = 1;
-const tableLength = 2;
+export const tableLength = 2;
 
 /** What spawning needs, on the main thread or a worker. All of it lives in shared memory. */
 export type Reservations = {
@@ -42,6 +42,8 @@ export type Entities = Reservations & {
     length: number;
     /** Indexes freed during the current sync point, reusable after it. */
     readonly released: number[];
+    /** Incremented whenever `free`, `archetype`, `row` or `generation` is replaced, for the layout directory. */
+    version: number;
 };
 
 const initialCapacity = 64;
@@ -60,6 +62,7 @@ export const createEntities = (memory: Memory): Entities => {
         generation: allocateArray(memory, Uint32Array, initialCapacity).fill(0),
         length: 1,
         released: [],
+        version: 0,
     };
 };
 
@@ -151,6 +154,7 @@ export const materialize = (memory: Memory, entities: Entities): Reserved => {
         entities.archetype = growArray(memory, entities.archetype, Int32Array, capacity, entities.length);
         entities.row = growArray(memory, entities.row, Uint32Array, capacity, entities.length);
         entities.generation = growArray(memory, entities.generation, Uint32Array, capacity, entities.length);
+        entities.version++;
     }
     entities.archetype.fill(-1, entities.length, length);
     entities.generation.fill(0, entities.length, length);
@@ -170,7 +174,10 @@ export const release = (entities: Entities, index: number): void => {
 export const recycle = (memory: Memory, entities: Entities): void => {
     const { cursor, released } = entities;
     const count = cursor[freeCount] + released.length;
-    if (count > entities.free.length) entities.free = growArray(memory, entities.free, Int32Array, capacityFor(entities.free.length, count), cursor[freeCount]);
+    if (count > entities.free.length) {
+        entities.free = growArray(memory, entities.free, Int32Array, capacityFor(entities.free.length, count), cursor[freeCount]);
+        entities.version++;
+    }
     entities.free.set(released, cursor[freeCount]);
     cursor[freeCount] = count;
     released.length = 0;

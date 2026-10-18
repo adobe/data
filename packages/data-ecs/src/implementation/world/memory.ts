@@ -1,9 +1,16 @@
 /** Bytes per WebAssembly page. */
-const pageBytes = 65536;
+export const pageBytes = 65536;
 /** 4 GiB, the wasm32 limit. Shared memory reserves address space up front, not physical memory. */
 const maximumPages = 65536;
 /** Smallest block; also the alignment of every block, so columns never share a cache line. */
 const minimumBlockBytes = 64;
+
+/**
+ * The layout directory's header (`layout-directory.ts`): the first block, at offset 0, which never moves. Its first word is
+ * the memory's length in pages, stored right after each grow, since 4 GiB in bytes doesn't fit a 32-bit word.
+ */
+export const headerBytes = minimumBlockBytes;
+export const pagesWord = 0;
 
 /**
  * A shared `WebAssembly.Memory` arena with power-of-two size classes.
@@ -14,6 +21,8 @@ const minimumBlockBytes = 64;
 export type Memory = {
     readonly memory: WebAssembly.Memory;
     readonly shared: boolean;
+    /** The layout directory's header, at offset 0; for unshared memory, an array of its own that no other thread reads. */
+    readonly header: Uint32Array;
     /** Returns a 64-byte aligned offset of a block with at least `bytes`. Contents are unspecified. */
     readonly allocate: (bytes: number) => number;
     readonly free: (offset: number, bytes: number) => void;
@@ -27,7 +36,9 @@ export const sharedMemoryAvailable = (): boolean => globalThis.crossOriginIsolat
 export const createMemory = (shared = sharedMemoryAvailable()): Memory => {
     const memory = new WebAssembly.Memory({ initial: 1, maximum: shared ? maximumPages : 1, shared });
     const freeBlocks: number[][] = [];
-    let top = 0;
+    let top = shared ? headerBytes : 0;
+    const header = shared ? new Uint32Array(memory.buffer, 0, headerBytes / 4) : new Uint32Array(headerBytes / 4);
+    header[pagesWord] = memory.buffer.byteLength / pageBytes;
 
     const allocate = (bytes: number): number => {
         const size = sizeClass(bytes);
@@ -40,6 +51,8 @@ export const createMemory = (shared = sharedMemoryAvailable()): Memory => {
         if (shortfall > 0) {
             const pages = memory.buffer.byteLength / pageBytes;
             memory.grow(Math.min(maximumPages - pages, Math.max(Math.ceil(shortfall / pageBytes), Math.ceil(pages / 2))));
+            // Other threads check their buffer covers it at each task's start.
+            Atomics.store(header, pagesWord, memory.buffer.byteLength / pageBytes);
         }
         return offset;
     };
@@ -48,5 +61,5 @@ export const createMemory = (shared = sharedMemoryAvailable()): Memory => {
         (freeBlocks[sizeClass(bytes)] ??= []).push(offset);
     };
 
-    return { memory, shared, allocate, free };
+    return { memory, shared, header, allocate, free };
 };

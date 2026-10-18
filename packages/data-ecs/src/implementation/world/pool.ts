@@ -112,7 +112,7 @@ export const createPool = (size: number, arena: Memory): Pool => {
         };
         slot.worker.onerror = event => kill(slot, new Error(`A world worker failed: ${event.message || "it couldn't load"}.`));
         slot.worker.onmessageerror = () => kill(slot, new Error("A world worker received a message it couldn't read."));
-        slot.worker.postMessage({ kind: "memory", memory } satisfies ToWorker);
+        slot.worker.postMessage({ kind: "memory", memory, header: arena.header.byteOffset } satisfies ToWorker);
         return slot;
     });
     const wake = (worker: number): void => {

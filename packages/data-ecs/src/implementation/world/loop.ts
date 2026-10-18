@@ -20,6 +20,9 @@ export type LoopHost = {
     readonly timer: (callback: () => void, milliseconds: number) => () => void;
 };
 
+/** What the loop takes from the platform; a world can be given its own, for tests and benchmarks. */
+export type LoopPlatform = Pick<LoopHost, "frame" | "timer" | "now">;
+
 export type Loop = {
     /** Adds a system to every tick from the next one on. Throws for a conflict with one already added, or input. */
     readonly add: (system: Definition) => void;
@@ -48,6 +51,34 @@ export const platformFrame = (callback: (time: number) => void): (() => void) =>
 export const platformTimer = (callback: () => void, milliseconds: number): (() => void) => {
     const handle = setTimeout(callback, milliseconds);
     return () => clearTimeout(handle);
+};
+
+/**
+ * For tests and benchmarks: frames that call back as soon as the event loop takes its next task, through a
+ * `MessageChannel` post. A task, so worker messages and `Atomics.waitAsync` settle between ticks, which microtasks would
+ * starve; unclamped, as `setTimeout(0)` isn't. `close` releases the channel, which keeps node running while open.
+ */
+export const backToBack = (): Partial<LoopPlatform> & { readonly close: () => void } => {
+    const channel = new MessageChannel();
+    let pending: ((time: number) => void) | null = null;
+    channel.port1.onmessage = () => {
+        const callback = pending;
+        pending = null;
+        callback?.(performance.now());
+    };
+    return {
+        frame: callback => {
+            pending = callback;
+            channel.port2.postMessage(null);
+            return () => {
+                if (pending === callback) pending = null;
+            };
+        },
+        close: () => {
+            channel.port1.close();
+            channel.port2.close();
+        },
+    };
 };
 
 /** Throws unless every leaf under a system takes no input, since ticks pass none. */

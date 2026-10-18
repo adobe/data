@@ -9,6 +9,7 @@ import * as structural from "./structural.js";
 import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, index, indexSum, observe, poke, pokeCluster, position, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
 
 import type { Benchmark } from "./benchmark.js";
+import { loopTickIdle, loopTicks } from "./loop.js";
 import { createWorld } from "../implementation/index.js";
 
 const check = (condition: boolean, message: string): void => {
@@ -106,6 +107,15 @@ export const benchmarks: readonly Benchmark[] = [
             await world.dispose();
             return best;
         },
+    },
+    {
+        name: "loop tick idle",
+        operation: "A world's loop ticking with nothing changed, driven back to back with `always` set, counted through an observer of its clock: the fixed cost of every tick.",
+        per: "ticks",
+        n: loopTicks,
+        typical: [1, 1],
+        best: runBest,
+        run: () => loopTickIdle(),
     },
     {
         name: "sync point one spawn",

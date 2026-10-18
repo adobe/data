@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createMemory, type Memory } from "./memory.js";
+import { createMemory, pageBytes, pagesWord, type Memory } from "./memory.js";
 import { createPool } from "./pool.js";
 
 /** Workers whose script doesn't exist, so they fail to load. */
@@ -45,4 +45,18 @@ describe("createPool", () => {
             expect(held).toBe(0);
         }
     }, 10000);
+
+    it("fails every task of a worker whose memory is shorter than the length the world stored", async () => {
+        const memory = createMemory(true);
+        const pool = createPool(1, memory);
+        expect((await pool.request(0, { kind: "kernels", kernels: [] })).error).toBeUndefined();
+        const pages = memory.memory.buffer.byteLength / pageBytes;
+        Atomics.store(memory.header, pagesWord, pages + 1);
+        const failed = await pool.request(0, { kind: "kernels", kernels: [] });
+        expect(failed.error?.message).toContain("short of");
+        // The worker stays broken, since views it made may be stale.
+        Atomics.store(memory.header, pagesWord, pages);
+        expect((await pool.request(0, { kind: "kernels", kernels: [] })).error?.message).toContain("short of");
+        await pool.terminate();
+    }, 5000);
 });

@@ -100,6 +100,18 @@ export type Archetype = {
     readonly objects: boolean;
     /** Incremented whenever arrays are replaced, so cached views can be refreshed. */
     version: number;
+    /** The world's archetypes created or bumped since the layout directory's last flush (`layout-directory.ts`). */
+    readonly bumped: Archetype[];
+    /** Whether this archetype is in `bumped`. */
+    listed: boolean;
+};
+
+/** Moves the version on once arrays are replaced, and lists the archetype for the layout directory's next flush. */
+const bump = (archetype: Archetype): void => {
+    archetype.version++;
+    if (archetype.listed) return;
+    archetype.listed = true;
+    archetype.bumped.push(archetype);
 };
 
 const initialCapacity = 16;
@@ -145,14 +157,15 @@ const createStorage = (memory: Memory, component: number, layout: Layout, capaci
 export const startTicks = (memory: Memory, archetype: Archetype, storage: Storage, tick: number): void => {
     if (storage.ticked) return;
     allocateTicks(memory, storage, archetype.capacity, tick);
-    archetype.version++;
+    bump(archetype);
 };
 
-export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, ticked: ReadonlySet<number>): Archetype => {
+/** Creates an archetype, listed in `bumped` for the layout directory's next flush. */
+export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, ticked: ReadonlySet<number>, bumped: Archetype[]): Archetype => {
     const storages = components.map(component => createStorage(memory, component, layouts[component], initialCapacity, resource || ticked.has(component)));
     const storageById: (Storage | undefined)[] = [];
     for (const storage of storages) storageById[storage.component] = storage;
-    return {
+    const archetype: Archetype = {
         id,
         components,
         storages,
@@ -167,7 +180,11 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
         resource,
         objects: storages.some(storage => storage.layout.kind === "object"),
         version: 0,
+        bumped,
+        listed: true,
     };
+    bumped.push(archetype);
+    return archetype;
 };
 
 const growViews = (memory: Memory, storage: Storage, capacity: number, count: number): void => {
@@ -196,7 +213,7 @@ const grow = (memory: Memory, archetype: Archetype, capacity = archetype.capacit
     }
     archetype.entities = growArray(memory, archetype.entities, Float64Array, capacity, count);
     archetype.capacity = capacity;
-    archetype.version++;
+    bump(archetype);
 };
 
 /** Grows once to fit `needed` rows, so a sync point adding many doesn't double over and over. */

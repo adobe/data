@@ -41,7 +41,6 @@ import {
 // directory describes them, struct columns and resources in shared memory, this thread's objects in its mirror
 // (`mirror.ts`), with commands and spawns written into its command ring, run as tasks the world posts.
 
-
 /** A system the world places on this thread: its index here, its id, and the world's numbers for the keys it names. */
 export type SystemSetup = { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] };
 
@@ -53,7 +52,6 @@ type ThreadArchetype = RowArchetype & {
     readonly record: number;
     readonly version: number;
     readonly mirrored: Mirrored | null | undefined;
-    readonly buffer: ArrayBufferLike;
     readonly components: readonly number[];
     readonly resource: boolean;
     readonly storageById: readonly (ThreadStorage | undefined)[];
@@ -203,7 +201,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
             if (storage !== undefined) storageById[storage.component] = storage;
         }
         return {
-            id, record, version, mirrored, buffer, components, storageById,
+            id, record, version, mirrored, components, storageById,
             resource: (words[record + recordFlags] & resourceFlag) !== 0,
             entities: new Float64Array(buffer, words[record + recordEntities], capacity),
         };
@@ -521,7 +519,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
             let error: unknown = undefined;
             if (runner === null || runner === undefined) error = new Error("A system the world placed on this thread isn't one this thread imported.");
             else {
-                const outcome = runner.run(tick, payload[base + systemLastRun], input);
+                const outcome = runner.run(payload[base + systemLastRun], input);
                 if (outcome.executed) flags |= executedFlag;
                 if (outcome.ran) flags |= ranFlag;
                 error = outcome.error ?? running.error;
@@ -584,7 +582,8 @@ type RunnerHost = {
 type Outcome = { executed: boolean; ran: boolean; error: unknown };
 
 type ThreadRunner = {
-    readonly run: (tick: number, lastRun: number, input: unknown) => Outcome;
+    /** Runs it once, at the tick its host's rows stamp with. */
+    readonly run: (lastRun: number, input: unknown) => Outcome;
     /** Writes its folds' leaves from `at`. */
     readonly writeFolds: (completion: Float64Array, at: number) => void;
 };
@@ -747,7 +746,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf): ThreadRunner => {
     };
 
     const outcome: Outcome = { executed: false, ran: false, error: undefined };
-    const run = (tick: number, lastRun: number, input: unknown): Outcome => {
+    const run = (lastRun: number, input: unknown): Outcome => {
         outcome.executed = outcome.ran = false;
         outcome.error = undefined;
         try {

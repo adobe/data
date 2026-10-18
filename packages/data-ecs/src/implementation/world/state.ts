@@ -1,3 +1,4 @@
+import { createHolds, type Holds } from './stop-lists.js';
 import type { Entity } from '../../interface/entity/entity.js';
 import { declarationOf, firstKeyOf, isWorldWritten, kindOf, labelOf } from '../../interface/registry/index.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
@@ -141,10 +142,10 @@ export type State = {
     readonly unplaced: Thrown[];
     readonly unplacedSeen: Set<object>;
     /**
-     * Indexes of entities despawned with stops of joined threads' finalizers, by index: how many threads haven't
-     * acknowledged them, so they're held apart from `released` until then.
+     * Indexes of entities despawned with stops of joined threads' finalizers, held apart from `released` until those
+     * threads acknowledge them.
      */
-    readonly holds: Map<number, number>;
+    readonly holds: Holds;
 };
 
 export const createState = (shared?: boolean, wasm = true, simd = true, gpu = false, initial: Map<Key, unknown> = new Map()): State => {
@@ -205,7 +206,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         placement: 0,
         unplaced: [],
         unplacedSeen: new Set(),
-        holds: new Map(),
+        holds: createHolds(),
     };
 };
 

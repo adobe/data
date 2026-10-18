@@ -131,11 +131,18 @@ const guarded = (errors: Thrown[], finalizer: Finalizer, body: () => void): void
 /** Whether the entity at `entry` stops matching: it matched before, and is despawned, no longer matches, or had a required component replaced. */
 const stops = (state: State, runner: FinalizerRunner, entry: number): Archetype | null => {
     const { plan, archetypes } = state;
-    const from = fromOf(state, entry);
-    if (from === null || !matches(runner, from)) return null;
-    const stopped = plan.despawned[entry] === 1 || !matches(runner, archetypes[plan.to[entry]])
-        || (plan.fresh.get(entry)?.some(id => runner.required.includes(id)) ?? false);
-    return stopped ? from : null;
+    const fromId = plan.from[entry];
+    if (fromId < 0) return null;
+    const from = archetypes[fromId];
+    if (!matches(runner, from)) return null;
+    const { born } = state;
+    if (born !== null && born.size > 0) {
+        // Committed from a batch here, so it wasn't alive before.
+        const first = born.get(fromId);
+        if (first !== undefined && state.entities.row[indexOf(plan.entity[entry])] >= first) return null;
+    }
+    if (plan.despawned[entry] === 1 || !matches(runner, archetypes[plan.to[entry]])) return from;
+    return plan.fresh.size > 0 && (plan.fresh.get(entry)?.some(id => runner.required.includes(id)) ?? false) ? from : null;
 };
 
 /** A finalizer a joined thread runs: its stops, staged for the thread's stop list. */

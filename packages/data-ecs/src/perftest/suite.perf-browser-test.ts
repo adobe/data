@@ -10,6 +10,7 @@ import { wake } from "./wake.js";
 import { remoteBenchmarks } from "./remote.js";
 import { logBenchmarks } from "./log.js";
 import { handoffBenchmarks } from "./handoff.js";
+import { finalizedBenchmarks } from "./finalized.js";
 
 /** Every worker's copy bandwidth together, through browser workers running the calibration script. */
 const browserThreadsBandwidth = async (): Promise<Curve> => {
@@ -86,6 +87,7 @@ const benchmarks = (device: GPUDevice): readonly Benchmark[] => [
     ...remoteBenchmarks,
     ...logBenchmarks,
     ...handoffBenchmarks,
+    ...finalizedBenchmarks,
     ...[[100_000, 10, "100K chains of 10"], [1_000, 1_000, "1K chains of 1,000"]].map(([roots, depth, chains]): Benchmark => ({
         name: `up depth ${depth} gpu`,
         operation: upOperation(String(chains)),

@@ -79,20 +79,40 @@ export type StopWriter = {
 
 export const createStopWriter = (memory: Memory, log: MoveLog): StopWriter => ({ memory, log, staged: [], written: [], unwoken: false });
 
+/**
+ * Indexes of entities despawned with stops of joined threads' finalizers: by index, how many threads haven't
+ * acknowledged the stop, so the sync point kills them without releasing them; and how many are held.
+ */
+export type Holds = { counts: Int32Array; size: number };
+
+export const createHolds = (): Holds => ({ counts: new Int32Array(0), size: 0 });
+
+const hold = (holds: Holds, index: number): void => {
+    if (index >= holds.counts.length) {
+        const counts = new Int32Array(Math.max(index + 1, 2 * holds.counts.length, 1024));
+        counts.set(holds.counts);
+        holds.counts = counts;
+    }
+    if (holds.counts[index]++ === 0) holds.size++;
+};
+
+/** A storage as stops are copied from it: its tags, or its linear values. */
+type Copied = { readonly tags: Uint32Array; readonly views: { readonly u8: Uint8Array; readonly u32: Uint32Array } };
+
 /** What a sync point's stops come from: entries' entities and archetypes before apply, and the entity table's rows. */
 export type StopSource = {
     readonly entity: Float64Array;
     readonly from: Int32Array;
     readonly despawned: Uint8Array;
-    readonly archetypes: readonly { readonly storageById: readonly ({ readonly tags: Uint32Array; readonly views: { readonly u8: Uint8Array } } | undefined)[] }[];
+    readonly archetypes: readonly { readonly storageById: readonly (Copied | undefined)[] }[];
     readonly row: Uint32Array;
-    /** Holds of despawned entities' indexes, by index: how many threads still finalize each. */
-    readonly holds: Map<number, number>;
+    readonly holds: Holds;
 };
 
 /**
  * Writes the block of a sync point's staged stops, before it applies: entities, archetypes and rows, tags and linear
- * values, copied from the rows they're at; despawned entities' indexes held. Links it after the last block.
+ * values, copied from the rows they're at, a column at a time; despawned entities' indexes held. Links it after the
+ * last block.
  */
 export const writeStops = (writer: StopWriter, sync: number, source: StopSource): void => {
     const { staged, memory } = writer;
@@ -115,9 +135,10 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
     for (const stops of staged) {
         const { entries, objects, linear, strides } = stops;
         const count = entries.length;
+        const size = groupBytes(count, objects.length, strides);
         u32[(group >> 2) + groupIndexWord] = stops.index;
         u32[(group >> 2) + groupCountWord] = count;
-        u32[(group >> 2) + groupBytesWord] = groupBytes(count, objects.length, strides);
+        u32[(group >> 2) + groupBytesWord] = size;
         const entityWords = entitiesAt(group) >> 3;
         const archetypeWords = archetypesAt(group, count) >> 2;
         const rowWords = rowsAt(group, count) >> 2;
@@ -125,27 +146,56 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
             const entry = entries[i];
             const stoppedEntity = entity[entry];
             const index = stoppedEntity >>> 0;
-            const archetype = from[entry];
-            const row = rows[index];
             f64[entityWords + i] = stoppedEntity;
-            u32[archetypeWords + i] = archetype;
-            u32[rowWords + i] = row;
-            const storages = archetypes[archetype].storageById;
-            for (let k = 0; k < objects.length; k++) u32[(tagsAt(group, count, k) >> 2) + i] = storages[objects[k]]?.tags[row] ?? 0;
-            let column = valuesAt(group, count, objects.length);
-            for (let k = 0; k < linear.length; k++) {
-                const stride = strides[k];
-                const values = storages[linear[k]]?.views.u8;
-                if (values !== undefined) u8.copyWithin(column + i * stride, values.byteOffset + row * stride, values.byteOffset + (row + 1) * stride);
-                column += columnBytes(count, stride);
-            }
+            u32[archetypeWords + i] = from[entry];
+            u32[rowWords + i] = rows[index];
             if (despawned[entry] === 1) {
-                holds.set(index, (holds.get(index) ?? 0) + 1);
+                hold(holds, index);
                 held.push(index);
             }
         }
+        for (let k = 0; k < objects.length; k++) {
+            const tagWords = tagsAt(group, count, k) >> 2;
+            const id = objects[k];
+            let archetype = -1;
+            let tags: Uint32Array | undefined;
+            for (let i = 0; i < count; i++) {
+                if (u32[archetypeWords + i] !== archetype) {
+                    archetype = u32[archetypeWords + i];
+                    tags = archetypes[archetype].storageById[id]?.tags;
+                }
+                u32[tagWords + i] = tags?.[u32[rowWords + i]] ?? 0;
+            }
+        }
+        let column = valuesAt(group, count, objects.length);
+        for (let k = 0; k < linear.length; k++) {
+            const stride = strides[k];
+            const id = linear[k];
+            const words = (stride & 3) === 0 ? stride >> 2 : 0;
+            let archetype = -1;
+            let values: Copied["views"] | undefined;
+            for (let i = 0; i < count; i++) {
+                if (u32[archetypeWords + i] !== archetype) {
+                    archetype = u32[archetypeWords + i];
+                    values = archetypes[archetype].storageById[id]?.views;
+                }
+                if (values === undefined) continue;
+                const row = u32[rowWords + i];
+                if (words > 0) {
+                    const source = values.u32;
+                    const target = (column >> 2) + i * words;
+                    for (let w = 0; w < words; w++) u32[target + w] = source[row * words + w];
+                }
+                else {
+                    const source = values.u8;
+                    const target = column + i * stride;
+                    for (let b = 0; b < stride; b++) u8[target + b] = source[row * stride + b];
+                }
+            }
+            column += columnBytes(count, stride);
+        }
         stopped.push([stops.finalizer, count]);
-        group += groupBytes(count, objects.length, strides);
+        group += size;
         entries.length = 0;
     }
     staged.length = 0;
@@ -158,14 +208,12 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
 };
 
 /** Returns a held index once no thread finalizes it any more: it's reusable after the sync point. */
-const unhold = (holds: Map<number, number>, released: number[], held: readonly number[]): void => {
+const unhold = (holds: Holds, released: number[], held: readonly number[]): void => {
+    const { counts } = holds;
     for (const index of held) {
-        const count = (holds.get(index) ?? 1) - 1;
-        if (count > 0) holds.set(index, count);
-        else {
-            holds.delete(index);
-            released.push(index);
-        }
+        if (--counts[index] !== 0) continue;
+        holds.size--;
+        released.push(index);
     }
 };
 
@@ -173,7 +221,7 @@ const unhold = (holds: Map<number, number>, released: number[], held: readonly n
  * Takes up what the thread acknowledged: blocks through the sync it finalized through return their held indexes, and
  * all but the newest of them are freed, since the thread reads the next block's offset from that one.
  */
-export const settleStops = (writer: StopWriter, holds: Map<number, number>, released: number[]): void => {
+export const settleStops = (writer: StopWriter, holds: Holds, released: number[]): void => {
     const { written, memory } = writer;
     if (written.length === 0) return;
     const finalized = Atomics.load(writer.log.header, logFinalizedWord) >>> 0;
@@ -195,7 +243,7 @@ export const settleStops = (writer: StopWriter, holds: Map<number, number>, rele
  * Once the thread is gone: every held index returns, and each finalizer with stops it never acknowledged is a `"thread"`
  * failure, for the next sync point's report.
  */
-export const endStops = (writer: StopWriter, holds: Map<number, number>, released: number[], label: string): { readonly finalizer: Finalizer; readonly error: Error; readonly kind: "thread" }[] => {
+export const endStops = (writer: StopWriter, holds: Holds, released: number[], label: string): { readonly finalizer: Finalizer; readonly error: Error; readonly kind: "thread" }[] => {
     settleStops(writer, holds, released);
     const missed = new Map<Finalizer, number>();
     for (const block of writer.written) {

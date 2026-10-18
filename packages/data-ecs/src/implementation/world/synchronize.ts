@@ -297,6 +297,8 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
     let lastJoined = -2;
     let ranges = true;
     let leaving = 0;
+    /** Indexes a joined thread's finalizers hold, which a despawn kills without releasing; null for none. */
+    const holds = state.holds.size > 0 ? state.holds.counts : null;
     for (let entry = 0; entry < plan.count; entry++) {
         const index = indexOf(plan.entity[entry]);
         const fromId = plan.from[entry];
@@ -309,7 +311,7 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
             if (fromId >= 0) state.touched?.add(archetypes[fromId]);
             if (fromId >= 0 && state.claimed) countChanged(state.counted, archetypes[fromId]);
             // Held while a joined thread's finalizers haven't acknowledged its stop.
-            if (state.holds.size > 0 && state.holds.has(index)) kill(entities, index);
+            if (holds !== null && index < holds.length && holds[index] > 0) kill(entities, index);
             else release(entities, index);
             continue;
         }

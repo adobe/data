@@ -21,6 +21,7 @@ import { createObservers } from './observers.js';
 import type { Observe } from '../../interface/observe/observe.js';
 import type { Report } from '../../interface/world/report.js';
 import { execute, type ExecuteContext } from './execute.js';
+import { settleKeys, type TailOutcome } from './tails.js';
 import { sharedMemoryAvailable } from './memory.js';
 import { createPool, type Pool } from './pool.js';
 import type { Runner } from './runner.js';
@@ -30,7 +31,7 @@ import type { EntityOptions, QueryOptions } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
 import { ensureProgramResources, activate, finalizerCrossing, placeFinalizers } from './activate.js';
-import { isWorldWritten, kindOf, type Composite } from '../../interface/registry/index.js';
+import { firstKeyOf, isWorldWritten, kindOf, programVersion, type Composite } from '../../interface/registry/index.js';
 import { always } from '../../interface/resources/always.js';
 import { cadence, type Cadence } from '../../interface/resources/cadence.js';
 import { clock } from '../../interface/resources/clock.js';
@@ -92,6 +93,11 @@ const ownSyncPoint = { name: "world" };
 /** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
 const defaultMinimumChunk = 16384;
 
+/** A report with its tails' failures and skipped systems. */
+const withTails = (report: Report, { failures, skipped }: TailOutcome): Report => failures === null && skipped === null ? report : {
+    ...report, failures: failures === null ? report.failures : [...report.failures, ...failures], skipped: skipped === null ? report.skipped : [...report.skipped, ...skipped],
+};
+
 /** Creates a world on this thread, as `World.create` does, with options for tests and benchmarks. */
 export const createWorld = (resources: InitialResources = {}, options: WorldOptions = {}): World => {
     const shared = sharedMemoryAvailable();
@@ -114,7 +120,12 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     /** Workers start with the first kernel, so worlds without kernels never spawn any. */
     let pool: Pool | null = null;
     const context: { -readonly [K in keyof ExecuteContext]: ExecuteContext[K] } = {
-        state, runnerOf: registrar.runnerOf, kernelIndexOf: registrar.kernelIndexOf, workers: null, publish: () => {},
+        state, runnerOf: registrar.runnerOf, kernelIndexOf: registrar.kernelIndexOf, workers: null, publish: () => {}, tails: null,
+    };
+
+    /** Waits for every joined thread's task in flight, as a tail may be, before what moves rows a tail may still read. */
+    const drainTails = async (): Promise<void> => {
+        while (state.channels.some(channel => channel.busy())) await Promise.all(state.channels.map(channel => channel.idle()));
     };
     let disposed = false;
     const ensured = { version: -1 };
@@ -154,6 +165,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     const complete = async (registration: Registration): Promise<void> => {
         const { resources, ticked, kernels } = registration;
         try {
+            await drainTails();
             ensureResources(state, resources);
             // Kept after a rollback: ticks nothing reads cost only memory.
             startTicking(state, ticked);
@@ -204,6 +216,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     /** Moves the world onto the device `gpuDevice` names, or off the GPU. */
     const followDevice = async (): Promise<void> => {
+        await drainTails();
         const device = readDevice();
         const current = state.gpu;
         if (current !== null) {
@@ -254,6 +267,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
      * async step for both, so a run awaits nothing more.
      */
     const perform = async (definition: Definition, value: unknown, deliver: boolean): Promise<Report> => {
+        // Resources added between runs move the resource entity, whose structs a tail may still read.
+        if (ensured.version !== programVersion() && state.channels.length > 0) await drainTails();
         ensureProgramResources(state, ensured);
         if (observers.start()) await reloadObserved();
         if (workersChanged()) await followWorkers();
@@ -261,17 +276,28 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         const schedule = registrar.registered(definition);
         if (schedule === undefined) throw new Error(`System "${labelOfItem(definition)}" didn't register.`);
         let report: Report;
+        let tails: Promise<TailOutcome> | null = null;
         try {
             report = await execute(context, schedule, value, definition);
         }
         finally {
+            tails = context.tails;
+            context.tails = null;
             if (deviceChanged()) await followDevice();
+        }
+        // A run is a transaction: it ends once its tails have; a tick's report waits for them without holding the queue.
+        if (tails !== null) {
+            if (deliver) report = withTails(report, await tails);
+            else tailing = tails;
         }
         // Observers get values a GPU kernel wrote, read back for them.
         const reading = observers.readback();
         if (reading !== null) await reading;
         return deliver ? delivered(report) : report;
     };
+
+    /** A tick's tails, which `perform` leaves for its report. */
+    let tailing: Promise<TailOutcome> | null = null;
 
     /** Delivers to observers, giving `report` with their failures. */
     const delivered = (report: Report): Report => {
@@ -300,18 +326,69 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 ensureResources(state, loopResources);
                 await complete(registrar.register(composite));
             }
+            if (reports.length > 0 && readsReport(composite)) {
+                await Promise.all(reports.map(pending => pending.tails));
+                flushReports();
+            }
+            if (state.tails.length !== 0) {
+                const waiting = settleKeys(state, [], [clockId]);
+                if (waiting !== null) await waiting;
+            }
             writeOwn(clock, clockValue);
             report = await perform(composite, undefined, false);
         }
         catch (error) {
             report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: [], dropped: 0, warnings: [] };
         }
+        const tails = tailing;
+        tailing = null;
+        if (tails === null && reports.length === 0) return writeReport(report);
+        // Observers get the tick's values now, and its report once its tails, and every earlier tick's, have run.
+        const failed = deliver();
+        const pending: PendingReport = { report: failed === null ? report : { ...report, failures: [...report.failures, ...failed] }, tails, done: tails === null };
+        reports.push(pending);
+        if (tails !== null) void tails.then(outcome => {
+            pending.report = withTails(pending.report, outcome);
+            pending.done = true;
+            void enqueue(async () => flushReports());
+        });
+        flushReports();
+    });
+
+    /** Writes a tick's report, then delivers to observers, the report then holding their failures without notifying them again. */
+    const writeReport = (report: Report): void => {
+        if (disposed) return;
         if (readResource(reportResource) !== report) writeOwn(reportResource, report);
         const observed = delivered(report);
         if (observed === report) return;
         const cell = findResource(state, reportResource);
         if (cell !== undefined) writeCell(cell.storage, cell.row, observed);
-    });
+    };
+
+    /** Ticks whose reports wait for their tails, in order. */
+    type PendingReport = { report: Report; readonly tails: Promise<TailOutcome> | null; done: boolean };
+    const reports: PendingReport[] = [];
+    /** Writes the reports of ticks whose tails, and every earlier tick's, have run. */
+    const flushReports = (): void => {
+        while (reports.length > 0 && reports[0].done) {
+            const pending = reports.shift();
+            if (pending !== undefined) writeReport(pending.report);
+        }
+    };
+    const clockId = idOf(state, clock);
+    /** Whether a tick's systems read its report, so a tick waits for the last one's tails first. */
+    const readersOfReport = new WeakMap<Composite, boolean>();
+    const readsReport = (composite: Composite): boolean => {
+        let reads = readersOfReport.get(composite);
+        if (reads === undefined) {
+            const schedule = registrar.registered(composite);
+            const key = firstKeyOf(reportResource);
+            reads = schedule?.tiers.some(tier => tier.some(({ declaration: { resources } }) =>
+                [...resources?.read ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? []].some(each => firstKeyOf(each) === key))) ?? false;
+            readersOfReport.set(composite, reads);
+        }
+        return reads;
+    };
 
     const loop = createLoop({
         settings: () => {
@@ -384,7 +461,9 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             placeFinalizers(state);
         },
         between: task => void enqueue(async () => {
-            if (!disposed) task();
+            if (disposed) return;
+            await drainTails();
+            task();
         }),
     });
 

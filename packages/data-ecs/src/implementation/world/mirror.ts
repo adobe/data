@@ -77,6 +77,11 @@ export type Mirror = {
      * replay holds before that sync.
      */
     finalize: ((sync: number, old: Previously | null) => boolean) | null;
+    /**
+     * The sync replay stops at while a task is in flight here, as a tail is while the world goes on, so its rows stay
+     * those of its sync; -1 for none.
+     */
+    bound: (() => number) | null;
 };
 
 /** An entity's object before a rebuild, or `start` where it held none there. */
@@ -88,7 +93,7 @@ export const createMirror = (memory: WebAssembly.Memory, block: number, thread: 
         memory, thread, block, buffer: memory.buffer, words: new Uint32Array(0), signed: new Int32Array(0), header: new Int32Array(0),
         ring: new Uint32Array(0), ringEntities: new Float64Array(0), version: -1, mask: 0, position: 0, through: 0, tick: 0,
         keys: new Map(), starts: new Map(), archetypes: [], scratch: new Uint32Array(1024), scratchEntities: new Float64Array(0),
-        staged: [], head: 0, nextSlot: 0, rebuilds: 0, finalize: null,
+        staged: [], head: 0, nextSlot: 0, rebuilds: 0, finalize: null, bound: null,
     };
     refresh(mirror);
     return mirror;
@@ -343,8 +348,20 @@ const heldAt = (mirror: Mirror, count: number): number => {
     return count;
 };
 
+/** Where the first entry of the first sync after `limit` is, among `count` copied; `count` when there's none. */
+const boundAt = (mirror: Mirror, count: number, limit: number): number => {
+    const { scratch } = mirror;
+    for (let e = 0; e < count; e++) {
+        const first = scratch[e * entryWords];
+        const kind = first & kindMask;
+        if (kind === syncEntry && ((scratch[e * entryWords + 1] - limit) | 0) > 0) return e;
+        if (kind === rangeEntry) e += Math.ceil(scratch[e * entryWords + 2] / 2);
+    }
+    return count;
+};
+
 /**
- * Replays every published sync since the last, in order: each one's entries, then its staged slots it didn't name are
+ * Replays every published sync since the last, in order, up to the mirror's bound: each one's entries, then its staged slots it didn't name are
  * settled. Entries are copied out first, and used only if the writer didn't lap them. Lapped, or with the ring
  * replaced, it applies nothing: the thread rebuilds.
  */
@@ -353,7 +370,10 @@ export const replay = (mirror: Mirror): Replayed => {
     const { header } = mirror;
     if (Atomics.load(header, logVersionWord) !== mirror.version) return "lapped";
     if (mirror.ring.length === 0) viewRing(mirror);
-    const sync = Atomics.load(header, logSyncWord) >>> 0;
+    const bound = mirror.bound === null ? -1 : mirror.bound();
+    const latest = Atomics.load(header, logSyncWord) >>> 0;
+    const bounded = bound >= 0 && ((latest - bound) | 0) > 0;
+    const sync = bounded ? bound >>> 0 : latest;
     const published = Atomics.load(header, logPublishedWord) >>> 0;
     const count = (published - mirror.position) >>> 0;
     if (count > mirror.mask + 1) return "lapped";
@@ -362,9 +382,10 @@ export const replay = (mirror: Mirror): Replayed => {
         // An exchange, so the copy's loads complete before it: the limit then covers whatever the writer overwrote.
         const limit = Atomics.add(header, logLimitWord, 0) >>> 0;
         if (((limit - mirror.position) >>> 0) > mirror.mask + 1 || Atomics.load(header, logVersionWord) !== mirror.version) return "lapped";
-        const applied = apply(mirror, heldAt(mirror, count));
+        const usable = bounded ? boundAt(mirror, count, bound) : count;
+        const applied = apply(mirror, heldAt(mirror, usable));
         mirror.position = (mirror.position + applied) >>> 0;
-        if (applied < count) {
+        if (applied < usable) {
             // Through the last sync applied, the one before the held one.
             if (applied > 0) mirror.through = mirror.tick >>> 0;
             settle(mirror);

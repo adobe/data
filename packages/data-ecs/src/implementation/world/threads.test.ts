@@ -27,6 +27,8 @@ import type * as ThreadSystems from "./thread-systems.fixture.js";
 import { threadSystemsCases } from "./thread-systems.cases.js";
 import type * as RemoteFinalizers from "./remote-finalizers.fixture.js";
 import { remoteFinalizersCases } from "./remote-finalizers.cases.js";
+import type * as Tails from "./tails.fixture.js";
+import { tailsCases } from "./tails.cases.js";
 
 // Real worker threads in node: the cases over fixtures `vitest.fixtures.ts` built, each typed as its source, which it's built from.
 workersCases((): Promise<typeof Workers> => builtFixture("workers"));
@@ -43,3 +45,4 @@ joiningCases((): Promise<typeof Joining> => builtFixture("joining"));
 remoteObjectsCases((): Promise<typeof RemoteObjects> => builtFixture("remote-objects"));
 threadSystemsCases((): Promise<typeof ThreadSystems> => builtFixture("thread-systems"));
 remoteFinalizersCases((): Promise<typeof RemoteFinalizers> => builtFixture("remote-finalizers"));
+tailsCases((): Promise<typeof Tails> => builtFixture("tails"));

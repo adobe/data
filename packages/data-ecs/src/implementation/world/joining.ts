@@ -51,11 +51,14 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
     | { readonly kind: "leave" }
     /**
      * After task `sequence` is done, when its completion says a message follows: its systems' errors and spilled
-     * segments, by position in the task; posted after the thread's numbers for keys its commands named first.
+     * segments, by position in the task; posted after the thread's numbers for keys its commands named first. `stamps`
+     * are the objects tails wrote from their snapshots, as position in the task, entity and component, which the world
+     * stamps changed at their tick.
      */
     | {
         readonly kind: "completed"; readonly sequence: number;
         readonly errors: readonly (readonly [number, WorkerError])[]; readonly spills: readonly (readonly [number, Uint8Array])[];
+        readonly stamps?: readonly number[];
     }
     /** What its finalizers threw, by their index on this thread, for the world's next report. */
     | { readonly kind: "finalized"; readonly errors: readonly (readonly [number, WorkerError])[] }

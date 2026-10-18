@@ -66,8 +66,9 @@ const nullCaptionsKernel = System.create({ name: "remoteTest/nullCaptionsKernel"
 const numberHandlesKernel = System.create({ name: "remoteTest/numberHandlesKernel", kernel: "cpu", components: { read: [point] } }, (row, { commands }) => {
     commands.add(row.entity, handle, row[point]);
 });
-const readCaptions = System.create({ name: "remoteTest/readCaptions", components: { read: [caption] } }, row => {
-    void row[caption];
+/** Reaches its commands, so it isn't terminal: its tier blocks rather than running as a tail. */
+const readCaptions = System.create({ name: "remoteTest/readCaptions", components: { read: [caption] } }, (row, { commands }) => {
+    if (row[caption] === "never") commands.despawn(row.entity);
 });
 const idle = System.create({ name: "remoteTest/idle" }, () => {});
 const after = System.create({ name: "remoteTest/after" }, () => {});

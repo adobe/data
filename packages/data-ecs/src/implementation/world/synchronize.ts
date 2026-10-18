@@ -556,6 +556,10 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     }
 };
 
+/** Whether a sync point would apply anything: commands queued, entities reserved or carried, or rules to derive again. */
+export const syncPending = (state: State, queued: readonly Queued[] = state.queued): boolean =>
+    !queued.every(({ buffer }) => buffer.count === 0) || reserved(state.entities) || state.carried !== null || state.structure.rederive;
+
 /**
  * The first half of a sync point: commits batch spawns, plans every command, cascades references and closes the plan
  * under rules. Nothing that exists moves yet, so the GPU can read back what the plan disturbs before `applySync`.
@@ -568,7 +572,7 @@ export const prepareSync = (state: State, isolated = false): boolean => {
     const queued = state.queued.splice(0);
     const { structure, plan } = state;
     // Finalizers' spawns are reserved during the last sync point, so their batches are pending without a reservation.
-    if (queued.every(({ buffer }) => buffer.count === 0) && !reserved(state.entities) && state.carried === null && !structure.rederive) return false;
+    if (!syncPending(state, queued)) return false;
     plan.count = 0;
     plan.spawned = 0;
     plan.dropped = 0;

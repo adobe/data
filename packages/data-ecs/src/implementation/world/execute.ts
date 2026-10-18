@@ -4,7 +4,9 @@ import type { Schedule } from '../../interface/registry/schedule.js';
 import type { Archetype, Storage } from './archetype.js';
 import { idOf, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
-import { applySync, prepareSync } from './synchronize.js';
+import { applySync, prepareSync, syncPending } from './synchronize.js';
+import { activate } from './activate.js';
+import { postTails, settleAll, settleKeys, settleRunners, tailsOf, type TailOutcome } from './tails.js';
 import { locate } from './entities.js';
 import { clearBuffer, createBuffer } from './buffer.js';
 import { drainSegment, type Segment } from './command-ring.js';
@@ -28,6 +30,8 @@ export type ExecuteContext = {
     readonly workers: Workers | null;
     /** Tells workers about layout changes; called after the sync point. */
     readonly publish: () => void;
+    /** The last run's tails, posted after its sync point, until the caller takes them; null when it had none. */
+    tails: Promise<TailOutcome> | null;
 };
 
 /**
@@ -99,6 +103,31 @@ type Prepared = {
     warned: Report | null;
     /** The run's failures and skipped systems, allocated only when there's something to list. */
     readonly outcome: Outcome;
+    /** The placement its tails were found for, and they: the schedule without them, and them in schedule order. */
+    placement: number;
+    tailing: Tailing | null;
+};
+
+/** A schedule's tails: the schedule without them, and their runners, leaves and tiers in schedule order. */
+type Tailing = { readonly schedule: Schedule; readonly runners: Runner[]; readonly leaves: readonly Leaf[]; readonly tiers: readonly number[] };
+
+/** Finds a schedule's tails where its systems are placed now; null without any. */
+const tailingOf = (context: ExecuteContext, schedule: Schedule): Tailing | null => {
+    const flags = tailsOf(schedule, context.runnerOf);
+    const leaves: Leaf[] = [];
+    const tiers: number[] = [];
+    const rest: Leaf[][] = [];
+    schedule.tiers.forEach((tier, t) => {
+        const kept = tier.filter((leaf, i) => {
+            if (!flags[t][i]) return true;
+            leaves.push(leaf);
+            tiers.push(t);
+            return false;
+        });
+        if (kept.length > 0) rest.push(kept);
+    });
+    if (leaves.length === 0) return null;
+    return { schedule: { tiers: rest, reductions: schedule.reductions }, runners: leaves.map(context.runnerOf), leaves, tiers };
 };
 
 type Outcome = { failures: Failure[] | null; skipped: string[] | null };
@@ -112,6 +141,7 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
         prepared = {
             runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)),
             systems: [], tiers: [], tasks: new Map(), warnings: [], warningCount: 0, warned: null, outcome: { failures: null, skipped: null },
+            placement: -1, tailing: null,
         };
         bySchedule.set(schedule, prepared);
     }
@@ -241,7 +271,12 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
         if (!allOn(next, channel)) break;
         last++;
     }
+    if (channel.busy()) await channel.idle();
     for (let v = first; v <= last; v++) {
+        if (state.tails.length !== 0) {
+            const waiting = settleRunners(state, prepared.runners[v]);
+            if (waiting !== null) await waiting;
+        }
         if (gpu !== null) await readAhead(state, gpu, prepared.runners[v]);
         gather(prepared, prepared.runners[v], channel, v - first);
     }
@@ -264,10 +299,21 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
     return last;
 };
 
-const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: unknown, earlier: Failure[] | null): Promise<Report> => {
+const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unknown, earlier: Failure[] | null): Promise<Report> => {
     const { state, kernelIndexOf, workers, publish } = context;
     const { gpu } = state;
-    const prepared = preparedFor(context, schedule);
+    context.tails = null;
+    let schedule = whole;
+    let prepared = preparedFor(context, whole);
+    if (prepared.placement !== state.placement) {
+        prepared.placement = state.placement;
+        prepared.tailing = state.channels.length === 0 ? null : tailingOf(context, whole);
+    }
+    const { tailing } = prepared;
+    if (tailing !== null) {
+        schedule = tailing.schedule;
+        prepared = preparedFor(context, schedule);
+    }
     let folds: Map<unknown, Fold> | null = null;
     for (const [key, contributors] of schedule.reductions) (folds ??= new Map()).set(key, { target: null, values: [], remaining: contributors, ran: false, failed: false });
     let dropped = 0;
@@ -281,6 +327,10 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
             const runners = prepared.runners[t];
             let remote = 0;
             for (let i = 0; i < tier.length; i++) if ((runners[i] = context.runnerOf(tier[i])).remote !== null) remote++;
+            if (state.tails.length !== 0) {
+                const waiting = settleRunners(state, runners);
+                if (waiting !== null) await waiting;
+            }
             const only = remote === runners.length ? runners[0]?.remote?.channel : undefined;
             if (only !== undefined && allOn(runners, only)) {
                 const last = await runFused(context, schedule, prepared, folds, args, t, only);
@@ -297,6 +347,7 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
                 for (let i = 0; i < runners.length; i++) {
                     const channel = runners[i].remote?.channel;
                     if (channel === undefined || tasks.has(channel)) continue;
+                    if (channel.busy()) await channel.idle();
                     gather(prepared, runners, channel, 0);
                     tasks.set(channel, post(state, prepared, channel, args));
                 }
@@ -346,6 +397,12 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
                 gpu.beforeSync();
             }
             try {
+                // A sync point counts as a write to everything a tail still reads.
+                if (state.tails.length !== 0) {
+                    activate(state);
+                    const waiting = syncPending(state) ? settleAll(state) : null;
+                    if (waiting !== null) await waiting;
+                }
                 if (prepareSync(state)) {
                     try {
                         if (gpu !== null) {
@@ -374,6 +431,16 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
         finally {
             rewind(state, workers);
             publish();
+        }
+    }
+    if (tailing !== null) {
+        // Placed again since, as when a joined thread is gone: they're found again next run.
+        if (tailing.runners.some((runner, k) => runner !== context.runnerOf(tailing.leaves[k]))) prepared.placement = -1;
+        else {
+            if (gpu !== null) await readAhead(state, gpu, tailing.runners);
+            // A thread runs one task at a time: the last tick's tail there, if it's still running, first.
+            for (const runner of tailing.runners) if (runner.remote?.channel.busy() === true) await runner.remote.channel.idle();
+            context.tails = postTails(state, tailing.runners, tailing.leaves, tailing.tiers, args);
         }
     }
     const { failures, skipped } = outcome;
@@ -435,7 +502,12 @@ const readAhead = async (state: State, gpu: GpuEngine, runners: readonly Runner[
         for (const archetype of runner.matched()) add(archetype, runner.touches);
         if (runner.looks.length > 0) for (const archetype of state.archetypes) add(archetype, runner.looks);
     }
-    if (storages.size > 0) await gpu.readback([...storages]);
+    if (storages.size === 0) return;
+    if (state.tails.length !== 0) {
+        const waiting = settleKeys(state, [...storages].map(storage => storage.component), []);
+        if (waiting !== null) await waiting;
+    }
+    await gpu.readback([...storages]);
 };
 
 /** CPU writes make GPU copies out of date; GPU kernels mark their own writes as they dispatch. */

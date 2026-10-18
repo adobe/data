@@ -8,15 +8,16 @@ import type { LocalIds, Segment } from './command-ring.js';
 import type { ToJoined } from './joining.js';
 import { lineWords, type WorkerError } from './protocol.js';
 import { reductionTargets, type ReductionTarget } from './reductions.js';
-import type { Runner } from './runner.js';
+import { resourceWritesOf, type Runner } from './runner.js';
 import { idOf, type Key, type State } from './state.js';
 import { logSyncWord, type MoveLog } from './move-log.js';
 import { createStopWriter, freeStops, type StopWriter } from './stop-lists.js';
+import { freeTail, stampWritten, type Tail } from './tails.js';
 import {
     completionCapacityWord, completionMessage, completionOffsetWord, completionSystems, completionWords, executedFlag, failedFlag,
     payloadCapacityWord, payloadCount, payloadInput, payloadOffsetWord, payloadSequence, payloadSync, payloadSystems, payloadWords, ranFlag,
     resultEnd, resultFields, resultFlags, resultStart, ringBaseWord, ringCapacityWord, ringCursorWord, ringNeededWord, spilledFlag, systemFields,
-    systemFolds, systemIndex, systemLastRun, systemTick, systemTier, taskBlockWords, taskDoneWord, taskPostedWord,
+    systemFolds, systemIndex, systemLastRun, systemTail, systemTick, systemTier, taskBlockWords, taskDoneWord, taskPostedWord,
 } from './thread-tasks.js';
 
 // The world's side of systems on joined threads (threads.md, "Systems on other threads"): a runner standing for each
@@ -47,6 +48,8 @@ export type RemoteSystem = {
     readonly declaresInput: boolean;
     lastRun: number;
     readonly result: RemoteResult;
+    /** Its block and snapshot once it ran as a tail (`tails.ts`). */
+    tail: Tail | null;
 };
 
 /** The world's end of a joined thread's task block and command ring. */
@@ -65,7 +68,13 @@ export type TaskChannel = {
      * Runs `systems`, with the tier of each within the task, as one task: each takes the next tick, and its result is
      * in its `result` once this resolves. Resolves with false when the thread is gone, having given back nothing.
      */
-    readonly run: (state: State, systems: readonly RemoteSystem[], tiers: readonly number[], args: unknown) => Promise<boolean>;
+    readonly run: (state: State, systems: readonly RemoteSystem[], tiers: readonly number[], args: unknown, tails?: boolean) => Promise<boolean>;
+    /** Resolves once no task is in flight, as a tail may be: true once done, false once the thread is gone. */
+    readonly idle: () => Promise<boolean>;
+    /** Whether a task is in flight. */
+    readonly busy: () => boolean;
+    /** Tails of its systems, whose blocks are freed with it. */
+    readonly owned: Tail[];
     /** A task's message, when its completion says one follows. */
     readonly completed: (message: Extract<import('./joining.js').ToWorld, { kind: "completed" }>) => void;
     /** Places a system on the thread, posting its setup; returns its index there. */
@@ -172,6 +181,8 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
                 result.error = failure === undefined ? new Error(`System "${system.label}" failed on thread "${label}".`) : errorOf(failure);
             }
             if ((flags & executedFlag) !== 0) system.lastRun = payloadView[payloadSystems + k * systemFields + systemTick];
+            const stamps = message?.stamps;
+            if (stamps !== undefined && stamps.length > 0) stampWritten(state, stamps, k, payloadView[payloadSystems + k * systemFields + systemTick]);
             if ((flags & ranFlag) !== 0 && (flags & failedFlag) === 0) {
                 let offset = folds + payloadView[payloadSystems + k * systemFields + systemFolds];
                 for (const leaves of system.folds) for (let i = 0; i < leaves.length; i++) leaves[i] = completionView[offset++];
@@ -213,7 +224,16 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
 
     /** The systems of the task in flight, kept as posted: the caller reuses what it passed. */
     const flight: RemoteSystem[] = [];
-    const run = async (state: State, systems: readonly RemoteSystem[], tiers: readonly number[], args: unknown): Promise<boolean> => {
+    let flying: Promise<boolean> | null = null;
+    const settledTask = Promise.resolve(true);
+    const notRun = Promise.resolve(false);
+    const run = (state: State, systems: readonly RemoteSystem[], tiers: readonly number[], args: unknown, tails = false): Promise<boolean> => {
+        if (ended) return notRun;
+        const task = runTask(state, systems, tiers, args, tails);
+        flying = task;
+        return task;
+    };
+    const runTask = async (state: State, systems: readonly RemoteSystem[], tiers: readonly number[], args: unknown, tails: boolean): Promise<boolean> => {
         if (ended) return false;
         flight.length = 0;
         for (let k = 0; k < systems.length; k++) flight.push(systems[k]);
@@ -242,6 +262,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
             payloadView[base + systemLastRun] = system.lastRun;
             payloadView[base + systemTier] = tiers[k];
             payloadView[base + systemFolds] = folds;
+            payloadView[base + systemTail] = tails ? system.tail?.block ?? 0 : 0;
             folds += system.foldCount;
         }
         if (input) post({ protocol: "@adobe/data-ecs/join@1", kind: "task input", sequence: next, input: args });
@@ -250,6 +271,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         wake();
         const done = await whenDone(next);
         if (done) collect(flight);
+        flying = null;
         return done;
     };
 
@@ -281,6 +303,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         return index;
     };
     const stops = createStopWriter(arena, log);
+    const owned: Tail[] = [];
 
     return {
         log,
@@ -289,6 +312,9 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         gone: () => ended,
         goneError,
         run,
+        idle: () => flying ?? settledTask,
+        busy: () => flying !== null,
+        owned,
         completed: arrived => {
             message = arrived;
             const resolve = settle;
@@ -319,6 +345,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         },
         free: () => {
             freeStops(stops);
+            for (const tail of owned) freeTail(state, tail);
             arena.free(raw, blockBytes);
             arena.free(ring.offset, ring.bytes);
             if (payload.bytes > 0) arena.free(payload.offset, payload.bytes);
@@ -386,6 +413,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         declaresInput: declaration.input !== undefined,
         lastRun: since,
         result: { flags: 0, segment: undefined, error: undefined },
+        tail: null,
     };
     return {
         kernel: null,
@@ -393,6 +421,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         touches,
         writes,
         looks,
+        resourceWrites: resourceWritesOf(state, declaration),
         matched,
         load: async () => {},
         setup: () => null,

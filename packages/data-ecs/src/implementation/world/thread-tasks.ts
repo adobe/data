@@ -29,27 +29,29 @@ export const taskBlockWords = 4 * lineWords;
 /**
  * A task's payload, f64 words: its sequence; the sync the thread replays through before it runs; how many systems it
  * runs; whether its input comes by message; then per system, in schedule order, its index on the thread, the tick it
- * takes when it runs, its `lastRun`, its tier within the task, and where its folds start in the completion.
+ * takes when it runs, its `lastRun`, its tier within the task, where its folds start in the completion, and for a
+ * tail the byte offset of its block (`tail-blocks.ts`), else 0. A task is all tails or none.
  */
 export const payloadSequence = 0;
 export const payloadSync = 1;
 export const payloadCount = 2;
 export const payloadInput = 3;
 export const payloadSystems = 4;
-export const systemFields = 5;
+export const systemFields = 6;
 export const systemIndex = 0;
 export const systemTick = 1;
 export const systemLastRun = 2;
 export const systemTier = 3;
 export const systemFolds = 4;
+export const systemTail = 5;
 
 /** f64 words of a payload for `count` systems. */
 export const payloadWords = (count: number): number => payloadSystems + count * systemFields;
 
 /**
- * A task's completion, f64 words: whether a message follows it, with failures, spilled segments or the thread's
- * numbers for keys its commands named for the first time; then per system its flags and its segment's start and end
- * past the ring's base; then the systems' folds, at the offsets the payload gives.
+ * A task's completion, f64 words: whether a message follows it, with failures, spilled segments, the thread's numbers
+ * for keys its commands named for the first time, or the rows a tail wrote from its snapshot; then per system its
+ * flags and its segment's start and end past the ring's base; then the systems' folds, at the offsets the payload gives.
  */
 export const completionMessage = 0;
 export const completionSystems = 1;

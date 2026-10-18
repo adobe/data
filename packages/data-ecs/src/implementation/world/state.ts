@@ -20,6 +20,7 @@ import { createJournal, type Journal } from './journal.js';
 import type { Row } from './rows.js';
 import type { MoveLog } from './move-log.js';
 import type { TaskChannel } from './remote-systems.js';
+import type { Tail } from './tails.js';
 import { claimComponent } from './remote.js';
 
 export type Key = string | symbol;
@@ -146,6 +147,8 @@ export type State = {
      * threads acknowledge them.
      */
     readonly holds: Holds;
+    /** Tails posted whose reads a later writer must still copy, or wait for (`tails.ts`). */
+    readonly tails: Tail[];
 };
 
 export const createState = (shared?: boolean, wasm = true, simd = true, gpu = false, initial: Map<Key, unknown> = new Map()): State => {
@@ -207,6 +210,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         unplaced: [],
         unplacedSeen: new Set(),
         holds: createHolds(),
+        tails: [],
     };
 };
 

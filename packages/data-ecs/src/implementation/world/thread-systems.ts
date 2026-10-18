@@ -23,24 +23,32 @@ import {
 } from './layout-directory.js';
 import { pageBytes, pagesWord } from './memory.js';
 import { ownTag } from './move-log.js';
-import { rebuild, replay, stage, type Mirror, type Mirrored } from './mirror.js';
+import { applying, rebuild, replay, stage, waitStructure, type Mirror, type Mirrored } from './mirror.js';
 import type { WorkerError } from './protocol.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { combine, contributed, identityOf, reductionTargetsOf, type ReductionTarget } from './reductions.js';
 import { rowBinderOf, type Row, type RowArchetype, type RowHost, type RowStorage } from './rows.js';
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
 import { createThreadFinalizers } from './thread-finalizers.js';
+import { chunkShift } from './kernel.js';
+import {
+    doneWord, endWord, headExecuted, headRan, progressWord, snapshotFlagsWord, snapshotLayout, snapshotOffsetWord, snapshotResourceArchetypeWord,
+    snapshotResourceRowWord, snapshotRowsWord, snapshotCapacityWord, snapshotted, tailBlockWords, tailChunk, waitingWord,
+} from './tail-blocks.js';
 import { defaultOf, type Key } from './state.js';
 import {
     completionCapacityWord, completionMessage, completionOffsetWord, completionSystems, executedFlag, failedFlag, payloadCapacityWord, payloadCount,
     payloadInput, payloadOffsetWord, payloadSequence, payloadSystems, ranFlag, resultEnd, resultFields, resultFlags, resultStart, ringBaseWord, ringCapacityWord,
-    ringCursorWord, ringNeededWord, spilledFlag, systemFields, systemFolds, systemIndex, systemLastRun, systemTick, systemTier, taskDoneWord,
-    taskPostedWord,
+    payloadSync, ringCursorWord, ringNeededWord, spilledFlag, systemFields, systemFolds, systemIndex, systemLastRun, systemTail, systemTick, systemTier,
+    taskDoneWord, taskPostedWord,
 } from './thread-tasks.js';
 
 // A joined thread's systems (threads.md, "Systems on other threads"): runners over the world's archetypes as the layout
 // directory describes them, struct columns and resources in shared memory, this thread's objects in its mirror
 // (`mirror.ts`), with commands and spawns written into its command ring, run as tasks the world posts.
+
+/** For tests: tails on this thread that read every row from a snapshot, being late, and that switched to one at a chunk. */
+export const tailSnapshots = { late: 0, switched: 0 };
 
 /** A system the world places on this thread: its index here, its id, and the world's numbers for the keys it names. */
 export type SystemSetup = { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] };
@@ -396,7 +404,11 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
     };
 
     const runnerHost: RunnerHost = {
-        rows: rowHost, archetypeAt, countOf, tableCount, resourceRow, refreshEntities, commands,
+        rows: rowHost, archetypeAt, countOf, tableCount, resourceRow, refreshEntities, commands, mirror,
+        refresh: () => {
+            refreshMemory();
+            return buffer;
+        },
         numberOf: key => {
             const number = numbers.get(firstKeyOf(key));
             if (number === undefined) throw new Error(`"${labelOf(key)}" has no number from the world here.`);
@@ -519,13 +531,47 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         return Atomics.load(control, taskDoneWord) === posted;
     };
 
+    /** The objects tails of the task wrote from their snapshots, for the world to stamp. */
+    const stamps: number[] = [];
+    /** Views of tails' blocks by offset, kept while the memory's buffer is the same. */
+    const tailControls = new Map<number, Int32Array>();
+    const tailControl = (offset: number): Int32Array => {
+        let control = tailControls.get(offset);
+        if (control === undefined || control.buffer !== buffer) tailControls.set(offset, control = new Int32Array(buffer, offset, tailBlockWords));
+        return control;
+    };
+
+    // While a task is in flight, as a tail is while the world goes on, replay stops at the sync it names, so its rows
+    // stay those of that sync until it's done.
+    mirror.bound = (): number => {
+        const posted = Atomics.load(control, taskPostedWord);
+        if (posted === Atomics.load(control, taskDoneWord)) return -1;
+        refreshMemory();
+        viewTask();
+        return payload.length > payloadSync ? payload[payloadSync] : -1;
+    };
+
+    /** A task waiting for a sync point to finish applying, to rebuild its mirror, runs once it has. */
+    let structureWaited = false;
+    const retryAfterStructure = (): void => {
+        if (structureWaited || !applying(mirror)) return;
+        structureWaited = true;
+        void waitStructure(mirror).then(() => {
+            structureWaited = false;
+            process();
+        });
+    };
+
     const runTask = (posted: number): void => {
         refreshMemory();
         viewTask();
         const count = payload[payloadCount];
         const sequence = payload[payloadSequence];
         pending = sequence;
-        if (!ready(payload, count)) return;
+        if (!ready(payload, count)) {
+            retryAfterStructure();
+            return;
+        }
         pending = -1;
         refreshEntities();
         const input = inputs.get(sequence);
@@ -536,6 +582,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         let transfer: ArrayBuffer[] | null = null;
         let failedTier = -1;
         const folds = completionSystems + count * resultFields;
+        stamps.length = 0;
         for (let k = 0; k < count; k++) {
             const base = payloadSystems + k * systemFields;
             const result = completionSystems + k * resultFields;
@@ -551,6 +598,19 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
             startSegment(writer, { tick, archetype: 0, start: k });
             let flags = 0;
             let error: unknown = undefined;
+            const tail = payload[base + systemTail];
+            if (tail !== 0 && runner !== null && runner !== undefined) {
+                // A tail writes no commands, so no segment.
+                const outcome = runner.runTail(payload[base + systemLastRun], input, tailControl(tail), payload[payloadSync], k, stamps);
+                if (outcome.executed) flags |= executedFlag;
+                if (outcome.ran) flags |= ranFlag;
+                if (outcome.error !== undefined) {
+                    flags |= failedFlag;
+                    (errors ??= []).push([k, errorOf(outcome.error)]);
+                }
+                completion[result + resultFlags] = flags;
+                continue;
+            }
             if (runner === null || runner === undefined) error = new Error("A system the world placed on this thread isn't one this thread imported.");
             else {
                 const outcome = runner.run(payload[base + systemLastRun], input);
@@ -579,9 +639,9 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
             else if (runner !== null && runner !== undefined && (flags & ranFlag) !== 0) runner.writeFolds(completion, folds + payload[base + systemFolds]);
             completion[result + resultFlags] = flags;
         }
-        const message = errors !== null || spills !== null || host.numbered() !== numberedBefore || !host.worldWaits;
+        const message = errors !== null || spills !== null || stamps.length > 0 || host.numbered() !== numberedBefore || !host.worldWaits;
         completion[completionMessage] = message ? 1 : 0;
-        if (message) host.post({ protocol: protocolName, kind: "completed", sequence, errors: errors ?? [], spills: spills ?? [] }, transfer ?? []);
+        if (message) host.post({ protocol: protocolName, kind: "completed", sequence, errors: errors ?? [], spills: spills ?? [], ...stamps.length > 0 ? { stamps: [...stamps] } : {} }, transfer ?? []);
         Atomics.store(control, taskDoneWord, posted);
         Atomics.notify(control, taskDoneWord);
     };
@@ -624,6 +684,9 @@ type RunnerHost = {
     readonly commands: Commands;
     readonly numberOf: (key: Key) => number;
     readonly layoutOf: (key: Key) => Layout | undefined;
+    readonly mirror: Mirror;
+    /** Views of the memory again, once it grew: its buffer. */
+    readonly refresh: () => ArrayBufferLike;
 };
 
 /** One run's outcome: whether it took its tick, ran its rows, and its error. */
@@ -632,6 +695,12 @@ type Outcome = { executed: boolean; ran: boolean; error: unknown };
 type ThreadRunner = {
     /** Runs it once, at the tick its host's rows stamp with. */
     readonly run: (lastRun: number, input: unknown) => Outcome;
+    /**
+     * Runs it once as a tail, through its block `control`, as of sync `sync`: claiming its rows in chunks where they
+     * are, and from the snapshot once the world took one. Objects it wrote from the snapshot are pushed to `stamps`
+     * as `position`, entity and component, for the world to stamp; -1 names the resource entity.
+     */
+    readonly runTail: (lastRun: number, input: unknown, control: Int32Array, sync: number, position: number, stamps: number[]) => Outcome;
     /** Writes its folds' leaves from `at`. */
     readonly writeFolds: (completion: Float64Array, at: number) => void;
 };
@@ -720,6 +789,13 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf): ThreadRunner => {
         Object.defineProperty(value, "reduce", { value: reducers, enumerable: true });
     }
     if (declaration.input !== undefined) value.input = undefined;
+    // A tail is terminal, so its context has no commands.
+    const tailValue: { input?: unknown } = own();
+    for (const name of Object.getOwnPropertyNames(value)) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, name);
+        if (descriptor !== undefined && name !== "input") Object.defineProperty(tailValue, name, descriptor);
+    }
+    if (declaration.input !== undefined) tailValue.input = undefined;
     Object.defineProperty(value, "commands", { value: host.commands, enumerable: true });
 
     /** Resolves resource cells for a run: they move only at sync points. */
@@ -827,12 +903,268 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf): ThreadRunner => {
         return outcome;
     };
 
+    // As a tail: its linear reads and resources, which a snapshot holds, and the objects it reads and writes, this
+    // thread's, which it reads from its mirror at the snapshot's rows.
+    const readKeys = query?.read ?? [];
+    const writeKeys = query?.write ?? [];
+    const linearReads: { readonly number: number; readonly layout: Layout & { readonly kind: "linear" } }[] = [];
+    const constantReads: { readonly number: number; readonly layout: Layout }[] = [];
+    for (const key of readKeys) {
+        const layout = host.layoutOf(key);
+        if (layout?.kind === "linear") linearReads.push({ number: numberOf(key), layout });
+        else if (layout?.kind === "constant") constantReads.push({ number: numberOf(key), layout });
+    }
+    const objectKeys = [...new Set([...readKeys, ...writeKeys])].filter(key => host.layoutOf(key)?.kind === "object").map(numberOf);
+    const writtenObjects = new Set(writeKeys.map(numberOf));
+    const snapshotResources = resourceKeys.flatMap((key, k) => {
+        const layout = host.layoutOf(key);
+        return layout?.kind === "linear" && !writes.has(key) ? [{ k, layout }] : [];
+    });
+    const strides = linearReads.map(({ layout }) => layout.stride);
+    const resourceStrides = snapshotResources.map(({ layout }) => layout.stride);
+    /** Matched archetypes' views and counts as of the tail's head. */
+    const tailArchetypes: (ThreadArchetype | undefined)[] = [];
+    const tailCounts: number[] = [];
+
+    /** Where the tail finished reading through; the world waits for it once it took a snapshot. */
+    const finish = (control: Int32Array, through: number): void => {
+        Atomics.store(control, doneWord, through);
+        if (Atomics.load(control, waitingWord) !== 0) Atomics.notify(control, doneWord);
+    };
+
+    const runRows = (archetype: ThreadArchetype, start: number, end: number, since: number): void => {
+        const row = bindRow(archetype);
+        const subject = row.value;
+        const filters = filtersOf(archetype);
+        if (since < 0 || filters.length === 0) {
+            for (let index = start; index < end; index++) {
+                row.index = index;
+                system.body(subject, tailValue);
+            }
+            return;
+        }
+        forEachPassingRange(filters, since, start, end, (first, last) => {
+            for (let index = first; index < last; index++) {
+                row.index = index;
+                system.body(subject, tailValue);
+            }
+        });
+    };
+
+    /** Runs positions `from` to `to` where their rows are, over the archetypes as of the head. */
+    const runPositions = (from: number, to: number, since: number): void => {
+        let base = 0;
+        for (let m = 0; m < tailCounts.length; m++) {
+            const count = tailCounts[m];
+            const start = Math.max(from - 1 - base, 0);
+            const end = Math.min(to - 1 - base, count);
+            const archetype = tailArchetypes[m];
+            if (end > start && archetype !== undefined) runRows(archetype, start, end, since);
+            base += count;
+            if (base >= to - 1) return;
+        }
+    };
+
+    /** Where each entity's row is in the mirror, for a mirror rebuilt past the tail's sync. */
+    const locations = (component: number): Map<number, { readonly values: unknown[]; readonly row: number }> => {
+        const found = new Map<number, { readonly values: unknown[]; readonly row: number }>();
+        for (const mirrored of host.mirror.archetypes) {
+            const column = mirrored?.byComponent[component];
+            if (mirrored === null || mirrored === undefined || column === undefined) continue;
+            for (let row = 0; row < mirrored.count; row++) found.set(mirrored.entities[row], { values: column.values, row });
+        }
+        return found;
+    };
+
+    /**
+     * Runs the rest from the snapshot, from `position` on: its head too when `head`. Reads only the snapshot and this
+     * thread's mirror, never the world's storages, which may have moved since; objects it writes go back to the mirror
+     * after, and are stamped by the world.
+     */
+    const runSnapshot = (control: Int32Array, position: number, head: boolean, sync: number, input: unknown, at: number, stamps: number[]): void => {
+        const buffer = host.refresh();
+        const offset = Atomics.load(control, snapshotOffsetWord) >>> 0;
+        const rows = Atomics.load(control, snapshotRowsWord);
+        const flags = Atomics.load(control, snapshotFlagsWord);
+        const placed = snapshotLayout(Atomics.load(control, snapshotCapacityWord), strides, resourceStrides);
+        if (position === 0) tailSnapshots.late++;
+        else tailSnapshots.switched++;
+        const { mirror } = host;
+        const tick = host.rows.tick;
+        const bounded = mirror.through === (sync >>> 0);
+        const resourceArchetype = Atomics.load(control, snapshotResourceArchetypeWord);
+        const resourceRow = Atomics.load(control, snapshotResourceRowWord);
+        // Resources: structs from the snapshot, this thread's objects from its mirror's resource row.
+        const ownResources: { readonly k: number; readonly component: number; readonly storage: ThreadStorage }[] = [];
+        resourceKeys.forEach((key, k) => {
+            const layout = host.layoutOf(key);
+            const component = resourceNumbers[k];
+            if (layout === undefined) return;
+            const copied = snapshotResources.findIndex(entry => entry.k === k);
+            if (copied >= 0) {
+                const stride = resourceStrides[copied];
+                cells[k].storage = localStorage(component, layout, viewsOf(buffer, offset + placed.resources[copied], stride), [], 0);
+                cells[k].row = 0;
+                return;
+            }
+            if (layout.kind === "object") {
+                const value = mirror.archetypes[resourceArchetype]?.byComponent[component]?.values[resourceRow];
+                const storage = localStorage(component, layout, emptyViews, [value], 1);
+                cells[k].storage = storage;
+                cells[k].row = 0;
+                ownResources.push({ k, component, storage });
+                return;
+            }
+            cells[k].storage = localStorage(component, layout, emptyViews, [], 0);
+            cells[k].row = 0;
+        });
+        if (head) {
+            if ((flags & headExecuted) === 0) return;
+            outcome.executed = true;
+            outcome.ran = (flags & headRan) !== 0;
+            if (declaration.input !== undefined) tailValue.input = ownInput(input);
+            if (!outcome.ran) return;
+            if (query === undefined) {
+                system.body(tailValue);
+                writeBackResources(ownResources, resourceArchetype, resourceRow, tick, at, stamps);
+                return;
+            }
+        }
+        const positions = new Uint32Array(buffer, offset + placed.positions, rows);
+        const archetypeIds = new Uint32Array(buffer, offset + placed.archetypes, rows);
+        const rowsOf = new Uint32Array(buffer, offset + placed.rows, rows);
+        const entities = new Float64Array(buffer, offset + placed.entities, rows);
+        const storageById: ThreadStorage[] = [];
+        linearReads.forEach(({ number, layout: linear }, k) => {
+            storageById[number] = localStorage(number, linear, viewsOf(buffer, offset + placed.columns[k], rows * linear.stride), [], 0);
+        });
+        for (const { number, layout: constant } of constantReads) storageById[number] = localStorage(number, constant, emptyViews, [], 0);
+        const objects: { readonly number: number; readonly storage: ThreadStorage }[] = [];
+        for (const number of objectKeys) {
+            const values = new Array<unknown>(rows);
+            const byEntity = bounded ? null : locations(number);
+            for (let i = 0; i < rows; i++) {
+                if (byEntity === null) values[i] = mirror.archetypes[archetypeIds[i]]?.byComponent[number]?.values[rowsOf[i]];
+                else {
+                    const location = byEntity.get(entities[i]);
+                    values[i] = location?.values[location.row];
+                }
+            }
+            const storage = localStorage(number, { kind: "object" }, emptyViews, values, writtenObjects.has(number) ? rows : 0);
+            storageById[number] = storage;
+            if (writtenObjects.has(number)) objects.push({ number, storage });
+        }
+        let first = 0;
+        while (first < rows && positions[first] < position) first++;
+        const row = bindRow({ id: -1, entities, storageById, record: -1, version: -1, mirrored: null, components: [], resource: false });
+        const subject = row.value;
+        try {
+            for (let index = first; index < rows; index++) {
+                row.index = index;
+                system.body(subject, tailValue);
+            }
+        }
+        finally {
+            // What it wrote goes back to the mirror, where its rows are now.
+            for (const { number, storage } of objects) {
+                const byEntity = bounded ? null : locations(number);
+                for (let i = first; i < rows; i++) {
+                    if (storage.changed[i] !== tick) continue;
+                    if (byEntity === null) {
+                        const column = mirror.archetypes[archetypeIds[i]]?.byComponent[number];
+                        if (column !== undefined) column.values[rowsOf[i]] = storage.values[i];
+                    }
+                    else {
+                        const location = byEntity.get(entities[i]);
+                        if (location !== undefined) location.values[location.row] = storage.values[i];
+                    }
+                    stamps.push(at, entities[i], number);
+                }
+            }
+            writeBackResources(ownResources, resourceArchetype, resourceRow, tick, at, stamps);
+        }
+    };
+
+    const writeBackResources = (resources: readonly { readonly component: number; readonly storage: ThreadStorage }[], archetype: number, row: number, tick: number, at: number, stamps: number[]): void => {
+        for (const { component, storage } of resources) {
+            if (storage.changed[0] !== tick) continue;
+            const column = host.mirror.archetypes[archetype]?.byComponent[component];
+            if (column !== undefined) column.values[row] = storage.values[0];
+            stamps.push(at, -1, component);
+        }
+    };
+
+    const runTail = (lastRun: number, input: unknown, control: Int32Array, sync: number, at: number, stamps: number[]): Outcome => {
+        outcome.executed = outcome.ran = false;
+        outcome.error = undefined;
+        const end = Atomics.load(control, endWord);
+        try {
+            let claimed = Atomics.add(control, progressWord, tailChunk);
+            if (claimed >= snapshotted) {
+                runSnapshot(control, 0, true, sync, input, at, stamps);
+                return outcome;
+            }
+            // The head, within the first claim: conditions, resources and the archetypes as of the tail's sync.
+            if (!holds()) return outcome;
+            outcome.executed = true;
+            const resourcesChanged = resourceChanged.length > 0 && resourcesChangedSince(lastRun);
+            const since = !filtered || resourcesChanged ? -1 : lastRun;
+            bind();
+            if (declaration.input !== undefined) tailValue.input = ownInput(input);
+            if (query === undefined) {
+                outcome.ran = since < 0;
+                if (outcome.ran) system.body(tailValue);
+                return outcome;
+            }
+            if (since >= 0 && addedIds.length + changedIds.length === 0) return outcome;
+            outcome.ran = true;
+            refreshMatches();
+            tailArchetypes.length = tailCounts.length = 0;
+            for (let m = 0; m < matches.length; m++) {
+                const archetype = host.archetypeAt(matches[m]);
+                tailArchetypes.push(archetype);
+                tailCounts.push(archetype === undefined ? 0 : host.countOf(archetype));
+            }
+            let from = 1;
+            for (;;) {
+                const to = Math.min(claimed + tailChunk, end);
+                if (from < to) runPositions(from, to, since);
+                if (to >= end) return outcome;
+                finish(control, to);
+                const next = to;
+                claimed = Atomics.add(control, progressWord, tailChunk);
+                if (claimed >= snapshotted) {
+                    runSnapshot(control, next, false, sync, input, at, stamps);
+                    return outcome;
+                }
+                from = claimed;
+            }
+        }
+        catch (error) {
+            outcome.error = error;
+            return outcome;
+        }
+        finally {
+            finish(control, end);
+        }
+    };
+
     const writeFolds = (completion: Float64Array, at: number): void => {
         let offset = at;
         for (const accumulators of reduced) for (let i = 0; i < accumulators.length; i++) completion[offset++] = accumulators[i];
     };
 
-    return { run, writeFolds };
+    return { run, runTail, writeFolds };
+};
+
+/** A storage over a snapshot's column, or of values only this thread holds, with ticks of its own for `ticked` rows. */
+const localStorage = (component: number, layout: Layout, views: Views, values: unknown[], ticked: number): ThreadStorage => {
+    const chunks = ticked === 0 ? 0 : (ticked >> chunkShift) + 1;
+    return {
+        component, layout, views, values, ...writeOf(layout), tags: noTags, ticked: ticked > 0,
+        added: ticked === 0 ? noTicks : new Float64Array(ticked), changed: ticked === 0 ? noTicks : new Float64Array(ticked),
+        chunkAdded: chunks === 0 ? noTicks : new Float64Array(chunks), chunkChanged: chunks === 0 ? noTicks : new Float64Array(chunks),
+    };
 };
 
 /** A lookup returning `read` values keyed by component, from this thread's views. */

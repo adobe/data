@@ -59,6 +59,8 @@ export type Runner = {
     readonly touches: readonly number[];
     readonly writes: readonly number[];
     readonly looks: readonly number[];
+    /** Resource ids it writes or reduces into, which a tail reading them waits for (`tails.ts`). */
+    readonly resourceWrites: readonly number[];
     /** The archetypes its query matches now. */
     readonly matched: () => readonly Archetype[];
     /** Loads its kernel, and compiles its compute pipeline when it's placed on the GPU; rejects with the reason it can't be. */
@@ -80,6 +82,10 @@ export type Runner = {
     /** The tick it last ran at, which a runner placing it elsewhere starts from. */
     readonly lastRun: () => number;
 };
+
+/** The resources a declaration writes or reduces into, by id. */
+export const resourceWritesOf = (state: State, declaration: Leaf["declaration"]): readonly number[] =>
+    [...new Set([...declaration.resources?.write ?? [], ...declaration.reduce === undefined ? [] : Object.getOwnPropertySymbols(declaration.reduce)].map(key => idOf(state, key)))];
 
 /** A number for each leaf, so the GPU records of every runner made for it are its own, whatever its name. */
 const leafNumbers = new WeakMap<Leaf, number>();
@@ -786,6 +792,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         touches,
         writes,
         looks,
+        resourceWrites: resourceWritesOf(state, declaration),
         matched: () => {
             refreshMatches();
             return matches;

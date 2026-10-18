@@ -1,4 +1,4 @@
-import { Resource } from '../../interface/resource/resource.js';
+import { Resource } from '../../index.js';
 import { count } from './particles.js';
 
 // @ts-expect-error a resource schema requires a default

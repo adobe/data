@@ -1,5 +1,5 @@
 import { createWorld } from '../../implementation/index.js';
-import { always } from '../../interface/resources/always.js';
+import { always } from '../../index.js';
 import { frame } from './sprites.js';
 
 // The world, on a worker: main and the loader join it through the ports main sends, and it draws every frame.

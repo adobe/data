@@ -1,12 +1,4 @@
-import { Component } from '../../interface/component/component.js';
-import type { Entity } from '../../interface/entity/entity.js';
-import { toPromise } from '../../interface/observe/to-promise.js';
-import { Resource } from '../../interface/resource/resource.js';
-import { Vec3 } from '../../interface/math/index.js';
-import { System } from '../../interface/system/system.js';
-import { World } from '../../interface/world/world.js';
-import { createWorld } from '../../implementation/index.js';
-import type { InitialResources } from '../../interface/world/create.js';
+import { Component, Observe, Resource, System, Vec3, type World } from '../../index.js';
 
 export const position = Symbol("particles/position");
 export const velocity = Symbol("particles/velocity");
@@ -14,11 +6,11 @@ export const delta = Symbol("particles/delta");
 export const count = Symbol("particles/count");
 
 declare module '@adobe/data-ecs' {
-    export interface Components {
+    interface Components {
         [position]: typeof positionTraits;
         [velocity]: typeof velocityTraits;
     }
-    export interface Resources {
+    interface Resources {
         [delta]: typeof deltaTraits;
         [count]: typeof countTraits;
     }
@@ -78,9 +70,6 @@ export const frame = async (world: World, seconds: number): Promise<readonly Vec
     await world.run(setDelta, { seconds });
     await world.run(main);
     // Each read is an observer's first value.
-    const particles = await toPromise(world.observe.select({ required: [position] }));
-    return Promise.all(particles.map(async (entity: Entity) => (await toPromise(world.observe.entity(entity, { required: [position] })))?.[position] ?? [0, 0, 0]));
+    const particles = await Observe.toPromise(world.observe.select({ required: [position] }));
+    return Promise.all(particles.map(async entity => (await Observe.toPromise(world.observe.entity(entity, { required: [position] })))?.[position] ?? [0, 0, 0]));
 };
-
-/** A world of the sample's particles; initial resources such as `workers` start at the given values. */
-export const start = async (resources: InitialResources = {}): Promise<World> => createWorld(resources);

@@ -1,8 +1,4 @@
-import { Component } from '../../interface/component/component.js';
-import { Vec2 } from '../../interface/math/index.js';
-import { Resource } from '../../interface/resource/resource.js';
-import { clock } from '../../interface/resources/clock.js';
-import { System } from '../../interface/system/system.js';
+import { Component, Resource, System, Vec2, clock } from '../../index.js';
 
 // The transfers sample's keys and systems, which every thread imports: the world, on a worker, draws sprites into the
 // canvas main moved to it, each with a texture a loader worker decoded and moved to it. Values move through runs whose
@@ -15,12 +11,12 @@ export const surface = Symbol("transferSprites/surface");
 export const stats = Symbol("transferSprites/stats");
 
 declare module '@adobe/data-ecs' {
-    export interface Components {
+    interface Components {
         [texture]: typeof textureTraits;
         [position]: typeof positionTraits;
         [velocity]: typeof velocityTraits;
     }
-    export interface Resources {
+    interface Resources {
         [surface]: typeof surfaceTraits;
         [stats]: typeof statsTraits;
     }

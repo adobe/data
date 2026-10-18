@@ -1,10 +1,6 @@
-import { Gpu } from '../../../interface/gpu/gpu.js';
-import { toPromise } from '../../../interface/observe/to-promise.js';
-import { System } from '../../../interface/system/system.js';
-import { World } from '../../../interface/world/world.js';
-import { createDraw, enabled, move, moveOnCpu, position, spawn, visible } from './particles.js';
 import { createWorld } from '../../../implementation/index.js';
-import { gpuDevice } from '../../../interface/resources/gpu-device.js';
+import { Gpu, Observe, System, gpuDevice } from '../../../index.js';
+import { createDraw, enabled, move, moveOnCpu, position, spawn, visible } from './particles.js';
 
 /**
  * The particles sample. `?mode=gpu` moves particles on the GPU, `cpu` on workers (uploading positions for drawing
@@ -67,8 +63,8 @@ const start = async (): Promise<void> => {
     await world.run(spawn, { count, width: canvas.width, height: canvas.height });
     /** For automated checks: a few drawn particles' positions, which observers read back from the GPU. */
     Reflect.set(globalThis, "sampleProbe", async () => {
-        const drawn = await toPromise(world.observe.select({ required: [position, visible, enabled] }));
-        return Promise.all(drawn.slice(0, 3).map(async entity => (await toPromise(world.observe.entity(entity, { required: [position] })))?.[position] ?? null));
+        const drawn = await Observe.toPromise(world.observe.select({ required: [position, visible, enabled] }));
+        return Promise.all(drawn.slice(0, 3).map(async entity => (await Observe.toPromise(world.observe.entity(entity, { required: [position] })))?.[position] ?? null));
     });
 
     // At most two frames of GPU work in flight, so the CPU can't run ahead of the GPU.

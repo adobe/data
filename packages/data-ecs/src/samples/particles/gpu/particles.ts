@@ -1,8 +1,4 @@
-import { Archetype } from '../../../interface/archetype/archetype.js';
-import { Component } from '../../../interface/component/component.js';
-import { Gpu } from '../../../interface/gpu/gpu.js';
-import { Vec3 } from '../../../interface/math/index.js';
-import { System } from '../../../interface/system/system.js';
+import { Archetype, Component, Gpu, System, Vec3 } from '../../../index.js';
 
 // The perf particles (src/perftest/particles.ts) on screen: 1M particles over four archetypes by visible and
 // enabled, with screen-space positions and velocities in pixels per frame. `move` is the perf move kernel, on the GPU.
@@ -15,7 +11,7 @@ export const visible = Symbol("gpuParticles/visible");
 export const enabled = Symbol("gpuParticles/enabled");
 
 declare module '@adobe/data-ecs' {
-    export interface Components {
+    interface Components {
         [position]: typeof positionTraits;
         [velocity]: typeof velocityTraits;
         [color]: typeof colorTraits;

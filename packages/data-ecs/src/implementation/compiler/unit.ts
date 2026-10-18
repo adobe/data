@@ -45,6 +45,8 @@ export type Unit = {
     /** The shapes of values contributed to reductions, as source text. */
     readonly reducedShapes: Set<string>;
     readonly keys: string[];
+    /** Each list the kernel spawns, as indexes into `keys`, listed once. */
+    readonly spawns: (readonly number[])[];
     /** Each leaf a reduction folds into: its resource (an index into `Signature.reduced`), path and accumulator local. */
     readonly accumulators: { readonly reduced: number; readonly path: readonly (number | string)[]; readonly local: number }[];
     /** The components, resources and lookup results the body reads and writes, to check the declaration lists only those. */
@@ -69,7 +71,7 @@ export const createUnit = (signature: Signature, module: Module, lists: Lists, e
     const up = signature.up === null ? null : counter++;
     if (up !== null) names.set(up, "up");
     return {
-        signature, module, lists, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], accumulators: [], active: new Set(),
+        signature, module, lists, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], spawns: [], accumulators: [], active: new Set(),
         used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map(), up: new Set() },
         up, upColumns: [], upColumnIndex: new Map(), upBooleans: new Set(),
         next: () => counter++, expression, statement,
@@ -92,4 +94,13 @@ export const keyIndex = (unit: Unit, name: string): number => {
     if (index >= 0) return index;
     unit.keys.push(name);
     return unit.keys.length - 1;
+};
+
+/** The `spawns` index for a list of components a kernel spawns. */
+export const spawnIndex = (unit: Unit, names: readonly string[]): number => {
+    const keys = names.map(name => keyIndex(unit, name));
+    const index = unit.spawns.findIndex(list => list.length === keys.length && list.every((key, k) => key === keys[k]));
+    if (index >= 0) return index;
+    unit.spawns.push(keys);
+    return unit.spawns.length - 1;
 };

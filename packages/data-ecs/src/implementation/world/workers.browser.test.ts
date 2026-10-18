@@ -137,6 +137,30 @@ const unlink = System.create({
     commands.despawn(1);
 });
 
+/** Archetypes in this order: 5 rows the main thread runs, 1,000 that workers run, then 10 more on the main thread. */
+const sources = System.create({ name: "workersTest/sources" }, ({ commands }) => {
+    for (let i = 0; i < 5; i++) commands.spawn([offset, tagD])({ [offset]: i });
+    for (let i = 5; i < 1_005; i++) commands.spawn([offset, tagA])({ [offset]: i });
+    for (let i = 1_005; i < 1_015; i++) commands.spawn([offset, tagB])({ [offset]: i });
+});
+
+/** A spawn per row, from wherever its chunk runs; with `edit`, each spawn is also added to and removed from. */
+const emit = System.create({
+    name: "workersTest/emit",
+    kernel: "cpu",
+    input: { type: "object", properties: { edit: { type: "boolean" } } },
+    components: { read: [offset], not: [spawned] },
+}, (row, { input, commands }) => {
+    const entity = commands.spawn([position, spawned, tagC])({ [position]: [row[offset], -row[offset]] });
+    if (input.edit) {
+        commands.add(entity, velocity, [row[offset], 1]);
+        commands.remove(entity, tagC);
+    }
+});
+
+const emitted = { seen: 0 };
+const countEmitted = System.create({ name: "workersTest/countEmitted", components: { added: [position], has: [spawned] } }, () => { emitted.seen++; });
+
 const disposals: World[] = [];
 afterEach(async () => {
     for (const world of disposals.splice(0)) await world.dispose();
@@ -209,6 +233,29 @@ describe("workers", () => {
             return [await read(world, first, offset), await readEach(world, await select(world, { required: [position] }), position)];
         };
         expect(await ordered(3)).toEqual(await ordered(0));
+    });
+
+    it("stage kernel spawns from every worker and the main thread in chunk order, whatever the worker count", async () => {
+        const spawnsWith = async (count: number, edit: boolean): Promise<unknown[]> => {
+            const world = createWorld({ [workers]: count }, { minimumChunk: 64 });
+            disposals.push(world);
+            await world.run(sources);
+            await world.run(emit, { edit });
+            emitted.seen = 0;
+            await world.run(countEmitted);
+            await world.run(countEmitted);
+            const entities = await select(world, { required: [spawned] });
+            return [emitted.seen, await readEach(world, entities, position), await readEach(world, entities, velocity), await readEach(world, entities, tagC)];
+        };
+        const rows = Array.from({ length: 1_015 }, (_, i) => i);
+        // Storage order is the spawns' order, row by row over the archetypes, wherever each chunk ran.
+        const alone = await spawnsWith(0, false);
+        expect(alone).toEqual([1_015, rows.map(i => [i, -i]), rows.map(() => null), rows.map(() => true)]);
+        for (const count of [1, 2, 7]) expect(await spawnsWith(count, false)).toEqual(alone);
+        // Spawned entities moved in the same sync point arrive in the order of the commands that moved them.
+        const edited = await spawnsWith(0, true);
+        expect(edited).toEqual([1_015, rows.map(i => [i, -i]), rows.map(i => [i, 1]), rows.map(() => null)]);
+        for (const count of [1, 2, 7]) expect(await spawnsWith(count, true)).toEqual(edited);
     });
 
     it("can't touch the resource entity", async () => {

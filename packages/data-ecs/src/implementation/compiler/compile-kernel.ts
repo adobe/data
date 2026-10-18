@@ -78,6 +78,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),
         ...resources.map((_, index) => `const r${index} = resources[${index}];`),
         ...lookups.map((_, index) => `const l${index} = lookups[${index}];`),
+        ...unit.spawns.map((_, index) => `const spawn${index} = commands.spawners[${index}];`),
         // A call's rows share one parent archetype, whose columns `up` reads at each row's parent row `p`.
         ...unit.up === null ? [] : [
             `const ${localName(unit, unit.up)} = found ? true : null;`,
@@ -93,6 +94,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             `lookups: [${lookups.map(lookup => JSON.stringify(lookup.name)).join(", ")}],`,
             ...up === null ? [] : ["up: true,", `upColumns: [${unit.upColumns.join(", ")}],`],
             `keys: [${keys.join(", ")}],`,
+            `spawns: ${JSON.stringify(unit.spawns)},`,
             `url: ${url},`,
             `program: ${serialize(program)},`,
             `reducedShapes: [${[...unit.reducedShapes].join(", ")}],`,

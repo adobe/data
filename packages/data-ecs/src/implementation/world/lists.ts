@@ -1,8 +1,8 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import { archetypeIndexOf, labelOf } from '../../interface/registry/index.js';
-import { writeF32, writeF32Lanes, writeU32 } from './archetype.js';
-import { batchOf, claim, openRow, writerOf, type Column, type SpawnBatch, type Writer } from './batches.js';
+import { batchOf } from './batches.js';
 import { reserve } from './entities.js';
+import { claim, generated, openRow, writerOf, type Column, type Positional, type SpawnBatch, type Writer } from './staging.js';
 import { commandIdOf, type State } from './state.js';
 
 /** Values by key, as spawns and adds read them. */
@@ -112,51 +112,7 @@ const loopSpawner = (state: State, { batch, keys, writers }: Written): Spawner =
     };
 };
 
-/** Whether code can be generated here; a content security policy without `'unsafe-eval'` forbids it. */
-let generating = true;
-
-/** Statements storing value expression `value` into column `k`: numbers and f32 tuples inline, anything else through its writer. */
-const store = (column: Column, k: number, value: string): string => {
-    const at = `row * ${column.unitStride} + ${column.unitOffset}`;
-    switch (column.write) {
-        case writeF32:
-        case writeU32:
-            return `v = ${value}; if (typeof v === "number") c${k}.views.${column.write === writeF32 ? "f32" : "u32"}[${at}] = v; else w${k}(row, v);`;
-        case writeF32Lanes: {
-            const lanes = Array.from({ length: column.lanes }, (_, lane) => `f[at + ${lane}] = Number(v[${lane}]);`).join(" ");
-            return `v = ${value}; if (Array.isArray(v)) { const f = c${k}.views.f32; const at = ${at}; ${lanes} } else w${k}(row, v);`;
-        }
-        default:
-            return `w${k}(row, ${value});`;
-    }
-};
-
-/**
- * A function generated to spawn into `batch`, taking `parameters`: one straight-line store per column, of the value
- * expression `values[k]` gives, so each store sees one layout and each read one object shape. Only numbers are written
- * into the code: keys, columns and writers are its arguments. Null where code can't be generated.
- */
-const generated = <F>(state: State, batch: SpawnBatch, parameters: readonly string[], keys: readonly symbol[], columns: readonly Column[], writers: readonly Writer[], values: (k: number) => string): F | null => {
-    if (!generating) return null;
-    const body = [
-        `return (${parameters.join(", ")}) => {`, "const row = openRow(batch);", "let v;",
-        ...columns.map((column, k) => store(column, k, values(k))),
-        "const entity = reserve(entities);", "claim(batch, entity);", "return entity;", "};",
-    ].join("\n");
-    try {
-        const factory = new Function("batch", "entities", "openRow", "claim", "reserve", ...columns.flatMap((_, k) => [`k${k}`, `c${k}`, `w${k}`]), body);
-        // The factory returns the function its body above makes.
-        const made: F = factory(batch, state.entities, openRow, claim, reserve, ...columns.flatMap((_, k) => [keys[k], columns[k], writers[k]]));
-        return made;
-    }
-    catch {
-        generating = false;
-        return null;
-    }
-};
-
-/** Spawns of a shape's components with their values in a site's key order, each `undefined` or left out its start. */
-export type Positional = (...values: unknown[]) => Entity;
+export type { Positional };
 
 /**
  * Spawns of a shape taking values positionally in `order`, a site's key order: generated, else a loop over the
@@ -165,7 +121,7 @@ export type Positional = (...values: unknown[]) => Entity;
 export const positionalOf = (state: State, shape: ListShape, order: readonly unknown[]): Positional => {
     const { batch, keys, columns, writers } = writtenOf(state, shape);
     const at = keys.map(key => order.indexOf(key));
-    const made = generated<Positional>(state, batch, order.map((_, k) => `v${k}`), keys, columns, writers, k => at[k] < 0 ? "undefined" : `v${at[k]}`);
+    const made = generated<Positional>(state.entities, batch, order.map((_, k) => `v${k}`), keys, columns, writers, k => at[k] < 0 ? "undefined" : `v${at[k]}`);
     if (made !== null) return made;
     const { entities } = state;
     return (...values) => {
@@ -185,6 +141,6 @@ export const spawnerOf = (state: State, shape: ListShape): Spawner => {
     if (shape.spawner !== null) return shape.spawner;
     const written = writtenOf(state, shape);
     const { batch, keys, columns, writers } = written;
-    shape.spawner = generated<Spawner>(state, batch, ["values"], keys, columns, writers, k => `values[k${k}]`) ?? loopSpawner(state, written);
+    shape.spawner = generated<Spawner>(state.entities, batch, ["values"], keys, columns, writers, k => `values[k${k}]`) ?? loopSpawner(state, written);
     return shape.spawner;
 };

@@ -38,7 +38,7 @@ const double = System.create({ name: "kernelsTest/double", kernel: "cpu", compon
 });
 
 const describing = (overrides: Partial<KernelDescription>): KernelDescription =>
-    ({ columns: [], shapes: [], resources: [], lookups: [], keys: [], url: "unused", program: null, reductions: [], reducedShapes: [], ...overrides });
+    ({ columns: [], shapes: [], resources: [], lookups: [], keys: [], spawns: [], url: "unused", program: null, reductions: [], reducedShapes: [], ...overrides });
 
 const bind = (overrides: Partial<KernelDescription>): void => {
     const definition = definitionOf(attachKernel(system, describing(overrides)));
@@ -55,5 +55,17 @@ describe("bindKernel", () => {
     });
     it("rejects a whole-value write of a component the system only reads", () => {
         expect(() => bind({ shapes: [{ component: value, leaves: [[]] }] })).toThrow("isn't in its components' write");
+    });
+    it("rejects a spawn list naming a component twice", () => {
+        expect(() => bind({ keys: [value, other], spawns: [[0, 1], [1, 0, 1]] })).toThrow('spawns a list naming "kernelsTest/other" twice');
+    });
+});
+
+describe("attachKernel", () => {
+    it("rejects at registration a spawn site naming a component twice", () => {
+        expect(() => attachKernel(system, describing({ keys: [value, other], spawns: [[1, 0, 1]] }))).toThrow('Kernel "kernelsTest/read": spawns a list naming "kernelsTest/other" twice.');
+    });
+    it("rejects at registration a spawn site naming a component outside its keys", () => {
+        expect(() => attachKernel(system, describing({ keys: [value], spawns: [[0, 1]] }))).toThrow('Kernel "kernelsTest/read": spawns a list naming component 1 of its 1 keys.');
     });
 });

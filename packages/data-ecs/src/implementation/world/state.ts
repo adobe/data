@@ -1,7 +1,7 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import { declarationOf, firstKeyOf, kindOf, labelOf } from '../../interface/registry/index.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
-import type { SpawnBatch } from './batches.js';
+import type { SpawnBatch } from './staging.js';
 import type { ListShape, Recent } from './lists.js';
 import type { Directory } from './directories.js';
 import type { GpuEngine } from './gpu.js';

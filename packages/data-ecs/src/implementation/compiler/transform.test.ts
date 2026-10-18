@@ -260,7 +260,12 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
     // Records each command start as [kind, entity], and each value or component as [kind, entity, key index, value?].
     let current: readonly [number | "spawn", number] = ["spawn", 0];
     const commands = {
-        spawn: () => { current = ["spawn", 999]; calls.push(current); return 999; },
+        spawners: description.spawns.map(list => (...values: unknown[]) => {
+            current = ["spawn", 999];
+            calls.push(current);
+            list.forEach((key, k) => calls.push([...current, key, values[k]]));
+            return 999;
+        }),
         begin: (kind: number, entity: number) => { current = [kind, entity]; calls.push(current); },
         value: (key: number, value: unknown) => { calls.push([...current, key, value]); },
         component: (key: number) => { calls.push([...current, key]); },

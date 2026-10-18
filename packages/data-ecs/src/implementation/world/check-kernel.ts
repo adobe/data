@@ -26,7 +26,8 @@ const exactly = (layout: Layout | null, leaves: readonly Path[]): boolean => {
 /**
  * Checks a compiled kernel against its declaration and the registered schemas, which don't depend on a world, so
  * registering the kernel rejects it where it's declared: every column, whole-value write, lookup, `up` read and
- * reduction it uses is declared, and names scalar leaves of its component's schema. Throws with the first mismatch.
+ * reduction it uses is declared, and names scalar leaves of its component's schema, and each spawn site names each of
+ * its components once, from its keys. Throws with the first mismatch.
  */
 export const checkKernel = (leaf: Leaf, description: KernelDescription): void => {
     const { lookup, components: query, resources, up, reduce } = leaf.declaration;
@@ -63,6 +64,12 @@ export const checkKernel = (leaf: Leaf, description: KernelDescription): void =>
     for (const reduced of description.reductions) {
         if (Reflect.get(reduce ?? {}, reduced.resource) !== reduced.operator) fail(`reduces "${labelOf(reduced.resource)}" with "${reduced.operator}", which its reduce doesn't declare.`);
         if (!hasLeaf(layoutOfKey(reduced.resource), reduced.path)) fail(`contributes to "${labelOf(reduced.resource)}" at [${reduced.path.join(", ")}], which isn't a scalar of its value; destructure tuples and structs or build them.`);
+    }
+    for (const list of description.spawns) {
+        list.forEach((k, position) => {
+            if (!Number.isInteger(k) || k < 0 || k >= description.keys.length) fail(`spawns a list naming component ${k} of its ${description.keys.length} keys.`);
+            if (list.findIndex(other => description.keys[other] === description.keys[k]) < position) fail(`spawns a list naming "${labelOf(description.keys[k])}" twice.`);
+        });
     }
     for (const shape of description.reducedShapes) {
         if (Reflect.get(reduce ?? {}, shape.component) === undefined || !exactly(layoutOfKey(shape.component), shape.leaves)) {

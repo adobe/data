@@ -25,6 +25,8 @@ export type BoundKernel = {
         readonly lookups: readonly LookupSetup[];
         readonly keys: readonly number[];
         readonly starts: readonly unknown[];
+        /** The component ids of each list the kernel spawns, in the order its spawner takes values. */
+        readonly spawns: readonly (readonly number[])[];
         /** Tick columns whose stamps nothing observes. */
         readonly muted: readonly boolean[];
         readonly up: KernelSetup["up"];
@@ -105,6 +107,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     const lookups = declaredLookups.map(declared => createArrayLookup(state, declared));
     const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => idOf(state, key));
     const keys = description.keys.map(key => commandIdOf(state, key));
+    const spawns = description.spawns.map(list => list.map(k => keys[k]));
     const setup = {
         sources,
         booleans,
@@ -113,6 +116,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         lookups: declaredLookups.map(declared => ({ read: ids(declared.read), has: ids(declared.has), not: ids(declared.not) })),
         keys,
         starts: keys.map(id => state.starts[id]),
+        spawns,
     };
     const cache = new Map<Archetype, { version: number; columns: readonly TypedArray[] }>();
     const columnsOf = (archetype: Archetype): readonly TypedArray[] => {

@@ -38,8 +38,8 @@ export type Shape = { readonly component: Key; readonly leaves: readonly Path[] 
  * - `resources`: values in `KernelDescription.resources` order.
  * - `lookups`: functions in `KernelDescription.lookups` order, returning the lookup's `read` values in declared order, or `null`.
  * - `keys`: `KernelDescription.keys`, for anything that needs a component's key.
- * - `commands`: issue commands without allocating: values are evaluated first, then `begin` (or `spawn`), then each `value`
- *   or `component`, naming components by index into `keys`.
+ * - `commands`: issue commands without allocating: values are evaluated first, then `begin`, then each `value` or
+ *   `component`, naming components by index into `keys`; a spawn calls its list's spawner with the values.
  */
 export type Kernel = (
     columns: readonly (Float64Array | Float32Array | Int32Array | Uint32Array | Uint8Array)[],
@@ -66,8 +66,11 @@ export type Kernel = (
 
 /** How kernels issue commands. `kind` is 1 for despawn, 2 for add, 3 for remove; `key` indexes the kernel's `keys`. */
 export type KernelCommands = {
-    /** Reserves an entity and starts its spawn command. */
-    readonly spawn: () => number;
+    /**
+     * By index into `KernelDescription.spawns`: stages a spawn of that list's components, taking one value per
+     * component in the list's order, `undefined` for its start, and returns the entity it reserved.
+     */
+    readonly spawners: readonly ((...values: unknown[]) => number)[];
     readonly begin: (kind: number, entity: number) => void;
     /** A component and its value for the current spawn or add; `undefined` is the component's start. */
     readonly value: (key: number, value: unknown) => void;
@@ -181,6 +184,8 @@ export type KernelDescription = {
     readonly up?: boolean;
     readonly upColumns?: readonly Column[];
     readonly keys: readonly Key[];
+    /** The components of each list the kernel spawns, as indexes into `keys`, in the order its spawner takes values. */
+    readonly spawns: readonly (readonly number[])[];
     /** A module exporting `create`, importable from the main thread and from workers. */
     readonly url: string;
     /** The same body for WASM, or `null` when it uses what WASM kernels don't support: commands, or non-scalar values. */

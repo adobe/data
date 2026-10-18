@@ -30,11 +30,6 @@ export type Plan = {
     readonly fresh: Map<number, number[]>;
     /** Where each entity index's entry is, or -1; reset after each sync point. */
     slots: Int32Array;
-    /**
-     * Spawns in a batch usually name the same few sets of components: the last eight id sequences and their target
-     * archetypes, replaced round-robin, so most spawns skip walking archetype edges.
-     */
-    readonly shapes: { ids: Int32Array; start: number; end: number; target: number }[];
 };
 
 /**
@@ -73,5 +68,4 @@ export const createPlan = (): Plan => ({
     more: new Map(),
     fresh: new Map(),
     slots: new Int32Array(0),
-    shapes: Array.from({ length: 8 }, () => ({ ids: new Int32Array(0), start: 0, end: 0, target: -1 })),
 });

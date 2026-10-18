@@ -5,9 +5,9 @@ import { readCell } from './cells.js';
 import { createCommands } from './commands.js';
 import { bindKernel, type BoundKernel } from './kernels.js';
 import type { Pool, TaskResult } from './pool.js';
-import { maximumScalars, type KernelSetup } from './protocol.js';
-import { createBuffer, createKernelCommands, emptyBuffer, type CommandBuffer } from './buffer.js';
-import { reserve } from './entities.js';
+import { maximumScalars, type KernelSetup, type PostedSpawns } from './protocol.js';
+import { createBuffer, createKernelCommands, emptyBuffer, stage, type CommandBuffer } from './buffer.js';
+import { createBatch, positionalSpawner, type SpawnBatch } from './staging.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, parentBinder, rowBinder } from './rows.js';
@@ -23,8 +23,11 @@ import { inputFor } from './input.js';
 import { createUp, type Run } from './up.js';
 import { labelOf, labelOfItem } from '../../interface/registry/index.js';
 
-/** One unit of a system's work for a run: the commands it issued, plus its error if it failed partway. */
-export type ChunkResult = { readonly commands: CommandBuffer; readonly error?: unknown };
+/**
+ * One unit of a system's work for a run: the commands it issued, the spawns a worker staged for it, plus its error if
+ * it failed partway.
+ */
+export type ChunkResult = { readonly commands: CommandBuffer; readonly spawns?: readonly PostedSpawns[]; readonly error?: unknown };
 /** An `up` system on workers settles as one chunk, once each depth's pieces have, in turn. */
 export type Chunk = ChunkResult | Promise<ChunkResult> | Promise<readonly ChunkResult[]>;
 
@@ -131,8 +134,34 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const nextBuffer = (): CommandBuffer => owned[used++] ??= createBuffer();
     /** Each owned buffer as a chunk, made once. */
     const ownedChunks: ChunkResult[] = [];
+    /**
+     * The kernel's spawn batches on the main thread, one per set of components its lists name, emptied at the start of
+     * each run, and by batch the first row the current buffer hasn't staged yet.
+     */
+    const spawnBatches: SpawnBatch[] = [];
+    const unstaged: number[] = [];
+    const spawners = (kernel?.setup.spawns ?? []).map(ids => {
+        const key = [...ids].sort((a, b) => a - b).join(",");
+        let batch = spawnBatches.find(candidate => candidate.ids.join(",") === key);
+        if (batch === undefined) {
+            batch = createBatch(state.layouts, ids);
+            spawnBatches.push(batch);
+            unstaged.push(0);
+        }
+        return positionalSpawner(state.entities, batch, ids, ids.map(id => state.starts[id]));
+    });
+    /** Stages in the current buffer the rows spawned since it took over, so they commit in its place in merge order. */
+    const stageSpawns = (): void => {
+        for (let b = 0; b < spawnBatches.length; b++) {
+            const { count } = spawnBatches[b];
+            if (count === unstaged[b]) continue;
+            stage(holder.buffer, spawnBatches[b], unstaged[b], count);
+            unstaged[b] = count;
+        }
+    };
     /** Moves `holder` to the run's next buffer, returning it as a chunk. */
     const nextChunk = (): ChunkResult => {
+        stageSpawns();
         const index = used;
         holder.buffer = nextBuffer();
         return ownedChunks[index] ??= { commands: holder.buffer };
@@ -150,7 +179,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         return false;
     };
     const commands = createCommands(state, holder);
-    const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], kernel?.setup.starts ?? [], () => reserve(state.entities));
+    const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], kernel?.setup.starts ?? [], spawners);
     // A kernel's reductions fold in its partials, so only a body that runs as written gets reducer functions. Render
     // bodies and GPU kernels issue no commands.
     const ownInput = inputFor(leaf);
@@ -644,6 +673,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         const args = ownInput(input);
         slotsUsed = 0;
         used = 0;
+        // The last run's spawns were committed, or dropped with its sync point.
+        for (let b = 0; b < spawnBatches.length; b++) spawnBatches[b].count = unstaged[b] = 0;
         const chunks = runChunks;
         // Truncated to one rather than emptied: emptying an array drops its backing store, which the push would allocate again.
         chunks.length = 1;
@@ -700,6 +731,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             return chunks;
         }
         finally {
+            stageSpawns();
             lastRun = tick;
         }
     };

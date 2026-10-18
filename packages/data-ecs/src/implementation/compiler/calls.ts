@@ -12,7 +12,7 @@ import type { Out } from './out.js';
 import { frameIn } from './module-value.js';
 import { scalar } from './scalar.js';
 import { childScope, findLocal, rootScope, type Scope } from './scope.js';
-import { fresh, keyIndex } from './unit.js';
+import { fresh, keyIndex, spawnIndex } from './unit.js';
 import { scalarValue, type Value } from './value.js';
 
 const argument = (node: SourceExpression | SpreadElement): SourceExpression =>
@@ -58,10 +58,10 @@ const none = scalarValue({ kind: "nullish", value: "undefined" });
 const undefinedValue: Expression = { kind: "nullish", value: "undefined" };
 
 /**
- * A list's values as `(key index, value)` pairs, each given one evaluated into a temporary in source order, and every
- * other component of the list `undefined`, which is its start.
+ * A list's values in its order, each given one evaluated into a temporary in source order, and every other component
+ * of the list `undefined`, which is its start.
  */
-const commandValues = (list: readonly string[], node: SourceExpression | SpreadElement | undefined, call: Node, scope: Scope, out: Out): readonly Statement[] => {
+const listValues = (list: readonly string[], node: SourceExpression | SpreadElement | undefined, call: Node, scope: Scope, out: Out): readonly Expression[] => {
     if (node?.type !== "ObjectExpression") return fail(node ?? call, "command values must be an object literal like { [position]: value }");
     const given = new Map<string, Expression>();
     for (const property of node.properties) {
@@ -71,7 +71,13 @@ const commandValues = (list: readonly string[], node: SourceExpression | SpreadE
         const value = scope.unit.expression(property.value, scope, out);
         given.set(name, temporary(scope, out, "value", observe(scope.unit, materialize(toData(value, property.value, scope)))));
     }
-    return list.map((name): Statement => ({ kind: "value", key: keyIndex(scope.unit, name), value: given.get(name) ?? undefinedValue }));
+    return list.map(name => given.get(name) ?? undefinedValue);
+};
+
+/** A list's values as `(key index, value)` statements, as `listValues` gives them. */
+const commandValues = (list: readonly string[], node: SourceExpression | SpreadElement | undefined, call: Node, scope: Scope, out: Out): readonly Statement[] => {
+    const values = listValues(list, node, call, scope, out);
+    return list.map((name, k): Statement => ({ kind: "value", key: keyIndex(scope.unit, name), value: values[k] }));
 };
 
 /**
@@ -90,13 +96,17 @@ const componentOf = (node: Node, call: string, scope: Scope): readonly string[] 
     }
 };
 
-/** `commands.spawn(components)(values)`: reserves an entity and gives each of the components its value or its start. */
+/**
+ * `commands.spawn(components)(values)`: stages a spawn through the list's spawner, giving each of the components its
+ * value or its start, and reserving the entity.
+ */
 const spawn = (inner: SimpleCallExpression, node: SimpleCallExpression, scope: Scope, out: Out): Value => {
     const [components, ...extra] = inner.arguments;
     if (components === undefined || extra.length > 0 || node.arguments.length !== 1) return fail(node, "a spawn is commands.spawn(components)(values)");
-    const values = commandValues(commandList(components, "commands.spawn", scope), node.arguments[0], node, scope, out);
+    const list = commandList(components, "commands.spawn", scope);
+    const values = listValues(list, node.arguments[0], node, scope, out);
     const result = fresh(scope.unit, "spawned");
-    out.push({ kind: "spawn", local: result }, ...values);
+    out.push({ kind: "spawn", local: result, list: spawnIndex(scope.unit, list), values });
     return scalarValue(local(result));
 };
 

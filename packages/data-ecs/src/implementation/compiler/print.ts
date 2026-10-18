@@ -84,7 +84,7 @@ const printStatement = (unit: Unit, statement: Statement, labels: Labels): strin
         case "next": return `continue ${rowLabel};`;
         case "intrinsic": return printStatements(unit, statement.body, labels);
         case "lookup": return `const ${localName(unit, statement.local)} = l${statement.lookup}(${value(statement.entity)});`;
-        case "spawn": return `const ${localName(unit, statement.local)} = commands.spawn();`;
+        case "spawn": return `const ${localName(unit, statement.local)} = spawn${statement.list}(${statement.values.map(value).join(", ")});`;
         case "begin": return `commands.begin(${statement.command}, ${value(statement.entity)});`;
         case "value": return `commands.value(${statement.key}, ${value(statement.value)});`;
         case "component": return `commands.component(${statement.key});`;

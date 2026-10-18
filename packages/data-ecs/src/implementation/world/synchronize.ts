@@ -2,7 +2,7 @@ import { copyValue, ensureCapacity, swapRemove, writeF32, writeF32Lanes, writeF6
 import { chunkShift } from './kernel.js';
 import { clearBuffer, despawnCommand, endOf, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { readCell, writeCell } from './cells.js';
-import { commitBatches } from './batches.js';
+import { commitBatches, commitStaged } from './batches.js';
 import { applyIndexChanges, cascadeReferences, indexChangesOf, type IndexChanges, type Written } from './cascade.js';
 import { refreshDirectories } from './directories.js';
 import { record } from './journal.js';
@@ -101,13 +101,11 @@ const withoutDependents = (state: State, to: Archetype, id: number): Archetype =
 const planOf = (state: State, queued: readonly Queued[], written: Written): void => {
     const { plan, structure } = state;
     if (plan.slots.length < state.entities.length) plan.slots = new Int32Array(Math.max(state.entities.length, plan.slots.length * 2)).fill(-1);
-    const { slots, shapes } = plan;
+    const { slots } = plan;
     const empty = archetypeOf(state, []).id;
     const { archetypes } = state;
     const within = derives(structure);
     const references = structure.referenceIds.length > 0;
-    let cached = 0;
-    let replace = 0;
     for (let b = 0; b < queued.length; b++) {
         const { buffer, guarded } = queued[b];
         const { kinds, entities, starts, ids, values } = buffer;
@@ -119,33 +117,15 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
             if (guarded && entity === state.resourceEntity) continue;
             const index = indexOf(entity);
             let entry: number;
+            // Only the world spawns through a command, its resource entity: systems' and kernels' spawns are staged.
             if (kind === spawnCommand) {
                 entry = addPlanned(state, entity, index, -1, empty);
                 plan.spawned++;
                 const start = starts[command];
                 const end = endOf(buffer, command);
-                const length = end - start;
-                let hit = -1;
-                for (let c = 0; c < cached && hit < 0; c++) {
-                    const shape = shapes[c];
-                    if (shape.end - shape.start !== length) continue;
-                    let same = true;
-                    for (let k = 0; k < length && same; k++) same = ids[start + k] === shape.ids[shape.start + k];
-                    if (same) hit = c;
-                }
-                if (hit >= 0) plan.to[entry] = shapes[hit].target;
-                else {
-                    let to = archetypes[empty];
-                    for (let k = start; k < end; k++) to = withComponent(state, to, ids[k]);
-                    plan.to[entry] = to.id;
-                    const shape = shapes[replace];
-                    shape.ids = ids;
-                    shape.start = start;
-                    shape.end = end;
-                    shape.target = to.id;
-                    replace = (replace + 1) % shapes.length;
-                    cached = Math.min(cached + 1, shapes.length);
-                }
+                let to = archetypes[empty];
+                for (let k = start; k < end; k++) to = withComponent(state, to, ids[k]);
+                plan.to[entry] = to.id;
                 if (end > start) addRange(state, entry, b, start, end);
                 if (references) for (let k = start; k < end; k++) if (structure.references[ids[k]] !== 0) written.push(entity, ids[k], Number(values[k]));
                 continue;
@@ -511,6 +491,7 @@ export const prepareSync = (state: State, isolated = false): boolean => {
         const born = new Map<number, number>();
         // Before the plan, so commands against staged entities find them, and before any growth, which copies `count` rows.
         if (!isolated) plan.spawned += commitBatches(state, tick, born, deriving ? close : null);
+        plan.spawned += commitStaged(state, queued, tick, born, deriving ? close : null);
         const written: Written = [];
         planOf(state, queued, written);
         if (structure.rederive && !isolated) rederive(state);

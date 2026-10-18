@@ -1,10 +1,11 @@
 import type { Entity } from '../../interface/entity/entity.js';
-import { locate, reserve, type Reservations } from './entities.js';
+import { locate } from './entities.js';
+import { createBatch, positionalSpawner, postBatch, type Positional, type SpawnBatch } from './staging.js';
 import type { Kernel, KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../interface/registry/layout.js';
 import { emptyViews } from './arrays.js';
 import { claimPiece } from './claims.js';
-import { controlWords, done, epoch, lineWords, posted, ringSize, signal, taskFields, taskWords, type ArchetypeLayout, type EntitiesLayout, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
+import { controlWords, done, epoch, lineWords, posted, ringSize, signal, taskFields, taskWords, type ArchetypeLayout, type EntitiesLayout, type FromWorker, type KernelSetup, type LookupSetup, type PostedSpawns, type ToWorker, type WorkerError } from './protocol.js';
 import { createBuffer, createKernelCommands, type CommandBuffer } from './buffer.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
@@ -21,13 +22,15 @@ type ArchetypeViews = {
     }>;
 };
 
-type EntityViews = Reservations & { readonly archetype: Int32Array; readonly row: Uint32Array; readonly length: number };
+type EntityViews = { cursor: Int32Array; free: Int32Array; generation: Uint32Array; archetype: Int32Array; row: Uint32Array; length: number };
 
 type LoadedKernel = {
     readonly setup: KernelSetup;
     readonly kernel: Kernel;
     readonly wasm: WasmRun | null;
     readonly lookups: readonly ((entity: Entity) => readonly unknown[] | null)[];
+    /** Where its spawns are staged, one batch per set of components its lists name, with its spawners; made on first run. */
+    staging: { readonly batches: readonly SpawnBatch[]; readonly spawners: readonly Positional[] } | null;
 };
 
 let memory: WebAssembly.Memory | null = null;
@@ -126,12 +129,38 @@ const filtersOf = (loaded: LoadedKernel, archetype: ArchetypeViews): Filter[] =>
 
 const noPartials = new Float64Array(0);
 
+/** A kernel's staging, made once its components' layouts are known. */
+const stagingOf = (loaded: LoadedKernel): NonNullable<LoadedKernel["staging"]> => {
+    if (loaded.staging !== null) return loaded.staging;
+    const table = required(entities, "layout");
+    const batches: SpawnBatch[] = [];
+    const spawners = loaded.setup.spawns.map(ids => {
+        const key = [...ids].sort((a, b) => a - b).join(",");
+        let batch = batches.find(candidate => candidate.ids.join(",") === key);
+        if (batch === undefined) batches.push(batch = createBatch(layouts, ids));
+        return positionalSpawner(table, batch, ids, ids.map(id => loaded.setup.starts[loaded.setup.keys.indexOf(id)]));
+    });
+    return loaded.staging = { batches, spawners };
+};
+
+/** Takes the spawns a task staged, in batch order, emptying the batches. */
+const takeSpawns = (message: ToWorker, transfer: ArrayBuffer[]): readonly PostedSpawns[] => {
+    if (message.kind !== "run") return noSpawns;
+    const staging = kernels.get(message.kernel)?.staging ?? null;
+    if (staging === null) return noSpawns;
+    const spawns: PostedSpawns[] = [];
+    for (const batch of staging.batches) if (batch.count > 0) spawns.push(postBatch(batch, transfer));
+    return spawns;
+};
+
+const noSpawns: readonly PostedSpawns[] = [];
+
 const run = (message: RunMessage, buffer: CommandBuffer): void => {
     const loaded = kernels.get(message.kernel);
     if (loaded === undefined) throw new Error(`Worker has no kernel ${message.kernel}.`);
     const archetype = archetypes.get(message.archetype);
     if (archetype === undefined) throw new Error(`Worker has no layout for archetype ${message.archetype}.`);
-    const commands = createKernelCommands({ buffer }, loaded.setup.keys, loaded.setup.starts, () => reserve(required(entities, "layout")));
+    const commands = createKernelCommands({ buffer }, loaded.setup.keys, loaded.setup.starts, stagingOf(loaded).spawners);
     const kernelColumns = columnsOf(loaded, message.archetype);
     const filters = filtersOf(loaded, archetype);
     const { wasm } = loaded;
@@ -158,7 +187,7 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
     }));
     // A kernel loaded again may have different columns, such as muted ones now stamped.
     columns.clear();
-    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup) }));
+    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup), staging: null }));
 };
 
 /** A split's claims, as this worker sees them. */
@@ -244,7 +273,9 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
 const applyLayout = (message: Extract<ToWorker, { kind: "layout" }>): void => {
     const buffer = required(memory, "memory").buffer;
     for (const [id, schema] of message.schemas) layouts[id] = layoutOf(schema);
-    entities = viewEntities(buffer, message.entities);
+    // Updated in place, since spawners hold the table.
+    if (entities === null) entities = viewEntities(buffer, message.entities);
+    else Object.assign(entities, viewEntities(buffer, message.entities));
     for (const archetype of message.archetypes) archetypes.set(archetype.id, viewArchetype(buffer, archetype));
     columns.clear();
 };
@@ -274,14 +305,15 @@ const handle = async (message: ToWorker): Promise<void> => {
         return;
     }
     const buffer = createBuffer();
+    const transfer: ArrayBuffer[] = [];
     try {
         if (broken !== null) throw new Error(`Worker can't run tasks after a layout failed: ${broken.message}`);
         if (message.kind === "kernels") await load(message.kernels);
         else run(message, buffer);
-        self.postMessage({ kind: "done", task: message.task, commands: buffer } satisfies FromWorker);
+        self.postMessage({ kind: "done", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer) } satisfies FromWorker, { transfer });
     }
     catch (error) {
-        self.postMessage({ kind: "failed", task: message.task, commands: buffer, error: errorOf(error) } satisfies FromWorker);
+        self.postMessage({ kind: "failed", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer), error: errorOf(error) } satisfies FromWorker, { transfer });
     }
 };
 

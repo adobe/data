@@ -59,8 +59,11 @@ export type Statement =
     | { readonly kind: "intrinsic"; readonly id: number; readonly name: string; readonly intrinsic: Program.Intrinsic; readonly operands: readonly (readonly Expression[])[]; readonly body: Out }
     // JS only:
     | { readonly kind: "lookup"; readonly local: number; readonly lookup: number; readonly entity: Expression }
-    /** `KernelCommands`: `spawn` reserves an entity and starts its spawn; `begin` starts a despawn (1), add (2) or remove (3). */
-    | { readonly kind: "spawn"; readonly local: number }
+    /**
+     * `KernelCommands`: `spawn` stages a spawn through spawner `list`, an index into `Unit.spawns`, with one value per
+     * component of the list, into `local`; `begin` starts a despawn (1), add (2) or remove (3).
+     */
+    | { readonly kind: "spawn"; readonly local: number; readonly list: number; readonly values: readonly Expression[] }
     | { readonly kind: "begin"; readonly command: 1 | 2 | 3; readonly entity: Expression }
     /** A component (index into `keys`) and its value for the current spawn or add. */
     | { readonly kind: "value"; readonly key: number; readonly value: Expression }

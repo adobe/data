@@ -6,6 +6,8 @@ import { idOf, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
 import { applySync, prepareSync } from './synchronize.js';
 import { locate } from './entities.js';
+import { stage } from './buffer.js';
+import { receivedBatch } from './staging.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
 import type { Failure, Report } from '../../interface/world/report.js';
 import { failureOf } from './failures.js';
@@ -94,9 +96,11 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
 };
 
 /** Queues a settled chunk's commands, and returns its error, if it failed. */
-const queue = (state: State, { commands, error }: ChunkResult): unknown => {
+const queue = (state: State, { commands, spawns, error }: ChunkResult): unknown => {
+    // A worker's spawns commit in its chunk's place.
+    if (spawns !== undefined) for (const posted of spawns) stage(commands, receivedBatch(state.layouts, posted), 0, posted.count);
     // Systems can't touch the resource entity; only registration adds resources.
-    if (commands.count > 0) state.queued.push({ buffer: commands, guarded: true });
+    if (commands.count > 0 || commands.stagedCount > 0) state.queued.push({ buffer: commands, guarded: true });
     return error;
 };
 

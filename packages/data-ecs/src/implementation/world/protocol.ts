@@ -52,6 +52,8 @@ export type KernelSetup = {
     readonly keys: readonly number[];
     /** By key index: what each component starts at when a command's value for it is `undefined`. */
     readonly starts: readonly unknown[];
+    /** The component ids of each list the kernel spawns, in the order its spawner takes values. */
+    readonly spawns: readonly (readonly number[])[];
     readonly added: readonly number[];
     readonly changed: readonly number[];
     /** For a kernel reading `up`: each parent column's boolean flag, stride and offset, the same in every archetype. */
@@ -87,10 +89,22 @@ export type ToWorker =
 
 export type WorkerError = { readonly name: string; readonly message: string; readonly stack?: string };
 
-/** A failed task still returns the commands it issued before failing, as the main thread would apply them. */
+/**
+ * A task's kernel spawns of one set of components, sorted `ids`, in issue order: by column, its rows' bytes in the
+ * target storage's layout, or an object column's values; empty for the other kind.
+ */
+export type PostedSpawns = {
+    readonly ids: readonly number[];
+    readonly count: number;
+    readonly entities: Float64Array;
+    readonly bytes: readonly Uint8Array[];
+    readonly values: readonly unknown[][];
+};
+
+/** A failed task still returns the commands it issued and the spawns it staged before failing, as the main thread would apply them. */
 export type FromWorker =
-    | { readonly kind: "done"; readonly task: number; readonly commands: CommandBuffer }
-    | { readonly kind: "failed"; readonly task: number; readonly commands: CommandBuffer; readonly error: WorkerError };
+    | { readonly kind: "done"; readonly task: number; readonly commands: CommandBuffer; readonly spawns: readonly PostedSpawns[] }
+    | { readonly kind: "failed"; readonly task: number; readonly commands: CommandBuffer; readonly spawns: readonly PostedSpawns[]; readonly error: WorkerError };
 
 /**
  * Tasks a worker's ring holds, and f64 words per task: twelve fields, then scalars. The fields are kernel, archetype,

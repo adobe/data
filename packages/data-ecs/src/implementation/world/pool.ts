@@ -2,13 +2,13 @@ import { allocateArray, freeArray } from './arrays.js';
 import { emptyBuffer, type CommandBuffer } from './buffer.js';
 import type { Memory } from './memory.js';
 import { maximumPieces, startRanges } from './claims.js';
-import { controlWords, splitCount, done, epoch, lineWords, posted, ringSize, signal, taskFields, taskWords, type FromWorker, type ToWorker, type WorkerError } from './protocol.js';
+import { controlWords, splitCount, done, epoch, lineWords, posted, ringSize, signal, taskFields, taskWords, type FromWorker, type PostedSpawns, type ToWorker, type WorkerError } from './protocol.js';
 
 type Task = Extract<ToWorker, { task: number }>;
 type Request = Task extends infer T ? T extends Task ? Omit<T, "task"> : never : never;
 
-/** A task's commands, plus its error if it failed partway; commands issued before the error still apply. */
-export type TaskResult = { readonly commands: CommandBuffer; readonly error?: Error };
+/** A task's commands and staged spawns, plus its error if it failed partway; what it issued before the error still applies. */
+export type TaskResult = { readonly commands: CommandBuffer; readonly spawns?: readonly PostedSpawns[]; readonly error?: Error };
 
 /** A WASM kernel task: everything is a number, so it travels through shared memory instead of a message. */
 export type FastTask = {
@@ -108,7 +108,7 @@ export const createPool = (size: number, arena: Memory): Pool => {
             const message = event.data;
             const settle = slot.pending.get(message.task);
             slot.pending.delete(message.task);
-            settle?.(message.kind === "done" ? { commands: message.commands } : { commands: message.commands, error: errorOf(message.error) });
+            settle?.(message.kind === "done" ? { commands: message.commands, spawns: message.spawns } : { commands: message.commands, spawns: message.spawns, error: errorOf(message.error) });
         };
         slot.worker.onerror = event => kill(slot, new Error(`A world worker failed: ${event.message || "it couldn't load"}.`));
         slot.worker.onmessageerror = () => kill(slot, new Error("A world worker received a message it couldn't read."));

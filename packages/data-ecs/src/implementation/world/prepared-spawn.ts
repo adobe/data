@@ -26,8 +26,11 @@ type Plans<P> = { readonly byIndex: (P | undefined)[]; readonly byShape: WeakMap
 
 const createPlans = <P>(): Plans<P> => ({ byIndex: [], byShape: new WeakMap() });
 
-/** A site's plan for a world and list: a kept one, else one `make` makes for its shape, kept from then on. */
-const planFor = <P extends Planned>(plans: Plans<P>, state: State, list: readonly unknown[], make: (shape: ListShape) => P): P => {
+/**
+ * A site's plan for a world and list: a kept one, else one `make` makes for its shape and the site's keys, kept from
+ * then on. `make` is one function per kind of site, so finding a plan allocates nothing.
+ */
+const planFor = <P extends Planned>(plans: Plans<P>, state: State, list: readonly unknown[], site: readonly Key[], make: (state: State, shape: ListShape, site: readonly Key[]) => P): P => {
     const index = archetypeIndexOf(list);
     if (index >= 0) {
         const indexed = plans.byIndex[index];
@@ -36,7 +39,7 @@ const planFor = <P extends Planned>(plans: Plans<P>, state: State, list: readonl
     const shape = listShapeOf(state, list);
     let plan = plans.byShape.get(shape);
     if (plan === undefined) {
-        plan = make(shape);
+        plan = make(state, shape, site);
         plans.byShape.set(shape, plan);
     }
     if (index >= 0) plans.byIndex[index] = plan;
@@ -45,6 +48,8 @@ const planFor = <P extends Planned>(plans: Plans<P>, state: State, list: readonl
 
 /** What a spawn site resolved for a world and list: the spawns of its shape taking the site's values in its key order. */
 type SpawnPlan = Planned & { readonly spawn: Positional };
+
+const spawnPlanOf = (state: State, shape: ListShape, site: readonly Key[]): SpawnPlan => ({ state, shape, spawn: positionalOf(state, shape, site) });
 
 /**
  * One spawn site's staging, for code the compiler emits for `commands.spawn(components)({ ... })` with literal keys:
@@ -73,9 +78,7 @@ export const prepareSpawn = (keys: () => readonly Key[]): PreparedSpawn => {
                 distinct = new Set(resolved).size === resolved.length;
             }
             if (!distinct || !isTargeted(commands)) return null;
-            const { state } = commands[commandsTarget];
-            const site = resolved;
-            return planFor(plans, state, components, shape => ({ state, shape, spawn: positionalOf(state, shape, site) })).spawn;
+            return planFor(plans, commands[commandsTarget].state, components, resolved, spawnPlanOf).spawn;
         },
         // Commands this world didn't make, or keys named twice, which only an untyped values object can carry.
         fallback: (commands, components, values) => Reflect.apply(commands.spawn(components), undefined, [valuesOf(resolved ?? keys(), values)]),
@@ -87,6 +90,19 @@ export const prepareSpawn = (keys: () => readonly Key[]): PreparedSpawn => {
  * their starts, and the list's other components with theirs.
  */
 type AddPlan = Planned & { readonly ids: readonly number[]; readonly given: readonly unknown[]; readonly missing: readonly number[]; readonly starts: readonly unknown[] };
+
+const addPlanOf = (state: State, shape: ListShape, site: readonly Key[]): AddPlan => {
+    const named = shape.keys.flatMap((key, k) => site.includes(key) ? [] : [k]);
+    const at = site.map(key => typeof key === "symbol" ? shape.keys.indexOf(key) : -1);
+    return {
+        state,
+        shape,
+        ids: at.map(k => k < 0 ? -1 : shape.ids[k]),
+        given: at.map(k => k < 0 ? undefined : shape.starts[k]),
+        missing: named.map(k => shape.ids[k]),
+        starts: named.map(k => shape.starts[k]),
+    };
+};
 
 /**
  * One add site's command, for code the compiler emits for `commands.add(entity, components, { ... })` with literal
@@ -121,19 +137,7 @@ export const prepareAdd = (keys: () => readonly Key[]): PreparedAdd => {
             }
             if (!distinct || !isTargeted(commands)) return false;
             const { state, target } = commands[commandsTarget];
-            const site = resolved;
-            plan = planFor(plans, state, components, shape => {
-                const named = shape.keys.flatMap((key, k) => site.includes(key) ? [] : [k]);
-                const at = site.map(key => typeof key === "symbol" ? shape.keys.indexOf(key) : -1);
-                return {
-                    state,
-                    shape,
-                    ids: at.map(k => k < 0 ? -1 : shape.ids[k]),
-                    given: at.map(k => k < 0 ? undefined : shape.starts[k]),
-                    missing: named.map(k => shape.ids[k]),
-                    starts: named.map(k => shape.starts[k]),
-                };
-            });
+            plan = planFor(plans, state, components, resolved, addPlanOf);
             buffer = target.buffer;
             pushCommand(buffer, addCommand, entity);
             buffer.shapes[buffer.count - 1] = plan.shape.index;

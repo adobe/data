@@ -21,7 +21,7 @@ Resource.register(report, {
                 items: {
                     type: "object",
                     properties: {
-                        kind: { anyOf: [{ const: "system" }, { const: "finalizer" }, { const: "gpu" }, { const: "observer" }, { const: "thread" }] },
+                        kind: { anyOf: [{ const: "system" }, { const: "finalizer" }, { const: "gpu" }, { const: "observer" }] },
                         name: text,
                         message: text,
                         stack: { anyOf: [text, { type: "null" }] },

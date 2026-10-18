@@ -28,9 +28,10 @@ const checkResources = (name: string, resources: { readonly read?: readonly Key[
 };
 
 /**
- * Declares a finalizer for each entity that stops matching its components, which applies in every world. It runs on
- * the thread its object components and resources live on. Throws if a system, rule or finalizer has its name, it lists
- * a resource in both `read` and `write`, writes a reduced one, or uses object values of different threads.
+ * Declares a finalizer for each entity that stops matching its components, which applies in every world, and returns
+ * it. It runs on the thread its object components and resources live on. Throws if it lists a resource in both `read`
+ * and `write`, writes a reduced one, uses object values of different threads, or is ordered in a cycle or with a
+ * resource conflict.
  */
 export const create = <const D extends Declaration>(
     declaration: D & Validate<D> & OneThread<ThreadsOf<D>>,
@@ -43,8 +44,8 @@ export const create = <const D extends Declaration>(
 };
 
 /**
- * Declares a finalizer of each sync point's structural changes, which applies in every world. Throws as `create` does,
- * and for a watched component that isn't registered or is derived.
+ * Declares a finalizer of each sync point's structural changes, which applies in every world, and returns it. Throws
+ * as `create` does, and for a watched component that isn't registered or is derived.
  */
 export const changes = <const D extends ChangesDeclaration>(
     declaration: D & Validate<D>,

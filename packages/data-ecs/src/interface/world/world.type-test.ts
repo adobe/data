@@ -103,10 +103,10 @@ const moved: Promise<World.Report> = world.run(move, { distance: 1 });
 const reported = async () => {
     const { failures, skipped, dropped } = await world.run(main);
     for (const failure of failures) {
-        const kind: "system" | "finalizer" | "gpu" | "observer" | "thread" = failure.kind;
+        check<Equal<typeof failure.kind, "system" | "finalizer" | "gpu" | "observer">>();
         const text: string = `${failure.name}: ${failure.message}`;
         const stack: string | null = failure.stack;
-        void [kind, text, stack];
+        void [text, stack];
     }
     const names: readonly string[] = skipped;
     const count: number = dropped;

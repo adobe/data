@@ -58,8 +58,8 @@ type Validate<D extends Declaration> =
     & { readonly shader?: never };
 
 /**
- * Declares a system; nothing runs. Throws if a system, rule or finalizer has its name, it lists a key in both `read` and
- * `write`, a lookup reads a component it writes, or its object components and resources live on different threads.
+ * Declares a system and returns it; nothing runs. Throws if it lists a key in both `read` and `write`, a lookup reads a
+ * component it writes, or its object components and resources live on different threads.
  */
 export const create = <const D extends Declaration>(declaration: D & Validate<D> & OneThread<ThreadsOf<D>>, body: Body<D>): System<InputOf<D>> => {
     const system: Leaf & System<InputOf<D>> = { kind: "system", name: declaration.name, declaration, body };
@@ -69,9 +69,8 @@ export const create = <const D extends Declaration>(declaration: D & Validate<D>
 };
 
 /**
- * Declares a system made of subsystems, which may live on different threads. Throws if a system, rule or finalizer has
- * its name, a member isn't a system a constructor returned, or two members declare an input field with different
- * schemas.
+ * Declares a system made of subsystems, which may live on different threads, and returns it. Throws if a member isn't
+ * a system a constructor returned, or two members declare an input field with different schemas.
  */
 export const composite = <const D extends CompositeDeclaration>(declaration: D & { readonly systems: CheckMembers<D["systems"]> }): System<CompositeInputOf<D["systems"]>> => {
     const system: Composite & System<CompositeInputOf<D["systems"]>> = { kind: "composite", name: declaration.name, declaration };

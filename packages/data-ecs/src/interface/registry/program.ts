@@ -61,12 +61,14 @@ const checkStrata = (all: readonly Rule[]): void => {
 };
 
 /** Records a rule, which applies in every world; the same rule again is already recorded. Throws for a cycle through a negation. */
-export const addRule = (rule: Rule): void => {
-    if (repeated(rule) !== undefined) return;
+export const addRule = (rule: Rule): Rule => {
+    const existing = repeated(rule);
+    if (existing?.kind === "rule") return existing;
     checkStrata([...rules, rule]);
     claim(rule);
     rules.push(rule);
     created++;
+    return rule;
 };
 
 /**

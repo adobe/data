@@ -280,6 +280,7 @@ Worker kernels write commands into their thread's ring, with merge tags; `FromWo
 words, struct observers through mailboxes, the structure epoch. Every logical thread is still filled by `world`.
 
 - Interface: `world.share(port)`, returning the joined thread's Entity with read-only status components written only by the world, the port kept internal; `World.join` and `World.Port`.
+- Interface: the `"thread"` failure kind returns to `World.Report`'s `Failure` and the `report` resource's schema, with the doc for systems skipped because their thread is gone; it was removed while nothing could produce it.
 - Contract: the first notification on a joined thread always comes later; `observe.entity(entity)` on a joined thread gives struct components plus that thread's objects; `share` and `join` are public.
 - Tests: node and browser, the world on a worker with main joined, and the reverse; observers of resources, entities, select and count; a joined thread that dies leaves its systems in `skipped` with a `"thread"` failure, and its status `"gone"`; no cross-origin isolation throws at `share` and `join`.
 - Must not regress: `run idle`, `select`, `sync point one spawn`.

@@ -13,10 +13,9 @@ export type World = {
     /**
      * The one way to change state. Runs are sequential in call order; physically, any that don't conflict overlap. Each
      * runs a system or composite, ending in a sync point, and resolves to what went wrong, if anything: systems,
-     * finalizers, GPU work and observers that failed, systems skipped after a failed tier, systems skipped with a
-     * failure because a thread they run on is gone, and commands that did nothing. Rejects only when the run can't
-     * happen or finish: registration fails, the world is disposed, its GPU device is lost, or its sync point can't apply
-     * a command's value.
+     * finalizers, GPU work and observers that failed, systems skipped after a failed tier, and commands that did
+     * nothing. Rejects only when the run can't happen or finish: registration fails, the world is disposed, its GPU
+     * device is lost, or its sync point can't apply a command's value.
      */
     run<I>(system: System<I>, ...input: Input<NoInfer<I>>): Promise<Report>;
     /**

@@ -29,7 +29,7 @@ declare module '@adobe/data-ecs' {
 }
 
 // Rules derive only derived components.
-Rule.create({ name: "ruleTypeTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] });
+const slots = Rule.create({ name: "ruleTypeTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] });
 // @ts-expect-error a rule derives only derived components
 Rule.create({ name: "ruleTypeTest/slots", components: { has: [source] }, derive: [source] });
 
@@ -92,9 +92,12 @@ System.create({ name: "ruleTypeTest/move", components: { read: [parent], write: 
 System.create({ name: "ruleTypeTest/move", components: { write: [parent] } }, () => {});
 check<Equal<Extract<Writable, typeof parent | typeof source>, typeof source>>();
 
-// A rule returns nothing, since nothing references one; a finalizer is its name, for ordering others.
-check<Equal<ReturnType<typeof Rule.create>, void>>();
+// A rule and a finalizer are the values their constructors return, labeled by their names, which needn't be unique.
+check<Equal<typeof slots, Rule>>();
+check<Equal<Rule, { readonly name: string }>>();
 check<Equal<typeof other, Finalizer>>();
+const sameName: Finalizer = Finalizer.create({ name: "ruleTypeTest/other", components: { read: [source] } }, () => {});
+void sameName;
 
 // Rules and finalizers apply in every world.
 declare const create: World.Create;

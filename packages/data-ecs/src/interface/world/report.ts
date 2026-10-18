@@ -1,19 +1,20 @@
 /** What went wrong in a run, as data. Empty lists and a zero mean the run succeeded. */
 export type Report = {
-    /** Systems, finalizers, GPU work, observers and threads that failed, in the order they ran or were found. */
+    /** Systems, finalizers, GPU work and observers that failed, in the order they ran or were found. */
     readonly failures: readonly Failure[];
-    /** Systems that didn't run because one in an earlier tier failed, or the thread they run on is gone. */
+    /** The labels of systems that didn't run because one in an earlier tier failed. */
     readonly skipped: readonly string[];
     /** Commands that did nothing, since their entity wasn't alive at the sync point. */
     readonly dropped: number;
 };
 
 export type Failure = {
-    readonly kind: "system" | "finalizer" | "gpu" | "observer" | "thread";
+    readonly kind: "system" | "finalizer" | "gpu" | "observer";
     /**
-     * The system or finalizer that failed; for GPU work, the system whose run submitted it; for an observer, what it
-     * observes, by the labels of its keys or the entity's number; for a thread, its name, when the run needed it and it
-     * was gone. A key's label is for display: its id, or its description, numbered when another key's label has it.
+     * The label of the system or finalizer that failed; for GPU work, of the system whose run submitted it; for an
+     * observer, what it observes, by the labels of its keys or the entity's number. Labels are for display: a system's
+     * or finalizer's is its name while no other registered system, rule or finalizer has it, else its name with its id,
+     * or numbered without one; a key's is its description, else its id, or numbered without one.
      */
     readonly name: string;
     /** An Error's message, or String() of anything else thrown. */

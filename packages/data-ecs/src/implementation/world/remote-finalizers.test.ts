@@ -9,7 +9,7 @@ import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join } from "./create.js";
 import { indexOf } from "./entities.js";
-import { attach, despawn, eventually, finalized, marked, place, released, scenario, serial, sorted, spawn, throwing, widget } from "./remote-finalizers.test-helper.js";
+import { attach, despawn, eventually, finalized, marked, place, released, retone, scenario, serial, sorted, spawn, throwing, tone, widget } from "./remote-finalizers.test-helper.js";
 
 // Finalizers on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
 
@@ -154,6 +154,18 @@ describe("finalizers on a joined thread", () => {
         expect((await world.run(despawn, { serials: [1] })).failures).toEqual([]);
         expect(await eventually(() => late.length === 2)).toBe(true);
         expect(late).toEqual(["0:null", "1:null"]);
+        // Placed there by the thread's object resource alone: stops of rows holding none of its objects, which its log
+        // has no entries for, run there too.
+        const heard: string[] = [];
+        Finalizer.create(identify({ name: "remoteFinalizersTest/heard", components: { read: [serial], not: [widget] }, resources: { read: [tone] } }, "remoteFinalizersTest#heard"), (row, { resources }) => { heard.push(`${row[serial]}:${resources[tone]}`); });
+        const plain = System.create({ name: "remoteFinalizersTest/plain" }, ({ commands }) => {
+            for (let k = 0; k < 3; k++) commands.spawn([serial, place])({ [serial]: 50 + k, [place]: [0, 0] });
+        });
+        await world.run(plain);
+        await world.run(retone, { tone: "soft" });
+        expect((await world.run(despawn, { serials: [50, 52] })).failures).toEqual([]);
+        expect(await eventually(() => heard.length === 2)).toBe(true);
+        expect(heard).toEqual(["50:soft", "52:soft"]);
         await remote.dispose();
         await world.dispose();
     });

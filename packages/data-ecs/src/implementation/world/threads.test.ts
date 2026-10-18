@@ -21,6 +21,8 @@ import type * as CommandRings from "./command-rings.fixture.js";
 import { commandRingsCases } from "./command-rings.cases.js";
 import type * as Joining from "./joining.fixture.js";
 import { joiningCases } from "./joining.cases.js";
+import type * as RemoteObjects from "./remote-objects.fixture.js";
+import { remoteObjectsCases } from "./remote-objects.cases.js";
 
 // Real worker threads in node: the cases over fixtures `vitest.fixtures.ts` built, each typed as its source, which it's built from.
 workersCases((): Promise<typeof Workers> => builtFixture("workers"));
@@ -34,3 +36,4 @@ upWorkersCases((): Promise<typeof UpWorkers> => builtFixture("up-workers"));
 portsCases((): Promise<typeof Ports> => builtFixture("ports"));
 commandRingsCases((): Promise<typeof CommandRings> => builtFixture("command-rings"));
 joiningCases((): Promise<typeof Joining> => builtFixture("joining"));
+remoteObjectsCases((): Promise<typeof RemoteObjects> => builtFixture("remote-objects"));

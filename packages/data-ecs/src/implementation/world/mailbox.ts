@@ -96,6 +96,9 @@ export const readSlot = (reader: MailboxReader, buffer: ArrayBufferLike): Views 
     return viewsFor(reader.cache[front], buffer, control[header + offsetField], control[header + capacityField]);
 };
 
+/** Whether a value newer than the one the reader holds is waiting. */
+export const hasFresh = (reader: MailboxReader): boolean => (Atomics.load(reader.control, indexWord) & fresh) !== 0;
+
 /**
  * Where each listed component's value goes in an entity's slot: after the presence word and a flag byte each, at a
  * multiple of its stride, so it's row `offset / stride` of the slot's views; -1 for a value with no bytes.

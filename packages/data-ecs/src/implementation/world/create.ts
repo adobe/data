@@ -11,6 +11,7 @@ import type { Schedule } from '../../interface/registry/schedule.js';
 import type { CommandBuffer } from './buffer.js';
 import { joinWorld } from './join.js';
 import { createSharing } from './sharing.js';
+import { markDelivered } from './move-log.js';
 import { gpuDevice } from '../../interface/resources/gpu-device.js';
 import { workers } from '../../interface/resources/workers.js';
 import { createGpu } from './gpu.js';
@@ -274,7 +275,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     /** Delivers to observers, giving `report` with their failures. */
     const delivered = (report: Report): Report => {
-        const failed = observers.deliver();
+        const failed = deliver();
         return failed === null ? report : { ...report, failures: [...report.failures, ...failed] };
     };
 
@@ -326,6 +327,13 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     const observers = createObservers(state, readResource, enqueue);
 
+    /** Delivers to observers; joined threads filling objects read theirs as of the sync point delivered through. */
+    const deliver = (): Failure[] | null => {
+        const failed = observers.deliver();
+        if (state.claimed) for (const log of state.logs) markDelivered(log);
+        return failed;
+    };
+
     /** Runs a system or composite with its input, as `run` does. */
     const runWith = (system: { readonly name: string }, value: unknown): Promise<Report> => {
         let registration: Registration | null = null;
@@ -354,7 +362,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         syncDue = false;
         if (disposed || state.queued.length === 0) return;
         const report = await execute(context, noSystems, undefined, ownSyncPoint);
-        const failed = observers.deliver();
+        const failed = deliver();
         // Its failures, as finalizers', go in the next run's report.
         for (const failure of [...report.failures, ...failed ?? []]) observers.defer(failure);
     };

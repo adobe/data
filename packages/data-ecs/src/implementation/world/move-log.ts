@@ -8,7 +8,8 @@ import type { Memory } from './memory.js';
 /**
  * The log's header, a block of its own that never moves: the ring's version, bumped when it's replaced, its offset
  * and capacity in entries, a power of two; the position the writer may have written up to; the position published
- * through, and the sync published through, modulo 2^32. Positions count entries from the start, modulo 2^32.
+ * through, and the sync published through, modulo 2^32; then the sync observers were delivered through. Positions
+ * count entries from the start, modulo 2^32.
  */
 export const logVersionWord = 0;
 export const logOffsetWord = 1;
@@ -16,6 +17,8 @@ export const logCapacityWord = 2;
 export const logLimitWord = 3;
 export const logPublishedWord = 4;
 export const logSyncWord = 5;
+/** The sync observers were last delivered through, so a thread reads its objects only as of the values delivered. */
+export const logDeliveredWord = 6;
 export const logHeaderBytes = 64;
 
 /** An entry is four words; its first holds its kind in the low four bits, the added flag, and an archetype from bit 8. */
@@ -190,4 +193,13 @@ export const publishLog = (log: MoveLog): void => {
     Atomics.store(log.header, logSyncWord, log.tick >>> 0);
     log.tick = -1;
     log.headed = false;
+};
+
+/** Once observers were delivered: through the sync last published, waking a thread waiting for it. */
+export const markDelivered = (log: MoveLog): void => {
+    const { header } = log;
+    const sync = header[logSyncWord];
+    if (header[logDeliveredWord] === sync) return;
+    Atomics.store(header, logDeliveredWord, sync);
+    Atomics.notify(header, logDeliveredWord);
 };

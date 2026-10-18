@@ -12,9 +12,9 @@ import {
     clean, completedWord, fitsInline, inputByMessage, inputLayoutOf, noInput, pending, platformLocks, postedWord, protocolName, runSlots, signalWord, unposted, unreadWord,
     slotInput, slotNumber, slotSequence, slotStatus, slotViews, slotWords, slotsWord, threadChannel, type Subscription, type ToJoined, type ToWorld,
 } from './joining.js';
-import { entityPlanOf, mailboxReader, readSlot, readValue, type MailboxReader } from './mailbox.js';
+import { entityPlanOf, hasFresh, mailboxReader, readSlot, readValue, type MailboxReader } from './mailbox.js';
 import { sharedMemoryAvailable } from './memory.js';
-import { applying, componentsAt, createMirror, locate, nameComponent, objectAt, waitStructure, type Location, type Mirror } from './mirror.js';
+import { componentsAt, createMirror, locate, nameComponent, objectAt, waitDelivered, waitStructure, type Location, type Mirror } from './mirror.js';
 import { defaultOf } from './state.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 
@@ -38,7 +38,15 @@ const stale = Symbol("stale");
  * An observer on this thread: its mailbox once the world placed it, how a value is read from a slot, and a slot held
  * until this thread's objects in it can be read.
  */
-type Observer = { readonly notify: Notify; reader: MailboxReader | null; readonly decode: (views: Views) => unknown; active: boolean; held: Views | null };
+type Observer = {
+    readonly notify: Notify;
+    reader: MailboxReader | null;
+    readonly decode: (views: Views) => unknown;
+    active: boolean;
+    held: Views | null;
+    /** Whether it reads this thread's objects, so its value holds only while no newer one waits. */
+    readonly objects: boolean;
+};
 
 const hasWaitAsync = (): boolean => typeof Atomics.waitAsync === "function";
 
@@ -108,6 +116,7 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
     const named = new Map<number, symbol | null>();
     const components = new Map<symbol, number>();
     let structureWaited = false;
+    let deliveryWaited = false;
 
     let memory: WebAssembly.Memory | null = null;
     let control: Int32Array | null = null;
@@ -185,6 +194,16 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
         }
     };
 
+    /** Evaluates observers again once observers were delivered through the sync this thread's objects are at. */
+    const waitForDelivery = (): void => {
+        if (deliveryWaited || mirror === null) return;
+        deliveryWaited = true;
+        void waitDelivered(mirror).then(() => {
+            deliveryWaited = false;
+            processObservers();
+        });
+    };
+
     /** Evaluates observers again once the structure epoch turns even: a sync point applied while one read. */
     const waitForStructure = (): void => {
         if (structureWaited || mirror === null) return;
@@ -199,26 +218,29 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
         if (memory === null || observers.size === 0) return;
         const buffer = memory.buffer;
         for (const observer of observers.values()) {
-            if (observer.reader === null || !observer.active) continue;
-            const slot = readSlot(observer.reader, buffer) ?? observer.held;
-            if (slot === null) continue;
-            observer.held = null;
-            let value: unknown;
-            try {
-                value = observer.decode(slot);
-            }
-            catch (error) {
-                rethrow(error);
-                continue;
-            }
-            // Held, unread, until its objects can be read; a newer value replaces it.
-            if (value === later) {
-                observer.held = slot;
-                if (mirror !== null && applying(mirror)) waitForStructure();
-                continue;
+            const { reader } = observer;
+            if (reader === null || !observer.active) continue;
+            let value: unknown = stale;
+            for (; ;) {
+                const slot = readSlot(reader, buffer) ?? observer.held;
+                if (slot === null) break;
+                observer.held = null;
+                try {
+                    value = observer.decode(slot);
+                }
+                catch (error) {
+                    rethrow(error);
+                    value = stale;
+                    break;
+                }
+                // Held, unread, until its objects can be read; a newer value replaces it.
+                if (value === later) observer.held = slot;
+                // Its objects are as of the sync observers were delivered through: only a value no newer one replaced
+                // is as of that sync too.
+                if (value === later || value === stale || !observer.objects || !hasFresh(reader)) break;
             }
             // The world gives the newer value it had when this thread's objects were read.
-            if (value === stale) continue;
+            if (value === later || value === stale) continue;
             try {
                 observer.notify(value);
             }
@@ -228,11 +250,16 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
         }
     };
 
-    /** Where an entity is, with this thread's objects up to date there; `later` while that can't be read yet. */
+    /**
+     * Where an entity is, with this thread's objects as of the sync observers were delivered through; `later` while that
+     * can't be read yet, evaluating observers again once it can.
+     */
     const located = (entity: Entity): Location | null | typeof later => {
         if (mirror === null) return later;
         const location = locate(mirror, entity);
-        return location === "applying" || location === "held" ? later : location;
+        if (location === "applying") waitForStructure();
+        else if (location === "behind") waitForDelivery();
+        return location === "applying" || location === "held" || location === "behind" ? later : location;
     };
 
     /** This thread's object of `key` at a location, or `later` while the world hasn't named its component yet. */
@@ -353,9 +380,9 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
     }
 
     /** Subscribes on the world's thread; the first value always comes later, through the mailbox. */
-    const observe = (subscription: Subscription, decode: (views: Views) => unknown) => (notify: Notify): (() => void) => {
+    const observe = (subscription: Subscription, decode: (views: Views) => unknown, objects = false) => (notify: Notify): (() => void) => {
         const number = observerCount++;
-        const observer: Observer = { notify, reader: null, decode, active: true, held: null };
+        const observer: Observer = { notify, reader: null, decode, active: true, held: null, objects };
         observers.set(number, observer);
         post({ protocol: protocolName, kind: "observe", observer: number, subscription });
         void listen();
@@ -412,7 +439,7 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
                     if (typeof key === "symbol" && knownOwn.has(firstKeyOf(key))) there++;
                 }
                 return there === owned ? value : stale;
-            });
+            }, knownOwn.size > 0);
         }
         const required = (options.required ?? []).map(symbolOf);
         const listed = [...required, ...(options.optional ?? []).map(symbolOf)];
@@ -436,7 +463,7 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
                 if (object.held) value[listed[k]] = object.value;
             }
             return value;
-        });
+        }, owned.length > 0);
     };
 
     const observeQuery = (options: QueryOptions, counting: boolean) => {

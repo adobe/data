@@ -6,7 +6,7 @@ import { createCommands } from "./commands.js";
 import { asEntity, indexOf, locate as locateHere } from "./entities.js";
 import { recordCount, structureWord, tableOffsetWord } from "./layout-directory.js";
 import { cellOf, createMirror, locate, nameComponent, rebuild, replay, stage, waitStructure, type Mirror } from "./mirror.js";
-import { createMoveLog, slotValue } from "./move-log.js";
+import { createMoveLog, markDelivered, slotValue, type MoveLog } from "./move-log.js";
 import { claimThreads } from "./remote.js";
 import { createState, defaultOf, idOf, startTicking, type State } from "./state.js";
 import { applySync, prepareSync, synchronize } from "./synchronize.js";
@@ -54,7 +54,7 @@ const random = (seed: number) => {
 };
 
 /** A world whose "moveLogTest" objects a mirror on this thread fills, its log holding at least `minimum` entries. */
-const threaded = (minimum: number): { readonly state: State; readonly mirror: Mirror } => {
+const threaded = (minimum: number): { readonly state: State; readonly mirror: Mirror; readonly log: MoveLog } => {
     const state = createState(true);
     let mirror: Mirror | null = null;
     const log = createMoveLog(state.memory, 1, state.starts, component => {
@@ -64,7 +64,7 @@ const threaded = (minimum: number): { readonly state: State; readonly mirror: Mi
     mirror = createMirror(state.memory.memory, log.block, 1);
     for (const key of [uid, amount, flag, own, ...remoteKeys]) idOf(state, key);
     claimThreads(state, log, ["moveLogTest"]);
-    return { state, mirror };
+    return { state, mirror, log };
 };
 
 const inline = (): State => {
@@ -253,12 +253,14 @@ describe("the move log", () => {
         follow(mirror);
         expect(mirror.staged).toEqual([]);
     });
-    it("lets an observer of the thread's objects read locations only while no sync point applies", async () => {
-        const { state, mirror } = threaded(4096);
+    it("lets an observer of the thread's objects read locations only while no sync point applies, once observers were delivered through it", async () => {
+        const { state, mirror, log } = threaded(4096);
         const { commands, target } = worldCommands(state);
         const entity = commands.spawn([uid, label])({ [uid]: 1 });
         state.queued.push({ buffer: target.buffer, guarded: true });
         synchronize(state);
+        expect(locate(mirror, entity)).toBe("behind");
+        markDelivered(log);
         const first = locate(mirror, entity);
         expect(first).toEqual({ archetype: state.entities.archetype[indexOf(entity)], row: 0 });
         commands.add(entity, amount, 3);
@@ -272,6 +274,8 @@ describe("the move log", () => {
         expect(waited).toBe(false);
         applySync(state);
         await waiting;
+        expect(locate(mirror, entity)).toBe("behind");
+        markDelivered(log);
         const moved = locate(mirror, entity);
         expect(moved).toEqual({ archetype: state.entities.archetype[indexOf(entity)], row: 0 });
         expect(moved).not.toEqual(first);

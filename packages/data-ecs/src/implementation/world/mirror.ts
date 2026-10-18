@@ -5,7 +5,7 @@ import {
     structureWord, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
 } from './layout-directory.js';
 import {
-    addedFlag, appendEntry, archetypeShift, entryWords, kindMask, logCapacityWord, logHeaderBytes, logLimitWord, logOffsetWord,
+    addedFlag, appendEntry, archetypeShift, entryWords, kindMask, logCapacityWord, logDeliveredWord, logHeaderBytes, logLimitWord, logOffsetWord,
     logPublishedWord, logSyncWord, logVersionWord, moveEntry, nullTag, rangeEntry, setEntry, slotTags, startTag, swapEntry, syncEntry,
 } from './move-log.js';
 
@@ -409,6 +409,19 @@ export const waitStructure = async (mirror: Mirror): Promise<void> => {
     }
 };
 
+/** Waits without blocking until observers were delivered through another sync than `through`. */
+export const waitDelivered = async (mirror: Mirror): Promise<void> => {
+    const { header } = mirror;
+    const delivered = Atomics.load(header, logDeliveredWord);
+    if ((delivered >>> 0) === mirror.through) return;
+    if (typeof Atomics.waitAsync !== "function") {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        return;
+    }
+    const waited = Atomics.waitAsync(header, logDeliveredWord, delivered);
+    if (waited.async) await waited.value;
+};
+
 /** Scratch for rebuilds, by entity index: where each entity was among the old rows. */
 type Previous = { entity: Float64Array; archetype: Int32Array; row: Int32Array };
 const previous: Previous = { entity: new Float64Array(0), archetype: new Int32Array(0), row: new Int32Array(0) };
@@ -550,12 +563,13 @@ export type Location = { readonly archetype: number; readonly row: number };
 /**
  * Brings the mirror up to the last published sync and finds an entity's archetype and row, under the structure
  * epoch: read while it's even, checked again after. Returns "applying" while a sync point applies, "held" while a
- * component has no key yet.
+ * component has no key yet, and "behind" while observers weren't delivered through that sync yet, since their values
+ * are older than the objects there.
  */
-export const locate = (mirror: Mirror, entity: number): Location | null | "applying" | "held" => {
+export const locate = (mirror: Mirror, entity: number): Location | null | "applying" | "held" | "behind" => {
     for (; ;) {
         refresh(mirror);
-        const { signed, words, buffer } = mirror;
+        const { signed, words, buffer, header } = mirror;
         const epoch = Atomics.load(signed, structureWord);
         if ((epoch & 1) === 1) return "applying";
         const replayed = replay(mirror);
@@ -564,6 +578,7 @@ export const locate = (mirror: Mirror, entity: number): Location | null | "apply
             if (applying(mirror)) return "applying";
             return "held";
         }
+        if ((Atomics.load(header, logDeliveredWord) >>> 0) !== mirror.through) return "behind";
         const index = indexOf(entity);
         const capacity = words[entitiesWord + capacityField];
         let location: Location | null = null;

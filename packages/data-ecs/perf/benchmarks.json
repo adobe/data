@@ -919,5 +919,44 @@
             "basis": "Each row reads 16 bytes; each tenth moves to a new archetype, about 180 bytes.",
             "on": "threads"
         }
+    },
+    "remote run": {
+        "operation": "An empty transaction run from a joined thread, through its run slots and completed word: input from another thread, such as the DOM on main driving a world on a worker.",
+        "per": "runs",
+        "n": 1000,
+        "typical": [
+            1,
+            100
+        ],
+        "best": {
+            "bytes": 192,
+            "basis": "A run moves at least its slot's line and the posted and completed words' lines between cores."
+        }
+    },
+    "mailbox resource": {
+        "operation": "Ticks that change one resource a joined thread observes, each writing its mailbox and waking it once: a UI on main showing a world's state.",
+        "per": "ticks",
+        "n": 1000,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "A tick reads at least one cache line of its system's state."
+        }
+    },
+    "mailbox select 10K": {
+        "operation": "Ticks that reverse the order of 10K entities a joined thread selects in order, each recomputing the selection and writing it into the mailbox: a sorted list shown on main.",
+        "per": "ticks",
+        "n": 1000,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 240000,
+            "basis": "Each tick writes 10K 8-byte values, reads them to sort, and writes 10K 8-byte entities."
+        }
     }
 }

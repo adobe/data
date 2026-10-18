@@ -1,7 +1,7 @@
 import type { Reduction } from '../../interface/resource/reduction.js';
 import type { Declaration } from '../../interface/system/declaration.js';
 import { isReduction } from '../../interface/registry/reduction.js';
-import type { Path, View } from '../../interface/registry/layout.js';
+import type { Layout, Path, View } from '../../interface/registry/layout.js';
 import { stampChanged } from './archetype.js';
 import { readCell, writeCell } from './cells.js';
 import { resourceCell } from './resources.js';
@@ -22,13 +22,17 @@ const bitwise: ReadonlySet<Reduction> = new Set(["&", "|", "^"]);
  * The resources a declaration reduces into, with their layouts' leaves. Creating the system checked each against its
  * `reduce` trait, which registering the resource checked against its schema, so a throw here is an invariant broken.
  */
-export const reductionTargets = (state: State, { name, reduce }: Pick<Declaration, "name" | "reduce">): readonly ReductionTarget[] => {
+export const reductionTargets = (state: State, declaration: Pick<Declaration, "name" | "reduce">): readonly ReductionTarget[] =>
+    reductionTargetsOf(key => state.layouts[idOf(state, key)], declaration);
+
+/** The resources a declaration reduces into, by `layoutFor`, each resource's layout. */
+export const reductionTargetsOf = (layoutFor: (key: Key) => Layout | undefined, { name, reduce }: Pick<Declaration, "name" | "reduce">): readonly ReductionTarget[] => {
     if (reduce === undefined) return [];
     return Object.getOwnPropertySymbols(reduce).flatMap((key): ReductionTarget[] => {
         const operator: unknown = Reflect.get(reduce, key);
         if (operator === undefined) return [];
         if (!isReduction(operator)) throw new Error(`System "${name}" reduces "${labelOf(key)}" with "${labelOf(operator)}", which isn't an operator.`);
-        const layout = state.layouts[idOf(state, key)];
+        const layout = layoutFor(key);
         if (layout?.kind !== "linear") throw new Error(`System "${name}" reduces "${labelOf(key)}", which isn't stored in linear memory.`);
         const leaves = layout.leaves.map(leaf => ({ path: leaf.path, view: leaf.view, boolean: leaf.scalar === "boolean" }));
         if (leaves.some(leaf => leaf.boolean) && !bitwise.has(operator)) {

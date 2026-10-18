@@ -5,7 +5,7 @@ import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/res
 import type { JoinOptions, Port } from '../../interface/world/join.js';
 import type { Report } from '../../interface/world/report.js';
 import type { World } from '../../interface/world/world.js';
-import { declarationOf, firstKeyOf, idOfItem, idOfKey, identifiedKeys, keyOfId, kindOf, labelOf, labelOfItem, requireDefinition, threadOfDeclaration, type Definition } from '../../interface/registry/index.js';
+import { declarationOf, firstKeyOf, identifiedItems, idOfItem, idOfKey, identifiedKeys, keyOfId, kindOf, labelOf, labelOfItem, requireDefinition, threadOfDeclaration, type Definition } from '../../interface/registry/index.js';
 import { layoutOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { asEntity } from './entities.js';
 import {
@@ -16,6 +16,8 @@ import { entityPlanOf, hasFresh, mailboxReader, readSlot, readValue, type Mailbo
 import { sharedMemoryAvailable } from './memory.js';
 import { componentsAt, createMirror, locate, nameComponent, objectAt, waitDelivered, waitStructure, type Location, type Mirror } from './mirror.js';
 import { defaultOf } from './state.js';
+import { createThreadSystems, type SystemSetup } from './thread-systems.js';
+import { taskBlockWords } from './thread-tasks.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 
 type Notify = (value: unknown) => void;
@@ -53,7 +55,7 @@ const hasWaitAsync = (): boolean => typeof Atomics.waitAsync === "function";
 /** Whether a key's values are objects of one of `claims`, which this thread fills. */
 const ownObject = (key: symbol, claims: ReadonlySet<string>): boolean => {
     const declaration = declarationOf(key);
-    const thread = declaration === undefined || kindOf(key) !== "component" ? null : threadOfDeclaration(declaration);
+    const thread = declaration === undefined ? null : threadOfDeclaration(declaration);
     return thread !== null && claims.has(thread);
 };
 
@@ -117,6 +119,9 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
     const components = new Map<symbol, number>();
     let structureWaited = false;
     let deliveryWaited = false;
+    /** The systems the world places on this thread, once it joined with claims; setups that came before. */
+    let systems: ReturnType<typeof createThreadSystems> | null = null;
+    const setups: SystemSetup[] = [];
 
     let memory: WebAssembly.Memory | null = null;
     let control: Int32Array | null = null;
@@ -281,6 +286,8 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
     const process = (): void => {
         if (control === null) return;
         Atomics.store(control, unreadWord, 0);
+        // A task first: the world waits for it.
+        systems?.process();
         completed = Atomics.load(control, completedWord);
         settle();
         writeWaiting();
@@ -288,7 +295,7 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
     };
 
     let listening = false;
-    const active = (): boolean => control !== null && failure === null && (runs.size > 0 || observers.size > 0);
+    const active = (): boolean => control !== null && failure === null && (runs.size > 0 || observers.size > 0 || systems !== null);
     /** Waits on the signal word without blocking while a run or observer is active, so a quiet thread does no work. */
     const listen = async (): Promise<void> => {
         if (listening || !hasWaitAsync()) return;
@@ -330,6 +337,14 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
                     for (const [component, key] of named) name(component, key);
                     named.clear();
                 }
+                if (message.tasks !== null && mirror !== null) {
+                    systems = createThreadSystems({
+                        memory, mirror, control: new Int32Array(memory.buffer, message.tasks, taskBlockWords), claims, worldWaits: message.waits,
+                        post: (sent, transfer) => channel.post(sent, transfer), keyNumber, numbered: () => numbers.size,
+                    });
+                    systems.setup(setups);
+                    setups.length = 0;
+                }
                 writeWaiting();
                 void listen();
                 return;
@@ -354,8 +369,16 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
                 // Its key here, if this thread has one, for a component of a thread it claims.
                 const key = message.id === null ? undefined : keyOfId(message.id);
                 name(message.component, key !== undefined && ownObject(key, claims) ? key : null);
+                // A task waiting for this component's key runs now.
+                systems?.process();
                 return processObservers();
             }
+            case "systems": {
+                if (systems === null) setups.push(...message.systems);
+                else systems.setup(message.systems);
+                return systems?.process();
+            }
+            case "task input": return systems?.input(message.sequence, message.input);
             case "wake": return process();
         }
     });
@@ -363,7 +386,10 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
     // its port reports nothing else.
     const locks = platformLocks();
     let release: (() => void) | null = null;
-    const joinMessage = (lock: string | null): ToWorld => ({ protocol: protocolName, kind: "join", threads: options.threads ?? [], waits: hasWaitAsync(), lock });
+    const joinMessage = (lock: string | null): ToWorld => ({
+        protocol: protocolName, kind: "join", threads: options.threads ?? [], waits: hasWaitAsync(), lock,
+        systems: claims.size === 0 ? [] : identifiedItems("system"),
+    });
     const sendHeld = (lock: string | null): void => {
         const messages = held ?? [];
         held = null;

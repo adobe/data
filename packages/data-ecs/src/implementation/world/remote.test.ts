@@ -147,7 +147,7 @@ describe("objects a joined thread fills", () => {
         await remote.dispose();
         await world.dispose();
     });
-    it("can't be read by observers on the world's thread, nor by its systems", async () => {
+    it("can't be read by observers on the world's thread; systems reading them run on the thread, their tiers warned of", async () => {
         const { world, thread, remote } = joined();
         await statusOf(world, thread, "joined");
         const entity = await spawnOne(world, 3);
@@ -155,7 +155,10 @@ describe("objects a joined thread fills", () => {
         expect(() => world.observe.select({ required: [point, caption], where: { [caption]: "none" } })(() => {})).toThrow('An observer reads "remoteTest/caption"');
         // Its whole value is the world's own.
         expect(await Observe.toPromise(world.observe.entity(entity))).toEqual({ [point]: 3, [kept]: "k3" });
-        await expect(world.run(readCaptions)).rejects.toThrow('System "remoteTest/readCaptions" runs on thread "remoteTest", which a joined thread fills; systems don\'t run on joined threads yet.');
+        expect(await world.run(readCaptions)).toEqual({
+            failures: [], skipped: [], dropped: 0,
+            warnings: [{ kind: "blocking", name: "remoteTest/readCaptions", message: 'System "remoteTest/readCaptions" runs on thread "remoteTest", which a joined thread fills, so its tier waits for that thread.' }],
+        });
         await remote.dispose();
         await world.dispose();
     });
@@ -173,13 +176,21 @@ describe("objects a joined thread fills", () => {
         expect((await world.run(readCaptions)).failures).toEqual([]);
         await world.dispose();
     });
-    it("refuse a claim of a thread whose systems or finalizers exist", async () => {
+    it("refuse a claim of a thread whose finalizers exist, or whose systems the joined thread can't run, and take one whose systems it imported", async () => {
         const world = createWorld({ [workers]: 0 });
         await world.run(readCaptions);
+        const taken = joined();
+        await statusOf(taken.world, taken.thread, "joined");
+        expect((await taken.world.run(readCaptions)).warnings.map(warning => warning.name)).toEqual(["remoteTest/readCaptions"]);
+        await taken.remote.dispose();
+        await taken.world.dispose();
+        // Declared in a function, so the build gives it no id, and another thread can't name it.
+        const unnamed = System.create({ name: "remoteTest/unnamed", components: { read: [caption] } }, row => { void row[caption]; });
+        await world.run(unnamed);
         const channel = new MessageChannel();
         const thread = world.share(channel.port1);
         const remote = join(channel.port2, { threads: ["remoteTest"] });
-        await expect(remote.run(idle)).rejects.toThrow('System "remoteTest/readCaptions" runs on thread "remoteTest", which a joined thread fills');
+        await expect(remote.run(idle)).rejects.toThrow('System "remoteTest/unnamed" runs on thread "remoteTest" and has no id, so a joined thread can\'t run it');
         await statusOf(world, thread, "gone");
         await remote.dispose();
         const other = joined(["remoteTestFinalized"]);

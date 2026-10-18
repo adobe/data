@@ -107,3 +107,10 @@ export const idOfItem = (item: object): string | undefined => entries.get(item)?
 
 /** The item first registered under an id, or undefined where no module declaring it was imported. */
 export const itemOfId = (id: string): { readonly kind: string; readonly name: string } | undefined => identified.get(id)?.first;
+
+/** The ids of every system, rule and finalizer of `kind` registered with one, as a joined thread tells the world what it imported. */
+export const identifiedItems = (kind: string): readonly string[] => {
+    const found: string[] = [];
+    for (const [id, entry] of identified) if (entry.kind === kind) found.push(id);
+    return found;
+};

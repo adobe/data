@@ -138,6 +138,8 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
     };
 
     const resource = (key: Key) => (notify: Notify) => {
+        const id = idOf(state, key);
+        if (state.remote[id] !== undefined) throw elsewhere(state, id);
         let entry = byKey.get(key);
         if (entry === undefined) {
             entry = { key, id: idOf(state, key), seen: state.tick, notifies: [], stopped: 0 };

@@ -24,6 +24,7 @@ import { samePath, type TypedArray } from '../../interface/registry/layout.js';
 import { inputFor } from './input.js';
 import { createUp, type Run } from './up.js';
 import { labelOf, labelOfItem } from '../../interface/registry/index.js';
+import type { RemoteSystem } from './remote-systems.js';
 
 /**
  * One unit of a system's work for a run: the commands it issued, or for a worker's chunk its segment of the worker's
@@ -74,6 +75,10 @@ export type Runner = {
     readonly finish: (failed: boolean) => readonly Float64Array[] | null;
     /** For the registrar to call after each sync point once the runner is registered: sizes its reduction partials. */
     readonly afterSync: (() => void) | null;
+    /** For a system placed on a joined thread, which runs it there (`remote-systems.ts`); null for one that runs here. */
+    readonly remote: RemoteSystem | null;
+    /** The tick it last ran at, which a runner placing it elsewhere starts from. */
+    readonly lastRun: () => number;
 };
 
 /** A number for each leaf, so the GPU records of every runner made for it are its own, whatever its name. */
@@ -85,8 +90,8 @@ const numberOf = (leaf: Leaf): number => {
     return number;
 };
 
-/** Throws if the leaf is a kernel that wasn't compiled. */
-export const createRunner = (state: State, leaf: Leaf): Runner => {
+/** Throws if the leaf is a kernel that wasn't compiled. `since` is the tick it last ran at, wherever it ran. */
+export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const { declaration } = leaf;
     const leafNumber = numberOf(leaf);
     const label = labelOfItem(leaf);
@@ -235,7 +240,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     let checked = 0;
     const bindRow = rowBinder(state, query?.read ?? [], query?.write ?? []);
     const bindParent = parentBinder(state, declaration.up?.read ?? []);
-    let lastRun = 0;
+    let lastRun = since;
 
     function refreshMatches(): void {
         for (; checked < state.archetypes.length; checked++) {
@@ -791,5 +796,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         targets,
         finish,
         afterSync: partialCount > 0 ? sizeSlots : null,
+        remote: null,
+        lastRun: () => lastRun,
     };
 };

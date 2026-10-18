@@ -9,7 +9,8 @@ import { locate } from './entities.js';
 import { clearBuffer, createBuffer } from './buffer.js';
 import { drainSegment, type Segment } from './command-ring.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
-import type { Failure, Report } from '../../interface/world/report.js';
+import type { Failure, Report, Warning } from '../../interface/world/report.js';
+import { liftColumnStamps, type RemoteSystem, type TaskChannel } from './remote-systems.js';
 import { failureOf } from './failures.js';
 import { checkCommands } from './remote.js';
 import { firstKeyOf, labelOfItem } from '../../interface/registry/index.js';
@@ -82,7 +83,25 @@ const contribute = (state: State, folds: ReadonlyMap<unknown, Fold>, runner: Run
  * A schedule's runners by tier, and an array per tier for their chunks, made on its first run and reused. Runners are
  * read again each run, since moving to or from a GPU device replaces them.
  */
-type Prepared = { readonly runners: Runner[][]; readonly started: (readonly Chunk[])[][] };
+type Prepared = {
+    readonly runners: Runner[][];
+    readonly started: (readonly Chunk[])[][];
+    /** For tasks on joined threads: the systems of the one being posted and their tiers in it, and by channel, the tier's task. */
+    readonly systems: RemoteSystem[];
+    readonly tiers: number[];
+    readonly tasks: Map<TaskChannel, Promise<boolean>>;
+    /**
+     * The run's warnings, the first `warningCount`, and the last report made of warnings alone, reused while a run's are
+     * the same. Counted rather than truncated: setting an array's length costs a run more than all of this.
+     */
+    readonly warnings: Warning[];
+    warningCount: number;
+    warned: Report | null;
+    /** The run's failures and skipped systems, allocated only when there's something to list. */
+    readonly outcome: Outcome;
+};
+
+type Outcome = { failures: Failure[] | null; skipped: string[] | null };
 const preparedBy = new WeakMap<ExecuteContext, WeakMap<Schedule, Prepared>>();
 
 const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
@@ -90,7 +109,10 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
     if (bySchedule === undefined) preparedBy.set(context, bySchedule = new WeakMap());
     let prepared = bySchedule.get(schedule);
     if (prepared === undefined) {
-        prepared = { runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)) };
+        prepared = {
+            runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)),
+            systems: [], tiers: [], tasks: new Map(), warnings: [], warningCount: 0, warned: null, outcome: { failures: null, skipped: null },
+        };
         bySchedule.set(schedule, prepared);
     }
     return prepared;
@@ -124,16 +146,123 @@ const queue = (state: State, { commands, segment, error }: ChunkResult): unknown
     return error ?? drained ?? checked;
 };
 
-/** Once a sync point applied or failed: empties the buffers workers' segments drained into, and their command rings. */
+/**
+ * Queues the commands a joined thread's system gave back, drained from its segment with the thread's numbers for keys
+ * mapped, and returns its error, if it failed. Values it gave its own objects are its slots; others are checked.
+ */
+const queueRemote = (state: State, { channel, result }: RemoteSystem): unknown => {
+    const { segment } = result;
+    if (segment === undefined) return result.error;
+    const buffer = state.drains[state.drained] ??= createBuffer();
+    state.drained++;
+    if (!drainSegment(buffer, segment.bytes, state.layouts, state.starts, state.unused, segment.tag, channel.local)) {
+        return result.error ?? new Error("A joined thread's commands came back under another task's merge tag, or name a key this world never imported.");
+    }
+    const checked = checkCommands(state, buffer, channel.log);
+    if (buffer.count > 0 || buffer.stagedCount > 0) state.queued.push({ buffer, guarded: true });
+    return result.error ?? checked;
+};
+
+/** What a joined thread's system gave back once its task settled: `gone` while its thread is gone, else its error. */
+const gone = Symbol("gone");
+const settleRemote = (state: State, remote: RemoteSystem, done: boolean): unknown => done ? queueRemote(state, remote) : gone;
+
+/** Whether every runner of a tier runs on `channel`'s thread. */
+const allOn = (runners: readonly Runner[], channel: TaskChannel): boolean => {
+    for (let i = 0; i < runners.length; i++) if (runners[i].remote?.channel !== channel) return false;
+    return runners.length > 0;
+};
+
+/** Once a sync point applied or failed: empties the buffers workers' and joined threads' segments drained into, and their command rings. */
 const rewind = (state: State, workers: Workers | null): void => {
     for (let k = 0; k < state.drained; k++) clearBuffer(state.drains[k]);
     state.drained = 0;
     workers?.pool.rewind();
+    for (let k = 0; k < state.channels.length; k++) state.channels[k].rewind();
 };
 
 const firstOf = (first: unknown, next: unknown): unknown => first === undefined ? next : first;
 
 const isResults = (result: ChunkResult | readonly ChunkResult[]): result is readonly ChunkResult[] => Array.isArray(result);
+
+/**
+ * A system's outcome in `outcome`: a failure, or a skip with a `"thread"` failure, and its fold. Returns whether it
+ * failed, which stops the run after its tier.
+ */
+const settled = (state: State, folds: ReadonlyMap<unknown, Fold> | null, outcome: Outcome, runner: Runner, leaf: { readonly name: string }, error: unknown): boolean => {
+    if (error === gone) {
+        const label = labelOfItem(leaf);
+        (outcome.failures ??= []).push(failureOf("thread", label, runner.remote?.channel.goneError()));
+        (outcome.skipped ??= []).push(label);
+        if (folds !== null && runner.targets.length > 0) contribute(state, folds, runner, null, true);
+        return false;
+    }
+    const failed = error !== undefined;
+    if (failed) (outcome.failures ??= []).push(failureOf("system", labelOfItem(leaf), error));
+    if (folds !== null && runner.targets.length > 0) contribute(state, folds, runner, runner.finish(failed), failed);
+    return failed;
+};
+
+/** Adds the systems of `runners` on `channel`'s thread to the task being gathered, with tier `tier` within it. */
+const gather = (prepared: Prepared, runners: readonly Runner[], channel: TaskChannel, tier: number): void => {
+    for (let i = 0; i < runners.length; i++) {
+        const { remote } = runners[i];
+        if (remote === null || remote.channel !== channel) continue;
+        liftColumnStamps(runners[i]);
+        prepared.systems.push(remote);
+        prepared.tiers.push(tier);
+        prepared.warnings[prepared.warningCount++] = remote.warning;
+    }
+};
+
+/** Posts the task gathered, on `channel`'s thread. */
+const post = (state: State, prepared: Prepared, channel: TaskChannel, args: unknown): Promise<boolean> => {
+    const task = channel.run(state, prepared.systems, prepared.tiers, args);
+    prepared.systems.length = 0;
+    prepared.tiers.length = 0;
+    return task;
+};
+
+/** A task never posted, as for a thread that's gone. */
+const notDone = Promise.resolve(false);
+
+/**
+ * Runs tiers from `first` on, as long as each is all on `channel`'s thread, as one task, with no barrier between them;
+ * returns the last of them, or -1 when one failed, the tiers after it skipped.
+ */
+const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: Prepared, folds: ReadonlyMap<unknown, Fold> | null, args: unknown, first: number, channel: TaskChannel): Promise<number> => {
+    const { state } = context;
+    const { gpu } = state;
+    let last = first;
+    while (last + 1 < schedule.tiers.length) {
+        const next = prepared.runners[last + 1];
+        const leaves = schedule.tiers[last + 1];
+        for (let i = 0; i < leaves.length; i++) next[i] = context.runnerOf(leaves[i]);
+        if (!allOn(next, channel)) break;
+        last++;
+    }
+    for (let v = first; v <= last; v++) {
+        if (gpu !== null) await readAhead(state, gpu, prepared.runners[v]);
+        gather(prepared, prepared.runners[v], channel, v - first);
+    }
+    const done = await post(state, prepared, channel, args);
+    const { outcome } = prepared;
+    for (let v = first; v <= last; v++) {
+        const leaves = schedule.tiers[v];
+        const runners = prepared.runners[v];
+        let failed = false;
+        for (let i = 0; i < runners.length; i++) {
+            const { remote } = runners[i];
+            if (remote !== null && settled(state, folds, outcome, runners[i], leaves[i], settleRemote(state, remote, done))) failed = true;
+        }
+        if (gpu !== null) markWrites(gpu, runners);
+        if (failed) {
+            for (let later = v + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (outcome.skipped ??= []).push(labelOfItem(leaf));
+            return -1;
+        }
+    }
+    return last;
+};
 
 const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: unknown, earlier: Failure[] | null): Promise<Report> => {
     const { state, kernelIndexOf, workers, publish } = context;
@@ -141,23 +270,49 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
     const prepared = preparedFor(context, schedule);
     let folds: Map<unknown, Fold> | null = null;
     for (const [key, contributors] of schedule.reductions) (folds ??= new Map()).set(key, { target: null, values: [], remaining: contributors, ran: false, failed: false });
-    // Allocated only when there's something to list.
-    let failures = earlier;
-    let skipped: string[] | null = null;
     let dropped = 0;
+    const { outcome } = prepared;
+    prepared.warningCount = 0;
+    outcome.failures = earlier;
+    outcome.skipped = null;
     try {
         for (let t = 0; t < schedule.tiers.length; t++) {
             const tier = schedule.tiers[t];
             const runners = prepared.runners[t];
-            for (let i = 0; i < tier.length; i++) runners[i] = context.runnerOf(tier[i]);
+            let remote = 0;
+            for (let i = 0; i < tier.length; i++) if ((runners[i] = context.runnerOf(tier[i])).remote !== null) remote++;
+            const only = remote === runners.length ? runners[0]?.remote?.channel : undefined;
+            if (only !== undefined && allOn(runners, only)) {
+                const last = await runFused(context, schedule, prepared, folds, args, t, only);
+                if (last < 0) break;
+                t = last;
+                continue;
+            }
             const started = prepared.started[t];
             if (gpu !== null) await readAhead(state, gpu, runners);
+            // Systems on joined threads start first, so their threads run while this one does.
+            if (remote > 0) {
+                const { tasks } = prepared;
+                tasks.clear();
+                for (let i = 0; i < runners.length; i++) {
+                    const channel = runners[i].remote?.channel;
+                    if (channel === undefined || tasks.has(channel)) continue;
+                    gather(prepared, runners, channel, 0);
+                    tasks.set(channel, post(state, prepared, channel, args));
+                }
+            }
             for (let i = 0; i < runners.length; i++) if (runners[i].kernel !== null) started[i] = runners[i].start(args, workers, kernelIndexOf(runners[i]));
-            for (let i = 0; i < runners.length; i++) if (runners[i].kernel === null) started[i] = runners[i].start(args, null, -1);
+            for (let i = 0; i < runners.length; i++) if (runners[i].kernel === null && runners[i].remote === null) started[i] = runners[i].start(args, null, -1);
             // Every chunk settles, even a failed one, so no worker is still writing at the sync point. Chunks the main
             // thread ran are settled already, so only those workers run are awaited.
             let tierFailed = false;
             for (let i = 0; i < runners.length; i++) {
+                const runner = runners[i];
+                const remoteSystem = runner.remote;
+                if (remoteSystem !== null) {
+                    if (settled(state, folds, outcome, runner, tier[i], settleRemote(state, remoteSystem, await (prepared.tasks.get(remoteSystem.channel) ?? notDone)))) tierFailed = true;
+                    continue;
+                }
                 let error: unknown = undefined;
                 // Indexed: an iterator kept across an await would be allocated for every system.
                 const chunks = started[i];
@@ -170,14 +325,16 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
                 }
                 started[i] = noChunks;
                 const failed = error !== undefined;
-                if (failed) (failures ??= []).push(failureOf("system", labelOfItem(tier[i]), error));
-                if (failed) tierFailed = true;
-                const runner = runners[i];
+                if (failed) {
+                    (outcome.failures ??= []).push(failureOf("system", labelOfItem(tier[i]), error));
+                    tierFailed = true;
+                }
                 if (folds !== null && runner.targets.length > 0) contribute(state, folds, runner, runner.finish(failed), failed);
             }
+            if (remote > 0) prepared.tasks.clear();
             if (gpu !== null) markWrites(gpu, runners);
             if (tierFailed) {
-                for (let later = t + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (skipped ??= []).push(labelOfItem(leaf));
+                for (let later = t + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (outcome.skipped ??= []).push(labelOfItem(leaf));
                 break;
             }
         }
@@ -202,7 +359,7 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
                     finally {
                         // Applied even when the readback fails, which only a lost device makes it do: the CPU state stays whole.
                         dropped = state.plan.dropped;
-                        for (const { finalizer, error } of applySync(state)) (failures ??= []).push(failureOf("finalizer", labelOfItem(finalizer), error));
+                        for (const { finalizer, error } of applySync(state)) (outcome.failures ??= []).push(failureOf("finalizer", labelOfItem(finalizer), error));
                     }
                 }
             }
@@ -219,7 +376,23 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
             publish();
         }
     }
-    return failures === null && skipped === null && dropped === 0 ? clean : { failures: failures ?? none, skipped: skipped ?? none, dropped, warnings: none };
+    const { failures, skipped } = outcome;
+    // Released for collection: the next run starts them again.
+    outcome.failures = outcome.skipped = null;
+    const { warningCount } = prepared;
+    if (failures === null && skipped === null && dropped === 0) return warningCount === 0 ? clean : warnedReport(prepared);
+    return { failures: failures ?? none, skipped: skipped ?? none, dropped, warnings: warningCount === 0 ? none : prepared.warnings.slice(0, warningCount) };
+};
+
+/** A report of warnings alone: the last one made, while a run's warnings are the same, so a steady run allocates none. */
+const warnedReport = (prepared: Prepared): Report => {
+    const { warnings, warningCount, warned } = prepared;
+    if (warned !== null && warned.warnings.length === warningCount) {
+        let same = true;
+        for (let k = 0; k < warningCount && same; k++) same = warned.warnings[k] === warnings[k];
+        if (same) return warned;
+    }
+    return prepared.warned = { failures: none, skipped: none, dropped: 0, warnings: warnings.slice(0, warningCount) };
 };
 
 /**

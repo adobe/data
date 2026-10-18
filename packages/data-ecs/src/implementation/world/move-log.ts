@@ -40,10 +40,14 @@ export const swapEntry = 5;
 /** A value given to the thread's object in a row: the row, the component, and its tag; added when it starts there. */
 export const setEntry = 6;
 
-/** Tags: the component's start, `null`, or a staged slot's value, by the slot's id plus `slotTags`. */
+/**
+ * Tags: the component's start, `null`, a value the thread's systems wrote, which it keeps by entity, or a staged slot's
+ * value, by the slot's id plus `slotTags`.
+ */
 export const startTag = 0;
 export const nullTag = 1;
-export const slotTags = 2;
+export const ownTag = 2;
+export const slotTags = 3;
 
 /** Entries a log holds at least. */
 export const minimumEntries = 4096;

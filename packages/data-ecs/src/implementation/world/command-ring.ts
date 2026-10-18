@@ -2,26 +2,39 @@ import { viewsOf, type Layout, type Views } from '../../interface/registry/layou
 import { emptyViews } from './arrays.js';
 import { writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32 } from './archetype.js';
 import { stage, type CommandBuffer } from './buffer.js';
+import { slotValue } from './move-log.js';
 import type { SpawnBatch } from './staging.js';
 
 // A pool worker's command ring (threads.md, "Command rings"): segments a worker writes into shared memory for the world's
 // thread to drain at the sync point. A segment holds one task's commands as the columns of a `CommandBuffer`, so the world
 // drains it by taking views of them, then its staged spawn batches as blocks and the reservation ranges it left unused.
 //
-// Layout, every region on 8 bytes: a header (the merge tag, then counts and sizes); entities, f64 by command; values'
-// bytes; first components, i32 by command; component ids, i32 by component; offsets into the values' bytes, i32 by
-// component, -1 for a value given by tag; kinds, u8 by command; tags, 16 bytes each (component, how, number); spawn
-// blocks; unused reservation ranges, u32 pairs.
+// Layout, every region on 8 bytes: a header (the merge tag, then counts and sizes, and its flags); entities, f64 by
+// command; values' bytes; first components, i32 by command; component ids, i32 by component; offsets into the values'
+// bytes, i32 by component, -1 for a value given by tag; kinds, u8 by command; tags, 16 bytes each (component, how,
+// number); spawn blocks; unused reservation ranges, u32 pairs.
 
 const segmentRecord = 8;
-const headerBytes = 48;
+const headerBytes = 56;
 
-/** How a tagged component's value comes: its start, `null`, a number or a boolean, which the world resolves. */
+/**
+ * A segment flag: some of its components are named by the joined thread's own numbers for their ids, `localNumbers`
+ * past each, which the world maps to its own as it drains it.
+ */
+const localFlag = 1;
+/** Where a joined thread's own numbers for keys start among a segment's component ids. */
+export const localNumbers = 0x40000000;
+
+/**
+ * How a tagged component's value comes: its start, `null`, a number or a boolean, which the world resolves; or a value
+ * the issuing thread staged for its own object, by the slot's id.
+ */
 const startValue = 1;
 const nullValue = 2;
 const numberValue = 3;
 const falseValue = 4;
 const trueValue = 5;
+const slotted = 6;
 
 const padded = (bytes: number): number => (bytes + 7) & ~7;
 
@@ -56,6 +69,8 @@ const scratchFor = (bytes: number): Views => {
 /** A task's commands as a worker builds them, in columns of its own reused by every task, copied into the ring at its end. */
 export type RingWriter = {
     tag: MergeTag;
+    /** Whether a component is named by a joined thread's own number for it. */
+    local: boolean;
     count: number;
     named: number;
     kinds: Uint8Array;
@@ -76,7 +91,7 @@ export type RingWriter = {
 const noTag: MergeTag = { tick: 0, archetype: 0, start: 0 };
 
 export const createRingWriter = (): RingWriter => ({
-    tag: noTag, count: 0, named: 0,
+    tag: noTag, local: false, count: 0, named: 0,
     kinds: new Uint8Array(1024), entities: new Float64Array(1024), firsts: new Int32Array(1024),
     ids: new Int32Array(1024), offsets: new Int32Array(1024),
     data: viewsOf(new ArrayBuffer(8192), 0, 8192), used: 0,
@@ -92,6 +107,7 @@ const doubled = <T extends Uint8Array | Float64Array | Int32Array>(array: T, cre
 /** Starts a task's commands, with its merge tag. */
 export const startSegment = (writer: RingWriter, tag: MergeTag): void => {
     writer.tag = tag;
+    writer.local = false;
     writer.count = writer.named = writer.used = writer.tagged = 0;
 };
 
@@ -111,6 +127,7 @@ export const beginCommand = (writer: RingWriter, kind: number, entity: number): 
 
 /** A component of the open command, its value's offset or -1; returns its index. */
 const component = (writer: RingWriter, id: number, offset: number): number => {
+    if (id >= localNumbers) writer.local = true;
     const named = writer.named;
     if (named === writer.ids.length) {
         writer.ids = doubled(writer.ids, length => new Int32Array(length));
@@ -140,6 +157,17 @@ const tag = (writer: RingWriter, entry: number, how: number, number: number): vo
 
 /** A component of the open add left out: its start, which the world resolves. */
 export const putStart = (writer: RingWriter, id: number): void => tag(writer, component(writer, id, -1), startValue, 0);
+
+/** A component of the open add given `null`, which the world takes for an object it doesn't hold. */
+export const putNull = (writer: RingWriter, id: number): void => tag(writer, component(writer, id, -1), nullValue, 0);
+
+/** A component of the open add given a value the issuing thread staged for its own object, under slot `slot`. */
+export const putSlot = (writer: RingWriter, id: number, slot: number): void => tag(writer, component(writer, id, -1), slotted, slot);
+
+/** Drops the open command, naming no entity, as a value it gave can't cross. */
+export const dropCommand = (writer: RingWriter): void => {
+    if (writer.count > 0) writer.entities[writer.count - 1] = 0;
+};
 
 /** Writes a value of a linear layout at byte `at`: numbers and f32 lane tuples straight in, the rest through the layout. */
 const writeLinear = (views: Views, at: number, encoder: Encoder, value: unknown): void => {
@@ -193,15 +221,22 @@ export const putValue = (writer: RingWriter, id: number, encoder: Encoder, value
     tag(writer, component(writer, id, -1), how, typeof value === "number" ? value : 0);
 };
 
+/**
+ * For a joined thread's segments: stages a value its spawn gives one of its own objects, other than its start or
+ * `null`, returning the slot's id; -1 for any other value or component.
+ */
+export type Slots = (component: number, entity: number, value: unknown) => number;
+
 /** The bytes a spawn batch's block takes; throws for an object value the world can't take. */
-const batchBytes = (batch: SpawnBatch): number => {
+const batchBytes = (batch: SpawnBatch, slots: Slots | null): number => {
     const { count, columns } = batch;
     if (count === 0) return 0;
     let bytes = 16 + padded(4 * columns.length) + 8 * count;
     for (const column of columns) {
         if (column.layout.kind === "linear") bytes += padded(count * column.stride);
         else if (column.layout.kind === "object") {
-            for (let row = 0; row < count; row++) if (objectTag(column.values[row]) < 0) throw unencodable(column.id);
+            // A joined thread's own objects take any value, staged as its segment is written.
+            if (slots === null) for (let row = 0; row < count; row++) if (objectTag(column.values[row]) < 0) throw unencodable(column.id);
             bytes += 16 * count;
         }
     }
@@ -209,7 +244,7 @@ const batchBytes = (batch: SpawnBatch): number => {
 };
 
 /** Copies a spawn batch's rows to byte `at` as one block, emptying it; returns the byte after it. */
-const putBatch = (views: Views, start: number, batch: SpawnBatch): number => {
+const putBatch = (views: Views, start: number, batch: SpawnBatch, slots: Slots | null): number => {
     const { count, columns } = batch;
     if (count === 0) return start;
     const { u8, u32, f64 } = views;
@@ -229,8 +264,12 @@ const putBatch = (views: Views, start: number, batch: SpawnBatch): number => {
         else if (column.layout.kind === "object") {
             for (let row = 0; row < count; row++, at += 16) {
                 const value = column.values[row];
-                u32[at >> 2] = objectTag(value);
-                f64[(at >> 3) + 1] = typeof value === "number" ? value : 0;
+                // A joined thread's own object holds what its spawn gave it, staged there.
+                const slot = slots === null ? -1 : slots(column.id, batch.entities[row], value);
+                const how = slot >= 0 ? slotted : objectTag(value);
+                if (how < 0) throw unencodable(column.id);
+                u32[at >> 2] = how;
+                f64[(at >> 3) + 1] = slot >= 0 ? slot : typeof value === "number" ? value : 0;
             }
             column.values.fill(undefined, 0, count);
         }
@@ -249,10 +288,11 @@ export const noExtent: Extent = { start: 0, end: 0, spill: null, transfer: null 
  * Writes the task's segment: its commands' columns, then `batches` as blocks, emptying them, and `unused`, into the ring
  * at `cursor` past `base` when it fits before `capacity`, else into a spill of its own.
  */
-export const endSegment = (writer: RingWriter, memory: Views, base: number, capacity: number, cursor: number, batches: readonly SpawnBatch[], unused: readonly number[]): Extent => {
+export const endSegment = (writer: RingWriter, memory: Views, base: number, capacity: number, cursor: number, batches: readonly SpawnBatch[], unused: readonly number[], slots: Slots | null = null): Extent => {
     const { count: n, named: m, tagged, used } = writer;
     let spawnBytes = 0;
-    for (const batch of batches) spawnBytes += batchBytes(batch);
+    for (const batch of batches) spawnBytes += batchBytes(batch, slots);
+    const local = writer.local || batches.some(batch => batch.count > 0 && batch.ids.some(id => id >= localNumbers));
     const columns = 8 * n + padded(used) + padded(4 * n) + 2 * padded(4 * m) + padded(n);
     const bytes = headerBytes + columns + 16 * tagged + spawnBytes + padded(4 * unused.length);
     const inRing = cursor + bytes <= capacity;
@@ -271,6 +311,7 @@ export const endSegment = (writer: RingWriter, memory: Views, base: number, capa
     u32[(at >> 2) + 9] = tagged;
     u32[(at >> 2) + 10] = spawnBytes;
     u32[(at >> 2) + 11] = unused.length;
+    u32[(at >> 2) + 12] = local ? localFlag : 0;
     at += headerBytes;
     f64.set(writer.entities.subarray(0, n), at >> 3);
     at += 8 * n;
@@ -289,7 +330,7 @@ export const endSegment = (writer: RingWriter, memory: Views, base: number, capa
         i32[(at >> 2) + 1] = writer.tagKinds[t];
         f64[(at >> 3) + 1] = writer.tagNumbers[t];
     }
-    for (const batch of batches) at = putBatch(views, at, batch);
+    for (const batch of batches) at = putBatch(views, at, batch, slots);
     for (let k = 0; k < unused.length; k++) u32[(at >> 2) + k] = unused[k];
     return transfer === null
         ? { start: cursor, end: cursor + bytes, spill: null, transfer: null }
@@ -303,6 +344,7 @@ const tagValue = (how: number, number: number, start: unknown): unknown => {
         case numberValue: return number;
         case falseValue: return false;
         case trueValue: return true;
+        case slotted: return slotValue(number);
         default: return undefined;
     }
 };
@@ -339,12 +381,52 @@ const decodeBatch = (views: Views, at: number, layouts: readonly Layout[], start
 /** Read-only by every drained buffer: no command names a list. Grown to the most commands one segment held. */
 let noShapes = new Int32Array(0);
 
+/** A joined thread's own numbers for keys, by number, as the world's ids; -1 for a key the world never imported. */
+export type LocalIds = (number: number) => number;
+
+/** Maps the joined thread's own numbers among `ids` to the world's in place; false if one names a key it never imported. */
+const mapLocal = (ids: Int32Array | Uint32Array, from: number, count: number, local: LocalIds): boolean => {
+    for (let k = from; k < from + count; k++) {
+        if (ids[k] < localNumbers) continue;
+        const id = local(ids[k] - localNumbers);
+        if (id < 0) return false;
+        ids[k] = id;
+    }
+    return true;
+};
+
+/** The bytes a spawn block at byte `at` takes, by its header and its components' layouts. */
+const blockBytes = (u32: Uint32Array, at: number, layouts: readonly Layout[]): number => {
+    const count = u32[at >> 2];
+    const width = u32[(at >> 2) + 1];
+    let bytes = 16 + padded(4 * width) + 8 * count;
+    for (let c = 0; c < width; c++) {
+        const layout = layouts[u32[(at >> 2) + 4 + c]];
+        if (layout === undefined) return -1;
+        if (layout.kind === "linear") bytes += padded(count * layout.stride);
+        else if (layout.kind === "object") bytes += 16 * count;
+    }
+    return bytes;
+};
+
+/** Maps the joined thread's own numbers among the spawn blocks' component ids, from byte `at` for `length` bytes. */
+const mapBatches = (u32: Uint32Array, at: number, length: number, layouts: readonly Layout[], local: LocalIds): boolean => {
+    for (let next = at; next < at + length;) {
+        if (!mapLocal(u32, (next >> 2) + 4, u32[(next >> 2) + 1], local)) return false;
+        const bytes = blockBytes(u32, next, layouts);
+        if (bytes < 0) return false;
+        next += bytes;
+    }
+    return true;
+};
+
 /**
  * Drains a segment into `buffer`, whose columns become views of it: commands with their structs' bytes left in place,
  * tagged values resolved, each spawn block staged as a batch over it, and unused reservation ranges appended to
- * `unused`. The segment must start with `tag`; returns false if it doesn't, draining nothing.
+ * `unused`. A joined thread's own numbers for keys are mapped through `local`. The segment must start with `tag`;
+ * returns false if it doesn't, or names a key the world never imported, draining nothing.
  */
-export const drainSegment = (buffer: CommandBuffer, bytes: Uint8Array, layouts: readonly Layout[], starts: readonly unknown[], unused: number[], tag: MergeTag): boolean => {
+export const drainSegment = (buffer: CommandBuffer, bytes: Uint8Array, layouts: readonly Layout[], starts: readonly unknown[], unused: number[], tag: MergeTag, local: LocalIds | null = null): boolean => {
     const views = viewsOf(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const { u32, i32, f64 } = views;
     if (bytes.byteLength < headerBytes || u32[0] !== segmentRecord || u32[1] !== tag.archetype || f64[1] !== tag.tick || f64[2] !== tag.start) return false;
@@ -354,6 +436,7 @@ export const drainSegment = (buffer: CommandBuffer, bytes: Uint8Array, layouts: 
     const tagged = u32[9];
     const spawnBytes = u32[10];
     const unusedCount = u32[11];
+    if ((u32[12] & localFlag) !== 0 && (local === null || !mapLocal(i32, (headerBytes + 8 * n + padded(used) + padded(4 * n)) >> 2, m, local) || !mapBatches(u32, headerBytes + 8 * n + padded(used) + padded(4 * n) + 2 * padded(4 * m) + padded(n) + 16 * tagged, spawnBytes, layouts, local))) return false;
     const { buffer: memory, byteOffset } = bytes;
     let at = headerBytes;
     buffer.entities = new Float64Array(memory, byteOffset + at, n);

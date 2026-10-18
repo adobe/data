@@ -378,7 +378,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             void enqueue(syncOwn);
         },
         defer: (failure: Failure) => observers.defer(failure),
-        placedOn: threads => registrar.placedOn(threads) ?? finalizerOn(threads),
+        crossing: (threads, imported) => registrar.crossing(threads, imported) ?? finalizerOn(threads),
+        placed: () => registrar.place(),
         between: task => void enqueue(async () => {
             if (!disposed) task();
         }),

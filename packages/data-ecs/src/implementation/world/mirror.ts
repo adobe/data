@@ -5,24 +5,23 @@ import {
     structureWord, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
 } from './layout-directory.js';
 import {
-    addedFlag, appendEntry, archetypeShift, entryWords, kindMask, logCapacityWord, logDeliveredWord, logHeaderBytes, logLimitWord, logOffsetWord,
-    logPublishedWord, logSyncWord, logVersionWord, moveEntry, nullTag, rangeEntry, setEntry, slotTags, startTag, swapEntry, syncEntry,
+    appendEntry, archetypeShift, entryWords, kindMask, logCapacityWord, logDeliveredWord, logHeaderBytes, logLimitWord, logOffsetWord,
+    logPublishedWord, logSyncWord, logVersionWord, moveEntry, nullTag, ownTag, rangeEntry, setEntry, slotTags, startTag, swapEntry, syncEntry,
 } from './move-log.js';
 
-// A joined thread's object columns: by row, as the world's are, with their ticks, following the world's rows through
-// the move log (`move-log.ts`), replayed lazily, or rebuilt from the layout directory when the log lapped it.
+// A joined thread's object columns: by row, as the world's are, following the world's rows through the move log
+// (`move-log.ts`), replayed lazily, or rebuilt from the layout directory when the log lapped it. Their ticks are the
+// world's storages', in shared memory, which the world stamps at sync points and this thread's systems as they write.
 
-/** One of this thread's object components in one archetype: its values and ticks by row. */
-type Column = {
+/** One of this thread's object components in one archetype: its values by row. */
+export type Column = {
     readonly component: number;
     readonly start: unknown;
     values: unknown[];
-    added: Float64Array;
-    changed: Float64Array;
 };
 
 /** An archetype holding this thread's objects, by the world's number: its columns, and each row's entity. */
-type Mirrored = {
+export type Mirrored = {
     readonly columns: readonly Column[];
     /** Columns by component number. */
     readonly byComponent: readonly (Column | undefined)[];
@@ -139,7 +138,7 @@ const columnsOf = (mirror: Mirror, record: number): Column[] | null | undefined 
         const component = words[base + storageComponent];
         const key = mirror.keys.get(component);
         if (key === undefined) return undefined;
-        if (key !== null) columns.push({ component, start: mirror.starts.get(component), values: [], added: new Float64Array(16), changed: new Float64Array(16) });
+        if (key !== null) columns.push({ component, start: mirror.starts.get(component), values: [] });
     }
     return holds ? columns : null;
 };
@@ -161,12 +160,6 @@ const archetypeOf = (mirror: Mirror, id: number): Mirrored | null | undefined =>
     return mirror.archetypes[id] = columns === null ? null : mirroredOf(columns, 16);
 };
 
-const grownTicks = (ticks: Float64Array, length: number): Float64Array => {
-    const grown = new Float64Array(length);
-    grown.set(ticks);
-    return grown;
-};
-
 /** Room for row `row`. */
 const ensureRow = (archetype: Mirrored, row: number): void => {
     if (row < archetype.entities.length) return;
@@ -175,21 +168,16 @@ const ensureRow = (archetype: Mirrored, row: number): void => {
     const entities = new Float64Array(length);
     entities.set(archetype.entities);
     archetype.entities = entities;
-    for (const column of archetype.columns) {
-        column.added = grownTicks(column.added, length);
-        column.changed = grownTicks(column.changed, length);
-    }
 };
 
-/** Row `row` filled with `entity`, every column at its start, added at the sync's tick. */
-const fill = (archetype: Mirrored, row: number, entity: number, tick: number): void => {
+/** Row `row` filled with `entity`, every column at its start. */
+const fill = (archetype: Mirrored, row: number, entity: number): void => {
     ensureRow(archetype, row);
     archetype.entities[row] = entity;
     const { columns } = archetype;
     for (let c = 0; c < columns.length; c++) {
         const column = columns[c];
         column.values[row] = column.start;
-        column.added[row] = column.changed[row] = tick;
     }
     if (row >= archetype.count) archetype.count = row + 1;
 };
@@ -235,14 +223,13 @@ export const stage = (mirror: Mirror, entity: number, component: number, value: 
 /** Applies `count` entries copied into the scratch, in order. */
 const apply = (mirror: Mirror, count: number): void => {
     const { scratch, scratchEntities, archetypes } = mirror;
-    let tick = mirror.tick;
     for (let e = 0; e < count; e++) {
         const at = e * entryWords;
         const first = scratch[at];
         const archetype = first >>> archetypeShift;
         switch (first & kindMask) {
             case syncEntry: {
-                tick = mirror.tick = scratch[at + 1] + scratch[at + 2] * 0x100000000;
+                mirror.tick = scratch[at + 1] + scratch[at + 2] * 0x100000000;
                 break;
             }
             case moveEntry: {
@@ -257,28 +244,21 @@ const apply = (mirror: Mirror, count: number): void => {
                 for (let c = 0; c < columns.length; c++) {
                     const column = columns[c];
                     const source = from.byComponent[column.component];
-                    if (source === undefined) {
-                        column.values[toRow] = column.start;
-                        column.added[toRow] = column.changed[toRow] = tick;
-                        continue;
-                    }
-                    column.values[toRow] = source.values[fromRow];
-                    column.added[toRow] = source.added[fromRow];
-                    column.changed[toRow] = source.changed[fromRow];
+                    column.values[toRow] = source === undefined ? column.start : source.values[fromRow];
                 }
                 if (toRow >= to.count) to.count = toRow + 1;
                 break;
             }
             case appendEntry: {
                 const to = archetypes[archetype];
-                if (to !== null && to !== undefined) fill(to, scratch[at + 1], scratch[at + 2] + scratch[at + 3] * 0x100000000, tick);
+                if (to !== null && to !== undefined) fill(to, scratch[at + 1], scratch[at + 2] + scratch[at + 3] * 0x100000000);
                 break;
             }
             case rangeEntry: {
                 const to = archetypes[archetype];
                 const row = scratch[at + 1];
                 const rows = scratch[at + 2];
-                if (to !== null && to !== undefined) for (let k = 0; k < rows; k++) fill(to, row + k, scratchEntities[(e + 1) * 2 + k], tick);
+                if (to !== null && to !== undefined) for (let k = 0; k < rows; k++) fill(to, row + k, scratchEntities[(e + 1) * 2 + k]);
                 e += Math.ceil(rows / 2);
                 break;
             }
@@ -293,8 +273,6 @@ const apply = (mirror: Mirror, count: number): void => {
                     for (let c = 0; c < columns.length; c++) {
                         const column = columns[c];
                         column.values[row] = column.values[last];
-                        column.added[row] = column.added[last];
-                        column.changed[row] = column.changed[last];
                     }
                 }
                 for (let c = 0; c < columns.length; c++) columns[c].values[last] = undefined;
@@ -306,11 +284,7 @@ const apply = (mirror: Mirror, count: number): void => {
                 const column = to === null || to === undefined ? undefined : to.byComponent[scratch[at + 2]];
                 const tag = scratch[at + 3];
                 const value = tag === startTag ? column?.start : tag === nullTag ? null : take(mirror, (tag - slotTags) >>> 0, column?.start);
-                if (column === undefined) break;
-                const row = scratch[at + 1];
-                column.values[row] = value;
-                column.changed[row] = tick;
-                if ((first & addedFlag) !== 0) column.added[row] = tick;
+                if (column !== undefined) column.values[scratch[at + 1]] = value;
                 break;
             }
         }
@@ -495,15 +469,7 @@ export const rebuild = (mirror: Mirror): boolean => {
         archetype.entities.set(new Float64Array(buffer, words[record + recordEntities], count));
         archetype.count = count;
         for (const column of columns) {
-            column.added = new Float64Array(archetype.entities.length);
-            column.changed = new Float64Array(archetype.entities.length);
             const storage = storageOf(words, record, column.component);
-            const ticked = (words[storage + storageFlags] & tickedFlag) !== 0;
-            // The world keeps ticks for every storage of a joined thread's objects.
-            if (ticked) {
-                column.added.set(new Float64Array(buffer, words[storage + storageAdded], count));
-                column.changed.set(new Float64Array(buffer, words[storage + storageChanged], count));
-            }
             const tags = new Uint32Array(buffer, words[storage + storageColumn], count);
             column.values = new Array(count).fill(column.start);
             for (let row = 0; row < count; row++) {
@@ -512,8 +478,9 @@ export const rebuild = (mirror: Mirror): boolean => {
                 const entity = archetype.entities[row];
                 if (tag === nullTag) column.values[row] = null;
                 else {
+                    // A value this thread's systems wrote is kept by entity, as one whose slot settled.
                     const slot = (tag - slotTags) >>> 0;
-                    const staged = stagedOf(mirror, slot);
+                    const staged = tag === ownTag ? undefined : stagedOf(mirror, slot);
                     if (staged === undefined) {
                         if (!indexed) {
                             indexPrevious(old, entityLength);
@@ -609,8 +576,14 @@ export const objectAt = (mirror: Mirror, location: Location, component: number):
 /** The components of this thread's objects an archetype holds, by the world's numbers. */
 export const componentsAt = (mirror: Mirror, archetype: number): readonly number[] => mirror.archetypes[archetype]?.columns.map(column => column.component) ?? [];
 
-/** For tests: an entity's value and ticks in one of this thread's columns, by its row, as of the last replay. */
+/** For tests: an entity's value in one of this thread's columns by its row, as of the last replay, and its ticks, the world's. */
 export const cellOf = (mirror: Mirror, archetype: number, row: number, component: number): { readonly value: unknown; readonly added: number; readonly changed: number } | null => {
     const column = mirror.archetypes[archetype]?.byComponent[component];
-    return column === undefined || row >= (mirror.archetypes[archetype]?.count ?? 0) ? null : { value: column.values[row], added: column.added[row], changed: column.changed[row] };
+    if (column === undefined || row >= (mirror.archetypes[archetype]?.count ?? 0)) return null;
+    refresh(mirror);
+    const { words, buffer } = mirror;
+    const storage = storageOf(words, recordOf(mirror, archetype), component);
+    const ticked = (words[storage + storageFlags] & tickedFlag) !== 0;
+    const tickAt = (field: number): number => ticked ? new Float64Array(buffer, words[storage + field], row + 1)[row] : 0;
+    return { value: column.values[row], added: tickAt(storageAdded), changed: tickAt(storageChanged) };
 };

@@ -18,6 +18,7 @@ import { createLayoutDirectory, type LayoutDirectory } from './layout-directory.
 import { createJournal, type Journal } from './journal.js';
 import type { Row } from './rows.js';
 import type { MoveLog } from './move-log.js';
+import type { TaskChannel } from './remote-systems.js';
 import { claimComponent } from './remote.js';
 
 export type Key = string | symbol;
@@ -128,6 +129,11 @@ export type State = {
     claimed: boolean;
     /** While a joined thread may read them: archetypes whose count changed since the layout directory's last flush. */
     readonly counted: Archetype[];
+    /** By logical thread a joined thread claims, its task channel, which systems placed there run through; and every channel. */
+    readonly threadTasks: Map<string, TaskChannel>;
+    readonly channels: TaskChannel[];
+    /** Moves on whenever systems are placed again, as claims are made or released. */
+    placement: number;
     /** Finalizers on claimed threads, which don't activate, with why, for the next sync point to report; and every one found. */
     readonly unplaced: Thrown[];
     readonly unplacedSeen: Set<object>;
@@ -186,6 +192,9 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         logs: [],
         claimed: false,
         counted: [],
+        threadTasks: new Map(),
+        channels: [],
+        placement: 0,
         unplaced: [],
         unplacedSeen: new Set(),
     };

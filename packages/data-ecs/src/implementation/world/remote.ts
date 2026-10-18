@@ -1,4 +1,4 @@
-import { declarationOf, kindOf, labelOf, threadOfDeclaration } from '../../interface/registry/index.js';
+import { declarationOf, labelOf, threadOfDeclaration } from '../../interface/registry/index.js';
 import { makeLocal, makeRemote } from './archetype.js';
 import type { CommandBuffer } from './buffer.js';
 import { flushBetween } from './layout-directory.js';
@@ -8,11 +8,10 @@ import { startTicking, type State } from './state.js';
 // Objects a joined thread fills: the world's storages for them hold each row's tag in place of its value, and the
 // archetypes holding them append their moves to the thread's log (`move-log.ts`).
 
-/** The logical thread a component's objects live on, or null for a struct or a resource. */
+/** The logical thread a component's or resource's objects live on, or null for a struct. */
 const threadOfComponent = (state: State, id: number): string | null => {
-    const key = state.keys[id];
-    const declaration = declarationOf(key);
-    return declaration === undefined || kindOf(key) !== "component" ? null : threadOfDeclaration(declaration);
+    const declaration = declarationOf(state.keys[id]);
+    return declaration === undefined ? null : threadOfDeclaration(declaration);
 };
 
 /** Gives a component a joined thread fills to its log, in every archetype and batch holding it. */
@@ -87,18 +86,20 @@ export const remoteError = (state: State, id: number): Error =>
 
 /**
  * For a system's commands, once a joined thread fills objects: the first error of a value another thread's object can't
- * take, with each such command dropped, by naming no entity, and each such staged spawn's value its start.
+ * take, with each such command dropped, by naming no entity, and each such staged spawn's value its start. Commands of
+ * the joined thread whose log is `own` give its own objects slots it staged.
  */
-export const checkCommands = (state: State, buffer: CommandBuffer): Error | undefined => {
+export const checkCommands = (state: State, buffer: CommandBuffer, own: MoveLog | null = null): Error | undefined => {
     let error: Error | undefined;
     const { ids, values, starts, entities } = buffer;
     for (let command = 0; command < buffer.count; command++) {
         const end = command + 1 < buffer.count ? starts[command + 1] : buffer.named;
         for (let k = starts[command]; k < end; k++) {
             const id = ids[k];
-            if (state.remote[id] === undefined) continue;
+            const log = state.remote[id];
+            if (log === undefined) continue;
             const tag = tagOf(values[k], state.starts[id]);
-            if (tag >= 0 && tag <= nullTag) continue;
+            if (tag >= 0 && (tag <= nullTag || log === own)) continue;
             error ??= remoteError(state, id);
             entities[command] = 0;
             break;
@@ -112,7 +113,7 @@ export const checkCommands = (state: State, buffer: CommandBuffer): Error | unde
             const begin = state.starts[column.id];
             for (let row = start; row < end; row++) {
                 const tag = tagOf(column.values[row], begin);
-                if (tag >= 0 && tag <= nullTag) continue;
+                if (tag >= 0 && (tag <= nullTag || log === own)) continue;
                 error ??= remoteError(state, column.id);
                 column.values[row] = begin;
             }

@@ -67,14 +67,17 @@ export const writeOf = (layout: Layout): { readonly write: number; readonly unit
 /** Chunks covering `capacity` rows. */
 const chunksFor = (capacity: number): number => Math.max(1, Math.ceil(capacity / 2 ** chunkShift));
 
+/** What stamping a row's ticks writes: a storage's, or a joined thread's view of one. */
+export type Stamped = Pick<Storage, "ticked" | "added" | "changed" | "chunkAdded" | "chunkChanged">;
+
 /** Stamps a row's `changed` tick and its chunk's. Ticks only increase, so the chunk's is the newest. */
-export const stampChanged = (storage: Storage, row: number, tick: number): void => {
+export const stampChanged = (storage: Stamped, row: number, tick: number): void => {
     if (!storage.ticked) return;
     storage.changed[row] = tick;
     storage.chunkChanged[row >> chunkShift] = tick;
 };
 
-export const stampAdded = (storage: Storage, row: number, tick: number): void => {
+export const stampAdded = (storage: Stamped, row: number, tick: number): void => {
     if (!storage.ticked) return;
     storage.added[row] = tick;
     storage.chunkAdded[row >> chunkShift] = tick;

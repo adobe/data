@@ -21,7 +21,9 @@ export const ensureResources = (state: State, keys: Iterable<Key>): void => {
     const archetype = index < 0 ? undefined : state.archetypes[state.entities.archetype[index]];
     const values: { [key: Key]: unknown } = {};
     for (const key of keys) {
-        if (archetype?.storageOf.has(idOf(state, key)) !== true) values[key] = initialOf(state, key);
+        const id = idOf(state, key);
+        // A joined thread's object starts there; the world holds none of its values.
+        if (archetype?.storageOf.has(id) !== true) values[key] = state.remote[id] === undefined ? initialOf(state, key) : state.starts[id];
     }
     if (Reflect.ownKeys(values).length === 0) return;
     const buffer = createBuffer();

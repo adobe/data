@@ -1,5 +1,6 @@
 import type { Leaf } from '../../interface/system/leaf.js';
-import { requireDefinition, threadOf, type Definition } from '../../interface/registry/index.js';
+import { idOfItem, idOfKey, labelOf, requireDefinition, threadOf, type Definition } from '../../interface/registry/index.js';
+import { createRemoteRunner, unplaceable } from './remote-systems.js';
 import { createRunner, type Runner } from './runner.js';
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, type Key, type State } from './state.js';
@@ -21,8 +22,14 @@ export type Registrar = {
     readonly kernels: () => readonly Runner[];
     /** Rebuilds the runners of `kernel: "gpu"` systems for the world's current device, or for the CPU without one; returns them to load. */
     readonly placeGpuKernels: () => readonly Runner[];
-    /** Why a joined thread can't claim `threads`: a registered system runs on one; null when none does. */
-    readonly placedOn: (threads: readonly string[]) => string | null;
+    /**
+     * Why a joined thread that imported the systems of ids `imported` can't claim `threads`: a registered system on one
+     * it didn't import, or one without an id, or naming a key without one, or one that can't run on a joined thread;
+     * null when every one can run there.
+     */
+    readonly crossing: (threads: readonly string[], imported: ReadonlySet<string>) => string | null;
+    /** Places each registered system again, as claims were made or released: on its joined thread, or here. */
+    readonly place: () => void;
 };
 
 /** Every system in a tree, the root included. */
@@ -61,9 +68,18 @@ const tickedBy = (leaf: Leaf): readonly Key[] =>
 /** The components whose `changed` stamps a leaf reads, so kernels writing them must keep their stamps. */
 const observedBy = (leaf: Leaf): readonly Key[] => [...leaf.declaration.components?.changed ?? [], ...upObserved(leaf)];
 
-/** Why a system can't run: its thread is one a joined thread claims, where systems don't run yet. */
-export const unplacedSystem = (name: string, thread: string): string =>
-    `System "${name}" runs on thread "${thread}", which a joined thread fills; systems don't run on joined threads yet.`;
+/** Every key a leaf names, as `keysOf` gives them, flattened. */
+const allKeysOf = (leaf: Leaf): readonly Key[] => {
+    const { components, resources } = keysOf(leaf);
+    return [...components, ...resources];
+};
+
+/** A runner for a leaf where it runs now: on the joined thread filling its thread, or here. */
+const placedRunner = (state: State, leaf: Leaf, since = 0): Runner => {
+    const thread = threadOf(leaf.declaration, "System", leaf.name);
+    const channel = thread === null ? undefined : state.threadTasks.get(thread);
+    return channel === undefined ? createRunner(state, leaf, since) : createRemoteRunner(state, leaf, channel, since);
+};
 
 export const createRegistrar = (state: State): Registrar => {
     const schedules = new Map<Definition, Schedule>();
@@ -80,8 +96,6 @@ export const createRegistrar = (state: State): Registrar => {
             if (schedules.has(system)) continue;
             addedSchedules.set(system, scheduleOf(system));
             if (isLeaf(system)) {
-                const thread = threadOf(system.declaration, "System", system.name);
-                if (thread !== null && state.claims.has(thread)) throw new Error(unplacedSystem(system.name, thread));
                 // Creating the system checked its declaration; registering it gives its keys ids in this world.
                 const keys = keysOf(system);
                 for (const key of keys.components) idOf(state, key);
@@ -89,7 +103,7 @@ export const createRegistrar = (state: State): Registrar => {
                     idOf(state, key);
                     resources.add(key);
                 }
-                addedRunners.set(system, createRunner(state, system));
+                addedRunners.set(system, placedRunner(state, system));
             }
         }
         for (const [system, schedule] of addedSchedules) schedules.set(system, schedule);
@@ -137,14 +151,34 @@ export const createRegistrar = (state: State): Registrar => {
         return placed;
     };
 
-    /** A registered system on one of `threads`, as the reason a joined thread can't claim them; null for none. */
-    const placedOn = (threads: readonly string[]): string | null => {
+    const crossing = (threads: readonly string[], imported: ReadonlySet<string>): string | null => {
         for (const leaf of runners.keys()) {
             const thread = threadOf(leaf.declaration, "System", leaf.name);
-            if (thread !== null && threads.includes(thread)) return unplacedSystem(leaf.name, thread);
+            if (thread === null || !threads.includes(thread)) continue;
+            const label = labelOfItem(leaf);
+            const id = idOfItem(leaf);
+            if (id === undefined) return `System "${label}" runs on thread "${thread}" and has no id, so a joined thread can't run it; the build gives top-level systems one.`;
+            if (!imported.has(id)) return `System "${label}" runs on thread "${thread}", which the joined thread claiming it never imported.`;
+            const unnamed = allKeysOf(leaf).find(key => typeof key !== "symbol" || idOfKey(key) === undefined);
+            if (unnamed !== undefined) return `System "${label}" runs on thread "${thread}" and names "${labelOf(unnamed)}", which has no id, so a joined thread can't name it; the build gives top-level keys one.`;
+            const problem = unplaceable(leaf, thread);
+            if (problem !== null) return problem;
         }
         return null;
     };
 
-    return { register, registered, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, kernels: () => [...kernelIndexes.keys()], placeGpuKernels, placedOn };
+    const place = (): void => {
+        for (const [leaf, old] of runners) {
+            const thread = threadOf(leaf.declaration, "System", leaf.name);
+            const channel = thread === null ? undefined : state.threadTasks.get(thread);
+            if (channel === undefined ? old.remote === null : old.remote?.channel === channel) continue;
+            const runner = placedRunner(state, leaf, old.lastRun());
+            runners.set(leaf, runner);
+            if (old.afterSync !== null) state.afterSync.delete(old.afterSync);
+            if (runner.afterSync !== null) state.afterSync.add(runner.afterSync);
+        }
+        state.placement++;
+    };
+
+    return { register, registered, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, kernels: () => [...kernelIndexes.keys()], placeGpuKernels, crossing, place };
 };

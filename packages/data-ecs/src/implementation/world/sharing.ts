@@ -18,6 +18,7 @@ import { alignFor, createMailbox, entityPlanOf, freeMailbox, publishSlot, writeS
 import { createMoveLog, freeMoveLog, type MoveLog } from './move-log.js';
 import { lineWords } from './protocol.js';
 import { claimThreads, releaseThreads } from './remote.js';
+import { createTaskChannel, type TaskChannel } from './remote-systems.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { idOf, type Key, type State } from './state.js';
 
@@ -39,8 +40,13 @@ export type SharingHost = {
     readonly change: (buffer: CommandBuffer) => void;
     /** A failure for the next run's report, as an observer's first value given through the queue is. */
     readonly defer: (failure: Failure) => void;
-    /** Why a joined thread can't claim `threads`: a system or finalizer runs on one; null when none does. */
-    readonly placedOn: (threads: readonly string[]) => string | null;
+    /**
+     * Why a joined thread that imported the systems of ids `imported` can't claim `threads`: a system it can't run there,
+     * or a finalizer on one; null when none.
+     */
+    readonly crossing: (threads: readonly string[], imported: ReadonlySet<string>) => string | null;
+    /** Places systems again, once claims were made or released. */
+    readonly placed: () => void;
     /** Runs a task between runs, in the world's queue. */
     readonly between: (task: () => void) => void;
 };
@@ -77,6 +83,10 @@ type Joined = {
     /** Its log, once the objects of the threads it claims are its own; and its number, which storage flags name. */
     log: MoveLog | null;
     readonly number: number;
+    /** The ids of the systems it imported, which those placed on it must be among. */
+    imported: ReadonlySet<string>;
+    /** Its task channel, once systems placed on the threads it claims run there. */
+    tasks: TaskChannel | null;
 };
 
 const hasWaitAsync = (): boolean => typeof Atomics.waitAsync === "function";
@@ -364,19 +374,20 @@ export const createSharing = (host: SharingHost) => {
      * Its claims checked against those already made, and against systems and finalizers on them; its control words
      * placed, and its status `"joined"`; or refused. With claims, its objects become its own between runs, then it's told.
      */
-    const join = (thread: Joined, threads: readonly string[], waits: boolean, lock: string | null): void => {
+    const refuse = (thread: Joined, message: string): void => {
+        post(thread, { protocol: protocolName, kind: "refused", message });
+        gone(thread);
+    };
+
+    const join = (thread: Joined, threads: readonly string[], waits: boolean, lock: string | null, imported: readonly string[]): void => {
         if (thread.status !== "joining") return;
         const locks = platformLocks();
         // Granted once the thread no longer holds it: it left, or ended.
         if (lock !== null && locks !== null) locks.request(lock, { signal: thread.abort.signal }, () => gone(thread)).catch(() => {});
+        thread.imported = new Set(imported);
         const twice = threads.find((name, at) => name === "world" || threads.indexOf(name) < at || claimed.has(name));
-        const placed = twice === undefined ? host.placedOn(threads) : null;
-        if (twice !== undefined || placed !== null) {
-            const message = placed ?? (twice === "world" ? `A joined thread can't claim "world", the world's own thread.` : `Thread "${twice}" is claimed twice.`);
-            post(thread, { protocol: protocolName, kind: "refused", message });
-            gone(thread);
-            return;
-        }
+        const placed = twice === undefined ? host.crossing(threads, thread.imported) : null;
+        if (twice !== undefined || placed !== null) return refuse(thread, placed ?? (twice === "world" ? `A joined thread can't claim "world", the world's own thread.` : `Thread "${twice}" is claimed twice.`));
         for (const name of threads) claimed.set(name, thread);
         thread.claims = threads;
         thread.waits = waits;
@@ -386,14 +397,28 @@ export const createSharing = (host: SharingHost) => {
         controlBlocks.set(thread, offset);
         thread.views = slotViews(memory.memory.buffer, start);
         thread.status = "joined";
-        const joined = (): void => post(thread, { protocol: protocolName, kind: "joined", memory: memory.memory, control: start, waits: hasWaitAsync(), log: thread.log?.block ?? null, thread: thread.number });
+        const joined = (): void => post(thread, {
+            protocol: protocolName, kind: "joined", memory: memory.memory, control: start, waits: hasWaitAsync(), log: thread.log?.block ?? null,
+            tasks: thread.tasks?.block ?? null, thread: thread.number,
+        });
         if (threads.length === 0) joined();
         else host.between(() => {
             if (thread.status !== "joined") return;
+            // Systems registered since it asked to join are checked too.
+            const crossing = host.crossing(threads, thread.imported);
+            if (crossing !== null) return refuse(thread, crossing);
             const log = createMoveLog(memory, thread.number, state.starts, component => announce(thread, component));
             thread.log = log;
             claimThreads(state, log, threads);
+            const tasks = createTaskChannel(state, log, message => post(thread, message), () => wake(thread), threads.join(`" and "`), number => {
+                const value = thread.names.get(number)?.value;
+                return typeof value === "symbol" ? idOf(state, value) : -1;
+            });
+            thread.tasks = tasks;
+            for (const name of threads) state.threadTasks.set(name, tasks);
+            state.channels.push(tasks);
             joined();
+            host.placed();
         });
         change(thread, addCommand, { [threadStatus]: "joined", [threadClaims]: threads });
         if (hasWaitAsync()) void listen(thread);
@@ -413,12 +438,20 @@ export const createSharing = (host: SharingHost) => {
      */
     const gone = (thread: Joined, left = false): void => {
         if (thread.status === "gone") return;
-        const { control, log } = thread;
+        const { control, log, tasks } = thread;
         thread.status = "gone";
         threads.delete(thread);
         for (const name of thread.claims) if (claimed.get(name) === thread) claimed.delete(name);
+        // A task in flight settles now, its systems skipped with a "thread" failure; they're placed here between runs.
+        tasks?.end();
         if (log !== null) host.between(() => {
             releaseThreads(state, log);
+            if (tasks !== null) {
+                for (const [name, channel] of [...state.threadTasks]) if (channel === tasks) state.threadTasks.delete(name);
+                state.channels.splice(state.channels.indexOf(tasks), 1);
+                host.placed();
+                if (left) tasks.free();
+            }
             if (left) freeMoveLog(log);
         });
         for (const observer of [...thread.watching.keys()]) unobserve(thread, observer);
@@ -429,7 +462,8 @@ export const createSharing = (host: SharingHost) => {
 
     const receive = (thread: Joined, message: ToWorld): void => {
         switch (message.kind) {
-            case "join": return join(thread, message.threads, message.waits, message.lock);
+            case "join": return join(thread, message.threads, message.waits, message.lock, message.systems);
+            case "completed": return thread.tasks?.completed(message);
             case "name": {
                 const found = message.item ? itemOfId(message.id) : keyOfId(message.id);
                 const value = found === undefined ? null : typeof found === "symbol" ? found : definitionOf(found) ?? null;
@@ -459,7 +493,7 @@ export const createSharing = (host: SharingHost) => {
         const thread: Joined = {
             entity, channel: threadChannel<ToJoined, ToWorld>(port), status: "joining", claims: [], control: null, views: [], waits: true,
             names: new Map(), next: 1, completed: 0, finished: new Set(), inputs: new Map(), watching: new Map(), woken: false,
-            abort: new AbortController(), log: null, number: ++numbered,
+            abort: new AbortController(), log: null, number: ++numbered, imported: new Set(), tasks: null,
         };
         threads.add(thread);
         change(thread, spawnCommand, { [threadStatus]: "joining", [threadClaims]: [] });

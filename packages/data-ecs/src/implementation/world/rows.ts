@@ -6,12 +6,25 @@ import type { Layout, TypedArray } from '../../interface/registry/layout.js';
 import { stampChanged, writeF32Lanes, writeGeneral, writeOf, type Archetype, type Storage } from './archetype.js';
 import { readCell, writeCell } from './cells.js';
 import { locate } from './entities.js';
+import { ownTag } from './move-log.js';
 import { findResource, resourceCell, type ResourceCell } from './resources.js';
 import { idOf, type Key, type State } from './state.js';
 import { combine, contributed, identityOf, type ReductionTarget } from './reductions.js';
 
+/**
+ * What an accessor row reads and writes: a storage, or a joined thread's view of one. A joined thread's own objects
+ * have `tags`, the world's tags of their rows, which a write marks as the thread's own value.
+ */
+export type RowStorage = Pick<Storage, "layout" | "views" | "values" | "write" | "ticked" | "added" | "changed" | "chunkAdded" | "chunkChanged" | "tags">;
+
+/** What a row binds to: an archetype, or a joined thread's view of one. */
+export type RowArchetype = { readonly id: number; readonly entities: Float64Array; readonly storageById: readonly (RowStorage | undefined)[] };
+
+/** What rows need of their world: layouts by component id, the rows made so far, and the running system's tick. */
+export type RowHost = { readonly layouts: readonly Layout[]; readonly rows: Map<string, Row>; readonly tick: number };
+
 /** One declared component's storage in the archetype a row is bound to, and the typed array its scalar leaves are read through. */
-type Slot = { storage: Storage; view: TypedArray };
+type Slot = { storage: RowStorage; view: TypedArray };
 
 /**
  * An accessor row for the declared components of a system. `bind` points it at an archetype's storages and `index`
@@ -23,7 +36,7 @@ export type Row = {
     index: number;
     entities: Float64Array;
     /** Points the row at another archetype's storages. Views are replaced only at sync points, so a binding lasts a pass. */
-    readonly bind: (archetype: Archetype) => void;
+    readonly bind: (archetype: RowArchetype) => void;
 };
 
 /** Chosen once per component, so a read doesn't dispatch on the layout; tuples of f32 lanes are read as array literals. */
@@ -53,12 +66,15 @@ const getterOf = (layout: Layout, slot: Slot, row: Row): () => unknown => {
     return () => layout.read(slot.storage.views, row.index);
 };
 
-const setterOf = (state: State, layout: Layout, slot: Slot, row: Row): (value: unknown) => void => {
-    if (layout.kind === "constant") return () => stampChanged(slot.storage, row.index, state.tick);
+const setterOf = (host: RowHost, layout: Layout, slot: Slot, row: Row): (value: unknown) => void => {
+    if (layout.kind === "constant") return () => stampChanged(slot.storage, row.index, host.tick);
     if (layout.kind === "object") return value => {
         const { storage } = slot;
-        storage.values[row.index] = value;
-        stampChanged(storage, row.index, state.tick);
+        const { index } = row;
+        storage.values[index] = value;
+        // A joined thread's own object: the world's tag says its value is the thread's.
+        if (storage.tags.length !== 0) storage.tags[index] = ownTag;
+        stampChanged(storage, index, host.tick);
     };
     const { write, unitStride, unitOffset, lanes } = writeOf(layout);
     // Array values of f32 lanes and scalars are stored directly, converting as `layout.write` does.
@@ -70,34 +86,34 @@ const setterOf = (state: State, layout: Layout, slot: Slot, row: Row): (value: u
             for (let i = 0; i < lanes; i++) view[base + i] = Number(value[i]);
         }
         else layout.write(storage.views, index, value);
-        stampChanged(storage, index, state.tick);
+        stampChanged(storage, index, host.tick);
     };
     if (write !== writeGeneral) return value => {
         const { index } = row;
         slot.view[index * unitStride + unitOffset] = Number(value);
-        stampChanged(slot.storage, index, state.tick);
+        stampChanged(slot.storage, index, host.tick);
     };
     return value => {
         const { storage } = slot;
         layout.write(storage.views, row.index, value);
-        stampChanged(storage, row.index, state.tick);
+        stampChanged(storage, row.index, host.tick);
     };
 };
 
 /** The view a slot's scalar leaves are read through: their own for a scalar or f32 lanes, unused otherwise. */
-const viewOf = (storage: Storage): TypedArray => {
+const viewOf = (storage: RowStorage): TypedArray => {
     const { layout } = storage;
     return layout.kind === "linear" && storage.write !== writeGeneral ? storage.views[layout.leaves[0].view] : storage.views.f32;
 };
 
-const slotOf = (archetype: Archetype, id: number): Slot => {
+const slotOf = (archetype: RowArchetype, id: number): Slot => {
     const storage = archetype.storageById[id];
     // A system matches only archetypes with every component it reads or writes.
     if (storage === undefined) throw new Error(`Archetype ${archetype.id} lacks component ${id}.`);
     return { storage, view: viewOf(storage) };
 };
 
-const createRow = (state: State, archetype: Archetype, keys: readonly Key[], ids: readonly number[], writes: readonly Key[]): Row => {
+const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly Key[], ids: readonly number[], writes: readonly Key[]): Row => {
     const slots = ids.map(id => slotOf(archetype, id));
     // Its own prototype gives the row its own root map. Rows built from `{}` share one, and defining an accessor with a
     // different getter than an existing transition's makes V8 switch the object to slow dictionary properties.
@@ -117,10 +133,10 @@ const createRow = (state: State, archetype: Archetype, keys: readonly Key[], ids
     };
     Object.defineProperty(value, "entity", { get: () => row.entities[row.index], enumerable: true });
     keys.forEach((key, i) => {
-        const layout = state.layouts[ids[i]];
+        const layout = host.layouts[ids[i]];
         Object.defineProperty(value, key, {
             get: getterOf(layout, slots[i], row),
-            set: writes.includes(key) ? setterOf(state, layout, slots[i], row) : undefined,
+            set: writes.includes(key) ? setterOf(host, layout, slots[i], row) : undefined,
             enumerable: true,
         });
     });
@@ -142,24 +158,28 @@ export const parentBinder = (state: State, reads: readonly Key[]): (archetype: A
 };
 
 /**
- * Binds the accessor row for `reads` and `writes` to an archetype. The row is shared by every main-thread system that
- * declares the same ones, so a body sees one row shape whichever system or archetype it runs over. Main-thread systems
- * run one at a time, so a binding lasts for one system's pass over one archetype.
+ * Binds the accessor row for `reads` and `writes` to an archetype. The row is shared by every system of its host that
+ * declares the same ones, so a body sees one row shape whichever system or archetype it runs over. A host's systems
+ * run one at a time, so a binding lasts for one system's pass over one archetype. `idOfKey` gives each key's component.
  */
-export const rowBinder = (state: State, reads: readonly Key[], writes: readonly Key[]): (archetype: Archetype) => Row => {
+export const rowBinderOf = <A extends RowArchetype>(host: RowHost, idOfKey: (key: Key) => number, reads: readonly Key[], writes: readonly Key[]): (archetype: A) => Row => {
     const keys = [...new Set([...reads, ...writes])];
-    const ids = keys.map(key => idOf(state, key));
+    const ids = keys.map(idOfKey);
     const signature = keys.map((key, i) => writes.includes(key) ? `${ids[i]}w` : `${ids[i]}`).join(",");
     return archetype => {
-        let row = state.rows.get(signature);
+        let row = host.rows.get(signature);
         if (row === undefined) {
-            row = createRow(state, archetype, keys, ids, writes);
-            state.rows.set(signature, row);
+            row = createRow(host, archetype, keys, ids, writes);
+            host.rows.set(signature, row);
         }
         else row.bind(archetype);
         return row;
     };
 };
+
+/** The accessor row binder for main-thread systems of a world. */
+export const rowBinder = (state: State, reads: readonly Key[], writes: readonly Key[]): (archetype: Archetype) => Row =>
+    rowBinderOf<Archetype>(state, key => idOf(state, key), reads, writes);
 
 /**
  * A lookup's matcher, with its component ids resolved once. `find` returns the row of a live entity that matches, or -1,

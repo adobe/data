@@ -1,5 +1,6 @@
 import type { Port } from '../../interface/world/join.js';
 import type { Report } from '../../interface/world/report.js';
+import type { WorkerError } from './protocol.js';
 import type { Schema } from '../../interface/schema/schema.js';
 import { layoutOf, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { lineWords } from './protocol.js';
@@ -34,7 +35,11 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
      * the name of a Web Lock it holds while it lives, where the platform has them, which the world then requests, so
      * it's granted when the thread ends however it ends.
      */
-    | { readonly kind: "join"; readonly threads: readonly string[]; readonly waits: boolean; readonly lock: string | null }
+    | {
+        readonly kind: "join"; readonly threads: readonly string[]; readonly waits: boolean; readonly lock: string | null;
+        /** With claims: the ids of the systems this thread imported, so the world checks those it places here. */
+        readonly systems: readonly string[];
+    }
     /** The id of a key or system it numbers `number`, posted before the first use of that number. */
     | { readonly kind: "name"; readonly number: number; readonly id: string; readonly item: boolean }
     /** The input of run `sequence`, which its slot says comes by message. */
@@ -44,15 +49,31 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
     /** Where the world can't wait without blocking: runs were posted. */
     | { readonly kind: "wake" }
     | { readonly kind: "leave" }
+    /**
+     * After task `sequence` is done, when its completion says a message follows: its systems' errors and spilled
+     * segments, by position in the task; posted after the thread's numbers for keys its commands named first.
+     */
+    | {
+        readonly kind: "completed"; readonly sequence: number;
+        readonly errors: readonly (readonly [number, WorkerError])[]; readonly spills: readonly (readonly [number, Uint8Array])[];
+    }
 );
 
 /** From the world's thread to a joined one. */
 export type ToJoined = { readonly protocol: typeof protocolName } & (
     /**
      * The memory, and the byte offset of the thread's control words; whether the world can wait without blocking; the
-     * byte offset of its move log's header, null without claims; and its number, which storage flags name.
+     * byte offsets of its move log's header and its task block (`thread-tasks.ts`), null without claims; and its
+     * number, which storage flags name.
      */
-    | { readonly kind: "joined"; readonly memory: WebAssembly.Memory; readonly control: number; readonly waits: boolean; readonly log: number | null; readonly thread: number }
+    | {
+        readonly kind: "joined"; readonly memory: WebAssembly.Memory; readonly control: number; readonly waits: boolean; readonly log: number | null;
+        readonly tasks: number | null; readonly thread: number;
+    }
+    /** Systems the world places on the thread, each by its index there and its id, with the world's numbers for its keys. */
+    | { readonly kind: "systems"; readonly systems: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
+    /** The input of task `sequence`, which its payload says comes by message. */
+    | { readonly kind: "task input"; readonly sequence: number; readonly input: unknown }
     /** A component whose objects the thread fills, by the world's number, with its id: null for one without. */
     | { readonly kind: "component"; readonly component: number; readonly id: string | null }
     | { readonly kind: "refused"; readonly message: string }
@@ -68,7 +89,7 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
 
 /** A joined thread's channel to the world, or the world's to it, over the port it was given. */
 export type ThreadChannel<Send, Receive> = {
-    readonly post: (message: Send) => void;
+    readonly post: (message: Send, transfer?: readonly ArrayBuffer[]) => void;
     /** Sets the one handler for this protocol's messages; others are ignored. */
     readonly onMessage: (handler: (message: Receive) => void) => void;
     /** Sets the one handler for the other end's end: a `MessagePort`'s close, or a node worker's exit. */
@@ -99,7 +120,9 @@ export const threadChannel = <Send, Receive>(port: Port): ThreadChannel<Send, Re
         else if (typeof listen === "function") Reflect.apply(listen, port, [event, listener]);
     };
     return {
-        post: message => { if (typeof postMessage === "function") Reflect.apply(postMessage, port, [message]); },
+        post: (message, transfer) => {
+            if (typeof postMessage === "function") Reflect.apply(postMessage, port, transfer === undefined || transfer.length === 0 ? [message] : [message, transfer]);
+        },
         onMessage: handler => {
             // Node gives the data itself; the browser, an event holding it.
             const node = typeof on === "function";

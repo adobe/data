@@ -46,17 +46,18 @@ export interface Threads {
     main: true;    // the window's thread, where the DOM is
 }
 
+// A value that isn't data states its type. A DOM Node lives on "main", and says so; the check resolves to no
+// requirement where the DOM library isn't loaded.
+const domNodeTraits = Component.register(domNode, { type: Component.object<HTMLElement>(), thread: "main" });
+// `transfer: true` requires a Transferable type: ArrayBuffer, ImageBitmap, VideoFrame, OffscreenCanvas, MessagePort.
+const textureSourceTraits = Component.register(textureSource, { type: Component.object<ImageBitmap>(), thread: "loader", transfer: true });
+// `thread` only on objects: a struct with `thread` fails in types and at registration.
 declare module "@adobe/data-ecs" {
     interface Components {
-        // A DOM Node lives on "main", and says so; the check resolves to no requirement where the DOM library isn't loaded.
-        [domNode]: { type: HTMLElement; thread: "main" };
-        // `transfer: true` requires a Transferable type: ArrayBuffer, ImageBitmap, VideoFrame, OffscreenCanvas, MessagePort.
-        [textureSource]: { type: ImageBitmap; thread: "loader"; transfer: true };
+        [domNode]: typeof domNodeTraits;
+        [textureSource]: typeof textureSourceTraits;
     }
 }
-// `thread` only on objects: a struct with `thread` fails in types and at registration.
-Component.register(domNode, { thread: "main" });
-Component.register(textureSource, { thread: "loader", transfer: true });
 
 // Planned, not public yet. On the thread that will hold the world:
 const world = World.create(resources?);

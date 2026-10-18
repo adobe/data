@@ -7,18 +7,18 @@ export const position = Symbol("position");
 export const velocity = Symbol("velocity");
 export const enemy = Symbol("enemy");
 
+const positionTraits = Component.register(position, { type: Vec3.schema });
+const velocityTraits = Component.register(velocity, { type: Vec3.schema });
+// A tag: present or not, with no value.
+const enemyTraits = Component.register(enemy, { type: { const: true } });
+
 declare module "@adobe/data-ecs" {
     interface Components {
-        [position]: { type: Vec3 };
-        [velocity]: { type: Vec3 };
-        // A tag: present or not, with no value.
-        [enemy]: { type: true };
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
+        [enemy]: typeof enemyTraits;
     }
 }
-
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(enemy, { type: { const: true } });
 
 // An archetype names a list of components, once at module scope; it goes wherever a list of components does.
 export const Particle = Archetype.create([position, velocity]);

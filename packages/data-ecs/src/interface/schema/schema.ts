@@ -83,11 +83,26 @@ export namespace Schema {
     /** Object properties are all required unless `required` is present, then only those listed are. */
     type ObjectToType<T extends ObjectSchema> =
         T extends { required: readonly (infer R)[] }
-            ? { readonly [P in Extract<R, keyof T['properties']>]: Schema.ToType<T['properties'][P]> }
-              & { readonly [P in Exclude<keyof T['properties'], R>]?: Schema.ToType<T['properties'][P]> }
+            ? Flat<{ readonly [P in Extract<R, keyof T['properties']>]: Schema.ToType<T['properties'][P]> }
+              & { readonly [P in Exclude<keyof T['properties'], R>]?: Schema.ToType<T['properties'][P]> }>
             : { readonly [P in keyof T['properties']]: Schema.ToType<T['properties'][P]> };
 
-    /** A literal `const` narrows the type; otherwise the structural type is used. */
+    /**
+     * One object type with the properties of an intersection, each as optional and read-only as it was. It's a
+     * conditional, so the result is an anonymous object type, which declarations emitted elsewhere can name.
+     */
+    type Flat<T> = T extends unknown ? { [P in keyof T]: T[P] } : never;
+
+    /** An array whose `minItems` and `maxItems` are one literal length is a tuple of that length. */
+    type ArrayToType<T, E> =
+        T extends { readonly minItems: infer N extends number; readonly maxItems: infer M extends number }
+            ? number extends N ? readonly E[] : [N] extends [M] ? [M] extends [N] ? Tuple<N, E> : readonly E[] : readonly E[]
+            : readonly E[];
+
+    type Tuple<N extends number, E, R extends readonly unknown[] = readonly []> =
+        R["length"] extends N ? R : Tuple<N, E, readonly [...R, E]>;
+
+    /** A literal `const` narrows the type, and a fixed-length array is a tuple; otherwise the structural type is used. */
     export type ToType<T extends Schema> =
         T extends AndSchema ? UnionToIntersection<Schema.ToType<T['allOf'][number]>> :
         T extends OrSchema ? Schema.ToType<T['anyOf'][number]> :
@@ -95,7 +110,7 @@ export namespace Schema {
         T extends EntitySchema ? Entity :
         T extends ObjectSchema ? ObjectToType<T> :
         T extends StringSchema ? string :
-        T extends ArraySchema<infer U> ? readonly Schema.ToType<U>[] :
+        T extends ArraySchema<infer U> ? ArrayToType<T, Schema.ToType<U>> :
         T extends NumberSchema ? number :
         T extends IntegerSchema ? number :
         T extends BooleanSchema ? boolean :

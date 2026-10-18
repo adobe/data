@@ -14,7 +14,7 @@ import { createState } from "./state.js";
 import { workers } from "../../interface/resources/workers.js";
 
 type Vec2 = readonly [number, number];
-const vec2: Schema.ForType<Vec2> = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 };
+const vec2 = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } as const satisfies Schema;
 
 const position = Symbol("wasmTest/position");
 const velocity = Symbol("wasmTest/velocity");
@@ -27,27 +27,27 @@ const target = Symbol("wasmTest/target");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: { type: Vec2 };
-        [velocity]: { type: Vec2 };
-        [bounces]: { type: number };
-        [flipped]: { type: boolean };
-        [score]: { type: number };
-        [target]: { type: Entity };
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
+        [bounces]: typeof bouncesTraits;
+        [flipped]: typeof flippedTraits;
+        [score]: typeof scoreTraits;
+        [target]: typeof targetTraits;
     }
     export interface Resources {
-        [seconds]: { type: number };
-        [floor]: { type: number };
+        [seconds]: typeof secondsTraits;
+        [floor]: typeof floorTraits;
     }
 }
 
-Component.register(position, { type: { ...vec2, layout: "storage" } });
-Component.register(velocity, { type: vec2 });
-Component.register(bounces, { type: { type: "integer", minimum: -2147483648, maximum: 2147483647 } });
-Component.register(flipped, { type: { type: "boolean" } });
-Component.register(score, { type: { type: "number" } });
-Component.register(target, { type: Entity.schema });
-Resource.register(seconds, { type: { type: "number", default: 1 / 60 } });
-Resource.register(floor, { type: { type: "number", precision: 1, default: -2.5 } });
+const positionTraits = Component.register(position, { type: { ...vec2, layout: "storage" } });
+const velocityTraits = Component.register(velocity, { type: vec2 });
+const bouncesTraits = Component.register(bounces, { type: { type: "integer", minimum: -2147483648, maximum: 2147483647 } });
+const flippedTraits = Component.register(flipped, { type: { type: "boolean" } });
+const scoreTraits = Component.register(score, { type: { type: "number" } });
+const targetTraits = Component.register(target, { type: Entity.schema });
+const secondsTraits = Resource.register(seconds, { type: { type: "number", default: 1 / 60 } });
+const floorTraits = Resource.register(floor, { type: { type: "number", precision: 1, default: -2.5 } });
 
 const seed = System.create({ name: "wasmTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
     let previous = Entity.none;

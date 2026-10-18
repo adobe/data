@@ -1,3 +1,5 @@
+import { Resource } from '../resource/resource.js';
+import { Component } from '../component/component.js';
 import { Archetype, System, type World } from "@adobe/data-ecs";
 
 const position = Symbol("archetypeTypeTest/position");
@@ -5,13 +7,16 @@ const velocity = Symbol("archetypeTypeTest/velocity");
 const scale = Symbol("archetypeTypeTest/scale");
 declare module "@adobe/data-ecs" {
     interface Components {
-        [position]: { type: number };
-        [velocity]: { type: number };
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
     }
     interface Resources {
-        [scale]: { type: number };
+        [scale]: typeof scaleTraits;
     }
 }
+const positionTraits = Component.register(position, { type: { type: "number" } });
+const velocityTraits = Component.register(velocity, { type: { type: "number" } });
+const scaleTraits = Resource.register(scale, { type: { type: "number", default: 0 } });
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 const expectType = <T extends true>(): T | undefined => undefined;

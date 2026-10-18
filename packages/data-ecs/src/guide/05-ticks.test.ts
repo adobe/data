@@ -4,13 +4,13 @@ import { createWorld } from "../implementation/index.js";
 
 const elapsed = Symbol("elapsed");
 
+const elapsedTraits = Resource.register(elapsed, { type: { type: "number", default: 0 } });
+
 declare module "@adobe/data-ecs" {
     interface Resources {
-        [elapsed]: { type: number };
+        [elapsed]: typeof elapsedTraits;
     }
 }
-
-Resource.register(elapsed, { type: { type: "number", default: 0 } });
 
 // clock is the current tick's: delta is the milliseconds since the last one.
 const advance = System.create({ resources: { read: [clock], write: [elapsed] } }, ({ resources }) => {

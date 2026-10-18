@@ -5,8 +5,8 @@ export const always = Symbol("always");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {
-        [always]: { type: boolean };
+        [always]: typeof alwaysTraits;
     }
 }
 
-Resource.register(always, { type: { type: "boolean", default: false } });
+const alwaysTraits = Resource.register(always, { type: { type: "boolean", default: false } });

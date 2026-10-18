@@ -12,13 +12,13 @@ const rate = Symbol("observersGpuTest/rate");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [heat]: { type: number };
-        [rate]: { type: number };
+        [heat]: typeof heatTraits;
+        [rate]: typeof rateTraits;
     }
 }
 
-Component.register(heat, { type: { type: "number", precision: 1 } });
-Component.register(rate, { type: { type: "number", precision: 1 } });
+const heatTraits = Component.register(heat, { type: { type: "number", precision: 1 } });
+const rateTraits = Component.register(rate, { type: { type: "number", precision: 1 } });
 
 let spawned: Entity[] = [];
 const spawn = System.create({ name: "observersGpuTest/spawn" }, ({ commands }) => {

@@ -14,25 +14,25 @@ type Request = { readonly entity: Entity; readonly token: number; readonly path:
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [meshSource]: { type: string };
-        [hidden]: { type: true };
+        [meshSource]: typeof meshSourceTraits;
+        [hidden]: typeof hiddenTraits;
         /** The token of the slot's load; a new one each time the slot starts over. */
-        [meshSlot]: { type: number; derived: true };
+        [meshSlot]: typeof meshSlotTraits;
         /** The loaded mesh's handle, which exists only while its slot does. */
-        [meshReady]: { type: number; within: typeof meshSlot };
+        [meshReady]: typeof meshReadyTraits;
     }
     interface Resources {
-        [nextToken]: { type: number };
-        [requests]: { type: readonly Request[] };
+        [nextToken]: typeof nextTokenTraits;
+        [requests]: typeof requestsTraits;
     }
 }
 
-Component.register(meshSource, { type: { type: "string" } });
-Component.register(hidden, { type: { const: true } });
-Component.register(meshSlot, { type: { type: "integer", default: 0 }, derived: true });
-Component.register(meshReady, { type: { type: "integer" }, within: meshSlot });
-Resource.register(nextToken, { type: { type: "integer", default: 1 } });
-Resource.register(requests, {
+const meshSourceTraits = Component.register(meshSource, { type: { type: "string" } });
+const hiddenTraits = Component.register(hidden, { type: { const: true } });
+const meshSlotTraits = Component.register(meshSlot, { type: { type: "integer", default: 0 }, derived: true });
+const meshReadyTraits = Component.register(meshReady, { type: { type: "integer" }, within: meshSlot });
+const nextTokenTraits = Resource.register(nextToken, { type: { type: "integer", default: 1 } });
+const requestsTraits = Resource.register(requests, {
     type: {
         type: "array",
         items: { type: "object", properties: { entity: Entity.schema, token: { type: "integer" }, path: { type: "string" } } },

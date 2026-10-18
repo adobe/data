@@ -8,7 +8,7 @@ import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
 
 type Vec3 = readonly [number, number, number];
-const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
+const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
 const position = Symbol("rowsTest/position");
 const count = Symbol("rowsTest/count");
 const flag = Symbol("rowsTest/flag");
@@ -16,17 +16,17 @@ const tag = Symbol("rowsTest/tag");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: { type: Vec3 };
-        [count]: { type: number };
-        [flag]: { type: boolean };
-        [tag]: { type: true };
+        [position]: typeof positionTraits;
+        [count]: typeof countTraits;
+        [flag]: typeof flagTraits;
+        [tag]: typeof tagTraits;
     }
 }
 
-Component.register(position, { type: vec3 });
-Component.register(count, { type: { type: "integer", minimum: 0, maximum: 1000 } });
-Component.register(flag, { type: { type: "boolean" } });
-Component.register(tag, { type: { const: true } });
+const positionTraits = Component.register(position, { type: vec3 });
+const countTraits = Component.register(count, { type: { type: "integer", minimum: 0, maximum: 1000 } });
+const flagTraits = Component.register(flag, { type: { type: "boolean" } });
+const tagTraits = Component.register(tag, { type: { const: true } });
 
 const seed = System.create({ name: "rowsTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 4; i++) commands.spawn(i < 2 ? [position, count, flag, tag] : [position, count, flag])({ [position]: [i, i + 0.5, -i], [count]: i, [flag]: i % 2 === 0 });

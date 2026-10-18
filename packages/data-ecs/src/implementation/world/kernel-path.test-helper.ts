@@ -7,12 +7,12 @@ const pair = Symbol("kernelPathTest/pair");
 const sum = Symbol("kernelPathTest/sum");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [pair]: { type: readonly [number, number] };
-        [sum]: { type: number };
+        [pair]: typeof pairTraits;
+        [sum]: typeof sumTraits;
     }
 }
-Component.register(pair, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-Component.register(sum, { type: { type: "number" } });
+const pairTraits = Component.register(pair, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
+const sumTraits = Component.register(sum, { type: { type: "number" } });
 
 export const beyond = System.create({ name: "kernelPathTest/beyond", kernel: "cpu", components: { read: [pair], write: [sum] } }, row => {
     // @ts-expect-error a pair has no third item

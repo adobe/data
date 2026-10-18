@@ -7,12 +7,12 @@ const frames = Symbol("ticksTest/frames");
 const seen = Symbol("ticksTest/seen");
 declare module "@adobe/data-ecs" {
     interface Resources {
-        [frames]: { type: number };
-        [seen]: { type: number };
+        [frames]: typeof framesTraits;
+        [seen]: typeof seenTraits;
     }
 }
-Resource.register(frames, { type: { type: "number", default: 0 } });
-Resource.register(seen, { type: { type: "number", default: -1 } });
+const framesTraits = Resource.register(frames, { type: { type: "number", default: 0 } });
+const seenTraits = Resource.register(seen, { type: { type: "number", default: -1 } });
 
 const count = System.create({ name: "ticksTest/count", resources: { write: [frames] } }, ({ resources }) => { resources[frames] += 1; });
 const watch = System.create({ name: "ticksTest/watch", resources: { read: [clock], write: [seen] } }, ({ resources }) => { resources[seen] = resources[clock].tick; });

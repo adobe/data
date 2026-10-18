@@ -5,15 +5,15 @@ import { createWorld } from "../implementation/index.js";
 const health = Symbol("health");
 const damage = Symbol("damage");
 
+const healthTraits = Component.register(health, { type: { type: "number" } });
+const damageTraits = Component.register(damage, { type: { type: "number" } });
+
 declare module "@adobe/data-ecs" {
     interface Components {
-        [health]: { type: number };
-        [damage]: { type: number };
+        [health]: typeof healthTraits;
+        [damage]: typeof damageTraits;
     }
 }
-
-Component.register(health, { type: { type: "number" } });
-Component.register(damage, { type: { type: "number" } });
 
 const spawn = System.create(({ commands }) => { commands.spawn([health, damage])({ [health]: 10, [damage]: 4 }); });
 const hit = System.create({ components: { read: [damage], write: [health] } }, row => {

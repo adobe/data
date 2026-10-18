@@ -42,29 +42,36 @@ import { kernelPlugin } from "@adobe/data-ecs/compiler";
 export default defineConfig({ plugins: [kernelPlugin()] });
 ```
 
-Types are declared by augmenting `Components`, `Resources` and `Traits` in `@adobe/data-ecs`. The examples create
-worlds with `createWorld()`.
+Each component and resource is registered once, and its type is declared by augmenting `Components` or `Resources`
+in `@adobe/data-ecs` with what registration returns; traits of your own augment `Traits`. The examples create worlds
+with `createWorld()`.
 
 ### 2. Resources
 
 ```ts
 export const gravity = Symbol("gravity");
+export const names = Symbol("names");
 
+// Registration returns the key's traits, its type the one its schema describes. A resource always has a value, so
+// its schema has a default.
+const gravityTraits = Resource.register(gravity, { type: { type: "number", default: -9.8 } });
+// A value that isn't data, such as a Map or a DOM node, states its type, and a resource's default is beside it.
+const namesTraits = Resource.register(names, { type: Resource.object<Map<string, number>>(), default: new Map() });
+
+// The types come from those traits.
 declare module "@adobe/data-ecs" {
     interface Resources {
-        [gravity]: { type: number };
+        [gravity]: typeof gravityTraits;
+        [names]: typeof namesTraits;
     }
 }
-
-// A resource always has a value, so its schema must provide a default.
-Resource.register(gravity, { type: { type: "number", default: -9.8 } });
 
 await using moon = createWorld({ [gravity]: -1.6 });
 // Observe.toPromise reads an observer's current value.
 expect(await Observe.toPromise(moon.observe.resource(gravity))).toBe(-1.6);
 ```
 
-[`02-resources.test.ts`](02-resources.test.ts#L5-L24)
+[`02-resources.test.ts`](02-resources.test.ts#L5-L31)
 
 ### 3. Entities, components and archetypes
 
@@ -73,18 +80,18 @@ export const position = Symbol("position");
 export const velocity = Symbol("velocity");
 export const enemy = Symbol("enemy");
 
+const positionTraits = Component.register(position, { type: Vec3.schema });
+const velocityTraits = Component.register(velocity, { type: Vec3.schema });
+// A tag: present or not, with no value.
+const enemyTraits = Component.register(enemy, { type: { const: true } });
+
 declare module "@adobe/data-ecs" {
     interface Components {
-        [position]: { type: Vec3 };
-        [velocity]: { type: Vec3 };
-        // A tag: present or not, with no value.
-        [enemy]: { type: true };
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
+        [enemy]: typeof enemyTraits;
     }
 }
-
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(enemy, { type: { const: true } });
 
 // An archetype names a list of components, once at module scope; it goes wherever a list of components does.
 export const Particle = Archetype.create([position, velocity]);
@@ -96,9 +103,12 @@ export const spawn = System.create(({ commands }) => {
 });
 
 // Commands also add and remove components, and despawn entities.
-export const defeat = System.create({ components: { has: [enemy] } }, (row, { commands }) => {
-    commands.remove(row.entity, enemy);
-});
+export const defeat = System.create(
+    { components: { has: [enemy] } },
+    (row, { commands }) => {
+        commands.remove(row.entity, enemy);
+    }
+);
 ```
 
 Observers read entities back:
@@ -119,7 +129,7 @@ expect(await Observe.toPromise(world.observe.count({ required: Particle }))).toB
 // Runs once per entity with every component in read and write, and none in not.
 const move = System.create({
     // Optional: labels the system in reports.
-    name: "physics/move",
+    name: "physics.move",
     components: { read: [velocity], write: [position], not: [frozen] },
     resources: { read: [delta] },
 }, (row, { resources }) => {
@@ -256,8 +266,8 @@ await world.run(hit, { amount: 3 });
 
 ```ts
 // Only rules add derived components, starting at their default.
-Component.register(drawn, { type: { const: true }, derived: true });
-Component.register(layer, { type: { type: "number", default: 1 }, derived: true });
+const drawnTraits = Component.register(drawn, { type: { const: true }, derived: true });
+const layerTraits = Component.register(layer, { type: { type: "number", default: 1 }, derived: true });
 
 // Entities matching a rule have what it derives, only while they match.
 Rule.create({ components: { has: [mesh], not: [hidden] }, derive: [drawn] });
@@ -267,7 +277,7 @@ Rule.create({ components: { has: [sprite], not: [hidden] }, derive: [drawn] });
 Rule.create({ components: { has: [drawn] }, derive: [layer] });
 ```
 
-[`10-rules.test.ts`](10-rules.test.ts#L24-L50)
+[`10-rules.test.ts`](10-rules.test.ts#L14-L50)
 
 ### 11. Finalizers and change sets
 
@@ -298,21 +308,15 @@ Finalizer.changes({ watch: [handle] }, changes => {
 ### 12. Traits, within and references
 
 ```ts
-// Traits are the fields of a key's record; type is one. Registration gives them again.
-declare module "@adobe/data-ecs" {
-    interface Components {
-        // Despawned with the entity it points to.
-        [parent]: { type: Entity; reference: "owner" };
-        // Removed when the entity it points to despawns.
-        [target]: { type: Entity; reference: "weak" };
-        // Removed with selected.
-        [outline]: { type: number; within: typeof selected };
-    }
-}
-
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(target, { type: Entity.schema, reference: "weak" });
-Component.register(outline, { type: { type: "number" }, within: selected });
+// Traits are the fields of a key's declaration; type is one.
+const shipTraits = Component.register(ship, { type: { const: true } });
+// Despawned with the entity it points to.
+const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
+// Removed when the entity it points to despawns.
+const targetTraits = Component.register(target, { type: Entity.schema, reference: "weak" });
+const selectedTraits = Component.register(selected, { type: { const: true } });
+// Removed with selected.
+const outlineTraits = Component.register(outline, { type: { type: "number" }, within: selected });
 
 const spawn = System.create(({ commands }) => {
     const mothership = commands.spawn([ship, selected, outline])({ [outline]: 2 });
@@ -324,11 +328,12 @@ const spawn = System.create(({ commands }) => {
 [`12-traits.test.ts`](12-traits.test.ts#L11-L53)
 
 ```ts
-// A trait of your own is a member of Traits<N>: the value it allows on key N, or never where it doesn't apply.
+// A trait of your own is a member of Traits<N, E>: the value it allows on key N, whose traits are E, or never where
+// it doesn't apply.
 export const instanced = Symbol("instanced");
 declare module "@adobe/data-ecs" {
-    interface Traits<N> {
-        readonly [instanced]: N extends Component.Key ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
+    interface Traits<N, E> {
+        readonly [instanced]: N extends Component.Key ? ([E["type"]] extends [readonly number[]] ? true : never) : never;
     }
 }
 Trait.register(instanced);
@@ -337,7 +342,7 @@ Trait.register(instanced);
 check<Equal<Extract<Component.With<typeof instanced>, typeof transform | typeof name>, typeof transform>>();
 ```
 
-[`12-traits.type-test.ts`](12-traits.type-test.ts#L6-L27)
+[`12-traits.type-test.ts`](12-traits.type-test.ts#L6-L28)
 
 ## Advanced
 

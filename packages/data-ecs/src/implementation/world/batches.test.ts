@@ -12,23 +12,23 @@ import { createCommands } from "./commands.js";
 import { createState } from "./state.js";
 
 type Vec3 = readonly [number, number, number];
-const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
+const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
 const position = Symbol("batchesTest/position");
 const score = Symbol("batchesTest/score");
 const name = Symbol("batchesTest/name");
 const tag = Symbol("batchesTest/tag");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: { type: Vec3 };
-        [score]: { type: number };
-        [name]: { type: string };
-        [tag]: { type: true };
+        [position]: typeof positionTraits;
+        [score]: typeof scoreTraits;
+        [name]: typeof nameTraits;
+        [tag]: typeof tagTraits;
     }
 }
-Component.register(position, { type: vec3 });
-Component.register(score, { type: { type: "number", precision: 1 } });
-Component.register(name, { type: { type: "string" } });
-Component.register(tag, { type: { const: true } });
+const positionTraits = Component.register(position, { type: vec3 });
+const scoreTraits = Component.register(score, { type: { type: "number", precision: 1 } });
+const nameTraits = Component.register(name, { type: { type: "string" } });
+const tagTraits = Component.register(tag, { type: { const: true } });
 
 describe("staged spawns", () => {
     it("are seen once by `added` observers in earlier, the same and later tiers, and not before the sync point", async () => {

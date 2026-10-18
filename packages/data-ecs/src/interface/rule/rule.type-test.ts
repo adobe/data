@@ -1,3 +1,4 @@
+import { Resource } from '../resource/resource.js';
 import { Component } from '../component/component.js';
 import { Entity } from '../entity/entity.js';
 import { Finalizer } from '../finalizer/finalizer.js';
@@ -18,15 +19,20 @@ const time = Symbol("ruleTypeTest/time");
 
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [source]: { type: number };
-        [hidden]: { type: true };
-        [slot]: { type: number; derived: true };
-        [parent]: { type: Entity; reference: "owner" };
+        [source]: typeof sourceTraits;
+        [hidden]: typeof hiddenTraits;
+        [slot]: typeof slotTraits;
+        [parent]: typeof parentTraits;
     }
     export interface Resources {
-        [time]: { type: number };
+        [time]: typeof timeTraits;
     }
 }
+const sourceTraits = Component.register(source, { type: { type: "number" } });
+const hiddenTraits = Component.register(hidden, { type: { const: true } });
+const slotTraits = Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
+const timeTraits = Resource.register(time, { type: { type: "number", default: 0 } });
 
 // Rules derive only derived components.
 const slots = Rule.create({ name: "ruleTypeTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] });

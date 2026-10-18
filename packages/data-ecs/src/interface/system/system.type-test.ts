@@ -1,4 +1,6 @@
-import type { Entity } from '../entity/entity.js';
+import { Resource } from '../resource/resource.js';
+import { Component } from '../component/component.js';
+import { Entity } from '../entity/entity.js';
 import { System } from './system.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
@@ -13,24 +15,33 @@ const score = Symbol("systemTest/score");
 
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [position]: { type: number };
-        [velocity]: { type: number };
-        [target]: { type: Entity };
-        [player]: { type: true };
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
+        [target]: typeof targetTraits;
+        [player]: typeof playerTraits;
     }
 }
+const positionTraits = Component.register(position, { type: { type: "number" } });
+const velocityTraits = Component.register(velocity, { type: { type: "number" } });
+const targetTraits = Component.register(target, { type: Entity.schema });
+const playerTraits = Component.register(player, { type: { const: true } });
 const flagged = Symbol("systemTest/flagged");
 const bounds = Symbol("systemTest/bounds");
 export const total = Symbol("systemTest/total");
 declare module '@adobe/data-ecs' {
     export interface Resources {
-        [time]: { type: number };
-        [score]: { type: number };
-        [flagged]: { type: boolean; reduce: "|" };
-        [bounds]: { type: readonly [number, number, number]; reduce: "min" };
-        [total]: { type: number; reduce: "+" };
+        [time]: typeof timeTraits;
+        [score]: typeof scoreTraits;
+        [flagged]: typeof flaggedTraits;
+        [bounds]: typeof boundsTraits;
+        [total]: typeof totalTraits;
     }
 }
+const boundsTraits = Resource.register(bounds, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3, default: [Infinity, Infinity, Infinity] }, reduce: "min" });
+const timeTraits = Resource.register(time, { type: { type: "number", default: 0 } });
+const scoreTraits = Resource.register(score, { type: { type: "number", default: 0 } });
+const flaggedTraits = Resource.register(flagged, { type: { type: "boolean", default: false }, reduce: "|" });
+const totalTraits = Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
 
 // Row: read values are read-only, write values writable, others absent.
 export const integrate = System.create({
@@ -148,11 +159,14 @@ const path = Symbol("systemTest/path");
 const vector = Symbol("systemTest/vector");
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [label]: { type: string };
-        [path]: { type: readonly number[] };
-        [vector]: { type: readonly [number, number, number] };
+        [label]: typeof labelTraits;
+        [path]: typeof pathTraits;
+        [vector]: typeof vectorTraits;
     }
 }
+const labelTraits = Component.register(label, { type: { type: "string" } });
+const pathTraits = Component.register(path, { type: { type: "array", items: { type: "number" } } });
+const vectorTraits = Component.register(vector, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 } });
 
 // Kernels: linear values (numbers, booleans, entities, fixed tuples), read-only resources.
 System.create({

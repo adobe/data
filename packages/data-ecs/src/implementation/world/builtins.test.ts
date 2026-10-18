@@ -14,19 +14,19 @@ const sums = Symbol("builtinsTest/sums");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: { type: Vec3 };
-        [velocity]: { type: Vec3 };
-        [bits]: { type: Vec3.U32 };
-        [counts]: { type: Vec3.U32 };
-        [sums]: { type: Vec3.I32 };
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
+        [bits]: typeof bitsTraits;
+        [counts]: typeof countsTraits;
+        [sums]: typeof sumsTraits;
     }
 }
 
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(bits, { type: Vec3.U32.schema });
-Component.register(counts, { type: Vec3.U32.schema });
-Component.register(sums, { type: Vec3.I32.schema });
+const positionTraits = Component.register(position, { type: Vec3.schema });
+const velocityTraits = Component.register(velocity, { type: Vec3.schema });
+const bitsTraits = Component.register(bits, { type: Vec3.U32.schema });
+const countsTraits = Component.register(counts, { type: Vec3.U32.schema });
+const sumsTraits = Component.register(sums, { type: Vec3.I32.schema });
 
 const spawn = System.create({ name: "builtinsTest/spawn" }, ({ commands }) => {
     for (let i = 0; i < 64; i++) commands.spawn([position, velocity])({ [position]: [i, i % 5, -i], [velocity]: [1, 0.5 * (i % 3), 0.25] });

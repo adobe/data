@@ -18,23 +18,29 @@ export const enabled = Symbol("flat/enabled");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [color]: { type: number };
-        [mass]: { type: number };
-        [positionX]: { type: number };
-        [positionY]: { type: number };
-        [positionZ]: { type: number };
-        [velocityX]: { type: number };
-        [velocityY]: { type: number };
-        [velocityZ]: { type: number };
-        [visible]: { type: true };
-        [enabled]: { type: true };
+        [color]: typeof colorTraits;
+        [mass]: typeof massTraits;
+        [positionX]: typeof positionXTraits;
+        [positionY]: typeof positionYTraits;
+        [positionZ]: typeof positionZTraits;
+        [velocityX]: typeof velocityXTraits;
+        [velocityY]: typeof velocityYTraits;
+        [velocityZ]: typeof velocityZTraits;
+        [visible]: typeof visibleTraits;
+        [enabled]: typeof enabledTraits;
     }
 }
 
-Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-for (const key of [mass, positionX, positionY, positionZ, velocityX, velocityY, velocityZ] as const) Component.register(key, { type: { type: "number", precision: 1 } });
-Component.register(visible, { type: { const: true } });
-Component.register(enabled, { type: { const: true } });
+const colorTraits = Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+const massTraits = Component.register(mass, { type: { type: "number", precision: 1 } });
+const positionXTraits = Component.register(positionX, { type: { type: "number", precision: 1 } });
+const positionYTraits = Component.register(positionY, { type: { type: "number", precision: 1 } });
+const positionZTraits = Component.register(positionZ, { type: { type: "number", precision: 1 } });
+const velocityXTraits = Component.register(velocityX, { type: { type: "number", precision: 1 } });
+const velocityYTraits = Component.register(velocityY, { type: { type: "number", precision: 1 } });
+const velocityZTraits = Component.register(velocityZ, { type: { type: "number", precision: 1 } });
+const visibleTraits = Component.register(visible, { type: { const: true } });
+const enabledTraits = Component.register(enabled, { type: { const: true } });
 
 const scalars = [color, mass, positionX, positionY, positionZ, velocityX, velocityY, velocityZ] as const;
 /** Entity i goes to archetype i % 4, like ecs2's seedSingle. */

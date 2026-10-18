@@ -7,10 +7,10 @@ import { createLoop, type Clock, type LoopSettings } from "./loop.js";
 const count = Symbol("loopTest/count");
 declare module "@adobe/data-ecs" {
     interface Components {
-        [count]: { type: number };
+        [count]: typeof countTraits;
     }
 }
-Component.register(count, { type: { type: "number" } });
+const countTraits = Component.register(count, { type: { type: "number" } });
 
 const increment = requireDefinition(System.create({ name: "loopTest/increment", components: { write: [count] } }, row => { row[count] += 1; }));
 const reader = requireDefinition(System.create({ name: "loopTest/reader", components: { read: [count] } }, row => { void row[count]; }));

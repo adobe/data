@@ -8,23 +8,23 @@ import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
 
 type Vec2 = readonly [number, number];
-const vec2: Schema.ForType<Vec2> = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 };
+const vec2 = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } as const satisfies Schema;
 const position = Symbol("semanticsTest/position");
 const target = Symbol("semanticsTest/target");
 const score = Symbol("semanticsTest/score");
 const tag = Symbol("semanticsTest/tag");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: { type: Vec2 };
-        [target]: { type: Entity };
-        [score]: { type: number };
-        [tag]: { type: true };
+        [position]: typeof positionTraits;
+        [target]: typeof targetTraits;
+        [score]: typeof scoreTraits;
+        [tag]: typeof tagTraits;
     }
 }
-Component.register(position, { type: vec2 });
-Component.register(target, { type: Entity.schema });
-Component.register(score, { type: { type: "number" } });
-Component.register(tag, { type: { const: true } });
+const positionTraits = Component.register(position, { type: vec2 });
+const targetTraits = Component.register(target, { type: Entity.schema });
+const scoreTraits = Component.register(score, { type: { type: "number" } });
+const tagTraits = Component.register(tag, { type: { const: true } });
 
 const seed = System.create({ name: "semanticsTest/seed" }, ({ commands }) => {
     // @ts-expect-error untyped callers can store any number as an entity

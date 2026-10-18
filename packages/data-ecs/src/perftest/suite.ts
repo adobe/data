@@ -9,7 +9,7 @@ import type { World } from "../interface/world/world.js";
 // One fixture per optimization area: structural changes, change filters, lookups, commands, dispatch and main-thread paths.
 
 type Vec3 = readonly [number, number, number];
-const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
+const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
 
 export const position = Symbol("suite/position");
 export const velocity = Symbol("suite/velocity");
@@ -21,13 +21,13 @@ export const hits = Symbol("suite/hits");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: { type: Vec3 };
-        [velocity]: { type: Vec3 };
-        [target]: { type: Entity };
-        [index]: { type: number };
-        [tag]: { type: true };
-        [unused]: { type: true };
-        [hits]: { type: number };
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
+        [target]: typeof targetTraits;
+        [index]: typeof indexTraits;
+        [tag]: typeof tagTraits;
+        [unused]: typeof unusedTraits;
+        [hits]: typeof hitsTraits;
     }
 }
 
@@ -35,20 +35,20 @@ export const indexSum = Symbol("suite/indexSum");
 export const highest = Symbol("suite/highest");
 declare module "@adobe/data-ecs" {
     export interface Resources {
-        [indexSum]: { type: number; reduce: "+" };
-        [highest]: { type: number; reduce: "max" };
+        [indexSum]: typeof indexSumTraits;
+        [highest]: typeof highestTraits;
     }
 }
-Resource.register(indexSum, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(highest, { type: { type: "number", default: 0 }, reduce: "max" });
+const indexSumTraits = Resource.register(indexSum, { type: { type: "number", default: 0 }, reduce: "+" });
+const highestTraits = Resource.register(highest, { type: { type: "number", default: 0 }, reduce: "max" });
 
-Component.register(position, { type: vec3 });
-Component.register(velocity, { type: vec3 });
-Component.register(target, { type: Entity.schema });
-Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(tag, { type: { const: true } });
-Component.register(unused, { type: { const: true } });
-Component.register(hits, { type: { type: "number", precision: 1 } });
+const positionTraits = Component.register(position, { type: vec3 });
+const velocityTraits = Component.register(velocity, { type: vec3 });
+const targetTraits = Component.register(target, { type: Entity.schema });
+const indexTraits = Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+const tagTraits = Component.register(tag, { type: { const: true } });
+const unusedTraits = Component.register(unused, { type: { const: true } });
+const hitsTraits = Component.register(hits, { type: { type: "number", precision: 1 } });
 
 const moving = Archetype.create([position, velocity, index]);
 const following = Archetype.create([position, velocity, index, target]);

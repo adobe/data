@@ -39,31 +39,31 @@ identify(taggedAgain, "idsTest/keys.ts#tagged");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [score]: { type: number };
-        [scoreAgain]: { type: number };
-        [shown]: { type: true; derived: true };
-        [shownAgain]: { type: true; derived: true };
-        [changed]: { type: number };
-        [changedAgain]: { type: string };
-        [crossed]: { type: number };
-        [unnamed]: { type: number };
+        [score]: typeof scoreTraits;
+        [scoreAgain]: typeof scoreTraits;
+        [shown]: typeof shownTraits;
+        [shownAgain]: typeof shownTraits;
+        [changed]: typeof changedTraits;
+        [changedAgain]: typeof changedTraits;
+        [crossed]: typeof crossedTraits;
+        [unnamed]: typeof scoreTraits;
     }
     export interface Resources {
-        [level]: { type: number };
-        [levelAgain]: { type: number };
-        [crossedAgain]: { type: number };
+        [level]: typeof levelTraits;
+        [levelAgain]: typeof levelTraits;
+        [crossedAgain]: typeof crossedTraits;
     }
-    export interface Traits<N> {
+    export interface Traits<N, E> {
         readonly [tagged]: true;
         readonly [taggedAgain]: true;
     }
 }
 
-Component.register(score, { type: { type: "number" } });
-Component.register(shown, { type: { const: true }, derived: true });
-Resource.register(level, { type: { type: "number", default: 0 } });
-Component.register(changed, { type: { type: "number" } });
-Component.register(crossed, { type: { type: "number" } });
+const scoreTraits = Component.register(score, { type: { type: "number" } });
+const shownTraits = Component.register(shown, { type: { const: true }, derived: true });
+const levelTraits = Resource.register(level, { type: { type: "number", default: 0 } });
+const changedTraits = Component.register(changed, { type: { type: "number" } });
+const crossedTraits = Component.register(crossed, { type: { type: "number" } });
 Trait.register(tagged);
 
 describe("keys with ids", () => {

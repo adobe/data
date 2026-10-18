@@ -7,7 +7,7 @@ import { System } from "../interface/system/system.js";
 // 4 archetypes by visible/enabled; move adds velocity to position for the visible and enabled quarter.
 
 type Vec3 = readonly [number, number, number];
-const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
+const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
 
 const color = Symbol("perf/color");
 const mass = Symbol("perf/mass");
@@ -18,21 +18,21 @@ export const enabled = Symbol("perf/enabled");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [color]: { type: number };
-        [mass]: { type: number };
-        [position]: { type: Vec3 };
-        [velocity]: { type: Vec3 };
-        [visible]: { type: true };
-        [enabled]: { type: true };
+        [color]: typeof colorTraits;
+        [mass]: typeof massTraits;
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
+        [visible]: typeof visibleTraits;
+        [enabled]: typeof enabledTraits;
     }
 }
 
-Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(mass, { type: { type: "number", precision: 1 } });
-Component.register(position, { type: vec3 });
-Component.register(velocity, { type: vec3 });
-Component.register(visible, { type: { const: true } });
-Component.register(enabled, { type: { const: true } });
+const colorTraits = Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+const massTraits = Component.register(mass, { type: { type: "number", precision: 1 } });
+const positionTraits = Component.register(position, { type: vec3 });
+const velocityTraits = Component.register(velocity, { type: vec3 });
+const visibleTraits = Component.register(visible, { type: { const: true } });
+const enabledTraits = Component.register(enabled, { type: { const: true } });
 
 /** Interleaved like ecs2's seedSingle: entity i goes to archetype i % 4. */
 const archetypes = [

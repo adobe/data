@@ -5,15 +5,17 @@ const scale = Symbol("keyTypeTest/scale");
 const mark = Symbol("keyTypeTest/mark");
 declare module "@adobe/data-ecs" {
     interface Components {
-        [position]: { type: number };
+        [position]: typeof positionTraits;
     }
     interface Resources {
-        [scale]: { type: number };
+        [scale]: typeof scaleTraits;
     }
-    interface Traits<N> {
+    interface Traits<N, E> {
         readonly [mark]: true;
     }
 }
+const positionTraits = Component.register(position, { type: { type: "number" } });
+const scaleTraits = Resource.register(scale, { type: { type: "number", default: 0 } });
 
 // Components, resources and traits are named by keys; systems, rules and finalizers by names.
 export const component: Component.Key = position;

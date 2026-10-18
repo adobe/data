@@ -10,10 +10,10 @@ import { workers } from "../../interface/resources/workers.js";
 const frames = Symbol("ticksBrowserTest/frames");
 declare module "@adobe/data-ecs" {
     export interface Resources {
-        [frames]: { type: number };
+        [frames]: typeof framesTraits;
     }
 }
-Resource.register(frames, { type: { type: "number", default: 0 } });
+const framesTraits = Resource.register(frames, { type: { type: "number", default: 0 } });
 
 const count = System.create({ name: "ticksBrowserTest/count", resources: { write: [frames] } }, ({ resources }) => { resources[frames] += 1; });
 const start = System.create({ name: "ticksBrowserTest/start", resources: { write: [always] } }, ({ resources }) => { resources[always] = true; });

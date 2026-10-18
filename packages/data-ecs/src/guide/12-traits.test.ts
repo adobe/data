@@ -8,25 +8,25 @@ const target = Symbol("target");
 const selected = Symbol("selected");
 const outline = Symbol("outline");
 
-// Traits are the fields of a key's record; type is one. Registration gives them again.
+// Traits are the fields of a key's declaration; type is one.
+const shipTraits = Component.register(ship, { type: { const: true } });
+// Despawned with the entity it points to.
+const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
+// Removed when the entity it points to despawns.
+const targetTraits = Component.register(target, { type: Entity.schema, reference: "weak" });
+const selectedTraits = Component.register(selected, { type: { const: true } });
+// Removed with selected.
+const outlineTraits = Component.register(outline, { type: { type: "number" }, within: selected });
+
 declare module "@adobe/data-ecs" {
     interface Components {
-        [ship]: { type: true };
-        // Despawned with the entity it points to.
-        [parent]: { type: Entity; reference: "owner" };
-        // Removed when the entity it points to despawns.
-        [target]: { type: Entity; reference: "weak" };
-        [selected]: { type: true };
-        // Removed with selected.
-        [outline]: { type: number; within: typeof selected };
+        [ship]: typeof shipTraits;
+        [parent]: typeof parentTraits;
+        [target]: typeof targetTraits;
+        [selected]: typeof selectedTraits;
+        [outline]: typeof outlineTraits;
     }
 }
-
-Component.register(ship, { type: { const: true } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(target, { type: Entity.schema, reference: "weak" });
-Component.register(selected, { type: { const: true } });
-Component.register(outline, { type: { type: "number" }, within: selected });
 
 const spawn = System.create(({ commands }) => {
     const mothership = commands.spawn([ship, selected, outline])({ [outline]: 2 });

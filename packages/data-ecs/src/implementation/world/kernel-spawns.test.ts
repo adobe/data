@@ -17,23 +17,23 @@ const position = Symbol("kernelSpawnsTest/position");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [index]: { type: number };
-        [value]: { type: number };
-        [extra]: { type: number };
-        [flag]: { type: true };
-        [made]: { type: true };
-        [name]: { type: string | null };
-        [position]: { type: readonly [number, number] };
+        [index]: typeof indexTraits;
+        [value]: typeof valueTraits;
+        [extra]: typeof extraTraits;
+        [flag]: typeof flagTraits;
+        [made]: typeof madeTraits;
+        [name]: typeof nameTraits;
+        [position]: typeof positionTraits;
     }
 }
 
-Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(extra, { type: { type: "number", precision: 1 } });
-Component.register(flag, { type: { const: true } });
-Component.register(made, { type: { const: true } });
-Component.register(name, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Component.register(position, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } });
+const indexTraits = Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+const valueTraits = Component.register(value, { type: { type: "number", precision: 1 } });
+const extraTraits = Component.register(extra, { type: { type: "number", precision: 1 } });
+const flagTraits = Component.register(flag, { type: { const: true } });
+const madeTraits = Component.register(made, { type: { const: true } });
+const nameTraits = Component.register(name, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
+const positionTraits = Component.register(position, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } });
 
 const spawned = Archetype.create([value, made]);
 

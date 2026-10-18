@@ -20,30 +20,30 @@ const height = Symbol("typesSystemTest/height");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: { type: number };
-        [label]: { type: string };
-        [node]: { type: HTMLElement; thread: "main" };
+        [position]: typeof positionTraits;
+        [label]: typeof labelTraits;
+        [node]: typeof nodeTraits;
         [unregistered]: { type: number };
-        [parent]: { type: Entity; reference: "weak" };
-        [height]: { type: number };
+        [parent]: typeof parentTraits;
+        [height]: typeof heightTraits;
     }
     export interface Resources {
-        [document]: { type: Document | null; thread: "main" };
-        [time]: { type: number };
-        [total]: { type: number; reduce: "+" };
-        [paused]: { type: boolean };
+        [document]: typeof documentTraits;
+        [time]: typeof timeTraits;
+        [total]: typeof totalTraits;
+        [paused]: typeof pausedTraits;
     }
 }
 
-Component.register(position, { type: { type: "number" } });
-Component.register(label, { type: { type: "string" } });
-Component.register(node, { thread: "main" });
-Resource.register(document, { thread: "main" });
-Resource.register(time, { type: { type: "number", default: 0 } });
-Component.register(parent, { type: Entity.schema, reference: "weak" });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(paused, { type: { type: "boolean", default: false } });
-Component.register(height, { type: { type: "number", precision: 1 } });
+const positionTraits = Component.register(position, { type: { type: "number" } });
+const labelTraits = Component.register(label, { type: { type: "string" } });
+const nodeTraits = Component.register(node, { type: Component.object<HTMLElement>(), thread: "main" });
+const documentTraits = Resource.register(document, { type: Resource.object<Document | null>(), thread: "main" });
+const timeTraits = Resource.register(time, { type: { type: "number", default: 0 } });
+const parentTraits = Component.register(parent, { type: Entity.schema, reference: "weak" });
+const totalTraits = Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+const pausedTraits = Resource.register(paused, { type: { type: "boolean", default: false } });
+const heightTraits = Component.register(height, { type: { type: "number", precision: 1 } });
 
 /** Creates as an untyped caller would, bypassing the types' checks. */
 const create = (declaration: object): unknown => Reflect.apply(System.create, undefined, [declaration, () => {}]);

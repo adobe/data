@@ -12,6 +12,7 @@ const position = Symbol("typesComponentTest/position");
 const bitmap = Symbol("typesComponentTest/bitmap");
 const marked = Symbol("typesComponentTest/marked");
 const mark = Symbol("typesComponentTest/mark");
+const late = Symbol("typesComponentTest/late");
 const slot = Symbol("typesComponentTest/slot");
 
 declare module "@adobe/data-ecs" {
@@ -19,29 +20,40 @@ declare module "@adobe/data-ecs" {
         typesComponentTest: true;
     }
     export interface Components {
-        [parent]: { type: Entity; reference: "owner" };
-        [count]: { type: number };
-        [label]: { type: string };
-        [placed]: { type: string; thread: "typesComponentTest" };
-        [position]: { type: readonly [number, number] };
-        [bitmap]: { type: ImageBitmap; transfer: true };
-        [marked]: { type: true; [mark]: true };
-        [slot]: { type: number; derived: true };
+        [parent]: typeof parentTraits;
+        [count]: typeof countTraits;
+        [label]: typeof labelTraits;
+        [placed]: typeof placedTraits;
+        [position]: typeof positionTraits;
+        [bitmap]: typeof bitmapTraits;
+        [marked]: typeof markedTraits;
+        [slot]: typeof slotTraits;
     }
-    export interface Traits<N> {
+    export interface Traits<N, E> {
         readonly [mark]: true;
+        readonly [late]: true;
     }
 }
 
+Trait.register(mark);
+const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
+const countTraits = Component.register(count, { type: { type: "number" } });
+const labelTraits = Component.register(label, { type: { type: "string" } });
+const placedTraits = Component.register(placed, { type: { type: "string" }, thread: "typesComponentTest" });
+const positionTraits = Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
+const bitmapTraits = Component.register(bitmap, { type: Component.object<ImageBitmap>(), transfer: true });
+const markedTraits = Component.register(marked, { type: { const: true }, [mark]: true });
+const slotTraits = Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+
+const untyped: (...parameters: never[]) => unknown = Component.register;
+
 /** Registers as an untyped caller would, bypassing the types' checks. */
-const register = (key: unknown, declaration: object): void => Reflect.apply(Component.register, undefined, [key, declaration]);
+const register = (key: unknown, declaration: object): void => {
+    Reflect.apply(untyped, undefined, [key, declaration]);
+};
 
 describe("Component.register", () => {
     it("records the declaration, and its thread: none for a struct, else its own or \"world\"", () => {
-        Component.register(parent, { type: Entity.schema, reference: "owner" });
-        Component.register(label, { type: { type: "string" } });
-        Component.register(placed, { type: { type: "string" }, thread: "typesComponentTest" });
-        Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
         expect(declarationOf(parent)).toEqual({ type: Entity.schema, reference: "owner" });
         expect(kindOf(parent)).toBe("component");
         expect(threadOfDeclaration({ type: Entity.schema })).toBe(null);
@@ -52,7 +64,6 @@ describe("Component.register", () => {
         expect([parent, label, placed, position].map(name => threadOfDeclaration(declarationOf(name) ?? {}))).toEqual([null, "world", "typesComponentTest", null]);
     });
     it("accepts the same declaration again, as a module evaluated again makes it, and rejects a different one or a key of another kind", () => {
-        Component.register(count, { type: { type: "number" } });
         expect(() => Component.register(count, { type: { type: "number" } })).not.toThrow();
         expect(() => register(count, { type: { type: "integer" } })).toThrow(`Cannot register component "typesComponentTest/count": already registered as a component, with another declaration.`);
         expect(declarationOf(count)).toEqual({ type: { type: "number" } });
@@ -87,15 +98,20 @@ describe("Component.register", () => {
         expect(() => register(Symbol("typesComponentTest/emptyThread"), { thread: "" })).toThrow("thread is a thread's name");
         expect(() => register(Symbol("typesComponentTest/dataTransfer"), { type: { type: "string" }, transfer: true })).toThrow("a value with a schema is data, which isn't Transferable");
         expect(() => register(Symbol("typesComponentTest/falseTransfer"), { transfer: false })).toThrow("transfer is true");
-        Component.register(bitmap, { transfer: true });
+    });
+    it("records no type for object<T>(), which only states the value's type", () => {
         expect(declarationOf(bitmap)).toEqual({ transfer: true });
+        expect(Reflect.has(declarationOf(bitmap) ?? {}, "type")).toBe(false);
+        expect(() => Component.register(bitmap, { type: Component.object<ImageBitmap>(), transfer: true })).not.toThrow();
+        expect(() => register(bitmap, { transfer: true })).not.toThrow();
     });
     it("takes traits other packages register, in the namespace components share", () => {
-        expect(() => register(marked, { type: { const: true }, [mark]: true })).toThrow(`typesComponentTest/mark isn't a registered trait`);
-        Trait.register(mark);
-        Component.register(marked, { type: { const: true }, [mark]: true });
+        const early = Symbol("typesComponentTest/early");
+        expect(() => register(early, { type: { const: true }, [late]: true })).toThrow(`typesComponentTest/late isn't a registered trait`);
+        Trait.register(late);
+        expect(() => register(early, { type: { const: true }, [late]: true })).not.toThrow();
+        expect(declarationOf(marked)).toEqual({ type: { const: true }, [mark]: true });
         expect(() => Trait.register(mark)).not.toThrow();
-        Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
         expect(declarationOf(slot)).toEqual({ type: { type: "number", default: 0 }, derived: true });
     });
 });

@@ -5,11 +5,11 @@ export const score = Symbol("reevaluation/score");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [score]: { type: number };
+        [score]: typeof scoreTraits;
     }
 }
 
-Component.register(score, { type: { type: "number" } });
+const scoreTraits = Component.register(score, { type: { type: "number" } });
 
 export const bump = System.create({ name: "reevaluation/bump", components: { write: [score] } }, row => {
     row[score] += 1;

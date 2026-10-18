@@ -45,7 +45,7 @@ check<Equal<
 // objects: only listed keys required when `required` is present
 check<Equal<
     Schema.ToType<{ type: 'object'; properties: { a: { type: 'number' }; b: { type: 'string' } }; required: ['a'] }>,
-    { readonly a: number } & { readonly b?: string }
+    { readonly a: number; readonly b?: string }
 >>();
 
 // combinators
@@ -110,3 +110,8 @@ const badBoolean: Schema.ForType<boolean> = { const: true };
 // @ts-expect-error type without const is too wide for the literal
 const badTrueWide: Schema.ForType<true> = { type: 'boolean' };
 void [okTrue, okFalse, okBoolean, badTrue, badFalse, badFalseRedundant, badBoolean, badTrueWide];
+
+// fixed-length arrays are tuples; any other length is an array
+check<Equal<Schema.ToType<{ type: 'array'; items: { type: 'number' }; minItems: 3; maxItems: 3 }>, readonly [number, number, number]>>();
+check<Equal<Schema.ToType<{ type: 'array'; items: { type: 'number' }; minItems: 2; maxItems: 3 }>, readonly number[]>>();
+check<Equal<Schema.ToType<{ type: 'array'; items: { type: 'number' }; minItems: number; maxItems: number }>, readonly number[]>>();

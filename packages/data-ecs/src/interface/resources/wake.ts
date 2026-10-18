@@ -8,8 +8,8 @@ export const wake = Symbol("wake");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {
-        [wake]: { type: number; reduce: "min" };
+        [wake]: typeof wakeTraits;
     }
 }
 
-Resource.register(wake, { type: { type: "number", default: Infinity }, reduce: "min" });
+const wakeTraits = Resource.register(wake, { type: { type: "number", default: Infinity }, reduce: "min" });

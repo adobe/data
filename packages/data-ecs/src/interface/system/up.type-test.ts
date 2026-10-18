@@ -1,4 +1,5 @@
-import type { Entity } from '../entity/entity.js';
+import { Component } from '../component/component.js';
+import { Entity } from '../entity/entity.js';
 import { System } from './system.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
@@ -11,12 +12,16 @@ const name = Symbol("upTypeTest/name");
 
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [local]: { type: number };
-        [world]: { type: number };
-        [parent]: { type: Entity; reference: "owner" };
-        [name]: { type: string };
+        [local]: typeof localTraits;
+        [world]: typeof worldTraits;
+        [parent]: typeof parentTraits;
+        [name]: typeof nameTraits;
     }
 }
+const localTraits = Component.register(local, { type: { type: "number" } });
+const worldTraits = Component.register(world, { type: { type: "number" } });
+const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
+const nameTraits = Component.register(name, { type: { type: "string" } });
 
 // `up` reads what `read` lists of the entity `through` names, or null for a row without one; it may read what the system writes.
 System.create({

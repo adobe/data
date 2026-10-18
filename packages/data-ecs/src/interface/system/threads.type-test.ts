@@ -1,3 +1,5 @@
+import { Resource } from '../resource/resource.js';
+import { Component } from '../component/component.js';
 import { Finalizer } from '../finalizer/finalizer.js';
 import { System } from './system.js';
 
@@ -14,17 +16,24 @@ declare module '@adobe/data-ecs' {
         threadsTypeTest: true;
     }
     export interface Components {
-        [node]: { type: HTMLElement; thread: "main" };
-        [label]: { type: string };
-        [audio]: { type: AudioBuffer; thread: "threadsTypeTest" };
-        [position]: { type: readonly [number, number] };
+        [node]: typeof nodeTraits;
+        [label]: typeof labelTraits;
+        [audio]: typeof audioTraits;
+        [position]: typeof positionTraits;
     }
     export interface Resources {
-        [document]: { type: Document | null; thread: "main" };
-        [settings]: { type: { readonly name: string } | null };
-        [time]: { type: number };
+        [document]: typeof documentTraits;
+        [settings]: typeof settingsTraits;
+        [time]: typeof timeTraits;
     }
 }
+const settingsTraits = Resource.register(settings, { type: { anyOf: [{ type: "object", properties: { name: { type: "string" } } }, { type: "null" }], default: null } });
+const nodeTraits = Component.register(node, { type: Component.object<HTMLElement>(), thread: "main" });
+const labelTraits = Component.register(label, { type: { type: "string" } });
+const audioTraits = Component.register(audio, { type: Component.object<AudioBuffer>(), thread: "threadsTypeTest" });
+const positionTraits = Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
+const documentTraits = Resource.register(document, { type: Resource.object<Document | null>(), thread: "main" });
+const timeTraits = Resource.register(time, { type: { type: "number", default: 0 } });
 
 // A system runs on the thread of the object components and resources it uses; structs go with any.
 System.create({ name: "threadsTypeTest/render", components: { read: [position], write: [node] }, resources: { read: [time, document] } }, () => {});

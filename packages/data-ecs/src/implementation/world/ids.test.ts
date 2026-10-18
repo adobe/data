@@ -23,15 +23,15 @@ identify(shownAgain, "worldIdsTest/keys.ts#shown");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [score]: { type: number };
-        [scoreAgain]: { type: number };
-        [shown]: { type: true; derived: true };
-        [shownAgain]: { type: true; derived: true };
+        [score]: typeof scoreTraits;
+        [scoreAgain]: typeof scoreTraits;
+        [shown]: typeof shownTraits;
+        [shownAgain]: typeof shownTraits;
     }
 }
 
-Component.register(score, { type: { type: "number" } });
-Component.register(shown, { type: { const: true }, derived: true });
+const scoreTraits = Component.register(score, { type: { type: "number" } });
+const shownTraits = Component.register(shown, { type: { const: true }, derived: true });
 Rule.create(identify({ name: "worldIdsTest/shown", components: { has: [score] }, derive: [shown] }, "worldIdsTest/systems.ts#shown"));
 const changes: (readonly symbol[])[] = [];
 Finalizer.changes(identify({ name: "worldIdsTest/changes", watch: [score] }, "worldIdsTest/systems.ts#changes"), ({ groups }) => {

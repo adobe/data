@@ -5,17 +5,17 @@ import { createWorld } from "../implementation/index.js";
 const health = Symbol("health");
 const seen = Symbol("seen");
 
+const healthTraits = Component.register(health, { type: { type: "number" } });
+const seenTraits = Resource.register(seen, { type: { type: "number", default: 0 } });
+
 declare module "@adobe/data-ecs" {
     interface Components {
-        [health]: { type: number };
+        [health]: typeof healthTraits;
     }
     interface Resources {
-        [seen]: { type: number };
+        [seen]: typeof seenTraits;
     }
 }
-
-Component.register(health, { type: { type: "number" } });
-Resource.register(seen, { type: { type: "number", default: 0 } });
 
 // Value writes apply at once; commands wait for the sync point that ends each run, then apply in the order issued.
 const spawn = System.create(({ commands }) => {

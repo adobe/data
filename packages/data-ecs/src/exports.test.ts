@@ -30,10 +30,12 @@ const install = (): void => {
 const consumer = `
 import { Component, System, World, gpuDevice } from "@adobe/data-ecs";
 export const position = Symbol("exportsTest/position");
+export const element = Symbol("exportsTest/element");
+const positionTraits = Component.register(position, { type: { type: "number" } });
+const elementTraits = Component.register(element, { type: Component.object<HTMLElement>(), thread: "main" });
 declare module "@adobe/data-ecs" {
-    interface Components { [position]: { type: number } }
+    interface Components { [position]: typeof positionTraits; [element]: typeof elementTraits }
 }
-Component.register(position, { type: { type: "number" } });
 export const move = System.create({ name: "exportsTest/move", components: { write: [position] } }, row => { row[position] += 1; });
 export const all = System.composite({ name: "exportsTest/all", systems: [move] });
 export const draw = System.render({ name: "exportsTest/draw", shader: { accessors: {} } }, () => {});
@@ -64,7 +66,7 @@ const reachable = (directory: string, file: string): string[] => {
 
 /** Modules only the implementation reads: the registry's read side and the forms of systems it holds. */
 const internal = (path: string): boolean =>
-    (path.startsWith("interface/registry/") && path !== "interface/registry/registry.d.ts")
+    path.startsWith("interface/registry/")
     || path === "interface/system/composite.d.ts" || path === "interface/system/leaf.d.ts" || path === "interface/system/definition.d.ts"
     || path.startsWith("interface/gpu/record");
 
@@ -90,11 +92,11 @@ const compile = (source: string): { readonly messages: string[] } => {
 const stringKeyed = (augmentation: string, registration = ""): string => `
 import { Component, Trait } from "@adobe/data-ecs";
 export const keyed = Symbol("exportsTest/keyed");
+const keyedTraits = Component.register(keyed, { type: { type: "number" } });
 declare module "@adobe/data-ecs" {
-    interface Components { [keyed]: { type: number } }
+    interface Components { [keyed]: typeof keyedTraits }
     ${augmentation}
 }
-Component.register(keyed, { type: { type: "number" } });
 ${registration}
 `;
 
@@ -112,7 +114,7 @@ describe("package exports", () => {
             .toContain(`'{ readonly "component keys must be symbols": "exportsTest/named"; }'`);
         expect(compile(stringKeyed(`interface Resources { "exportsTest/time": { type: number } }`)).messages.join("\n"))
             .toContain(`'{ readonly "resource keys must be symbols": "exportsTest/time"; }'`);
-        const trait = compile(stringKeyed(`interface Traits<N> { readonly persisted: true }`, `Trait.register("persisted");`)).messages.join("\n");
+        const trait = compile(stringKeyed(`interface Traits<N, E> { readonly persisted: true }`, `Trait.register("persisted");`)).messages.join("\n");
         expect(trait).toContain(`'{ readonly "trait keys must be symbols": "persisted"; }'`);
         // Registration takes only symbol keys, so a string-keyed trait can't be registered either.
         expect(trait).toContain(`Argument of type '"persisted"' is not assignable`);

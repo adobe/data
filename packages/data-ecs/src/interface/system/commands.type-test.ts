@@ -1,3 +1,5 @@
+import { Resource } from '../resource/resource.js';
+import { Component } from '../component/component.js';
 import { Archetype } from '../archetype/archetype.js';
 import type { Entity } from '../entity/entity.js';
 import type { Commands } from './commands.js';
@@ -13,16 +15,22 @@ const slot = Symbol("commandsTypeTest/slot");
 const time = Symbol("commandsTypeTest/time");
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [position]: { type: number };
-        [velocity]: { type: number };
-        [label]: { type: string | null };
-        [player]: { type: true };
-        [slot]: { type: number; derived: true };
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
+        [label]: typeof labelTraits;
+        [player]: typeof playerTraits;
+        [slot]: typeof slotTraits;
     }
     export interface Resources {
-        [time]: { type: number };
+        [time]: typeof timeTraits;
     }
 }
+const positionTraits = Component.register(position, { type: { type: "number" } });
+const velocityTraits = Component.register(velocity, { type: { type: "number" } });
+const labelTraits = Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
+const playerTraits = Component.register(player, { type: { const: true } });
+const slotTraits = Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+const timeTraits = Resource.register(time, { type: { type: "number", default: 0 } });
 
 const particle = Archetype.create([position, velocity, label, player]);
 

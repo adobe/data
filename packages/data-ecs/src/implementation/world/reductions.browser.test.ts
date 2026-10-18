@@ -14,21 +14,21 @@ const largest = Symbol("reductionsBrowserTest/largest");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [weight]: { type: number };
-        [sized]: { type: true };
+        [weight]: typeof weightTraits;
+        [sized]: typeof sizedTraits;
     }
     export interface Resources {
-        [count]: { type: number; reduce: "+" };
-        [sum]: { type: number; reduce: "+" };
-        [largest]: { type: number; reduce: "max" };
+        [count]: typeof countTraits;
+        [sum]: typeof sumTraits;
+        [largest]: typeof largestTraits;
     }
 }
 
-Component.register(weight, { type: { type: "number", precision: 1 } });
-Component.register(sized, { type: { const: true } });
-Resource.register(count, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(sum, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(largest, { type: { type: "number", default: 0 }, reduce: "max" });
+const weightTraits = Component.register(weight, { type: { type: "number", precision: 1 } });
+const sizedTraits = Component.register(sized, { type: { const: true } });
+const countTraits = Resource.register(count, { type: { type: "number", default: 0 }, reduce: "+" });
+const sumTraits = Resource.register(sum, { type: { type: "number", default: 0 }, reduce: "+" });
+const largestTraits = Resource.register(largest, { type: { type: "number", default: 0 }, reduce: "max" });
 
 const rows = 100_000;
 const weightAt = (i: number): number => Math.fround(Math.sin(i * 0.37) * 1000);

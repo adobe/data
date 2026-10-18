@@ -14,19 +14,19 @@ export const count = Symbol("particles/count");
 
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [position]: { type: Vec3 };
-        [velocity]: { type: Vec3 };
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
     }
     export interface Resources {
-        [delta]: { type: number };
-        [count]: { type: number };
+        [delta]: typeof deltaTraits;
+        [count]: typeof countTraits;
     }
 }
 
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Resource.register(delta, { type: { type: "number", precision: 1, default: 0 } });
-Resource.register(count, { type: { type: "integer", minimum: 0, default: 100 } });
+const positionTraits = Component.register(position, { type: Vec3.schema });
+const velocityTraits = Component.register(velocity, { type: Vec3.schema });
+const deltaTraits = Resource.register(delta, { type: { type: "number", precision: 1, default: 0 } });
+const countTraits = Resource.register(count, { type: { type: "integer", minimum: 0, default: 100 } });
 
 // Main thread: resource-only, runs when `count` changes, including the first run.
 export const spawn = System.create({

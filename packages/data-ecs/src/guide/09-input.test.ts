@@ -4,13 +4,13 @@ import { createWorld } from "../implementation/index.js";
 
 const health = Symbol("health");
 
+const healthTraits = Component.register(health, { type: { type: "number" } });
+
 declare module "@adobe/data-ecs" {
     interface Components {
-        [health]: { type: number };
+        [health]: typeof healthTraits;
     }
 }
-
-Component.register(health, { type: { type: "number" } });
 
 const spawn = System.create(({ commands }) => { commands.spawn([health])({ [health]: 10 }); });
 

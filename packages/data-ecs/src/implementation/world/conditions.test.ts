@@ -17,24 +17,27 @@ const value = Symbol("conditionsTest/value");
 
 declare module "@adobe/data-ecs" {
     interface Resources {
-        [paused]: { type: boolean };
-        [level]: { type: { readonly size: number } | null };
-        [ticks]: { type: number };
-        [after]: { type: number };
-        [sizes]: { type: number };
-        [total]: { type: number; reduce: "+" };
-        [count]: { type: number };
+        [paused]: typeof pausedTraits;
+        [level]: typeof levelTraits;
+        [ticks]: typeof ticksTraits;
+        [after]: typeof afterTraits;
+        [sizes]: typeof sizesTraits;
+        [total]: typeof totalTraits;
+        [count]: typeof countTraits;
     }
     interface Components {
-        [value]: { type: number };
+        [value]: typeof valueTraits;
     }
 }
 
-Resource.register(paused, { type: { type: "boolean", default: false } });
-Resource.register(level, { type: { anyOf: [{ type: "object", properties: { size: { type: "number" } } }, { type: "null" }] } });
-for (const key of [ticks, after, sizes, count] as const) Resource.register(key, { type: { type: "number", default: 0 } });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-Component.register(value, { type: { type: "number" } });
+const pausedTraits = Resource.register(paused, { type: { type: "boolean", default: false } });
+const levelTraits = Resource.register(level, { type: { anyOf: [{ type: "object", properties: { size: { type: "number" } } }, { type: "null" }] } });
+const ticksTraits = Resource.register(ticks, { type: { type: "number", default: 0 } });
+const afterTraits = Resource.register(after, { type: { type: "number", default: 0 } });
+const sizesTraits = Resource.register(sizes, { type: { type: "number", default: 0 } });
+const countTraits = Resource.register(count, { type: { type: "number", default: 0 } });
+const totalTraits = Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+const valueTraits = Component.register(value, { type: { type: "number" } });
 
 const pause = System.create({ name: "conditionsTest/pause", resources: { write: [paused] } }, ({ resources }) => { resources[paused] = true; });
 const tick = System.create({ name: "conditionsTest/tick", resources: { not: [paused], write: [ticks] } }, ({ resources }) => { resources[ticks] += 1; });

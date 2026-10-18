@@ -10,15 +10,15 @@ const flag = Symbol("observedTest/flag");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [value]: { type: number };
-        [seen]: { type: number };
-        [flag]: { type: true };
+        [value]: typeof valueTraits;
+        [seen]: typeof seenTraits;
+        [flag]: typeof flagTraits;
     }
 }
 
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(seen, { type: { type: "number", precision: 1 } });
-Component.register(flag, { type: { const: true } });
+const valueTraits = Component.register(value, { type: { type: "number", precision: 1 } });
+const seenTraits = Component.register(seen, { type: { type: "number", precision: 1 } });
+const flagTraits = Component.register(flag, { type: { const: true } });
 
 const seed = System.create({ name: "observedTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn([value, seen])({ [value]: i, [seen]: 0 });

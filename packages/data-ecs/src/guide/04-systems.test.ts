@@ -8,23 +8,23 @@ const frozen = Symbol("frozen");
 const delta = Symbol("delta");
 const frames = Symbol("frames");
 
+const positionTraits = Component.register(position, { type: Vec3.schema });
+const velocityTraits = Component.register(velocity, { type: Vec3.schema });
+const frozenTraits = Component.register(frozen, { type: { const: true } });
+const deltaTraits = Resource.register(delta, { type: { type: "number", default: 0.5 } });
+const framesTraits = Resource.register(frames, { type: { type: "number", default: 0 } });
+
 declare module "@adobe/data-ecs" {
     interface Components {
-        [position]: { type: Vec3 };
-        [velocity]: { type: Vec3 };
-        [frozen]: { type: true };
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
+        [frozen]: typeof frozenTraits;
     }
     interface Resources {
-        [delta]: { type: number };
-        [frames]: { type: number };
+        [delta]: typeof deltaTraits;
+        [frames]: typeof framesTraits;
     }
 }
-
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(frozen, { type: { const: true } });
-Resource.register(delta, { type: { type: "number", default: 0.5 } });
-Resource.register(frames, { type: { type: "number", default: 0 } });
 
 const spawn = System.create(({ commands }) => {
     commands.spawn([position, velocity])({ [position]: [0, 0, 0], [velocity]: [2, 0, 0] });

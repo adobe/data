@@ -1,3 +1,4 @@
+import { Component } from '../component/component.js';
 import type { Gpu } from '../index.js';
 import { System } from '../system/system.js';
 
@@ -7,9 +8,10 @@ const check = <_T extends true>() => { };
 const tint = Symbol("gpuTypeTest/tint");
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [tint]: { type: number };
+        [tint]: typeof tintTraits;
     }
 }
+const tintTraits = Component.register(tint, { type: { type: "number" } });
 
 declare const wgsl: typeof Gpu.wgsl;
 declare const layout: typeof Gpu.layout;

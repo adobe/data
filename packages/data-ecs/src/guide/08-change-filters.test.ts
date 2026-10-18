@@ -10,27 +10,27 @@ const paused = Symbol("paused");
 const map = Symbol("map");
 const steps = Symbol("steps");
 
+const scoreTraits = Component.register(score, { type: { type: "number" } });
+const shownTraits = Component.register(shown, { type: { type: "number" } });
+const bossTraits = Component.register(boss, { type: { const: true } });
+const levelTraits = Resource.register(level, { type: { type: "number", default: 1 } });
+const pausedTraits = Resource.register(paused, { type: { type: "boolean", default: false } });
+const mapTraits = Resource.register(map, { type: { anyOf: [{ type: "object", properties: { width: { type: "number" } } }, { type: "null" }] } });
+const stepsTraits = Resource.register(steps, { type: { type: "number", default: 0 } });
+
 declare module "@adobe/data-ecs" {
     interface Components {
-        [score]: { type: number };
-        [shown]: { type: number };
-        [boss]: { type: true };
+        [score]: typeof scoreTraits;
+        [shown]: typeof shownTraits;
+        [boss]: typeof bossTraits;
     }
     interface Resources {
-        [level]: { type: number };
-        [paused]: { type: boolean };
-        [map]: { type: { readonly width: number } | null };
-        [steps]: { type: number };
+        [level]: typeof levelTraits;
+        [paused]: typeof pausedTraits;
+        [map]: typeof mapTraits;
+        [steps]: typeof stepsTraits;
     }
 }
-
-Component.register(score, { type: { type: "number" } });
-Component.register(shown, { type: { type: "number" } });
-Component.register(boss, { type: { const: true } });
-Resource.register(level, { type: { type: "number", default: 1 } });
-Resource.register(paused, { type: { type: "boolean", default: false } });
-Resource.register(map, { type: { anyOf: [{ type: "object", properties: { width: { type: "number" } } }, { type: "null" }] } });
-Resource.register(steps, { type: { type: "number", default: 0 } });
 
 // A resource in changed passes the first run and each run after it changes: no run-once flag needed.
 const load = System.create({ resources: { read: [level], changed: [level] } }, ({ resources, commands }) => {

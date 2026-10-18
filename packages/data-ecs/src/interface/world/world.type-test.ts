@@ -1,3 +1,4 @@
+import { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import type { Observe, Observers } from '../index.js';
 import { System } from '../system/system.js';
@@ -19,11 +20,14 @@ const persistent = Symbol("worldTypeTest/persistent");
 const shared = Symbol("worldTypeTest/shared");
 declare module '@adobe/data-ecs' {
     export interface Components {
-        [point]: { type: { x: number } };
-        [persistent]: { type: true };
-        [shared]: { type: true };
+        [point]: typeof pointTraits;
+        [persistent]: typeof persistentTraits;
+        [shared]: typeof sharedTraits;
     }
 }
+const pointTraits = Component.register(point, { type: { type: "object", properties: { x: { type: "number" } } } });
+const persistentTraits = Component.register(persistent, { type: { const: true } });
+const sharedTraits = Component.register(shared, { type: { const: true } });
 // Observing a query: `where` and `order` name only required components; `count` takes no `order` or `page`.
 const query: World.Query<[typeof persistent]> = { required: [persistent], not: [shared], where: { [persistent]: true }, order: { [persistent]: true } };
 const selected: Observe<readonly Entity[]> = world.observe.select(query);

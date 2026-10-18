@@ -2,10 +2,10 @@ import type { Schema } from '../schema/schema.js';
 import type { Key as TraitKey } from '../trait/key.js';
 import { layoutOf } from './layout.js';
 import { claimKey, declarationOf, failRegistration, firstKeyOf, kindOf, labelOf, requireKey, sameDeclaration } from './names.js';
-import type { Registry } from './registry.js';
 import { isReduction } from './reduction.js';
 import { allowsNull, hasBoolean, isEntity, isStruct } from './schemas.js';
 import { isTrait } from './traits.js';
+import { isObjectType, type AnyObjectType } from '../trait/object.js';
 
 /**
  * A registered declaration, as any consumer iterating components or resources sees it: its `type` and other traits.
@@ -86,14 +86,25 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
     }
 };
 
-/** The constraint makes each `D[K]` an `AnyDeclaration` without evaluating `D`'s generic declaration type. */
-export const createRegistry = <D extends { readonly [K in keyof D]: AnyDeclaration }>(kind: "component" | "resource"): Registry<D> => {
-    const register = <K extends keyof D & symbol>(key: K, declaration: D[K]): void => {
-        const symbol = requireKey(kind, key);
-        const existing = kindOf(symbol);
-        if (existing === kind && sameDeclaration(declarationOf(symbol), declaration)) return;
-        if (existing === undefined) check(kind, symbol, declaration);
-        claimKey(symbol, kind, declaration);
-    };
-    return { register };
+/** A declaration as registration takes it: its `type` may be `object<T>()`, which states a type and records nothing. */
+export type GivenDeclaration = { readonly type?: Schema | AnyObjectType; readonly default?: unknown } & { readonly [T in TraitKey]?: unknown };
+
+/** The declaration registration records: `object<T>()` leaves `type` out. */
+const recorded = (declaration: GivenDeclaration): AnyDeclaration => {
+    const { type, ...rest } = declaration;
+    return type === undefined || isObjectType(type) ? rest : { ...rest, type };
+};
+
+/**
+ * Registers a declaration of `kind` under `key`, fixed from then on, and returns it. The same declaration again is
+ * accepted, and so is a new symbol with the id of a key of this kind, as a module evaluated again makes it.
+ */
+export const createRegistry = (kind: "component" | "resource") => (key: unknown, given: GivenDeclaration): GivenDeclaration => {
+    const symbol = requireKey(kind, key);
+    const declaration = recorded(given);
+    const existing = kindOf(symbol);
+    if (existing === kind && sameDeclaration(declarationOf(symbol), declaration)) return given;
+    if (existing === undefined) check(kind, symbol, declaration);
+    claimKey(symbol, kind, declaration);
+    return given;
 };

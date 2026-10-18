@@ -10,13 +10,13 @@ const seen = Symbol("observedWorkersTest/seen");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [value]: { type: number };
-        [seen]: { type: number };
+        [value]: typeof valueTraits;
+        [seen]: typeof seenTraits;
     }
 }
 
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(seen, { type: { type: "number", precision: 1 } });
+const valueTraits = Component.register(value, { type: { type: "number", precision: 1 } });
+const seenTraits = Component.register(seen, { type: { type: "number", precision: 1 } });
 
 const seed = System.create({ name: "observedWorkersTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn([value, seen])({ [value]: i, [seen]: 0 });

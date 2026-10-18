@@ -17,25 +17,25 @@ const other = Symbol("typesFinalizerTest/other");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [node]: { type: HTMLElement; thread: "main" };
-        [label]: { type: string };
-        [slot]: { type: number; derived: true };
-        [mark]: { type: true; derived: true };
-        [other]: { type: true; derived: true };
+        [node]: typeof nodeTraits;
+        [label]: typeof labelTraits;
+        [slot]: typeof slotTraits;
+        [mark]: typeof markTraits;
+        [other]: typeof otherTraits;
     }
     export interface Resources {
-        [total]: { type: number; reduce: "+" };
-        [time]: { type: number };
+        [total]: typeof totalTraits;
+        [time]: typeof timeTraits;
     }
 }
 
-Component.register(node, { thread: "main" });
-Component.register(label, { type: { type: "string" } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(time, { type: { type: "number", default: 0 } });
-Component.register(mark, { type: { const: true }, derived: true });
-Component.register(other, { type: { const: true }, derived: true });
+const nodeTraits = Component.register(node, { type: Component.object<HTMLElement>(), thread: "main" });
+const labelTraits = Component.register(label, { type: { type: "string" } });
+const slotTraits = Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+const totalTraits = Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+const timeTraits = Resource.register(time, { type: { type: "number", default: 0 } });
+const markTraits = Component.register(mark, { type: { const: true }, derived: true });
+const otherTraits = Component.register(other, { type: { const: true }, derived: true });
 
 /** Declares as an untyped caller would, bypassing the types' checks. */
 const untyped = (constructor: (...parameters: never[]) => unknown, declaration: object): unknown => Reflect.apply(constructor, undefined, [declaration, () => {}]);

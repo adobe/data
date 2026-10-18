@@ -14,26 +14,37 @@ const flags = Symbol("typesResourceTest/flags");
 
 declare module "@adobe/data-ecs" {
     export interface Resources {
-        [time]: { type: number };
-        [symbol]: { type: boolean };
-        [shared]: { type: true };
-        [cache]: { type: Map<string, number>; thread: "main" };
-        [port]: { type: MessagePort | null; transfer: true };
-        [total]: { type: number; reduce: "+" };
-        [flags]: { type: boolean; reduce: "|" };
+        [time]: typeof timeTraits;
+        [symbol]: typeof symbolTraits;
+        [shared]: typeof sharedTraits;
+        [cache]: typeof cacheTraits;
+        [port]: typeof portTraits;
+        [total]: typeof totalTraits;
+        [flags]: typeof flagsTraits;
     }
     export interface Components {
-        [shared]: { type: true };
+        [shared]: typeof sharedTraits;
     }
 }
 
+const timeTraits = Resource.register(time, { type: { type: "number", default: 0 } });
+const symbolTraits = Resource.register(symbol, { type: { type: "boolean", default: false } });
+// @ts-expect-error a key declared as both a component and a resource can't be registered as either
+const sharedTraits = Component.register(shared, { type: { const: true } });
+const cacheTraits = Resource.register(cache, { type: Resource.object<Map<string, number>>(), default: new Map(), thread: "main" });
+const portTraits = Resource.register(port, { type: Resource.object<MessagePort | null>(), transfer: true });
+const totalTraits = Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+const flagsTraits = Resource.register(flags, { type: { type: "boolean", default: false }, reduce: "|" });
+
+const untyped: (...parameters: never[]) => unknown = Resource.register;
+
 /** Registers as an untyped caller would, bypassing the types' checks. */
-const register = (key: unknown, declaration: object): void => Reflect.apply(Resource.register, undefined, [key, declaration]);
+const register = (key: unknown, declaration: object): void => {
+    Reflect.apply(untyped, undefined, [key, declaration]);
+};
 
 describe("Resource.register", () => {
     it("records the declaration by its symbol, which needs no description", () => {
-        Resource.register(time, { type: { type: "number", default: 0 } });
-        Resource.register(symbol, { type: { type: "boolean", default: false } });
         expect(declarationOf(time)).toEqual({ type: { type: "number", default: 0 } });
         expect(declarationOf(symbol)).toEqual({ type: { type: "boolean", default: false } });
         expect(kindOf(symbol)).toBe("resource");
@@ -47,8 +58,6 @@ describe("Resource.register", () => {
     it("accepts the same declaration again, and rejects a different one or one also declared as a component", () => {
         expect(() => Resource.register(time, { type: { type: "number", default: 0 } })).not.toThrow();
         expect(() => Resource.register(time, { type: { type: "number", default: 1 } })).toThrow(`Cannot register resource "typesResourceTest/time": already registered as a resource, with another declaration.`);
-        // @ts-expect-error a key declared as both a component and a resource can't be registered as either
-        Component.register(shared, { type: { const: true } });
         // @ts-expect-error a key declared as both a component and a resource can't be registered as either
         expect(() => Resource.register(shared, { type: { const: true, default: true } })).toThrow("already registered as a component");
     });
@@ -67,16 +76,14 @@ describe("Resource.register", () => {
         expect([cadence, always, wake, clock, report].map(name => threadOfDeclaration(declarationOf(name) ?? {}))).toEqual(["world", null, null, null, "world"]);
     });
     it("checks thread and transfer as far as values tell", () => {
-        Resource.register(cache, { default: new Map(), thread: "main" });
+        expect(declarationOf(cache)).toEqual({ default: new Map(), thread: "main" });
         expect(threadOfDeclaration(declarationOf(cache) ?? {})).toBe("main");
-        Resource.register(port, { transfer: true });
+        expect(declarationOf(port)).toEqual({ transfer: true });
         expect(() => register(Symbol("typesResourceTest/buffer"), { default: new ArrayBuffer(8), transfer: true })).not.toThrow();
         expect(() => register(Symbol("typesResourceTest/map"), { default: new Map(), transfer: true })).toThrow("its value isn't Transferable");
         expect(() => register(Symbol("typesResourceTest/count"), { type: { type: "number", default: 0 }, thread: "main" })).toThrow("a struct lives in shared memory");
     });
     it("checks reductions", () => {
-        Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-        Resource.register(flags, { type: { type: "boolean", default: false }, reduce: "|" });
         expect(() => register(Symbol("typesResourceTest/badOperator"), { type: { type: "number", default: 0 }, reduce: "-" })).toThrow('reduce is one of "+"');
         expect(() => register(Symbol("typesResourceTest/sumFlags"), { type: { type: "boolean", default: false }, reduce: "+" })).toThrow('booleans reduce with "&", "|" or "^"');
         expect(() => register(Symbol("typesResourceTest/text"), { type: { type: "string", default: "" }, reduce: "max" })).toThrow("a reduced resource is a struct");

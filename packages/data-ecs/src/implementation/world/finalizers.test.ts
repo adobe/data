@@ -31,39 +31,45 @@ const reloaded = Symbol("finalizersTest/reloaded");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [reloaded]: { type: number };
-        [handle]: { type: number };
-        [hidden]: { type: true };
-        [source]: { type: number };
-        [slot]: { type: number; derived: true };
-        [parent]: { type: Entity; reference: "owner" };
-        [label]: { type: string };
-        [late]: { type: number };
-        [counted]: { type: number };
-        [pendingHandle]: { type: number };
-        [respawned]: { type: number };
-        [ordered]: { type: number };
-        [writing]: { type: number };
-        [disposing]: { type: number };
+        [reloaded]: typeof reloadedTraits;
+        [handle]: typeof handleTraits;
+        [hidden]: typeof hiddenTraits;
+        [source]: typeof sourceTraits;
+        [slot]: typeof slotTraits;
+        [parent]: typeof parentTraits;
+        [label]: typeof labelTraits;
+        [late]: typeof lateTraits;
+        [counted]: typeof countedTraits;
+        [pendingHandle]: typeof pendingHandleTraits;
+        [respawned]: typeof respawnedTraits;
+        [ordered]: typeof orderedTraits;
+        [writing]: typeof writingTraits;
+        [disposing]: typeof disposingTraits;
     }
     export interface Resources {
-        [released]: { type: number };
-        [level]: { type: number };
-        [written]: { type: number };
+        [released]: typeof releasedTraits;
+        [level]: typeof levelTraits;
+        [written]: typeof writtenTraits;
     }
 }
 
-Component.register(handle, { type: { type: "number" } });
-Component.register(hidden, { type: { const: true } });
-Component.register(source, { type: { type: "number" } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(label, { type: { type: "string" } });
-Component.register(late, { type: { type: "number" } });
-Resource.register(released, { type: { type: "number", default: 0 } });
-Resource.register(level, { type: { type: "number", default: 0 } });
-Resource.register(written, { type: { type: "number", default: 0 } });
-for (const key of [counted, pendingHandle, respawned, ordered, writing, disposing, reloaded] as const) Component.register(key, { type: { type: "number" } });
+const handleTraits = Component.register(handle, { type: { type: "number" } });
+const hiddenTraits = Component.register(hidden, { type: { const: true } });
+const sourceTraits = Component.register(source, { type: { type: "number" } });
+const slotTraits = Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
+const labelTraits = Component.register(label, { type: { type: "string" } });
+const lateTraits = Component.register(late, { type: { type: "number" } });
+const releasedTraits = Resource.register(released, { type: { type: "number", default: 0 } });
+const levelTraits = Resource.register(level, { type: { type: "number", default: 0 } });
+const writtenTraits = Resource.register(written, { type: { type: "number", default: 0 } });
+const countedTraits = Component.register(counted, { type: { type: "number" } });
+const pendingHandleTraits = Component.register(pendingHandle, { type: { type: "number" } });
+const respawnedTraits = Component.register(respawned, { type: { type: "number" } });
+const orderedTraits = Component.register(ordered, { type: { type: "number" } });
+const writingTraits = Component.register(writing, { type: { type: "number" } });
+const disposingTraits = Component.register(disposing, { type: { type: "number" } });
+const reloadedTraits = Component.register(reloaded, { type: { type: "number" } });
 
 Rule.create({ name: "finalizersTest/slots", components: { has: [source] }, derive: [slot] });
 

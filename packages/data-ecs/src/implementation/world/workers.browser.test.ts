@@ -10,7 +10,7 @@ import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
 
 type Vec2 = readonly [number, number];
-const vec2: Schema.ForType<Vec2> = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 };
+const vec2 = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } as const satisfies Schema;
 
 const position = Symbol("workersTest/position");
 const velocity = Symbol("workersTest/velocity");
@@ -31,32 +31,40 @@ const seconds = Symbol("workersTest/seconds");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: { type: Vec2 };
-        [velocity]: { type: Vec2 };
-        [target]: { type: Entity };
-        [offset]: { type: number };
-        [spawned]: { type: true };
-        [tagA]: { type: true };
-        [tagB]: { type: true };
-        [tagC]: { type: true };
-        [tagD]: { type: true };
-        [tagE]: { type: true };
-        [tagF]: { type: true };
-        [tagG]: { type: true };
-        [tagH]: { type: true };
-        [tagI]: { type: true };
+        [position]: typeof positionTraits;
+        [velocity]: typeof velocityTraits;
+        [target]: typeof targetTraits;
+        [offset]: typeof offsetTraits;
+        [spawned]: typeof spawnedTraits;
+        [tagA]: typeof tagATraits;
+        [tagB]: typeof tagBTraits;
+        [tagC]: typeof tagCTraits;
+        [tagD]: typeof tagDTraits;
+        [tagE]: typeof tagETraits;
+        [tagF]: typeof tagFTraits;
+        [tagG]: typeof tagGTraits;
+        [tagH]: typeof tagHTraits;
+        [tagI]: typeof tagITraits;
     }
     export interface Resources {
-        [seconds]: { type: number };
+        [seconds]: typeof secondsTraits;
     }
 }
 
-Component.register(position, { type: vec2 });
-Component.register(velocity, { type: vec2 });
-Component.register(target, { type: Entity.schema });
-Component.register(offset, { type: { type: "number", precision: 1 } });
-Component.register(spawned, { type: { const: true } });
-for (const tag of tags) Component.register(tag, { type: { const: true } });
+const positionTraits = Component.register(position, { type: vec2 });
+const velocityTraits = Component.register(velocity, { type: vec2 });
+const targetTraits = Component.register(target, { type: Entity.schema });
+const offsetTraits = Component.register(offset, { type: { type: "number", precision: 1 } });
+const spawnedTraits = Component.register(spawned, { type: { const: true } });
+const tagATraits = Component.register(tagA, { type: { const: true } });
+const tagBTraits = Component.register(tagB, { type: { const: true } });
+const tagCTraits = Component.register(tagC, { type: { const: true } });
+const tagDTraits = Component.register(tagD, { type: { const: true } });
+const tagETraits = Component.register(tagE, { type: { const: true } });
+const tagFTraits = Component.register(tagF, { type: { const: true } });
+const tagGTraits = Component.register(tagG, { type: { const: true } });
+const tagHTraits = Component.register(tagH, { type: { const: true } });
+const tagITraits = Component.register(tagI, { type: { const: true } });
 
 /** 64 entities in each of the 512 archetypes the tags combine into. */
 const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) => {
@@ -66,7 +74,7 @@ const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) =>
         commands.spawn(components)({ [position]: [i, 0], [velocity]: [1, i % 5] });
     }
 });
-Resource.register(seconds, { type: { type: "number", default: 0.25 } });
+const secondsTraits = Resource.register(seconds, { type: { type: "number", default: 0.25 } });
 
 /** Spawns `count` moving entities, each following the one before it. */
 const seed = System.create({ name: "workersTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {

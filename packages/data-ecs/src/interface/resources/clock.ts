@@ -8,10 +8,10 @@ export const clock = Symbol("clock");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {
-        [clock]: { type: { readonly now: number; readonly delta: number; readonly tick: number } };
+        [clock]: typeof clockTraits;
     }
 }
 
-Resource.register(clock, {
+const clockTraits = Resource.register(clock, {
     type: { type: "object", properties: { now: { type: "number" }, delta: { type: "number" }, tick: { type: "number" } }, default: { now: 0, delta: 0, tick: 0 } },
 });

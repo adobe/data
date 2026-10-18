@@ -8,22 +8,22 @@ const hidden = Symbol("hidden");
 const drawn = Symbol("drawn");
 const layer = Symbol("layer");
 
+const meshTraits = Component.register(mesh, { type: { type: "number" } });
+const spriteTraits = Component.register(sprite, { type: { type: "number" } });
+const hiddenTraits = Component.register(hidden, { type: { const: true } });
+// Only rules add derived components, starting at their default.
+const drawnTraits = Component.register(drawn, { type: { const: true }, derived: true });
+const layerTraits = Component.register(layer, { type: { type: "number", default: 1 }, derived: true });
+
 declare module "@adobe/data-ecs" {
     interface Components {
-        [mesh]: { type: number };
-        [sprite]: { type: number };
-        [hidden]: { type: true };
-        [drawn]: { type: true; derived: true };
-        [layer]: { type: number; derived: true };
+        [mesh]: typeof meshTraits;
+        [sprite]: typeof spriteTraits;
+        [hidden]: typeof hiddenTraits;
+        [drawn]: typeof drawnTraits;
+        [layer]: typeof layerTraits;
     }
 }
-
-Component.register(mesh, { type: { type: "number" } });
-Component.register(sprite, { type: { type: "number" } });
-Component.register(hidden, { type: { const: true } });
-// Only rules add derived components, starting at their default.
-Component.register(drawn, { type: { const: true }, derived: true });
-Component.register(layer, { type: { type: "number", default: 1 }, derived: true });
 
 // Entities matching a rule have what it derives, only while they match.
 Rule.create({ components: { has: [mesh], not: [hidden] }, derive: [drawn] });

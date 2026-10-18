@@ -9,14 +9,14 @@ const label = Symbol("kernelLookupTest/label");
 const offset = Symbol("kernelLookupTest/offset");
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [target]: { type: Entity };
-        [label]: { type: string };
-        [offset]: { type: number };
+        [target]: typeof targetTraits;
+        [label]: typeof labelTraits;
+        [offset]: typeof offsetTraits;
     }
 }
-Component.register(target, { type: Entity.schema });
-Component.register(label, { type: { type: "string" } });
-Component.register(offset, { type: { type: "number", precision: 1 } });
+const targetTraits = Component.register(target, { type: Entity.schema });
+const labelTraits = Component.register(label, { type: { type: "string" } });
+const offsetTraits = Component.register(offset, { type: { type: "number", precision: 1 } });
 
 export const labels = System.create({
     name: "kernelLookupTest/labels",

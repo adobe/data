@@ -14,7 +14,7 @@ import { count, read, readEntity, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 type Vec3 = readonly [number, number, number];
-const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
+const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
 const position = Symbol("commandsTest/position");
 const score = Symbol("commandsTest/score");
 const health = Symbol("commandsTest/health");
@@ -31,32 +31,35 @@ const bit3 = Symbol("commandsTest/bit3");
 const bits = [bit0, bit1, bit2, bit3] as const;
 declare module "@adobe/data-ecs" {
     export interface Components {
-        [position]: { type: Vec3 };
-        [score]: { type: number };
-        [health]: { type: number };
-        [label]: { type: string | null };
-        [tag]: { type: true };
-        [other]: { type: true };
-        [slot]: { type: number; derived: true };
+        [position]: typeof positionTraits;
+        [score]: typeof scoreTraits;
+        [health]: typeof healthTraits;
+        [label]: typeof labelTraits;
+        [tag]: typeof tagTraits;
+        [other]: typeof otherTraits;
+        [slot]: typeof slotTraits;
         [unregistered]: { type: number };
-        [bit0]: { type: true };
-        [bit1]: { type: true };
-        [bit2]: { type: true };
-        [bit3]: { type: true };
+        [bit0]: typeof bit0Traits;
+        [bit1]: typeof bit1Traits;
+        [bit2]: typeof bit2Traits;
+        [bit3]: typeof bit3Traits;
     }
     export interface Resources {
-        [level]: { type: number };
+        [level]: typeof levelTraits;
     }
 }
-Component.register(position, { type: vec3 });
-Component.register(score, { type: { type: "number", precision: 1 } });
-Component.register(health, { type: { type: "number" } });
-Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Component.register(tag, { type: { const: true } });
-Component.register(other, { type: { const: true } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-for (const bit of bits) Component.register(bit, { type: { const: true } });
-Resource.register(level, { type: { type: "number", default: 0 } });
+const positionTraits = Component.register(position, { type: vec3 });
+const scoreTraits = Component.register(score, { type: { type: "number", precision: 1 } });
+const healthTraits = Component.register(health, { type: { type: "number" } });
+const labelTraits = Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
+const tagTraits = Component.register(tag, { type: { const: true } });
+const otherTraits = Component.register(other, { type: { const: true } });
+const slotTraits = Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+const bit0Traits = Component.register(bit0, { type: { const: true } });
+const bit1Traits = Component.register(bit1, { type: { const: true } });
+const bit2Traits = Component.register(bit2, { type: { const: true } });
+const bit3Traits = Component.register(bit3, { type: { const: true } });
+const levelTraits = Resource.register(level, { type: { type: "number", default: 0 } });
 Rule.create({ name: "commandsTest/slots", components: { has: [other, score] }, derive: [slot] });
 
 const unit = Archetype.create([position, score, tag]);

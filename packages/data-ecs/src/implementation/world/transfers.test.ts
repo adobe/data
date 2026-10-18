@@ -5,7 +5,7 @@ import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { asEntity } from "./entities.js";
 import { peersOf } from "./join.js";
-import { attachHere, attachThere, greetThere, kept, mark, marks, spawnHere, storeHere, storeThere, stored } from "./transfers.test-helper.js";
+import { attachHere, attachThere, greetThere, kept, mark, marks, spawnHere, storeHere, storeThere, stored, unregistered } from "./transfers.test-helper.js";
 
 // Transfers, with the world, the thread filling "transfersTest" and a thread filling none on this one, joined through
 // MessageChannels: a run's Transferable input moves to the thread its system runs on.
@@ -128,6 +128,16 @@ describe("transfers", () => {
         expect((await loader.run(attachThere, { entity: dead, value: there.port1 })).dropped).toBe(1);
         expect((await loader.run(attachHere, { entity: dead, value: here.port1 })).dropped).toBe(1);
         expect(await Promise.all(closes)).toEqual([true, true]);
+        await loader.dispose();
+        await filler.dispose();
+        await world.dispose();
+    });
+    it("release what moved for a run that never ran there", async () => {
+        const { world, filler, loader } = await joined();
+        const channel = new MessageChannel();
+        const closing = closed(channel.port2);
+        await expect(loader.run(unregistered, { value: channel.port1 })).rejects.toThrow("declares up");
+        expect(await closing).toBe(true);
         await loader.dispose();
         await filler.dispose();
         await world.dispose();

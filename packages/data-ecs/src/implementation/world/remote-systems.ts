@@ -268,10 +268,12 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
             payloadView[base + systemTail] = tails ? system.tail?.block ?? 0 : 0;
             folds += system.foldCount;
         }
-        // An input that moved to the thread is there already: the message names it.
-        if (input) post(isHeld(args)
-            ? { protocol: "@adobe/data-ecs/join@1", kind: "task input", sequence: next, input: undefined, held: [args.from, args.sequence] }
-            : { protocol: "@adobe/data-ecs/join@1", kind: "task input", sequence: next, input: args });
+        // An input that moved to the thread is there already: the message names it, and the task takes it.
+        if (input && isHeld(args)) {
+            args.taken = true;
+            post({ protocol: "@adobe/data-ecs/join@1", kind: "task input", sequence: next, input: undefined, held: [args.from, args.sequence] });
+        }
+        else if (input) post({ protocol: "@adobe/data-ecs/join@1", kind: "task input", sequence: next, input: args });
         completionView[completionMessage] = 0;
         if (tails) {
             Atomics.store(log.header, logBoundWord, payloadView[payloadSync]);

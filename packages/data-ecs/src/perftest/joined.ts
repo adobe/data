@@ -7,6 +7,8 @@ import { counter, empty, order, remoteRuns, type FromJoined, type ToJoined } fro
 import { handoffSystems } from "./handoff.js";
 import { release } from "./finalized.js";
 import { tailSystems } from "./tails.js";
+import { take, transferBatch, transferBytes, transferCount, transferSide, transferSystems } from "./transfers.js";
+import { peersOf } from "../implementation/world/join.js";
 import { programFinalizers, requireDefinition } from "../interface/registry/index.js";
 
 /**
@@ -14,9 +16,11 @@ import { programFinalizers, requireDefinition } from "../interface/registry/inde
  * the thread the handoff benchmarks' systems run on, the one the despawn objects benchmark's finalizer runs on, or the
  * one the tail benchmarks' tails run on.
  */
-type Message = ToJoined | { readonly kind: "port"; readonly port: MessagePort | NodeMessagePort; readonly threads?: readonly ("handoffBenchmark" | "finalizedBenchmark" | "tailsBenchmark")[] };
+type Message = ToJoined
+    | { readonly kind: "port"; readonly port: MessagePort | NodeMessagePort; readonly threads?: readonly ("handoffBenchmark" | "finalizedBenchmark" | "tailsBenchmark" | "transfersBenchmark")[] }
+    | { readonly kind: "transfers" };
 
-const channel = scopeChannel<FromJoined | { readonly kind: "joined" }, Message>();
+const channel = scopeChannel<FromJoined | { readonly kind: "joined" } | { readonly kind: "transferred"; readonly milliseconds: number }, Message>();
 let remote: World | null = null;
 let stop: (() => void) | null = null;
 let last = 0;
@@ -25,7 +29,7 @@ let notified = 0;
 channel.onMessage(async message => {
     if (message.kind === "port") {
         // The systems the handoff benchmarks place on the thread it claims, which it imports so it runs them.
-        if (message.threads !== undefined) for (const system of [...handoffSystems, ...tailSystems]) requireDefinition(system);
+        if (message.threads !== undefined) for (const system of [...handoffSystems, ...tailSystems, ...transferSystems]) requireDefinition(system);
         // The finalizer the despawn benchmark places there, which importing its module declared.
         if (!programFinalizers().some(finalizer => finalizer === release)) throw new Error("joined: the despawn objects benchmark's finalizer isn't declared here.");
         remote = join(message.port, { threads: message.threads ?? [] });
@@ -33,6 +37,23 @@ channel.onMessage(async message => {
         return;
     }
     if (remote === null) return;
+    if (message.kind === "transfers") {
+        // The loader moves each run's values straight to the claimed thread once the world gave it a channel there.
+        const world = remote;
+        while ((peersOf.get(world)?.() ?? 0) === 0) await new Promise(resolve => setTimeout(resolve, 1));
+        const pixels = new ImageData(transferSide, transferSide);
+        const batch = async () => {
+            const assets = await Promise.all(Array.from({ length: transferBatch }, async () => ({ buffer: new ArrayBuffer(transferBytes), bitmap: await createImageBitmap(pixels) })));
+            const start = performance.now();
+            await Promise.all(assets.map(asset => world.run(take, asset)));
+            return performance.now() - start;
+        };
+        await batch();
+        let milliseconds = 0;
+        for (let k = 0; k < transferCount / transferBatch; k++) milliseconds += await batch();
+        channel.post({ kind: "transferred", milliseconds });
+        return;
+    }
     if (message.kind === "runs") {
         for (let k = 0; k < 100; k++) await remote.run(empty);
         let best = Infinity;

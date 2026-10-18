@@ -13,6 +13,8 @@ export const port = Symbol("transfersTest/port");
 export const bitmap = Symbol("transfersTest/bitmap");
 export const portHere = Symbol("transfersTest/portHere");
 export const bitmapHere = Symbol("transfersTest/bitmapHere");
+export const parent = Symbol("transfersTest/parent");
+export const depth = Symbol("transfersTest/depth");
 declare module "@adobe/data-ecs" {
     export interface Threads {
         transfersTest: true;
@@ -22,6 +24,8 @@ declare module "@adobe/data-ecs" {
         [bitmap]: typeof bitmapTraits;
         [portHere]: typeof portHereTraits;
         [bitmapHere]: typeof bitmapHereTraits;
+        [parent]: typeof parentTraits;
+        [depth]: typeof depthTraits;
     }
     export interface Resources {
         [anchor]: typeof anchorTraits;
@@ -36,6 +40,8 @@ const portTraits = Component.register(port, { type: Component.object<MessagePort
 const bitmapTraits = Component.register(bitmap, { type: Component.object<ImageBitmap>(), thread: "transfersTest", transfer: true });
 const portHereTraits = Component.register(portHere, { type: Component.object<MessagePort>(), transfer: true });
 const bitmapHereTraits = Component.register(bitmapHere, { type: Component.object<ImageBitmap>(), transfer: true });
+const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
+const depthTraits = Component.register(depth, { type: { type: "number" } });
 
 const any = { allOf: [] } as const;
 
@@ -88,8 +94,18 @@ export const spawnHere = System.create({ name: "transfersTest/spawnHere", input:
     if (input.value instanceof MessagePort) commands.spawn([portHere])({ [portHere]: input.value });
 });
 
+/**
+ * On "transfersTest", declaring `up`, which runs only on the world's thread: once a joined thread fills
+ * "transfersTest", it fails to register, so a run of it never runs.
+ */
+export const unregistered = System.create({
+    name: "transfersTest/unregistered", input: { type: "object", properties: { value: any } }, components: { read: [port], write: [depth] }, up: { through: parent, read: [depth] },
+}, (row, { input, up }) => {
+    row[depth] = (up === null ? 0 : up[depth]) + (row[port] === input.value ? 1 : 0);
+});
+
 /** On the world's thread: nothing, a run of its own. */
 export const idle = System.create({ name: "transfersTest/idle" }, () => {});
 
 /** Every system the joined threads run or place, which they import so the world can place them there. */
-export const transferSystems: readonly { readonly name: string }[] = [storeThere, storeHere, mark, attachThere, attachHere, spawnHere, greetThere];
+export const transferSystems: readonly { readonly name: string }[] = [storeThere, storeHere, mark, attachThere, attachHere, spawnHere, greetThere, unregistered];

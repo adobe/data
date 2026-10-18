@@ -19,7 +19,7 @@ import { createTaskChannel, type TaskChannel } from './remote-systems.js';
 import { endStops } from './stop-lists.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { idOf, type Key, type State } from './state.js';
-import { heldInput } from './transfers.js';
+import { heldInput, type HeldInput } from './transfers.js';
 
 type Notify = (value: unknown) => void;
 type Subscribe = (notify: Notify) => () => void;
@@ -182,9 +182,9 @@ export const createSharing = (host: SharingHost) => {
     const reject = (thread: Joined, sequence: number, text: string): void =>
         finish(thread, sequence, rejected, { protocol: protocolName, kind: "rejected", sequence, message: text });
 
-    /** Run `sequence` of `thread`, whose input moved to `holder`, finished: what of it no task took is released there. */
-    const released = (holder: Joined | null, thread: Joined, sequence: number): void => {
-        if (holder !== null && holder.status === "joined") post(holder, { protocol: protocolName, kind: "release", from: thread.number, sequence });
+    /** Run `sequence` of `thread`, whose input moved to `holder`, finished: if no task there took it, it's released there. */
+    const released = (holder: Joined | null, thread: Joined, sequence: number, held: HeldInput | null = null): void => {
+        if (holder !== null && holder.status === "joined" && held?.taken !== true) post(holder, { protocol: protocolName, kind: "release", from: thread.number, sequence });
     };
 
     /** The joined thread holding a run's moved input, its claims made, by the number its slot names; null once it's gone. */
@@ -220,11 +220,13 @@ export const createSharing = (host: SharingHost) => {
             if (holder !== null && holder !== thread && thread.moved.get(sequence) !== holder) return;
             thread.next++;
             const input = bytes === inputByMessage ? thread.inputs.get(sequence) : undefined;
-            thread.inputs.delete(sequence);
-            thread.moved.delete(sequence);
-            if (bytes === inputMoved && holder === null) {
-                reject(thread, sequence, "The run's input moved to a joined thread that's gone.");
-                continue;
+            if (bytes === inputByMessage) thread.inputs.delete(sequence);
+            else if (bytes === inputMoved) {
+                thread.moved.delete(sequence);
+                if (holder === null) {
+                    reject(thread, sequence, "The run's input moved to a joined thread that's gone.");
+                    continue;
+                }
             }
             const definition = typeof named.value === "object" && named.value !== null ? named.value : null;
             if (definition === null) {
@@ -233,8 +235,8 @@ export const createSharing = (host: SharingHost) => {
                 continue;
             }
             const layout = bytes >= 0 && definition.kind !== "composite" ? inputLayoutOf(definition, definition.declaration.input) : null;
-            const value = holder !== null && holder.tasks !== null ? heldInput(thread.number, sequence, holder.tasks)
-                : layout !== null && layout.kind === "linear" ? layout.read(thread.views[slot], 0) : input;
+            const held = holder !== null && holder.tasks !== null ? heldInput(thread.number, sequence, holder.tasks) : null;
+            const value = held ?? (layout !== null && layout.kind === "linear" ? layout.read(thread.views[slot], 0) : input);
             let ran: Promise<Report>;
             try {
                 ran = host.run(definition, value);
@@ -248,7 +250,7 @@ export const createSharing = (host: SharingHost) => {
                 report => isClean(report) ? finish(thread, sequence, clean, null) : finish(thread, sequence, reported, { protocol: protocolName, kind: "report", sequence, report }),
                 error => reject(thread, sequence, messageOf(error)),
             );
-            if (holder !== null) void settled.then(() => released(holder, thread, sequence));
+            if (held !== null) void settled.then(() => released(holder, thread, sequence, held));
         }
     };
 

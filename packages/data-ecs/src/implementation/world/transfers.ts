@@ -87,14 +87,15 @@ export const releaseInput = (input: unknown): void => {
 
 /**
  * On the world's thread, a run's input held on the joined thread its system runs on, which moved it there: the joined
- * thread that ran it, by number, the run's sequence there, and the channel of the thread holding it.
+ * thread that ran it, by number, the run's sequence there, the channel of the thread holding it, and whether a task
+ * there took it, so what none took is released once the run finishes.
  */
-export type HeldInput = { readonly from: number; readonly sequence: number; readonly channel: TaskChannel };
+export type HeldInput = { readonly from: number; readonly sequence: number; readonly channel: TaskChannel; taken: boolean };
 
 const held = new WeakSet<object>();
 
 export const heldInput = (from: number, sequence: number, channel: TaskChannel): HeldInput => {
-    const input: HeldInput = { from, sequence, channel };
+    const input: HeldInput = { from, sequence, channel, taken: false };
     held.add(input);
     return input;
 };

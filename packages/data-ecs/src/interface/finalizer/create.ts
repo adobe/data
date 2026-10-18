@@ -1,7 +1,7 @@
 import { declarationOf, kindOf, labelOf } from '../registry/names.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
-import { nameOf } from '../registry/items.js';
-import { addFinalizer } from '../registry/program.js';
+import { firstItemOf, labelOfItem, nameOf } from '../registry/items.js';
+import { addFinalizer, programFinalizers } from '../registry/program.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
 import type { Resource } from '../resource/resource.js';
@@ -13,6 +13,7 @@ import type { ChangeSet, Context, Row, Watched } from './body.js';
 import type { Changes, Leaf } from './created.js';
 import type { ChangesDeclaration, Declaration } from './declaration.js';
 import type { Finalizer } from './finalizer.js';
+import type { Finalizer as Registered } from './created.js';
 
 /** A resource in `write` is readable too, so it isn't also in `read`. */
 type Validate<D extends Declaration | ChangesDeclaration> =
@@ -45,12 +46,29 @@ const checkResources = (name: string, resources: { readonly read?: readonly Key[
     }
 };
 
+/** The thread a registered finalizer runs on: a changes finalizer, and one using no objects, on the world's. */
+const runsOn = (finalizer: Registered): string => finalizer.kind === "finalizer" ? threadOf(finalizer.declaration, "Finalizer", finalizer.name) ?? "world" : "world";
+
+/** Throws for a finalizer ordered with one on another thread: they run at different times. */
+const checkOrder = (name: string, thread: string, declaration: { readonly before?: readonly Finalizer[]; readonly after?: readonly Finalizer[] }): void => {
+    for (const other of [...declaration.before ?? [], ...declaration.after ?? []]) {
+        const first = firstItemOf(other);
+        const found = programFinalizers().find(finalizer => firstItemOf(finalizer) === first);
+        if (found === undefined) continue;
+        const theirs = runsOn(found);
+        if (theirs !== thread) {
+            throw new Error(`Finalizer "${name}" runs on thread "${thread}" and is ordered with "${labelOfItem(found)}", which runs on thread "${theirs}"; finalizers on different threads run at different times, so neither is ordered before the other.`);
+        }
+    }
+};
+
 /**
  * Declares a finalizer for each entity that stops matching its components, which applies in every world, and returns
  * it. It runs on the thread its object components and resources live on: on another than the world's, after the sync
  * point, issuing no commands. Throws if it names a component or resource that isn't registered as one, lists a
  * resource in both `read` and `write`, writes a reduced one, uses object values of different threads, writes resources
- * or looks up entities on another thread than the world's, or is ordered in a cycle or with a resource conflict.
+ * or looks up entities on another thread than the world's, or is ordered with a finalizer on another thread, in a cycle
+ * or with a resource conflict.
  */
 export const create = <const D extends Declaration>(
     declaration: D & Validate<D> & OneThread<ThreadsOf<D>> & Remote<D>,
@@ -66,6 +84,7 @@ export const create = <const D extends Declaration>(
         if ((declaration.resources?.write?.length ?? 0) > 0) throw new Error(`Finalizer "${name}" runs on thread "${thread}" and writes resources; ${elsewhere} writes none.`);
         if (Object.keys(declaration.lookup ?? {}).length > 0) throw new Error(`Finalizer "${name}" runs on thread "${thread}" and looks up other entities; ${elsewhere} looks up none.`);
     }
+    checkOrder(name, thread ?? "world", declaration);
     requireRegistered("Finalizer", name, "component", declaration.components.has);
     requireRegistered("Finalizer", name, "component", declaration.components.not);
     for (const lookupName in declaration.lookup) {
@@ -100,5 +119,6 @@ export const changes = <const D extends ChangesDeclaration>(
     }
     const thread = threadOf({ components: { read: declaration.watch }, resources: declaration.resources, lookup: declaration.lookup }, "Finalizer", name);
     if (thread !== null && thread !== "world") throw new Error(`Finalizer "${name}" watches or reads values on thread "${thread}"; a changes finalizer runs on the world's thread, in the sync point.`);
+    checkOrder(name, "world", declaration);
     return addFinalizer(finalizer, id);
 };

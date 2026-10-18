@@ -96,8 +96,18 @@ describe("Finalizer.create and Finalizer.changes", () => {
         expect(() => untyped(Finalizer.changes, { name: "typesFinalizerTest/savePageOnly", resources: { read: [page] } }))
             .toThrow(`Finalizer "typesFinalizerTest/savePageOnly" watches or reads values on thread "main"; a changes finalizer runs on the world's thread, in the sync point.`);
         // Reading another thread's values, without writing or looking up, it's created.
-        Finalizer.create({ name: "typesFinalizerTest/detach", components: { read: [node] }, resources: { read: [page] } }, () => {});
+        const detach = Finalizer.create({ name: "typesFinalizerTest/detach", components: { read: [node] }, resources: { read: [page] } }, () => {});
         expect(programFinalizers()).toHaveLength(8);
+        // Finalizers on different threads run at different times, so neither is ordered before the other.
+        const late = programFinalizers().find(finalizer => finalizer.name === "typesFinalizerTest/late");
+        expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/afterDetach", components: { read: [label] }, after: [detach] }))
+            .toThrow(`Finalizer "typesFinalizerTest/afterDetach" runs on thread "world" and is ordered with "typesFinalizerTest/detach", which runs on thread "main"; finalizers on different threads run at different times, so neither is ordered before the other.`);
+        expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/beforeLate", components: { read: [node] }, before: [late] }))
+            .toThrow(`Finalizer "typesFinalizerTest/beforeLate" runs on thread "main" and is ordered with "typesFinalizerTest/late", which runs on thread "world"`);
+        expect(() => untyped(Finalizer.changes, { name: "typesFinalizerTest/saveAfterDetach", watch: [label], after: [detach] }))
+            .toThrow(`Finalizer "typesFinalizerTest/saveAfterDetach" runs on thread "world" and is ordered with "typesFinalizerTest/detach"`);
+        Finalizer.create({ name: "typesFinalizerTest/detachAgain", components: { read: [node] }, after: [detach] }, () => {});
+        expect(programFinalizers()).toHaveLength(9);
     });
 });
 

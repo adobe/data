@@ -3,7 +3,8 @@ import type { Archetype, Storage } from './archetype.js';
 import { readCell } from './cells.js';
 import { asEntity, locate } from './entities.js';
 import { entriesOf, idOf, metIdOf, type Key, type State } from './state.js';
-import { newestKeyOf } from '../../interface/registry/index.js';
+import { labelOf, newestKeyOf } from '../../interface/registry/index.js';
+import type { MoveLog } from './move-log.js';
 
 const operators = new Set(["==", "!=", "<", ">", "<=", ">="]);
 
@@ -93,14 +94,24 @@ export const compileQuery = (state: State, query: QueryOptions): CompiledQuery =
     if (page !== undefined && !(isCount(page.offset) && isCount(page.limit))) {
         throw new Error(`A query's page needs a non-negative integer offset and limit, not ${String(page.offset)} and ${String(page.limit)}.`);
     }
+    /** The id of a component the query reads values of, which a joined thread's objects aren't here. */
+    const readId = (key: Key): number => {
+        const id = idOf(state, key);
+        if (state.remote[id] !== undefined) throw elsewhere(state, id);
+        return id;
+    };
     return {
         required: (query.required ?? []).map(key => idOf(state, key)),
         not: (query.not ?? []).map(key => idOf(state, key)),
-        where: query.where === undefined ? [] : entriesOf(query.where).map(([key, condition]) => ({ id: idOf(state, key), test: predicateOf(condition) })),
-        order: query.order === undefined ? [] : entriesOf(query.order).map(([key, ascending]) => ({ id: idOf(state, key), ascending: ascending !== false })),
+        where: query.where === undefined ? [] : entriesOf(query.where).map(([key, condition]) => ({ id: readId(key), test: predicateOf(condition) })),
+        order: query.order === undefined ? [] : entriesOf(query.order).map(([key, ascending]) => ({ id: readId(key), ascending: ascending !== false })),
         page: page === undefined ? null : { offset: page.offset, limit: page.limit },
     };
 };
+
+/** An observer here reading a joined thread's objects: only an observer on that thread reads them. */
+export const elsewhere = (state: State, id: number): Error =>
+    new Error(`An observer reads "${labelOf(state.keys[id])}", an object a joined thread fills, which only an observer there reads.`);
 
 /** Whether a query's entities may be in an archetype, whatever its rows. */
 export const matchesArchetype = (archetype: Archetype, query: CompiledQuery): boolean =>
@@ -329,14 +340,18 @@ export const countOf = (state: State, query: CompiledQuery): number => {
 export type EntityOptions = { readonly required?: readonly Key[]; readonly optional?: readonly Key[] };
 
 /** A live entity's required components and the optional ones it has, or every one without options; `null` if it's dead or lacks a required one. */
-export const readEntity = (state: State, entity: Entity, options: EntityOptions | undefined): object | null => {
+export const readEntity = (state: State, entity: Entity, options: EntityOptions | undefined, owner: MoveLog | null = null): object | null => {
     const index = locate(state.entities, entity);
     if (index < 0) return null;
     const archetype = state.archetypes[state.entities.archetype[index]];
     const row = state.entities.row[index];
     const values: { [key: Key]: unknown } = {};
     if (options === undefined) {
-        for (const storage of archetype.storages) values[newestKeyOf(state.keys[storage.component])] = readCell(storage, row);
+        // A joined thread's objects are there: for its own observer, present, with their values read there.
+        for (const storage of archetype.storages) {
+            if (storage.remote === null) values[newestKeyOf(state.keys[storage.component])] = readCell(storage, row);
+            else if (storage.remote === owner) values[newestKeyOf(state.keys[storage.component])] = undefined;
+        }
         return values;
     }
     for (const key of options.required ?? []) {

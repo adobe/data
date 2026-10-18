@@ -7,7 +7,20 @@ import { triggersOf } from './program.js';
 import { ensureResources, findResource } from './resources.js';
 import { idOf, metIdOf, type Key, type State } from './state.js';
 import { restratify } from './structure.js';
-import { labelOf } from '../../interface/registry/index.js';
+import { labelOf, threadOf } from '../../interface/registry/index.js';
+
+/** Why a finalizer doesn't run: its thread is one a joined thread claims, where finalizers don't run yet. */
+export const unplacedFinalizer = (name: string, thread: string): string =>
+    `Finalizer "${name}" runs on thread "${thread}", which a joined thread fills; finalizers don't run on joined threads yet.`;
+
+/** A program finalizer on one of `threads`, as the reason a joined thread can't claim them; null for none. */
+export const finalizerOn = (threads: readonly string[]): string | null => {
+    for (const finalizer of programFinalizers()) {
+        const thread = threadOf(finalizer.declaration, "Finalizer", finalizer.name);
+        if (thread !== null && threads.includes(thread)) return unplacedFinalizer(finalizer.name, thread);
+    }
+    return null;
+};
 
 const resourcesOf = (finalizer: Finalizer): readonly Key[] => [...finalizer.declaration.resources?.read ?? [], ...finalizer.declaration.resources?.write ?? []];
 
@@ -49,6 +62,15 @@ export const activate = (state: State): void => {
         for (const finalizer of programFinalizers()) {
             // A finalizer added during a run waits for its resources, which are added between runs.
             if (activated.has(finalizer) || !ready(state, finalizer) || resourcesOf(finalizer).some(key => findResource(state, key) === undefined)) continue;
+            // One a joined thread would run doesn't activate while it's claimed; the sync point reports it once.
+            const thread = state.claimed ? threadOf(finalizer.declaration, "Finalizer", finalizer.name) : null;
+            if (thread !== null && state.claims.has(thread)) {
+                if (!state.unplacedSeen.has(finalizer)) {
+                    state.unplacedSeen.add(finalizer);
+                    state.unplaced.push({ finalizer, error: new Error(unplacedFinalizer(finalizer.name, thread)) });
+                }
+                continue;
+            }
             activated.add(finalizer);
             runners.set(finalizer, createFinalizerRunner(state, finalizer));
         }

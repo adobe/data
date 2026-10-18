@@ -9,7 +9,7 @@ import type { GpuEngine } from './gpu.js';
 import type { Queued } from './synchronize.js';
 import type { IndexChanges } from './cascade.js';
 import { createEntities, type Entities, type Reserved } from './entities.js';
-import type { FinalizerRunner } from './finalizers.js';
+import type { FinalizerRunner, Thrown } from './finalizers.js';
 import { createPlan, type Plan } from './plan.js';
 import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
 import { layoutOf, type Layout } from '../../interface/registry/layout.js';
@@ -17,6 +17,8 @@ import { createMemory, type Memory } from './memory.js';
 import { createLayoutDirectory, type LayoutDirectory } from './layout-directory.js';
 import { createJournal, type Journal } from './journal.js';
 import type { Row } from './rows.js';
+import type { MoveLog } from './move-log.js';
+import { claimComponent } from './remote.js';
 
 export type Key = string | symbol;
 
@@ -118,6 +120,17 @@ export type State = {
     gpu: GpuEngine | null;
     /** With a GPU: archetypes the current sync point changed, whose GPU copies are then out of date. */
     touched: Set<Archetype> | null;
+    /** By component id: the log of the joined thread filling its objects (`remote.ts`). */
+    readonly remote: (MoveLog | undefined)[];
+    /** Logical threads joined threads claim, by their logs; the logs; and whether there are any. */
+    readonly claims: Map<string, MoveLog>;
+    readonly logs: MoveLog[];
+    claimed: boolean;
+    /** While a joined thread may read them: archetypes whose count changed since the layout directory's last flush. */
+    readonly counted: Archetype[];
+    /** Finalizers on claimed threads, which don't activate, with why, for the next sync point to report; and every one found. */
+    readonly unplaced: Thrown[];
+    readonly unplacedSeen: Set<object>;
 };
 
 export const createState = (shared?: boolean, wasm = true, simd = true, gpu = false, initial: Map<Key, unknown> = new Map()): State => {
@@ -168,6 +181,13 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         initial,
         gpu: null,
         touched: gpu ? new Set() : null,
+        remote: [],
+        claims: new Map(),
+        logs: [],
+        claimed: false,
+        counted: [],
+        unplaced: [],
+        unplacedSeen: new Set(),
     };
 };
 
@@ -224,6 +244,7 @@ export const idOf = (state: State, key: Key): number => {
     if (structure.references[id] !== 0) structure.referenceIds.push(id);
     if (kindOf(key) === "resource") state.resources.add(id);
     state.activation.met = true;
+    if (state.claimed) claimComponent(state, id);
     return id;
 };
 
@@ -256,7 +277,7 @@ export const archetypeOf = (state: State, components: readonly number[]): Archet
     const key = components.join(",");
     const existing = state.archetypeByKey.get(key);
     if (existing !== undefined) return existing;
-    const archetype = createArchetype(state.memory, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)), state.ticked, state.bumped);
+    const archetype = createArchetype(state.memory, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)), state.ticked, state.bumped, state.remote);
     state.archetypes.push(archetype);
     state.archetypeByKey.set(key, archetype);
     return archetype;

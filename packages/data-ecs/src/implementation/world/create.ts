@@ -28,7 +28,7 @@ import { createPublisher } from './publish.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
-import { ensureProgramResources, activate } from './activate.js';
+import { ensureProgramResources, activate, finalizerOn } from './activate.js';
 import { isWorldWritten, kindOf, type Composite } from '../../interface/registry/index.js';
 import { always } from '../../interface/resources/always.js';
 import { cadence, type Cadence } from '../../interface/resources/cadence.js';
@@ -370,6 +370,10 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             void enqueue(syncOwn);
         },
         defer: (failure: Failure) => observers.defer(failure),
+        placedOn: threads => registrar.placedOn(threads) ?? finalizerOn(threads),
+        between: task => void enqueue(async () => {
+            if (!disposed) task();
+        }),
     });
 
     const world: World = {

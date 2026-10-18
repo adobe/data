@@ -3,7 +3,7 @@ import type { Port } from '../../interface/world/join.js';
 import type { Failure, Report } from '../../interface/world/report.js';
 import { threadClaims } from '../../interface/components/thread-claims.js';
 import { threadStatus } from '../../interface/components/thread-status.js';
-import { definitionOf, firstKeyOf, itemOfId, keyOfId, labelOf, type Definition } from '../../interface/registry/index.js';
+import { definitionOf, firstKeyOf, idOfKey, itemOfId, keyOfId, labelOf, type Definition } from '../../interface/registry/index.js';
 import type { Layout, Views } from '../../interface/registry/layout.js';
 import { addCommand, createBuffer, spawnCommand, type CommandBuffer } from './buffer.js';
 import { pushValues } from './commands.js';
@@ -15,7 +15,9 @@ import {
     type Subscription, type ThreadChannel, type ToJoined, type ToWorld,
 } from './joining.js';
 import { alignFor, createMailbox, entityPlanOf, freeMailbox, publishSlot, writeSlot, writeValue, type MailboxWriter } from './mailbox.js';
+import { createMoveLog, freeMoveLog, type MoveLog } from './move-log.js';
 import { lineWords } from './protocol.js';
+import { claimThreads, releaseThreads } from './remote.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { idOf, type Key, type State } from './state.js';
 
@@ -29,13 +31,18 @@ export type SharingHost = {
     readonly run: (definition: Definition, input: unknown) => Promise<Report>;
     readonly observers: {
         readonly resource: (key: Key) => Subscribe;
-        readonly entity: (entity: Entity, options: EntityOptions | undefined) => Subscribe;
+        /** With `owner`, a joined thread's log: that thread's objects are present, read there. */
+        readonly entity: (entity: Entity, options: EntityOptions | undefined, owner: MoveLog | null) => Subscribe;
         readonly query: (options: QueryOptions, counting: boolean) => Subscribe;
     };
     /** Queues the world's own changes to a thread's entity for the next sync point, and makes it due. */
     readonly change: (buffer: CommandBuffer) => void;
     /** A failure for the next run's report, as an observer's first value given through the queue is. */
     readonly defer: (failure: Failure) => void;
+    /** Why a joined thread can't claim `threads`: a system or finalizer runs on one; null when none does. */
+    readonly placedOn: (threads: readonly string[]) => string | null;
+    /** Runs a task between runs, in the world's queue. */
+    readonly between: (task: () => void) => void;
 };
 
 /** A number a joined thread gave a key or system, with its id, and what the id names here, or null for nothing. */
@@ -67,6 +74,9 @@ type Joined = {
     woken: boolean;
     /** Ends the world's request for its lock. */
     readonly abort: AbortController;
+    /** Its log, once the objects of the threads it claims are its own; and its number, which storage flags name. */
+    log: MoveLog | null;
+    readonly number: number;
 };
 
 const hasWaitAsync = (): boolean => typeof Atomics.waitAsync === "function";
@@ -92,6 +102,8 @@ export const createSharing = (host: SharingHost) => {
     const waking: Joined[] = [];
     /** Each joined thread's block of control words, as allocated. */
     const controlBlocks = new Map<Joined, number>();
+    /** Joined threads' numbers, never reused, so a thread that died never reads another's flags as its own. */
+    let numbered = 0;
 
     const post = (thread: Joined, message: ToJoined): void => thread.channel.post(message);
 
@@ -208,9 +220,11 @@ export const createSharing = (host: SharingHost) => {
         return value;
     };
 
-    const layoutOfKey = (key: Key, what: string): Layout => {
-        const layout = state.layouts[idOf(state, key)];
-        if (layout.kind === "object") throw new Error(`${what} reads "${labelOf(key)}", an object, which another thread can't read.`);
+    /** A key's layout, for an observer of a joined thread's: an object only if it's that thread's own, `owner`, read there. */
+    const layoutOfKey = (owner: MoveLog | null, key: Key, what: string): Layout => {
+        const id = idOf(state, key);
+        const layout = state.layouts[id];
+        if (layout.kind === "object" && (owner === null || state.remote[id] !== owner)) throw new Error(`${what} reads "${labelOf(key)}", an object, which another thread can't read.`);
         return layout;
     };
 
@@ -223,7 +237,8 @@ export const createSharing = (host: SharingHost) => {
         switch (subscription.kind) {
             case "resource": {
                 const key = keyOf(thread, subscription.key);
-                const layout = layoutOfKey(key, "An observer");
+                const layout = state.layouts[idOf(state, key)];
+                if (layout.kind === "object") throw new Error(`An observer reads "${labelOf(key)}", an object, which another thread can't read.`);
                 const bytes = layout.kind === "linear" ? layout.stride : 8;
                 return host.observers.resource(key)(value => {
                     writeValue(writeSlot(mailbox, bytes), layout, 0, value);
@@ -234,9 +249,10 @@ export const createSharing = (host: SharingHost) => {
                 const required = subscription.required.map(number => keyOf(thread, number));
                 const optional = subscription.optional.map(number => keyOf(thread, number));
                 const keys = [...required, ...optional];
-                const layouts = keys.map(key => layoutOfKey(key, "An observer"));
+                const layouts = keys.map(key => layoutOfKey(thread.log, key, "An observer"));
                 const plan = entityPlanOf(layouts);
-                return host.observers.entity(asEntity(subscription.entity), { required, optional })(observed => {
+                // Its own objects are present here, and read there.
+                return host.observers.entity(asEntity(subscription.entity), { required, optional }, thread.log)(observed => {
                     const value = typeof observed === "object" ? observed : null;
                     const views = writeSlot(mailbox, plan.bytes);
                     views.f64[0] = value === null ? 0 : 1;
@@ -256,13 +272,15 @@ export const createSharing = (host: SharingHost) => {
                     if (typeof value === "symbol") numbers.set(firstKeyOf(value), number);
                 }
                 const listed: { number: number; layout: Layout; value: unknown }[] = [];
-                return host.observers.entity(asEntity(subscription.entity), undefined)(observed => {
+                return host.observers.entity(asEntity(subscription.entity), undefined, thread.log)(observed => {
                     const value = typeof observed === "object" ? observed : null;
                     listed.length = 0;
                     if (value !== null) for (const key of Object.getOwnPropertySymbols(value)) {
                         const number = numbers.get(firstKeyOf(key));
-                        const layout = state.layouts[idOf(state, key)];
-                        if (number !== undefined && layout.kind !== "object") listed.push({ number, layout, value: Reflect.get(value, key) });
+                        const id = idOf(state, key);
+                        const layout = state.layouts[id];
+                        // Its own objects, present, with their values read there.
+                        if (number !== undefined && (layout.kind !== "object" || (thread.log !== null && state.remote[id] === thread.log))) listed.push({ number, layout, value: Reflect.get(value, key) });
                     }
                     let cursor = 8 + 8 * listed.length;
                     const offsets = listed.map(({ layout }) => {
@@ -284,13 +302,13 @@ export const createSharing = (host: SharingHost) => {
                 const where: { [key: Key]: unknown } = {};
                 for (const [number, value] of subscription.where) {
                     const key = keyOf(thread, number);
-                    layoutOfKey(key, "A query's where");
+                    layoutOfKey(null, key, "A query's where");
                     where[key] = value;
                 }
                 const order: { [key: Key]: boolean } = {};
                 for (const [number, ascending] of subscription.order) {
                     const key = keyOf(thread, number);
-                    layoutOfKey(key, "A query's order");
+                    layoutOfKey(null, key, "A query's order");
                     order[key] = ascending;
                 }
                 const options: QueryOptions = {
@@ -336,15 +354,25 @@ export const createSharing = (host: SharingHost) => {
         freeMailbox(watching.mailbox);
     };
 
-    /** Its claims checked against those already made, its control words placed, and its status `"joined"`; or refused. */
+    /** Tells a thread a component whose objects it fills, by its id. */
+    const announce = (thread: Joined, component: number): void => {
+        const key = state.keys[component];
+        post(thread, { protocol: protocolName, kind: "component", component, id: typeof key === "symbol" ? idOfKey(key) ?? null : null });
+    };
+
+    /**
+     * Its claims checked against those already made, and against systems and finalizers on them; its control words
+     * placed, and its status `"joined"`; or refused. With claims, its objects become its own between runs, then it's told.
+     */
     const join = (thread: Joined, threads: readonly string[], waits: boolean, lock: string | null): void => {
         if (thread.status !== "joining") return;
         const locks = platformLocks();
         // Granted once the thread no longer holds it: it left, or ended.
         if (lock !== null && locks !== null) locks.request(lock, { signal: thread.abort.signal }, () => gone(thread)).catch(() => {});
         const twice = threads.find((name, at) => name === "world" || threads.indexOf(name) < at || claimed.has(name));
-        if (twice !== undefined) {
-            const message = twice === "world" ? `A joined thread can't claim "world", the world's own thread.` : `Thread "${twice}" is claimed twice.`;
+        const placed = twice === undefined ? host.placedOn(threads) : null;
+        if (twice !== undefined || placed !== null) {
+            const message = placed ?? (twice === "world" ? `A joined thread can't claim "world", the world's own thread.` : `Thread "${twice}" is claimed twice.`);
             post(thread, { protocol: protocolName, kind: "refused", message });
             gone(thread);
             return;
@@ -358,7 +386,15 @@ export const createSharing = (host: SharingHost) => {
         controlBlocks.set(thread, offset);
         thread.views = slotViews(memory.memory.buffer, start);
         thread.status = "joined";
-        post(thread, { protocol: protocolName, kind: "joined", memory: memory.memory, control: start, waits: hasWaitAsync() });
+        const joined = (): void => post(thread, { protocol: protocolName, kind: "joined", memory: memory.memory, control: start, waits: hasWaitAsync(), log: thread.log?.block ?? null, thread: thread.number });
+        if (threads.length === 0) joined();
+        else host.between(() => {
+            if (thread.status !== "joined") return;
+            const log = createMoveLog(memory, thread.number, state.starts, component => announce(thread, component));
+            thread.log = log;
+            claimThreads(state, log, threads);
+            joined();
+        });
         change(thread, addCommand, { [threadStatus]: "joined", [threadClaims]: threads });
         if (hasWaitAsync()) void listen(thread);
     };
@@ -371,13 +407,20 @@ export const createSharing = (host: SharingHost) => {
         thread.control = null;
     };
 
-    /** Disconnected, dead or refused: its status `"gone"`, its claims released and its observers stopped. */
-    const gone = (thread: Joined): void => {
+    /**
+     * Disconnected, dead or refused: its status `"gone"`, its claims released, its objects back here between runs, and
+     * its observers stopped. Its log is freed once it `left`: a thread that died may still be reading it.
+     */
+    const gone = (thread: Joined, left = false): void => {
         if (thread.status === "gone") return;
-        const { control } = thread;
+        const { control, log } = thread;
         thread.status = "gone";
         threads.delete(thread);
         for (const name of thread.claims) if (claimed.get(name) === thread) claimed.delete(name);
+        if (log !== null) host.between(() => {
+            releaseThreads(state, log);
+            if (left) freeMoveLog(log);
+        });
         for (const observer of [...thread.watching.keys()]) unobserve(thread, observer);
         if (control !== null) Atomics.notify(control, postedWord);
         thread.abort.abort();
@@ -401,7 +444,7 @@ export const createSharing = (host: SharingHost) => {
             case "unobserve": return unobserve(thread, message.observer);
             case "wake": return drain(thread);
             case "leave": {
-                gone(thread);
+                gone(thread, true);
                 return free(thread);
             }
         }
@@ -416,7 +459,7 @@ export const createSharing = (host: SharingHost) => {
         const thread: Joined = {
             entity, channel: threadChannel<ToJoined, ToWorld>(port), status: "joining", claims: [], control: null, views: [], waits: true,
             names: new Map(), next: 1, completed: 0, finished: new Set(), inputs: new Map(), watching: new Map(), woken: false,
-            abort: new AbortController(),
+            abort: new AbortController(), log: null, number: ++numbered,
         };
         threads.add(thread);
         change(thread, spawnCommand, { [threadStatus]: "joining", [threadClaims]: [] });

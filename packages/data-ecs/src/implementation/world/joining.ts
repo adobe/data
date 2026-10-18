@@ -48,8 +48,13 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
 
 /** From the world's thread to a joined one. */
 export type ToJoined = { readonly protocol: typeof protocolName } & (
-    /** The memory, and the byte offset of the thread's control words; whether the world can wait without blocking. */
-    | { readonly kind: "joined"; readonly memory: WebAssembly.Memory; readonly control: number; readonly waits: boolean }
+    /**
+     * The memory, and the byte offset of the thread's control words; whether the world can wait without blocking; the
+     * byte offset of its move log's header, null without claims; and its number, which storage flags name.
+     */
+    | { readonly kind: "joined"; readonly memory: WebAssembly.Memory; readonly control: number; readonly waits: boolean; readonly log: number | null; readonly thread: number }
+    /** A component whose objects the thread fills, by the world's number, with its id: null for one without. */
+    | { readonly kind: "component"; readonly component: number; readonly id: string | null }
     | { readonly kind: "refused"; readonly message: string }
     /** The report of run `sequence`, posted only when it isn't clean. */
     | { readonly kind: "report"; readonly sequence: number; readonly report: Report }

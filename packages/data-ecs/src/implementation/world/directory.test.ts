@@ -15,10 +15,17 @@ declare module "@adobe/data-ecs" {
 const gravityTraits = Resource.register(gravity, { type: { type: "number", default: -9.8 } });
 
 describe("the layout directory", () => {
-    it("keeps the structure epoch odd from a sync point's start until its directory writes, and even otherwise", () => {
+    it("keeps the structure epoch odd from a sync point's start until its directory writes, and even otherwise, once a thread may read it", () => {
         const state = createState(true);
         const words = new Int32Array(state.memory.memory.buffer, 0, 16);
         expect(words[structureWord]).toBe(0);
+        // No joined thread reads it, so a sync point leaves it.
+        reserve(state.entities);
+        expect(prepareSync(state)).toBe(true);
+        expect(words[structureWord]).toBe(0);
+        applySync(state);
+        expect(words[structureWord]).toBe(0);
+        if (state.directory !== null) state.directory.guarded = true;
         // Nothing to apply leaves it.
         expect(prepareSync(state)).toBe(false);
         expect(words[structureWord]).toBe(0);

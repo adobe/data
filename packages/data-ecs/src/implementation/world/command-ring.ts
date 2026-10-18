@@ -331,7 +331,7 @@ const decodeBatch = (views: Views, at: number, layouts: readonly Layout[], start
         else if (layout.kind === "object") {
             for (let row = 0; row < count; row++, next += 16) values.push(tagValue(u32[next >> 2], f64[(next >> 3) + 1], starts[id]));
         }
-        return { id, layout, ...writeOf(layout), stride, views: columnViews, values };
+        return { id, layout, ...writeOf(layout), stride, views: columnViews, values, remote: null };
     });
     return { batch: { ids, archetype: null, columns, entities, count, capacity: count }, end: next };
 };

@@ -16,6 +16,8 @@ export type Column = {
     readonly stride: number;
     views: Views;
     readonly values: unknown[];
+    /** Where a joined thread fills its objects, so a spawn here gives it only its start or `null`: why another fails. */
+    remote: string | null;
 };
 
 /**
@@ -43,7 +45,7 @@ const initialCapacity = 64;
 
 const columnOf = (layout: Layout, id: number, capacity: number): Column => {
     const stride = layout.kind === "linear" ? layout.stride : 0;
-    return { id, layout, ...writeOf(layout), stride, views: viewsOf(new ArrayBuffer(capacity * stride), 0, capacity * stride), values: [] };
+    return { id, layout, ...writeOf(layout), stride, views: viewsOf(new ArrayBuffer(capacity * stride), 0, capacity * stride), values: [], remote: null };
 };
 
 /** An empty batch of spawns of exactly these components, by their layouts. */
@@ -71,7 +73,12 @@ const grow = (batch: SpawnBatch): void => {
  */
 export const writerOf = (column: Column, start: unknown): Writer => {
     const { unitStride, unitOffset, lanes } = column;
-    const general: Writer = (row, value) => writeColumn(column, row, value === undefined ? start : value);
+    const general: Writer = column.layout.kind === "object"
+        ? (row, value) => {
+            if (column.remote !== null && value !== undefined && value !== null && value !== start) throw new Error(column.remote);
+            writeColumn(column, row, value === undefined ? start : value);
+        }
+        : (row, value) => writeColumn(column, row, value === undefined ? start : value);
     switch (column.write) {
         case writeF32: return (row, value) => {
             if (typeof value !== "number") return general(row, value);

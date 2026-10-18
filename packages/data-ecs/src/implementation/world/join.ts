@@ -5,7 +5,7 @@ import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/res
 import type { JoinOptions, Port } from '../../interface/world/join.js';
 import type { Report } from '../../interface/world/report.js';
 import type { World } from '../../interface/world/world.js';
-import { declarationOf, idOfItem, idOfKey, identifiedKeys, kindOf, labelOf, labelOfItem, requireDefinition, type Definition } from '../../interface/registry/index.js';
+import { declarationOf, firstKeyOf, idOfItem, idOfKey, identifiedKeys, keyOfId, kindOf, labelOf, labelOfItem, requireDefinition, threadOfDeclaration, type Definition } from '../../interface/registry/index.js';
 import { layoutOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { asEntity } from './entities.js';
 import {
@@ -14,6 +14,8 @@ import {
 } from './joining.js';
 import { entityPlanOf, mailboxReader, readSlot, readValue, type MailboxReader } from './mailbox.js';
 import { sharedMemoryAvailable } from './memory.js';
+import { applying, componentsAt, createMirror, locate, nameComponent, objectAt, waitStructure, type Location, type Mirror } from './mirror.js';
+import { defaultOf } from './state.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 
 type Notify = (value: unknown) => void;
@@ -28,15 +30,32 @@ type Run = { readonly resolve: (report: Report) => void; readonly reject: (error
 /** A run waiting for a free slot, or for the thread to have joined. */
 type Waiting = { readonly sequence: number; readonly number: number; readonly definition: Definition; readonly input: unknown };
 
-/** An observer on this thread: its mailbox once the world placed it, and how a value is read from a slot. */
-type Observer = { readonly notify: Notify; reader: MailboxReader | null; readonly decode: (views: Views) => unknown; active: boolean };
+/** What a decode gives for a value it can't read yet, with this thread's objects, and for one a newer will replace. */
+const later = Symbol("later");
+const stale = Symbol("stale");
+
+/**
+ * An observer on this thread: its mailbox once the world placed it, how a value is read from a slot, and a slot held
+ * until this thread's objects in it can be read.
+ */
+type Observer = { readonly notify: Notify; reader: MailboxReader | null; readonly decode: (views: Views) => unknown; active: boolean; held: Views | null };
 
 const hasWaitAsync = (): boolean => typeof Atomics.waitAsync === "function";
 
-/** A key's layout, for an observer reading its values. Throws for a key without an id, or one holding objects. */
-const readableLayout = (key: symbol): Layout => {
+/** Whether a key's values are objects of one of `claims`, which this thread fills. */
+const ownObject = (key: symbol, claims: ReadonlySet<string>): boolean => {
+    const declaration = declarationOf(key);
+    const thread = declaration === undefined || kindOf(key) !== "component" ? null : threadOfDeclaration(declaration);
+    return thread !== null && claims.has(thread);
+};
+
+/**
+ * A key's layout, for an observer reading its values. Throws for one holding objects, unless `claims`, the threads
+ * this thread fills, has its thread: an entity observer reads this thread's own objects here.
+ */
+const readableLayout = (key: symbol, claims: ReadonlySet<string> = new Set()): Layout => {
     const layout = layoutOf(declarationOf(key)?.type);
-    if (layout.kind === "object") throw new Error(`An observer on a joined thread reads "${labelOf(key)}", an object, which lives on another thread.`);
+    if (layout.kind === "object" && !ownObject(key, claims)) throw new Error(`An observer on a joined thread reads "${labelOf(key)}", an object, which lives on another thread.`);
     return layout;
 };
 
@@ -82,6 +101,13 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
         if (id === undefined) throw new Error(`"${labelOf(symbol)}" has no id, so another thread can't name it; the build gives top-level keys one.`);
         return numberOf(id, false, symbol);
     };
+
+    const claims: ReadonlySet<string> = new Set(options.threads ?? []);
+    /** This thread's objects, following the world's rows, once it joined with claims; and its components' keys by the world's numbers. */
+    let mirror: Mirror | null = null;
+    const named = new Map<number, symbol | null>();
+    const components = new Map<symbol, number>();
+    let structureWaited = false;
 
     let memory: WebAssembly.Memory | null = null;
     let control: Int32Array | null = null;
@@ -159,20 +185,70 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
         }
     };
 
+    /** Evaluates observers again once the structure epoch turns even: a sync point applied while one read. */
+    const waitForStructure = (): void => {
+        if (structureWaited || mirror === null) return;
+        structureWaited = true;
+        void waitStructure(mirror).then(() => {
+            structureWaited = false;
+            processObservers();
+        });
+    };
+
     const processObservers = (): void => {
         if (memory === null || observers.size === 0) return;
         const buffer = memory.buffer;
         for (const observer of observers.values()) {
             if (observer.reader === null || !observer.active) continue;
-            const slot = readSlot(observer.reader, buffer);
+            const slot = readSlot(observer.reader, buffer) ?? observer.held;
             if (slot === null) continue;
+            observer.held = null;
+            let value: unknown;
             try {
-                observer.notify(observer.decode(slot));
+                value = observer.decode(slot);
+            }
+            catch (error) {
+                rethrow(error);
+                continue;
+            }
+            // Held, unread, until its objects can be read; a newer value replaces it.
+            if (value === later) {
+                observer.held = slot;
+                if (mirror !== null && applying(mirror)) waitForStructure();
+                continue;
+            }
+            // The world gives the newer value it had when this thread's objects were read.
+            if (value === stale) continue;
+            try {
+                observer.notify(value);
             }
             catch (error) {
                 rethrow(error);
             }
         }
+    };
+
+    /** Where an entity is, with this thread's objects up to date there; `later` while that can't be read yet. */
+    const located = (entity: Entity): Location | null | typeof later => {
+        if (mirror === null) return later;
+        const location = locate(mirror, entity);
+        return location === "applying" || location === "held" ? later : location;
+    };
+
+    /** This thread's object of `key` at a location, or `later` while the world hasn't named its component yet. */
+    const objectOf = (location: Location, key: symbol): { readonly held: boolean; readonly value: unknown } | typeof later => {
+        const component = components.get(firstKeyOf(key));
+        return mirror === null || component === undefined ? later : objectAt(mirror, location, component);
+    };
+
+    /** Names a component whose objects this thread fills, once its mirror exists. */
+    const name = (component: number, key: symbol | null): void => {
+        if (mirror === null) {
+            named.set(component, key);
+            return;
+        }
+        nameComponent(mirror, component, key, defaultOf);
+        if (key !== null) components.set(firstKeyOf(key), component);
     };
 
     const process = (): void => {
@@ -222,6 +298,11 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
                 control = new Int32Array(memory.buffer, message.control, (slotsWord + runSlots * slotWords));
                 views = slotViews(memory.buffer, message.control);
                 worldWaits = message.waits;
+                if (message.log !== null) {
+                    mirror = createMirror(memory, message.log, message.thread);
+                    for (const [component, key] of named) name(component, key);
+                    named.clear();
+                }
                 writeWaiting();
                 void listen();
                 return;
@@ -241,6 +322,12 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
                 processObservers();
                 void listen();
                 return;
+            }
+            case "component": {
+                // Its key here, if this thread has one, for a component of a thread it claims.
+                const key = message.id === null ? undefined : keyOfId(message.id);
+                name(message.component, key !== undefined && ownObject(key, claims) ? key : null);
+                return processObservers();
             }
             case "wake": return process();
         }
@@ -268,7 +355,7 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
     /** Subscribes on the world's thread; the first value always comes later, through the mailbox. */
     const observe = (subscription: Subscription, decode: (views: Views) => unknown) => (notify: Notify): (() => void) => {
         const number = observerCount++;
-        const observer: Observer = { notify, reader: null, decode, active: true };
+        const observer: Observer = { notify, reader: null, decode, active: true, held: null };
         observers.set(number, observer);
         post({ protocol: protocolName, kind: "observe", observer: number, subscription });
         void listen();
@@ -288,29 +375,66 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
 
     const observeEntity = (entity: Entity, options: EntityOptions | undefined) => {
         if (options === undefined) {
-            // Every struct component this thread knows, by its own numbers.
+            // Every struct component this thread knows, and its own objects, by its own numbers.
             const known: number[] = [];
-            for (const [id, key] of identifiedKeys("component")) if (layoutOf(declarationOf(key)?.type).kind !== "object") known.push(numberOf(id, false, key));
+            const knownOwn = new Set<symbol>();
+            for (const [id, key] of identifiedKeys("component")) {
+                const own = ownObject(key, claims);
+                if (own) knownOwn.add(firstKeyOf(key));
+                if (own || layoutOf(declarationOf(key)?.type).kind !== "object") known.push(numberOf(id, false, key));
+            }
             return observe({ kind: "whole", entity, known }, slot => {
                 const count = slot.f64[0];
                 if (count < 0) return null;
                 const value: { [key: symbol]: unknown } = {};
+                let owned = 0;
                 for (let k = 0; k < count; k++) {
                     const key = keys[slot.u32[2 + 2 * k]];
-                    value[key] = readValue(slot, layoutOf(declarationOf(key)?.type), slot.u32[3 + 2 * k]);
+                    if (knownOwn.has(firstKeyOf(key))) owned++;
+                    else value[key] = readValue(slot, layoutOf(declarationOf(key)?.type), slot.u32[3 + 2 * k]);
                 }
-                return value;
+                if (knownOwn.size === 0) return value;
+                const location = located(entity);
+                if (location === later) return later;
+                if (location === null) return stale;
+                // This thread's objects there: those the world listed, and no other it knew of.
+                for (let k = 0; k < count; k++) {
+                    const key = keys[slot.u32[2 + 2 * k]];
+                    if (!knownOwn.has(firstKeyOf(key))) continue;
+                    const object = objectOf(location, key);
+                    if (object === later) return later;
+                    if (!object.held) return stale;
+                    value[key] = object.value;
+                }
+                let there = 0;
+                for (const component of mirror === null ? [] : componentsAt(mirror, location.archetype)) {
+                    const key = mirror?.keys.get(component);
+                    if (typeof key === "symbol" && knownOwn.has(firstKeyOf(key))) there++;
+                }
+                return there === owned ? value : stale;
             });
         }
         const required = (options.required ?? []).map(symbolOf);
         const listed = [...required, ...(options.optional ?? []).map(symbolOf)];
-        const layouts = listed.map(key => readableLayout(key));
+        const layouts = listed.map(key => readableLayout(key, claims));
+        const owned = listed.flatMap((key, k) => ownObject(key, claims) ? [k] : []);
         const plan = entityPlanOf(layouts);
         const subscription: Subscription = { kind: "entity", entity, required: required.map(keyNumber), optional: (options.optional ?? []).map(keyNumber) };
         return observe(subscription, slot => {
             if (slot.f64[0] === 0) return null;
             const value: { [key: symbol]: unknown } = {};
             for (let k = 0; k < listed.length; k++) if (slot.u8[8 + k] === 1) value[listed[k]] = readValue(slot, layouts[k], plan.offsets[k]);
+            if (owned.length === 0) return value;
+            const location = located(entity);
+            if (location === later) return later;
+            if (location === null) return stale;
+            // This thread's objects there, present as the world's value says, else that value was older.
+            for (const k of owned) {
+                const object = objectOf(location, listed[k]);
+                if (object === later) return later;
+                if (object.held !== (slot.u8[8 + k] === 1)) return stale;
+                if (object.held) value[listed[k]] = object.value;
+            }
             return value;
         });
     };

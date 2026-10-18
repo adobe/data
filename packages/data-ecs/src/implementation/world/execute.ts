@@ -11,6 +11,7 @@ import { drainSegment, type Segment } from './command-ring.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
 import type { Failure, Report } from '../../interface/world/report.js';
 import { failureOf } from './failures.js';
+import { checkCommands } from './remote.js';
 import { firstKeyOf, labelOfItem } from '../../interface/registry/index.js';
 
 /** Shared by every report without failures or skipped systems: they're read-only, so none needs its own. */
@@ -108,11 +109,19 @@ const drain = (state: State, { bytes, tag }: Segment): Error | undefined => {
     return undefined;
 };
 
-/** Queues a settled chunk's commands, a worker's drained from its segment, and returns its error, if it failed. */
+/**
+ * Queues a settled chunk's commands, a worker's drained from its segment, and returns its error, if it failed. Once a
+ * joined thread fills objects, values given them here are checked, each command giving another value dropped.
+ */
 const queue = (state: State, { commands, segment, error }: ChunkResult): unknown => {
     const drained = segment === undefined ? undefined : drain(state, segment);
+    let checked: Error | undefined;
+    if (state.claimed) {
+        checked = checkCommands(state, commands);
+        if (segment !== undefined) checked ??= checkCommands(state, state.drains[state.drained - 1]);
+    }
     if (commands.count > 0 || commands.stagedCount > 0) state.queued.push({ buffer: commands, guarded: true });
-    return error ?? drained;
+    return error ?? drained ?? checked;
 };
 
 /** Once a sync point applied or failed: empties the buffers workers' segments drained into, and their command rings. */

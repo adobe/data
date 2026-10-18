@@ -5,7 +5,8 @@ import type { Archetype, Storage } from './archetype.js';
 import { indexOf, locate } from './entities.js';
 import { journalEnd } from './journal.js';
 import { chunkShift } from './kernel.js';
-import { compileQuery, countOf, createSelectScratch, matchesArchetype, readEntity, selectInto, type CompiledQuery, type EntityOptions, type QueryOptions } from './reads.js';
+import { compileQuery, countOf, createSelectScratch, elsewhere, matchesArchetype, readEntity, selectInto, type CompiledQuery, type EntityOptions, type QueryOptions } from './reads.js';
+import type { MoveLog } from './move-log.js';
 import { idOf, startTicking, type Key, type State } from './state.js';
 import { labelOf } from '../../interface/registry/index.js';
 
@@ -24,6 +25,8 @@ type EntityObserver = {
     primed: boolean;
     watching: boolean;
     readonly options: EntityOptions | undefined;
+    /** For a joined thread's observer: its log, whose objects it reads there. */
+    readonly owner: MoveLog | null;
     readonly ids: readonly number[] | null;
     readonly required: number;
 };
@@ -83,8 +86,12 @@ const changedFor = (observer: EntityObserver, previous: Archetype | null, curren
     const { ids } = observer;
     if (ids === null) {
         if (previous !== current) return true;
-        const { components } = current;
-        for (let i = 0; i < components.length; i++) if (changedAfter(current, components[i], row, seen)) return true;
+        const { storages } = current;
+        for (let i = 0; i < storages.length; i++) {
+            // A joined thread's objects are part of the value only for its own observer.
+            const { remote } = storages[i];
+            if ((remote === null || remote === observer.owner) && changedAfter(current, storages[i].component, row, seen)) return true;
+        }
         return false;
     }
     for (let i = 0; i < ids.length; i++) {
@@ -177,9 +184,10 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
         for (let i = 0; i < components.length; i++) if (!requested.has(components[i])) request(components[i]);
     };
 
-    const entity = (entity: Entity, options: EntityOptions | undefined) => (notify: Notify) => {
+    const entity = (entity: Entity, options: EntityOptions | undefined, owner: MoveLog | null = null) => (notify: Notify) => {
         const required = options?.required ?? [];
         const ids = options === undefined ? null : [...required, ...options.optional ?? []].map(key => idOf(state, key));
+        if (ids !== null) for (const id of ids) if (state.remote[id] !== undefined && state.remote[id] !== owner) throw elsewhere(state, id);
         let entry = byEntity.get(entity);
         if (entry === undefined) {
             const index = locate(state.entities, entity);
@@ -188,7 +196,7 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
             entities.push(entry);
         }
         const observed = entry;
-        const observer: EntityObserver = { notify, primed: false, watching: true, options, ids, required: required.length };
+        const observer: EntityObserver = { notify, primed: false, watching: true, options, owner, ids, required: required.length };
         observed.observers.push(observer);
         if (ids !== null) for (const id of ids) request(id);
         else if (observed.archetype >= 0) requestAll(state.archetypes[observed.archetype]);
@@ -204,7 +212,7 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
         };
         const first = (): void => {
             observer.primed = true;
-            notify(readEntity(state, entity, options));
+            notify(readEntity(state, entity, options, owner));
         };
         const ahead = new Set<Storage>();
         aheadForEntity(entity, observer, ahead);
@@ -523,7 +531,7 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
                     : hasRequired(previous, observer) || hasRequired(current, observer);
                 if (!changed) continue;
                 try {
-                    notify(readEntity(state, entry.entity, observer.options));
+                    notify(readEntity(state, entry.entity, observer.options, observer.owner));
                 }
                 catch (error) {
                     (failures ??= []).push(failureOf("observer", String(entry.entity), error));

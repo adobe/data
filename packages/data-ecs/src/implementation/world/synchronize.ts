@@ -6,13 +6,15 @@ import { readCell, writeCell } from './cells.js';
 import { commitBatches, commitStaged } from './batches.js';
 import { applyIndexChanges, cascadeReferences, indexChangesOf, type IndexChanges, type Written } from './cascade.js';
 import { refreshDirectories } from './directories.js';
-import { beginStructure, endStructure, flushDirectory } from './layout-directory.js';
+import { beginStructure, countChanged, endStructure, flushDirectory } from './layout-directory.js';
+import { beginLog, logAppend, logMove, logSet, logSwap, publishLog, startTag, tagOf } from './move-log.js';
 import { record } from './journal.js';
 import { indexOf, locate, materialize, recycle, release, reserved, unreserve, type Reserved } from './entities.js';
 import { activate } from './activate.js';
 import { runFinalizers, type Thrown } from './finalizers.js';
 import { closureOf, derives, gainsOf } from './structure.js';
 import type { Plan } from './plan.js';
+import type { MoveLog } from './move-log.js';
 import { archetypeOf, defaultOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
 
 /** Buffers queued for the next sync point, in merge order. Commands in guarded buffers can't touch the resource entity. */
@@ -212,6 +214,14 @@ const copyBytes = (storage: Storage, row: number, bytes: Views, offset: number):
     for (let i = 0; i < stride; i++) target[row * stride + i] = source[offset + i];
 };
 
+/** A joined thread's object: its tag here, its value given there. */
+const writeRemote = (storage: Storage, log: MoveLog, value: unknown, to: Archetype, toRow: number, from: Archetype | null, fresh: readonly number[] | undefined): void => {
+    const id = storage.component;
+    const tag = tagOf(value, log.starts[id]);
+    storage.tags[toRow] = tag;
+    logSet(log, to.id, toRow, id, tag, from === null || from.storageById[id] === undefined || (fresh !== undefined && fresh.includes(id)));
+};
+
 const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Archetype, toRow: number, from: Archetype | null, fresh: readonly number[] | undefined, tick: number): void => {
     const { ids, values, bytes, offsets } = buffer;
     for (let k = start; k < end; k++) {
@@ -233,7 +243,9 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
                 if (Array.isArray(value)) for (let lane = 0; lane < storage.lanes; lane++) views.f32[index + lane] = Number(value[lane]);
                 else writeCell(storage, toRow, value);
                 break;
-            default: writeCell(storage, toRow, value);
+            default:
+                if (storage.remote === null) writeCell(storage, toRow, value);
+                else writeRemote(storage, storage.remote, value, to, toRow, from, fresh);
         }
         if (!storage.ticked) continue;
         const starts = from === null || from.storageById[id] === undefined || (fresh !== undefined && fresh.includes(id));
@@ -251,7 +263,9 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
 
 /** Writes a derived component's default into a row it starts in, stamped as added. */
 export const writeDefault = (state: State, storage: Storage, row: number, tick: number): void => {
-    writeCell(storage, row, defaultOf(state.keys[storage.component]));
+    // A joined thread's object starts there, as the row's move or append says.
+    if (storage.remote === null) writeCell(storage, row, defaultOf(state.keys[storage.component]));
+    else storage.tags[row] = startTag;
     if (!storage.ticked) return;
     storage.added[row] = storage.changed[row] = tick;
     storage.chunkAdded[row >> chunkShift] = storage.chunkChanged[row >> chunkShift] = tick;
@@ -292,6 +306,7 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
             plan.row[entry] = fromRow;
             if (fromRow >= 0) leaving++;
             if (fromId >= 0) state.touched?.add(archetypes[fromId]);
+            if (fromId >= 0 && state.claimed) countChanged(state.counted, archetypes[fromId]);
             release(entities, index);
             continue;
         }
@@ -375,6 +390,28 @@ const copyColumn = (from: Storage, to: Storage, plan: Plan, order: Int32Array, f
 };
 
 /**
+ * A pair's rows arriving, once a joined thread may read: the counts that changed, and in an archetype holding joined
+ * threads' objects, for each thread's log, moves from an archetype holding its objects too, else appends, each of the
+ * thread's objects the row gains at its start.
+ */
+const noteArrivals = (state: State, from: Archetype | null, to: Archetype, first: number, count: number, toStart: number): void => {
+    countChanged(state.counted, to);
+    if (from !== null) countChanged(state.counted, from);
+    const { logs } = to;
+    if (logs === null) return;
+    const { plan } = state;
+    const { order } = plan.pairs;
+    for (const log of logs) {
+        const moving = from !== null && from.logs !== null && from.logs.includes(log);
+        for (let k = 0; k < count; k++) {
+            const entry = order[first + k];
+            if (moving) logMove(log, from.id, plan.row[entry], to.id, toStart + k);
+            else logAppend(log, to.id, toStart + k, plan.entity[entry]);
+        }
+    }
+};
+
+/**
  * The second pass: each pair's entries arrive as one block of rows at the end of their target, which presizing made
  * room for. The pair resolves once the cells its archetypes share and the derived components the target adds, and
  * copies them column by column; then each entry's values are written and its entity placed.
@@ -395,6 +432,7 @@ const arrive = (state: State, queued: readonly Queued[], tick: number, deriving:
             const moves = movesOf(from, to);
             for (let m = 0; m < moves.length; m += 2) copyColumn(moves[m], moves[m + 1], plan, order, first, count, toStart);
         }
+        if (state.claimed) noteArrivals(state, from, to, first, count, toStart);
         // Rows are reused after swap-removes, so a derived component starting here gets its default written.
         if (deriving) {
             for (const id of gainsOf(state.structure, state.derived, from, to)) {
@@ -436,6 +474,17 @@ const leave = (state: State, entry: number): void => {
         // Its row changed, so what `up` keeps of it does.
         record(state.journal, index, state.entities.length);
     }
+};
+
+/** `leave`, once a joined thread may read: a row removed from an archetype holding its objects goes in its log first. */
+const leaveLogged = (state: State, entry: number): void => {
+    const { plan } = state;
+    const row = plan.row[entry];
+    if (row >= 0) {
+        const from = state.archetypes[plan.from[entry]];
+        if (from.logs !== null) for (const log of from.logs) logSwap(log, from.id, from.count - 1, row);
+    }
+    leave(state, entry);
 };
 
 /** Grows each archetype once to fit the entities moving or spawning into it. */
@@ -488,7 +537,9 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     // Systems reuse their buffers next run.
     for (const { buffer } of queued) clearBuffer(buffer);
     refreshDirectories(state);
-    flushDirectory(state.directory, state.bumped, state.archetypes, state.entities, state.resourceEntity);
+    flushDirectory(state.directory, state.bumped, state.archetypes, state.entities, state.resourceEntity, state.counted);
+    // Published once the records name what its entries do, and before the epoch turns even.
+    for (let k = 0; k < state.logs.length; k++) publishLog(state.logs[k]);
     endStructure(state.directory);
     state.syncing = null;
 };
@@ -521,6 +572,7 @@ export const prepareSync = (state: State, isolated = false): boolean => {
         reservations = merged(state.carried, made);
         state.carried = null;
         const tick = ++state.tick;
+        for (let k = 0; k < state.logs.length; k++) beginLog(state.logs[k], tick);
         const deriving = derives(structure);
         const close = (archetype: Archetype): Archetype => closureOf(structure, state.derived, archetype, components => archetypeOf(state, components), state.archetypes);
         const born = new Map<number, number>();
@@ -586,14 +638,19 @@ export const applySync = (state: State): readonly Thrown[] => {
     const { plan } = state;
     let errors = nothingThrown;
     try {
+        if (state.unplaced.length > 0 && !isolated) errors = state.unplaced.splice(0);
         if (state.finalizers.length > 0 && !isolated) {
-            errors = runFinalizers(state, queued, born);
+            const thrown = runFinalizers(state, queued, born);
+            errors = errors.length === 0 ? thrown : [...errors, ...thrown];
             // Finalizers reserve entities for their spawns; the next sync point accounts for them.
             if (reserved(state.entities)) state.carried = materialize(state.memory, state.entities);
         }
         sort(state, queued, tick);
         arrive(state, queued, tick, deriving);
-        if (plan.pairs.leaving > 0) for (let entry = plan.count - 1; entry >= 0; entry--) leave(state, entry);
+        if (plan.pairs.leaving > 0) {
+            if (state.claimed) for (let entry = plan.count - 1; entry >= 0; entry--) leaveLogged(state, entry);
+            else for (let entry = plan.count - 1; entry >= 0; entry--) leave(state, entry);
+        }
         if (index !== null) applyIndexChanges(state, index);
         // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its index.
         // Every spawn consumes one reservation and the rest were unreserved, so only a shortfall needs the scan, which

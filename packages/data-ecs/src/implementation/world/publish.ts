@@ -1,6 +1,6 @@
 import type { Schema } from '../../interface/schema/schema.js';
 import { schemaOf } from '../../interface/registry/index.js';
-import { flushDirectory } from './layout-directory.js';
+import { flushBetween } from './layout-directory.js';
 import type { Pool } from './pool.js';
 import type { State } from './state.js';
 
@@ -13,7 +13,7 @@ import type { State } from './state.js';
 export const createPublisher = (state: State, pool: Pool): (() => void) => {
     let schemasSent = 0;
     return () => {
-        flushDirectory(state.directory, state.bumped, state.archetypes, state.entities, state.resourceEntity);
+        flushBetween(state.directory, state.bumped, state.archetypes, state.entities, state.resourceEntity, state.counted);
         if (schemasSent === state.keys.length) return;
         // Workers never touch resources, so their schemas, defaults included, stay on the world's thread.
         // A value that isn't data has no schema; workers store it as an object they never touch.

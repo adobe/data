@@ -5,6 +5,9 @@ import { chunkShift } from './kernel.js';
 import { createBatch, type SpawnBatch } from './staging.js';
 import { archetypeOf, type State } from './state.js';
 import { gainsOf } from './structure.js';
+import { remoteError } from './remote.js';
+import { countChanged } from './layout-directory.js';
+import { logRange, logSet, startTag, tagOf } from './move-log.js';
 import { writeDefault } from './synchronize.js';
 
 /** Batches of at most this many rows commit element by element. */
@@ -16,6 +19,7 @@ export const batchOf = (state: State, ids: readonly number[]): SpawnBatch => {
     let batch = state.batchByKey.get(key);
     if (batch === undefined) {
         batch = createBatch(state.layouts, ids);
+        for (const column of batch.columns) if (state.remote[column.id] !== undefined) column.remote = remoteError(state, column.id).message;
         state.batchByKey.set(key, batch);
         state.batches.push(batch);
     }
@@ -42,6 +46,8 @@ const commitRows = (state: State, batch: SpawnBatch, first: number, n: number, t
     // A few rows copy element by element: a subarray to copy from costs more than they do.
     if (n <= smallCopy) for (let i = 0; i < n; i++) target.entities[start + i] = batch.entities[first + i];
     else target.entities.set(batch.entities.subarray(first, first + n), start);
+    if (target.logs !== null) for (const log of target.logs) logRange(log, target.id, start, n, batch.entities, first);
+    if (state.claimed) countChanged(state.counted, target);
     for (const column of batch.columns) {
         const storage = target.storageById[column.id];
         if (storage === undefined) continue;
@@ -53,7 +59,17 @@ const commitRows = (state: State, batch: SpawnBatch, first: number, n: number, t
             else storage.views.u8.set(column.views.u8.subarray(from, from + bytes), offset);
         }
         else if (column.layout.kind === "object") {
-            for (let i = 0; i < n; i++) storage.values[start + i] = column.values[first + i];
+            if (storage.remote === null) for (let i = 0; i < n; i++) storage.values[start + i] = column.values[first + i];
+            else {
+                // A joined thread's objects start at their starts there, as the rows' range says: a tag set otherwise.
+                const log = storage.remote;
+                const begin = log.starts[column.id];
+                for (let i = 0; i < n; i++) {
+                    const tag = Math.max(startTag, tagOf(column.values[first + i], begin));
+                    storage.tags[start + i] = tag;
+                    if (tag !== startTag) logSet(log, target.id, start + i, column.id, tag, true);
+                }
+            }
             column.values.fill(undefined, first, first + n);
         }
         if (!storage.ticked) continue;

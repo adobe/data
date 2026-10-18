@@ -1,5 +1,5 @@
 import type { Leaf } from '../../interface/system/leaf.js';
-import { requireDefinition, type Definition } from '../../interface/registry/index.js';
+import { requireDefinition, threadOf, type Definition } from '../../interface/registry/index.js';
 import { createRunner, type Runner } from './runner.js';
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, type Key, type State } from './state.js';
@@ -21,6 +21,8 @@ export type Registrar = {
     readonly kernels: () => readonly Runner[];
     /** Rebuilds the runners of `kernel: "gpu"` systems for the world's current device, or for the CPU without one; returns them to load. */
     readonly placeGpuKernels: () => readonly Runner[];
+    /** Why a joined thread can't claim `threads`: a registered system runs on one; null when none does. */
+    readonly placedOn: (threads: readonly string[]) => string | null;
 };
 
 /** Every system in a tree, the root included. */
@@ -59,6 +61,10 @@ const tickedBy = (leaf: Leaf): readonly Key[] =>
 /** The components whose `changed` stamps a leaf reads, so kernels writing them must keep their stamps. */
 const observedBy = (leaf: Leaf): readonly Key[] => [...leaf.declaration.components?.changed ?? [], ...upObserved(leaf)];
 
+/** Why a system can't run: its thread is one a joined thread claims, where systems don't run yet. */
+export const unplacedSystem = (name: string, thread: string): string =>
+    `System "${name}" runs on thread "${thread}", which a joined thread fills; systems don't run on joined threads yet.`;
+
 export const createRegistrar = (state: State): Registrar => {
     const schedules = new Map<Definition, Schedule>();
     const runners = new Map<Leaf, Runner>();
@@ -74,6 +80,8 @@ export const createRegistrar = (state: State): Registrar => {
             if (schedules.has(system)) continue;
             addedSchedules.set(system, scheduleOf(system));
             if (isLeaf(system)) {
+                const thread = threadOf(system.declaration, "System", system.name);
+                if (thread !== null && state.claims.has(thread)) throw new Error(unplacedSystem(system.name, thread));
                 // Creating the system checked its declaration; registering it gives its keys ids in this world.
                 const keys = keysOf(system);
                 for (const key of keys.components) idOf(state, key);
@@ -129,5 +137,14 @@ export const createRegistrar = (state: State): Registrar => {
         return placed;
     };
 
-    return { register, registered, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, kernels: () => [...kernelIndexes.keys()], placeGpuKernels };
+    /** A registered system on one of `threads`, as the reason a joined thread can't claim them; null for none. */
+    const placedOn = (threads: readonly string[]): string | null => {
+        for (const leaf of runners.keys()) {
+            const thread = threadOf(leaf.declaration, "System", leaf.name);
+            if (thread !== null && threads.includes(thread)) return unplacedSystem(leaf.name, thread);
+        }
+        return null;
+    };
+
+    return { register, registered, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, kernels: () => [...kernelIndexes.keys()], placeGpuKernels, placedOn };
 };

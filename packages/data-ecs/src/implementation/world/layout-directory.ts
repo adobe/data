@@ -16,7 +16,8 @@ import type { Memory } from './memory.js';
  *
  * The structure epoch is odd from the start of each sync point that applies anything until its directory writes at the
  * end, and even otherwise. A thread reading entity locations outside a task reads while it's even and checks it again
- * after, retrying on a change, and waits on it while it's odd; the world notifies it when it turns even.
+ * after, retrying on a change, and waits on it while it's odd, counted in the waiters word first; the world notifies
+ * waiting readers when it turns even.
  */
 export const tableOffsetWord = 1;
 export const tableLengthWord = 2;
@@ -31,18 +32,22 @@ export const generationField = 5;
 export const capacityField = 6;
 export const entitiesVersionField = 7;
 export const resourceEntityWord = 12;
+/** Readers waiting on the structure epoch, so the world notifies only when one is. */
+export const structureWaitersWord = 13;
 
 /**
- * An archetype record: its capacity, `entities` offset, storage count, version and flags, then per storage its component
- * number, flags, column, `added`, `changed`, `chunkAdded` and `chunkChanged` offsets, and chunk count. Offsets a storage
- * doesn't have are 0. A record is allocated once, since an archetype's storages are fixed, and never moves.
+ * An archetype record: its capacity, `entities` offset, storage count, version, flags and row count, then per storage
+ * its component number, flags, column, `added`, `changed`, `chunkAdded` and `chunkChanged` offsets, and chunk count.
+ * Offsets a storage doesn't have are 0. A record is allocated once, since an archetype's storages are fixed, and never
+ * moves. Its count is written at flushes while a joined thread may read it, for archetypes whose count changed.
  */
 export const recordCapacity = 0;
 export const recordEntities = 1;
 export const recordStorages = 2;
 export const recordVersion = 3;
 export const recordFlags = 4;
-export const recordWords = 5;
+export const recordCount = 5;
+export const recordWords = 6;
 /** Record flags: it's the resource archetype, of the entity resources live on. */
 export const resourceFlag = 1;
 export const storageWords = 8;
@@ -54,9 +59,14 @@ export const storageChanged = 4;
 export const storageChunkAdded = 5;
 export const storageChunkChanged = 6;
 export const storageChunks = 7;
-/** Storage flags: it keeps ticks; it has a column in linear memory. */
+/**
+ * Storage flags: it keeps ticks; it has a column in linear memory; its objects are a joined thread's, whose number is
+ * the flags from `threadShift` on, and its column holds each row's tag (`move-log.ts`).
+ */
 export const tickedFlag = 1;
 export const linearFlag = 2;
+export const remoteFlag = 4;
+export const threadShift = 8;
 
 /** The world's side of the directory. */
 export type LayoutDirectory = {
@@ -69,6 +79,8 @@ export type LayoutDirectory = {
     readonly records: (Uint32Array | undefined)[];
     /** The entity table's version as last flushed. */
     entities: number;
+    /** Whether a joined thread may read entity locations outside a task, so sync points keep the structure epoch. */
+    guarded: boolean;
 };
 
 const initialTable = 64;
@@ -80,7 +92,7 @@ export const createLayoutDirectory = (memory: Memory): LayoutDirectory | null =>
     const { header } = memory;
     header[tableOffsetWord] = table.byteOffset;
     header[tableLengthWord] = 0;
-    return { memory, header, words: new Int32Array(header.buffer, header.byteOffset, header.length), table, records: [], entities: -1 };
+    return { memory, header, words: new Int32Array(header.buffer, header.byteOffset, header.length), table, records: [], entities: -1, guarded: false };
 };
 
 const writeEntities = ({ header }: LayoutDirectory, entities: Entities): void => {
@@ -118,13 +130,15 @@ const writeArchetype = (directory: LayoutDirectory, archetype: Archetype): void 
     record[recordEntities] = archetype.entities.byteOffset;
     record[recordStorages] = archetype.storages.length;
     record[recordFlags] = archetype.resource ? resourceFlag : 0;
+    record[recordCount] = archetype.count;
     for (let s = 0; s < archetype.storages.length; s++) {
         const storage = archetype.storages[s];
         const base = recordWords + s * storageWords;
         const linear = storage.layout.kind === "linear";
+        const { remote } = storage;
         record[base + storageComponent] = storage.component;
-        record[base + storageFlags] = (storage.ticked ? tickedFlag : 0) | (linear ? linearFlag : 0);
-        record[base + storageColumn] = linear ? storage.views.u8.byteOffset : 0;
+        record[base + storageFlags] = (storage.ticked ? tickedFlag : 0) | (linear ? linearFlag : 0) | (remote === null ? 0 : remoteFlag | (remote.thread << threadShift));
+        record[base + storageColumn] = linear ? storage.views.u8.byteOffset : remote === null ? 0 : storage.tags.byteOffset;
         record[base + storageAdded] = storage.ticked ? storage.added.byteOffset : 0;
         record[base + storageChanged] = storage.ticked ? storage.changed.byteOffset : 0;
         record[base + storageChunkAdded] = storage.ticked ? storage.chunkAdded.byteOffset : 0;
@@ -141,10 +155,11 @@ const writeArchetype = (directory: LayoutDirectory, archetype: Archetype): void 
  * entity table's and the resource entity's if they moved. Runs at the end of each sync point and wherever registration
  * changes layouts; allocates only for new records.
  */
-export const flushDirectory = (directory: LayoutDirectory | null, bumped: Archetype[], archetypes: readonly Archetype[], entities: Entities, resourceEntity: number): void => {
+export const flushDirectory = (directory: LayoutDirectory | null, bumped: Archetype[], archetypes: readonly Archetype[], entities: Entities, resourceEntity: number, counted: Archetype[]): void => {
     if (directory === null) return;
     const resourceWord = resourceEntity < 0 ? 0 : (resourceEntity >>> 0) + 1;
     if (directory.header[resourceEntityWord] !== resourceWord) Atomics.store(directory.header, resourceEntityWord, resourceWord);
+    if (counted.length > 0) flushCounts(directory, counted);
     if (bumped.length === 0 && entities.version === directory.entities) return;
     if (entities.version !== directory.entities) {
         writeEntities(directory, entities);
@@ -160,14 +175,53 @@ export const flushDirectory = (directory: LayoutDirectory | null, bumped: Archet
     Atomics.store(directory.header, tableLengthWord, archetypes.length);
 };
 
-/** At the start of a sync point that applies anything: the structure epoch turns odd. */
-export const beginStructure = (directory: LayoutDirectory | null): void => {
-    if (directory !== null) Atomics.add(directory.words, structureWord, 1);
+/**
+ * A flush between sync points, as registration's: under the structure epoch, as a sync point's is, while a joined
+ * thread may read records.
+ */
+export const flushBetween = (directory: LayoutDirectory | null, bumped: Archetype[], archetypes: readonly Archetype[], entities: Entities, resourceEntity: number, counted: Archetype[]): void => {
+    if (directory === null) return;
+    const guarding = directory.guarded && (bumped.length > 0 || counted.length > 0 || entities.version !== directory.entities);
+    if (guarding) Atomics.add(directory.words, structureWord, 1);
+    flushDirectory(directory, bumped, archetypes, entities, resourceEntity, counted);
+    if (guarding) endStructure(directory);
 };
 
-/** Once a sync point's directory writes are done: the structure epoch turns even, waking readers waiting on it. */
+/** Writes the counts of archetypes whose count changed, those with records; a new archetype's comes with its record. */
+const flushCounts = (directory: LayoutDirectory, counted: Archetype[]): void => {
+    for (let k = 0; k < counted.length; k++) {
+        const archetype = counted[k];
+        archetype.counted = false;
+        const record = directory.records[archetype.id];
+        if (record !== undefined) record[recordCount] = archetype.count;
+    }
+    counted.length = 0;
+};
+
+/** Lists an archetype whose count changed for the next flush, while a joined thread may read counts. */
+export const countChanged = (counted: Archetype[], archetype: Archetype): void => {
+    if (archetype.counted) return;
+    archetype.counted = true;
+    counted.push(archetype);
+};
+
+/**
+ * At the start of a sync point that applies anything, once a joined thread may read locations: the structure epoch
+ * turns odd, by an exchange, so the writes after it can't be seen before it.
+ */
+export const beginStructure = (directory: LayoutDirectory | null): void => {
+    if (directory !== null && directory.guarded) Atomics.add(directory.words, structureWord, 1);
+};
+
+/**
+ * Once a sync point's directory writes are done: the structure epoch turns even, by a store, since only the world
+ * writes it, waking readers only when one waits on it.
+ */
 export const endStructure = (directory: LayoutDirectory | null): void => {
-    if (directory === null || (directory.words[structureWord] & 1) === 0) return;
-    Atomics.add(directory.words, structureWord, 1);
-    Atomics.notify(directory.words, structureWord);
+    if (directory === null) return;
+    const { words } = directory;
+    const epoch = words[structureWord];
+    if ((epoch & 1) === 0) return;
+    Atomics.store(words, structureWord, epoch + 1);
+    if (Atomics.load(words, structureWaitersWord) !== 0) Atomics.notify(words, structureWord);
 };

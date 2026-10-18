@@ -1,8 +1,9 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Layout, Views } from '../../interface/registry/layout.js';
-import { allocateArray, allocateViews, emptyViews, freeViews, growArray } from './arrays.js';
+import { allocateArray, allocateViews, emptyViews, freeArray, freeViews, growArray } from './arrays.js';
 import { chunkShift } from './kernel.js';
 import type { Memory } from './memory.js';
+import { nullTag, startTag, type MoveLog } from './move-log.js';
 
 /** One component's storage in one archetype. Its views and ticks are replaced when the archetype grows. */
 export type Storage = {
@@ -10,8 +11,11 @@ export type Storage = {
     readonly layout: Layout;
     /** Views of the interleaved column, for a linear layout: row `r` is `layout.stride` bytes at `r * stride`. */
     views: Views;
-    /** Values, for an object layout. */
+    /** Values, for an object layout the world's thread fills. */
     readonly values: unknown[];
+    /** For an object layout a joined thread fills, its log, and each row's tag (`move-log.ts`) in place of its value. */
+    remote: MoveLog | null;
+    tags: Uint32Array;
     /** How the sync point writes a value without a closure call: one of the `write` kinds, with its leaves' placement. */
     readonly write: number;
     readonly unitStride: number;
@@ -98,6 +102,10 @@ export type Archetype = {
     readonly resource: boolean;
     /** Whether a storage holds values as objects, which a removed row must release. */
     readonly objects: boolean;
+    /** The logs of the joined threads whose objects it holds, which its moves are appended to; null for none. */
+    logs: MoveLog[] | null;
+    /** Whether it's listed for the layout directory's next flush of counts. */
+    counted: boolean;
     /** Incremented whenever arrays are replaced, so cached views can be refreshed. */
     version: number;
     /** The world's archetypes created or bumped since the layout directory's last flush (`layout-directory.ts`). */
@@ -118,6 +126,8 @@ const initialCapacity = 16;
 
 /** The tick arrays of a storage without ticks. */
 const noTicks = new Float64Array(0);
+/** The tags of a storage whose values the world's thread holds. */
+const noTags = new Uint32Array(0);
 
 /**
  * Gives a storage tick arrays for `capacity` rows, every tick set to `tick`. A constant's value can't change, so its
@@ -145,6 +155,8 @@ const createStorage = (memory: Memory, component: number, layout: Layout, capaci
         chunkAdded: noTicks,
         chunkChanged: noTicks,
         columnChanged: 0,
+        remote: null,
+        tags: noTags,
     };
     if (ticked) allocateTicks(memory, storage, capacity, 0);
     return storage;
@@ -160,8 +172,11 @@ export const startTicks = (memory: Memory, archetype: Archetype, storage: Storag
     bump(archetype);
 };
 
-/** Creates an archetype, listed in `bumped` for the layout directory's next flush. */
-export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, ticked: ReadonlySet<number>, bumped: Archetype[]): Archetype => {
+/**
+ * Creates an archetype, listed in `bumped` for the layout directory's next flush; storages of components a joined
+ * thread fills, by `remote`, hold their tags.
+ */
+export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, ticked: ReadonlySet<number>, bumped: Archetype[], remote: readonly (MoveLog | undefined)[]): Archetype => {
     const storages = components.map(component => createStorage(memory, component, layouts[component], initialCapacity, resource || ticked.has(component)));
     const storageById: (Storage | undefined)[] = [];
     for (const storage of storages) storageById[storage.component] = storage;
@@ -182,8 +197,14 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
         version: 0,
         bumped,
         listed: true,
+        logs: null,
+        counted: false,
     };
     bumped.push(archetype);
+    for (const storage of storages) {
+        const log = remote[storage.component];
+        if (log !== undefined) makeRemote(memory, archetype, storage, log);
+    }
     return archetype;
 };
 
@@ -200,6 +221,7 @@ const grow = (memory: Memory, archetype: Archetype, capacity = archetype.capacit
     const { count } = archetype;
     for (const storage of archetype.storages) {
         growViews(memory, storage, capacity, count);
+        if (storage.remote !== null) storage.tags = growArray(memory, storage.tags, Uint32Array, capacity, count);
         if (!storage.ticked) continue;
         const shared = storage.changed === storage.added;
         storage.added = growArray(memory, storage.added, Float64Array, capacity, count);
@@ -257,7 +279,10 @@ export const copyValue = (from: Storage, fromRow: number, to: Storage, toRow: nu
         for (let i = 0; i < words; i++) target[t + i] = source[s + i];
     }
     else if (layout.kind === "linear") copyElement(from.views, fromRow, to.views, toRow, layout.stride);
-    else if (layout.kind === "object") to.values[toRow] = from.values[fromRow];
+    else if (layout.kind === "object") {
+        if (to.remote === null) to.values[toRow] = from.values[fromRow];
+        else to.tags[toRow] = from.tags[fromRow];
+    }
 };
 
 /** Copies one component's value and ticks between rows of storages with the same layout. */
@@ -282,8 +307,41 @@ export const swapRemove = (archetype: Archetype, row: number): number => {
     const moved = row === last ? -1 : archetype.entities[last];
     for (const storage of archetype.storages) {
         if (moved !== -1) copyCell(storage, last, storage, row);
-        if (storage.layout.kind === "object") storage.values[last] = undefined;
+        if (storage.layout.kind === "object" && storage.remote === null) storage.values[last] = undefined;
     }
     if (moved !== -1) archetype.entities[row] = moved;
     return moved;
+};
+
+/**
+ * Gives a storage's objects to the joined thread `log` is for: its values are released, every row starting there at
+ * its start, and its tags are kept in their place. Allocates, so it runs only between runs.
+ */
+export const makeRemote = (memory: Memory, archetype: Archetype, storage: Storage, log: MoveLog): void => {
+    storage.remote = log;
+    storage.tags = allocateArray(memory, Uint32Array, archetype.capacity).fill(startTag);
+    storage.values.length = 0;
+    if (archetype.logs === null) archetype.logs = [log];
+    else if (!archetype.logs.includes(log)) archetype.logs.push(log);
+    if (!log.archetypes.includes(archetype)) log.archetypes.push(archetype);
+    bump(archetype);
+};
+
+/**
+ * Takes a storage's objects back from a joined thread that's gone: each row at the value its tag names, `null` or its
+ * start, since a slot's value was the thread's. Allocates, so it runs only between runs.
+ */
+export const makeLocal = (memory: Memory, archetype: Archetype, storage: Storage, start: unknown): void => {
+    const log = storage.remote;
+    if (log === null) return;
+    for (let row = 0; row < archetype.count; row++) storage.values[row] = storage.tags[row] === nullTag ? null : start;
+    freeArray(memory, storage.tags);
+    storage.tags = noTags;
+    storage.remote = null;
+    if (!archetype.storages.some(other => other.remote === log)) {
+        const logs = (archetype.logs ?? []).filter(other => other !== log);
+        archetype.logs = logs.length === 0 ? null : logs;
+        log.archetypes.splice(log.archetypes.indexOf(archetype), 1);
+    }
+    bump(archetype);
 };

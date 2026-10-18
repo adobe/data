@@ -1,5 +1,6 @@
 /// <reference types="node" />
 import { Component } from "../interface/component/component.js";
+import { Observe } from "../interface/observe/observe.js";
 import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
 import { clock } from "../interface/resources/clock.js";
@@ -124,8 +125,11 @@ const mailboxBest = async (kind: "resource" | "select", system: System<void>, st
             });
             world.add(system);
         });
+        const counted = kind === "resource" ? await Observe.toPromise(world.observe.resource(counter)) : 0;
         const stopped = await joined.ask({ kind: "stop" });
         if (stopped.kind !== "stopped" || stopped.notified === 0) throw new Error(`mailbox ${kind}: the joined thread saw nothing.`);
+        // Timed only while the joined thread keeps up: one that stopped being woken costs the world nothing.
+        if (kind === "resource" && stopped.last < counted - mailboxTicks) throw new Error(`mailbox ${kind}: the joined thread saw ${stopped.last} of ${counted}.`);
     }
     finally {
         await joined.terminate();

@@ -2,7 +2,8 @@ import type { Entity } from '../../interface/entity/entity.js';
 import type { Archetype, Storage } from './archetype.js';
 import { readCell } from './cells.js';
 import { asEntity, locate } from './entities.js';
-import { entriesOf, idOf, type Key, type State } from './state.js';
+import { entriesOf, idOf, metIdOf, type Key, type State } from './state.js';
+import { newestKeyOf } from '../../interface/registry/index.js';
 
 const operators = new Set(["==", "!=", "<", ">", "<=", ">="]);
 
@@ -335,17 +336,17 @@ export const readEntity = (state: State, entity: Entity, options: EntityOptions 
     const row = state.entities.row[index];
     const values: { [key: Key]: unknown } = {};
     if (options === undefined) {
-        for (const storage of archetype.storages) values[state.keys[storage.component]] = readCell(storage, row);
+        for (const storage of archetype.storages) values[newestKeyOf(state.keys[storage.component])] = readCell(storage, row);
         return values;
     }
     for (const key of options.required ?? []) {
-        const id = state.ids.get(key);
+        const id = metIdOf(state, key);
         const storage = id === undefined ? undefined : archetype.storageById[id];
         if (storage === undefined) return null;
         values[key] = readCell(storage, row);
     }
     for (const key of options.optional ?? []) {
-        const id = state.ids.get(key);
+        const id = metIdOf(state, key);
         const storage = id === undefined ? undefined : archetype.storageById[id];
         if (storage !== undefined) values[key] = readCell(storage, row);
     }

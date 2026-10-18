@@ -2,8 +2,7 @@ import type { Schema } from '../schema/schema.js';
 import type { Definition } from '../system/definition.js';
 import type { Leaf } from '../system/leaf.js';
 import { requireDefinition } from './program.js';
-import { sameDeclaration } from './same-declaration.js';
-import { labelOf } from './names.js';
+import { firstKeyOf, labelOf, sameDeclaration } from './names.js';
 
 type Key = symbol;
 
@@ -138,14 +137,14 @@ export const reducedBy = (leaf: Leaf): readonly Key[] => {
     return reduce === undefined ? [] : Object.getOwnPropertySymbols(reduce).filter(key => Reflect.get(reduce, key) !== undefined);
 };
 
-/** Reads include change filters, since they observe writers' ticks. Presence-only lists don't conflict. */
+/** Reads include change filters, since they observe writers' ticks. Presence-only lists don't conflict. Keys are each one's first symbol. */
 export const accessOf = (leaf: Leaf): Access => {
     const { components, lookup, resources, up } = leaf.declaration;
-    const reads = new Set<Key>([...components?.read ?? [], ...components?.added ?? [], ...components?.changed ?? [], ...resources?.read ?? [], ...resources?.changed ?? []]);
-    for (const name in lookup) for (const key of lookup[name].read ?? []) reads.add(key);
-    if (up !== undefined) for (const key of [up.through, ...up.read ?? []]) reads.add(key);
-    const writes = new Set<Key>([...components?.write ?? [], ...resources?.write ?? []]);
-    return { reads, writes, reduces: new Set(reducedBy(leaf)) };
+    const reads = new Set<Key>([...components?.read ?? [], ...components?.added ?? [], ...components?.changed ?? [], ...resources?.read ?? [], ...resources?.changed ?? []].map(firstKeyOf));
+    for (const name in lookup) for (const key of lookup[name].read ?? []) reads.add(firstKeyOf(key));
+    if (up !== undefined) for (const key of [up.through, ...up.read ?? []]) reads.add(firstKeyOf(key));
+    const writes = new Set<Key>([...components?.write ?? [], ...resources?.write ?? []].map(firstKeyOf));
+    return { reads, writes, reduces: new Set(reducedBy(leaf).map(firstKeyOf)) };
 };
 
 /** Contributors to one resource don't conflict with each other: their fold doesn't depend on which runs first. */

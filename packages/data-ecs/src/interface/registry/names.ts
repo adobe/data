@@ -1,13 +1,20 @@
 import type { AnyDeclaration } from './declarations.js';
+import { idOfKey } from './ids.js';
 
 /** What a key names. */
 export type Kind = "component" | "resource" | "trait";
 
-/** A registered key: its kind, its declaration (none for a trait) and its label. */
-type Entry = { readonly kind: Kind; readonly declaration: AnyDeclaration | undefined; readonly label: string };
+/**
+ * A registered key: its kind, its declaration (none for a trait) and its label, shared by every symbol registered under
+ * its id. `first` is the symbol registered first, `newest` the one registered last.
+ */
+type Entry = { readonly kind: Kind; readonly declaration: AnyDeclaration | undefined; readonly label: string; readonly first: symbol; newest: symbol };
 
-/** Every component, resource and user trait, by key identity. */
+/** Every component, resource and user trait, by symbol identity: symbols of one id share an entry. */
 const entries = new Map<symbol, Entry>();
+
+/** Entries by the ids the plugin gave their keys. */
+const identified = new Map<string, Entry>();
 
 /** Labels given, so each key's is unique. */
 const labels = new Set<string>();
@@ -24,14 +31,28 @@ export const kindOf = (key: unknown): Kind | undefined => typeof key === "symbol
 /** The declaration of a registered component or resource. */
 export const declarationOf = (key: unknown): AnyDeclaration | undefined => typeof key === "symbol" ? entries.get(key)?.declaration : undefined;
 
+/** Whether two values are one key: the same value, or symbols registered under one id. */
+export const sameKey = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true;
+    if (typeof a !== "symbol" || typeof b !== "symbol") return false;
+    const entry = entries.get(a);
+    return entry !== undefined && entry === entries.get(b);
+};
+
+/** The symbol first registered as this key, which stands for it wherever keys are compared; any other value as it is. */
+export const firstKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entries.get(key)?.first ?? key : key;
+
+/** The symbol last registered as this key, by which a world gives values; any other value as it is. */
+export const newestKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entries.get(key)?.newest ?? key : key;
+
 /**
- * How errors and reports name a key: a registered key's label, unique among them and kept once given; its description,
- * numbered by registration order when another key's label has it. An unregistered key is named by its description,
- * `Symbol()` without one, and any other value as text.
+ * How errors and reports name a key: its id when the plugin gave it one; else a registered key's label, unique among
+ * them and kept once given, its description, numbered by registration order when another key's label has it. An
+ * unregistered key is named by its description, `Symbol()` without one, and any other value as text.
  */
 export const labelOf = (key: unknown): string => {
     if (typeof key !== "symbol") return String(key);
-    return entries.get(key)?.label ?? wellKnown.get(key) ?? (key.description === undefined || key.description === "" ? "Symbol()" : key.description);
+    return entries.get(key)?.label ?? idOfKey(key) ?? wellKnown.get(key) ?? (key.description === undefined || key.description === "" ? "Symbol()" : key.description);
 };
 
 /** A unique label for a key registered now. */
@@ -58,8 +79,28 @@ export const requireKey = (kind: Kind, key: unknown): symbol => {
 };
 
 /**
- * Records a key as a component, resource or trait, with its declaration. Throws for a key that isn't a plain
- * `Symbol(...)`, or one already registered.
+ * Whether two declarations are the same, as a module evaluated again declares them, such as on a hot reload. Keys
+ * compare as `sameKey` does, and systems and finalizers they list by name, since evaluating their modules again makes
+ * new ones.
+ */
+export const sameDeclaration = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true;
+    if (typeof a === "symbol" || typeof b === "symbol") return sameKey(a, b);
+    if (typeof a !== "object" || typeof b !== "object" || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
+    if ("declaration" in a && "name" in a && "declaration" in b && "name" in b) return a.name === b.name;
+    const keys = Reflect.ownKeys(a);
+    const others = Reflect.ownKeys(b);
+    return keys.length === others.length && keys.every(key => {
+        const other = typeof key === "symbol" ? others.find(candidate => sameKey(key, candidate)) : key;
+        return other !== undefined && Reflect.has(b, other) && sameDeclaration(Reflect.get(a, key), Reflect.get(b, other));
+    });
+};
+
+/**
+ * Records a key as a component, resource or trait, with its declaration. A symbol whose id is already a registered
+ * key's, of its kind with the same declaration, as a module evaluated again makes it, is that key. Throws for a key
+ * that isn't a plain `Symbol(...)`, one already registered, or one whose id is another kind's or has another
+ * declaration.
  */
 export const claimKey = (key: unknown, kind: Kind, declaration?: AnyDeclaration): void => {
     const symbol = requireKey(kind, key);
@@ -67,5 +108,21 @@ export const claimKey = (key: unknown, kind: Kind, declaration?: AnyDeclaration)
     if (existing !== undefined) {
         failRegistration(kind, symbol, existing.kind === kind ? `already registered as a ${kind}, with another declaration.` : `already registered as a ${existing.kind}.`);
     }
-    entries.set(symbol, { kind, declaration, label: labelFor(symbol) });
+    const id = idOfKey(symbol);
+    const named = id === undefined ? undefined : identified.get(id);
+    if (named !== undefined) {
+        if (named.kind !== kind) failRegistration(kind, symbol, `its id is a ${named.kind}'s.`);
+        if (!sameDeclaration(named.declaration, declaration)) {
+            failRegistration(kind, symbol, "its id is another key's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.");
+        }
+        named.newest = symbol;
+        entries.set(symbol, named);
+        return;
+    }
+    const entry: Entry = { kind, declaration, label: id ?? labelFor(symbol), first: symbol, newest: symbol };
+    if (id !== undefined) {
+        labels.add(id);
+        identified.set(id, entry);
+    }
+    entries.set(symbol, entry);
 };

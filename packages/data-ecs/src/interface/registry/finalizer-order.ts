@@ -1,5 +1,5 @@
 import type { Finalizer } from '../finalizer/created.js';
-import { labelOf } from './names.js';
+import { firstKeyOf, labelOf } from './names.js';
 
 /**
  * Finalizers in run order: `before` and `after` first, then registration order. Throws for a cycle, and for two that
@@ -39,8 +39,8 @@ export const orderFinalizers = <T extends { readonly name: string; readonly fina
         }
         return false;
     };
-    const writes = runners.map(runner => new Set<unknown>(runner.finalizer.declaration.resources?.write ?? []));
-    const reads = runners.map(runner => new Set<unknown>(runner.finalizer.declaration.resources?.read ?? []));
+    const writes = runners.map(runner => new Set<unknown>((runner.finalizer.declaration.resources?.write ?? []).map(firstKeyOf)));
+    const reads = runners.map(runner => new Set<unknown>((runner.finalizer.declaration.resources?.read ?? []).map(firstKeyOf)));
     for (let a = 0; a < runners.length; a++) for (let b = a + 1; b < runners.length; b++) {
         const conflict = [...writes[a]].find(key => writes[b].has(key) || reads[b].has(key)) ?? [...writes[b]].find(key => reads[a].has(key));
         if (conflict !== undefined && !reaches(a, b) && !reaches(b, a)) {

@@ -13,7 +13,7 @@ import { idOf, type Key, type State } from './state.js';
 import type { Queued } from './synchronize.js';
 import type { Essential, ReadonlyValue } from '../../interface/component/value.js';
 import type { Leaf } from '../../interface/finalizer/created.js';
-import { labelOf } from '../../interface/registry/index.js';
+import { labelOf, newestKeyOf } from '../../interface/registry/index.js';
 
 /** A registered finalizer, resolved for a world: what it matches or watches, its context, and the buffer its commands go to. */
 export type FinalizerRunner = {
@@ -141,8 +141,8 @@ export const commandValue = (state: State, queued: readonly Queued[], entry: num
 
 export const isMissing = (value: unknown): boolean => value === missing;
 
-/** A watched component's name: watched components are registered and not derived, so they're essential. */
-const essential = (state: State, id: number): Essential => state.keys[id] as Essential;
+/** A watched component's newest key: watched components are registered and not derived, so they're essential. */
+const essential = (state: State, id: number): Essential => newestKeyOf(state.keys[id]) as Essential;
 
 /** The sync point's structural changes to a changes finalizer's components, grouped by how they changed. */
 const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queued[]): ChangeSet<Essential> => {

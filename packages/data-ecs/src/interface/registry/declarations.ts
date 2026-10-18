@@ -1,10 +1,9 @@
 import type { Schema } from '../schema/schema.js';
 import type { Name as TraitName } from '../trait/name.js';
 import { layoutOf } from './layout.js';
-import { claimKey, declarationOf, failRegistration, kindOf, labelOf, requireKey } from './names.js';
+import { claimKey, declarationOf, failRegistration, kindOf, labelOf, requireKey, sameDeclaration } from './names.js';
 import type { Registry } from './registry.js';
 import { isReduction } from './reduction.js';
-import { sameDeclaration } from './same-declaration.js';
 import { allowsNull, hasBoolean, isEntity, isStruct } from './schemas.js';
 import { isTrait } from './traits.js';
 

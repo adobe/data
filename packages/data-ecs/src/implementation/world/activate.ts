@@ -5,7 +5,7 @@ import { createFinalizerRunner, type FinalizerRunner } from './finalizers.js';
 import { programFinalizers, programRules, programVersion } from '../../interface/registry/program.js';
 import { triggersOf } from './program.js';
 import { ensureResources, findResource } from './resources.js';
-import { idOf, type Key, type State } from './state.js';
+import { idOf, metIdOf, type Key, type State } from './state.js';
 import { restratify } from './structure.js';
 import { labelOf } from '../../interface/registry/index.js';
 
@@ -23,7 +23,7 @@ export const ensureProgramResources = (state: State, ensured: { version: number 
 
 const ready = (state: State, item: Rule | Finalizer): boolean => {
     const { keys, any } = triggersOf(item);
-    return keys.length === 0 || (any ? keys.some(key => state.ids.has(key)) : keys.every(key => state.ids.has(key)));
+    return keys.length === 0 || (any ? keys.some(key => metIdOf(state, key) !== undefined) : keys.every(key => metIdOf(state, key) !== undefined));
 };
 
 /**

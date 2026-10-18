@@ -9,6 +9,7 @@ import { locate } from './entities.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
 import type { Failure, Report } from '../../interface/world/report.js';
 import { failureOf } from './failures.js';
+import { firstKeyOf } from '../../interface/registry/index.js';
 
 /** Shared by every report without failures or skipped systems: they're read-only, so none needs its own. */
 const none: readonly never[] = [];
@@ -60,7 +61,7 @@ type Fold = { target: ReductionTarget | null; readonly values: number[]; remaini
 /** Folds a contributor's leaves into its run's folds, writing each resource whose contributors have all finished. */
 const contribute = (state: State, folds: ReadonlyMap<unknown, Fold>, runner: Runner, folded: readonly Float64Array[] | null, failed: boolean): void => {
     runner.targets.forEach((target, t) => {
-        const fold = folds.get(target.key);
+        const fold = folds.get(target.key) ?? folds.get(firstKeyOf(target.key));
         if (fold === undefined) return;
         fold.target ??= target;
         if (fold.values.length === 0) fold.values.push(...target.leaves.map(() => identityOf(target.operator)));

@@ -2,7 +2,7 @@
 export type { AnyDeclaration } from './declarations.js';
 export { schemaOf, threadOfDeclaration } from './declarations.js';
 export type { Kind } from './names.js';
-export { declarationOf, kindOf, labelOf } from './names.js';
+export { declarationOf, firstKeyOf, kindOf, labelOf, newestKeyOf } from './names.js';
 export type { Item } from './program.js';
 export { definitionOf, itemNamed, programFinalizers, programRules, programVersion, requireDefinition } from './program.js';
 export type { Schedule } from './schedule.js';
@@ -13,7 +13,7 @@ export type { Placed } from './threads.js';
 export { threadOf } from './threads.js';
 export { isTrait } from './traits.js';
 export { isWorldWritten } from './written.js';
-export { sameDeclaration } from './same-declaration.js';
+export { sameDeclaration } from './names.js';
 export { allowsNull, conditional, isStruct } from './schemas.js';
 export { isReduction, reductionOperators } from './reduction.js';
 export type { Definition } from '../system/definition.js';

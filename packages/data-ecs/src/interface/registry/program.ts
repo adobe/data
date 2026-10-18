@@ -1,9 +1,8 @@
 import type { Finalizer } from '../finalizer/created.js';
 import type { Rule } from '../rule/created.js';
 import type { Definition } from '../system/definition.js';
-import { declarationOf, labelOf } from './names.js';
+import { declarationOf, firstKeyOf, labelOf, sameDeclaration } from './names.js';
 import { orderFinalizers } from './finalizer-order.js';
-import { sameDeclaration } from './same-declaration.js';
 import { strataOf, type RuleFacts } from './strata.js';
 
 /** What a system, rule or finalizer constructor recorded. */
@@ -42,7 +41,8 @@ const checkStrata = (all: readonly Rule[]): void => {
     const ids = new Map<Key, number>();
     const keys: Key[] = [];
     const hosts: number[] = [];
-    const idOf = (key: Key): number => {
+    const idOf = (symbol: Key): number => {
+        const key = firstKeyOf(symbol);
         const existing = ids.get(key);
         if (existing !== undefined) return existing;
         const id = keys.length;

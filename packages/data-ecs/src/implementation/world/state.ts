@@ -1,5 +1,5 @@
 import type { Entity } from '../../interface/entity/entity.js';
-import { declarationOf, kindOf, labelOf } from '../../interface/registry/index.js';
+import { declarationOf, firstKeyOf, kindOf, labelOf } from '../../interface/registry/index.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
 import type { Shape, SpawnBatch } from './batches.js';
 import type { Directory } from './directories.js';
@@ -135,6 +135,9 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
     };
 };
 
+/** The id of a component or resource the world has met, or undefined. */
+export const metIdOf = (state: State, key: Key): number | undefined => state.ids.get(key) ?? state.ids.get(firstKeyOf(key));
+
 /** Components whose hosts are being resolved, to report a cycle of `within` declarations. */
 const resolving = new Set<Key>();
 
@@ -142,6 +145,13 @@ const resolving = new Set<Key>();
 export const idOf = (state: State, key: Key): number => {
     const existing = state.ids.get(key);
     if (existing !== undefined) return existing;
+    // Symbols registered under one id are one component, by the first of them.
+    const first = firstKeyOf(key);
+    if (first !== key) {
+        const id = idOf(state, first);
+        state.ids.set(key, id);
+        return id;
+    }
     const declaration = declarationOf(key);
     if (declaration === undefined) throw new Error(`"${labelOf(key)}" has no registered schema; import the module that registers it.`);
     const { structure } = state;

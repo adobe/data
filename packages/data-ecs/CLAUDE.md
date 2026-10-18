@@ -15,6 +15,9 @@ aren't in its type, though the value still holds them: narrowing a type doesn't 
 Keeping the two apart leaves the implementation free to change how it stores, validates and runs things without
 changing the interface.
 
+Humans own the interface and agents own the implementation: agents don't add to or widen the public contract. See
+`src/interface/CLAUDE.md`.
+
 ## Folders
 
 - **`src/interface`** holds every public type, the registration functions with their registry and checks, and the runtime

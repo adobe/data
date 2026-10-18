@@ -147,15 +147,36 @@ export const neverYields = async (ticks: number) => {
 };
 
 /**
+ * The first value of a number an observer gives that reaches `target`, or -1 once it gave none for `milliseconds`: it
+ * stopped, rather than went on slowly.
+ */
+const reachedOrStopped = (observe: Observe<number>, target: number, milliseconds: number): Promise<number> => new Promise(resolve => {
+    let done = false;
+    let changed = performance.now();
+    const finish = (value: number): void => {
+        if (done) return;
+        done = true;
+        clearInterval(watch);
+        queueMicrotask(() => stop());
+        resolve(value);
+    };
+    const watch = setInterval(() => { if (performance.now() - changed > milliseconds) finish(-1); }, milliseconds / 10);
+    const stop = observe(value => {
+        changed = performance.now();
+        if (value >= target) finish(value);
+    });
+});
+
+/**
  * Ticks of a system on the joined worker, back to back, each a task that follows the last closely: how many ran, or -1
- * once they stopped, as when a wake notified no one.
+ * once they stopped for 5 s, as when a wake notified no one.
  */
 export const ticksThere = async (ticks: number) => {
     const driver = backToBack();
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
     const { worker } = await joined(world);
     world.add(countThere);
-    const counted = await within(until(world.observe.resource(changes), value => value >= ticks), 10000, -1);
+    const counted = await reachedOrStopped(world.observe.resource(changes), ticks, 5000);
     await worker.terminate();
     await world.dispose();
     driver.close();

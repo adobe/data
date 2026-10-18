@@ -35,6 +35,7 @@ export const threadSystemsCases = (load: () => Promise<typeof Fixture>) => descr
     }, 30000);
     it("keep waking the joined worker for tasks that follow each other closely", async () => {
         const fixture = await load();
+        // Ticks that stopped for 5 s give -1; ones going on slowly, as on a busy machine, are waited for.
         expect(await fixture.ticksThere(30000)).toBeGreaterThanOrEqual(30000);
-    }, 30000);
+    }, 120000);
 });

@@ -106,11 +106,14 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   registers it. **Errors when joining:** a thread claimed twice; a claimed thread whose systems or finalizers that
   joined thread hasn't imported (checked by id, once), or one of them without an id.
 - **A terminal system** writes only objects of its own thread, issues no commands, writes no struct component or
-  struct resource, and looks up no struct component. Commands are in every non-GPU system's context, so "issues no
-  commands" is what the plugin proves from the body, as it checks main-thread bodies' keys: a body that never reaches
-  `commands`. A system the plugin can't prove is not terminal. A terminal system's context has no `commands`. DOM-writing
-  systems and render systems are terminal. A remote terminal system runs as a tail (see Tails). A non-terminal remote
-  system is a blocking tier, and the tick's report lists it under `warnings`.
+  struct resource, reduces into nothing, and looks nothing up, since a lookup reads the entity table the next sync
+  point rewrites. Commands are in every non-GPU system's context, so "issues no commands" is what the plugin proves from
+  the body (`compiler/terminal.ts`): its context absent, destructured by plain names other than `commands` without a
+  rest, or a name used only as `name.property` for other properties, and no `arguments` or `eval`; the plugin marks such
+  a body by wrapping it, as it gives ids. A system the plugin can't prove is not terminal. A tail's context has no
+  `commands`. DOM-writing systems and render systems are terminal. A remote terminal system that no system of a later
+  tier conflicts with runs as a tail (see Tails). Any other remote system is a blocking tier, and the tick's report
+  lists it under `warnings`.
 - **Observers:** one that names objects of a thread other than its own throws at subscribe. A struct-only observer is
   evaluated on `world`. One that names its own thread's objects is evaluated on its thread.
 - **Finalizers** run on the thread of the objects they read, after the sync point where a joined thread fills it. So
@@ -449,21 +452,37 @@ tiers, and observers read published results.
 
 ### Tails
 
-Tails at the end of tick N sit just before the head of tick N+1, and ordinary scheduling applies across that boundary.
-A tier in N+1 that writes what a tail reads waits for the tail's reads, which end when its body ends. A sync point
-counts as a write to everything a tail reads, from its `materialize` on, since growth frees blocks the same sync point
-may reuse.
+Tails at the end of tick N sit just before the head of tick N+1, and ordinary scheduling applies across that boundary
+(`tails.ts`, the thread's in `thread-systems.ts`). A tick posts its tails after its sync point, those of each joined
+thread as one task, in schedule order, once that thread's last task finished, so a tail reads the tick's values as of
+its sync point. A tier in N+1 that writes what a tail reads waits for the tail's reads, which end when its body ends: a
+struct component it reads or filters on, or a struct resource it reads, conditions or filters on, written by a system,
+a reduction, a GPU readback, or the world's own clock. A sync point counts as a write to everything a tail reads, from
+its `materialize` on, since growth frees blocks the same sync point may reuse. A run is a transaction, so it waits for
+its tails before it resolves, with their failures in its report.
 
-- **Fallback snapshot.** Sometimes a conflicting writer in N+1 is ready before the tail has finished its reads, as when
-  main is late. A tail claims its rows in chunks with `Atomics.add` on a progress word. The world's thread exchanges
-  the word for a sentinel, copies the declared struct reads of the passing rows from that position on, with their
-  entities, into a tail buffer, and waits until the tail is done through the chunks it claimed, at most one chunk,
-  before the writer runs; the tail reads the rest from the copy. The values are the same either way, so this stays
-  deterministic. A prompt main never copies.
-- **The tail's own objects** are read where they are. The next sync point's moves wait in the log until the tail
-  finishes.
+- **Claims.** A tail's work is numbered: position 0 is its head, which checks its conditions and resolves its
+  resources, and positions from 1 are its matched archetypes' rows in order. It claims positions in chunks of 64 with
+  `Atomics.add` on a progress word in its block, and stores the position it read through after each chunk; the world
+  stored its end when it posted it.
+- **Fallback snapshot.** Sometimes a conflicting writer is ready before the tail has finished its reads, as when main
+  is late. The world's thread then evaluates the tail's head as the tail would, copies the declared linear struct reads
+  of the passing rows from the position the tail reached, with their position, archetype, row and entity, and its
+  linear resources, into a tail buffer, a column at a time; exchanges the progress word for a sentinel; and waits until
+  the tail is done through what it had claimed, at most one chunk, spinning briefly before it waits. A claim that
+  returns the sentinel reads the rest from the copy, rows from its own position on. The values are the same either
+  way, so this stays deterministic. A prompt main never copies.
+- **The tail's own objects** are read where they are: while a tail is in flight, the thread's replay stops at the sync
+  it names, which the world stores in the log header as it posts it, so the next sync point's moves wait in the log until the tail finishes. Rows read from the copy take their
+  objects from the mirror at the copy's rows, or, once its log lapped and it rebuilt past that sync, by entity. Objects
+  it writes from the copy go back to the mirror after its body; the world marks their tags the thread's own when it
+  copies, and stamps them changed at the tail's tick, as the task's completion names them by entity, before the
+  thread's next task.
+- **What waits for a tail to finish:** the next task on its thread, and what moves rows a tail may still read outside
+  a sync point: registration, resources added between runs, a GPU device change, and joined threads joining or leaving.
 - **Report.** A tick ends in two steps: its tiers and sync point, which release the world's queue so N+1 can start, and
-  its report, written to the `report` resource once after its tails, so their failures are in it.
+  its report, written to the `report` resource once after its tails, and every earlier tick's, so their failures are in
+  it. A tick whose systems read the `report` resource waits for the last tick's tails first.
 
 ### Transfers
 
@@ -487,8 +506,8 @@ Memory isn't shared, so the world runs inline, and `share` and `World.join` will
 | A task on any thread | one load per archetype it touches, of its record's version |
 | A tier on a thread other than `world` | one task posted and waited for; consecutive tiers on that thread are one: `handoff` 11.5 µs a tick of five, `fused tiers` 7.5 µs a tick of one, in node |
 | A blocking tier on main | main's event-loop latency, which the report warns about |
-| A terminal tail on main, prompt | one post; nothing copied; the next tick waits only if main is late at a conflict |
-| A terminal tail on main, late at a conflict | a copy of the declared struct reads of its unclaimed passing rows, and a wait of at most one chunk |
+| A terminal tail on main, prompt | one post; nothing copied; the next tick waits only if main is late at a conflict: `tail prompt` 18.4 µs a tick of a 1,000-row tail, in node |
+| A terminal tail on main, late at a conflict | a copy of the declared struct reads of its unclaimed passing rows, a run of rows at a time, and a wait of at most one chunk: `tail late snapshot 10K` 6.7 ns a row of a vec3 and a mat4, in node |
 | Commands and staged spawns from a worker kernel or joined thread | ring writes; the private spill and its message only past the ring's size |
 | `run` from a joined thread | one slot and notify; resolves through a word |
 | Struct observers on a joined thread, per tick | candidate check on the world's thread, a mailbox write of changed results, at most one notify |
@@ -718,20 +737,30 @@ placed on it.
 - New: `despawn objects 10K` (a sync point despawning 10K entities whose objects a joined worker fills, a finalizer
   there reading the object and a vec3), 83 ns a despawn in node, against 77 with the finalizer run inline.
 
-### Phase 6: tails
+### Built: phase 6, tails
 
-Terminal systems proven by the plugin and scheduled across the tick boundary, waits only at conflicts, chunk claims,
-fallback snapshots when a tail is late, ticks resolved in two steps.
+Terminal systems proven by the plugin (`compiler/terminal.ts`) and run as tails after their tick's sync point on their
+joined thread (`tails.ts`, `tail-blocks.ts`, `thread-systems.ts`): claims in chunks, conflicts resolved at later tiers,
+the clock, GPU readbacks and sync points by fallback snapshots, waits only for the claimed chunk, the thread's replay
+bounded by the task in flight, writes from a snapshot returned to the mirror and stamped by the world, ticks resolved
+in two steps.
 
 - Interface: none.
-- Contract: a tick's report includes its tails' failures, written once after them.
-- Tests: a terminal main system over 1,000 rows while the world ticks continuously, checking that every tail sees one
-  tick's values, whether read in place, from a snapshot, or both across a switch at a chunk; a prompt main never
-  snapshots; a sync point that grows what a tail reads waits or snapshots before it materializes; a tail that throws
-  is in its tick's report; a body that reaches `commands` isn't terminal.
+- Contract: a tick's report includes its tails' failures, written once after them, and after every earlier tick's; a
+  run resolves once its tails ran, with their failures; a terminal system on a joined thread that no later system
+  conflicts with runs after its tick's sync point, unlisted in `warnings`.
+- Tests: the plugin marking bodies that never reach `commands`, and not those that may; on one thread through a
+  `MessageChannel`, tails unwarned, each seeing one tick's values, a run waiting for them, a body reaching `commands`
+  blocking its tier, a tail that throws in its run's report and its tick's `report`, and tails skipped with a
+  `"thread"` failure once their thread is gone; in node and chromium against a joined worker, a terminal main system
+  over 1,000 rows while the world ticks back to back, every run seeing one tick's values, read in place, from a
+  snapshot when late, and both across a switch at a chunk (red without snapshots: 9,640 rows of another tick's values);
+  a prompt main never snapshots; a sync point spawning 20,000 rows into what a late tail reads, its labels written from
+  the snapshot kept and stamped (red without stamps).
 - Must not regress: `run idle`, `move main`, `main thread`, `loop tick idle`.
-- New: `tail prompt` (the next tick's start latency with a 1,000-row main tail that finishes in time, N = 1,000
-  ticks); `tail late snapshot 10K` (a late tail of 10,000 passing rows of a vec3 and a mat4, the copy's cost).
+- New: `tail prompt` (ticks of a world system and a 1,000-row tail on a joined worker that keeps up, N = 1,000 ticks),
+  18.4 µs a tick in node; `tail late snapshot 10K` (a run writing what a late tail of 10,000 rows of a vec3 and a mat4
+  reads, the copy's cost), 6.7 ns a row in node.
 
 ### Phase 7: transfers
 

@@ -411,6 +411,11 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   report. A thread finalizes what was published before it leaves.
 - **Dispose:** once the world is disposed, a joined thread runs the stop lists published, then its finalizers for every
   row they match, as the world's thread runs its own.
+- **Restriction:** a finalizer on a thread other than `world` issues no commands, writes no resources and looks
+  nothing up, wherever it runs, so the world's thread never waits for one. Kept open, to revisit when a use case needs
+  it: (a) allow commands and resource writes, applied at the next or a later sync point, with lookups read under the
+  structure epoch; (b) the world waits for remote finalizers inside the sync point, exact timing for about a 10 µs
+  round trip per sync point with such stops.
 
 ### Struct observers and mailboxes
 

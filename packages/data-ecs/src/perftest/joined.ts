@@ -6,13 +6,15 @@ import type { World } from "../interface/world/world.js";
 import { counter, empty, order, remoteRuns, type FromJoined, type ToJoined } from "./remote.js";
 import { handoffSystems } from "./handoff.js";
 import { release } from "./finalized.js";
+import { tailSystems } from "./tails.js";
 import { programFinalizers, requireDefinition } from "../interface/registry/index.js";
 
 /**
  * A thread joined to a benchmark's world: it times runs, or observes through a mailbox until asked to stop, or claims
- * the thread the handoff benchmarks' systems run on, or the one the despawn objects benchmark's finalizer runs on.
+ * the thread the handoff benchmarks' systems run on, the one the despawn objects benchmark's finalizer runs on, or the
+ * one the tail benchmarks' tails run on.
  */
-type Message = ToJoined | { readonly kind: "port"; readonly port: MessagePort | NodeMessagePort; readonly threads?: readonly ("handoffBenchmark" | "finalizedBenchmark")[] };
+type Message = ToJoined | { readonly kind: "port"; readonly port: MessagePort | NodeMessagePort; readonly threads?: readonly ("handoffBenchmark" | "finalizedBenchmark" | "tailsBenchmark")[] };
 
 const channel = scopeChannel<FromJoined | { readonly kind: "joined" }, Message>();
 let remote: World | null = null;
@@ -23,7 +25,7 @@ let notified = 0;
 channel.onMessage(async message => {
     if (message.kind === "port") {
         // The systems the handoff benchmarks place on the thread it claims, which it imports so it runs them.
-        if (message.threads !== undefined) for (const system of handoffSystems) requireDefinition(system);
+        if (message.threads !== undefined) for (const system of [...handoffSystems, ...tailSystems]) requireDefinition(system);
         // The finalizer the despawn benchmark places there, which importing its module declared.
         if (!programFinalizers().some(finalizer => finalizer === release)) throw new Error("joined: the despawn objects benchmark's finalizer isn't declared here.");
         remote = join(message.port, { threads: message.threads ?? [] });

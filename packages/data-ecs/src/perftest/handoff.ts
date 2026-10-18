@@ -11,7 +11,8 @@ import { backToBack, createWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
 
 // Benchmarks of systems on a joined thread, which claims "handoffBenchmark": tiers handing off between the world's thread
-// and the joined one, and consecutive tiers on the joined one, which run as one task. The joined thread is `joined.ts`.
+// and the joined one, and consecutive tiers on the joined one, which run as one task. Their systems reach their commands, so
+// they block their tiers rather than run as tails. The joined thread is `joined.ts`.
 
 export const token = Symbol("handoff/token");
 declare module "@adobe/data-ecs" {
@@ -26,28 +27,28 @@ declare module "@adobe/data-ecs" {
 const tokenTraits = Resource.register(token, { type: Resource.object<{ readonly read: () => number } | null>(), thread: "handoffBenchmark" });
 
 const here0 = System.create({ name: "handoff/here0" }, () => {});
-const there0 = System.create({ name: "handoff/there0", resources: { read: [token] }, after: [here0] }, ({ resources }) => { void resources[token]; });
+const there0 = System.create({ name: "handoff/there0", resources: { read: [token] }, after: [here0] }, ({ resources, commands }) => { void resources[token]; void commands; });
 const here1 = System.create({ name: "handoff/here1", after: [there0] }, () => {});
-const there1 = System.create({ name: "handoff/there1", resources: { read: [token] }, after: [here1] }, ({ resources }) => { void resources[token]; });
+const there1 = System.create({ name: "handoff/there1", resources: { read: [token] }, after: [here1] }, ({ resources, commands }) => { void resources[token]; void commands; });
 const here2 = System.create({ name: "handoff/here2", after: [there1] }, () => {});
-const there2 = System.create({ name: "handoff/there2", resources: { read: [token] }, after: [here2] }, ({ resources }) => { void resources[token]; });
+const there2 = System.create({ name: "handoff/there2", resources: { read: [token] }, after: [here2] }, ({ resources, commands }) => { void resources[token]; void commands; });
 const here3 = System.create({ name: "handoff/here3", after: [there2] }, () => {});
-const there3 = System.create({ name: "handoff/there3", resources: { read: [token] }, after: [here3] }, ({ resources }) => { void resources[token]; });
+const there3 = System.create({ name: "handoff/there3", resources: { read: [token] }, after: [here3] }, ({ resources, commands }) => { void resources[token]; void commands; });
 const here4 = System.create({ name: "handoff/here4", after: [there3] }, () => {});
-const there4 = System.create({ name: "handoff/there4", resources: { read: [token] }, after: [here4] }, ({ resources }) => { void resources[token]; });
+const there4 = System.create({ name: "handoff/there4", resources: { read: [token] }, after: [here4] }, ({ resources, commands }) => { void resources[token]; void commands; });
 /** Ten tiers alternating the world's thread and the joined one, empty systems. */
 export const handoff = System.create({ name: "handoff/ticks", systems: [here0, there0, here1, there1, here2, there2, here3, there3, here4, there4] });
 
-const fused0 = System.create({ name: "handoff/fused0", resources: { read: [token] } }, ({ resources }) => { void resources[token]; });
-const fused1 = System.create({ name: "handoff/fused1", resources: { read: [token] }, after: [fused0] }, ({ resources }) => { void resources[token]; });
-const fused2 = System.create({ name: "handoff/fused2", resources: { read: [token] }, after: [fused1] }, ({ resources }) => { void resources[token]; });
-const fused3 = System.create({ name: "handoff/fused3", resources: { read: [token] }, after: [fused2] }, ({ resources }) => { void resources[token]; });
-const fused4 = System.create({ name: "handoff/fused4", resources: { read: [token] }, after: [fused3] }, ({ resources }) => { void resources[token]; });
-const fused5 = System.create({ name: "handoff/fused5", resources: { read: [token] }, after: [fused4] }, ({ resources }) => { void resources[token]; });
-const fused6 = System.create({ name: "handoff/fused6", resources: { read: [token] }, after: [fused5] }, ({ resources }) => { void resources[token]; });
-const fused7 = System.create({ name: "handoff/fused7", resources: { read: [token] }, after: [fused6] }, ({ resources }) => { void resources[token]; });
-const fused8 = System.create({ name: "handoff/fused8", resources: { read: [token] }, after: [fused7] }, ({ resources }) => { void resources[token]; });
-const fused9 = System.create({ name: "handoff/fused9", resources: { read: [token] }, after: [fused8] }, ({ resources }) => { void resources[token]; });
+const fused0 = System.create({ name: "handoff/fused0", resources: { read: [token] } }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused1 = System.create({ name: "handoff/fused1", resources: { read: [token] }, after: [fused0] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused2 = System.create({ name: "handoff/fused2", resources: { read: [token] }, after: [fused1] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused3 = System.create({ name: "handoff/fused3", resources: { read: [token] }, after: [fused2] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused4 = System.create({ name: "handoff/fused4", resources: { read: [token] }, after: [fused3] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused5 = System.create({ name: "handoff/fused5", resources: { read: [token] }, after: [fused4] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused6 = System.create({ name: "handoff/fused6", resources: { read: [token] }, after: [fused5] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused7 = System.create({ name: "handoff/fused7", resources: { read: [token] }, after: [fused6] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused8 = System.create({ name: "handoff/fused8", resources: { read: [token] }, after: [fused7] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused9 = System.create({ name: "handoff/fused9", resources: { read: [token] }, after: [fused8] }, ({ resources, commands }) => { void resources[token]; void commands; });
 /** Ten consecutive tiers on the joined thread, empty systems. */
 export const fused = System.create({ name: "handoff/fused", systems: [fused0, fused1, fused2, fused3, fused4, fused5, fused6, fused7, fused8, fused9] });
 

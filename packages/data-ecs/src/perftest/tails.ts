@@ -1,0 +1,222 @@
+/// <reference types="node" />
+import { threadStatus } from "../interface/components/index.js";
+import { Component } from "../interface/component/component.js";
+import type { Entity } from "../interface/entity/entity.js";
+import { Resource } from "../interface/resource/resource.js";
+import { always } from "../interface/resources/always.js";
+import { clock } from "../interface/resources/clock.js";
+import { workers } from "../interface/resources/workers.js";
+import { System } from "../interface/system/system.js";
+import type { World } from "../interface/world/world.js";
+import { backToBack, createWorld } from "../implementation/index.js";
+import type { Benchmark } from "./benchmark.js";
+
+// Tails: terminal systems on a joined worker, which claims "tailsBenchmark", running after their tick's sync point
+// while the world goes on. The joined thread is `joined.ts`.
+
+const place = Symbol("tails/place");
+const pose = Symbol("tails/pose");
+const surface = Symbol("tails/surface");
+const poked = Symbol("tails/poked");
+declare module "@adobe/data-ecs" {
+    export interface Threads {
+        tailsBenchmark: true;
+    }
+    export interface Components {
+        [place]: typeof placeTraits;
+        [pose]: typeof poseTraits;
+    }
+    export interface Resources {
+        [surface]: typeof surfaceTraits;
+        [poked]: typeof pokedTraits;
+    }
+}
+const placeTraits = Component.register(place, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
+const poseTraits = Component.register(pose, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 16, maxItems: 16 } });
+/** An object of the joined thread, as a canvas or the DOM is, which places the systems reading it there. */
+const surfaceTraits = Resource.register(surface, { type: { type: "string", default: "surface" }, thread: "tailsBenchmark" });
+const pokedTraits = Resource.register(poked, { type: { type: "integer", default: 0 } });
+
+/** What the tails read, so their reads aren't dead. */
+export const drawn = { sum: 0 };
+
+/** Rows of the prompt tail, and of the late one's snapshot. */
+export const promptRows = 1_000;
+export const lateRows = 10_000;
+/** Ticks in each timed stretch of the prompt tail. */
+export const tailTicks = 1_000;
+
+const spawnPlaces = System.create({ name: "tails/spawnPlaces" }, ({ commands }) => {
+    for (let k = 0; k < promptRows; k++) commands.spawn([place])({ [place]: [k, 0, 0] });
+});
+const spawnPoses = System.create({ name: "tails/spawnPoses" }, ({ commands }) => {
+    for (let k = 0; k < lateRows; k++) commands.spawn([place, pose])({ [place]: [k, 0, 0], [pose]: [k, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] });
+});
+
+const here = System.create({ name: "tails/here" }, () => {});
+/** On the joined thread, terminal: reads every row's place, as a DOM-writing system reads positions. */
+const draw = System.create({ name: "tails/draw", components: { read: [place] }, resources: { read: [surface] } }, (row, { resources }) => {
+    if (resources[surface] === "surface") drawn.sum += row[place][0];
+});
+/** A tick of a world system and a 1,000-row tail that finishes before the next tick needs it. */
+export const promptTick = System.create({ name: "tails/promptTick", systems: [here, draw] });
+
+/** On the joined thread, ahead of the late tail: busy for a while, as a main thread is with layout. */
+const busy = System.create({ name: "tails/busy", resources: { read: [surface] } }, ({ resources }) => {
+    const until = performance.now() + 4;
+    while (performance.now() < until && resources[surface] === "surface");
+});
+/** On the joined thread, terminal, after `busy`: reads every row's place and pose, and the resource `poke` writes. */
+const copied = System.create({ name: "tails/copied", components: { read: [place, pose] }, resources: { read: [surface, poked] }, after: [busy] }, (row, { resources }) => {
+    if (resources[surface] === "surface") drawn.sum += row[place][0] + row[pose][15] + resources[poked];
+});
+export const lateTick = System.create({ name: "tails/lateTick", systems: [busy, copied] });
+/** On the world's thread: writes what the late tail reads, so it copies the rest of the tail's reads first. */
+const poke = System.create({ name: "tails/poke", resources: { write: [poked] } }, ({ resources }) => {
+    resources[poked] += 1;
+});
+const nothing = System.create({ name: "tails/nothing" }, () => {});
+
+/** Every system the joined thread runs, which it imports so the world can place them there. */
+export const tailSystems: readonly System<void>[] = [promptTick, lateTick];
+
+const joinedFile = "./joined.js";
+
+/** Starts `joined.ts` on a worker, joined to `world` and claiming the benchmark's thread, once it joined. */
+const startClaiming = async (world: World): Promise<{ readonly terminate: () => Promise<void> }> => {
+    const message = (port: unknown) => ({ kind: "port", port, threads: ["tailsBenchmark"] });
+    let thread: Entity;
+    let terminate: () => Promise<void>;
+    if (typeof globalThis.Worker === "function") {
+        const { port1, port2 } = new MessageChannel();
+        thread = world.share(port1);
+        const worker = new globalThis.Worker(new URL("./joined.js", import.meta.url), { type: "module" });
+        await new Promise(resolve => {
+            worker.onmessage = resolve;
+            worker.postMessage(message(port2), [port2]);
+        });
+        terminate = async () => worker.terminate();
+    }
+    else {
+        const threads = globalThis.process.getBuiltinModule("node:worker_threads");
+        const { port1, port2 } = new threads.MessageChannel();
+        thread = world.share(port1);
+        const worker = new threads.Worker(new URL(joinedFile, import.meta.url));
+        await new Promise(resolve => {
+            worker.once("message", resolve);
+            worker.postMessage(message(port2), [port2]);
+        });
+        terminate = async () => { await worker.terminate(); };
+    }
+    await new Promise<void>(resolve => {
+        let done = false;
+        const stop = world.observe.entity(thread, { required: [threadStatus] })(value => {
+            if (done || value?.[threadStatus] !== "joined") return;
+            done = true;
+            queueMicrotask(() => stop());
+            resolve();
+        });
+    });
+    return { terminate };
+};
+
+/** The fastest of `stretches` stretches of `tailTicks` ticks with the prompt tail, driven back to back. */
+const prompt = async (stretches = 5): Promise<number> => {
+    const driver = backToBack();
+    const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
+    const joined = await startClaiming(world);
+    let best = Infinity;
+    try {
+        await world.run(spawnPlaces);
+        const report = await world.run(promptTick);
+        if (report.failures.length > 0 || report.warnings.length > 0) throw new Error(`tail prompt: the tail didn't run as one: ${report.failures[0]?.message ?? report.warnings[0]?.message}.`);
+        await new Promise<void>(resolve => {
+            let ticks = 0;
+            let stretch = 0;
+            let start = 0;
+            const unobserve = world.observe.resource(clock)(() => {
+                if (ticks++ % tailTicks !== 0) return;
+                const now = performance.now();
+                if (stretch > 1) best = Math.min(best, now - start);
+                start = now;
+                if (stretch++ <= stretches) return;
+                unobserve();
+                resolve();
+            });
+            world.add(promptTick);
+        });
+    }
+    finally {
+        await joined.terminate();
+        await world.dispose();
+        driver.close();
+    }
+    return best;
+};
+
+const nextTick = (world: World): Promise<void> => new Promise(resolve => {
+    let first = true;
+    const stop = world.observe.resource(clock)(() => {
+        if (first) {
+            first = false;
+            return;
+        }
+        queueMicrotask(() => stop());
+        resolve();
+    });
+});
+
+/**
+ * The fastest of `rounds` runs writing what a late tail of 10,000 rows reads, each right after a tick posted it behind a
+ * busy system on its thread, so the run copies the tail's reads first.
+ */
+const late = async (rounds = 30): Promise<number> => {
+    const driver = backToBack();
+    const world = createWorld({ [workers]: 0 }, { loop: driver });
+    const joined = await startClaiming(world);
+    let best = Infinity;
+    try {
+        await world.run(spawnPoses);
+        world.add(lateTick);
+        for (let round = 0; round < rounds; round++) {
+            // Each run makes the next beat tick, which posts the tail behind `busy`.
+            const ticked = nextTick(world);
+            await world.run(nothing);
+            await ticked;
+            const start = performance.now();
+            const report = await world.run(poke);
+            const time = performance.now() - start;
+            if (report.failures.length > 0) throw new Error(`tail late snapshot: ${report.failures[0].message}`);
+            if (round > 1) best = Math.min(best, time);
+            // The tail and the tick the run made finish.
+            await new Promise(resolve => setTimeout(resolve, 12));
+        }
+    }
+    finally {
+        await joined.terminate();
+        await world.dispose();
+        driver.close();
+    }
+    return best;
+};
+
+export const tailBenchmarks: readonly Benchmark[] = [
+    {
+        name: "tail prompt",
+        operation: "Ticks of a world system and a terminal system on a joined worker over 1,000 rows, which runs after the sync point and finishes before the next tick needs it: a DOM-writing system on main that keeps up.",
+        per: "ticks",
+        n: tailTicks,
+        typical: [1, 1],
+        best: { bytes: 256 + promptRows * 12, basis: "One task moves its posted, done, payload and completion lines between cores, and the tail reads each row's 12-byte vec3." },
+        run: () => prompt(),
+    },
+    {
+        name: "tail late snapshot 10K",
+        operation: "A run writing what a late tail on a joined worker reads, 10,000 passing rows of a vec3 and a mat4: the copy of the tail's reads it makes first, as when main is busy when the next tick writes positions.",
+        per: "rows copied",
+        n: lateRows,
+        typical: [100, 10_000],
+        best: { bytes: 2 * (12 + 64) + 20, basis: "Each row's 12-byte vec3 and 64-byte mat4 are read and written, and its position, archetype, row and entity, 20 bytes, written." },
+        run: () => late(),
+    },
+];

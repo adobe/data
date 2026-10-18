@@ -16,6 +16,7 @@ import { remoteBenchmarks } from "./remote.js";
 import { logBenchmarks } from "./log.js";
 import { handoffBenchmarks } from "./handoff.js";
 import { finalizedBenchmarks } from "./finalized.js";
+import { tailBenchmarks } from "./tails.js";
 import { createWorld } from "../implementation/index.js";
 import { workers } from "../interface/resources/workers.js";
 
@@ -635,4 +636,5 @@ export const benchmarks: readonly Benchmark[] = [
     ...logBenchmarks,
     ...handoffBenchmarks,
     ...finalizedBenchmarks,
+    ...tailBenchmarks,
 ];

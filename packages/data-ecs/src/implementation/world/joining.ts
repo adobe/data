@@ -72,6 +72,11 @@ export type ThreadChannel<Send, Receive> = {
     readonly close: () => void;
 };
 
+/** Whether a port is a `MessagePort` this thread may close: not a worker, nor its scope, whose `close` ends the worker. */
+const isMessagePort = (port: Port): boolean =>
+    typeof globalThis.MessagePort === "function" && port instanceof globalThis.MessagePort
+    && port !== globalThis.process?.getBuiltinModule?.("node:worker_threads")?.parentPort;
+
 const isOurs = (data: unknown): boolean => typeof data === "object" && data !== null && Reflect.get(data, "protocol") === protocolName;
 
 /**
@@ -110,7 +115,7 @@ export const threadChannel = <Send, Receive>(port: Port): ThreadChannel<Send, Re
             subscribe("close", once);
             if (typeof on === "function") subscribe("exit", once);
         },
-        close: () => { if (typeof close === "function" && typeof Reflect.get(port, "terminate") !== "function") Reflect.apply(close, port, []); },
+        close: () => { if (isMessagePort(port) && typeof close === "function") Reflect.apply(close, port, []); },
     };
 };
 

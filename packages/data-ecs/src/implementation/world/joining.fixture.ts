@@ -3,9 +3,10 @@ import { threadClaims, threadStatus } from "../../interface/components/index.js"
 import { Observe } from "../../interface/observe/observe.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
+import type { World } from "../../interface/world/world.js";
 import { createWorld, join } from "./create.js";
 import type { FromJoiningWorker, ToJoiningWorker } from "./joining-worker.fixture.js";
-import { drive, names, total, until } from "./joining.test-helper.js";
+import { add, drive, names, total, until } from "./joining.test-helper.js";
 
 /**
  * Scenarios of a thread joining a world on another, run built in node and from source in chromium: a worker joining a
@@ -15,7 +16,15 @@ import { drive, names, total, until } from "./joining.test-helper.js";
 /** A system only this thread imports, which a world on a worker never did. */
 const unimportedByWorker = System.create({ name: "joiningTest/unimportedByWorker" }, () => {});
 
-type Worker = { readonly ask: (message: ToJoiningWorker, transfer?: readonly unknown[]) => Promise<FromJoiningWorker>; readonly terminate: () => Promise<void> };
+type Worker = {
+    readonly ask: (message: ToJoiningWorker, transfer?: readonly unknown[]) => Promise<FromJoiningWorker>;
+    readonly terminate: () => Promise<void>;
+    /** The worker itself, as a port to join a world it shares through its scope. */
+    readonly port: World.Port;
+};
+
+/** Whether a reply is the fixture's, not the world's, where it shares the worker's scope. */
+const isReply = (data: unknown): boolean => typeof data === "object" && data !== null && !("protocol" in data);
 
 const workerFile = "./joining-worker.fixture.js";
 
@@ -25,20 +34,27 @@ const start = (): Worker => {
         const worker = new globalThis.Worker(new URL("./joining-worker.fixture.js", import.meta.url), { type: "module" });
         return {
             ask: (message, transfer = []) => new Promise(resolve => {
-                worker.onmessage = (event: MessageEvent<FromJoiningWorker>) => resolve(event.data);
+                worker.onmessage = (event: MessageEvent<FromJoiningWorker>) => { if (isReply(event.data)) resolve(event.data); };
                 worker.postMessage(message, { transfer: transfer.filter(port => port instanceof MessagePort) });
             }),
             terminate: async () => worker.terminate(),
+            port: worker,
         };
     }
     const threads = globalThis.process.getBuiltinModule("node:worker_threads");
     const worker = new threads.Worker(new URL(workerFile, import.meta.url));
     return {
         ask: (message, transfer = []) => new Promise(resolve => {
-            worker.once("message", resolve);
+            const reply = (data: FromJoiningWorker): void => {
+                if (!isReply(data)) return;
+                worker.off("message", reply);
+                resolve(data);
+            };
+            worker.on("message", reply);
             worker.postMessage(message, transfer.filter(port => port instanceof threads.MessagePort));
         }),
         terminate: async () => { await worker.terminate(); },
+        port: worker,
     };
 };
 
@@ -107,4 +123,17 @@ export const claimedTwice = async () => {
     for (const worker of pair) await worker.terminate();
     await world.dispose();
     return { first: one.kind === "joined" ? one.ran : null, second: two.kind === "joined" ? two.ran : null, status: gone?.[threadStatus] ?? null };
+};
+
+/** A world on a worker shared through its own scope, this thread joined through the worker: runs, an observer, leaving. */
+export const scopes = async () => {
+    const worker = start();
+    await worker.ask({ kind: "host scope" });
+    const remote = join(worker.port);
+    for (const amount of [4, 5, 6]) await remote.run(add, { amount });
+    const observed = await until(remote.observe.resource(total), value => value === 456);
+    await remote.dispose();
+    const state = await worker.ask({ kind: "state" });
+    await worker.terminate();
+    return { observed, ...state.kind === "state" ? { total: state.total, status: state.status } : {} };
 };

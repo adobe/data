@@ -37,6 +37,11 @@ export const joiningCases = (load: () => Promise<typeof Fixture>) => describe("j
         expect(result.status).toBe("gone");
     }, 20000);
 
+    it("share a world through a worker's own scope, joined through the worker", async () => {
+        const fixture = await load();
+        expect(await fixture.scopes()).toEqual({ observed: 456, total: 456, status: "gone" });
+    }, 20000);
+
     it("show a joined thread that dies as gone", async () => {
         const fixture = await load();
         expect(await fixture.dies()).toEqual({ ran: "ran", status: "gone" });

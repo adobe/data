@@ -17,6 +17,8 @@ export type ToJoiningWorker =
     | { readonly kind: "join"; readonly port: Port; readonly threads: readonly "main"[] }
     | { readonly kind: "idle"; readonly port: Port; readonly threads: readonly "main"[] }
     | { readonly kind: "host"; readonly port: Port }
+    /** Hold a world shared through this worker's own scope, which this fixture's messages share. */
+    | { readonly kind: "host scope" }
     | { readonly kind: "state" };
 export type FromJoiningWorker =
     | { readonly kind: "driven"; readonly driven: Driven }
@@ -27,7 +29,15 @@ export type FromJoiningWorker =
 const channel = scopeChannel<FromJoiningWorker, ToJoiningWorker>();
 let hosted: { readonly world: ReturnType<typeof createWorld>; readonly thread: ReturnType<ReturnType<typeof createWorld>["share"]> } | null = null;
 channel.onMessage(async message => {
-    if (message.kind === "join") {
+    // The world's own messages, where it shares the scope.
+    if ("protocol" in message) return;
+    if (message.kind === "host scope") {
+        const world = createWorld({ [workers]: 0 });
+        const scope = globalThis.process?.getBuiltinModule?.("node:worker_threads")?.parentPort ?? self;
+        hosted = { world, thread: world.share(scope) };
+        channel.post({ kind: "shared" });
+    }
+    else if (message.kind === "join") {
         const remote = join(message.port, { threads: message.threads });
         channel.post({ kind: "driven", driven: await drive(remote, unimportedByMain) });
         await remote.dispose();

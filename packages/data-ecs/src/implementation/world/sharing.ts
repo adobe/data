@@ -316,15 +316,16 @@ export const createSharing = (host: SharingHost) => {
 
     const observe = (thread: Joined, observer: number, subscription: Subscription): void => {
         const mailbox = createMailbox(memory);
-        // Posted first, so the thread knows the mailbox before its first value's wake.
-        post(thread, { protocol: protocolName, kind: "mailbox", observer, offset: mailbox.offset });
         try {
             thread.watching.set(observer, { stop: subscribe(thread, mailbox, subscription), mailbox });
         }
         catch (error) {
             freeMailbox(mailbox);
             host.defer(failureOf("observer", `a joined thread's observer #${observer}`, error));
+            return;
         }
+        // The thread reads the mailbox once this arrives, a first value written into it already included.
+        post(thread, { protocol: protocolName, kind: "mailbox", observer, offset: mailbox.offset });
     };
 
     const unobserve = (thread: Joined, observer: number): void => {

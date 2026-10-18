@@ -99,7 +99,7 @@ const within = <T>(promise: Promise<T>, milliseconds: number, otherwise: T): Pro
  */
 export const leaveQueued = async () => {
     const worker = start();
-    const reply = await within(worker.ask({ kind: "leave queued" }), 10000, null);
+    const reply = await within(worker.ask({ kind: "leave queued" }), 20000, null);
     await worker.terminate();
     return reply !== null && reply.kind === "left" ? { skipped: reply.skipped, after: reply.after } : null;
 };

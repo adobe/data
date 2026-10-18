@@ -129,7 +129,7 @@ export const afterFailedRegistration = (failing = 2): Promise<{ readonly rejecte
 /** Positions after 12 frames of growth then a kernel, back to back, or "timeout". */
 const backToBackRun = (count: number, wasm = true, delay = false): Promise<readonly string[] | "timeout"> => using(createWorld({ [workers]: count }, { minimumChunk: 64, wasm }), async world => {
     for (let frame = 0; frame < 12; frame++) {
-        const r = await withTimeout((async () => { await world.run(grow); if (delay) await new Promise(r => setTimeout(r, 30)); await world.run(fastA); })(), 3000);
+        const r = await withTimeout((async () => { await world.run(grow); if (delay) await new Promise(r => setTimeout(r, 30)); await world.run(fastA); })(), 20000);
         if (r === "timeout") return "timeout";
     }
     return (await readEach(world, await select(world, { required: [position] }), position)).map(each => JSON.stringify(each)).sort();

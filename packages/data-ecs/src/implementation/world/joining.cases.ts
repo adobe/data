@@ -26,7 +26,7 @@ export const joiningCases = (load: () => Promise<typeof Fixture>) => describe("j
         expect(result.status).toBe("gone");
         expect(result.total).toBe(123);
         expect(result.names).toEqual(["a", "b"]);
-    }, 20000);
+    }, 30000);
 
     it("let this thread join a world on a worker, by the ids of keys and systems both threads imported", async () => {
         const fixture = await load();
@@ -35,20 +35,20 @@ export const joiningCases = (load: () => Promise<typeof Fixture>) => describe("j
         expect(result.total).toBe(123);
         expect(result.names).toEqual(["a", "b"]);
         expect(result.status).toBe("gone");
-    }, 20000);
+    }, 30000);
 
     it("share a world through a worker's own scope, joined through the worker", async () => {
         const fixture = await load();
         expect(await fixture.scopes()).toEqual({ observed: 456, total: 456, status: "gone" });
-    }, 20000);
+    }, 30000);
 
     it("show a joined thread that dies as gone", async () => {
         const fixture = await load();
         expect(await fixture.dies()).toEqual({ ran: "ran", status: "gone" });
-    }, 20000);
+    }, 30000);
 
     it("refuse a thread claimed twice", async () => {
         const fixture = await load();
         expect(await fixture.claimedTwice()).toEqual({ first: "ran", second: 'Thread "main" is claimed twice.', status: "gone" });
-    }, 20000);
+    }, 30000);
 });

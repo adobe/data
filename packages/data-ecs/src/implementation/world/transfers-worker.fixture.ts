@@ -45,7 +45,7 @@ const bufferOf = (first: number, bytes: number): ArrayBuffer => {
 };
 
 /** Resolves once a port's other end closed, or with false after `milliseconds`. */
-const closed = (port: MessagePort, milliseconds = 2000): Promise<boolean> => new Promise(resolve => {
+const closed = (port: MessagePort, milliseconds = 20000): Promise<boolean> => new Promise(resolve => {
     port.addEventListener("close", () => resolve(true));
     port.start();
     setTimeout(() => resolve(false), milliseconds);

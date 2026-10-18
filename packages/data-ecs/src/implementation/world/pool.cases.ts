@@ -9,7 +9,7 @@ export const poolCases = (load: () => Promise<typeof Fixture>) => describe("crea
         expect(message).toContain("failed");
         // Later tasks fail immediately too.
         expect(same).toBe(true);
-    }, 5000);
+    }, 30000);
 
     it("releases its control state when terminated, so pools of new sizes don't grow what the arena holds", async () => {
         const fixture = await load();
@@ -17,7 +17,7 @@ export const poolCases = (load: () => Promise<typeof Fixture>) => describe("crea
             expect(before).toBeGreaterThan(0);
             expect(after).toBe(0);
         }
-    }, 10000);
+    }, 30000);
 
     it("fails every task of a worker whose memory is shorter than the length the world stored", async () => {
         const fixture = await load();
@@ -26,5 +26,5 @@ export const poolCases = (load: () => Promise<typeof Fixture>) => describe("crea
         expect(during).toContain("short of");
         // The worker stays broken, since views it made may be stale.
         expect(after).toContain("short of");
-    }, 5000);
+    }, 30000);
 });

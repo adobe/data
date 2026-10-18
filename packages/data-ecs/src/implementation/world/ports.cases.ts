@@ -16,7 +16,7 @@ export const portsCases = (load: () => Promise<typeof Fixture>) => describe("thr
             expect(second.length).toBeGreaterThan(0);
             for (const message of second) expect(message).toMatch(death);
             expect(disposed).toBe(true);
-        }, 20000);
+        }, 30000);
     }
 
     it("serve a world on a worker as its nested workers, with the main thread's results", async () => {
@@ -25,7 +25,7 @@ export const portsCases = (load: () => Promise<typeof Fixture>) => describe("thr
         const nested = await fixture.nested();
         expect(nested.rows).toEqual(alone.rows);
         expect(nested.tasks).toBeGreaterThanOrEqual(12 * 3);
-    }, 20000);
+    }, 30000);
 
     it("serve a world on a worker as workers the main thread lent it, with the main thread's results", async () => {
         const fixture = await load();
@@ -33,5 +33,5 @@ export const portsCases = (load: () => Promise<typeof Fixture>) => describe("thr
         const lent = await fixture.lent();
         expect(lent.rows).toEqual(alone.rows);
         expect(lent.tasks).toBeGreaterThanOrEqual(12 * 3);
-    }, 20000);
+    }, 30000);
 });

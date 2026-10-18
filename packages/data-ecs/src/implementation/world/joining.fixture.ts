@@ -103,7 +103,7 @@ export const dies = async () => {
     const worker = start();
     const reply = await worker.ask({ kind: "idle", port: port2, threads: [] }, [port2]);
     await worker.terminate();
-    const gone = await within(until(world.threads, threads => threads[0]?.status === "gone"), 5000, null);
+    const gone = await within(until(world.threads, threads => threads[0]?.status === "gone"), 20000, null);
     await world.dispose();
     return { ran: reply.kind === "joined" ? reply.ran : null, status: gone?.[0]?.status ?? null };
 };

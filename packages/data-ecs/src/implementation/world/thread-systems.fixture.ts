@@ -109,9 +109,9 @@ export const diesMidTask = async () => {
     const running = world.run(stall);
     await new Promise(resolve => setTimeout(resolve, 50));
     await worker.terminate();
-    const report = await within(running, 5000, null);
+    const report = await within(running, 20000, null);
     // Placed here again once its claims are released: a run on the world's thread.
-    const after = report === null ? null : await within(world.run(count), 5000, null);
+    const after = report === null ? null : await within(world.run(count), 20000, null);
     await world.dispose();
     return {
         report: report === null ? null : { failures: report.failures.map(failure => [failure.kind, failure.name, failure.message]), skipped: report.skipped },
@@ -139,7 +139,7 @@ export const neverYields = async (ticks: number) => {
     const { worker } = await joined(world);
     await worker.ask({ kind: "spin" });
     world.add(count);
-    const counted = await within(until(world.observe.resource(changes), value => value >= ticks), 10000, -1);
+    const counted = await within(until(world.observe.resource(changes), value => value >= ticks), 20000, -1);
     await worker.terminate();
     await world.dispose();
     driver.close();

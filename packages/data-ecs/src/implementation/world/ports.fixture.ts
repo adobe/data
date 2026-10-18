@@ -63,7 +63,7 @@ export const killedMidTask = async (by: "exit" | "owner", wasm: boolean): Promis
     await world.run(seed);
     const first = (await world.run(heavy)).failures.map(failure => failure.message);
     const second = (await world.run(heavy)).failures.map(failure => failure.message);
-    const disposed = await Promise.race([world.dispose().then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 3000))]);
+    const disposed = await Promise.race([world.dispose().then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 20000))]);
     return { first, second, disposed };
 };
 

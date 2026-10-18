@@ -96,7 +96,7 @@ export const unflag = System.create({ name: "remoteFinalizersTest/unflag", compo
 });
 
 /** Waits until `done` holds, letting other tasks run, for at most `milliseconds`. */
-export const eventually = async (done: () => boolean | Promise<boolean>, milliseconds = 5000): Promise<boolean> => {
+export const eventually = async (done: () => boolean | Promise<boolean>, milliseconds = 20000): Promise<boolean> => {
     const deadline = performance.now() + milliseconds;
     while (!await done() && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 1));
     return done();

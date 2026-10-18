@@ -74,12 +74,20 @@ const commandValues = (list: readonly string[], node: SourceExpression | SpreadE
     return list.map((name): Statement => ({ kind: "value", key: keyIndex(scope.unit, name), value: given.get(name) ?? undefinedValue }));
 };
 
-/** Whether a command's second argument is a list of components rather than one. */
-const listed = (node: Node, scope: Scope): boolean => {
-    if (node.type === "ArrayExpression") return true;
+/**
+ * A command's second argument as a list of components, or as one key's name: whatever its definition is (`Lists.component`).
+ * A body's local is one key, which `commandName` rejects.
+ */
+const componentOf = (node: Node, call: string, scope: Scope): readonly string[] | { readonly key: string } => {
+    if (node.type === "ArrayExpression") return commandList(node, call, scope);
     const first = root(node);
-    // A member chain is never one key, so it's a list, read or reported as one.
-    return first.type === "Identifier" && findLocal(scope, first.name) === undefined && (node.type === "MemberExpression" || scope.unit.lists.isList(node));
+    if (first.type !== "Identifier" || findLocal(scope, first.name) !== undefined) return { key: commandName(node, scope) };
+    const named = scope.unit.lists.component(node);
+    switch (named.kind) {
+        case "list": return commandList(node, call, scope);
+        case "key": return { key: node.type === "Identifier" ? commandName(node, scope) : named.name };
+        case "error": return fail(node, `${call}: ${named.error}`);
+    }
 };
 
 /** `commands.spawn(components)(values)`: reserves an entity and gives each of the components its value or its start. */
@@ -104,13 +112,13 @@ const command = (name: string, node: SimpleCallExpression, scope: Scope, out: Ou
         case "add": {
             if (second === undefined || rest.length > 0) return fail(node, "an add is commands.add(entity, component, value) or commands.add(entity, components, values)");
             const target = temporary(scope, out, "entity", scalarArgument(entity, scope, out));
-            const component = argument(second);
-            if (listed(component, scope)) {
-                const values = commandValues(commandList(component, "commands.add", scope), third, node, scope, out);
+            const component = componentOf(argument(second), "commands.add", scope);
+            if (!("key" in component)) {
+                const values = commandValues(component, third, node, scope, out);
                 out.push({ kind: "begin", command: 2, entity: target }, ...values);
                 return none;
             }
-            const key = keyIndex(scope.unit, commandName(component, scope));
+            const key = keyIndex(scope.unit, component.key);
             const value = third === undefined ? undefinedValue : temporary(scope, out, "value", observe(scope.unit, materialize(toData(scope.unit.expression(argument(third), scope, out), third, scope))));
             out.push({ kind: "begin", command: 2, entity: target }, { kind: "value", key, value });
             return none;
@@ -118,8 +126,8 @@ const command = (name: string, node: SimpleCallExpression, scope: Scope, out: Ou
         default: {
             if (second === undefined || third !== undefined) return fail(node, "a remove is commands.remove(entity, component) or commands.remove(entity, components)");
             const target = temporary(scope, out, "entity", scalarArgument(entity, scope, out));
-            const component = argument(second);
-            const names = listed(component, scope) ? commandList(component, "commands.remove", scope) : [commandName(component, scope)];
+            const component = componentOf(argument(second), "commands.remove", scope);
+            const names = "key" in component ? [component.key] : component;
             out.push({ kind: "begin", command: 3, entity: target }, ...names.map((key): Statement => ({ kind: "component", key: keyIndex(scope.unit, key) })));
             return none;
         }

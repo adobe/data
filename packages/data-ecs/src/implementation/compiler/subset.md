@@ -65,7 +65,9 @@ call        = Math-function | helper | lookup | command | reducer
   them, or a constant holding one or `Archetype.create` of one, in the kernel's module or imported, also through
   re-exports and namespaces, its keys read in the scope of the module that declares it; a component it lists that a
   command gives no value starts at its start. A list the build can't read, such as one computed when its module runs,
-  fails the build at the command. The spawner is called where it's made.
+  fails the build at the command. `add` and `remove` take a name as one key when its definition is `Symbol(...)`, as a
+  list when it's a list, and otherwise fail the build with the reason; a name from a package external to the build,
+  which the build can't read, is one key, and registration rejects a list there. The spawner is called where it's made.
 
 ## GPU kernels
 

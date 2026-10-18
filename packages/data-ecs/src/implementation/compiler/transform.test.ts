@@ -31,6 +31,7 @@ const target = "target";
 const host = (files: { readonly [file: string]: string }): LinkHost => ({
     resolve: async (specifier, importer) => {
         if (specifier === "ecs") return packageIndex;
+        if (specifier === "external") return { error: "external is external to the build", unreadable: true };
         if (!specifier.startsWith(".")) return { error: `${specifier} can't be resolved from ${importer}` };
         const path = resolve(dirname(importer), specifier);
         const typescript = path.replace(/\.js$/, ".ts");
@@ -1131,6 +1132,41 @@ const kernel = System.create({ name: "a", kernel: "cpu", components: { read: Gua
         ["a member of a namespace it doesn't export", "commands.remove(row.entity, Archetypes.Missing);", "commands.remove: Missing isn't exported by /archetypes.js"],
     ])("fail the build for a list %s", async (_, body, message) => {
         expect(await failure(commanding(`import { Computed, Changing, Spread, Missing } from "./archetypes.js";\nimport * as Archetypes from "./archetypes.js";`, body), files)).toBe(message);
+    });
+
+    test("take an imported name as one key when it resolves to a key, followed through namespaces and constants", async () => {
+        const keys = {
+            ...files,
+            "/keys.js": [
+                `export const ember = Symbol("ember");`,
+                `export const glow = identify$(Symbol("glow"), "keys.js#glow");`,
+                `export const spark = ember;`,
+                `function identify$(symbol, id) { return symbol; }`,
+            ].join("\n"),
+        };
+        const source = commanding(`import { ember, glow, spark } from "./keys.js";\nimport * as Keys from "./keys.js";\nimport { heat } from "external";`, `
+            commands.add(row.entity, ember, row[mass]);
+            commands.add(row.entity, glow, true);
+            commands.remove(row.entity, Keys.ember);
+            commands.remove(row.entity, spark);
+            commands.add(row.entity, heat, 2);`);
+        const result = await transform(source, keys);
+        expect(result !== null && "code" in result ? result.code : result?.failure.message).toContain("keys: [ember, glow, spark, heat],");
+    });
+
+    test.each([
+        ["computed when its module runs", "commands.add(row.entity, Computed, {});", "commands.add: Computed is computed when /archetypes.js runs, so the compiler can't tell whether it's a key or a list; declare a key as Symbol(...), or a list as an array literal or Archetype.create of one"],
+        ["not a const", "commands.remove(row.entity, Changing);", "commands.remove: Changing isn't a module-scope const, so the compiler can't tell whether it's a key or a list"],
+        ["not exported", "commands.remove(row.entity, Missing);", "commands.remove: Missing isn't exported by /archetypes.js"],
+        ["a namespace", "commands.add(row.entity, Archetypes, 1);", "commands.add: Archetypes is a module namespace, not a key or a list of components"],
+        ["of a module that can't be resolved", "commands.add(row.entity, Lost, 1);", "commands.add: nowhere can't be resolved from /test.js"],
+    ])("fail the build for an added or removed name %s", async (_, body, message) => {
+        expect(await failure(commanding(`import { Computed, Changing, Missing } from "./archetypes.js";\nimport * as Archetypes from "./archetypes.js";\nimport { Lost } from "nowhere";`, body), files)).toBe(message);
+    });
+
+    test("fail the build for a list that names a key", async () => {
+        expect(await failure(commanding(`import { health } from "./components.js";`, "commands.spawn(health)({});"), files))
+            .toBe("commands.spawn: health is a key, not a list of components; list it as [health]");
     });
 
     test("fail the build for a declaration's list computed when its module runs", async () => {

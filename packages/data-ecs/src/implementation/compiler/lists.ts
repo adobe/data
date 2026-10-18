@@ -15,14 +15,39 @@ export type Lists = {
      * itself, as `List[k]`.
      */
     readonly names: (node: Node) => ListNames;
-    /** Whether a node names a list rather than one key; a name the compiler can't follow is taken as a key. */
-    readonly isList: (node: Node) => boolean;
+    /**
+     * What a command's component argument names: a list, or one key by the expression the kernel's module names it with.
+     * A name is one key when its definition is a call of the global `Symbol`, identified or not, or a literal, which
+     * registration rejects for not being a symbol. A name defined in a module the build can't read, such as a package
+     * external to it, is taken as a key, and registration rejects a list there. Anything else fails with the reason.
+     */
+    readonly component: (node: Node) => Named;
 };
+
+/** What a command's component argument names, or why the compiler can't tell. */
+export type Named = { readonly kind: "list" } | { readonly kind: "key"; readonly name: string } | { readonly kind: "error"; readonly error: string };
 
 /** A list's array literal, the module it's written in, and how the kernel's module refers to it. */
 type Found = { readonly literal: ArrayExpression; readonly module: Module; readonly reference: string };
 
-type Followed = Found | { readonly error: string };
+/** What a name is defined as: a list, a key by its definition's identity (null where the build can't read it), or why it's neither. */
+type Followed = Found | { readonly key: string | null } | { readonly error: string };
+
+/** Whether a name may be one key as well as a list, which words the reasons it's neither. */
+type Wanted = "list" | "either";
+
+/** A call of the global `Symbol` in `module`. */
+const isSymbolCall = (node: Expression, module: Module): boolean =>
+    node.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.name === "Symbol" && !module.bindings.has("Symbol");
+
+/** A key's definition: `Symbol(...)`, as the plugin identifies it, `identify$(Symbol(...), id)`, or a literal. */
+const isKey = (node: Expression, module: Module): boolean => {
+    if (node.type === "Literal") return !("regex" in node);
+    if (isSymbolCall(node, module)) return true;
+    if (node.type !== "CallExpression" || node.callee.type !== "Identifier" || !/^identify\$\d*$/.test(node.callee.name)) return false;
+    const [symbol] = node.arguments;
+    return module.bindings.get(node.callee.name)?.kind === "function" && symbol !== undefined && symbol.type !== "SpreadElement" && isSymbolCall(symbol, module);
+};
 
 /** `Archetype.create(<array literal>)`, with `Archetype` imported under any name: its array literal, else null. */
 const createdList = (node: Expression, module: Module): ArrayExpression | null => {
@@ -36,11 +61,12 @@ const createdList = (node: Expression, module: Module): ArrayExpression | null =
 
 const fileOf = (module: Module, kernel: Module): string => module === kernel ? "this module" : module.file;
 
-/** Follows a binding to the array literal its constant holds, through imports and constants naming another. */
-const follow = (name: string, binding: ModuleBinding, module: Module, kernel: Module, link: Link | null, reference: string, seen: Set<string>): Followed => {
+/** Follows a binding to the array literal or key its constant holds, through imports and constants naming another. */
+const follow = (name: string, binding: ModuleBinding, module: Module, kernel: Module, link: Link | null, reference: string, wanted: Wanted, seen: Set<string>): Followed => {
     const identity = `${module.file}\0${name}`;
     if (seen.has(identity)) return { error: `${reference} refers to itself` };
     seen.add(identity);
+    const unread = wanted === "list" ? "the compiler can't read its components" : "the compiler can't tell whether it's a key or a list";
     switch (binding.kind) {
         case "const": {
             const { init } = binding;
@@ -49,23 +75,26 @@ const follow = (name: string, binding: ModuleBinding, module: Module, kernel: Mo
             if (created !== null) return { literal: created, module, reference };
             if (init.type === "Identifier") {
                 const aliased = module.bindings.get(init.name);
-                if (aliased !== undefined) return follow(init.name, aliased, module, kernel, link, reference, seen);
+                if (aliased !== undefined) return follow(init.name, aliased, module, kernel, link, reference, wanted, seen);
             }
-            return { error: `${reference} is computed when ${fileOf(module, kernel)} runs, so the compiler can't read its components; declare it as an array literal, or Archetype.create of one` };
+            if (isKey(init, module)) return { key: identity };
+            const declare = wanted === "list" ? "declare it as an array literal, or Archetype.create of one" : "declare a key as Symbol(...), or a list as an array literal or Archetype.create of one";
+            return { error: `${reference} is computed when ${fileOf(module, kernel)} runs, so ${unread}; ${declare}` };
         }
         case "import": case "importNamespace":
-            if (link === null) return { error: `${reference} is imported, and this build doesn't link imports` };
-            return followResolved(resolveBinding(link, module, name, binding), kernel, link, reference, seen);
+            // Without a linker nothing imported can be read, so a name that may be one key is taken as one.
+            if (link === null) return wanted === "list" ? { error: `${reference} is imported, and this build doesn't link imports` } : { key: null };
+            return followResolved(resolveBinding(link, module, name, binding), kernel, link, reference, wanted, seen);
         case "function": case "other":
-            return { error: `${reference} isn't a module-scope const, so the compiler can't read its components` };
+            return { error: `${reference} isn't a module-scope const, so ${unread}` };
     }
 };
 
-const followResolved = (resolved: Resolved, kernel: Module, link: Link | null, reference: string, seen: Set<string>): Followed => {
+const followResolved = (resolved: Resolved, kernel: Module, link: Link | null, reference: string, wanted: Wanted, seen: Set<string>): Followed => {
     switch (resolved.kind) {
-        case "error": return { error: resolved.error };
-        case "namespace": return { error: `${reference} is a module namespace, not a list of components` };
-        case "binding": return follow(resolved.name, resolved.binding, resolved.module, kernel, link, reference, seen);
+        case "error": return wanted === "either" && resolved.cause === "unreadable" ? { key: null } : { error: resolved.error };
+        case "namespace": return { error: `${reference} is a module namespace, not ${wanted === "list" ? "a list of components" : "a key or a list of components"}` };
+        case "binding": return follow(resolved.name, resolved.binding, resolved.module, kernel, link, reference, wanted, seen);
     }
 };
 
@@ -77,8 +106,8 @@ const chain = (node: Node): readonly string[] | null => {
     return object === null ? null : [...object, node.property.name];
 };
 
-/** The literal a list node names: itself, or the constant an identifier or a namespace member chain names. */
-const find = (node: Node, kernel: Module, link: Link | null): Followed => {
+/** What a node names: an array literal, or the definition an identifier or a namespace member chain names. */
+const find = (node: Node, kernel: Module, link: Link | null, wanted: Wanted): Followed => {
     if (node.type === "ArrayExpression") return { literal: node, module: kernel, reference: "" };
     const names = chain(node);
     if (names === null) return { error: "commands and kernel declarations name a list as an array literal, or a constant holding one or Archetype.create of one" };
@@ -86,15 +115,17 @@ const find = (node: Node, kernel: Module, link: Link | null): Followed => {
     const reference = names.join(".");
     const binding = kernel.bindings.get(first);
     if (binding === undefined) return { error: `${first} isn't bound at module scope` };
-    if (members.length === 0) return follow(first, binding, kernel, kernel, link, reference, new Set());
-    if (binding.kind !== "importNamespace") return { error: `${first} isn't a module namespace, so ${reference} isn't a list the compiler can read` };
-    if (link === null) return { error: `${reference} is imported, and this build doesn't link imports` };
+    if (members.length === 0) return follow(first, binding, kernel, kernel, link, reference, wanted, new Set());
+    const what = wanted === "list" ? "a list" : "a key or a list";
+    if (binding.kind !== "importNamespace") return { error: `${first} isn't a module namespace, so ${reference} isn't ${what} the compiler can read` };
+    if (link === null) return wanted === "list" ? { error: `${reference} is imported, and this build doesn't link imports` } : { key: null };
     let resolved = resolveBinding(link, kernel, first, binding);
     for (const member of members) {
-        if (resolved.kind !== "namespace") return resolved.kind === "error" ? { error: resolved.error } : { error: `${reference} isn't a list the compiler can read` };
+        if (resolved.kind === "error") return followResolved(resolved, kernel, link, reference, wanted, new Set());
+        if (resolved.kind !== "namespace") return { error: `${reference} isn't ${what} the compiler can read` };
         resolved = resolveExport(link, resolved.file, member);
     }
-    return followResolved(resolved, kernel, link, reference, new Set());
+    return followResolved(resolved, kernel, link, reference, wanted, new Set());
 };
 
 /** The identity of what a binding of `module` defines: its module and name, through imports; null where it can't be followed. */
@@ -134,7 +165,11 @@ export const createLists = (kernel: Module, link: Link | null, nodes: readonly N
         return fallback;
     };
     const names = (node: Node): ListNames => {
-        const found = find(node, kernel, link);
+        const found = find(node, kernel, link, "list");
+        if ("key" in found) {
+            const reference = chain(node)?.join(".") ?? "";
+            return { error: `${reference} is a key, not a list of components; list it as [${reference}]` };
+        }
         if (!("literal" in found)) return found;
         const { literal, module, reference } = found;
         const result: string[] = [];
@@ -154,12 +189,14 @@ export const createLists = (kernel: Module, link: Link | null, nodes: readonly N
         }
         return result;
     };
-    return {
-        names,
-        isList: node => {
-            if (node.type === "ArrayExpression") return true;
-            const found = find(node, kernel, link);
-            return "literal" in found;
-        },
+    const component = (node: Node): Named => {
+        const found = find(node, kernel, link, "either");
+        if ("literal" in found) return { kind: "list" };
+        if ("error" in found) return { kind: "error", error: found.error };
+        const reference = chain(node)?.join(".") ?? "";
+        // A key named by an identifier is that identifier; one named through a namespace is the kernel's own binding of
+        // its definition where it has one.
+        return { kind: "key", name: node.type === "Identifier" || found.key === null ? reference : nameOf(found.key, reference) };
     };
+    return { names, component };
 };

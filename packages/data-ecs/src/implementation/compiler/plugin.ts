@@ -55,7 +55,7 @@ const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
         const resolved = await resolver().resolve(specifier, importer, { skipSelf: true });
         if (resolved === null) return { error: `${specifier} can't be resolved from ${importer}` };
         if (resolved.external) {
-            return specifier === packageName ? packageIndex : { error: `${specifier} is external to the build, so kernels can't inline from it` };
+            return specifier === packageName ? packageIndex : { error: `${specifier} is external to the build, so kernels can't inline from it`, unreadable: true };
         }
         const id = resolved.id.split("?")[0] ?? resolved.id;
         return id.includes("\0") || !isAbsolute(id) ? { error: `${specifier} isn't a file` } : id;

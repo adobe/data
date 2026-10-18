@@ -125,6 +125,23 @@ Component.register(twin, { type: { type: "number" } });
 export const labels = [labelOf(score), labelOf(twin), labelOf(marker)];
 export const worker = () => new Worker(new URL("./worker-keys.js", import.meta.url), { type: "module" });
 `);
+/** Kernels adding a key and a list a package external to the build declares, so the build can't read them. */
+mkdirSync(join(directory, "node_modules/external-keys"), { recursive: true });
+writeFileSync(join(directory, "node_modules/external-keys/package.json"), JSON.stringify({ name: "external-keys", type: "module", exports: "./index.js" }));
+writeFileSync(join(directory, "node_modules/external-keys/index.js"), `export const heat = Symbol("heat");\nexport const Pair = [Symbol("left"), Symbol("right")];\n`);
+const externalKernel = (name: string, added: string) => `import { System } from ${source("../../interface/system/system.ts")};
+import { Component } from ${source("../../interface/component/component.ts")};
+import { kernelOf } from ${source("../world/attach-kernel.ts")};
+import { ${added} } from "external-keys";
+const score = Symbol("score");
+Component.register(score, { type: { type: "number" } });
+const kernel = System.create({ name: "${name}", kernel: "cpu", components: { read: [score] } }, (row, { commands }) => { commands.add(row.entity, ${added}, row[score]); });
+export const description = kernelOf(kernel);
+`;
+const externalKey = join(directory, "external-key.js");
+writeFileSync(externalKey, externalKernel("externalKey", "heat"));
+const externalList = join(directory, "external-list.js");
+writeFileSync(externalList, externalKernel("externalList", "Pair"));
 afterAll(() => rmSync(directory, { recursive: true, force: true }));
 
 /** Runs a one-column kernel writing a function of the entity, for entities 3 and 4. */
@@ -324,4 +341,18 @@ test("a second instance of the plugin in one bundle does nothing, as when an app
     expect(idsIn(main?.code ?? "").filter(id => id.startsWith("fixture-app/"))).toEqual(["fixture-app/fixture.js#score"]);
     const { description }: { description: KernelDescription } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
     expect(runs(await import(/* @vite-ignore */ description.url), description)).toEqual([6, 8]);
+});
+
+test("a build takes a name from a package external to it as one key, and registration rejects a list there", async () => {
+    const outDir = join(directory, "dist-external");
+    const output = await build({
+        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        build: { outDir, minify: false, rolldownOptions: { input: [externalKey, externalList], external: ["external-keys"], preserveEntrySignatures: "strict" } },
+    });
+    const chunks = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
+        .filter((item): item is Rollup.OutputChunk => item.type === "chunk");
+    const url = (entry: string) => pathToFileURL(join(outDir, chunks.find(chunk => chunk.facadeModuleId === entry)?.fileName ?? "")).href;
+    const { description }: { description: KernelDescription } = await import(/* @vite-ignore */ url(externalKey));
+    expect(description.keys.map(String)).toEqual(["Symbol(heat)"]);
+    await expect(import(/* @vite-ignore */ url(externalList))).rejects.toThrow(`System "externalList" names a list of components where a command takes one component; its kernel's build couldn't read the list, so name it from a module the build reads, or as an array literal.`);
 });

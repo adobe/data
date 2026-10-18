@@ -1,10 +1,16 @@
 import type { Program } from 'estree';
 import { createModule, locateIn, type Module, type ModuleBinding } from './module-scope.js';
 
+/**
+ * Why a specifier names no file the linker can read. `unreadable` marks one the build leaves unread, such as a package
+ * external to it, rather than one that fails to resolve.
+ */
+export type Unresolved = { readonly error: string; readonly unreadable?: boolean };
+
 /** How the linker reaches other modules. Errors are reasons, reported only if a kernel uses what failed. */
 export type LinkHost = {
     /** The file an import specifier names from `importer`. */
-    readonly resolve: (specifier: string, importer: string) => Promise<string | { readonly error: string }>;
+    readonly resolve: (specifier: string, importer: string) => Promise<string | Unresolved>;
     /** A file's code as JavaScript, and how offsets in it map to source lines when it was compiled from another language. */
     readonly load: (file: string) => Promise<{ readonly code: string; readonly locate?: Module["locate"] } | { readonly error: string }>;
 };
@@ -15,7 +21,7 @@ export type LinkHost = {
  */
 export type Link = {
     readonly module: (file: string) => Module | { readonly error: string };
-    readonly resolve: (specifier: string, importer: string) => string | { readonly error: string };
+    readonly resolve: (specifier: string, importer: string) => string | Unresolved;
 };
 
 /** A cache of modules and resolutions shared across transforms. */
@@ -39,7 +45,7 @@ export const isPending = (error: unknown): error is Pending =>
     typeof error === "object" && error !== null && "pending" in error && error.pending instanceof Promise;
 
 type Loaded = Module | { readonly error: string };
-type Resolution = string | { readonly error: string };
+type Resolution = string | Unresolved;
 
 export const createLinker = (host: LinkHost, parse: (code: string) => Program): Linker => {
     const modules = new Map<string, Loaded>();
@@ -122,8 +128,14 @@ export const createLinker = (host: LinkHost, parse: (code: string) => Program): 
 export type Resolved =
     | { readonly kind: "binding"; readonly module: Module; readonly name: string; readonly binding: Exclude<ModuleBinding, { kind: "import" | "importNamespace" }> }
     | { readonly kind: "namespace"; readonly file: string }
-    /** `cause` tells a name a module doesn't export, and one several `export *` provide, from failing to tell. */
-    | { readonly kind: "error"; readonly error: string; readonly cause?: "missing" | "ambiguous" };
+    /**
+     * `cause` tells a name a module doesn't export, one several `export *` provide, and one in a module the build leaves
+     * unread, from failing to tell.
+     */
+    | { readonly kind: "error"; readonly error: string; readonly cause?: "missing" | "ambiguous" | "unreadable" };
+
+/** A resolution that names no file, as a `Resolved`. */
+const unresolved = ({ error, unreadable }: Unresolved): Resolved => unreadable === true ? { kind: "error", error, cause: "unreadable" } : { kind: "error", error };
 
 const sameResolution = (a: Resolved, b: Resolved): boolean =>
     a.kind === "binding" && b.kind === "binding" ? a.module === b.module && a.name === b.name
@@ -134,7 +146,7 @@ export const resolveBinding = (link: Link, module: Module, name: string, binding
     switch (binding.kind) {
         case "import": case "importNamespace": {
             const file = link.resolve(binding.specifier, module.file);
-            if (typeof file !== "string") return { kind: "error", error: file.error };
+            if (typeof file !== "string") return unresolved(file);
             return binding.kind === "importNamespace" ? { kind: "namespace", file } : resolveExport(link, file, binding.imported, seen);
         }
         default:
@@ -159,7 +171,7 @@ export const resolveExport = (link: Link, file: string, name: string, seen: Set<
             }
             case "reexport": case "namespace": {
                 const target = link.resolve(exported.specifier, file);
-                if (typeof target !== "string") return { kind: "error", error: target.error };
+                if (typeof target !== "string") return unresolved(target);
                 return exported.kind === "namespace" ? { kind: "namespace", file: target } : resolveExport(link, target, exported.imported, seen);
             }
         }
@@ -173,7 +185,7 @@ export const resolveExport = (link: Link, file: string, name: string, seen: Set<
     for (const star of module.stars) {
         try {
             const target = link.resolve(star, file);
-            const result: Resolved = typeof target === "string" ? resolveExport(link, target, name, new Set(seen)) : { kind: "error", error: target.error };
+            const result: Resolved = typeof target === "string" ? resolveExport(link, target, name, new Set(seen)) : unresolved(target);
             if (result.kind !== "error") {
                 if (!found.some(item => sameResolution(item, result))) found.push(result);
             }

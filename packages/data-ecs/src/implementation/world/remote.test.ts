@@ -16,6 +16,7 @@ const caption = Symbol("remoteTest/caption");
 const widget = Symbol("remoteTest/widget");
 const kept = Symbol("remoteTest/kept");
 const guarded = Symbol("remoteTest/guarded");
+const handle = Symbol("remoteTest/handle");
 declare module "@adobe/data-ecs" {
     export interface Threads {
         remoteTest: true;
@@ -27,6 +28,7 @@ declare module "@adobe/data-ecs" {
         [widget]: typeof widgetTraits;
         [kept]: typeof keptTraits;
         [guarded]: typeof guardedTraits;
+        [handle]: typeof handleTraits;
     }
 }
 /** A value that isn't data. */
@@ -35,6 +37,8 @@ const pointTraits = Component.register(point, { type: { type: "number" } });
 const captionTraits = Component.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "remoteTest" });
 const widgetTraits = Component.register(widget, { type: Component.object<Widget | null>(), thread: "remoteTest" });
 const keptTraits = Component.register(kept, { type: { type: "string" } });
+/** A widget, or the number a kernel gives one, which only the world's thread could hold. */
+const handleTraits = Component.register(handle, { type: Component.object<Widget | number | null>(), thread: "remoteTest" });
 const guardedTraits = Component.register(guarded, { type: Component.object<Widget | null>(), thread: "remoteTestFinalized" });
 
 const spawn = System.create({ name: "remoteTest/spawn", input: { type: "object", properties: { x: { type: "number" } } } }, ({ input, commands }) => {
@@ -54,6 +58,13 @@ const giveCaption = System.create({ name: "remoteTest/giveCaption", components: 
 });
 const spawnCaptioned = System.create({ name: "remoteTest/spawnCaptioned" }, ({ commands }) => {
     commands.spawn([point, caption])({ [point]: 1, [caption]: "a caption only the thread gives" });
+});
+/** A kernel giving the thread's objects null, which they take, and a number, which they don't. */
+const nullCaptionsKernel = System.create({ name: "remoteTest/nullCaptionsKernel", kernel: "cpu", components: { has: [caption], read: [point] } }, (row, { commands }) => {
+    if (row[point] > 0) commands.add(row.entity, caption, null);
+});
+const numberHandlesKernel = System.create({ name: "remoteTest/numberHandlesKernel", kernel: "cpu", components: { read: [point] } }, (row, { commands }) => {
+    commands.add(row.entity, handle, row[point]);
 });
 const readCaptions = System.create({ name: "remoteTest/readCaptions", components: { read: [caption] } }, row => {
     void row[caption];
@@ -119,6 +130,20 @@ describe("objects a joined thread fills", () => {
         expect((await world.run(giveCaption)).failures.map(failure => failure.message)).toEqual([message]);
         expect((await world.run(spawnCaptioned)).failures.map(failure => failure.message)).toEqual([message]);
         expect(await Observe.toPromise(world.observe.count({ required: [caption] }))).toBe(1);
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("take from a kernel only their start or null, its command giving another dropping and its system failing", async () => {
+        const { world, thread, remote } = joined();
+        await statusOf(world, thread, "joined");
+        const entity = await spawnOne(world, 6);
+        const listed = remote.observe.entity(entity, { required: [caption, widget] });
+        expect(await until(listed, value => value !== null)).toEqual({ [caption]: "none", [widget]: null });
+        expect((await world.run(nullCaptionsKernel)).failures).toEqual([]);
+        expect(await until(listed, value => value?.[caption] === null)).toEqual({ [caption]: null, [widget]: null });
+        const report = await world.run(numberHandlesKernel);
+        expect(report.failures.map(failure => [failure.name, failure.message])).toEqual([["remoteTest/numberHandlesKernel", '"remoteTest/handle" lives on thread "remoteTest", which a joined thread fills, so a command here gives it only its start or null.']]);
+        expect(report.dropped).toBe(1);
         await remote.dispose();
         await world.dispose();
     });

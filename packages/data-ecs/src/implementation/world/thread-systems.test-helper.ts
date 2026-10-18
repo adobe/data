@@ -224,3 +224,32 @@ export const scenario = async (world: World, threads: World) => {
     snapshots.push(await snapshot(world, threads));
     return { snapshots, reports, warnings };
 };
+
+/** Spawns entities with captions, from the world's thread. */
+export const crowd = System.create({ name: "threadSystemsTest/crowd", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+    for (let k = 0; k < input.count; k++) commands.spawn([uid, caption])({ [uid]: 1000 + k });
+});
+/** On the world's thread: every crowd entity but uid 1000 moves archetype, flagged on one run and not on the next. */
+export const flagCrowd = System.create({ name: "threadSystemsTest/flagCrowd", components: { read: [uid], has: [caption], not: [flagged] } }, (row, { commands }) => {
+    if (row[uid] !== 1000) commands.add(row.entity, flagged);
+});
+export const unflagCrowd = System.create({ name: "threadSystemsTest/unflagCrowd", components: { has: [caption, flagged] } }, (row, { commands }) => {
+    commands.remove(row.entity, flagged);
+});
+/** On the thread: writes uid 1000's caption in place. */
+export const write = System.create({ name: "threadSystemsTest/write", components: { read: [uid], write: [caption] } }, row => {
+    if (row[uid] === 1000) row[caption] = "written";
+});
+/** On the thread: counts captions it holds that the thread wrote, into a struct resource. */
+export const countWritten = System.create({ name: "threadSystemsTest/countWritten", components: { read: [caption] }, resources: { write: [changes] } }, (row, { resources }) => {
+    if (row[caption] === "written") resources[changes] += 1;
+});
+
+/** On the thread: gives an object of the world's thread a value, which can't cross, so its command drops and it fails. */
+export const giveKept = System.create({ name: "threadSystemsTest/giveKept", components: { read: [caption] } }, (row, { commands }) => {
+    if (row[caption] !== undefined) commands.add(row.entity, kept, "given there");
+});
+/** On the thread: spawns giving an object of the world's thread a value, which throws when it's issued. */
+export const spawnKept = System.create({ name: "threadSystemsTest/spawnKept", resources: { read: [paint] } }, ({ resources, commands }) => {
+    commands.spawn([uid, kept])({ [uid]: resources[paint].length, [kept]: "spawned there" });
+});

@@ -6,7 +6,7 @@ import { createCommands } from "./commands.js";
 import { asEntity, indexOf, locate as locateHere } from "./entities.js";
 import { recordCount, structureWord, tableOffsetWord } from "./layout-directory.js";
 import { cellOf, createMirror, locate, nameComponent, rebuild, replay, stage, waitStructure, type Mirror } from "./mirror.js";
-import { createMoveLog, markDelivered, slotValue, type MoveLog } from "./move-log.js";
+import { createMoveLog, markDelivered, ownTag, slotValue, type MoveLog } from "./move-log.js";
 import { claimThreads } from "./remote.js";
 import { createState, defaultOf, idOf, startTicking, type State } from "./state.js";
 import { applySync, prepareSync, synchronize } from "./synchronize.js";
@@ -237,6 +237,38 @@ describe("the move log", () => {
             expect(compared).toBeGreaterThan(100);
             expect(rebuilds).toBeGreaterThan(10);
         }
+    });
+    it("keeps by entity a value the thread's systems wrote, which its row's tag marks, across a rebuild and a move", () => {
+        const { state, mirror } = threaded(4);
+        follow(mirror);
+        const { commands, target } = worldCommands(state);
+        const entity = commands.spawn([uid, label])({ [uid]: 1 });
+        const other = commands.spawn([uid, label])({ [uid]: 2 });
+        state.queued.push({ buffer: target.buffer, guarded: true });
+        synchronize(state);
+        follow(mirror);
+        // A system on the thread writes the entity's label: its value there, its tag the thread's own.
+        const id = idOf(state, label);
+        const index = indexOf(entity);
+        const archetype = state.archetypes[state.entities.archetype[index]];
+        const row = state.entities.row[index];
+        const column = mirror.archetypes[archetype.id]?.byComponent[id];
+        if (column === undefined) throw new Error("The mirror holds no labels.");
+        column.values[row] = "written";
+        const storage = archetype.storageById[id];
+        if (storage === undefined) throw new Error("The world holds no labels.");
+        storage.tags[row] = ownTag;
+        // More entries than the log holds, and a move: the thread rebuilds, keeping the value by entity.
+        const rebuilds = mirror.rebuilds;
+        commands.add(entity, flag);
+        for (let k = 0; k < 4; k++) commands.add(other, amount, k);
+        commands.despawn(other);
+        state.queued.push({ buffer: target.buffer, guarded: true });
+        synchronize(state);
+        follow(mirror);
+        expect(mirror.rebuilds).toBe(rebuilds + 1);
+        const moved = indexOf(entity);
+        expect(cellOf(mirror, state.entities.archetype[moved], state.entities.row[moved], id)?.value).toBe("written");
     });
     it("drops a staged slot whose command names an entity the sync point despawned, without a value", () => {
         const { state, mirror } = threaded(4096);

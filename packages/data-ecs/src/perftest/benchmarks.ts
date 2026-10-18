@@ -1,9 +1,11 @@
+import type { Component } from "../interface/component/component.js";
 import type { Entity } from "../interface/entity/entity.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { World } from "../interface/world/world.js";
 import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVisible } from "./flat.js";
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
 import { forest, local as hierarchyLocal, nudge, parent as hierarchyParent, propagate, propagateChanged, reparent, sprout, turnover, under } from "./hierarchy.js";
+import * as structural from "./structural.js";
 import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, index, indexSum, observe, poke, pokeCluster, position, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
 
 import type { Benchmark } from "./benchmark.js";
@@ -37,6 +39,27 @@ const after = async (before: () => Promise<unknown>, measured: () => Promise<unk
     }
     return best;
 };
+
+/** Entities in each structural benchmark. */
+const structuralCount = 100_000;
+
+/** A world of `structuralCount` seeded entities, in one archetype or interleaved over four. */
+const structuralWorld = async (sources: 1 | 4): Promise<World> => {
+    const world = createWorld();
+    await world.run(structural.seed, { count: structuralCount, sources });
+    return world;
+};
+
+/** The fastest run of `measured` over a seeded world, after `before` restores what the last one changed. */
+const structuralBest = async (sources: 1 | 4, before: (world: World) => Promise<unknown>, measured: (world: World) => Promise<unknown>, verify: (world: World) => Promise<boolean>, name: string): Promise<number> => {
+    const world = await structuralWorld(sources);
+    const best = await after(() => before(world), () => measured(world), 40, 8);
+    check(await verify(world), `${name}: wrong result`);
+    await world.dispose();
+    return best;
+};
+
+const countOf = (world: World, required: readonly Component.Name[]): Promise<number> => toPromise(world.observe.count({ required }));
 
 /** A forest of 100K chains of 10, filtered propagation run once, and its roots. */
 const filteredForest = async (): Promise<{ readonly world: World; readonly roots: readonly Entity[] }> => {
@@ -462,6 +485,122 @@ export const benchmarks: readonly Benchmark[] = [
                 const selected = await toPromise(world.observe.select({ required: [position, index], where: { [index]: { "<": 500_000 } } }));
                 check(selected.length === 500_000, "select: wrong count");
             });
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "spawn bulk",
+        operation: "A main-thread system spawning 100K entities of one archetype, applied by its sync point: loading many of one kind.",
+        per: "spawns",
+        n: structuralCount,
+        typical: [100, 100_000],
+        best: { bytes: 24, basis: "Each entity writes its 8 bytes of values, its 8-byte entity and its 8-byte location." },
+        run: () => structuralBest(1, world => world.run(structural.despawnSpawned), world => world.run(structural.spawnBulk, { count: structuralCount }),
+            async world => await countOf(world, [structural.spawned]) === structuralCount, "spawn bulk"),
+    },
+    {
+        name: "spawn bulk kernel",
+        operation: "A kernel spawning an entity per row over 100K rows: spawns found by a parallel pass, such as debris or hits.",
+        per: "spawns",
+        n: structuralCount,
+        typical: [100, 100_000],
+        best: { bytes: 28, basis: "Each row reads its 4-byte index; each spawn writes its 8 bytes of values, its entity and its location." },
+        run: () => structuralBest(1, world => world.run(structural.despawnSpawned), world => world.run(structural.spawnKernel),
+            async world => await countOf(world, [structural.spawned]) === structuralCount, "spawn bulk kernel"),
+    },
+    {
+        name: "spawn singles",
+        operation: "A run spawning one entity of each of four archetypes: the fixed cost of a few spawns a frame, such as a click or a message.",
+        per: "spawns",
+        n: 4,
+        typical: [1, 10],
+        best: { bytes: 64 / 4 + 24, basis: "Each entity writes its values, entity and location, and the run reads a cache line of its system's state." },
+        run: async () => {
+            const world = await structuralWorld(1);
+            const best = await fastest(() => world.run(structural.spawnSingles));
+            check(await countOf(world, [structural.spawned]) > 0, "spawn singles: nothing spawned");
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "spawn sixteen archetypes",
+        operation: "Spawns from value objects over sixteen archetypes, more component sets than spawns cache: entities of many kinds, from data.",
+        per: "spawns",
+        n: structuralCount,
+        typical: [100, 100_000],
+        best: { bytes: 24, basis: "Each entity writes its 8 bytes of values, its 8-byte entity and its 8-byte location." },
+        run: () => structuralBest(1, world => world.run(structural.despawnSpawned), world => world.run(structural.spawnSixteen, { count: structuralCount }),
+            async world => await countOf(world, [structural.spawned]) === structuralCount, "spawn sixteen archetypes"),
+    },
+    {
+        name: "despawn bulk",
+        operation: "A main-thread system despawning 100K entities over four archetypes: unloading a level.",
+        per: "despawns",
+        n: structuralCount,
+        typical: [100, 100_000],
+        best: { bytes: 16, basis: "Each despawn frees its 8-byte location and entity; the archetypes empty, so no row moves." },
+        run: () => structuralBest(4, world => world.run(structural.seed, { count: structuralCount, sources: 4 }), world => world.run(structural.despawnAll),
+            async world => await countOf(world, [structural.index]) === 0, "despawn bulk"),
+    },
+    {
+        name: "despawn bulk kernel",
+        operation: "The same despawns from a kernel.",
+        per: "despawns",
+        n: structuralCount,
+        typical: [100, 100_000],
+        best: { bytes: 20, basis: "Each row reads its 4-byte index; each despawn frees its location and entity." },
+        run: () => structuralBest(4, world => world.run(structural.seed, { count: structuralCount, sources: 4 }), world => world.run(structural.despawnKernel),
+            async world => await countOf(world, [structural.index]) === 0, "despawn bulk kernel"),
+    },
+    {
+        name: "despawn one",
+        operation: "A run despawning one entity of 100K: the fixed cost of a despawn, such as one projectile hitting.",
+        per: "despawns",
+        n: 1,
+        typical: [1, 10],
+        best: { bytes: 64 + 32, basis: "The despawn swaps the last row into its hole and frees its location, and the run reads its system's state." },
+        run: async () => {
+            const world = await structuralWorld(1);
+            const best = await after(() => world.run(structural.spawnOne), () => world.run(structural.despawnOne), 2_000, 200);
+            check(await countOf(world, [structural.spawned]) === 0, "despawn one: entities left");
+            await world.dispose();
+            return best;
+        },
+    },
+    ...([
+        ["add tag", "Adding a tag to 100K entities of one archetype: a state flag set on many at once.", 1, structural.removeFlag, structural.addFlag, [structural.flag], 16],
+        ["add tag kernel", "The same adds from a kernel.", 1, structural.removeFlagKernel, structural.addFlagKernel, [structural.flag], 20],
+        ["add tag from four archetypes", "Adding a tag to 100K entities over four archetypes, each moving to its own target.", 4, structural.removeFlag, structural.addFlag, [structural.flag], 16],
+        ["add value", "Adding a valued component to 100K entities of one archetype: attaching data such as a timer or a score.", 1, structural.removeAmount, structural.addAmount, [structural.amount], 20],
+        ["add several", "Adding a tag and two values at once to 100K entities: attaching a bundle of components.", 1, structural.removeSeveral, structural.addSeveral, [structural.flag, structural.amount, structural.extra], 24],
+        ["remove tag", "Removing a tag from 100K entities of one archetype.", 1, structural.addFlag, structural.removeFlag, null, 16],
+        ["remove tag kernel", "The same removes from a kernel.", 1, structural.addFlagKernel, structural.removeFlagKernel, null, 20],
+        ["remove tag from four archetypes", "Removing a tag from 100K entities over four archetypes.", 4, structural.addFlag, structural.removeFlag, null, 16],
+        ["remove several", "Removing a tag and two values at once from 100K entities.", 1, structural.addSeveral, structural.removeSeveral, null, 16],
+    ] as const).map(([name, operation, sources, before, measured, added, bytes]): Benchmark => ({
+        name,
+        operation,
+        per: "entities moved",
+        n: structuralCount,
+        typical: [100, 100_000],
+        best: { bytes, basis: "Each entity copies its row to the target archetype and its location changes; the source empties, so no row swaps into a hole." },
+        run: () => structuralBest(sources, world => world.run(before), world => world.run(measured),
+            async world => added === null ? await countOf(world, [structural.flag]) === 0 : await countOf(world, added) === structuralCount, name),
+    })),
+    {
+        name: "add replace",
+        operation: "Adding a value 100K entities already have: values replaced and marked changed, with no archetype moves.",
+        per: "entities",
+        n: structuralCount,
+        typical: [100, 100_000],
+        best: { bytes: 12, basis: "Each row reads its 4-byte value and writes 4 bytes, plus its 4-byte location read." },
+        run: async () => {
+            const world = await structuralWorld(1);
+            await world.run(structural.addAmount);
+            const best = await fastest(() => world.run(structural.replaceAmount));
+            check(await countOf(world, [structural.amount]) === structuralCount, "add replace: wrong count");
             await world.dispose();
             return best;
         },

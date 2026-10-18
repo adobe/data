@@ -686,7 +686,7 @@ world's storages' alone, which the thread's writes stamp, marking the row's tag 
 joined thread reads again rather than wait while its unread word is set, which lost wakes before.
 
 - Interface: the `"thread"` failure kind in `World.Report`'s `Failure` and the `report` resource's schema; `warnings`
-  in `World.Report`, of `World.Warning`s, `{ kind: "blocking", name, message }`, in the schema too; both type-tested.
+  in `World.Report`, each `{ kind: "blocking", name, message }`, its type inline, in the schema too; both type-tested.
 - Contract: a blocking tier is listed in its run's or tick's `warnings`; a system on a claimed thread runs there, and a
   joined thread's claim is refused for a system there it can't run, one it didn't import, one without an id or naming a
   key without one, or one declaring `up`; a system whose thread is gone is in `skipped` with a `"thread"` failure, later

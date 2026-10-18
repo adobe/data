@@ -11,7 +11,7 @@ import { locate } from './entities.js';
 import { clearBuffer, createBuffer } from './buffer.js';
 import { drainSegment, type Segment } from './command-ring.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
-import type { Failure, Report, Warning } from '../../interface/world/report.js';
+import type { Failure, Report } from '../../interface/world/report.js';
 import { liftColumnStamps, type RemoteSystem, type TaskChannel } from './remote-systems.js';
 import { failureOf } from './failures.js';
 import { checkCommands } from './remote.js';
@@ -98,7 +98,7 @@ type Prepared = {
      * The run's warnings, the first `warningCount`, and the last report made of warnings alone, reused while a run's are
      * the same. Counted rather than truncated: setting an array's length costs a run more than all of this.
      */
-    readonly warnings: Warning[];
+    readonly warnings: Report["warnings"][number][];
     warningCount: number;
     warned: Report | null;
     /** The run's failures and skipped systems, allocated only when there's something to list. */

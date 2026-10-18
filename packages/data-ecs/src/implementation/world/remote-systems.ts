@@ -1,6 +1,6 @@
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Leaf as FinalizerLeaf } from '../../interface/finalizer/created.js';
-import type { Warning } from '../../interface/world/report.js';
+import type { Report } from '../../interface/world/report.js';
 import { idOfItem, idOfKey, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
 import type { Archetype } from './archetype.js';
 import { chunkShift } from './kernel.js';
@@ -37,7 +37,7 @@ export type RemoteSystem = {
     readonly index: number;
     readonly label: string;
     /** Its warning, listed in each run's report its tier blocks. */
-    readonly warning: Warning;
+    readonly warning: Report["warnings"][number];
     readonly targets: readonly ReductionTarget[];
     /** Its folds' leaves, as the last task gave them, by target. */
     readonly folds: readonly Float64Array[];

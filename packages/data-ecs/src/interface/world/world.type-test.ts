@@ -115,8 +115,7 @@ const reported = async () => {
     const names: readonly string[] = skipped;
     const count: number = dropped;
     for (const warning of warnings) {
-        check<Equal<typeof warning, World.Warning>>();
-        check<Equal<World.Warning, { readonly kind: "blocking"; readonly name: string; readonly message: string }>>();
+        check<Equal<typeof warning, { readonly kind: "blocking"; readonly name: string; readonly message: string }>>();
     }
     // @ts-expect-error a report is read-only
     warnings.push({ kind: "blocking", name: "", message: "" });
@@ -159,3 +158,6 @@ void [disposed, usingDispose, selected, paged, selectedAll, counted, query, ran,
 
 // World.create is a type here, with no runtime value.
 check<Equal<ReturnType<World.Create>, World>>();
+// A warning's type is inferred from the report's: World.Report["warnings"][number].
+// @ts-expect-error no World.Warning
+export type Warned = World.Warning;

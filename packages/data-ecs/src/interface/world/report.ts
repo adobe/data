@@ -9,8 +9,11 @@ export type Report = {
     readonly skipped: readonly string[];
     /** Commands that did nothing, since their entity wasn't alive at the sync point. */
     readonly dropped: number;
-    /** What ran but slowed the run, such as a tier that waited for a system on a joined thread. */
-    readonly warnings: readonly Warning[];
+    /**
+     * What ran but slowed the run. `"blocking"`: a system that runs on a thread a joined thread fills and isn't
+     * terminal, so its tier waited for that thread, by the system's label.
+     */
+    readonly warnings: readonly { readonly kind: "blocking"; readonly name: string; readonly message: string }[];
 };
 
 export type Failure = {
@@ -30,14 +33,4 @@ export type Failure = {
     readonly message: string;
     /** The thrown Error's `stack`, as the JavaScript engine formats it, for logs and display; null when it had none. */
     readonly stack: string | null;
-};
-
-/**
- * Something that slowed a run without failing it. `"blocking"`: a system that runs on a thread a joined thread fills
- * and isn't terminal, so its tier waited for that thread, by the system's label.
- */
-export type Warning = {
-    readonly kind: "blocking";
-    readonly name: string;
-    readonly message: string;
 };

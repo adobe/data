@@ -5,7 +5,7 @@ import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join } from "./create.js";
 import { Observe } from "../../interface/observe/observe.js";
-import { caption, changes, countWritten, crowd, flagCrowd, giveKept, kept, scenario, spawnKept, uid, unflagCrowd, write } from "./thread-systems.test-helper.js";
+import { caption, changes, countWritten, crowd, flagCrowd, giveKept, kept, objectsThere, scenario, spawnKept, uid, unflagCrowd, write } from "./thread-systems.test-helper.js";
 
 // Systems on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
 
@@ -36,10 +36,10 @@ const joined = async (): Promise<{ readonly world: World; readonly remote: World
 describe("systems on a joined thread", () => {
     it("give an inline world's results: rows, commands, spawns, reductions, resources, lookups, filters, conditions and failures", async () => {
         const inline = createWorld({ [workers]: 0 });
-        const expected = await scenario(inline, inline);
+        const expected = await scenario(inline);
         await inline.dispose();
         const { world, remote } = await joined();
-        const actual = await scenario(world, remote);
+        const actual = await scenario(world, objectsThere(remote));
         expect(actual.snapshots).toEqual(expected.snapshots);
         expect(actual.reports).toEqual(expected.reports);
         expect(expected.warnings.every(names => names.length === 0)).toBe(true);

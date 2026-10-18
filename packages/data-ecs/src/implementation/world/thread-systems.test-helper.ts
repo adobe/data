@@ -175,18 +175,22 @@ const plain = (value: { readonly [key: symbol]: unknown } | null): { readonly [n
     return result;
 };
 
-/**
- * What a world holds after its runs: each entity by uid, its structs and the world's objects read on `world`, and the
- * thread's objects read on `threads` (the world itself, inline, or the thread that fills them).
- */
-export const snapshot = async (world: World, threads: World): Promise<Snapshot> => {
+/** The thread's objects of `entities`, as data, read where they live: on `threads`, the world itself inline, or the thread that fills them. */
+export type Objects = (entities: readonly Entity[]) => Promise<readonly { readonly [name: string]: unknown }[]>;
+
+/** Objects read by a joined thread's observers, where it fills them. */
+export const objectsThere = (threads: World): Objects => entities =>
+    Promise.all(entities.map(async entity => plain(await Observe.toPromise(threads.observe.entity(entity, { required: [uid], optional: [caption, note] })))));
+
+/** Objects of an inline world, which its own entity values hold. */
+const objectsInline: Objects = async entities => entities.map(() => ({}));
+
+/** What a world holds after its runs: each entity by uid, its structs and the world's objects, and the thread's objects. */
+export const snapshot = async (world: World, objects: Objects): Promise<Snapshot> => {
     const entities = await Observe.toPromise(world.observe.select({ required: [uid] }));
-    const read = async (entity: Entity) => {
-        const here = plain(await Observe.toPromise(world.observe.entity(entity)));
-        const there = threads === world ? {} : plain(await Observe.toPromise(threads.observe.entity(entity, { required: [uid], optional: [caption, note] })));
-        return [Number(here.uid), { ...here, ...there }] as const;
-    };
-    const listed = await Promise.all(entities.map(read));
+    const here = await Promise.all(entities.map(async entity => plain(await Observe.toPromise(world.observe.entity(entity)))));
+    const there = await objects(entities);
+    const listed = here.map((value, k) => [Number(value.uid), { ...value, ...there[k] }] as const);
     return {
         entities: listed.sort((a, b) => a[0] - b[0]),
         total: await Observe.toPromise(world.observe.resource(total)),
@@ -201,8 +205,11 @@ const comparable = ({ failures, skipped, dropped, warnings }: World.Report) => (
     warnings: warnings.map(warning => warning.name),
 });
 
-/** The runs both worlds take: seeds, ticks, a run with input, a failing run, and ticks with `repaint` disabled. */
-export const scenario = async (world: World, threads: World) => {
+/**
+ * The runs both worlds take: seeds, ticks, a run with input, a failing run, and ticks with `repaint` disabled. Without
+ * `objects`, the world is inline.
+ */
+export const scenario = async (world: World, objects: Objects = objectsInline) => {
     const snapshots: Snapshot[] = [];
     const reports: unknown[] = [];
     const warnings: (readonly string[])[] = [];
@@ -214,14 +221,14 @@ export const scenario = async (world: World, threads: World) => {
     ran(await world.run(seed, { count: 12 }));
     for (let k = 0; k < 6; k++) {
         ran(await world.run(tick));
-        snapshots.push(await snapshot(world, threads));
+        snapshots.push(await snapshot(world, objects));
     }
     ran(await world.run(stamp, { text: "stamped" }));
     ran(await world.run(failing));
-    snapshots.push(await snapshot(world, threads));
+    snapshots.push(await snapshot(world, objects));
     ran(await world.run(disable));
     for (let k = 0; k < 2; k++) ran(await world.run(tick));
-    snapshots.push(await snapshot(world, threads));
+    snapshots.push(await snapshot(world, objects));
     return { snapshots, reports, warnings };
 };
 
@@ -252,4 +259,13 @@ export const giveKept = System.create({ name: "threadSystemsTest/giveKept", comp
 /** On the thread: spawns giving an object of the world's thread a value, which throws when it's issued. */
 export const spawnKept = System.create({ name: "threadSystemsTest/spawnKept", resources: { read: [paint] } }, ({ resources, commands }) => {
     commands.spawn([uid, kept])({ [uid]: resources[paint].length, [kept]: "spawned there" });
+});
+
+/** On the thread: runs until its thread ends, so its task never completes. */
+export const stall = System.create({ name: "threadSystemsTest/stall", resources: { read: [paint] } }, ({ resources }) => {
+    while (resources[paint] !== "never") { /* until the thread ends */ }
+});
+/** On the world's thread: counts its runs, ticking with nothing on the thread. */
+export const count = System.create({ name: "threadSystemsTest/count", resources: { write: [changes] } }, ({ resources }) => {
+    resources[changes] += 1;
 });

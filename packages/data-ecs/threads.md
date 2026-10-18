@@ -9,9 +9,9 @@ Referenced from `design.md`.
 - **Struct:** numbers, booleans, entities, fixed-length tuples and structs of those. A struct has a fixed size and
   lives in shared memory: columns, ticks, the entity table and resource cells of struct type, all in the arena
   (`memory.ts`), readable and writable from any thread the schedule gives them to. A struct has no thread.
-- **Object:** every other value: strings, variable-length arrays, plain objects, DOM nodes, GPU objects, functions.
-  Each object component and object resource lives on one logical thread, and only the thread filling it reads or
-  writes it. Objects are never copied between threads; one declared `transfer: true` may be moved, never copied.
+- **Object:** every other value: strings, variable-length arrays, plain objects, and values that aren't data, declared
+  with `Component.object<T>()` (DOM nodes, GPU objects, functions). Each object component and object resource lives on
+  one logical thread, and only the thread filling it reads or writes it. Objects are never copied between threads; one declared `transfer: true` may be moved, never copied.
 - **Logical thread:** a name in the augmentable `Threads` interface. `world` and `main` are built in. A joined thread
   fills the logical threads it claims; the world's thread fills every one no joined thread claims.
 
@@ -31,9 +31,18 @@ Referenced from `design.md`.
 - **Keys are symbols,** so components, resources and traits never collide, but a symbol is a different value on each
   thread. Threads agree on keys through the ids the plugin gives top-level `Symbol(...)` declarations, by which the
   registry already takes the symbols of one id as one key; a threaded world will reject a key without one, at
-  registration or first use. Ids name packages, not directories, so threads bundled apart agree on them.
+  registration or first use. Ids name packages, not directories, so threads bundled apart agree on them, and the
+  plugin adds itself to `worker.plugins`, so worker bundles' keys get them too.
+- **Systems, rules and finalizers are their values,** and names are optional labels, so a value is different on each
+  thread too. Threads agree on them through the ids the plugin gives top-level `System.create`, `System.render`,
+  `Rule.create`, `Finalizer.create` and `Finalizer.changes` bindings, composites included, by which the registry
+  already takes values of one id as one item. A threaded world rejects an item without one where it crosses threads:
+  a system or finalizer placed on a joined thread, and a system a joined thread runs, at join or at that run. Rules run
+  only at `world`'s sync points, so they never cross. A kernel crosses as its chunk's url and the world's index for it,
+  as pool workers load it now; kernel chunks keep their exports' signatures, so every thread's import finds them.
 - **Archetypes are lists of keys.** The index `Archetype.create` gives a list is for its own thread's lookups;
-  threads agree on an archetype through its components' ids, as commands carry component ids, never indexes.
+  threads agree on an archetype through the world's numbers for its components, which a joined thread maps from key
+  ids when it joins. Commands and staged spawn batches carry those numbers, never archetype indexes.
 - **Inline is the same layout.** With every logical thread filled by the world's thread, storage and code paths are
   those of today; nothing below adds work to a one-thread world.
 
@@ -82,9 +91,9 @@ All derived from declarations when they're made; none is a flag.
   `added`, `changed`, `lookup`, `up` and resource `is`. Components in `has` and `not` are structural, and read a shared
   presence word, so they don't place it. With no objects, a kernel runs on the pool and any other system on `world`.
   Render systems and `kernel: "gpu"` systems are on `world`, with `gpuDevice`.
-- **Errors when declared:** objects of two threads in one system or finalizer, in types and at creation. Errors when
-  joining: a thread claimed twice, or a claimed thread whose systems that joined thread hasn't imported (checked by
-  name, once).
+- **Errors when declared:** objects of two threads in one system or finalizer, in types and when it's created, which
+  registers it. Errors when joining: a thread claimed twice, a claimed thread whose systems or finalizers that joined
+  thread hasn't imported (checked by id, once), or one of them without an id.
 - **A terminal system** writes only objects of its own thread, issues no commands, writes no struct component or
   struct resource, and looks up no struct component. DOM-writing systems and render systems are terminal. A terminal
   system on another thread runs as a tail (see Tails). A non-terminal system on a thread other than `world` is a
@@ -104,40 +113,54 @@ All derived from declarations when they're made; none is a flag.
   arrived since the last tick. A quiet loop schedules nothing, and a fixed loop builds no debt while quiet. The
   clock's own writes never wake it.
 - **`run(system, input)`** is a transaction: runs are sequential in call order, each its own sync point, and each one
-  makes the next beat tick. Runs from joined threads land in the same order through command rings, with merge tags.
+  makes the next beat tick. Runs from joined threads land in the same order through command rings, with merge tags,
+  naming the system by the world's index for its id.
 - **Failures of ticks** are in the `report` resource. A thread that dies doesn't reject a run or a tick: its systems
-  are in `skipped`, with a `"thread"` failure.
+  are in `skipped`, with a `"thread"` failure, a kind `World.Report` gains with joining.
 - **Observers** notify after each run or tick that changed what they observe; nothing promises a notification before
   `run` resolves. A quiet loop delivers nothing.
 
 ### Shared layout directory
 
-Per archetype in the arena: `count`, `capacity`, the `entities` offset, and per storage its column, tick and
-chunk-tick offsets. The world's thread keeps its JS fields as the source of truth on its hot paths and writes each
-record only at sync points, for archetypes created, grown or whose count changed. Every other thread indexes
-whole-buffer typed views (`u8`, `u32`, `i32`, `f32`, `f64` over `memory.buffer`) by those offsets, rebuilding the views
-only when a shared byte-length word moves. Only new components (schemas) and new archetypes (sorted component ids) are
-posted. This replaces `publish.ts`'s layout broadcast and the per-lookup directories' archetype records.
+Per archetype in the arena: `count`, `capacity`, the `entities` offset, a version bumped when its offsets move, and per
+storage its column, tick and chunk-tick offsets; and one record for the entity table: its cursor, free list, archetype,
+row and generation offsets, capacity and length. The world's thread keeps its JS fields as the source of truth on its
+hot paths and writes each record only at sync points, for archetypes created, grown or whose count changed, and for
+the entity table when it grows. Every other thread indexes whole-buffer typed views (`u8`, `u32`, `i32`, `f32`, `f64`
+over `memory.buffer`) by those offsets, rebuilding the views only when a shared byte-length word moves, and checks an
+archetype's version, one load, before using columns it cached for it. Only new components (schemas, none for a value
+that isn't data) and new archetypes (sorted component numbers) are posted. This replaces `publish.ts`'s layout
+broadcast, which posts every created or grown archetype's layout and the entity table's, and the per-lookup
+directories' archetype records.
 
 ### Task rings
 
-The pool's ring (`pool.ts`, `protocol.ts`) generalized to every thread. Pool workers are nested workers of the world's
-thread by default; the main thread may create them and pass their ports instead. Each ring has posted, done, epoch and
-signal words on their own cache lines, plus payload words: task kind, system index, tick, `lastRun`, input offset, and
-**the sync number the task needs replayed through**. Workers wait in a window with `Atomics.wait`. The main thread
-can't block: it waits with `Atomics.waitAsync`, or a posted message where that's unavailable. Consecutive tiers whose
-systems are all on one thread go as one task, with no barrier between them.
+The pool's ring (`pool.ts`, `protocol.ts`) generalized to every thread. Today it carries only WASM kernel tasks, all
+numbers, with claimed splits; a JS kernel's task, with its resources, input and commands, is a message. Pool workers
+are nested workers of the world's thread by default; the main thread may create them and pass their ports instead.
+Each ring has posted, done, epoch and signal words on their own cache lines, plus payload words: task kind, system
+index, tick, `lastRun`, input offset, and **the sync number the task needs replayed through**. Workers wait in a
+window with `Atomics.wait`. The main thread can't block: it waits with `Atomics.waitAsync`, or a posted message where
+that's unavailable. Consecutive tiers whose systems are all on one thread go as one task, with no barrier between
+them.
 
 ### Command rings
 
 One ring per thread in shared memory, with that thread as its only writer, drained by the world's thread at the sync
 point. Each block carries a merge tag (tier, system index, chunk index), so the merge order never depends on which
-thread ran a chunk. Structs are written through each component's layout writer. An object of the issuing thread's own
-logical thread stays there in a staging array; the ring carries its slot number. Worker kernels write their commands
-here instead of posting `CommandBuffer`s back, and their staged spawns as blocks of rows already in the target
-archetype's layout, as they post them back now. `run(system, input)` from another thread writes an entry, encoding
-struct input through its schema; other input is structured-cloned, as a command is. `run` resolves through a
-completion word, and the report is posted only when it isn't clean.
+thread ran a chunk. Commands are `despawn`, and `add` and `remove` of one component or a list; structs are written
+through each component's layout writer. An object of the issuing thread's own logical thread stays there in a staging
+array; the ring carries its slot number. Worker kernels write their commands here instead of posting `CommandBuffer`s
+back. `run(system, input)` from another thread writes an entry, encoding struct input through its schema; other input
+is structured-cloned, as a command is. `run` resolves through a completion word, and the report is posted only when it
+isn't clean.
+
+Spawns, `spawn(components)(values)`, stay staged (`staging.ts`), not commands: each thread stages into batches per
+component set, in the target storages' layout, as the main thread and pool workers do now, and reserves entities in
+blocks. A worker writes each batch's rows into its ring as a block tagged with its chunk's merge tag, in place of the
+`PostedSpawns` it posts back now, with the reservation ranges its block left unused. The sync point commits blocks in
+merge order, right after the world thread's own batches and before any command, as it commits posted batches now, and
+returns the unused ranges to the free list.
 
 ### Object columns on other threads
 
@@ -216,7 +239,7 @@ Memory isn't shared, so the world runs inline, and `share` and `World.join` will
 | A blocking tier on main | main's event-loop latency, which the report warns about |
 | A terminal tail on main, prompt | one post; nothing copied; the next tick waits only if main is late at a conflict |
 | A terminal tail on main, late at a conflict | a copy of the declared struct reads of its passing rows; the world's thread goes on |
-| Commands from a worker kernel or joined thread | ring writes; no message |
+| Commands and staged spawns from a worker kernel or joined thread | ring writes; no message |
 | `run` from a joined thread | one ring entry and notify; resolves through a word |
 | Struct observers on a joined thread, per tick | candidate check on the world's thread, a mailbox write of changed results, one notify |
 | Structural change touching archetypes with objects on other threads | one log entry per row moved, replayed once on that thread |
@@ -226,7 +249,7 @@ Memory isn't shared, so the world runs inline, and `share` and `World.join` will
 ## Memory
 
 - **Directory:** a record per archetype, 16 bytes plus 32 bytes per storage.
-- **Rings:** per thread, a task ring as the pool's, and a command ring sized to the largest tick's commands, grown at sync points.
+- **Rings:** per thread, a task ring as the pool's, and a command ring sized to the largest tick's commands and staged spawn rows, grown at sync points.
 - **Move log:** 16 bytes per entry, up to each thread's row count; 8 bytes per row of the archetypes it holds objects of, for its entity column.
 - **Mailboxes:** three slots per observing thread, each sized to the largest result delivered.
 - **Tail buffers:** only once a fallback snapshot was taken: passing rows times their declared struct reads, kept for the next.
@@ -238,55 +261,87 @@ Each phase leaves the package shippable with every test passing, and starts inte
 then green type tests, then runtime with red then green runtime tests. Each phase ends with `pnpm perf --record` and
 `pnpm perf:browser --record`; listed benchmarks must not regress beyond noise.
 
-### Built: threads in declarations, and the loop
+### Built: threads in declarations, the loop, and the pool
 
 - `Threads`, `thread`, `transfer` and the DOM rule in types, with registration's checks; a system's and finalizer's
-  thread derived, and two threads rejected, when declared. With every thread filled by `world`, nothing changes at
+  thread derived, and two threads rejected, when it's created. With every thread filled by `world`, nothing changes at
   runtime.
+- Ids: the plugin gives top-level keys and `System.create`, `System.render`, `Rule.create`, `Finalizer.create` and
+  `Finalizer.changes` bindings ids, in worker bundles too; the registry takes symbols or values of one id as one key or
+  item. Nothing rejects a key or item without one yet.
 - The loop, inline: `add`, `cadence` with `maxSteps`, `always`, `wake`, `clock`, `report`, beats on animation frames or
-  timers, and the `workers` resource sizing the pool at sync points.
+  timers, and the `workers` resource sizing the pool at sync points. `World.Report` has no `"thread"` failure kind.
+- The pool: WASM kernel tasks through per-worker rings with claimed splits, JS kernel tasks by message; kernel spawns
+  staged into batches per component set on the main thread and workers, posted back per chunk and committed in merge
+  order, with entities reserved in blocks whose unused positions the sync point returns; `terminate` waits for workers
+  to leave their windows before releasing the pool's control state to the arena.
 - `share` and `World.join` aren't public yet; they come with joining.
 
 ### Phase 1: shared layout directory
 
-Workers read archetype layout from the directory; `publish.ts` posts only new components and archetypes; lookup
-directories reuse its records.
+Workers read archetype and entity-table layout from the directory; `publish.ts` posts only new components and
+archetypes; lookup directories reuse its records.
 
 - Interface: none. Contract: none.
-- Tests: the existing worker browser tests; a test that grows 100 archetypes across sync points and checks workers' kernels see every row, with no layout message after the first.
-- Must not regress: `sync point one spawn`, `run idle`, `run 50 idle`, `create`, `churn`, `move workers`, `follow workers`, `chain workers`, `up depth 10 workers`.
-- New: `sync point grow 100 archetypes` (one spawn into each of 100 full archetypes per sync point, workers on), node and browser.
+- Tests: the existing worker browser tests; a test that grows 100 archetypes across sync points and checks workers'
+  kernels see every row, with no layout message after the first; one that grows the entity table between runs and
+  checks workers' lookups and spawns use the new table, with no message.
+- Must not regress: `sync point one spawn`, `run idle`, `run 50 idle`, `create`, `churn`, `spawn bulk kernel`, and in
+  chromium `move workers`, `follow workers`, `chain workers`, `sparse changed workers`, `spawn bulk kernel workers`,
+  `up depth 10 workers`.
+- New: `sync point grow 100 archetypes main` and `workers` (one spawn into each of 100 full archetypes per sync point),
+  in chromium; `loop tick idle` (a tick with nothing changed, N = 10,000), node and chromium, so later phases guard the
+  loop.
 
 ### Phase 2: thread ports and node workers
 
 `pool.ts` takes a port abstraction over browser `Worker` and node `worker_threads`, so real-thread tests run in node,
-and pool workers can be nested workers of a world on a worker, or ports the main thread passes.
+and pool workers can be nested workers of a world on a worker, or ports the main thread passes. A port's terminate is
+async, as `pool.terminate` is, which still releases control state only once every windowed worker has left. Worker
+counts come from the port's platform, not `typeof Worker`.
 
 - Interface: none. Contract: none.
-- Tests: the worker browser tests' cases run again in node with `worker_threads`; a dead-worker test in both.
+- Tests: the worker browser tests' cases run again in node with `worker_threads`, against a Vite 8 build with the
+  plugin, as `pnpm perf` bundles, since a `worker_threads` worker doesn't go through Vitest 5's transform; the pool
+  tests (a worker that can't load, control state released on terminate) in both; a worker that dies mid-task, in both.
 - Must not regress: every `workers` benchmark.
-- New: `move workers` and `follow workers` in node; `wake` (a notify from the world's thread to a waiting worker and back, N = 10,000).
+- New: in node, `move workers`, `follow workers`, `spawn bulk kernel workers` and `sync point grow 100 archetypes
+  workers`; `wake` (a notify from the world's thread to a waiting worker and back, N = 10,000), node and chromium.
 
 ### Phase 3: command rings for the pool
 
-Worker kernels write commands into their thread's ring, with merge tags; `FromWorker` carries no commands.
+Worker kernels write commands into their thread's ring, with merge tags, and their staged spawn batches as tagged
+blocks with their unused reservation ranges; `FromWorker` carries only a task's completion, its error, and the object
+values its commands give, by slot. The sync point's commit of staged rows and its plan are unchanged.
 
 - Interface: none. Contract: none.
-- Tests: deterministic merge across worker counts 0, 1, 2 and 7, compared row for row; ring growth across sync points.
-- Must not regress: `emit`, `churn`, `sync point one spawn`.
-- New: `emit workers` (a kernel spawning 1 per row over 1M rows, then despawning them).
+- Tests: the existing merge tests, commands at 0 and 3 workers and staged spawns at 0, 1, 2 and 7, with commands
+  extended to 0, 1, 2 and 7, in node and chromium; ring growth across sync points; a failed task's commands and spawns
+  before its failure still apply; unused reservation ranges return to the free list once.
+- Must not regress: `emit`, `churn`, `sync point one spawn`, `spawn bulk kernel`, `despawn bulk kernel`, `add tag
+  kernel`, `remove tag kernel`, `spawn bulk kernel main`, `spawn bulk kernel workers`.
+- New: `emit main` and `emit workers` (`emit`'s kernel, an add for a tenth of 1M rows), node and chromium.
 
 ### Phase 4: joining
 
 `share`, `World.join`, the handshake through the thread's entity, remote `run` through command rings and completion
 words, struct observers through mailboxes, the structure epoch. Every logical thread is still filled by `world`.
 
-- Interface: `world.share(port)`, returning the joined thread's Entity with read-only status components written only by the world, the port kept internal; `World.join` and `World.Port`.
-- Interface: the `"thread"` failure kind returns to `World.Report`'s `Failure` and the `report` resource's schema, with the doc for systems skipped because their thread is gone; it was removed while nothing could produce it.
-- Contract: the first notification on a joined thread always comes later; `observe.entity(entity)` on a joined thread gives struct components plus that thread's objects; `share` and `join` are public.
-- Tests: node and browser, the world on a worker with main joined, and the reverse; observers of resources, entities, select and count; a joined thread that dies leaves its systems in `skipped` with a `"thread"` failure, and its status `"gone"`; no cross-origin isolation throws at `share` and `join`.
-- Must not regress: `run idle`, `select`, `sync point one spawn`.
-- New: `remote run` (an empty transaction from a joined thread, N = 1,000); `mailbox resource` (one observed resource changed per tick, N = 1,000 ticks); `mailbox select 10K` (a `select` over 10,000 entities whose order changes every tick).
+- Interface: `world.share(port)`, returning the joined thread's Entity with read-only status components written only
+  by the world, the port kept internal; `World.join` and `World.Port`.
+- Interface: the `"thread"` failure kind in `World.Report`'s `Failure` and the `report` resource's schema, with the
+  doc for systems skipped because their thread is gone.
+- Contract: the first notification on a joined thread always comes later; `observe.entity(entity)` on a joined thread
+  gives struct components plus that thread's objects; a threaded world rejects keys, systems and finalizers without
+  ids where they cross threads; `share` and `join` are public.
+- Tests: node and browser, the world on a worker with main joined, and the reverse; observers of resources, entities,
+  select and count; a joined thread that dies leaves its systems in `skipped` with a `"thread"` failure, and its status
+  `"gone"`; a joined thread's `run` of a system without an id rejects, as does joining with one claimed; keys and items
+  of one id from separately bundled threads are one; no cross-origin isolation throws at `share` and `join`.
+- Must not regress: `run idle`, `run 50 idle`, `select`, `sync point one spawn`, `loop tick idle`.
+- New: `remote run` (an empty transaction from a joined thread, N = 1,000); `mailbox resource` (one observed resource
+  changed per tick, N = 1,000 ticks); `mailbox select 10K` (a `select` over 10,000 entities whose order changes every
+  tick).
 
 ### Phase 5: objects on other threads
 
@@ -296,9 +351,14 @@ gated on acknowledgement.
 
 - Interface: finalizers that read objects of another thread lose `commands` and resource writes, type-tested.
 - Contract: such finalizers run after the sync point, under the guarantee above.
-- Tests: a property test of random spawns, despawns, adds and removes on archetypes holding objects on another thread, comparing that thread's values with an inline world's after every tick, with the log forced to drop; finalizers run once per stop, before index reuse; a main thread that never yields doesn't stall ticks that don't touch it.
+- Tests: a property test of random spawns, despawns, adds and removes, single and list forms, on archetypes holding
+  objects on another thread, comparing that thread's values with an inline world's after every tick, with the log
+  forced to drop; finalizers run once per stop, before index reuse; a main thread that never yields doesn't stall
+  ticks that don't touch it.
 - Must not regress: every benchmark, inline.
-- New: `handoff` (10 tiers alternating `world` and a joined worker, empty systems, N = 1,000 ticks); `fused tiers` (10 consecutive tiers on a joined worker); `log replay` (10,000 swap-removes and moves per sync point, time per move); `log rebuild 100K` (a forced rebuild over 100,000 rows); `despawn objects 10K`.
+- New: `handoff` (10 tiers alternating `world` and a joined worker, empty systems, N = 1,000 ticks); `fused tiers` (10
+  consecutive tiers on a joined worker); `log replay` (10,000 swap-removes and moves per sync point, time per move);
+  `log rebuild 100K` (a forced rebuild over 100,000 rows); `despawn objects 10K`.
 
 ### Phase 6: tails
 
@@ -306,9 +366,12 @@ Terminal systems scheduled across the tick boundary, waits only at conflicts, fa
 
 - Interface: `warnings` in `World.Report`, type-tested.
 - Contract: a tick's report includes its tails' failures.
-- Tests: a terminal main system over 1,000 rows while the world ticks continuously, checking that every tail sees one tick's values, whether read in place or from a snapshot; a prompt main never snapshots; a tail that throws is in its tick's report.
+- Tests: a terminal main system over 1,000 rows while the world ticks continuously, checking that every tail sees one
+  tick's values, whether read in place or from a snapshot; a prompt main never snapshots; a tail that throws is in its
+  tick's report.
 - Must not regress: `run idle`, `move main`, `main thread`, `loop tick idle`.
-- New: `loop tick idle` (a tick with nothing changed, N = 10,000); `tail prompt` (the next tick's start latency with a 1,000-row main tail that finishes in time, N = 1,000 ticks); `tail late snapshot 10K` (a late tail of 10,000 passing rows of a vec3 and a mat4, the copy's cost).
+- New: `tail prompt` (the next tick's start latency with a 1,000-row main tail that finishes in time, N = 1,000
+  ticks); `tail late snapshot 10K` (a late tail of 10,000 passing rows of a vec3 and a mat4, the copy's cost).
 
 ### Phase 7: transfers
 

@@ -1,4 +1,4 @@
-import { allocateArray } from './arrays.js';
+import { allocateArray, freeArray } from './arrays.js';
 import { emptyBuffer, type CommandBuffer } from './buffer.js';
 import type { Memory } from './memory.js';
 import { maximumPieces, startRanges } from './claims.js';
@@ -44,8 +44,16 @@ export type Pool = {
      */
     readonly claimed: (first: number, workers: number, task: FastTask, grain: number) => Promise<TaskResult>[];
     readonly close: () => void;
-    readonly terminate: () => void;
+    /**
+     * Stops the workers, then releases the pool's control state to the arena once every worker that waited on it has
+     * left its window, as each acknowledges a message. One that doesn't within `releaseTimeout`, or that died with a
+     * window open, may still touch it, so it's kept.
+     */
+    readonly terminate: () => Promise<void>;
 };
+
+/** How long `terminate` waits for workers to leave their windows before keeping the control state. */
+const releaseTimeout = 1000;
 
 
 
@@ -61,23 +69,30 @@ type Slot = {
     dead: Error | null;
 };
 
-/** Zeroed Int32 words starting on a cache line, so a block of whole lines shares none with other arrays. */
-const allocateLines = (arena: Memory, words: number): Int32Array => {
+type Block = { readonly offset: number; readonly bytes: number };
+
+/** Zeroed Int32 words starting on a cache line, so a block of whole lines shares none with other arrays; `blocks` records the block. */
+const allocateLines = (arena: Memory, words: number, blocks: Block[]): Int32Array => {
     const lineBytes = lineWords * 4;
-    const offset = arena.allocate(words * 4 + lineBytes);
+    const bytes = words * 4 + lineBytes;
+    const offset = arena.allocate(bytes);
+    blocks.push({ offset, bytes });
     return new Int32Array(arena.memory.buffer, Math.ceil(offset / lineBytes) * lineBytes, words).fill(0);
 };
 
 export const createPool = (size: number, arena: Memory): Pool => {
     const { memory } = arena;
     let nextTask = 0;
-    const control = allocateLines(arena, size * controlWords);
-    const statuses = allocateLines(arena, size * ringSize);
+    const lines: Block[] = [];
+    const control = allocateLines(arena, size * controlWords, lines);
+    const statuses = allocateLines(arena, size * ringSize, lines);
     const payloads = allocateArray(arena, Float64Array, size * ringSize * taskWords);
-    const claims = allocateLines(arena, splitCount * size * lineWords);
+    const claims = allocateLines(arena, splitCount * size * lineWords, lines);
     /** Splits' claim slots no split in flight uses: one is reused only once every task of its split is done. */
     const freeSplits = Array.from({ length: splitCount }, (_, split) => split);
     const open = new Array<boolean>(size).fill(false);
+    /** Whether each worker was ever given a window, and so may touch the control state. */
+    const windowed = new Array<boolean>(size).fill(false);
     const sent = new Array<number>(size).fill(0);
     /** Writes held back by a full ring, chained so they stay in order. */
     const waiting = new Array<number>(size).fill(0);
@@ -118,6 +133,7 @@ export const createPool = (size: number, arena: Memory): Pool => {
     const ensureOpen = (worker: number): void => {
         if (open[worker]) return;
         open[worker] = true;
+        windowed[worker] = true;
         const current = Atomics.load(control, worker * controlWords + epoch);
         slots[worker].worker.postMessage({ kind: "window", control: control.byteOffset, statuses: statuses.byteOffset, payloads: payloads.byteOffset, claims: claims.byteOffset, worker, epoch: current } satisfies ToWorker);
     };
@@ -212,12 +228,27 @@ export const createPool = (size: number, arena: Memory): Pool => {
             slot.pending.set(task, settle);
             slot.worker.postMessage({ ...message, task });
         }),
-        terminate: () => {
+        terminate: async () => {
             close();
+            // A worker handles messages only outside its window, so its reply means it has left and won't enter again.
+            const left = slots.map((slot, worker) => !windowed[worker] ? Promise.resolve(true)
+                : slot.dead !== null ? Promise.resolve(false)
+                : new Promise<boolean>(settle => {
+                    const task = nextTask++;
+                    slot.pending.set(task, result => settle(result.error === undefined));
+                    slot.worker.postMessage({ kind: "kernels", kernels: [], task } satisfies ToWorker);
+                }));
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const timeout = new Promise<boolean>(settle => { timer = setTimeout(() => settle(false), releaseTimeout); });
+            const released = await Promise.race([Promise.all(left).then(all => all.every(Boolean)), timeout]);
+            clearTimeout(timer);
             for (const slot of slots) {
                 slot.worker.terminate();
                 kill(slot, new Error("The world is disposed."));
             }
+            if (!released) return;
+            for (const { offset, bytes } of lines) arena.free(offset, bytes);
+            freeArray(arena, payloads);
         },
     };
 };

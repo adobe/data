@@ -204,7 +204,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         context.workers = null;
         context.publish = () => {};
         for (const runner of registrar.kernels()) runner.kernel?.unloadedOnWorkers();
-        old?.terminate();
+        // The old pool releases its control state once its workers have left their windows; runs don't wait for it.
+        if (old !== null) void old.terminate();
         await loadOnWorkers();
     };
 

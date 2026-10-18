@@ -472,7 +472,8 @@ export const rebuild = (mirror: Mirror): boolean => {
     const published = Atomics.load(header, logPublishedWord) >>> 0;
     const old = mirror.archetypes;
     const entityLength = new Int32Array(buffer, words[entitiesWord + cursorField], 4)[2];
-    indexPrevious(old, entityLength);
+    /** The old rows, indexed by entity only once a row's value is one this thread gave and kept. */
+    let indexed = false;
     const archetypes: (Mirrored | null)[] = [];
     /** Staged slots the rebuild takes, settled only once it's complete. */
     const taken: number[] = [];
@@ -504,15 +505,22 @@ export const rebuild = (mirror: Mirror): boolean => {
                 column.changed.set(new Float64Array(buffer, words[storage + storageChanged], count));
             }
             const tags = new Uint32Array(buffer, words[storage + storageColumn], count);
+            column.values = new Array(count).fill(column.start);
             for (let row = 0; row < count; row++) {
                 const tag = tags[row];
+                if (tag === startTag) continue;
                 const entity = archetype.entities[row];
-                if (tag === startTag) column.values[row] = column.start;
-                else if (tag === nullTag) column.values[row] = null;
+                if (tag === nullTag) column.values[row] = null;
                 else {
                     const slot = (tag - slotTags) >>> 0;
                     const staged = stagedOf(mirror, slot);
-                    if (staged === undefined) column.values[row] = previousValue(old, entity, column.component, column.start);
+                    if (staged === undefined) {
+                        if (!indexed) {
+                            indexPrevious(old, entityLength);
+                            indexed = true;
+                        }
+                        column.values[row] = previousValue(old, entity, column.component, column.start);
+                    }
                     else {
                         column.values[row] = staged.value;
                         taken.push(slot);

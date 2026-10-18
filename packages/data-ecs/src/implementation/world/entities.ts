@@ -90,14 +90,15 @@ const capacityFor = (current: number, needed: number): number => {
 };
 
 /** Indexes reserved since the last sync point: the reused ones, and new ones from `firstNew` up to the table's length. */
-export type Reserved = { readonly reused: readonly number[]; readonly firstNew: number };
+export type Reserved = { readonly reused: Int32Array; readonly firstNew: number };
 
 /** At the start of a sync point: makes reserved indexes addressable, not yet alive. */
 export const materialize = (memory: Memory, entities: Entities): Reserved => {
     const { cursor } = entities;
     const count = Atomics.exchange(cursor, taken, 0);
     const reusedCount = Math.min(count, cursor[freeCount]);
-    const reused = Array.from(entities.free.subarray(cursor[freeCount] - reusedCount, cursor[freeCount]));
+    // A typed copy, since the sync point recycles freed indexes over these.
+    const reused = entities.free.slice(cursor[freeCount] - reusedCount, cursor[freeCount]);
     cursor[freeCount] -= reusedCount;
     const firstNew = entities.length;
     const length = entities.length + count - reusedCount;

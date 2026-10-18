@@ -428,8 +428,13 @@ const presize = (state: State): void => {
     }
 };
 
-const merged = (carried: Reserved | null, reservations: Reserved): Reserved => carried === null ? reservations
-    : { reused: [...carried.reused, ...reservations.reused], firstNew: Math.min(carried.firstNew, reservations.firstNew) };
+const merged = (carried: Reserved | null, reservations: Reserved): Reserved => {
+    if (carried === null) return reservations;
+    const reused = new Int32Array(carried.reused.length + reservations.reused.length);
+    reused.set(carried.reused);
+    reused.set(reservations.reused, carried.reused.length);
+    return { reused, firstNew: Math.min(carried.firstNew, reservations.firstNew) };
+};
 
 /** Every live entity whose archetype's closure differs gets an entry, after rules were registered. */
 const rederive = (state: State): void => {

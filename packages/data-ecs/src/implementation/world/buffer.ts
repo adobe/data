@@ -104,25 +104,6 @@ export const pushComponent = (buffer: CommandBuffer, id: number, value: unknown)
     buffer.named++;
 };
 
-const fitted = <T extends Uint8Array | Float64Array | Int32Array>(array: T, length: number, create: (length: number) => T): T => {
-    if (array.length >= length) return array;
-    const larger = create(Math.max(length, 2 * array.length));
-    larger.set(array);
-    return larger;
-};
-
-/** Grows a buffer to take `commands` more commands naming `components` more components, as a drain writes them straight in. */
-export const fitDrained = (buffer: CommandBuffer, commands: number, components: number): void => {
-    const count = buffer.count + commands;
-    buffer.kinds = fitted(buffer.kinds, count, length => new Uint8Array(length));
-    buffer.shapes = fitted(buffer.shapes, count, length => new Int32Array(length));
-    buffer.entities = fitted(buffer.entities, count, length => new Float64Array(length));
-    buffer.starts = fitted(buffer.starts, count, length => new Int32Array(length));
-    const named = buffer.named + components;
-    buffer.ids = fitted(buffer.ids, named, length => new Int32Array(length));
-    buffer.offsets = fitted(buffer.offsets, named, length => new Int32Array(length));
-};
-
 /** A component value read out of bytes in a general layout, copied to row 0 here first; grown for larger layouts. */
 let scratch = viewsOf(new ArrayBuffer(256), 0, 256);
 

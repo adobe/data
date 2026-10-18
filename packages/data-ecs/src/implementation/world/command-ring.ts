@@ -1,43 +1,35 @@
 import { viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { emptyViews } from './arrays.js';
 import { writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32 } from './archetype.js';
-import { fitDrained, stage, type CommandBuffer } from './buffer.js';
+import { stage, type CommandBuffer } from './buffer.js';
 import type { SpawnBatch } from './staging.js';
 
-// A pool worker's command ring (threads.md, "Command rings"): records a worker writes into shared memory for the world's
-// thread to drain at the sync point. Every record starts on 8 bytes. A task's segment starts with its merge tag, then
-// holds its commands in issue order, then its staged spawn batches and the reservation ranges it left unused.
+// A pool worker's command ring (threads.md, "Command rings"): segments a worker writes into shared memory for the world's
+// thread to drain at the sync point. A segment holds one task's commands as the columns of a `CommandBuffer`, so the world
+// drains it by taking views of them, then its staged spawn batches as blocks and the reservation ranges it left unused.
+//
+// Layout, every region on 8 bytes: a header (the merge tag, then counts and sizes); entities, f64 by command; values'
+// bytes; first components, i32 by command; component ids, i32 by component; offsets into the values' bytes, i32 by
+// component, -1 for a value given by tag; kinds, u8 by command; tags, 16 bytes each (component, how, number); spawn
+// blocks; unused reservation ranges, u32 pairs.
 
-/** Record kinds. Commands are 1 to 3, as `CommandBuffer.kinds`: kind and component count, a word, then the entity. */
-const tagRecord = 8;
-const spawnRecord = 9;
-const unusedRecord = 10;
+const segmentRecord = 8;
+const headerBytes = 48;
 
-/**
- * How a command's component entry carries its value: an id word, this word, then its data. A struct is its bytes in its
- * storage's layout; any other value is a tag the world resolves: start, `null`, a number or a boolean.
- */
-const noValue = 0;
+/** How a tagged component's value comes: its start, `null`, a number or a boolean, which the world resolves. */
 const startValue = 1;
 const nullValue = 2;
 const numberValue = 3;
 const falseValue = 4;
 const trueValue = 5;
-const bytesValue = 6;
-
-/** The bytes a merge tag takes: kind, archetype, tick, first row. */
-const tagBytes = 24;
 
 const padded = (bytes: number): number => (bytes + 7) & ~7;
 
 /** A task's merge tag: its system's run, by the tick it took, and its chunk, by archetype and first row. */
 export type MergeTag = { readonly tick: number; readonly archetype: number; readonly start: number };
 
-/**
- * A task's segment, as the world's thread receives it: its records in the ring, then those it wrote past the ring's
- * size into a spill, and the merge tag the world gave the task.
- */
-export type Segment = { readonly ring: Uint8Array; readonly spill: Uint8Array | null; readonly tag: MergeTag };
+/** A task's segment, as the world's thread receives it: in the ring, or in a spill past the ring's size, and the merge tag the world gave the task. */
+export type Segment = { readonly bytes: Uint8Array; readonly tag: MergeTag };
 
 /** How a worker writes one component's values: its layout, write kind and placement, and its bytes rounded up to 8. */
 export type Encoder = { readonly layout: Layout; readonly write: number; readonly unitOffset: number; readonly lanes: number; readonly stride: number; readonly padded: number };
@@ -54,121 +46,100 @@ export const encoderOf = (layout: Layout): Encoder => {
  */
 export const objectStart = Symbol("objectStart");
 
-/** One component's value in a general layout, written at row 0, to copy into a record; grown for larger layouts. */
+/** One component's value in a general layout, written at row 0, to copy into the values' bytes; grown for larger layouts. */
 let scratch = viewsOf(new ArrayBuffer(256), 0, 256);
 const scratchFor = (bytes: number): Views => {
     if (bytes > scratch.u8.length) scratch = viewsOf(new ArrayBuffer(padded(bytes * 2)), 0, padded(bytes * 2));
     return scratch;
 };
 
-/**
- * Where a worker's task writes: its ring in the memory, from `first` past `base`, until `capacity`; then a spill of its
- * own, which its completion message carries.
- */
+/** A task's commands as a worker builds them, in columns of its own reused by every task, copied into the ring at its end. */
 export type RingWriter = {
-    memory: Views;
-    base: number;
-    capacity: number;
-    first: number;
-    /** The views written: the memory's, or the spill's once the ring is full. */
-    views: Views;
-    at: number;
-    limit: number;
-    spill: Views | null;
-    /** The spill's buffer, which its completion message transfers. */
-    spillBuffer: ArrayBuffer | null;
-    /** Past `base`, where the ring part ended once the task spilled. */
-    ringEnd: number;
-    /** The open command's first byte, whose component count each entry raises; -1 for none. */
-    head: number;
+    tag: MergeTag;
+    count: number;
+    named: number;
+    kinds: Uint8Array;
+    entities: Float64Array;
+    firsts: Int32Array;
+    ids: Int32Array;
+    offsets: Int32Array;
+    /** Values' bytes, and the next free byte. */
+    data: Views;
+    used: number;
+    /** Tagged values: by tag, the component it's at, how it comes and its number. */
+    tagged: number;
+    tagEntries: Int32Array;
+    tagKinds: Int32Array;
+    tagNumbers: Float64Array;
 };
 
-export const createRingWriter = (): RingWriter => ({ memory: emptyViews, base: 0, capacity: 0, first: 0, views: emptyViews, at: 0, limit: 0, spill: null, spillBuffer: null, ringEnd: 0, head: -1 });
+const noTag: MergeTag = { tick: 0, archetype: 0, start: 0 };
 
-/** A spill's smallest size. */
-const spillBytes = 1 << 16;
+export const createRingWriter = (): RingWriter => ({
+    tag: noTag, count: 0, named: 0,
+    kinds: new Uint8Array(1024), entities: new Float64Array(1024), firsts: new Int32Array(1024),
+    ids: new Int32Array(1024), offsets: new Int32Array(1024),
+    data: viewsOf(new ArrayBuffer(8192), 0, 8192), used: 0,
+    tagged: 0, tagEntries: new Int32Array(256), tagKinds: new Int32Array(256), tagNumbers: new Float64Array(256),
+});
 
-/** Moves the write position to the spill, with the open command, or grows the spill, to fit `bytes` more. */
-const overflow = (writer: RingWriter, bytes: number): void => {
-    const from = writer.spill !== null ? 0 : writer.head >= 0 ? writer.head : writer.at;
-    const kept = writer.at - from;
-    const size = Math.max(spillBytes, padded(2 * (kept + bytes)));
-    const buffer = new ArrayBuffer(size);
-    const spill = viewsOf(buffer, 0, size);
-    spill.u8.set(writer.views.u8.subarray(from, writer.at));
-    writer.spillBuffer = buffer;
-    if (writer.spill === null) writer.ringEnd = from - writer.base;
-    if (writer.head >= 0) writer.head -= from;
-    writer.views = writer.spill = spill;
-    writer.at = kept;
-    writer.limit = size;
+const doubled = <T extends Uint8Array | Float64Array | Int32Array>(array: T, create: (length: number) => T): T => {
+    const larger = create(array.length * 2);
+    larger.set(array);
+    return larger;
 };
 
-/** The first of the next `bytes` to write. */
-const reserve = (writer: RingWriter, bytes: number): number => {
-    if (writer.at + bytes > writer.limit) overflow(writer, bytes);
-    const at = writer.at;
-    writer.at += bytes;
-    return at;
+/** Starts a task's commands, with its merge tag. */
+export const startSegment = (writer: RingWriter, tag: MergeTag): void => {
+    writer.tag = tag;
+    writer.count = writer.named = writer.used = writer.tagged = 0;
 };
-
-/** Starts a task's segment at `cursor` past the ring's base, with its merge tag. */
-export const startSegment = (writer: RingWriter, memory: Views, base: number, capacity: number, cursor: number, tag: MergeTag): void => {
-    writer.memory = writer.views = memory;
-    writer.base = base;
-    writer.capacity = capacity;
-    writer.first = cursor;
-    writer.at = base + cursor;
-    writer.limit = base + capacity;
-    writer.spill = null;
-    writer.spillBuffer = null;
-    writer.head = -1;
-    const at = reserve(writer, tagBytes);
-    const { u32, f64 } = writer.views;
-    u32[at >> 2] = tagRecord;
-    u32[(at >> 2) + 1] = tag.archetype;
-    f64[(at >> 3) + 1] = tag.tick;
-    f64[(at >> 3) + 2] = tag.start;
-};
-
-/** Where a task's segment is: its extent past the ring's base, and its spill's bytes and their buffer, or null. */
-export type Extent = { readonly start: number; readonly end: number; readonly spill: Uint8Array | null; readonly transfer: ArrayBuffer | null };
-
-/** No segment, for a task that failed before starting one. */
-export const noExtent: Extent = { start: 0, end: 0, spill: null, transfer: null };
-
-export const segmentExtent = (writer: RingWriter): Extent => writer.spillBuffer === null
-    ? { start: writer.first, end: writer.at - writer.base, spill: null, transfer: null }
-    : { start: writer.first, end: writer.ringEnd, spill: new Uint8Array(writer.spillBuffer, 0, writer.at), transfer: writer.spillBuffer };
 
 /** Starts a despawn (1), add (2) or remove (3); its components follow. */
 export const beginCommand = (writer: RingWriter, kind: number, entity: number): void => {
-    // A command is complete once the next one starts, so a spill takes only the open one along.
-    writer.head = -1;
-    const at = reserve(writer, 16);
-    writer.head = at;
-    const { u32, f64 } = writer.views;
-    u32[at >> 2] = kind;
-    u32[(at >> 2) + 1] = 0;
-    f64[(at >> 3) + 1] = entity;
+    const command = writer.count;
+    if (command === writer.kinds.length) {
+        writer.kinds = doubled(writer.kinds, length => new Uint8Array(length));
+        writer.entities = doubled(writer.entities, length => new Float64Array(length));
+        writer.firsts = doubled(writer.firsts, length => new Int32Array(length));
+    }
+    writer.kinds[command] = kind;
+    writer.entities[command] = entity;
+    writer.firsts[command] = writer.named;
+    writer.count = command + 1;
 };
 
-/** Adds a component entry to the open command, returning its data's first byte. */
-const entry = (writer: RingWriter, id: number, how: number, data: number): number => {
-    const at = reserve(writer, 8 + data);
-    const { u32 } = writer.views;
-    u32[at >> 2] = id;
-    u32[(at >> 2) + 1] = how;
-    // The count is above the kind's byte.
-    u32[writer.head >> 2] += 256;
-    return at + 8;
+/** A component of the open command, its value's offset or -1; returns its index. */
+const component = (writer: RingWriter, id: number, offset: number): number => {
+    const named = writer.named;
+    if (named === writer.ids.length) {
+        writer.ids = doubled(writer.ids, length => new Int32Array(length));
+        writer.offsets = doubled(writer.offsets, length => new Int32Array(length));
+    }
+    writer.ids[named] = id;
+    writer.offsets[named] = offset;
+    writer.named = named + 1;
+    return named;
 };
 
 /** A component of the open remove. */
-export const putComponent = (writer: RingWriter, id: number): void => void entry(writer, id, noValue, 0);
+export const putComponent = (writer: RingWriter, id: number): void => void component(writer, id, -1);
+
+const tag = (writer: RingWriter, entry: number, how: number, number: number): void => {
+    const tagged = writer.tagged;
+    if (tagged === writer.tagEntries.length) {
+        writer.tagEntries = doubled(writer.tagEntries, length => new Int32Array(length));
+        writer.tagKinds = doubled(writer.tagKinds, length => new Int32Array(length));
+        writer.tagNumbers = doubled(writer.tagNumbers, length => new Float64Array(length));
+    }
+    writer.tagEntries[tagged] = entry;
+    writer.tagKinds[tagged] = how;
+    writer.tagNumbers[tagged] = number;
+    writer.tagged = tagged + 1;
+};
 
 /** A component of the open add left out: its start, which the world resolves. */
-export const putStart = (writer: RingWriter, id: number): void => void entry(writer, id, startValue, 0);
+export const putStart = (writer: RingWriter, id: number): void => tag(writer, component(writer, id, -1), startValue, 0);
 
 /** Writes a value of a linear layout at byte `at`: numbers and f32 lane tuples straight in, the rest through the layout. */
 const writeLinear = (views: Views, at: number, encoder: Encoder, value: unknown): void => {
@@ -203,21 +174,29 @@ const unencodable = (id: number): Error =>
 export const putValue = (writer: RingWriter, id: number, encoder: Encoder, value: unknown): void => {
     const { layout } = encoder;
     if (layout.kind === "linear") {
-        const at = entry(writer, id, bytesValue, encoder.padded);
-        writeLinear(writer.views, at, encoder, value);
+        const at = writer.used;
+        const end = at + encoder.padded;
+        if (end > writer.data.u8.length) {
+            const length = Math.max(end, writer.data.u8.length * 2);
+            const data = viewsOf(new ArrayBuffer(length), 0, length);
+            data.u8.set(writer.data.u8.subarray(0, at));
+            writer.data = data;
+        }
+        writer.used = end;
+        component(writer, id, at);
+        writeLinear(writer.data, at, encoder, value);
         return;
     }
     if (layout.kind === "constant") return putStart(writer, id);
-    const tag = objectTag(value);
-    if (tag < 0) throw unencodable(id);
-    const at = entry(writer, id, tag, tag === numberValue ? 8 : 0);
-    if (tag === numberValue) writer.views.f64[at >> 3] = Number(value);
+    const how = objectTag(value);
+    if (how < 0) throw unencodable(id);
+    tag(writer, component(writer, id, -1), how, typeof value === "number" ? value : 0);
 };
 
-/** Copies a spawn batch's rows into the segment as one block, emptying it. */
-export const putBatch = (writer: RingWriter, batch: SpawnBatch): void => {
+/** The bytes a spawn batch's block takes; throws for an object value the world can't take. */
+const batchBytes = (batch: SpawnBatch): number => {
     const { count, columns } = batch;
-    if (count === 0) return;
+    if (count === 0) return 0;
     let bytes = 16 + padded(4 * columns.length) + 8 * count;
     for (const column of columns) {
         if (column.layout.kind === "linear") bytes += padded(count * column.stride);
@@ -226,13 +205,17 @@ export const putBatch = (writer: RingWriter, batch: SpawnBatch): void => {
             bytes += 16 * count;
         }
     }
-    writer.head = -1;
-    let at = reserve(writer, bytes);
-    const { u8, u32, f64 } = writer.views;
-    u32[at >> 2] = spawnRecord;
-    u32[(at >> 2) + 1] = count;
-    u32[(at >> 2) + 2] = columns.length;
-    u32[(at >> 2) + 3] = 0;
+    return bytes;
+};
+
+/** Copies a spawn batch's rows to byte `at` as one block, emptying it; returns the byte after it. */
+const putBatch = (views: Views, start: number, batch: SpawnBatch): number => {
+    const { count, columns } = batch;
+    if (count === 0) return start;
+    const { u8, u32, f64 } = views;
+    let at = start;
+    u32[at >> 2] = count;
+    u32[(at >> 2) + 1] = columns.length;
     at += 16;
     for (let c = 0; c < columns.length; c++) u32[(at >> 2) + c] = columns[c].id;
     at += padded(4 * columns.length);
@@ -253,24 +236,71 @@ export const putBatch = (writer: RingWriter, batch: SpawnBatch): void => {
         }
     }
     batch.count = 0;
+    return at;
 };
 
-/** The reservation positions the task's block left unused, as start and end pairs. */
-export const putUnused = (writer: RingWriter, unused: readonly number[]): void => {
-    if (unused.length === 0) return;
-    writer.head = -1;
-    const at = reserve(writer, 8 + padded(4 * unused.length));
-    const { u32 } = writer.views;
-    u32[at >> 2] = unusedRecord;
-    u32[(at >> 2) + 1] = unused.length;
-    for (let k = 0; k < unused.length; k++) u32[(at >> 2) + 2 + k] = unused[k];
+/** Where a task's segment is: its extent past the ring's base, or its spill and the spill's buffer. */
+export type Extent = { readonly start: number; readonly end: number; readonly spill: Uint8Array | null; readonly transfer: ArrayBuffer | null };
+
+/** No segment, for a task that failed before starting one. */
+export const noExtent: Extent = { start: 0, end: 0, spill: null, transfer: null };
+
+/**
+ * Writes the task's segment: its commands' columns, then `batches` as blocks, emptying them, and `unused`, into the ring
+ * at `cursor` past `base` when it fits before `capacity`, else into a spill of its own.
+ */
+export const endSegment = (writer: RingWriter, memory: Views, base: number, capacity: number, cursor: number, batches: readonly SpawnBatch[], unused: readonly number[]): Extent => {
+    const { count: n, named: m, tagged, used } = writer;
+    let spawnBytes = 0;
+    for (const batch of batches) spawnBytes += batchBytes(batch);
+    const columns = 8 * n + padded(used) + padded(4 * n) + 2 * padded(4 * m) + padded(n);
+    const bytes = headerBytes + columns + 16 * tagged + spawnBytes + padded(4 * unused.length);
+    const inRing = cursor + bytes <= capacity;
+    const transfer = inRing ? null : new ArrayBuffer(bytes);
+    const views = transfer === null ? memory : viewsOf(transfer, 0, bytes);
+    const first = transfer === null ? base + cursor : 0;
+    const { u8, u32, i32, f64 } = views;
+    let at = first;
+    u32[at >> 2] = segmentRecord;
+    u32[(at >> 2) + 1] = writer.tag.archetype;
+    f64[(at >> 3) + 1] = writer.tag.tick;
+    f64[(at >> 3) + 2] = writer.tag.start;
+    u32[(at >> 2) + 6] = n;
+    u32[(at >> 2) + 7] = m;
+    u32[(at >> 2) + 8] = used;
+    u32[(at >> 2) + 9] = tagged;
+    u32[(at >> 2) + 10] = spawnBytes;
+    u32[(at >> 2) + 11] = unused.length;
+    at += headerBytes;
+    f64.set(writer.entities.subarray(0, n), at >> 3);
+    at += 8 * n;
+    u8.set(writer.data.u8.subarray(0, used), at);
+    at += padded(used);
+    i32.set(writer.firsts.subarray(0, n), at >> 2);
+    at += padded(4 * n);
+    i32.set(writer.ids.subarray(0, m), at >> 2);
+    at += padded(4 * m);
+    i32.set(writer.offsets.subarray(0, m), at >> 2);
+    at += padded(4 * m);
+    u8.set(writer.kinds.subarray(0, n), at);
+    at += padded(n);
+    for (let t = 0; t < tagged; t++, at += 16) {
+        i32[at >> 2] = writer.tagEntries[t];
+        i32[(at >> 2) + 1] = writer.tagKinds[t];
+        f64[(at >> 3) + 1] = writer.tagNumbers[t];
+    }
+    for (const batch of batches) at = putBatch(views, at, batch);
+    for (let k = 0; k < unused.length; k++) u32[(at >> 2) + k] = unused[k];
+    return transfer === null
+        ? { start: cursor, end: cursor + bytes, spill: null, transfer: null }
+        : { start: cursor, end: cursor, spill: new Uint8Array(transfer), transfer };
 };
 
-const tagValue = (how: number, f64: Float64Array, data: number, start: unknown): unknown => {
+const tagValue = (how: number, number: number, start: unknown): unknown => {
     switch (how) {
         case startValue: return start;
         case nullValue: return null;
-        case numberValue: return f64[data >> 3];
+        case numberValue: return number;
         case falseValue: return false;
         case trueValue: return true;
         default: return undefined;
@@ -280,8 +310,8 @@ const tagValue = (how: number, f64: Float64Array, data: number, start: unknown):
 /** A spawn block's rows as a batch over the segment, to commit as the world thread's own. */
 const decodeBatch = (views: Views, at: number, layouts: readonly Layout[], starts: readonly unknown[]): { readonly batch: SpawnBatch; readonly end: number } => {
     const { u32, f64 } = views;
-    const count = u32[(at >> 2) + 1];
-    const width = u32[(at >> 2) + 2];
+    const count = u32[at >> 2];
+    const width = u32[(at >> 2) + 1];
     let next = at + 16;
     const ids: number[] = [];
     for (let c = 0; c < width; c++) ids.push(u32[(next >> 2) + c]);
@@ -299,76 +329,62 @@ const decodeBatch = (views: Views, at: number, layouts: readonly Layout[], start
             next += padded(count * stride);
         }
         else if (layout.kind === "object") {
-            for (let row = 0; row < count; row++, next += 16) values.push(tagValue(u32[next >> 2], f64, next + 8, starts[id]));
+            for (let row = 0; row < count; row++, next += 16) values.push(tagValue(u32[next >> 2], f64[(next >> 3) + 1], starts[id]));
         }
         return { id, layout, ...writeOf(layout), stride, views: columnViews, values };
     });
     return { batch: { ids, archetype: null, columns, entities, count, capacity: count }, end: next };
 };
 
+/** Read-only by every drained buffer: no command names a list. Grown to the most commands one segment held. */
+let noShapes = new Int32Array(0);
+
 /**
- * Decodes a segment part's records into `buffer`, whose `bytes` become its views: commands with their structs' bytes
- * left in place, each spawn block staged as a batch over it, and unused reservation ranges appended to `unused`. With
- * `tag`, the first record must be that merge tag; returns false if it isn't, decoding nothing.
+ * Drains a segment into `buffer`, whose columns become views of it: commands with their structs' bytes left in place,
+ * tagged values resolved, each spawn block staged as a batch over it, and unused reservation ranges appended to
+ * `unused`. The segment must start with `tag`; returns false if it doesn't, draining nothing.
  */
-export const decodeSegment = (buffer: CommandBuffer, views: Views, layouts: readonly Layout[], starts: readonly unknown[], unused: number[], tag: MergeTag | null): boolean => {
-    const { u32, f64 } = views;
-    const end = views.u8.length;
-    let at = 0;
-    if (tag !== null) {
-        if (end < tagBytes || u32[0] !== tagRecord || u32[1] !== tag.archetype || f64[1] !== tag.tick || f64[2] !== tag.start) return false;
-        at = tagBytes;
+export const drainSegment = (buffer: CommandBuffer, bytes: Uint8Array, layouts: readonly Layout[], starts: readonly unknown[], unused: number[], tag: MergeTag): boolean => {
+    const views = viewsOf(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const { u32, i32, f64 } = views;
+    if (bytes.byteLength < headerBytes || u32[0] !== segmentRecord || u32[1] !== tag.archetype || f64[1] !== tag.tick || f64[2] !== tag.start) return false;
+    const n = u32[6];
+    const m = u32[7];
+    const used = u32[8];
+    const tagged = u32[9];
+    const spawnBytes = u32[10];
+    const unusedCount = u32[11];
+    const { buffer: memory, byteOffset } = bytes;
+    let at = headerBytes;
+    buffer.entities = new Float64Array(memory, byteOffset + at, n);
+    at += 8 * n;
+    buffer.bytes = viewsOf(memory, byteOffset + at, used);
+    at += padded(used);
+    buffer.starts = new Int32Array(memory, byteOffset + at, n);
+    at += padded(4 * n);
+    buffer.ids = new Int32Array(memory, byteOffset + at, m);
+    at += padded(4 * m);
+    buffer.offsets = new Int32Array(memory, byteOffset + at, m);
+    at += padded(4 * m);
+    buffer.kinds = new Uint8Array(memory, byteOffset + at, n);
+    at += padded(n);
+    if (noShapes.length < n) noShapes = new Int32Array(Math.max(n, 2 * noShapes.length)).fill(-1);
+    buffer.shapes = noShapes;
+    buffer.count = n;
+    buffer.named = m;
+    // Values are read by every component, so the array covers them; only tagged ones hold any.
+    const { values } = buffer;
+    for (let k = values.length; k < m; k++) values.push(undefined);
+    for (let t = 0; t < tagged; t++, at += 16) {
+        const entry = i32[at >> 2];
+        values[entry] = tagValue(i32[(at >> 2) + 1], f64[(at >> 3) + 1], starts[buffer.ids[entry]]);
     }
-    buffer.bytes = views;
-    // A command takes at least 16 bytes and a component entry 8, so the arrays are fitted once and written straight in.
-    fitDrained(buffer, (end - at) >> 4, (end - at) >> 3);
-    const { kinds, shapes, entities, starts: firsts, ids, offsets, values } = buffer;
-    let { count, named } = buffer;
-    while (at < end) {
-        const word = u32[at >> 2];
-        const kind = word & 255;
-        if (kind === spawnRecord) {
-            buffer.count = count;
-            buffer.named = named;
-            const { batch, end: next } = decodeBatch(views, at, layouts, starts);
-            stage(buffer, batch, 0, batch.count);
-            at = next;
-            continue;
-        }
-        if (kind === unusedRecord) {
-            const pairs = u32[(at >> 2) + 1];
-            for (let k = 0; k < pairs; k++) unused.push(u32[(at >> 2) + 2 + k]);
-            at += 8 + padded(4 * pairs);
-            continue;
-        }
-        if (kind === tagRecord) {
-            at += tagBytes;
-            continue;
-        }
-        kinds[count] = kind;
-        shapes[count] = -1;
-        entities[count] = f64[(at >> 3) + 1];
-        firsts[count] = named;
-        count++;
-        at += 16;
-        for (let n = word >>> 8; n > 0; n--) {
-            const id = u32[at >> 2];
-            const how = u32[(at >> 2) + 1];
-            at += 8;
-            ids[named] = id;
-            if (how === bytesValue) {
-                const layout = layouts[id];
-                offsets[named] = at;
-                values[named++] = undefined;
-                at += padded(layout.kind === "linear" ? layout.stride : 0);
-                continue;
-            }
-            offsets[named] = -1;
-            values[named++] = tagValue(how, f64, at, starts[id]);
-            if (how === numberValue) at += 8;
-        }
+    const spawnEnd = at + spawnBytes;
+    while (at < spawnEnd) {
+        const { batch, end } = decodeBatch(views, at, layouts, starts);
+        stage(buffer, batch, 0, batch.count);
+        at = end;
     }
-    buffer.count = count;
-    buffer.named = named;
+    for (let k = 0; k < unusedCount; k++) unused.push(u32[(at >> 2) + k]);
     return true;
 };

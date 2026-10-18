@@ -218,16 +218,18 @@ The world's thread keeps its own `CommandBuffer`s, as now. Every other thread ha
 thread as its only writer, drained by the world's thread at the sync point. Commands are `despawn`, and `add` and
 `remove` of one component or a list.
 
-- **Records** (`command-ring.ts`) start on 8 bytes. A task's segment starts with its merge tag, then holds its commands
-  in issue order: kind and component count, the entity, then per component its id, how its value comes and the value.
-  Then its staged spawn batches, as blocks, and the reservation ranges its block left unused.
+- **Segments** (`command-ring.ts`): each task's is one block, on 8 bytes: a header with its merge tag and counts; its
+  commands as the columns of a `CommandBuffer` (entities, values' bytes, first components, component ids, offsets into
+  the values' bytes, kinds); its tagged values; its staged spawn batches, as blocks; and the reservation ranges its
+  block left unused. The worker builds the columns in arrays of its own, reused by every task, and copies them in at
+  the task's end, so the world drains a segment by taking views of its columns, decoding nothing but its tags.
 - **Values:** structs are written as bytes in the target storage's layout, through each component's layout writer,
-  with numbers and f32 lane tuples written straight in. The world drains a segment into a `CommandBuffer` whose values
-  for those components are bytes, left in the ring at offsets the buffer keeps: `writeRange` copies them, by 32-bit
-  word, and the plan's references, finalizers' `commandValue` and holder-index changes decode only what they read. Any
-  other value is a tag: start, `null`, a number or a boolean, which the world resolves, start to the component's start;
-  a value left out is the start tag, struct or not; from phase 5, a slot, which names an object of the issuing thread's
-  own logical thread, kept there in a staging array with its entity and component.
+  with numbers and f32 lane tuples written straight in. The world's `CommandBuffer` for a segment keeps those values
+  as bytes in the ring, at the offsets its column gives: `writeRange` copies them, by 32-bit word, and the plan's
+  references, finalizers' `commandValue` and holder-index changes decode only what they read. Any other value is a tag:
+  start, `null`, a number or a boolean, which the world resolves, start to the component's start; a value left out is
+  the start tag, struct or not; from phase 5, a slot, which names an object of the issuing thread's own logical thread,
+  kept there in a staging array with its entity and component.
 - **Kernels:** a pool kernel's values are scalars, tuples, structs, `null` or `undefined` (its start), and kernels read
   no object component (`compiler/subset.md`). So an object component gets a tag, and the compiler lists the components
   a command or spawn gives a tuple or struct, which fails the kernel's registration for a component without a linear
@@ -238,18 +240,17 @@ thread as its only writer, drained by the world's thread at the sync point. Comm
   against the task it posted rather than sorting, so the order never depends on which thread ran a chunk. WASM kernels
   issue no commands, so claimed splits don't touch it.
 - **Size:** a pool worker's ring words are in its control line: base, capacity, write cursor and the bytes its tasks
-  needed. It loads them at each task's start; the world resets the cursor, and regrows the ring, after the sync point,
-  when no task runs. A task that fills the ring writes the rest of that chunk's commands and spawns, the open command
-  included, into a private buffer carried in its completion message, after its ring part, and stores what its tasks
-  needed in the needed word, which the next sync point grows the ring to, at least doubling it. The ring part and the
-  spill drain into buffers of their own, queued one after the other. A ring starts at 64 KiB; a dead worker's is left
-  to it, since it may still write.
+  needed. It loads them at each task's end, when it writes its segment; the world resets the cursor, and regrows the
+  ring, after the sync point, when no task runs. A segment that doesn't fit what's left of the ring goes whole into a
+  private buffer carried in its completion message, and the worker adds what it needed to the needed word, which the
+  next sync point grows the ring to, at least doubling it. A ring starts at 64 KiB; a dead worker's is left to it,
+  since it may still write.
 - **Spawns,** `spawn(components)(values)`, stay staged (`staging.ts`), not commands: each thread stages into private
   batches per component set, in the target storages' layout, as the main thread and pool workers do now, and reserves
-  entities in blocks. At a task's end a worker copies each batch's rows into its ring as a block in the chunk's
-  segment, after its commands, then the reservation ranges its block left unused. The sync point commits blocks in
-  merge order, right after the world thread's own batches and before any command, as batches over the ring, and returns
-  the unused ranges to the free list.
+  entities in blocks. At a task's end a worker copies each batch's rows into its segment as a block, after its
+  commands, then the reservation ranges its block left unused. The sync point commits blocks in merge order, right
+  after the world thread's own batches and before any command, as batches over the ring, and returns the unused ranges
+  to the free list.
 
 ### Runs from joined threads
 
@@ -450,9 +451,9 @@ back, so none finishes after it and leaves workers' kernels behind the main thre
 
 ### Built: phase 3, command rings for the pool
 
-Worker kernels write commands into their worker's ring, with merge tags, values as bytes, tags for the rest, and their
-staged spawn batches as blocks with their unused reservation ranges; the spill past the ring's size and the needed
-word; `CommandBuffer`'s byte values, which `writeRange` copies and the plan's references, finalizers and holder-index
+Worker kernels write their commands into their worker's ring as a `CommandBuffer`'s columns, with merge tags, values
+as bytes, tags for the rest, and their staged spawn batches as blocks with their unused reservation ranges; the spill of
+a segment past the ring's size and the needed word; `CommandBuffer`'s byte values, which `writeRange` copies and the plan's references, finalizers and holder-index
 changes decode. `FromWorker` carries a task's completion, ring extent and error, and a spill. The world's own commands,
 the sync point's commit of staged rows and its plan's order are unchanged. Kernel setups carry only linear components'
 starts, the rest being the world's to resolve, and `terminate` waits for every worker that ran a task by message, as

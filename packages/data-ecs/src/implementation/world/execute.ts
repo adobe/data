@@ -7,8 +7,7 @@ import type { GpuEngine } from './gpu.js';
 import { applySync, prepareSync } from './synchronize.js';
 import { locate } from './entities.js';
 import { clearBuffer, createBuffer } from './buffer.js';
-import { decodeSegment, type MergeTag, type Segment } from './command-ring.js';
-import { viewsOf } from '../../interface/registry/layout.js';
+import { drainSegment, type Segment } from './command-ring.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
 import type { Failure, Report } from '../../interface/world/report.js';
 import { failureOf } from './failures.js';
@@ -97,23 +96,16 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
 };
 
 /**
- * Drains one part of a worker's segment into a buffer of its own, queued in its place: commands, spawn blocks staged
- * to commit in its place, and the reservations it left unused. With `tag`, the part must start with that merge tag.
+ * Drains a worker's segment into a buffer of its own, queued in its place: commands, spawn blocks staged to commit in its
+ * place, and the reservations it left unused. Fails if it doesn't start with its task's merge tag.
  */
-const drainPart = (state: State, bytes: Uint8Array, tag: MergeTag | null): boolean => {
-    if (bytes.byteLength === 0) return true;
+const drain = (state: State, { bytes, tag }: Segment): Error | undefined => {
     const buffer = state.drains[state.drained] ??= createBuffer();
     state.drained++;
-    if (!decodeSegment(buffer, viewsOf(bytes.buffer, bytes.byteOffset, bytes.byteLength), state.layouts, state.starts, state.unused, tag)) return false;
+    if (!drainSegment(buffer, bytes, state.layouts, state.starts, state.unused, tag)) return new Error("A worker's commands came back under another task's merge tag.");
     // Systems can't touch the resource entity; only registration adds resources.
     if (buffer.count > 0 || buffer.stagedCount > 0) state.queued.push({ buffer, guarded: true });
-    return true;
-};
-
-/** A segment's ring part, then its spill; the first part holding records starts with the task's merge tag. */
-const drain = (state: State, { ring, spill, tag }: Segment): Error | undefined => {
-    const drained = drainPart(state, ring, tag) && (spill === null || drainPart(state, spill, ring.byteLength === 0 ? tag : null));
-    return drained ? undefined : new Error("A worker's commands came back under another task's merge tag.");
+    return undefined;
 };
 
 /** Queues a settled chunk's commands, a worker's drained from its segment, and returns its error, if it failed. */

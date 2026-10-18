@@ -6,7 +6,7 @@ import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../
 import { emptyViews } from './arrays.js';
 import { claimPiece } from './claims.js';
 import { controlWords, done, epoch, idleKernel, lineWords, posted, ringBase, ringCapacity, ringCursor, ringNeeded, ringSize, signal, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
-import { beginCommand, createRingWriter, encoderOf, noExtent, objectStart, putBatch, putComponent, putStart, putUnused, putValue, segmentExtent, startSegment, type Encoder } from './command-ring.js';
+import { beginCommand, createRingWriter, encoderOf, endSegment, noExtent, objectStart, putComponent, putStart, putValue, startSegment, type Encoder, type Extent } from './command-ring.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
 import { pageBytes, pagesWord } from './memory.js';
@@ -271,13 +271,14 @@ const stagingOf = (loaded: LoadedKernel): NonNullable<LoadedKernel["staging"]> =
 /** Reservation positions this worker's block left unused, reused by each task. */
 const unused: number[] = [];
 
-/** Ends a run's segment: its staged spawn batches, in batch order, emptying them, then the reservations its block left unused. */
-const endSegment = (message: RunMessage): void => {
+const noBatches: readonly SpawnBatch[] = [];
+
+/** Writes a run's segment: its commands, its staged spawn batches, in batch order, emptying them, then the reservations its block left unused. */
+const writeSegment = (message: RunMessage): Extent => {
     unused.length = 0;
     if (block !== null) endBlock(block, unused);
     const staging = kernels.get(message.kernel)?.staging ?? null;
-    if (staging !== null) for (const batch of staging.batches) putBatch(writer, batch);
-    putUnused(writer, unused);
+    return endSegment(writer, memoryViews, Atomics.load(control, ringBase) >>> 0, Atomics.load(control, ringCapacity), Atomics.load(control, ringCursor), staging?.batches ?? noBatches, unused);
 };
 
 const run = (message: RunMessage): void => {
@@ -432,7 +433,7 @@ const handle = async (message: ToWorker): Promise<void> => {
     let segment = false;
     try {
         refreshMemory();
-        startSegment(writer, memoryViews, Atomics.load(control, ringBase) >>> 0, Atomics.load(control, ringCapacity), Atomics.load(control, ringCursor), message);
+        startSegment(writer, message);
         segment = true;
         run(message);
     }
@@ -440,16 +441,17 @@ const handle = async (message: ToWorker): Promise<void> => {
         failure = error;
     }
     // What a failed task issued before failing still applies, its spawns included.
+    let extent = noExtent;
     if (segment) {
         try {
-            endSegment(message);
+            extent = writeSegment(message);
         }
         catch (error) {
             failure ??= error;
         }
     }
-    const { start, end, spill, transfer: spilled } = segment ? segmentExtent(writer) : noExtent;
-    if (segment) {
+    const { start, end, spill, transfer: spilled } = extent;
+    if (extent !== noExtent) {
         Atomics.store(control, ringCursor, end);
         Atomics.store(control, ringNeeded, Atomics.load(control, ringNeeded) + end - start + (spill?.length ?? 0));
     }

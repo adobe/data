@@ -138,7 +138,7 @@ export const createPool = (ports: readonly WorkerPort[], arena: Memory): Pool =>
             const wrote = end > start || spill !== null;
             if (wrote) written = true;
             // The ring moves only at a rewind, which waits for every task.
-            const segment = wrote && pending.tag !== null ? { ring: new Uint8Array(memory.buffer, rings[worker].offset + start, end - start), spill, tag: pending.tag } : undefined;
+            const segment = wrote && pending.tag !== null ? { bytes: spill ?? new Uint8Array(memory.buffer, rings[worker].offset + start, end - start), tag: pending.tag } : undefined;
             pending.settle(message.kind === "done" ? { commands: emptyBuffer, segment } : { commands: emptyBuffer, segment, error: errorOf(message.error) });
         });
         port.onDeath(error => kill(slot, error));

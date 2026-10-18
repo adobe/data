@@ -90,6 +90,20 @@ const summary = async (worker: Worker) => {
     };
 };
 
+const within = <T>(promise: Promise<T>, milliseconds: number, otherwise: T): Promise<T> =>
+    Promise.race([promise, new Promise<T>(resolve => setTimeout(() => resolve(otherwise), milliseconds))]);
+
+/**
+ * A world and its joined thread on the worker, the thread leaving with two runs of its tails queued: what they
+ * reported, or null when the worker never answered, as when its world waits forever for a gone thread's tail.
+ */
+export const leaveQueued = async () => {
+    const worker = start();
+    const reply = await within(worker.ask({ kind: "leave queued" }), 10000, null);
+    await worker.terminate();
+    return reply !== null && reply.kind === "left" ? { skipped: reply.skipped, after: reply.after } : null;
+};
+
 /** 1,000 rows while the world ticks back to back: prompt, then stalling at the end of a chunk, then late. */
 export const continuous = async () => {
     const driver = backToBack();

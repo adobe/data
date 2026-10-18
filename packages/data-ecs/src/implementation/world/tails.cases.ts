@@ -23,4 +23,9 @@ export const tailsCases = (load: () => Promise<typeof Fixture>) => describe("tai
         expect(seen.late).toBeGreaterThan(0);
         expect(seen.counted).toBeGreaterThan(10);
     }, 30000);
+    it("are skipped in every run queued when their thread left, and nothing waits for a tail on a thread that's gone", async () => {
+        const fixture = await load();
+        const skipped = ["tailsTest/lead", "tailsTest/watch"];
+        expect(await fixture.leaveQueued()).toEqual({ skipped: [skipped, skipped], after: 0 });
+    }, 30000);
 });

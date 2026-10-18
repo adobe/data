@@ -27,7 +27,7 @@ const open = new Set<number>();
 Finalizer.create({ name: "guide/finalizers/release", components: { read: [position, handle] } }, (row, { commands }) => {
     open.delete(row[handle]);
     const [x, y, z] = row[position];
-    commands.spawn([position, debris])({ [position]: [x, y, z], [debris]: true });
+    commands.spawn([position, debris])({ [position]: [x, y, z] });
 });
 
 const spawn = System.create({ name: "guide/finalizers/spawn" }, ({ commands }) => {

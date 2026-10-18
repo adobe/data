@@ -59,8 +59,11 @@ call        = Math-function | helper | lookup | command | reducer
   or rest parameters, no spread.
 - **Lookups:** `context.lookup.name(entity)` returns the other entity's values in that lookup's `read`, or `null`.
 - **Reductions:** `context.reduce[resource](value)` contributes a value to a resource in `reduce`; see `design.md`.
-- **Commands:** `context.commands.spawn({ [component]: value, ... })`, `despawn(entity)`, `add(entity, { ... })`,
-  `remove(entity, component, ...)`, with component keys bound at module scope.
+- **Commands:** `context.commands.spawn(components)({ [component]: value, ... })`, `despawn(entity)`,
+  `add(entity, component, value)` or `add(entity, components, { ... })`, and `remove(entity, component)` or
+  `remove(entity, components)`, with component keys bound at module scope. A list of components is an array literal of
+  them, or a constant of the kernel's module holding one or `Archetype.create` of one; a component it lists that a
+  command gives no value starts at its start. The spawner is called where it's made.
 
 ## GPU kernels
 

@@ -29,7 +29,7 @@ Resource.register(frames, { type: { type: "number", default: 0 } });
 
 const spawn = System.create({ name: "guide/systems/spawn" }, ({ commands }) => {
     commands.spawn([position, velocity])({ [position]: [0, 0, 0], [velocity]: [2, 0, 0] });
-    commands.spawn([position, velocity, frozen])({ [position]: [0, 0, 0], [velocity]: [2, 0, 0], [frozen]: true });
+    commands.spawn([position, velocity, frozen])({ [position]: [0, 0, 0], [velocity]: [2, 0, 0] });
 });
 
 // The row holds the components it reads and writes, `write` being readable too; values are replaced whole, never edited in place.

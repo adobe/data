@@ -1151,6 +1151,15 @@ describe("declared access", () => {
         expect(await failed(`${header}const f = Finalizer.create({ name: "f", components: { read: [handle] } }, (row) => { console.log(row[handle]); });`)).toBe("compiled");
     });
 
+    test("a list declared as a module constant is checked as its array literal", async () => {
+        const moving = `const moving = [position, velocity];\n`;
+        expect(await failure(`${moving}${system("components: { read: moving }", "(row) => { console.log(row[position]); }")}`))
+            .toBe("velocity is in components read but never read; remove it, or move it to components has to keep requiring it");
+        expect(await failure(`${moving}${system("components: { read: moving }", "(row) => { console.log(row[position], row[velocity]); }")}`)).toBe("compiled");
+        expect(await failure(`${moving}${kernel("components: { read: moving, write: [score] }", "row[score] = row[position];")}`))
+            .toBe("velocity is in components read but never read; remove it, or move it to components has to keep requiring it");
+    });
+
     test("a main-thread system whose body hides an access isn't checked", async () => {
         expect(await failure(system("components: { read: [mass] }", "(row) => { helper(row); }"))).toBe("compiled");
         expect(await failure(system("components: { read: [mass] }", "(row) => { for (const key of [mass]) console.log(row[key]); }"))).toBe("compiled");

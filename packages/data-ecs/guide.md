@@ -75,19 +75,34 @@ Component.register(enemy, { type: { const: true } });
 Resource.register(gravity, { type: { type: "number", default: -9.8 } });
 ```
 
-Entities are spawned by systems. Observing is the way to read the world: `world.observe.resource`, `.entity`,
+An archetype is the list of components an entity has. `Archetype.create` declares one at module scope and returns
+the list, typed as its tuple; any readonly list of components is an archetype too, and archetypes go wherever
+component lists do. Entities are spawned by systems, naming their components first, then giving their values:
+
+```ts
+export const foe = Archetype.create([position, enemy]);
+
+export const spawn = System.create({ name: "guide/components/spawn" }, ({ commands }) => {
+    commands.spawn(foe)({ [position]: [0, 10, 0] });
+    commands.spawn([position])({ [position]: [5, 0, 0] });
+});
+```
+
+Observing is the way to read the world: `world.observe.resource`, `.entity`,
 `.select` and `.count` each give the current value now or later, then again after each run or tick that changed it,
 never during a run, and with no promise of coming before `run` resolves. `toPromise`, as in `@adobe/data`, reads one value, as the examples do:
 
 ```ts
 await using world = createWorld();
 await world.run(spawn);
-const [first] = await toPromise(world.observe.select({ required: [position, enemy] }));
+const [first] = await toPromise(world.observe.select({ required: foe }));
 const components = await toPromise(world.observe.entity(first, { required: [position] }));
 expect(components?.[position]).toEqual([0, 10, 0]);
 ```
 
-Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L6-L38).
+Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L6-L42).
+
+- **Archetypes:** `Archetype.create` throws for a component listed twice and gives the list a program-wide index, by which worlds find its storage without comparing its components; a plain list is compared by its components each time, so it may change, while an archetype must not. A resource or string in either is a type error.
 
 - **Queries:** `select` and `count` take `required`, which matches every entity when left out, `not`, and `where`; `select` takes `order` and `page: { offset, limit }` too, a slice of the ordered result for a scrolled list, whose total `count` gives. Without `order` a page follows storage order, so stable pages need an `order`. `world.observe.entity(entity, { required, optional })` gives just those components, or `null` while the entity is dead or lacks a required one.
 - **Notifications:** `select` notifies when the set of entities differs or, with `order`, their order, and with a `page`, only when the page does; `count` when the number does. Nothing notifies when the result is the same, even if matching entities were written.
@@ -99,8 +114,8 @@ Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L6-L38).
 - **A system is its name:** what `System.create` returns is typed as its `name` and the input `run` takes with it, nothing more.
 - **Names are program-wide:** a second system, rule or finalizer with a name throws when it's created, unless its declaration is the same, its keys matching by id, as when a module is evaluated again. A system declared again is a new system; a rule declared again is the one already recorded; a finalizer keeps its place in every world, with the new body.
 - **`Entity` is a branded number.** `Entity.none` names no entity: it's what zeroed memory and entity defaults hold, and a lookup of it returns null.
-- **Keys are symbols,** so two keys never collide, even with one description. Strings, `Symbol.for` symbols and well-known symbols aren't keys; a string key in a values object is ignored, and one in a literal spawn or add fails the build.
-- **Ids:** the plugin gives each top-level `Symbol(...)` declaration (`const`, `let`, `var`, exported or not, and `export default Symbol()`) an id, its module's path from the project root, or a dependency's package name and path, and its binding: `src/keys.ts#position`. A module evaluated again makes new symbols with the same ids; each, registered with the same kind and declaration, is the key already registered, so worlds store both as one component, and give values by the newest. Errors and reports name a key by its id, or without one by its description. Symbols made elsewhere (in functions, blocks, TypeScript namespaces, class fields or CommonJS), or where `Symbol` isn't the global, have no id, and are compared by identity alone.
+- **Keys are symbols,** so two keys never collide, even with one description. Strings, `Symbol.for` symbols and well-known symbols aren't keys; a command reads values only by its components' keys, so others are ignored, and a string key in a literal spawn or add fails the build.
+- **Ids:** the plugin gives each top-level `Symbol(...)` declaration (`const`, `let`, `var`, exported or not, and `export default Symbol()`) an id: the name of the nearest `package.json` above its module, the module's path in that package, and its binding, as `my-app/src/keys.ts#position`, so a workspace-linked package names no directory outside it; without a named package, a dependency's package name and path, or the path from the project root. A module evaluated again makes new symbols with the same ids; each, registered with the same kind and declaration, is the key already registered, so worlds store both as one component, and give values by the newest. Errors and reports name a key by its description while no other registered key has it, else by its id, and without one by its description numbered by registration. Symbols made elsewhere (in functions, blocks, TypeScript namespaces, class fields or CommonJS), or where `Symbol` isn't the global, have no id, and are compared by identity alone.
 - **Rejected:** a key registered again as another kind or with a different declaration, and a symbol whose id is a key's of another kind or declaration, as a module evaluated again after its declaration changed makes it, at registration; a string key anywhere in `Components`, `Resources` or `Traits` (but the built-in traits), which makes every registration fail to compile. The same declaration again is accepted.
 
 ## 3. Systems
@@ -182,7 +197,7 @@ passes every row when it changes, including on the first run, so systems that se
 
 ```ts
 const load = System.create({ name: "guide/filters/load", resources: { read: [level], changed: [level] } }, ({ resources, commands }) => {
-    for (let i = 0; i < resources[level] * 2; i++) commands.spawn({ [score]: 0, [shown]: -1, [enemy]: true });
+    for (let i = 0; i < resources[level] * 2; i++) commands.spawn([score, shown, enemy])({ [score]: 0, [shown]: -1 });
 });
 const show = System.create({ name: "guide/filters/show", components: { read: [score], write: [shown], changed: [score] } }, row => {
     row[shown] = row[score];
@@ -241,7 +256,7 @@ const place = System.create({
     name: "guide/input/place",
     input: { type: "object", properties: { x: { type: "number" }, count: { type: "integer" } } },
 }, ({ input, commands }) => {
-    for (let i = 0; i < input.count; i++) commands.spawn({ [position]: [input.x, i, 0] });
+    for (let i = 0; i < input.count; i++) commands.spawn([position])({ [position]: [input.x, i, 0] });
 });
 await world.run(place, { x: 3, count: 2 });
 ```
@@ -279,15 +294,17 @@ never there. A run whose system throws still applies its commands, and the run's
 
 ```ts
 const spawn = System.create({ name: "guide/sync/spawn" }, ({ commands }) => {
-    const entity = commands.spawn({ [unit]: 1 });
-    commands.add(entity, { [shield]: true });
+    const entity = commands.spawn([unit])({ [unit]: 1 });
+    commands.add(entity, shield);
     commands.remove(entity, shield);
 });
 ```
 
 Example: [`07-sync-points.test.ts`](src/guide/07-sync-points.test.ts#L24-L55).
 
-- **`spawn` returns a real entity at once,** which can be stored, including in the spawner's own row.
+- **`spawn(components)` gives the world's spawner of exactly those components,** the same function each time, so calling it allocates nothing; it returns a real entity at once, which can be stored, including in the spawner's own row. Its values are exact against the components: a tag needs none, a component whose type allows `null` may be left out to start at `null`, and every other one is required. Leaving a value out, or giving `undefined`, never leaves the component out.
+- **`add` and `remove`** take one component, with its value for an add (none for a tag), or one list, with its values for an add as a spawn takes them. An add replaces a value the entity has, marking it changed. Commands never name a derived component; a key that isn't a component they may name, or one listed twice, throws in the issuing system before anything is queued.
+- **Literal values pass positionally:** the plugin rewrites `commands.spawn(components)({ ... })` and `commands.add(entity, components, { ... })` with literal keys in a main-thread system into code that builds no values object.
 - **Commands against dead entities do nothing;** the run's report counts them as `dropped`.
 - **`run()` resolves to a report:** `failures` lists each system, finalizer, GPU work, observer or thread that failed, with its `kind`, `name`, `message` and `stack`, and `skipped` the systems of tiers after a failure. It rejects only when the run can't happen or finish: registration fails, the world is disposed, its GPU device is lost, or the sync point can't apply a command's value.
 
@@ -310,7 +327,7 @@ const chase = System.create({
     row[velocity] = steer(row[velocity], Vec3.subtract(other[position], row[position]), 2);
     // A kernel builds tuple values from their leaves.
     const [x, y, z] = row[position];
-    if (Vec3.distance(other[position], row[position]) < 1) commands.spawn({ [position]: [x, y, z], [spark]: true });
+    if (Vec3.distance(other[position], row[position]) < 1) commands.spawn([position, spark])({ [position]: [x, y, z] });
 });
 ```
 
@@ -319,6 +336,7 @@ Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L31-L61), with the 
 
 - **The subset** a kernel body may use is in [`src/implementation/compiler/subset.md`](src/implementation/compiler/subset.md). The build rejects anything else, with a message at the code.
 - **Math types:** `Vec2`, `Vec3`, `Vec4` (each F32, with `I32` and `U32`), `Quat`, `Mat4x4`, and the scalars, each with a `schema`, follow WGSL's semantics. See the [`math follows WGSL`](src/interface/math/semantics.test.ts) tests.
+- **Lists in kernels:** a kernel's declaration and commands name components in array literals, or in constants of its own module holding one or `Archetype.create` of one; a kernel calls the spawner where it gets it, as `commands.spawn(components)(values)`.
 - **What a kernel compiles to:** JS, WGSL and WASM output for one system, in [`generated-code.md`](src/implementation/world/generated-code.md).
 - **Rejected:** a kernel that wasn't compiled, at registration; a body outside the subset, at build.
 
@@ -503,7 +521,7 @@ still matches.
 Finalizer.create({ name: "guide/finalizers/release", components: { read: [position, handle] } }, (row, { commands }) => {
     open.delete(row[handle]);
     const [x, y, z] = row[position];
-    commands.spawn({ [position]: [x, y, z], [debris]: true });
+    commands.spawn([position, debris])({ [position]: [x, y, z] });
 });
 ```
 
@@ -549,7 +567,7 @@ const apply = System.create({
     input: { type: "object", properties: { entity: Entity.schema, token: { type: "integer" }, handle: { type: "integer" } } },
     lookup: { slots: { read: [meshSlot] } },
 }, ({ input, lookup, commands }) => {
-    if (lookup.slots(input.entity)?.[meshSlot] === input.token) commands.add(input.entity, { [meshReady]: input.handle });
+    if (lookup.slots(input.entity)?.[meshSlot] === input.token) commands.add(input.entity, meshReady, input.handle);
     else loaded.delete(input.handle);
 });
 ```
@@ -589,10 +607,10 @@ Example: [`19-ticks.test.ts`](src/guide/19-ticks.test.ts#L23-L55).
 - **World:** `run(system, input?)` resolves to a report; `add(system)` puts a system in every tick; `observe` has `resource`, `entity`, `select` and `count`; `dispose()` and `[Symbol.asyncDispose]` wait for pending runs, then release the world.
 - **Built-in resources,** in [`src/interface/resources/`](src/interface/resources/): `gpuDevice`, the world's device or `null`, the default; `workers`, the kernel pool's size, `null` by default for the platform's choice; `cadence`, `{ kind: "frame" }` by default or `{ kind: "fixed", step, maxSteps }`; `always`, false by default; `wake`, reduced with `"min"`, Infinity for none; `clock`, `{ now, delta, tick }`; and `report`, the last tick's. Only the world writes `clock` and `report`.
 - **No built-in components,** and no way yet to join a world from another thread: `share` and `World.join` are planned ([`threads.md`](threads.md)).
-- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Key`, `Value` and `With`; `Resource.Key` and `Value`; `System` and `System.Commands`; `Finalizer`; `Thread`; `Cadence`; `Observe` and `Observers`; and `World`, with `World.Create`, `World.Query` and `World.Report`. Everything else is inferred from the values the API returns.
+- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Key`, `Value` and `With`; `Resource.Key` and `Value`; `Trait.Key`; `Archetype`; `System` and `System.Commands`; `Finalizer`; `Thread`; `Cadence`; `Observe` and `Observers`; and `World`, with `World.Create`, `World.Query` and `World.Report`. Everything else is inferred from the values the API returns.
 - **Emitted declarations:** every type those values carry is named from `@adobe/data-ecs`, such as `Observers` for `world.observe`, so a library that exports them emits declarations naming only the package root.
 - **Code layout:** the interface is [`src/interface/`](src/interface/), a project that imports nothing outside it; the implementation, `createWorld` and the compiler, is [`src/implementation/`](src/implementation/); samples are in [`src/samples/`](src/samples/).
-- **Constructors:** `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, typed as its `name`. `Rule.create` returns nothing. Rules and finalizers apply in every world.
-- **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/interface/system/system.type-test.ts), [`world.type-test.ts`](src/interface/world/world.type-test.ts), [`loop.type-test.ts`](src/interface/world/loop.type-test.ts), [`gpu.type-test.ts`](src/interface/gpu/gpu.type-test.ts), [`thread.type-test.ts`](src/interface/thread/thread.type-test.ts), [`rule.type-test.ts`](src/interface/rule/rule.type-test.ts), [`trait.type-test.ts`](src/interface/trait/trait.type-test.ts).
+- **Constructors:** `Archetype.create` returns the list it's given. `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, typed as its `name`. `Rule.create` returns nothing. Rules and finalizers apply in every world.
+- **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/interface/system/system.type-test.ts), [`commands.type-test.ts`](src/interface/system/commands.type-test.ts), [`archetype.type-test.ts`](src/interface/archetype/archetype.type-test.ts), [`world.type-test.ts`](src/interface/world/world.type-test.ts), [`loop.type-test.ts`](src/interface/world/loop.type-test.ts), [`gpu.type-test.ts`](src/interface/gpu/gpu.type-test.ts), [`thread.type-test.ts`](src/interface/thread/thread.type-test.ts), [`rule.type-test.ts`](src/interface/rule/rule.type-test.ts), [`trait.type-test.ts`](src/interface/trait/trait.type-test.ts).
 - **The contract and its reasoning:** [`design.md`](design.md).
 - **A complete application:** the [particle sample](src/samples/particles/particles.ts), run by [`particles.test.ts`](src/samples/particles/particles.test.ts), and its [GPU version](src/samples/particles/gpu/).

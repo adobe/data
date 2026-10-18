@@ -35,7 +35,7 @@ Resource.register(steps, { type: { type: "number", default: 0 } });
 
 // A resource in `changed` passes every run after it changes, and the first run: no run-once flag is needed.
 const load = System.create({ name: "guide/filters/load", resources: { read: [level], changed: [level] } }, ({ resources, commands }) => {
-    for (let i = 0; i < resources[level] * 2; i++) commands.spawn([score, shown, enemy])({ [score]: 0, [shown]: -1, [enemy]: true });
+    for (let i = 0; i < resources[level] * 2; i++) commands.spawn([score, shown, enemy])({ [score]: 0, [shown]: -1 });
 });
 // `changed` passes rows written since this system last ran; each system sees each change once.
 const show = System.create({ name: "guide/filters/show", components: { read: [score], write: [shown], changed: [score] } }, row => {

@@ -24,7 +24,7 @@ Resource.register(counted, { type: { type: "number", default: 0 } });
 // Commands are structural changes: they apply together at the sync point that ends each run.
 const spawn = System.create({ name: "guide/sync/spawn" }, ({ commands }) => {
     const entity = commands.spawn([unit])({ [unit]: 1 });
-    commands.add(entity, shield, true);
+    commands.add(entity, shield);
     commands.remove(entity, shield);
 });
 const count = System.create({ name: "guide/sync/count", components: { has: [unit] }, resources: { write: [counted] }, after: [spawn] }, (_, { resources }) => {

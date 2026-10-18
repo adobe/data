@@ -31,7 +31,9 @@ Referenced from `design.md`.
 - **Keys are symbols,** so components, resources and traits never collide, but a symbol is a different value on each
   thread. Threads agree on keys through the ids the plugin gives top-level `Symbol(...)` declarations, by which the
   registry already takes the symbols of one id as one key; a threaded world will reject a key without one, at
-  registration or first use.
+  registration or first use. Ids name packages, not directories, so threads bundled apart agree on them.
+- **Archetypes are lists of keys.** The index `Archetype.create` gives a list is for its own thread's lookups;
+  threads agree on an archetype through its components' ids, as commands carry component ids, never indexes.
 - **Inline is the same layout.** With every logical thread filled by the world's thread, storage and code paths are
   those of today; nothing below adds work to a one-thread world.
 

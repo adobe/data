@@ -45,7 +45,7 @@ const chase = System.create({
     row[velocity] = steer(row[velocity], Vec3.subtract(other[position], row[position]), 2);
     // A kernel builds tuple values from their leaves.
     const [x, y, z] = row[position];
-    if (Vec3.distance(other[position], row[position]) < 1) commands.spawn([position, spark])({ [position]: [x, y, z], [spark]: true });
+    if (Vec3.distance(other[position], row[position]) < 1) commands.spawn([position, spark])({ [position]: [x, y, z] });
 });
 
 it("runs systems compiled as kernels", async () => {

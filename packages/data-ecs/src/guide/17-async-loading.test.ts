@@ -81,7 +81,7 @@ const spawn = System.create({ name: "guide/loading/spawn" }, ({ commands }) => {
     commands.spawn([meshSource])({ [meshSource]: "rock.glb" });
 });
 const hide = System.create({ name: "guide/loading/hide", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
-    commands.add(input.entity, hidden, true);
+    commands.add(input.entity, hidden);
 });
 
 it("loads resources asynchronously for derived slots, and releases them when the slot goes", async () => {

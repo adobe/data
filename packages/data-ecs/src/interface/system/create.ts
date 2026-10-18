@@ -1,5 +1,6 @@
 import type { Component } from '../component/component.js';
-import { claim } from '../registry/program.js';
+import { takeIdOfDeclaration } from '../registry/ids.js';
+import { claimSystem } from '../registry/program.js';
 import type { Resource } from '../resource/resource.js';
 import type { Schema } from '../schema/schema.js';
 import type { Body } from './body.js';
@@ -62,9 +63,10 @@ type Validate<D extends Declaration> =
  * component it writes, or its object components and resources live on different threads.
  */
 export const create = <const D extends Declaration>(declaration: D & Validate<D> & OneThread<ThreadsOf<D>>, body: Body<D>): System<InputOf<D>> => {
+    const id = takeIdOfDeclaration(declaration);
     const system: Leaf & System<InputOf<D>> = { kind: "system", name: declaration.name, declaration, body };
     checkLeaf(system);
-    claim(system);
+    claimSystem(system, id);
     return system;
 };
 
@@ -73,8 +75,9 @@ export const create = <const D extends Declaration>(declaration: D & Validate<D>
  * a system a constructor returned, or two members declare an input field with different schemas.
  */
 export const composite = <const D extends CompositeDeclaration>(declaration: D & { readonly systems: CheckMembers<D["systems"]> }): System<CompositeInputOf<D["systems"]>> => {
+    const id = takeIdOfDeclaration(declaration);
     const system: Composite & System<CompositeInputOf<D["systems"]>> = { kind: "composite", name: declaration.name, declaration };
     checkComposite(system);
-    claim(system);
+    claimSystem(system, id);
     return system;
 };

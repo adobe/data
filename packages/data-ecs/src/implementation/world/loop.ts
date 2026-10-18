@@ -1,5 +1,6 @@
 import type { Cadence } from '../../interface/resources/cadence.js';
 import type { Composite, Definition } from '../../interface/registry/index.js';
+import { labelOfItem } from '../../interface/registry/index.js';
 import { requireDefinition } from '../../interface/registry/program.js';
 import { isLeaf, scheduleOf } from '../../interface/registry/schedule.js';
 
@@ -54,7 +55,7 @@ const checkNoInput = (system: Definition, seen: Set<Definition> = new Set()): vo
     if (seen.has(system)) return;
     seen.add(system);
     if (isLeaf(system)) {
-        if (system.declaration.input !== undefined) throw new Error(`System "${system.name}" takes input, which ticks don't pass; run it instead.`);
+        if (system.declaration.input !== undefined) throw new Error(`System "${labelOfItem(system)}" takes input, which ticks don't pass; run it instead.`);
         return;
     }
     for (const member of system.declaration.systems) checkNoInput(requireDefinition(member), seen);

@@ -8,7 +8,7 @@ import { commandIdOf, idOf, type Key, type State } from './state.js';
 import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
 import { createDirectory, lookupParameters } from './directories.js';
 import { generateWgsl, type WgslKernel } from './wgsl.js';
-import { labelOf } from '../../interface/registry/index.js';
+import { labelOf, labelOfItem } from '../../interface/registry/index.js';
 
 /** A kernel without lookups passes no lookup parameters; read-only, so one is shared. */
 const noParameters: readonly number[] = [];
@@ -65,8 +65,8 @@ const leafType = (layout: Layout, path: readonly (number | string)[]): Type | nu
  * Throws if a column names a missing leaf or a whole-value write doesn't cover every leaf.
  */
 export const bindKernel = (state: State, leaf: Leaf, description: KernelDescription): BoundKernel => {
-    const { name, lookup, components: query, resources } = leaf.declaration;
-    const fail = (message: string): never => { throw new Error(`Kernel "${name}": ${message}`); };
+    const { lookup, components: query, resources } = leaf.declaration;
+    const fail = (message: string): never => { throw new Error(`Kernel "${labelOfItem(leaf)}": ${message}`); };
     const queried = new Set<Key>([...query?.read ?? [], ...query?.write ?? []]);
     const written = new Set<Key>(query?.write);
     const readable = new Set<Key>(resources?.read);

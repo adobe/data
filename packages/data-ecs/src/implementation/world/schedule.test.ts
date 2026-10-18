@@ -19,7 +19,7 @@ declare module "@adobe/data-ecs" {
 Component.register(value, { type: { type: "number" } });
 Component.register(other, { type: { type: "number" } });
 
-/** Systems built as values, so each test can reuse names without claiming them program-wide. */
+/** Systems built as values, not registered, so each test's are its own. */
 const leaf = (declaration: Declaration): Leaf => ({ kind: "system", name: declaration.name, declaration, body: () => {} });
 const composite = (declaration: Composite["declaration"]): Composite => ({ kind: "composite", name: declaration.name, declaration });
 
@@ -28,28 +28,28 @@ const names = (system: Definition): string[][] => scheduleOf(system).tiers.map(t
 describe("scheduleOf", () => {
     it("tiers by longest ordering path, keeping flatten order within a tier", () => {
         const a = leaf({ name: "scheduleTest/a" });
-        const b = leaf({ name: "scheduleTest/b", after: [{ name: "scheduleTest/a" }] });
-        const c = leaf({ name: "scheduleTest/c", before: [{ name: "scheduleTest/b" }] });
+        const b = leaf({ name: "scheduleTest/b", after: [a] });
+        const c = leaf({ name: "scheduleTest/c", before: [b] });
         const d = leaf({ name: "scheduleTest/d" });
         const root = composite({ name: "scheduleTest/root", systems: [b, d, c, a] });
         expect(names(root)).toEqual([["scheduleTest/d", "scheduleTest/c", "scheduleTest/a"], ["scheduleTest/b"]]);
     });
 
-    it("applies a composite's constraints to every member, and resolves composite names to their members", () => {
+    it("applies a composite's constraints to every member, and resolves composites to their members", () => {
         const a = leaf({ name: "scheduleTest/a" });
         const b = leaf({ name: "scheduleTest/b" });
-        const c = leaf({ name: "scheduleTest/c", after: [{ name: "scheduleTest/group" }] });
-        const group = composite({ name: "scheduleTest/group", systems: [a, b], after: [{ name: "scheduleTest/d" }] });
         const d = leaf({ name: "scheduleTest/d" });
+        const group = composite({ name: "scheduleTest/group", systems: [a, b], after: [d] });
+        const c = leaf({ name: "scheduleTest/c", after: [group] });
         expect(names(composite({ name: "scheduleTest/root", systems: [c, group, d] })))
             .toEqual([["scheduleTest/d"], ["scheduleTest/a", "scheduleTest/b"], ["scheduleTest/c"]]);
     });
 
     it("pulls during pairs into one tier unless an ordering path separates them", () => {
         const a = leaf({ name: "scheduleTest/a" });
-        const b = leaf({ name: "scheduleTest/b", after: [{ name: "scheduleTest/a" }] });
-        const c = leaf({ name: "scheduleTest/c", during: [{ name: "scheduleTest/b" }] });
-        const d = leaf({ name: "scheduleTest/d", after: [{ name: "scheduleTest/c" }] });
+        const b = leaf({ name: "scheduleTest/b", after: [a] });
+        const c = leaf({ name: "scheduleTest/c", during: [b] });
+        const d = leaf({ name: "scheduleTest/d", after: [c] });
         expect(names(composite({ name: "scheduleTest/root", systems: [a, b, c, d] })))
             .toEqual([["scheduleTest/a"], ["scheduleTest/b", "scheduleTest/c"], ["scheduleTest/d"]]);
     });
@@ -95,29 +95,30 @@ describe("scheduleOf", () => {
     });
 
     it("ignores constraints naming systems outside the one being scheduled", () => {
-        const a = leaf({ name: "scheduleTest/a", after: [{ name: "scheduleTest/d" }] });
+        const a = leaf({ name: "scheduleTest/a", after: [leaf({ name: "scheduleTest/d" })] });
         expect(names(composite({ name: "scheduleTest/root", systems: [a] }))).toEqual([["scheduleTest/a"]]);
     });
 
     it("throws on a cycle", () => {
-        const a = leaf({ name: "scheduleTest/a", after: [{ name: "scheduleTest/b" }] });
-        const b = leaf({ name: "scheduleTest/b", after: [{ name: "scheduleTest/a" }] });
+        const a = leaf({ name: "scheduleTest/a" });
+        const b = leaf({ name: "scheduleTest/b", after: [a], before: [a] });
         expect(() => scheduleOf(composite({ name: "scheduleTest/root", systems: [a, b] }))).toThrow("Ordering cycle");
     });
 
     it("throws on an unordered write conflict, but not when ordered or disjoint", () => {
         const a = leaf({ name: "scheduleTest/a", components: { write: [value] } });
         const b = leaf({ name: "scheduleTest/b", components: { read: [value] } });
-        const c = leaf({ name: "scheduleTest/c", components: { write: [other] }, during: [{ name: "scheduleTest/a" }] });
+        const c = leaf({ name: "scheduleTest/c", components: { write: [other] }, during: [a] });
         expect(() => scheduleOf(composite({ name: "scheduleTest/root", systems: [a, b] }))).toThrow('"scheduleTest/a" and "scheduleTest/b"');
-        const ordered = leaf({ ...b.declaration, after: [{ name: "scheduleTest/a" }] });
+        const ordered = leaf({ ...b.declaration, after: [a] });
         expect(names(composite({ name: "scheduleTest/root", systems: [a, ordered, c] })))
             .toEqual([["scheduleTest/a", "scheduleTest/c"], ["scheduleTest/b"]]);
     });
 
-    it("throws on two different systems with one name", () => {
-        const a = leaf({ name: "scheduleTest/a" });
-        const copy = leaf({ name: "scheduleTest/a" });
-        expect(() => scheduleOf(composite({ name: "scheduleTest/root", systems: [a, copy] }))).toThrow('named "scheduleTest/a"');
+    it("schedules two systems of one name as two, and one listed twice as one", () => {
+        const a = leaf({ name: "scheduleTest/a", components: { write: [value] } });
+        const copy = leaf({ name: "scheduleTest/a", components: { write: [value] }, after: [a] });
+        expect(scheduleOf(composite({ name: "scheduleTest/root", systems: [copy, a, a] })).tiers).toEqual([[a], [copy]]);
+        expect(() => scheduleOf(composite({ name: "scheduleTest/root", systems: [a, leaf({ name: "scheduleTest/a", components: { write: [value] } })] }))).toThrow('Systems "scheduleTest/a" and "scheduleTest/a" both access');
     });
 });

@@ -42,9 +42,9 @@ export const activate = (state: State): void => {
         for (const rule of programRules()) {
             if (activated.has(rule) || !ready(state, rule)) continue;
             activated.add(rule);
-            const { name, components, derive } = rule.declaration;
+            const { components, derive } = rule.declaration;
             const ids = (keys: readonly Key[]): number[] => keys.map(key => idOf(state, key));
-            facts.push({ name, has: ids(components.has ?? []), not: ids(components.not ?? []), derives: ids(derive) });
+            facts.push({ has: ids(components.has ?? []), not: ids(components.not ?? []), derives: ids(derive) });
         }
         for (const finalizer of programFinalizers()) {
             // A finalizer added during a run waits for its resources, which are added between runs.

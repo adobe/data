@@ -5,7 +5,7 @@ import { requireDefinition, type Definition } from '../../interface/registry/ind
 import { createRunner, type Runner } from './runner.js';
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, type Key, type State } from './state.js';
-import { labelOf } from '../../interface/registry/index.js';
+import { labelOf, labelOfItem } from '../../interface/registry/index.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
 /** `ticked`: components the new systems filter on, which must keep ticks before they run. */
@@ -49,7 +49,8 @@ const keysOf = (leaf: Leaf): { readonly components: readonly Key[]; readonly res
 
 /** Throws if `up.through` isn't a registered reference component. */
 const checkUp = (leaf: Leaf): void => {
-    const { name, up } = leaf.declaration;
+    const { up } = leaf.declaration;
+    const name = labelOfItem(leaf);
     if (up === undefined) return;
     if (kindOf(up.through) !== "component" || declarationOf(up.through)?.reference === undefined) {
         throw new Error(`System "${name}": up.through "${labelOf(up.through)}" isn't a reference component.`);
@@ -82,7 +83,8 @@ const checkLists = (kind: string, name: string, what: string, lists: { readonly 
  * that's reduced, which only its contributors' fold sets.
  */
 const checkReductions = (leaf: Leaf): void => {
-    const { name, reduce, resources } = leaf.declaration;
+    const { reduce, resources } = leaf.declaration;
+    const name = labelOfItem(leaf);
     for (const key of reducedBy(leaf)) {
         const declared = declarationOf(key)?.reduce;
         const operator: unknown = Reflect.get(reduce ?? {}, key);
@@ -99,7 +101,8 @@ const checkReductions = (leaf: Leaf): void => {
  * read or written: `is` already makes it readable.
  */
 const checkConditions = (leaf: Leaf): void => {
-    const { name, resources } = leaf.declaration;
+    const { resources } = leaf.declaration;
+    const name = labelOfItem(leaf);
     const is = resources?.is ?? [];
     const not = resources?.not ?? [];
     const listed = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? []]);
@@ -128,7 +131,7 @@ export const createRegistrar = (state: State): Registrar => {
         const resources = new Set<Key>();
         for (const system of systemsOf(root)) {
             if (schedules.has(system)) continue;
-            const { name } = system.declaration;
+            const name = labelOfItem(system);
             addedSchedules.set(system, scheduleOf(system));
             if (isLeaf(system)) {
                 checkLists("System", name, "components", system.declaration.components);
@@ -174,7 +177,7 @@ export const createRegistrar = (state: State): Registrar => {
 
     const runnerOf = (leaf: Leaf): Runner => {
         const runner = runners.get(leaf);
-        if (runner === undefined) throw new Error(`System "${leaf.declaration.name}" isn't registered.`);
+        if (runner === undefined) throw new Error(`System "${labelOfItem(leaf)}" isn't registered.`);
         return runner;
     };
 

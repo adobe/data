@@ -6,7 +6,7 @@
  */
 
 /** A rule as component ids. */
-export type RuleFacts = { readonly name: string; readonly has: readonly number[]; readonly not: readonly number[]; readonly derives: readonly number[] };
+export type RuleFacts = { readonly has: readonly number[]; readonly not: readonly number[]; readonly derives: readonly number[] };
 
 /** Strata in evaluation order: the rules deriving into each, with only that stratum's components, and its `within` dependents. */
 export type Strata = readonly {

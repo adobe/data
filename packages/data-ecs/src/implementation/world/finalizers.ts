@@ -13,11 +13,10 @@ import { idOf, type Key, type State } from './state.js';
 import type { Queued } from './synchronize.js';
 import type { Essential, ReadonlyValue } from '../../interface/component/value.js';
 import type { Leaf } from '../../interface/finalizer/created.js';
-import { labelOf, newestKeyOf } from '../../interface/registry/index.js';
+import { labelOf, labelOfItem, newestKeyOf } from '../../interface/registry/index.js';
 
 /** A registered finalizer, resolved for a world: what it matches or watches, its context, and the buffer its commands go to. */
 export type FinalizerRunner = {
-    readonly name: string;
     readonly finalizer: Finalizer;
     readonly required: readonly number[];
     readonly excluded: readonly number[];
@@ -44,7 +43,7 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
     if (watch !== undefined) {
         const watched = new Set(watch.map(key => {
             const id = idOf(state, key);
-            if (state.derived[id]) throw new Error(`Finalizer "${declaration.name}" watches "${labelOf(key)}", which is derived; it sees only components user code adds and removes.`);
+            if (state.derived[id]) throw new Error(`Finalizer "${labelOfItem(finalizer)}" watches "${labelOf(key)}", which is derived; it sees only components user code adds and removes.`);
             return id;
         }));
         watches = id => watched.has(id);
@@ -52,7 +51,6 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
     const target = { buffer: createBuffer() };
     const commands = createCommands(state, target);
     return {
-        name: declaration.name,
         finalizer,
         required: [...new Set([...reads, ...query?.has ?? []])].map(key => idOf(state, key)),
         excluded: (query?.not ?? []).map(key => idOf(state, key)),
@@ -86,13 +84,13 @@ const fromOf = (state: State, entry: number): Archetype | null => {
 
 type Untyped = { body(row: object, context: object): void };
 
-/** What a finalizer threw, by its name, kept for after the sync point applies. */
-export type Thrown = { readonly name: string; readonly error: unknown };
+/** What a finalizer threw, kept for after the sync point applies. */
+export type Thrown = { readonly finalizer: Finalizer; readonly error: unknown };
 
 /** Calls `body`, keeping what it throws. */
-const guarded = (errors: Thrown[], name: string, body: () => void): void => {
+const guarded = (errors: Thrown[], finalizer: Finalizer, body: () => void): void => {
     try { body(); }
-    catch (error) { errors.push({ name, error }); }
+    catch (error) { errors.push({ finalizer, error }); }
 };
 
 /** Each entity that stops matching: it matched before, and is despawned, no longer matches, or had a required component replaced. */
@@ -116,7 +114,7 @@ const finalizeStops = (state: State, runner: FinalizerRunner, leaf: Leaf, errors
         const row = bind(archetype);
         for (const entry of stopped) {
             row.index = entities.row[indexOf(plan.entity[entry])];
-            guarded(errors, leaf.name, () => finalizer.body(row.value, runner.context.value));
+            guarded(errors, leaf, () => finalizer.body(row.value, runner.context.value));
         }
     }
 };
@@ -232,7 +230,7 @@ export const runFinalizers = (state: State, queued: readonly Queued[], born: Map
             else {
                 // The context is built to the finalizer's declaration, so its body accepts it.
                 const changes: { body(changes: ChangeSet<Essential>, context: object): void } = finalizer;
-                guarded(errors, finalizer.name, () => changes.body(changesOf(state, runner, queued), runner.context.value));
+                guarded(errors, finalizer, () => changes.body(changesOf(state, runner, queued), runner.context.value));
             }
             if (runner.target.buffer.count > 0) {
                 state.queued.push({ buffer: runner.target.buffer, guarded: true });
@@ -260,7 +258,7 @@ export const finalizeAll = (state: State): Thrown[] => {
             const row = bind(archetype);
             for (let index = 0; index < archetype.count; index++) {
                 row.index = index;
-                guarded(errors, leaf.name, () => finalizer.body(row.value, runner.context.value));
+                guarded(errors, leaf, () => finalizer.body(row.value, runner.context.value));
             }
         }
     }

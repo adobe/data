@@ -33,7 +33,7 @@ import { createLoop, platformFrame, platformTimer, type Clock } from './loop.js'
 import { createState, idOf, startTicking, type Key } from './state.js';
 import { indexOf } from './entities.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
-import { labelOf } from '../../interface/registry/index.js';
+import { labelOf, labelOfItem } from '../../interface/registry/index.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
 
@@ -215,10 +215,10 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (workersChanged()) await followWorkers();
         if (deviceChanged()) await followDevice();
         const schedule = registrar.registered(definition);
-        if (schedule === undefined) throw new Error(`System "${definition.name}" didn't register.`);
+        if (schedule === undefined) throw new Error(`System "${labelOfItem(definition)}" didn't register.`);
         let report: Report;
         try {
-            report = await execute(context, schedule, value, definition.name);
+            report = await execute(context, schedule, value, definition);
         }
         finally {
             if (deviceChanged()) await followDevice();
@@ -251,7 +251,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             report = await perform(composite, undefined);
         }
         catch (error) {
-            report = { failures: [failureOf("system", composite.name, error)], skipped: [], dropped: 0 };
+            report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: [], dropped: 0 };
         }
         if (readResource(reportResource) === report) return;
         writeOwn(reportResource, report);

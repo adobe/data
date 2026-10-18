@@ -1,3 +1,4 @@
+import { labelOfItem } from '../../interface/registry/index.js';
 import { layout } from '../../interface/gpu/layout.js';
 import { recordBytes } from '../../interface/gpu/record.js';
 import type { Archetype, Storage } from './archetype.js';
@@ -70,8 +71,8 @@ export type GpuEngine = {
     /** Set once the device is lost; later runs that use the GPU reject with it, and readbacks keep the CPU's copies. */
     readonly lost: () => string | null;
     /** Records the first error a run's scopes report, for the next run to reject with. */
-    /** Keeps the first error of a run's GPU work, with the name of the system whose run submitted it. */
-    readonly reportErrors: (name: string, validation: Promise<GPUError | null>, memory: Promise<GPUError | null>) => void;
+    /** Keeps the first error of a run's GPU work, with the label of the system whose run submitted it. */
+    readonly reportErrors: (system: { readonly name: string }, validation: Promise<GPUError | null>, memory: Promise<GPUError | null>) => void;
     /** The recorded error, cleared. */
     readonly takeError: () => { readonly name: string; readonly message: string } | null;
     readonly destroy: () => void;
@@ -317,11 +318,11 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         disturb: disturbed => { disturbedNow = disturbed; },
         touched,
         lost: () => lostReason,
-        reportErrors: (name, validation, memory) => {
+        reportErrors: (system, validation, memory) => {
             void (async () => {
                 const [invalid, exhausted] = await Promise.all([validation, memory]);
-                if (invalid !== null) recorded ??= { name, message: `validation: ${invalid.message}` };
-                else if (exhausted !== null) recorded ??= { name, message: `out of memory: ${exhausted.message}` };
+                if (invalid !== null) recorded ??= { name: labelOfItem(system), message: `validation: ${invalid.message}` };
+                else if (exhausted !== null) recorded ??= { name: labelOfItem(system), message: `out of memory: ${exhausted.message}` };
             })();
         },
         takeError: () => {

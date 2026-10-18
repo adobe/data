@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { identify } from "../../interface/registry/ids.test-helper.js";
 import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
@@ -199,15 +200,15 @@ describe("finalizers", () => {
 describe("a finalizer declared again the same, as a module evaluated again declares it", () => {
     it("keeps its place in each world, and runs its new body once", async () => {
         const seen: string[] = [];
-        const first = Finalizer.create({ name: "finalizersTest/reloaded", components: { read: [reloaded] } }, () => { seen.push("first"); });
+        const first = Finalizer.create(identify({ name: "finalizersTest/reloaded", components: { read: [reloaded] } }, "finalizersTest/finalizers.ts#reloaded"), () => { seen.push("first"); });
         const world = createWorld({ [workers]: 0 });
         let entity = Entity.none;
         await step(world)(commands => { entity = commands.spawn([reloaded])({ [reloaded]: 1 }); });
-        const again = Finalizer.create({ name: "finalizersTest/reloaded", components: { read: [reloaded] } }, () => { seen.push("again"); });
+        const again = Finalizer.create(identify({ name: "finalizersTest/reloaded", components: { read: [reloaded] } }, "finalizersTest/finalizers.ts#reloaded"), () => { seen.push("again"); });
         expect(again).toBe(first);
         await step(world)(commands => { commands.despawn(entity); });
         expect(seen).toEqual(["again"]);
-        expect(() => Finalizer.create({ name: "finalizersTest/reloaded", components: { read: [handle] } }, () => {})).toThrow("already exists");
+        expect(() => Finalizer.create(identify({ name: "finalizersTest/reloaded", components: { read: [handle] } }, "finalizersTest/finalizers.ts#reloaded"), () => {})).toThrow("reload the page");
         await world.dispose();
     });
 });

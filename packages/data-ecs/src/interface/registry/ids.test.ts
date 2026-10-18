@@ -6,7 +6,7 @@ import { Rule } from "../rule/rule.js";
 import { System } from "../system/system.js";
 import { Trait } from "../trait/trait.js";
 import { identify } from "./ids.test-helper.js";
-import { declarationOf, itemNamed, kindOf, labelOf, programFinalizers, programRules, requireDefinition, scheduleOf } from "./index.js";
+import { declarationOf, kindOf, labelOf, programFinalizers, programRules, requireDefinition, sameItem, scheduleOf } from "./index.js";
 
 // Each pair is one module's key and the key that module makes when evaluated again: one id, two symbols.
 const score = Symbol("score");
@@ -91,28 +91,28 @@ describe("keys with ids", () => {
     });
     it("keeps keys of different ids apart, though their descriptions match", () => {
         Component.register(unnamed, { type: { type: "number" } });
-        System.create({ name: "idsTest/unnamed", components: { write: [score] } }, row => { row[score] = 1; });
-        expect(() => System.create({ name: "idsTest/unnamed", components: { write: [unnamed] } }, row => { row[unnamed] = 1; })).toThrow("already exists");
+        System.create(identify({ name: "idsTest/unnamed", components: { write: [score] } }, "idsTest/systems.ts#unnamed"), row => { row[score] = 1; });
+        expect(() => System.create(identify({ name: "idsTest/unnamed", components: { write: [unnamed] } }, "idsTest/systems.ts#unnamed"), row => { row[unnamed] = 1; })).toThrow("reload the page");
     });
 });
 
 describe("declarations evaluated again", () => {
     it("accept a system whose keys match by id, as a new system", () => {
-        const first = System.create({ name: "idsTest/system", components: { write: [score] }, resources: { read: [level] } }, (row, { resources }) => { row[score] = resources[level]; });
-        const again = System.create({ name: "idsTest/system", components: { write: [scoreAgain] }, resources: { read: [levelAgain] } }, (row, { resources }) => { row[scoreAgain] = resources[levelAgain]; });
+        const first = System.create(identify({ name: "idsTest/system", components: { write: [score] }, resources: { read: [level] } }, "idsTest/systems.ts#system"), (row, { resources }) => { row[score] = resources[level]; });
+        const again = System.create(identify({ name: "idsTest/system", components: { write: [scoreAgain] }, resources: { read: [levelAgain] } }, "idsTest/systems.ts#system"), (row, { resources }) => { row[scoreAgain] = resources[levelAgain]; });
         expect(again).not.toBe(first);
-        expect(itemNamed("idsTest/system")).toBe(again);
+        expect(sameItem(again, first)).toBe(true);
     });
     it("accept a rule whose keys match by id, which is already recorded", () => {
-        Rule.create({ name: "idsTest/rule", components: { has: [score] }, derive: [shown] });
+        const rule = Rule.create(identify({ name: "idsTest/rule", components: { has: [score] }, derive: [shown] }, "idsTest/systems.ts#rule"));
         const rules = programRules().length;
-        expect(() => Rule.create({ name: "idsTest/rule", components: { has: [scoreAgain] }, derive: [shownAgain] })).not.toThrow();
+        expect(Rule.create(identify({ name: "idsTest/rule", components: { has: [scoreAgain] }, derive: [shownAgain] }, "idsTest/systems.ts#rule"))).toBe(rule);
         expect(programRules()).toHaveLength(rules);
     });
     it("accept a finalizer whose keys match by id, keeping its place with the new body", () => {
-        const first = Finalizer.create({ name: "idsTest/finalizer", components: { read: [score] } }, () => {});
+        const first = Finalizer.create(identify({ name: "idsTest/finalizer", components: { read: [score] } }, "idsTest/systems.ts#finalizer"), () => {});
         const body = (): void => {};
-        expect(Finalizer.create({ name: "idsTest/finalizer", components: { read: [scoreAgain] } }, body)).toBe(first);
+        expect(Finalizer.create(identify({ name: "idsTest/finalizer", components: { read: [scoreAgain] } }, "idsTest/systems.ts#finalizer"), body)).toBe(first);
         const found = programFinalizers().find(finalizer => finalizer.name === "idsTest/finalizer");
         expect(found?.kind === "finalizer" ? found.body : null).toBe(body);
     });

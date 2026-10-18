@@ -28,3 +28,13 @@ const systemModules: ReadonlySet<string> = new Set([
 
 /** Whether a resolved module id is this package's `System` namespace, directly or through the package root. */
 export const isSystemModule = (id: string): boolean => systemModules.has(posix(id.split("?")[0] ?? id));
+
+const roots = ["src/interface/index.ts", "src/interface/index.js", "dist/interface/index.js", "src/index.ts", "src/index.js", "dist/index.js"];
+const namespaceModules: { readonly [namespace: string]: ReadonlySet<string> } = Object.fromEntries(
+    [["System", "system/system"], ["Rule", "rule/rule"], ["Finalizer", "finalizer/finalizer"]].map(([namespace, module]) => [namespace, new Set(
+        [`src/interface/${module}.ts`, `src/interface/${module}.js`, `dist/interface/${module}.js`, ...roots].map(path => `${packageRoot}/${path}`),
+    )]),
+);
+
+/** Whether a resolved module id is the module of this package's `namespace`, directly or through the package root. */
+export const isNamespaceModule = (id: string, namespace: string): boolean => namespaceModules[namespace]?.has(posix(id.split("?")[0] ?? id)) ?? false;

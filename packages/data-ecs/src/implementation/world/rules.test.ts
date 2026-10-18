@@ -6,6 +6,8 @@ import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { count, read } from "./reads.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
+import { identify } from "../../interface/registry/ids.test-helper.js";
+import { labelOfItem, programRules } from "../../interface/registry/index.js";
 
 const source = Symbol("rulesTest/source");
 const hidden = Symbol("rulesTest/hidden");
@@ -59,7 +61,7 @@ Component.register(late, { type: { const: true }, derived: true });
 Component.register(tagged, { type: { const: true } });
 Component.register(tag, { type: { const: true }, derived: true });
 
-Rule.create({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] });
+Rule.create(identify({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
 Rule.create({ name: "rulesTest/visible", components: { has: [slot] }, derive: [visible] });
 Rule.create({ name: "rulesTest/sprites", components: { has: [sprite] }, derive: [visible] });
 Rule.create({ name: "rulesTest/tag", components: { has: [tagged] }, derive: [tag] });
@@ -81,9 +83,11 @@ const components = async (world: ReturnType<typeof createWorld>, entity: Entity)
 };
 
 describe("rules", () => {
-    it("accept a rule declared again the same, as a module evaluated again declares it, and reject a different one", () => {
-        Rule.create({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] });
-        expect(() => Rule.create({ name: "rulesTest/slots", components: { has: [source] }, derive: [slot] })).toThrow("already exists");
+    it("accept a rule declared again the same under its id, as a module evaluated again declares it, and reject a different one", () => {
+        const rules = programRules().length;
+        Rule.create(identify({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
+        expect(() => Rule.create(identify({ name: "rulesTest/slots", components: { has: [source] }, derive: [slot] }, "rulesTest/rules.ts#slots"))).toThrow("reload the page");
+        expect(programRules()).toHaveLength(rules);
     });
     it("derive components where they match, from the schema default, and remove them where they stop", async () => {
         const world = createWorld({ [workers]: 0 });
@@ -149,9 +153,9 @@ describe("rules", () => {
         // @ts-expect-error a rule derives only derived components
         expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [source] }, derive: [mark] })).toThrow(`derives "rulesTest/mark", which isn't declared derived`);
         expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [source], not: [visible] }, derive: [slot] })).toThrow("cycle through a negation, which could oscillate");
-        // A rejected rule records nothing, so its name is still free; a taken one isn't.
-        expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [tagged] }, derive: [late] })).not.toThrow();
-        expect(() => System.create({ name: "rulesTest/visible" }, () => {})).toThrow('A different system, rule or finalizer named "rulesTest/visible"');
+        // A rejected rule records nothing, so its name labels only the next; a system may share a rule's name.
+        expect(labelOfItem(Rule.create({ name: "rulesTest/bad", components: { has: [tagged] }, derive: [late] }))).toBe("rulesTest/bad");
+        expect(labelOfItem(System.create({ name: "rulesTest/visible" }, () => {}))).toBe("rulesTest/visible#2");
         const world = createWorld({ [workers]: 0 });
         // @ts-expect-error a reference changes only through commands
         const writes = System.create({ name: "rulesTest/writeReference", components: { write: [owned] } }, row => { row[owned] = Entity.none; });

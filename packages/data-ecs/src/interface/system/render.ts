@@ -1,5 +1,6 @@
 import type { Component } from '../component/component.js';
-import { claim } from '../registry/program.js';
+import { takeIdOfDeclaration } from '../registry/ids.js';
+import { claimSystem } from '../registry/program.js';
 import type { Condition } from '../resource/condition.js';
 import type { Resource } from '../resource/resource.js';
 import type { ThreadOfResource } from '../resource/value.js';
@@ -58,6 +59,7 @@ export const render = <const D extends RenderDeclaration>(
     declaration: D & OneThread<ThreadsOf<D> | ThreadOfResource<typeof gpuDevice>>,
     body: Body<Rendered<D>>,
 ): System => {
+    const id = takeIdOfDeclaration(declaration);
     const system: Leaf & System = {
         kind: "render",
         name: declaration.name,
@@ -69,6 +71,6 @@ export const render = <const D extends RenderDeclaration>(
         body,
     };
     checkLeaf(system);
-    claim(system);
+    claimSystem(system, id);
     return system;
 };

@@ -1,4 +1,5 @@
 import { declarationOf, kindOf, labelOf } from '../registry/names.js';
+import { takeIdOfDeclaration } from '../registry/ids.js';
 import { addFinalizer } from '../registry/program.js';
 import { threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
@@ -37,10 +38,11 @@ export const create = <const D extends Declaration>(
     declaration: D & Validate<D> & OneThread<ThreadsOf<D>>,
     body: (row: Row<D>, context: Context<D>) => void,
 ): Finalizer => {
+    const id = takeIdOfDeclaration(declaration);
     const finalizer: Leaf<D> = { kind: "finalizer", name: declaration.name, declaration, body };
     checkResources(declaration.name, declaration.resources);
     threadOf(declaration, "Finalizer");
-    return addFinalizer(finalizer);
+    return addFinalizer(finalizer, id);
 };
 
 /**
@@ -51,11 +53,12 @@ export const changes = <const D extends ChangesDeclaration>(
     declaration: D & Validate<D>,
     body: (changes: ChangeSet<Watched<D>>, context: Context<D>) => void,
 ): Finalizer => {
+    const id = takeIdOfDeclaration(declaration);
     const finalizer: Changes<D> = { kind: "changes", name: declaration.name, declaration, body };
     checkResources(declaration.name, declaration.resources);
     for (const key of declaration.watch ?? []) {
         if (kindOf(key) !== "component") throw new Error(`Finalizer "${declaration.name}" watches "${labelOf(key)}", which isn't a registered component.`);
         if (declarationOf(key)?.derived === true) throw new Error(`Finalizer "${declaration.name}" watches "${labelOf(key)}", which is derived; it sees only components user code adds and removes.`);
     }
-    return addFinalizer(finalizer);
+    return addFinalizer(finalizer, id);
 };

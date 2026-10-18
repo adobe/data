@@ -1,6 +1,7 @@
 import type { Finalizer } from '../finalizer/created.js';
 import type { Rule } from '../rule/created.js';
 import type { Definition } from '../system/definition.js';
+import { recordItem, registeredAs } from './items.js';
 import { declarationOf, firstKeyOf, labelOf, sameDeclaration } from './names.js';
 import { orderFinalizers } from './finalizer-order.js';
 import { strataOf, type RuleFacts } from './strata.js';
@@ -10,30 +11,17 @@ export type Item = Definition | Rule | Finalizer;
 
 type Key = symbol;
 
-/** The program's systems, rules and finalizers, by name: names are unique across all three. */
-const named = new Map<string, Item>();
 const rules: Rule[] = [];
 /** In the order every world runs them. */
 let finalizers: readonly Finalizer[] = [];
 let created = 0;
 
-/** The item already named as `item` is, when it's the same kind with the same declaration: a module evaluated again. */
-const repeated = (item: Item): Item | undefined => {
-    const existing = named.get(item.declaration.name);
-    return existing !== undefined && existing.kind === item.kind && sameDeclaration(existing.declaration, item.declaration) ? existing : undefined;
-};
-
 /**
- * Records an item's name, replacing one a module evaluated again declared the same. Throws if a different system, rule
- * or finalizer has it.
+ * Records a system under the id the plugin gave its declaration. Declared again under that id the same, as a module
+ * evaluated again declares it, it's a new value of the same system. Throws for that id with another kind or declaration.
  */
-export const claim = (item: Item): void => {
-    const { name } = item.declaration;
-    const existing = named.get(name);
-    if (existing !== undefined && existing !== item && repeated(item) === undefined) {
-        throw new Error(`A different system, rule or finalizer named "${name}" already exists; if a module was evaluated again with a changed declaration, reload the page.`);
-    }
-    named.set(name, item);
+export const claimSystem = (system: Definition, id: string | undefined): void => {
+    recordItem(system, id, registeredAs(system, id, sameDeclaration));
 };
 
 /** Every rule's facts with the `within` hosts of their components, numbered for this check only. Throws for a cycle. */
@@ -54,29 +42,36 @@ const checkStrata = (all: readonly Rule[]): void => {
         return id;
     };
     const facts = all.map((rule): RuleFacts => {
-        const { name, components, derive } = rule.declaration;
-        return { name, has: (components.has ?? []).map(idOf), not: (components.not ?? []).map(idOf), derives: derive.map(idOf) };
+        const { components, derive } = rule.declaration;
+        return { has: (components.has ?? []).map(idOf), not: (components.not ?? []).map(idOf), derives: derive.map(idOf) };
     });
     strataOf(facts, hosts, id => labelOf(keys[id]));
 };
 
-/** Records a rule, which applies in every world; the same rule again is already recorded. Throws for a cycle through a negation. */
-export const addRule = (rule: Rule): Rule => {
-    const existing = repeated(rule);
-    if (existing?.kind === "rule") return existing;
+/**
+ * Records a rule under the id the plugin gave its declaration, which applies in every world, and returns it; declared
+ * again under that id the same, it's the rule already recorded. Throws for a cycle through a negation, and for that id
+ * with another kind or declaration.
+ */
+export const addRule = (rule: Rule, id: string | undefined): Rule => {
+    const existing = registeredAs(rule, id, sameDeclaration);
+    const found = existing === undefined ? undefined : rules.find(other => other === existing);
+    if (found !== undefined) return found;
     checkStrata([...rules, rule]);
-    claim(rule);
+    recordItem(rule, id, undefined);
     rules.push(rule);
     created++;
     return rule;
 };
 
 /**
- * Records a finalizer, which applies in every world, and returns it. The same finalizer again keeps its place, with the
- * new body. Throws for an order that cycles or leaves a resource conflict.
+ * Records a finalizer under the id the plugin gave its declaration, which applies in every world, and returns it;
+ * declared again under that id the same, it's the finalizer already recorded, which keeps its place with the new body.
+ * Throws for an order that cycles or leaves a resource conflict, and for that id with another kind or declaration.
  */
-export const addFinalizer = (finalizer: Finalizer): Finalizer => {
-    const existing = repeated(finalizer);
+export const addFinalizer = (finalizer: Finalizer, id: string | undefined): Finalizer => {
+    const registered = registeredAs(finalizer, id, sameDeclaration);
+    const existing = registered === undefined ? undefined : finalizers.find(other => other === registered);
     if (existing?.kind === "finalizer" && finalizer.kind === "finalizer") {
         existing.body = finalizer.body;
         return existing;
@@ -85,15 +80,12 @@ export const addFinalizer = (finalizer: Finalizer): Finalizer => {
         existing.body = finalizer.body;
         return existing;
     }
-    const ordered = orderFinalizers([...finalizers, finalizer].map(item => ({ name: item.declaration.name, finalizer: item })));
-    claim(finalizer);
-    finalizers = ordered.map(item => item.finalizer);
+    const ordered = orderFinalizers([...finalizers, finalizer]);
+    recordItem(finalizer, id, undefined);
+    finalizers = ordered;
     created++;
     return finalizer;
 };
-
-/** The system, rule or finalizer with this name. */
-export const itemNamed = (name: string): Item | undefined => named.get(name);
 
 /** Only constructors make values with a system's kind and a declaration. */
 const isDefinition = (system: object): system is Definition =>

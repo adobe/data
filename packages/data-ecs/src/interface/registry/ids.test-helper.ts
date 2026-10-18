@@ -1,10 +1,14 @@
 import { idsName } from './ids.js';
 
-/** Gives a key an id, as code the plugin generates does for a top-level `Symbol(...)` declaration. */
-export const identify = (key: symbol, id: string): void => {
+/**
+ * Gives a key or a declaration an id, as code the plugin generates does for a top-level `Symbol(...)` declaration or a
+ * top-level binding's constructor call. Returns what it was given.
+ */
+export const identify = <T extends symbol | object>(value: T, id: string): T => {
     const name = Symbol.for(idsName);
     const existing: unknown = Reflect.get(globalThis, name);
-    const map = existing instanceof Map ? existing : new Map<symbol, string>();
-    map.set(key, id);
+    const map = existing instanceof Map ? existing : new Map<unknown, string>();
+    map.set(value, id);
     Reflect.set(globalThis, name, map);
+    return value;
 };

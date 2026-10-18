@@ -6,7 +6,7 @@ import { closedComponents } from "./closure.js";
 const derived = [false, false, false, true, false, true, true, false];
 const hosts = [-1, -1, -1, -1, 3, -1, -1, -1];
 const name = (id: number): string => `c${id}`;
-const rule = (has: number[], not: number[], derives: number[]): RuleFacts => ({ name: "r", has, not, derives });
+const rule = (has: number[], not: number[], derives: number[]): RuleFacts => ({ has, not, derives });
 const closure = (rules: readonly RuleFacts[], components: number[]): number[] => closedComponents(components, derived, hosts, strataOf(rules, hosts, name));
 
 describe("closure", () => {

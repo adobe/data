@@ -32,9 +32,9 @@ declare module "@adobe/data-ecs" {
 
 Component.register(score, { type: { type: "number" } });
 Component.register(shown, { type: { const: true }, derived: true });
-Rule.create({ name: "worldIdsTest/shown", components: { has: [score] }, derive: [shown] });
+Rule.create(identify({ name: "worldIdsTest/shown", components: { has: [score] }, derive: [shown] }, "worldIdsTest/systems.ts#shown"));
 const changes: (readonly symbol[])[] = [];
-Finalizer.changes({ name: "worldIdsTest/changes", watch: [score] }, ({ groups }) => {
+Finalizer.changes(identify({ name: "worldIdsTest/changes", watch: [score] }, "worldIdsTest/systems.ts#changes"), ({ groups }) => {
     for (const group of groups) changes.push(group.added);
 });
 
@@ -42,8 +42,8 @@ Finalizer.changes({ name: "worldIdsTest/changes", watch: [score] }, ({ groups })
 const evaluateAgain = (): void => {
     Component.register(scoreAgain, { type: { type: "number" } });
     Component.register(shownAgain, { type: { const: true }, derived: true });
-    Rule.create({ name: "worldIdsTest/shown", components: { has: [scoreAgain] }, derive: [shownAgain] });
-    Finalizer.changes({ name: "worldIdsTest/changes", watch: [scoreAgain] }, ({ groups }) => {
+    Rule.create(identify({ name: "worldIdsTest/shown", components: { has: [scoreAgain] }, derive: [shownAgain] }, "worldIdsTest/systems.ts#shown"));
+    Finalizer.changes(identify({ name: "worldIdsTest/changes", watch: [scoreAgain] }, "worldIdsTest/systems.ts#changes"), ({ groups }) => {
         for (const group of groups) changes.push(group.added);
     });
 };

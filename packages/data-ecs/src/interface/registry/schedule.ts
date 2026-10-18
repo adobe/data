@@ -1,6 +1,7 @@
 import type { Schema } from '../schema/schema.js';
 import type { Definition } from '../system/definition.js';
 import type { Leaf } from '../system/leaf.js';
+import { firstItemOf, labelOfItem } from './items.js';
 import { requireDefinition } from './program.js';
 import { firstKeyOf, labelOf, sameDeclaration } from './names.js';
 
@@ -9,7 +10,9 @@ type Key = symbol;
 /** Throws unless each leaf's input is an object schema of named fields, and a field several declare has one schema. */
 const checkInputs = (leaves: readonly Leaf[]): void => {
     const fields = new Map<string, { readonly schema: Schema; readonly system: string }>();
-    for (const { declaration: { name, input } } of leaves) {
+    for (const leaf of leaves) {
+        const { input } = leaf.declaration;
+        const name = labelOfItem(leaf);
         if (input === undefined) continue;
         const schema: Schema = input;
         if (!("type" in schema) || schema.type !== "object" || typeof schema.properties !== "object" || schema.properties === null) {
@@ -42,28 +45,26 @@ type Graph = { readonly units: readonly Definition[]; readonly successors: reado
 /**
  * A leaf runs from its start to its end, and a composite spans its members. `after` and `before` order one system's end
  * before another's start, and `during` places a system inside another's span. The root's own constraints are ignored,
- * as are constraints naming systems outside it.
+ * as are constraints naming systems outside it. Values of one system, as a module evaluated again makes them, are one
+ * unit, the first reached.
  */
 const graphOf = (root: Definition): Graph => {
     const units: Definition[] = [];
     const members: (readonly number[])[] = [];
-    const indexOf = new Map<Definition, number>();
-    const named = new Map<string, number>();
+    const indexOf = new Map<object, number>();
     const visit = (system: Definition): number => {
-        const known = indexOf.get(system);
+        const first = firstItemOf(system);
+        const known = indexOf.get(first);
         if (known !== undefined) return known;
-        const { name } = system.declaration;
-        if (named.has(name)) throw new Error(`Two different systems are named "${name}".`);
         const unit = units.push(system) - 1;
-        indexOf.set(system, unit);
-        named.set(name, unit);
+        indexOf.set(first, unit);
         members[unit] = isLeaf(system) ? [] : system.declaration.systems.map(member => visit(requireDefinition(member)));
         return unit;
     };
     visit(root);
     const successors = units.flatMap(() => [new Set<number>(), new Set<number>()]);
-    const resolve = (systems: readonly { readonly name: string }[] | undefined): readonly number[] =>
-        (systems ?? []).flatMap(({ name }) => named.get(name) ?? []);
+    const resolve = (systems: readonly object[] | undefined): readonly number[] =>
+        (systems ?? []).flatMap(system => indexOf.get(firstItemOf(system)) ?? []);
     units.forEach((system, unit) => {
         successors[start(unit)].add(end(unit));
         for (const member of members[unit]) {
@@ -94,7 +95,7 @@ const topologicalOrder = ({ units, successors }: Graph): number[] => {
         for (const next of successors[node]) if (--incoming[next] === 0) ready.push(next);
     }
     if (order.length < successors.length) {
-        const cyclic = units.filter((_, unit) => incoming[start(unit)] > 0 || incoming[end(unit)] > 0).map(system => `"${system.declaration.name}"`);
+        const cyclic = units.filter((_, unit) => incoming[start(unit)] > 0 || incoming[end(unit)] > 0).map(system => `"${labelOfItem(system)}"`);
         throw new Error(`Ordering cycle between ${cyclic.join(", ")}.`);
     }
     return order;
@@ -188,7 +189,7 @@ const createSchedule = (system: Definition): Schedule => {
         for (let b = a + 1; b < leaves.length; b++) {
             const key = conflictOf(accesses[a], accesses[b]);
             if (key !== undefined && !ordered(reach, leaves[a].unit, leaves[b].unit)) {
-                throw new Error(`Systems "${leaves[a].leaf.declaration.name}" and "${leaves[b].leaf.declaration.name}" both access "${labelOf(key)}" and one writes it; order them with before or after.`);
+                throw new Error(`Systems "${labelOfItem(leaves[a].leaf)}" and "${labelOfItem(leaves[b].leaf)}" both access "${labelOf(key)}" and one writes it; order them with before or after.`);
             }
         }
     }

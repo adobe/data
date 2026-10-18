@@ -5,10 +5,10 @@ import { isAbsolute } from 'node:path';
 import type { Plugin, Rollup, ViteDevServer } from 'vite';
 import { estreeOf } from './estree.js';
 import { describeFailure } from './failure.js';
-import { identifySymbols, moduleIdOf, type PackageNameOf } from './identify.js';
+import { identify as identifyModule, moduleIdOf, type PackageNameOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
-import { isSystemModule, packageIndex } from './paths.js';
+import { isNamespaceModule, isSystemModule, packageIndex } from './paths.js';
 import { locateThroughMap } from './source-map.js';
 import { transformKernels } from './transform.js';
 
@@ -72,7 +72,8 @@ const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
  * The application's build compiles every kernel, its dependencies' too: a library ships its kernels uncompiled.
  *
  * Also gives each top-level `Symbol(...)` declaration an id, its package's name, its module's path in the package and
- * its binding, by which the registry knows the symbol a module evaluated again makes as the same key (`identify.ts`).
+ * its binding, by which the registry knows the symbol a module evaluated again makes as the same key, and in the same
+ * way the declaration of each top-level binding's system, rule or finalizer, as the same item (`identify.ts`).
  *
  * Dev dep pre-bundling bypasses plugins and breaks the runtime's worker url, so `@adobe/data-ecs` is excluded from it.
  * Consumers must also add to `optimizeDeps.exclude` any dependency that defines kernels or keys, imports
@@ -173,7 +174,10 @@ export const kernelPlugin = (): Plugin => {
         async transform(code, id, options) {
             if (repeated || id.includes("\0") || !scripts.test(id.split("?")[0] ?? id)) return null;
             const parse = (input: string) => estreeOf(this.parse(input));
-            const identify = (input: string) => identifySymbols(input, moduleIdOf(id, root, packageNameOf), parse);
+            const identify = (input: string) => identifyModule(input, moduleIdOf(id, root, packageNameOf), parse, async (source, namespace) => {
+                const resolved = await this.resolve(source, id);
+                return resolved !== null && (resolved.external ? source === packageName : isNamespaceModule(resolved.id, namespace));
+            });
             const linker = linkerFor(options?.ssr === true, this);
             const hashes: string[] = [];
             const result = await transformKernels(code, id, parse, async source => {
@@ -190,13 +194,13 @@ export const kernelPlugin = (): Plugin => {
             if (result === null) {
                 kernels.delete(id);
                 depend(parent, []);
-                return identify(code);
+                return await identify(code);
             }
             for (const dependency of result.dependencies) this.addWatchFile(dependency);
             depend(parent, result.dependencies);
             if ("failure" in result) return this.error(describeFailure(result.failure), result.failure.position);
             kernels.set(id, result.kernels.map((source, index) => ({ source, hash: hashes[index] ?? "" })));
-            return identify(result.code) ?? { code: result.code, map: null };
+            return await identify(result.code) ?? { code: result.code, map: null };
         },
     };
     return plugin;

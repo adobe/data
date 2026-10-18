@@ -21,7 +21,7 @@ import { combine, identityOf, reductionTargets, type ReductionTarget } from './r
 import { samePath, type TypedArray } from '../../interface/registry/layout.js';
 import { inputFor } from './input.js';
 import { createUp, type Run } from './up.js';
-import { labelOf } from '../../interface/registry/index.js';
+import { labelOf, labelOfItem } from '../../interface/registry/index.js';
 
 /** One unit of a system's work for a run: the commands it issued, plus its error if it failed partway. */
 export type ChunkResult = { readonly commands: CommandBuffer; readonly error?: unknown };
@@ -71,9 +71,20 @@ export type Runner = {
     readonly afterSync: (() => void) | null;
 };
 
+/** A number for each leaf, so the GPU records of every runner made for it are its own, whatever its name. */
+const leafNumbers = new WeakMap<Leaf, number>();
+let leafCount = 0;
+const numberOf = (leaf: Leaf): number => {
+    let number = leafNumbers.get(leaf);
+    if (number === undefined) leafNumbers.set(leaf, number = leafCount++);
+    return number;
+};
+
 /** Throws if the leaf is a kernel that wasn't compiled or doesn't match its schemas. */
 export const createRunner = (state: State, leaf: Leaf): Runner => {
     const { declaration } = leaf;
+    const leafNumber = numberOf(leaf);
+    const label = labelOfItem(leaf);
     // Method parameters are bivariant, so the runtime can see any leaf's body with erased parameter types.
     const system: { body(subject: unknown, context?: unknown): void } = leaf;
     const { components: query, resources } = declaration;
@@ -86,11 +97,11 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     let kernel: BoundKernel | null = null;
     if (declaration.kernel !== undefined) {
         const description = kernelOf(leaf);
-        if (description === undefined) throw new Error(`System "${declaration.name}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
+        if (description === undefined) throw new Error(`System "${label}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
         kernel = bindKernel(state, leaf, description);
     }
     const placement = leaf.kind === "render" ? "render" : declaration.kernel === "gpu" && state.gpu !== null ? "gpu" : "cpu";
-    const failPlacement = (message: string): never => { throw new Error(`System "${declaration.name}" ${message}.`); };
+    const failPlacement = (message: string): never => { throw new Error(`System "${label}" ${message}.`); };
     // The build rejects these in compiled kernels; this covers declarations it didn't see.
     if (declaration.kernel === "gpu") {
         if (filtered) failPlacement("can't run on the GPU: GPU kernels don't support change filters yet");
@@ -129,7 +140,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const keys = new Map<Archetype, string>();
     const keyOf = (archetype: Archetype): string => {
         let key = keys.get(archetype);
-        if (key === undefined) keys.set(archetype, key = `${declaration.name}:${archetype.id}`);
+        if (key === undefined) keys.set(archetype, key = `${leafNumber}:${archetype.id}`);
         return key;
     };
     let pipeline: { readonly compute: GPUComputePipeline; readonly kernel: WgslKernel } | null = null;
@@ -196,7 +207,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         const first = slotsUsed;
         slotsUsed += count;
         // Archetypes change only at sync points, which size the slots for them.
-        if (slotsUsed * partialCount > slots.length) throw new Error(`System "${declaration.name}" has no room for its reduction partials.`);
+        if (slotsUsed * partialCount > slots.length) throw new Error(`System "${label}" has no room for its reduction partials.`);
         for (let slot = first; slot < slotsUsed; slot++) {
             partialLeaves.forEach(({ target }, k) => { slots[slot * partialCount + k] = identityOf(targets[target]?.operator ?? "+"); });
         }
@@ -538,8 +549,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         if (gpu === null || pipeline === null || kernel === null || up === null) return failPlacement("isn't loaded on the GPU");
         const order = up.levels(matches);
         const fresh = order !== uploadedOrder;
-        const rowsAddress = gpu.uploadIndexes(`${declaration.name}:rows`, order.rows, order.size, fresh);
-        const parentsAddress = gpu.uploadIndexes(`${declaration.name}:parents`, order.parents, order.size, fresh);
+        const rowsAddress = gpu.uploadIndexes(`${leafNumber}:rows`, order.rows, order.size, fresh);
+        const parentsAddress = gpu.uploadIndexes(`${leafNumber}:parents`, order.parents, order.size, fresh);
         uploadedOrder = order;
         const { sources } = kernel.setup;
         const scalars = scalarValues(pipeline.kernel.scalars, values, args);
@@ -565,7 +576,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
                 words[base + 3 + k] = parent === null || storage === undefined ? 0 : gpu.upload(parent, storage);
             });
             scalars.forEach((value, s) => { floats[base + 3 + upIds.length + s] = value; });
-            dispatches.push({ offset: gpu.record(`${declaration.name}:up:${group}`, words), count });
+            dispatches.push({ offset: gpu.record(`${leafNumber}:up:${group}`, words), count });
         }
         if (dispatches.length > 0) {
             const pass = gpu.encoder().beginComputePass();

@@ -87,7 +87,7 @@ const tripled = System.create({ name: "tripled", kernel: "cpu", components: { wr
 export const descriptions = [kernelOf(doubled), kernelOf(tripled)];
 `);
 /** A module of keys and what it declares with them, which serving evaluates again under another query. */
-const keys = (declaration: string) => `import { System } from ${source("../../interface/system/system.ts")};
+const keys = (declaration: string, released = "score") => `import { System as Systems } from ${source("../../interface/system/system.ts")};
 import { Component } from ${source("../../interface/component/component.ts")};
 import { Finalizer } from ${source("../../interface/finalizer/finalizer.ts")};
 import { Rule } from ${source("../../interface/rule/rule.ts")};
@@ -96,15 +96,18 @@ export const score = Symbol("score");
 const shown = Symbol("shown");
 Component.register(score, ${declaration});
 Component.register(shown, { type: { const: true }, derived: true });
-Rule.create({ name: "keys/shown", components: { has: [score] }, derive: [shown] });
-Finalizer.create({ name: "keys/release", components: { read: [score] } }, () => {});
-export const system = System.create({ name: "keys/write", components: { write: [score] } }, (row) => { row[score] = 1; });
+export const rule = Rule.create({ name: "keys/shown", components: { has: [score] }, derive: [shown] });
+export const release = Finalizer.create({ name: "keys/release", components: { read: [${released}] } }, () => {});
+export const system = Systems.create({ name: "keys/write", components: { write: [score] } }, (row) => { row[score] = 1; });
+export const kernel = Systems.create({ name: "keys/write", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = 2; });
 export const label = labelOf(score);
 `;
 const evaluated = join(directory, "evaluated.js");
 writeFileSync(evaluated, keys(`{ type: { type: "number" } }`));
 const changed = join(directory, "changed.js");
 writeFileSync(changed, keys(`{ type: { type: "number" } }`));
+const changedItems = join(directory, "changed-items.js");
+writeFileSync(changedItems, keys(`{ type: { type: "number" } }`));
 /** An application whose keys are its own and a dependency's, and a worker's. */
 const identified = join(directory, "identified.js");
 mkdirSync(join(directory, "node_modules/key-library/dist"), { recursive: true });
@@ -255,13 +258,27 @@ test("an application's build compiles the kernels a library ships uncompiled", a
     expect(description === undefined ? [] : runs(module, description)).toEqual([6, 8]);
 });
 
-test("serve accepts a module of keys evaluated again, which makes the same keys", async () => {
+test("serve accepts a module of keys evaluated again, which makes the same keys, systems, rules and finalizers by their ids", async () => {
     await serve(async server => {
         const first = await server.ssrLoadModule(evaluated);
         const again = await server.ssrLoadModule(`${evaluated}?evaluated=again`);
+        const { labelOfItem, sameItem } = await server.ssrLoadModule(JSON.parse(source("../../interface/registry/items.ts")));
         expect(again.score).not.toBe(first.score);
-        expect(again.system).not.toBe(first.system);
         expect([first.label, again.label]).toEqual(["score", "score"]);
+        expect(again.system).not.toBe(first.system);
+        expect([sameItem(again.system, first.system), sameItem(again.kernel, first.kernel), sameItem(again.kernel, again.system)]).toEqual([true, true, false]);
+        expect(again.rule).toBe(first.rule);
+        expect(again.release).toBe(first.release);
+        // The two systems share a name, so each is labeled with its id.
+        expect([labelOfItem(again.system), labelOfItem(first.kernel)]).toEqual(["keys/write (fixture-app/evaluated.js#system)", "keys/write (fixture-app/evaluated.js#kernel)"]);
+    });
+});
+
+test("serve reports a finalizer evaluated again under its id with another declaration", async () => {
+    await serve(async server => {
+        await server.ssrLoadModule(changedItems);
+        writeFileSync(changedItems, keys(`{ type: { type: "number" } }`, "shown"));
+        await expect(server.ssrLoadModule(`${changedItems}?evaluated=changed`)).rejects.toThrow(`Cannot declare "keys/release" (fixture-app/changed-items.js#release): its id is another item's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.`);
     });
 });
 

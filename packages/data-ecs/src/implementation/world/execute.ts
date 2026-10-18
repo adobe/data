@@ -9,7 +9,7 @@ import { locate } from './entities.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
 import type { Failure, Report } from '../../interface/world/report.js';
 import { failureOf } from './failures.js';
-import { firstKeyOf } from '../../interface/registry/index.js';
+import { firstKeyOf, labelOfItem } from '../../interface/registry/index.js';
 
 /** Shared by every report without failures or skipped systems: they're read-only, so none needs its own. */
 const none: readonly never[] = [];
@@ -30,9 +30,9 @@ export type ExecuteContext = {
  * Runs a schedule tier by tier, then applies one sync point, and reports what went wrong. Within a tier, kernels start
  * first so workers run while main-thread systems do; commands merge in tier order, then chunk order, whichever thread
  * ran them. A failing system stops the run after its tier finishes: later tiers are skipped, and commands so far still
- * apply. `name` is the system the run was given, which the GPU's errors are reported under.
+ * apply. `system` is the one the run was given, which the GPU's errors are reported under.
  */
-export const execute = async (context: ExecuteContext, schedule: Schedule, args: unknown, name: string): Promise<Report> => {
+export const execute = async (context: ExecuteContext, schedule: Schedule, args: unknown, system: { readonly name: string }): Promise<Report> => {
     const { gpu } = context.state;
     if (gpu === null) return executeTiers(context, schedule, args, null);
     const lost = gpu.lost();
@@ -48,7 +48,7 @@ export const execute = async (context: ExecuteContext, schedule: Schedule, args:
         return await executeTiers(context, schedule, args, failures);
     }
     finally {
-        gpu.reportErrors(name, gpu.device.popErrorScope(), gpu.device.popErrorScope());
+        gpu.reportErrors(system, gpu.device.popErrorScope(), gpu.device.popErrorScope());
     }
 };
 
@@ -139,14 +139,14 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
                 }
                 started[i] = noChunks;
                 const failed = error !== undefined;
-                if (failed) (failures ??= []).push(failureOf("system", tier[i].name, error));
+                if (failed) (failures ??= []).push(failureOf("system", labelOfItem(tier[i]), error));
                 if (failed) tierFailed = true;
                 const runner = runners[i];
                 if (folds !== null && runner.targets.length > 0) contribute(state, folds, runner, runner.finish(failed), failed);
             }
             if (gpu !== null) markWrites(gpu, runners);
             if (tierFailed) {
-                for (let later = t + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (skipped ??= []).push(leaf.name);
+                for (let later = t + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (skipped ??= []).push(labelOfItem(leaf));
                 break;
             }
         }
@@ -171,7 +171,7 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
                     finally {
                         // Applied even when the readback fails, which only a lost device makes it do: the CPU state stays whole.
                         dropped = state.plan.dropped;
-                        for (const { name, error } of applySync(state)) (failures ??= []).push(failureOf("finalizer", name, error));
+                        for (const { finalizer, error } of applySync(state)) (failures ??= []).push(failureOf("finalizer", labelOfItem(finalizer), error));
                     }
                 }
             }

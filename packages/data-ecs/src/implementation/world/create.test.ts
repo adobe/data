@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { identify } from "../../interface/registry/ids.test-helper.js";
 import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Resource } from "../../interface/resource/resource.js";
@@ -358,10 +359,10 @@ describe("World.create", () => {
         expect(seen).toBeNull();
     });
 
-    it("accepts a system declared again the same, as a module evaluated again declares it, and rejects a different one", async () => {
-        const first = System.create({ name: "createTest/named", resources: { write: [seen] } }, ({ resources }) => { resources[seen] = 1; });
-        const again = System.create({ name: "createTest/named", resources: { write: [seen] } }, ({ resources }) => { resources[seen] = 2; });
-        expect(() => System.create({ name: "createTest/named" }, () => {})).toThrow('A different system, rule or finalizer named "createTest/named" already exists');
+    it("accepts a system declared again the same under its id, as a module evaluated again declares it, and rejects a different one", async () => {
+        const first = System.create(identify({ name: "createTest/named", resources: { write: [seen] } }, "createTest/systems.ts#named"), ({ resources }) => { resources[seen] = 1; });
+        const again = System.create(identify({ name: "createTest/named", resources: { write: [seen] } }, "createTest/systems.ts#named"), ({ resources }) => { resources[seen] = 2; });
+        expect(() => System.create(identify({ name: "createTest/named" }, "createTest/systems.ts#named"), () => {})).toThrow('Cannot declare "createTest/named" (createTest/systems.ts#named): its id is another item\'s, with another declaration; if a module was evaluated again with a changed declaration, reload the page.');
         await using world = createWorld();
         await world.run(first);
         await world.run(again);

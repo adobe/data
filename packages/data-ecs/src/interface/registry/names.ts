@@ -1,5 +1,6 @@
 import type { AnyDeclaration } from './declarations.js';
 import { idOfKey } from './ids.js';
+import { sameItem } from './items.js';
 
 /** What a key names. */
 export type Kind = "component" | "resource" | "trait";
@@ -99,14 +100,14 @@ export const requireKey = (kind: Kind, key: unknown): symbol => {
 
 /**
  * Whether two declarations are the same, as a module evaluated again declares them, such as on a hot reload. Keys
- * compare as `sameKey` does, and systems and finalizers they list by name, since evaluating their modules again makes
- * new ones.
+ * compare as `sameKey` does, and systems and finalizers they list as `sameItem` does, since evaluating their modules
+ * again makes new values of them.
  */
 export const sameDeclaration = (a: unknown, b: unknown): boolean => {
     if (a === b) return true;
     if (typeof a === "symbol" || typeof b === "symbol") return sameKey(a, b);
     if (typeof a !== "object" || typeof b !== "object" || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
-    if ("declaration" in a && "name" in a && "declaration" in b && "name" in b) return a.name === b.name;
+    if ("declaration" in a && "declaration" in b) return sameItem(a, b);
     const keys = Reflect.ownKeys(a);
     const others = Reflect.ownKeys(b);
     return keys.length === others.length && keys.every(key => {

@@ -5,6 +5,7 @@ import { posix } from 'node:path';
 import { idsName } from '../../interface/registry/ids.js';
 import { children, isFunction } from './estree.js';
 import { moduleScope } from './module-scope.js';
+import { attachKernelPath } from './paths.js';
 
 export type Parse = (code: string) => Program;
 
@@ -50,11 +51,62 @@ const declaresInModule = (program: Program, name: string): boolean => {
 const isSymbolCall = (node: Expression | null | undefined): node is Expression =>
     node?.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.name === "Symbol";
 
+/** The package's namespaces whose constructors declare systems, rules and finalizers. */
+export type Namespace = "System" | "Rule" | "Finalizer";
+
+const constructors: { readonly [N in Namespace]: ReadonlySet<string> } = {
+    System: new Set(["create", "render", "composite"]),
+    Rule: new Set(["create"]),
+    Finalizer: new Set(["create", "changes"]),
+};
+
+const isNamespace = (name: string): name is Namespace => name === "System" || name === "Rule" || name === "Finalizer";
+
+/** Whether an import specifier, resolved from the module being transformed, is a module of the package exporting `namespace`. */
+export type ResolveNamespace = (source: string, namespace: Namespace) => Promise<boolean>;
+
+/** The module's local names of the package's namespaces, and of the kernel transform's `attachKernel`. */
+const localsOf = async (program: Program, resolve: ResolveNamespace): Promise<{ readonly namespaces: ReadonlyMap<string, Namespace>; readonly attach: ReadonlySet<string> }> => {
+    const namespaces = new Map<string, Namespace>();
+    const attach = new Set<string>();
+    for (const statement of program.body) {
+        if (statement.type !== "ImportDeclaration" || typeof statement.source.value !== "string") continue;
+        for (const specifier of statement.specifiers) {
+            if (specifier.type !== "ImportSpecifier" || specifier.imported.type !== "Identifier") continue;
+            const imported = specifier.imported.name;
+            if (statement.source.value === attachKernelPath && imported === "attachKernel") attach.add(specifier.local.name);
+            else if (isNamespace(imported) && await resolve(statement.source.value, imported)) namespaces.set(specifier.local.name, imported);
+        }
+    }
+    return { namespaces, attach };
+};
+
+/**
+ * The declaration a constructor call of a namespace passes, the call possibly wrapped by the kernel transform as
+ * `attachKernel$(call, description)`; undefined for any other expression.
+ */
+const declarationOf = (node: Node | null | undefined, namespaces: ReadonlyMap<string, Namespace>, attach: ReadonlySet<string>): Expression | undefined => {
+    if (node?.type !== "CallExpression") return undefined;
+    const { callee } = node;
+    if (callee.type === "Identifier" && attach.has(callee.name)) {
+        const [call] = node.arguments;
+        return call === undefined || call.type === "SpreadElement" ? undefined : declarationOf(call, namespaces, new Set());
+    }
+    if (callee.type !== "MemberExpression" || callee.computed || callee.object.type !== "Identifier" || callee.property.type !== "Identifier") return undefined;
+    const namespace = namespaces.get(callee.object.name);
+    if (namespace === undefined || !constructors[namespace].has(callee.property.name)) return undefined;
+    const [declaration] = node.arguments;
+    return declaration === undefined || declaration.type === "SpreadElement" ? undefined : declaration;
+};
+
 const uniqueName = (code: string, base: string): string => {
     let name = base;
     for (let n = 1; code.includes(name); n++) name = `${base}${n}`;
     return name;
 };
+
+/** Whether code may hold a constructor call worth resolving its imports for. */
+const mayDeclare = /\.(create|render|composite|changes)\(/;
 
 /**
  * Gives each top-level `Symbol(...)` declaration an id, its module's id and its binding (`src/keys.ts#position`, or
@@ -62,30 +114,42 @@ const uniqueName = (code: string, base: string): string => {
  * exports. The symbol is still the one `Symbol(...)` makes; a function appended to the module records its id in the
  * global map the registry reads, so the code imports nothing. Symbols made anywhere else, such as in functions, blocks,
  * TypeScript namespaces, class fields or CommonJS exports, have no id, nor does any symbol where `Symbol` or
- * `globalThis` isn't the global. Returns null when nothing is identified.
+ * `globalThis` isn't the global.
+ *
+ * The same bindings initialized by a constructor call of the package's `System`, `Rule` or `Finalizer`, imported under
+ * any local name, give the call's declaration their id, which the constructor takes from the map: a kernel's call as
+ * the kernel transform wrapped it too. Returns null when nothing is identified.
  */
-export const identifySymbols = (code: string, id: string, parse: Parse): Identified | null => {
-    if (!code.includes("Symbol(")) return null;
+export const identify = async (code: string, id: string, parse: Parse, resolve: ResolveNamespace): Promise<Identified | null> => {
+    const symbols = code.includes("Symbol(");
+    const items = mayDeclare.test(code);
+    if (!symbols && !items) return null;
     const program = parse(code);
-    const found: { readonly call: Expression; readonly binding: string }[] = [];
+    const { namespaces, attach } = items ? await localsOf(program, resolve) : { namespaces: new Map<string, Namespace>(), attach: new Set<string>() };
+    const found: { readonly value: Expression; readonly binding: string }[] = [];
+    const consider = (init: Expression | null | undefined, binding: string): void => {
+        if (isSymbolCall(init)) found.push({ value: init, binding });
+        else if (namespaces.size > 0) {
+            const declaration = declarationOf(init, namespaces, attach);
+            if (declaration !== undefined) found.push({ value: declaration, binding });
+        }
+    };
     for (const statement of program.body) {
         const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
         if (declaration?.type === "VariableDeclaration") {
-            for (const declarator of declaration.declarations) {
-                if (declarator.id.type === "Identifier" && isSymbolCall(declarator.init)) found.push({ call: declarator.init, binding: declarator.id.name });
-            }
-        } else if (statement.type === "ExportDefaultDeclaration" && statement.declaration.type === "CallExpression" && isSymbolCall(statement.declaration)) {
-            found.push({ call: statement.declaration, binding: "default" });
+            for (const declarator of declaration.declarations) if (declarator.id.type === "Identifier") consider(declarator.init, declarator.id.name);
+        } else if (statement.type === "ExportDefaultDeclaration" && statement.declaration.type === "CallExpression") {
+            consider(statement.declaration, "default");
         }
     }
     if (found.length === 0 || declaresInModule(program, "Symbol") || declaresInModule(program, "globalThis")) return null;
-    const identify = uniqueName(code, "identify$");
+    const identifier = uniqueName(code, "identify$");
     const edited = new MagicString(code);
-    for (const { call, binding } of found) {
-        edited.appendLeft(call.start, `${identify}(`);
-        edited.appendRight(call.end, `, ${JSON.stringify(`${id}#${binding}`)})`);
+    for (const { value, binding } of found) {
+        edited.appendLeft(value.start, `${identifier}(`);
+        edited.appendRight(value.end, `, ${JSON.stringify(`${id}#${binding}`)})`);
     }
     const ids = JSON.stringify(idsName);
-    edited.append(`\nfunction ${identify}(symbol, id) { const ids = Symbol.for(${ids}); (globalThis[ids] || (globalThis[ids] = new Map())).set(symbol, id); return symbol; }\n`);
+    edited.append(`\nfunction ${identifier}(value, id) { const ids = Symbol.for(${ids}); (globalThis[ids] || (globalThis[ids] = new Map())).set(value, id); return value; }\n`);
     return { code: edited.toString(), map: edited.generateMap({ source: id, hires: "boundary", includeContent: true }) };
 };

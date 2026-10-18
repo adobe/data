@@ -1,5 +1,6 @@
 import { declarationOf, kindOf, labelOf } from '../registry/names.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
+import { nameOf } from '../registry/items.js';
 import { addRule } from '../registry/program.js';
 import type { Rule as Created } from './created.js';
 import type { Declaration } from './declaration.js';
@@ -11,7 +12,8 @@ import type { Rule } from './rule.js';
  */
 export const create = <const D extends Declaration>(declaration: D): Rule => {
     const id = takeIdOfDeclaration(declaration);
-    const { name, components, derive } = declaration;
+    const name = nameOf(declaration.name, id, "rule");
+    const { components, derive } = declaration;
     for (const key of [...components.has ?? [], ...components.not ?? [], ...derive]) {
         if (kindOf(key) !== "component") throw new Error(`Rule "${name}" uses "${labelOf(key)}", which isn't a registered component.`);
     }

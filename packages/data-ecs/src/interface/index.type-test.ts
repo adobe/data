@@ -1,4 +1,4 @@
-import { Component, Entity, Finalizer, Resource, Rule, System, gpuDevice, workers, type Gpu, type Thread, type World } from "@adobe/data-ecs";
+import { Component, Entity, Finalizer, Observe, Resource, Rule, System, gpuDevice, workers, type Gpu, type Thread, type World } from "@adobe/data-ecs";
 
 // A consumer emits declarations for the values it makes from the public interface, naming no internal module.
 export const position = Symbol("indexTypeTest/position");
@@ -38,3 +38,7 @@ export const counted = world.observe.count({ required: [position] });
 export const report = world.run(all);
 export const shader = wgsl(draw);
 export const thread: Thread = "main";
+
+// `Observe` is the type of an observer and the namespace of its helpers.
+export const first: Promise<number> = Observe.toPromise(world.observe.resource(scale));
+export const observed: Observe<number> = world.observe.resource(scale);

@@ -121,9 +121,9 @@ world.run(move, { distance: "far" });
 // @ts-expect-error a system without input takes none
 world.run(main, {});
 
-// The same shape as @adobe/data's Observe, without depending on it.
-type AdobeObserve<T> = (notify: (value: T) => void) => () => void;
-const observed: AdobeObserve<number> = world.observe.resource(time);
+// A plain subscribe function: any function of this shape is one.
+type PlainObserve<T> = (notify: (value: T) => void) => () => void;
+const observed: PlainObserve<number> = world.observe.resource(time);
 const typed: Observe<number> = world.observe.resource(time);
 const stop: () => void = typed(value => { const time: number = value; void time; });
 // @ts-expect-error a resource's value has its type

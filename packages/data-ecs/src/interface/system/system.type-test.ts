@@ -53,7 +53,7 @@ System.create({
     name: "test/integrate",
     // @ts-expect-error write already makes it readable
     components: { read: [position], write: [position] },
-}, row => { row[position] += 1; });
+}, () => {});
 
 // Lookups: read-only values by entity, or null.
 export const follow = System.create({
@@ -117,7 +117,7 @@ System.create({
     name: "test/tally",
     // @ts-expect-error write already makes a resource readable
     resources: { read: [score], write: [score] },
-}, ({ resources }) => { resources[score] += 1; });
+}, () => {});
 
 System.create({
     name: "test/integrate",
@@ -300,3 +300,25 @@ System.render({
     components: { read: [position] },
     shader: { accessors: { place: position } },
 }, () => {});
+
+// Names are optional: a declaration may leave it out, and a system that declares nothing is just its body.
+export const unnamed = System.create({ components: { write: [position] }, resources: { read: [time] } }, (row, { resources }) => {
+    row[position] += resources[time];
+});
+check<Equal<typeof unnamed, System>>();
+export const unnamedInput = System.create({ input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input }) => {
+    const count: number = input.count;
+    void count;
+});
+check<Equal<typeof unnamedInput, System<{ readonly count: number }>>>();
+export const bodyOnly = System.create(({ commands }) => {
+    commands.spawn([position])({ [position]: 0 });
+});
+check<Equal<typeof bodyOnly, System>>();
+// @ts-expect-error a body alone declares no resources
+System.create(({ resources }) => { void resources; });
+// @ts-expect-error a body alone runs once per run, so it has no row
+System.create((row: { readonly entity: Entity }) => { void row; });
+export const unnamedAll = System.composite({ systems: [unnamed, bodyOnly] });
+check<Equal<typeof unnamedAll, System>>();
+System.render({ shader: { accessors: { place: position } } }, gpu => { void gpu.encoder; });

@@ -20,10 +20,10 @@ Component.register(value, { type: { type: "number" } });
 Component.register(other, { type: { type: "number" } });
 
 /** Systems built as values, not registered, so each test's are its own. */
-const leaf = (declaration: Declaration): Leaf => ({ kind: "system", name: declaration.name, declaration, body: () => {} });
-const composite = (declaration: Composite["declaration"]): Composite => ({ kind: "composite", name: declaration.name, declaration });
+const leaf = (declaration: Declaration & { readonly name: string }): Leaf => ({ kind: "system", name: declaration.name, declaration, body: () => {} });
+const composite = (declaration: Composite["declaration"] & { readonly name: string }): Composite => ({ kind: "composite", name: declaration.name, declaration });
 
-const names = (system: Definition): string[][] => scheduleOf(system).tiers.map(tier => tier.map(leaf => leaf.declaration.name));
+const names = (system: Definition): string[][] => scheduleOf(system).tiers.map(tier => tier.map(leaf => leaf.name));
 
 describe("scheduleOf", () => {
     it("tiers by longest ordering path, keeping flatten order within a tier", () => {
@@ -110,7 +110,7 @@ describe("scheduleOf", () => {
         const b = leaf({ name: "scheduleTest/b", components: { read: [value] } });
         const c = leaf({ name: "scheduleTest/c", components: { write: [other] }, during: [a] });
         expect(() => scheduleOf(composite({ name: "scheduleTest/root", systems: [a, b] }))).toThrow('"scheduleTest/a" and "scheduleTest/b"');
-        const ordered = leaf({ ...b.declaration, after: [a] });
+        const ordered = leaf({ ...b.declaration, name: b.name, after: [a] });
         expect(names(composite({ name: "scheduleTest/root", systems: [a, ordered, c] })))
             .toEqual([["scheduleTest/a", "scheduleTest/c"], ["scheduleTest/b"]]);
     });

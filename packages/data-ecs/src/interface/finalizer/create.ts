@@ -1,5 +1,6 @@
 import { declarationOf, kindOf, labelOf } from '../registry/names.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
+import { nameOf } from '../registry/items.js';
 import { addFinalizer } from '../registry/program.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
@@ -39,14 +40,15 @@ export const create = <const D extends Declaration>(
     body: (row: Row<D>, context: Context<D>) => void,
 ): Finalizer => {
     const id = takeIdOfDeclaration(declaration);
-    const finalizer: Leaf<D> = { kind: "finalizer", name: declaration.name, declaration, body };
-    checkResources(declaration.name, declaration.resources);
-    threadOf(declaration, "Finalizer");
-    requireRegistered("Finalizer", declaration.name, "component", declaration.components.has);
-    requireRegistered("Finalizer", declaration.name, "component", declaration.components.not);
-    for (const name in declaration.lookup) {
-        requireRegistered("Finalizer", declaration.name, "component", declaration.lookup[name].has);
-        requireRegistered("Finalizer", declaration.name, "component", declaration.lookup[name].not);
+    const name = nameOf(declaration.name, id, "finalizer");
+    const finalizer: Leaf<D> = { kind: "finalizer", name, declaration, body };
+    checkResources(name, declaration.resources);
+    threadOf(declaration, "Finalizer", name);
+    requireRegistered("Finalizer", name, "component", declaration.components.has);
+    requireRegistered("Finalizer", name, "component", declaration.components.not);
+    for (const lookupName in declaration.lookup) {
+        requireRegistered("Finalizer", name, "component", declaration.lookup[lookupName].has);
+        requireRegistered("Finalizer", name, "component", declaration.lookup[lookupName].not);
     }
     return addFinalizer(finalizer, id);
 };
@@ -60,17 +62,18 @@ export const changes = <const D extends ChangesDeclaration>(
     body: (changes: ChangeSet<Watched<D>>, context: Context<D>) => void,
 ): Finalizer => {
     const id = takeIdOfDeclaration(declaration);
-    const finalizer: Changes<D> = { kind: "changes", name: declaration.name, declaration, body };
-    checkResources(declaration.name, declaration.resources);
-    requireRegistered("Finalizer", declaration.name, "resource", declaration.resources?.read);
-    requireRegistered("Finalizer", declaration.name, "resource", declaration.resources?.write);
-    for (const name in declaration.lookup) {
-        const { read, has, not } = declaration.lookup[name];
-        for (const keys of [read, has, not]) requireRegistered("Finalizer", declaration.name, "component", keys);
+    const name = nameOf(declaration.name, id, "finalizer");
+    const finalizer: Changes<D> = { kind: "changes", name, declaration, body };
+    checkResources(name, declaration.resources);
+    requireRegistered("Finalizer", name, "resource", declaration.resources?.read);
+    requireRegistered("Finalizer", name, "resource", declaration.resources?.write);
+    for (const lookupName in declaration.lookup) {
+        const { read, has, not } = declaration.lookup[lookupName];
+        for (const keys of [read, has, not]) requireRegistered("Finalizer", name, "component", keys);
     }
     for (const key of declaration.watch ?? []) {
-        if (kindOf(key) !== "component") throw new Error(`Finalizer "${declaration.name}" watches "${labelOf(key)}", which isn't a registered component.`);
-        if (declarationOf(key)?.derived === true) throw new Error(`Finalizer "${declaration.name}" watches "${labelOf(key)}", which is derived; it sees only components user code adds and removes.`);
+        if (kindOf(key) !== "component") throw new Error(`Finalizer "${name}" watches "${labelOf(key)}", which isn't a registered component.`);
+        if (declarationOf(key)?.derived === true) throw new Error(`Finalizer "${name}" watches "${labelOf(key)}", which is derived; it sees only components user code adds and removes.`);
     }
     return addFinalizer(finalizer, id);
 };

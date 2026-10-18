@@ -86,3 +86,18 @@ export const recordItem = (item: Registered, id: string | undefined, existing: o
     if (id !== undefined) identified.set(id, entry);
     entries.set(item, entry);
 };
+
+/** How many items of each kind were declared without a name or an id, to number their labels. */
+const anonymous = new Map<string, number>();
+
+/**
+ * An item's name: the one its declaration gives; without one, its binding with the id the plugin gave it
+ * (`spawn (src/setup.ts#spawn)`), and without an id, its kind numbered by creation (`system #3`).
+ */
+export const nameOf = (name: string | undefined, id: string | undefined, kind: "system" | "rule" | "finalizer"): string => {
+    if (name !== undefined) return name;
+    if (id !== undefined) return `${id.slice(id.lastIndexOf("#") + 1)} (${id})`;
+    const count = (anonymous.get(kind) ?? 0) + 1;
+    anonymous.set(kind, count);
+    return `${kind} #${count}`;
+};

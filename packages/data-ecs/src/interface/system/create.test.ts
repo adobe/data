@@ -81,6 +81,20 @@ describe("System.create", () => {
         expect(() => System.composite(identify({ name: "typesSystemTest/linked", systems: [first] }, "a.ts#linked"))).toThrow("its id is a system's");
         expect(labelOfItem(declare("c.ts#linked", false))).toBe("typesSystemTest/linked (c.ts#linked)");
     });
+    it("names a system declared without a name by its binding and id, or else by its kind numbered", () => {
+        const body = ({ commands }: { readonly commands: System.Commands }): void => { commands.spawn([position])({ [position]: 0 }); };
+        const alone = System.create(identify(body, "setup.ts#spawnOnce"));
+        expect(definitionOf(alone)).toEqual({ kind: "system", name: "spawnOnce (setup.ts#spawnOnce)", declaration: {}, body });
+        expect(labelOfItem(alone)).toBe("spawnOnce (setup.ts#spawnOnce)");
+        expect(sameItem(System.create(identify(body, "setup.ts#spawnOnce")), alone)).toBe(true);
+        const show = System.create(identify({ components: { read: [position] } }, "show.ts#show"), row => { void row[position]; });
+        expect(labelOfItem(show)).toBe("show (show.ts#show)");
+        const [first, second] = [System.create(() => {}), System.composite({ systems: [show] })].map(labelOfItem);
+        const number = Number(first?.slice("system #".length));
+        expect([first, second]).toEqual([`system #${number}`, `system #${number + 1}`]);
+        expect(labelOfItem(System.render({ shader: { accessors: {} } }, () => {}))).toBe(`system #${number + 2}`);
+        expect(() => create({ components: { read: [position], write: [position] } })).toThrow(`System "system #${number + 3}" lists "typesSystemTest/position" in both components read and write`);
+    });
     it("rejects writing what only the world writes, for untyped callers", () => {
         expect(() => create({ name: "typesSystemTest/clock", resources: { write: [clock] } })).toThrow(`writes "clock", which only the world writes`);
         expect(() => create({ name: "typesSystemTest/report", resources: { write: [report] } })).toThrow(`writes "report", which only the world writes`);
@@ -122,7 +136,7 @@ describe("System.create", () => {
         const count = System.create({ name: "typesSystemTest/count", components: { read: [label], has: [node] } }, row => { void row[label]; });
         const tick = System.create({ name: "typesSystemTest/tick", components: { write: [position] } }, row => { row[position] += 1; });
         const leaves = [show, count, tick].map(system => definitionOf(system));
-        expect(leaves.map(leaf => leaf === undefined || leaf.kind === "composite" ? undefined : threadOf(leaf.declaration, "System"))).toEqual(["main", "world", null]);
+        expect(leaves.map(leaf => leaf === undefined || leaf.kind === "composite" ? undefined : threadOf(leaf.declaration, "System", leaf.name))).toEqual(["main", "world", null]);
         expect(() => create({ name: "typesSystemTest/span", components: { read: [label], write: [node] } })).toThrow('System "typesSystemTest/span" uses values on threads "world" and "main"');
         expect(() => create({ name: "typesSystemTest/spanResource", components: { read: [label] }, resources: { is: [document] } })).toThrow('uses values on threads "world" and "main"');
         expect(() => create({ name: "typesSystemTest/unregistered", components: { read: [unregistered] } })).toThrow(`uses component "typesSystemTest/unregistered", which isn't a registered component`);

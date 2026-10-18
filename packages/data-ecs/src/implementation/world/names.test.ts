@@ -38,6 +38,7 @@ Finalizer.create({ name: "namesTest/linked", components: { read: [value] } }, ro
 const ran: string[] = [];
 const spawn = System.create({ name: "namesTest/spawn" }, ({ commands }) => { commands.spawn([value])({ [value]: 1 }); });
 const despawn = System.create({ name: "namesTest/despawn", components: { has: [value] } }, (row, { commands }) => { commands.despawn(row.entity); });
+const failOnce = System.create(() => { throw new Error("unnamed"); });
 
 describe("systems, rules and finalizers of one name", () => {
     it("are distinct in schedules, both run, and are told apart in reports by their labels", async () => {
@@ -70,5 +71,9 @@ describe("systems, rules and finalizers of one name", () => {
         await world.run(System.create({ name: "namesTest/spawnOther" }, ({ commands }) => { commands.spawn([other])({ [other]: 0 }); }));
         const names = async (system: System) => (await world.run(system)).failures.map(failure => failure.name);
         expect([await names(one), await names(two)]).toEqual([["namesTest/library (one.ts#library)"], ["namesTest/library (two.ts#library)"]]);
+    });
+    it("label a system without a name by its binding and the id the plugin gave it", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        expect((await world.run(failOnce)).failures.map(failure => failure.name)).toEqual(["failOnce (@adobe/data-ecs/src/implementation/world/names.test.ts#failOnce)"]);
     });
 });

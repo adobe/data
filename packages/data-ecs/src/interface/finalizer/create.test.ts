@@ -103,3 +103,13 @@ describe("Rule.create", () => {
         expect(programRules()).toHaveLength(3);
     });
 });
+
+describe("rules and finalizers without a name", () => {
+    it("are named by their binding and id, or else by their kind numbered", () => {
+        const rule = Rule.create(identify({ components: { has: [node] }, derive: [slot] }, "rules.ts#slotted"));
+        const release = Finalizer.create(identify({ components: { read: [node] } }, "finalizers.ts#release"), () => {});
+        expect([rule, release].map(labelOfItem)).toEqual(["slotted (rules.ts#slotted)", "release (finalizers.ts#release)"]);
+        const labels = [Rule.create({ components: { has: [label] }, derive: [slot] }), Finalizer.changes({ watch: [label] }, () => {})].map(labelOfItem);
+        expect(labels.map(found => found.replace(/#\d+$/, "#n"))).toEqual(["rule #n", "finalizer #n"]);
+    });
+});

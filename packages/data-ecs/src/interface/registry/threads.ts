@@ -12,7 +12,6 @@ type Lists = {
 
 /** What places a system or finalizer: the names it reads, writes or filters on by change, but not `has` and `not`. */
 export type Placed = {
-    readonly name: string;
     readonly components?: Lists;
     readonly lookup?: { readonly [name: string]: { readonly read?: readonly Key[] } };
     readonly up?: { readonly read?: readonly Key[] };
@@ -32,10 +31,10 @@ export const requireRegistered = (what: "System" | "Finalizer", name: string, ki
  * The thread a system or finalizer runs on: the one its object components and resources live on, or null when it uses
  * none. Throws when they live on different threads, or a name it's placed by isn't registered as its kind.
  */
-export const threadOf = (declaration: Placed, what: "System" | "Finalizer"): string | null => {
+export const threadOf = (declaration: Placed, what: "System" | "Finalizer", name: string): string | null => {
     const threads = new Set<string>();
     const add = (kind: "component" | "resource", keys: readonly Key[] | undefined): void => {
-        requireRegistered(what, declaration.name, kind, keys);
+        requireRegistered(what, name, kind, keys);
         for (const key of keys ?? []) {
             const found = declarationOf(key);
             const thread = found === undefined ? null : threadOfDeclaration(found);
@@ -55,7 +54,7 @@ export const threadOf = (declaration: Placed, what: "System" | "Finalizer"): str
     add("resource", resources?.is);
     const found = [...threads];
     if (found.length > 1) {
-        throw new Error(`${what} "${declaration.name}" uses values on threads ${found.map(thread => `"${thread}"`).join(" and ")}; its object components and resources live on one thread.`);
+        throw new Error(`${what} "${name}" uses values on threads ${found.map(thread => `"${thread}"`).join(" and ")}; its object components and resources live on one thread.`);
     }
     return found[0] ?? null;
 };

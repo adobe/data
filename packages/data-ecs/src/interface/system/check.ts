@@ -24,7 +24,8 @@ const checkLists = (name: string, what: string, lists: { readonly read?: readonl
  * or filters on it, or writes a resource that's reduced, which only its contributors' fold sets.
  */
 const checkReductions = (leaf: Leaf): void => {
-    const { name, reduce, resources } = leaf.declaration;
+    const { name } = leaf;
+    const { reduce, resources } = leaf.declaration;
     const others = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? []]);
     for (const key of reducedBy(leaf)) {
         const declared = declarationOf(key)?.reduce;
@@ -43,7 +44,8 @@ const checkReductions = (leaf: Leaf): void => {
  * read or written: `is` already makes it readable.
  */
 const checkConditions = (leaf: Leaf): void => {
-    const { name, resources } = leaf.declaration;
+    const { name } = leaf;
+    const { resources } = leaf.declaration;
     const is = resources?.is ?? [];
     const not = resources?.not ?? [];
     const listed = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? []]);
@@ -65,7 +67,8 @@ const checkConditions = (leaf: Leaf): void => {
  * reductions, and a render system's reductions.
  */
 const checkPlacement = (leaf: Leaf): void => {
-    const { name, kernel, components, lookup, up, resources } = leaf.declaration;
+    const { name } = leaf;
+    const { kernel, components, lookup, up, resources } = leaf.declaration;
     const fail = (message: string): never => { throw new Error(`System "${name}" ${message}.`); };
     if (up !== undefined) {
         if (components === undefined) fail("uses up, which orders rows, without components");
@@ -97,8 +100,8 @@ const checkPlacement = (leaf: Leaf): void => {
  * can't hold.
  */
 export const checkLeaf = (leaf: Leaf): void => {
-    const { declaration } = leaf;
-    const { name, components, resources, lookup, input } = declaration;
+    const { name, declaration } = leaf;
+    const { components, resources, lookup, input } = declaration;
     checkLists(name, "components", components);
     checkLists(name, "resources", resources);
     checkWorldWritten(`System "${name}"`, resources?.write);
@@ -114,7 +117,7 @@ export const checkLeaf = (leaf: Leaf): void => {
             throw new Error(`System "${name}": input is an object schema of named fields.`);
         }
     }
-    threadOf(declaration, "System");
+    threadOf(declaration, "System", name);
     requireRegistered("System", name, "component", components?.has);
     requireRegistered("System", name, "component", components?.not);
     for (const lookupName in lookup) {

@@ -1,5 +1,6 @@
 import type { Component } from '../component/component.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
+import { nameOf } from '../registry/items.js';
 import { claimSystem } from '../registry/program.js';
 import type { Condition } from '../resource/condition.js';
 import type { Resource } from '../resource/resource.js';
@@ -37,7 +38,7 @@ export type RenderContext = {
 };
 
 type RenderDeclaration = {
-    readonly name: Name;
+    readonly name?: Name;
     /** It reads the components its accessors name. */
     readonly components?: { readonly has?: readonly Component.Key[]; readonly not?: readonly Component.Key[] };
     /** It runs only while `gpuDevice` is set, as if `is` listed it. */
@@ -61,9 +62,10 @@ export const render = <const D extends RenderDeclaration>(
     body: Body<Rendered<D>>,
 ): System => {
     const id = takeIdOfDeclaration(declaration);
+    const name = nameOf(declaration.name, id, "system");
     const system: Leaf & System = {
         kind: "render",
-        name: declaration.name,
+        name,
         declaration: {
             ...declaration,
             components: { ...declaration.components, read: [...new Set(Object.values(declaration.shader.accessors))] },
@@ -73,7 +75,7 @@ export const render = <const D extends RenderDeclaration>(
     };
     checkLeaf(system);
     const accessors = accessorsOf(declaration.shader);
-    if (typeof accessors === "string") throw new Error(`System "${declaration.name}" can't render: ${accessors}.`);
+    if (typeof accessors === "string") throw new Error(`System "${name}" can't render: ${accessors}.`);
     claimSystem(system, id);
     return system;
 };

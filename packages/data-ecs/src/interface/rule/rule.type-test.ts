@@ -102,3 +102,9 @@ void sameName;
 // Rules and finalizers apply in every world.
 declare const create: World.Create;
 export const created: World = create();
+
+// Names are optional for rules and finalizers too.
+const unnamedRule: Rule = Rule.create({ components: { has: [source] }, derive: [slot] });
+const unnamedFinalizer: Finalizer = Finalizer.create({ components: { read: [source] } }, row => { void row[source]; });
+const unnamedChanges: Finalizer = Finalizer.changes({ watch: [source] }, changes => { void changes.groups; });
+void [unnamedRule, unnamedFinalizer, unnamedChanges];

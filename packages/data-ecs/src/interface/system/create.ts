@@ -1,9 +1,11 @@
 import type { Component } from '../component/component.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
+import { nameOf } from '../registry/items.js';
 import { claimSystem } from '../registry/program.js';
 import type { Resource } from '../resource/resource.js';
 import type { Schema } from '../schema/schema.js';
 import type { Body } from './body.js';
+import type { Commands } from './commands.js';
 import { checkComposite, checkLeaf } from './check.js';
 import type { Composite } from './composite.js';
 import type { CompositeDeclaration } from './composite-declaration.js';
@@ -58,18 +60,28 @@ type Validate<D extends Declaration> =
     & (Property<D, "components"> extends undefined ? { readonly up?: { readonly [key: string]: never } } : {})
     & { readonly shader?: never };
 
+/** The body of a system that declares nothing, which runs once per run with its commands. */
+type Alone = (context: { readonly commands: Commands }) => void;
+
 /**
- * Declares a system and returns it; nothing runs. Throws if it names a key that isn't registered as its kind, lists a
- * key in both `read` and `write`, writes a reference, a lookup reads a component it writes, its object components and
- * resources live on different threads, or its reductions, conditions, `up` or placement can't hold.
+ * Declares a system and returns it; nothing runs. A system that declares nothing is created from its body alone, which
+ * runs once per run with its commands. Throws if it names a key that isn't registered as its kind, lists a key in both
+ * `read` and `write`, writes a reference, a lookup reads a component it writes, its object components and resources
+ * live on different threads, or its reductions, conditions, `up` or placement can't hold.
  */
-export const create = <const D extends Declaration>(declaration: D & Validate<D> & OneThread<ThreadsOf<D>>, body: Body<D>): System<InputOf<D>> => {
-    const id = takeIdOfDeclaration(declaration);
-    const system: Leaf & System<InputOf<D>> = { kind: "system", name: declaration.name, declaration, body };
+export function create(body: Alone): System;
+export function create<const D extends Declaration>(declaration: D & Validate<D> & OneThread<ThreadsOf<D>>, body: Body<D>): System<InputOf<D>>;
+export function create(first: Declaration | Leaf["body"], second?: Leaf["body"]): System<unknown> {
+    const declaration: Declaration = typeof first === "function" ? {} : first;
+    const body = typeof first === "function" ? first : second;
+    if (body === undefined) throw new Error("A system needs a body.");
+    // The plugin gives its id to the call's first argument: the declaration, or the body made into a system alone.
+    const id = takeIdOfDeclaration(first);
+    const system: Leaf & System<unknown> = { kind: "system", name: nameOf(declaration.name, id, "system"), declaration, body };
     checkLeaf(system);
     claimSystem(system, id);
     return system;
-};
+}
 
 /**
  * Declares a system made of subsystems, which may live on different threads, and returns it. Throws if a member isn't
@@ -77,7 +89,7 @@ export const create = <const D extends Declaration>(declaration: D & Validate<D>
  */
 export const composite = <const D extends CompositeDeclaration>(declaration: D & { readonly systems: CheckMembers<D["systems"]> }): System<CompositeInputOf<D["systems"]>> => {
     const id = takeIdOfDeclaration(declaration);
-    const system: Composite & System<CompositeInputOf<D["systems"]>> = { kind: "composite", name: declaration.name, declaration };
+    const system: Composite & System<CompositeInputOf<D["systems"]>> = { kind: "composite", name: nameOf(declaration.name, id, "system"), declaration };
     checkComposite(system);
     claimSystem(system, id);
     return system;

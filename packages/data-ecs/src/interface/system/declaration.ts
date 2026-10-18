@@ -12,7 +12,7 @@ import type { OperatorOf, Reduced } from '../resource/reduction.js';
  * Without them, a kernel runs on the kernel pool and any other system on `"world"`.
  */
 export type Declaration = {
-    readonly name: Name;
+    readonly name?: Name;
     /**
      * Compiled to a kernel, which the build rejects if the body leaves the kernel subset. Values in `components` and
      * `lookup` must be structs and resources read-only. Without it, the system runs as written, on its thread.

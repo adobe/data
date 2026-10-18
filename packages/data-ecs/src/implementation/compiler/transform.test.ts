@@ -878,6 +878,11 @@ describe("commands in main-thread systems", () => {
         expect(calls).toEqual([["prepared", ["score"], ["score"], [1]]]);
     });
 
+    test("pass values positionally in a system made from its body alone", async () => {
+        const result = await transform("const system = System.create(({ commands }) => { commands.spawn([score])({ [score]: 1 }); });");
+        expect(result !== null && "code" in result ? result.code : null).toContain("spawn$0(commands, [score], 1)");
+    });
+
     test.each([
         ["a value object built first", "const values = { [score]: 1 }; commands.spawn([score])(values);"],
         ["a spread", "const values = { [score]: 1 }; commands.spawn([score, mass])({ ...values, [mass]: 2 });"],

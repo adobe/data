@@ -157,7 +157,11 @@ export const transformKernels = async (
     const visit = (node: Node, nested: boolean): void => {
         const created = node.type === "CallExpression" ? createdBy(node, locals) : null;
         if (node.type === "CallExpression" && created !== null) {
-            const [declaration, body] = node.arguments;
+            const [first, second] = node.arguments;
+            // A system that declares nothing is made from its body alone, which takes only its context.
+            const alone = created === "system" && first !== undefined && isFunction(first) && second === undefined;
+            const declaration = alone ? undefined : first;
+            const body = alone ? first : second;
             const target = declaration?.type === "ObjectExpression" ? kernelOf(declaration) : null;
             if (declaration?.type === "ObjectExpression" && target !== null) {
                 if (nested) fail(node, "kernel systems must be declared at module scope");
@@ -165,7 +169,7 @@ export const transformKernels = async (
                 sites.push({ node, declaration, body, target });
                 return;
             }
-            const positions = declaration?.type === "ObjectExpression" ? positionsOf(created, declaration) : null;
+            const positions = alone ? { row: -1, context: 0 } : declaration?.type === "ObjectExpression" ? positionsOf(created, declaration) : null;
             if (declaration?.type === "ObjectExpression" && positions !== null && body !== undefined && body.type !== "SpreadElement") {
                 requireExact(declaration, usedBy(declaration, body, module.bindings, positions), module.bindings, mainThreadLists);
             }

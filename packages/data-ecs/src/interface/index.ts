@@ -12,7 +12,7 @@ export { System } from './system/system.js';
 export { Trait } from './trait/trait.js';
 export type { World } from './world/world.js';
 export type { Observers } from './world/observers.js';
-export type { Observe } from './observe/observe.js';
+export { Observe } from './observe/observe.js';
 export type { Components } from './component/types.js';
 export type { Resources } from './resource/types.js';
 export type { Traits } from './trait/types.js';

@@ -205,11 +205,15 @@ spins as long for the next, each about one wake-up's latency, since a tick's tas
 Consecutive tiers whose systems are all on one joined thread go as one task, with no barrier between them.
 
 **A joined thread returns to its event loop at least once a tick,** so its timers, rendering and promises' callbacks
-run however fast the world ticks: the world bumps a run word in the log header once each run's or tick's sync point is
-done, before its tails are posted, and the thread takes a turn of its event loop (`setImmediate` in node, a message to
-itself in a browser) instead of going on synchronously once that word moved since its last turn, which is after the
-tick's last task there or its tails, after a wake that wasn't a task, and after at most 2 ms of work, a task's own
-length aside. A wait that resolves asynchronously is a turn already.
+run however fast the world ticks: the world bumps a run word in the log header once a run's or tick's tiers are done,
+before its sync point and tails, and a thread holding claims takes a turn of its event loop rather than go on
+synchronously once that word moved since its last turn, so after the tick's last task there, while the world applies
+the sync point; any thread takes one after at most 2 ms of work, a task's own length aside. A wait that resolves
+asynchronously is a turn already. A turn costs about a microsecond: a message to itself in a browser, and in node,
+whose messages can arrive without its timers running, a wait on a word of its own that times out at once (a timed
+wait in a browser takes a millisecond). The trade: about 2 µs a tick where ticks follow each other back to back
+(`handoff` +15%, `tail prompt` +13% in node, +10% and +15% in chromium; `fused tiers` and `remote run` within noise);
+none for ticks a frame apart, between which the thread waits anyway.
 
 ### Thread ports
 

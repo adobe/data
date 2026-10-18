@@ -392,6 +392,8 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
         }
     }
     finally {
+        // This run's tasks on joined threads are done: they return to their event loops while its sync point applies.
+        for (let k = 0; k < state.logs.length; k++) markRun(state.logs[k]);
         try {
             if (gpu !== null) {
                 gpu.submit();
@@ -432,8 +434,6 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
         finally {
             rewind(state, workers);
             publish();
-            // This run's tasks on joined threads are done, which return to their event loops.
-            for (let k = 0; k < state.logs.length; k++) markRun(state.logs[k]);
         }
     }
     if (tailing !== null) {

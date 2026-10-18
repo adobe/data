@@ -29,7 +29,7 @@ export const logFinalizedWord = 8;
  */
 export const logBoundedWord = 9;
 export const logBoundWord = 10;
-/** The runs and ticks the world finished, modulo 2^32: a joined thread returns to its event loop once each. */
+/** The runs and ticks whose tiers the world finished, modulo 2^32: a joined thread returns to its event loop once each. */
 export const logRunWord = 11;
 export const logHeaderBytes = 64;
 
@@ -211,7 +211,7 @@ export const publishLog = (log: MoveLog): void => {
     log.headed = false;
 };
 
-/** Once a run's or tick's sync point is done, before its tails are posted. */
+/** Once a run's or tick's tiers are done, before its sync point and tails. */
 export const markRun = (log: MoveLog): void => {
     Atomics.add(log.header, logRunWord, 1);
 };

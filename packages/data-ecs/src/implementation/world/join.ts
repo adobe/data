@@ -59,12 +59,23 @@ const taskSpinMilliseconds = 0.02;
 /** The most a joined thread works without returning to its event loop, where it can't be cut short: a task. */
 const busyMilliseconds = 2;
 
+/** A turn's timeout in node: as short as it can be while still resolving as a task. */
+const turnMilliseconds = 0.001;
+
 /**
- * Resolves on a later turn of this thread's event loop, after what was queued before it: node's `setImmediate`, which
- * runs after the turn's timers and I/O, or else a message to itself, a task as a timer's is.
+ * Resolves on a later turn of this thread's event loop, once what was due there ran, timers included, at about a
+ * microsecond's cost: in a browser a message to itself, a task as a timer's is; in node, whose messages a turn can
+ * deliver without running timers, a wait on a word of its own that times out at once, which resolves as a task, where
+ * a browser's would take at least a millisecond.
  */
 const createTurn = (): (() => Promise<void>) => {
-    if (typeof globalThis.setImmediate === "function") return () => new Promise(resolve => { setImmediate(resolve); });
+    if (globalThis.process?.versions?.node !== undefined) {
+        const word = new Int32Array(new SharedArrayBuffer(4));
+        return async () => {
+            const waited = Atomics.waitAsync(word, 0, 0, turnMilliseconds);
+            if (waited.async) await waited.value;
+        };
+    }
     const { port1, port2 } = new MessageChannel();
     const waiting: (() => void)[] = [];
     port1.onmessage = () => waiting.shift()?.();
@@ -339,10 +350,10 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         turnedAt = performance.now();
     };
     /**
-     * Whether to return to the event loop before going on: once a run or tick finished since it last did, which is
-     * after the tick's last task here or its tails, after a wake that wasn't a task, or after `busyMilliseconds`.
+     * Whether to return to the event loop before going on: once a run's or tick's tiers finished since it last did,
+     * which is after the tick's last task here, or after `busyMilliseconds`.
      */
-    const due = (tasked: boolean): boolean => !tasked || runNow() !== turnedRun || performance.now() - turnedAt > busyMilliseconds;
+    const due = (): boolean => runNow() !== turnedRun || performance.now() - turnedAt > busyMilliseconds;
     const nextTurn = async (): Promise<void> => {
         turn ??= createTurn();
         await turn();
@@ -368,7 +379,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 if (tasked) {
                     let deadline = performance.now() + taskSpinMilliseconds;
                     while (Atomics.load(control, signalWord) === seen && performance.now() < deadline) {
-                        if (!due(true)) continue;
+                        if (!due()) continue;
                         await nextTurn();
                         deadline = performance.now() + taskSpinMilliseconds;
                     }
@@ -376,7 +387,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 // A wake since this thread cleared the word may have notified no one, and the next wake won't notify
                 // while the word says this thread hasn't read it, so it reads again rather than wait.
                 if (Atomics.load(control, unreadWord) !== 0) {
-                    if (due(tasked)) await nextTurn();
+                    if (due()) await nextTurn();
                     continue;
                 }
                 const waited = Atomics.waitAsync(control, signalWord, seen);
@@ -384,7 +395,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                     await waited.value;
                     turned();
                 }
-                else if (due(tasked)) await nextTurn();
+                else if (due()) await nextTurn();
             }
         }
         finally {

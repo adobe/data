@@ -119,9 +119,13 @@ export const kernelPlugin = (): Plugin => {
     const kernels = new Map<string, readonly CachedKernel[]>();
     /** Reference ids of the kernel chunks a build emitted. */
     const chunks = new Set<string>();
-    /** The bundler gives chunks emitted under one name one reference, so each kernel's name carries its hash. */
+    /**
+     * The bundler gives chunks emitted under one name one reference, so each kernel's name carries its hash. Its
+     * `create` is imported at run time, which the bundle can't see, so the chunk keeps its exports even where the
+     * build drops entries' signatures, as an application's does.
+     */
     const emitChunk = (context: Rollup.PluginContext, id: string, hash: string): string => {
-        const referenceId = context.emitFile({ type: "chunk", id, name: `kernel-${hash}` });
+        const referenceId = context.emitFile({ type: "chunk", id, name: `kernel-${hash}`, preserveSignature: "exports-only" });
         chunks.add(referenceId);
         return referenceId;
     };

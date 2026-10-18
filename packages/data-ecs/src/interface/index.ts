@@ -1,3 +1,4 @@
+export { Archetype } from './archetype/archetype.js';
 export { Component } from './component/component.js';
 export { Entity } from './entity/entity.js';
 export { Finalizer } from './finalizer/finalizer.js';

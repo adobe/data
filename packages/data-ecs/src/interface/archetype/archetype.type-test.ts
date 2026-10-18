@@ -1,0 +1,32 @@
+import { Archetype, System, type World } from "@adobe/data-ecs";
+
+const position = Symbol("archetypeTypeTest/position");
+const velocity = Symbol("archetypeTypeTest/velocity");
+const scale = Symbol("archetypeTypeTest/scale");
+declare module "@adobe/data-ecs" {
+    interface Components {
+        [position]: { type: number };
+        [velocity]: { type: number };
+    }
+    interface Resources {
+        [scale]: { type: number };
+    }
+}
+
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+const expectType = <T extends true>(): T | undefined => undefined;
+
+// `create` returns its argument, typed as the tuple it was given.
+export const particle = Archetype.create([position, velocity]);
+expectType<Equal<typeof particle, readonly [typeof position, typeof velocity]>>();
+export const one: Archetype = particle;
+// A plain readonly list of components is an archetype too.
+export const plain: Archetype = [position];
+// @ts-expect-error a resource is never in an archetype
+Archetype.create([position, scale]);
+// @ts-expect-error nor is a string
+Archetype.create(["position"]);
+// Archetypes go wherever component lists do.
+export const move = System.create({ name: "archetypeTypeTest/move", components: { write: particle } }, row => { row[position] += row[velocity]; });
+declare const world: World;
+export const selected = world.observe.select({ required: particle, where: { [velocity]: { ">": 0 } } });

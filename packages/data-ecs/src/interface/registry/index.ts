@@ -21,3 +21,4 @@ export type { Leaf } from '../system/leaf.js';
 export type { Composite } from '../system/composite.js';
 export type { Rule } from '../rule/created.js';
 export type { Finalizer } from '../finalizer/created.js';
+export { archetypeIndexOf } from './archetypes.js';

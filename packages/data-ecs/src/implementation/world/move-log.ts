@@ -23,6 +23,12 @@ export const logDeliveredWord = 6;
 export const logStopsWord = 7;
 /** The sync the thread finalized through, which it stores once its finalizers ran for every stop through it. */
 export const logFinalizedWord = 8;
+/**
+ * While a tail is in flight on the thread, 1, and the sync it names, which the thread's replay stops at so the tail's
+ * rows stay those of that sync; the world stores them as it posts the tail and clears the flag once it's done.
+ */
+export const logBoundedWord = 9;
+export const logBoundWord = 10;
 export const logHeaderBytes = 64;
 
 /** An entry is four words; its first holds its kind in the low four bits, the added flag, and an archetype from bit 8. */

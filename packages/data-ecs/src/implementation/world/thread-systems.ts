@@ -541,16 +541,6 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         return control;
     };
 
-    // While a task is in flight, as a tail is while the world goes on, replay stops at the sync it names, so its rows
-    // stay those of that sync until it's done.
-    mirror.bound = (): number => {
-        const posted = Atomics.load(control, taskPostedWord);
-        if (posted === Atomics.load(control, taskDoneWord)) return -1;
-        refreshMemory();
-        viewTask();
-        return payload.length > payloadSync ? payload[payloadSync] : -1;
-    };
-
     /** A task waiting for a sync point to finish applying, to rebuild its mirror, runs once it has. */
     let structureWaited = false;
     const retryAfterStructure = (): void => {

@@ -6,7 +6,7 @@ import {
 } from './layout-directory.js';
 import {
     appendEntry, archetypeShift, entryWords, kindMask, logCapacityWord, logDeliveredWord, logHeaderBytes, logLimitWord, logOffsetWord,
-    logPublishedWord, logSyncWord, logVersionWord, moveEntry, nullTag, ownTag, rangeEntry, setEntry, slotTags, startTag, swapEntry, syncEntry,
+    logPublishedWord, logSyncWord, logVersionWord, logBoundWord, logBoundedWord, moveEntry, nullTag, ownTag, rangeEntry, setEntry, slotTags, startTag, swapEntry, syncEntry,
 } from './move-log.js';
 
 // A joined thread's object columns: by row, as the world's are, following the world's rows through the move log
@@ -77,11 +77,6 @@ export type Mirror = {
      * replay holds before that sync.
      */
     finalize: ((sync: number, old: Previously | null) => boolean) | null;
-    /**
-     * The sync replay stops at while a task is in flight here, as a tail is while the world goes on, so its rows stay
-     * those of its sync; -1 for none.
-     */
-    bound: (() => number) | null;
 };
 
 /** An entity's object before a rebuild, or `start` where it held none there. */
@@ -93,7 +88,7 @@ export const createMirror = (memory: WebAssembly.Memory, block: number, thread: 
         memory, thread, block, buffer: memory.buffer, words: new Uint32Array(0), signed: new Int32Array(0), header: new Int32Array(0),
         ring: new Uint32Array(0), ringEntities: new Float64Array(0), version: -1, mask: 0, position: 0, through: 0, tick: 0,
         keys: new Map(), starts: new Map(), archetypes: [], scratch: new Uint32Array(1024), scratchEntities: new Float64Array(0),
-        staged: [], head: 0, nextSlot: 0, rebuilds: 0, finalize: null, bound: null,
+        staged: [], head: 0, nextSlot: 0, rebuilds: 0, finalize: null,
     };
     refresh(mirror);
     return mirror;
@@ -370,9 +365,11 @@ export const replay = (mirror: Mirror): Replayed => {
     const { header } = mirror;
     if (Atomics.load(header, logVersionWord) !== mirror.version) return "lapped";
     if (mirror.ring.length === 0) viewRing(mirror);
-    const bound = mirror.bound === null ? -1 : mirror.bound();
+    // While a tail is in flight here, replay stops at its sync.
+    const held = Atomics.load(header, logBoundedWord) !== 0;
+    const bound = held ? Atomics.load(header, logBoundWord) >>> 0 : 0;
     const latest = Atomics.load(header, logSyncWord) >>> 0;
-    const bounded = bound >= 0 && ((latest - bound) | 0) > 0;
+    const bounded = held && ((latest - bound) | 0) > 0;
     const sync = bounded ? bound >>> 0 : latest;
     const published = Atomics.load(header, logPublishedWord) >>> 0;
     const count = (published - mirror.position) >>> 0;

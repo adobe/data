@@ -10,7 +10,7 @@ import { lineWords, type WorkerError } from './protocol.js';
 import { reductionTargets, type ReductionTarget } from './reductions.js';
 import { resourceWritesOf, type Runner } from './runner.js';
 import { idOf, type Key, type State } from './state.js';
-import { logSyncWord, type MoveLog } from './move-log.js';
+import { logBoundedWord, logBoundWord, logSyncWord, type MoveLog } from './move-log.js';
 import { createStopWriter, freeStops, type StopWriter } from './stop-lists.js';
 import { freeTail, stampWritten, type Tail } from './tails.js';
 import {
@@ -267,9 +267,14 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         }
         if (input) post({ protocol: "@adobe/data-ecs/join@1", kind: "task input", sequence: next, input: args });
         completionView[completionMessage] = 0;
+        if (tails) {
+            Atomics.store(log.header, logBoundWord, payloadView[payloadSync]);
+            Atomics.store(log.header, logBoundedWord, 1);
+        }
         Atomics.store(control, taskPostedWord, next);
         wake();
         const done = await whenDone(next);
+        if (tails) Atomics.store(log.header, logBoundedWord, 0);
         if (done) collect(flight);
         flying = null;
         return done;

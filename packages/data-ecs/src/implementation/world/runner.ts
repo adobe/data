@@ -153,6 +153,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
         return positionalSpawner(block, reserveFrom, batch, ids, ids.map(id => state.starts[id]));
     });
+    /** Whether the kernel spawns, so runs of every other system skip staging. */
+    const spawns = spawnBatches.length > 0;
     /** Stages in the current buffer the rows spawned since it took over, so they commit in its place in merge order. */
     const stageSpawns = (): void => {
         for (let b = 0; b < spawnBatches.length; b++) {
@@ -164,7 +166,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     };
     /** Moves `holder` to the run's next buffer, returning it as a chunk. */
     const nextChunk = (): ChunkResult => {
-        stageSpawns();
+        if (spawns) stageSpawns();
         const index = used;
         holder.buffer = nextBuffer();
         return ownedChunks[index] ??= { commands: holder.buffer };
@@ -677,7 +679,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         slotsUsed = 0;
         used = 0;
         // The last run's spawns were committed, or dropped with its sync point.
-        for (let b = 0; b < spawnBatches.length; b++) spawnBatches[b].count = unstaged[b] = 0;
+        if (spawns) for (let b = 0; b < spawnBatches.length; b++) spawnBatches[b].count = unstaged[b] = 0;
         const chunks = runChunks;
         // Truncated to one rather than emptied: emptying an array drops its backing store, which the push would allocate again.
         chunks.length = 1;
@@ -734,8 +736,10 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             return chunks;
         }
         finally {
-            stageSpawns();
-            endBlock(block, state.unused);
+            if (spawns) {
+                stageSpawns();
+                endBlock(block, state.unused);
+            }
             lastRun = tick;
         }
     };

@@ -145,6 +145,89 @@ export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly
     return row;
 };
 
+/** The row a shared-class row's value reads through, as its accessors' `this`. */
+const rowOfValue = Symbol("row");
+
+/** A row of shared class: its slots are its own, for the accessors every row of its shape shares. */
+type SharedRow = Row & { readonly slots: Slot[] };
+
+/** A shared-class row's value, as its accessors see it. */
+type SharedValue = { readonly [rowOfValue]: SharedRow };
+
+/** As `getterOf`, but one function for every row of a shape, finding its row and slot through the value. */
+const sharedGetterOf = (layout: Layout, i: number): (this: SharedValue) => unknown => {
+    if (layout.kind === "constant") {
+        const { value } = layout;
+        return () => value;
+    }
+    if (layout.kind === "object") return function (this: SharedValue): unknown {
+        const row = this[rowOfValue];
+        return row.slots[i].storage.values[row.index];
+    };
+    const { write, unitStride, unitOffset, lanes } = writeOf(layout);
+    if (write === writeF32Lanes && lanes === 2) return function (this: SharedValue): unknown {
+        const row = this[rowOfValue];
+        const { view } = row.slots[i];
+        const base = row.index * unitStride + unitOffset;
+        return [view[base], view[base + 1]];
+    };
+    if (write === writeF32Lanes && lanes === 3) return function (this: SharedValue): unknown {
+        const row = this[rowOfValue];
+        const { view } = row.slots[i];
+        const base = row.index * unitStride + unitOffset;
+        return [view[base], view[base + 1], view[base + 2]];
+    };
+    if (write === writeF32Lanes && lanes === 4) return function (this: SharedValue): unknown {
+        const row = this[rowOfValue];
+        const { view } = row.slots[i];
+        const base = row.index * unitStride + unitOffset;
+        return [view[base], view[base + 1], view[base + 2], view[base + 3]];
+    };
+    if (write !== writeGeneral && write !== writeF32Lanes) return function (this: SharedValue): unknown {
+        const row = this[rowOfValue];
+        return row.slots[i].view[row.index * unitStride + unitOffset];
+    };
+    return function (this: SharedValue): unknown {
+        const row = this[rowOfValue];
+        return layout.read(row.slots[i].storage.views, row.index);
+    };
+};
+
+const sharedEntity = function (this: SharedValue): number {
+    const row = this[rowOfValue];
+    return row.entities[row.index];
+};
+
+/**
+ * Makes read-only accessor rows for `keys` whose values share one hidden class: every value's own accessors are the
+ * same functions, finding the row through the value. A body reading many rows at once, as a list's, sees one map.
+ */
+export const sharedRows = (host: RowHost, keys: readonly Key[], ids: readonly number[]): (archetype: RowArchetype) => Row => {
+    const prototype = {};
+    const getters = keys.map((_, i) => sharedGetterOf(host.layouts[ids[i]], i));
+    return archetype => {
+        const value: object = Object.create(prototype);
+        const row: SharedRow = {
+            value,
+            index: 0,
+            entities: archetype.entities,
+            slots: ids.map(id => slotOf(archetype, id)),
+            bind: next => {
+                row.entities = next.entities;
+                for (let i = 0; i < ids.length; i++) {
+                    const { storage, view } = slotOf(next, ids[i]);
+                    row.slots[i].storage = storage;
+                    row.slots[i].view = view;
+                }
+            },
+        };
+        Object.defineProperty(value, rowOfValue, { value: row });
+        Object.defineProperty(value, "entity", { get: sharedEntity, enumerable: true });
+        for (let i = 0; i < keys.length; i++) Object.defineProperty(value, keys[i], { get: getters[i], enumerable: true });
+        return row;
+    };
+};
+
 /**
  * Binds a read-only accessor row of its own, for the parents an `up` system reads, to an archetype. It isn't shared,
  * so binding it never moves the row a system runs over, even when both read the same components.

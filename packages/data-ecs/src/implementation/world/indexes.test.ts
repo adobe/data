@@ -647,3 +647,40 @@ describe("an incrementally refreshed sorted index", () => {
         expect(held).toBeGreaterThan(250);
     });
 });
+
+/** Whether two objects have the same own properties in the same order, each accessor's functions the same ones. */
+const sameAccessors = (a: object, b: object): boolean => {
+    const keysOf = (value: object): readonly (string | symbol)[] => Reflect.ownKeys(value);
+    const keys = keysOf(a);
+    if (keys.length !== keysOf(b).length) return false;
+    return keys.every((key, k) => {
+        const first = Object.getOwnPropertyDescriptor(a, key);
+        const second = Object.getOwnPropertyDescriptor(b, key);
+        return keysOf(b)[k] === key && first?.get === second?.get && first?.set === second?.set && (typeof first?.value !== "function" || first.value === second?.value);
+    });
+};
+
+describe("lists and their rows", () => {
+    it("share their accessors across call sites and positions, so a body reading many sees one hidden class", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(spawnCells, { cells: [[0, 0], [0, 0], [1, 1]] });
+        await world.run(System.create(({ commands }) => {
+            for (const value of [1, 2, 3]) commands.spawn([rank])({ [rank]: value });
+        }));
+        let hashed: readonly object[] = [];
+        let sorted: readonly object[] = [];
+        await world.run(System.create({ lookup: { near: { index: grid, read: [weight] }, ranks: { index: byRank, read: [rank] } } }, ({ lookup }) => {
+            const first = lookup.near([0, 0]);
+            const second = lookup.near([1, 1]);
+            hashed = [first, second, first.at(0), first.at(1), second.at(0)];
+            const all = lookup.ranks();
+            const some = lookup.ranks({ ">": 1 });
+            sorted = [all, some, all.at(0), all.at(1), some.at(0)];
+        }));
+        expect(hashed).toHaveLength(5);
+        expect(sameAccessors(hashed[0], hashed[1])).toBe(true);
+        expect(sameAccessors(hashed[2], hashed[3]) && sameAccessors(hashed[2], hashed[4])).toBe(true);
+        expect(sameAccessors(sorted[0], sorted[1])).toBe(true);
+        expect(sameAccessors(sorted[2], sorted[3]) && sameAccessors(sorted[2], sorted[4])).toBe(true);
+    });
+});

@@ -54,6 +54,12 @@ export type HashView = Pick<HashTable, "words" | "stride" | "slots" | "records" 
 
 const minimumSlots = 16;
 
+/** Slots the table keeps for each bucket at least: it's at most half full. */
+const slotsPerBucket = 2;
+
+/** Whether `slots` slots hold `buckets` buckets. */
+export const slotsHold = (slots: number, buckets: number): boolean => slotsPerBucket * buckets + 2 <= slots;
+
 export const createHashTable = (memory: Memory, words: number): HashTable => ({
     memory,
     words,
@@ -140,10 +146,10 @@ export const place = (slots: Uint32Array, bucket: number, hash: number): void =>
     slots[2 * slot + 1] = bucket + 1;
 };
 
-/** Empties the table at a capacity for `buckets`, at most half full. */
+/** Empties the table at a capacity for `buckets`. */
 export const rehash = (table: HashTable, buckets: number): void => {
     let capacity = minimumSlots;
-    while (capacity < 2 * buckets + 2) capacity *= 2;
+    while (!slotsHold(capacity, buckets)) capacity *= 2;
     if (2 * capacity !== table.slots.length) {
         freeArray(table.memory, table.slots);
         table.slots = allocateArray(table.memory, Uint32Array, 2 * capacity);
@@ -162,7 +168,7 @@ export const bucketFor = (table: HashTable, key: Uint32Array, at: number, hash: 
     const found = findBucket(table, key, at, hash);
     if (found >= 0) return found;
     const live = table.count - table.freed.length;
-    if (2 * (live + 1) > table.slots.length >> 1) {
+    if (!slotsHold(table.slots.length >> 1, live + 1)) {
         rehash(table, live + 1);
         placeAll(table);
     }
@@ -398,7 +404,7 @@ export const loadHashTable = (table: HashTable, count: number, entries: Int32Arr
         const hash = hashes[k];
         let bucket = findBucket(table, keys, k * words, hash);
         if (bucket < 0) {
-            if (2 * (table.count + 1) > table.slots.length >> 1) {
+            if (!slotsHold(table.slots.length >> 1, table.count + 1)) {
                 rehash(table, 2 * (table.count + 1));
                 placeAll(table);
             }

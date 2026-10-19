@@ -2,7 +2,7 @@ import type { Scalar } from '../../interface/registry/layout.js';
 import { encodeScalar, encodeValue, hashWords, orderF32, orderF64, partWords, type KeyPart } from './index-keys.js';
 import { entryWords, findBucket, lengthOf, recordKey, recordLength, recordStart, startOf, type HashView } from './index-hash.js';
 import { blockAt, blockBase, bound, firstPosition, treeMaximum, type SortedView } from './index-sorted.js';
-import { createRow, type Row, type RowArchetype, type RowHost } from './rows.js';
+import { sharedRows, type Row, type RowArchetype, type RowHost } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
 
 /** A system's `lastRun` while it runs, which its lists' `changed` compares with: -1 in finalizers, which have none. */
@@ -46,24 +46,52 @@ const lookups = new WeakMap<object, IndexLookup>();
 /** The index lookup behind a function a body was given, or undefined for any other. */
 export const indexLookupOf = (lookup: unknown): IndexLookup | undefined => typeof lookup === "function" ? lookups.get(lookup) : undefined;
 
-/** Rows a list's `at` gives, each bound to the archetype of the entry it was last pointed at. */
-type Pool = { readonly rows: Row[]; readonly archetypes: number[]; readonly versions: number[] };
+/** Rows a list's `at` gives, each bound to the archetype of the entry it was last pointed at, made by `make`. */
+type Pool = { readonly rows: Row[]; readonly archetypes: number[]; readonly versions: number[]; readonly make: (archetype: RowArchetype) => Row };
+
+/** Each lookup's maker of rows, so every row its sites give shares one hidden class. */
+const makers = new WeakMap<IndexLookup, (archetype: RowArchetype) => Row>();
+
+const poolOf = (lookup: IndexLookup): Pool => {
+    let make = makers.get(lookup);
+    if (make === undefined) makers.set(lookup, make = sharedRows(lookup.rows, lookup.reads, lookup.readIds));
+    return { rows: [], archetypes: [], versions: [], make };
+};
+
+/** Binds row `n` of a pool to an archetype, making it first if the pool has none there yet. */
+const bindRow = (pool: Pool, n: number, archetypeId: number, archetype: LookupArchetype): Row => {
+    let found = pool.rows[n];
+    if (found === undefined) found = pool.rows[n] = pool.make(archetype);
+    else found.bind(archetype);
+    pool.archetypes[n] = archetypeId;
+    pool.versions[n] = archetype.version;
+    return found;
+};
+
+/**
+ * Makes a pool's rows up to `length`, bound to an archetype entries likely have, when a site's lookup found a list
+ * longer than any before. Making them here, not in `at`, keeps the one-time work out of the path a body inlines.
+ */
+const growPool = (lookup: IndexLookup, pool: Pool, length: number, archetypeId: number): void => {
+    const archetype = lookup.archetypeAt(archetypeId);
+    if (archetype === undefined) return;
+    for (let n = pool.rows.length; n < length; n++) bindRow(pool, n, archetypeId, archetype);
+};
+
+/** Binds row `n` again to an entry's archetype, or makes it, when its archetype or that's arrays changed. */
+const reboundAt = (lookup: IndexLookup, pool: Pool, n: number, archetypeId: number, row: number): object | undefined => {
+    const archetype = lookup.archetypeAt(archetypeId);
+    if (archetype === undefined) return undefined;
+    const found = bindRow(pool, n, archetypeId, archetype);
+    found.index = row;
+    return found.value;
+};
 
 /** Points row `n` of a pool at an entry's archetype and row, binding it again only when its archetype or that's arrays changed. */
 const rowAt = (lookup: IndexLookup, pool: Pool, n: number, archetypeId: number, row: number): object | undefined => {
+    const found = pool.rows[n];
     const archetype = lookup.archetypeAt(archetypeId);
-    if (archetype === undefined) return undefined;
-    let found = pool.rows[n];
-    if (found === undefined) {
-        found = pool.rows[n] = createRow(lookup.rows, archetype, lookup.reads, lookup.readIds, []);
-        pool.archetypes[n] = archetypeId;
-        pool.versions[n] = archetype.version;
-    }
-    else if (pool.archetypes[n] !== archetypeId || pool.versions[n] !== archetype.version) {
-        found.bind(archetype);
-        pool.archetypes[n] = archetypeId;
-        pool.versions[n] = archetype.version;
-    }
+    if (found === undefined || archetype === undefined || pool.archetypes[n] !== archetypeId || pool.versions[n] !== archetype.version) return reboundAt(lookup, pool, n, archetypeId, row);
     found.index = row;
     return found.value;
 };
@@ -74,33 +102,54 @@ const rowAt = (lookup: IndexLookup, pool: Pool, n: number, archetypeId: number, 
  */
 export type List = { readonly length: number; readonly changed: boolean; at(index: number): object | undefined };
 
-/** What a list points at: a bucket, or -1 for a key no bucket holds. */
-type Found = { bucket: number };
+/** A list's state, hidden on it, which the functions every list of its kind shares read through `this`. */
+const listState = Symbol("list");
 
-const createList = (lookup: IndexLookup, hash: HashView, found: Found): List => {
-    const pool: Pool = { rows: [], archetypes: [], versions: [] };
-    return {
-        get length(): number {
-            return found.bucket < 0 ? 0 : hash.records[found.bucket * hash.stride + recordLength];
-        },
-        get changed(): boolean {
-            const { bucket } = found;
-            const since = lookup.since.value;
-            if (bucket < 0) return hash.cleared > since;
-            if (hash.ticks[bucket] > since) return true;
-            const { watched } = lookup;
-            for (let k = 0; k < watched.length; k++) if ((hash.watched.get(watched[k])?.[bucket] ?? Infinity) > since) return true;
-            return false;
-        },
-        at(position: number): object | undefined {
-            const { bucket } = found;
-            const record = bucket * hash.stride;
-            if (bucket < 0 || !(position >= 0 && position < hash.records[record + recordLength])) return undefined;
-            const at = (hash.records[record + recordStart] + position) * entryWords;
-            return rowAt(lookup, pool, position, hash.entries[at + 1], hash.entries[at + 2]);
-        },
-    };
+/**
+ * Gives a list its accessors and its state. Every list of a kind has the same functions, defined in the same order, so
+ * lists share one hidden class and a body's loads of `length` and `at` stay monomorphic whichever site made the list.
+ */
+const shareList = <S>(state: S, length: (this: { readonly [listState]: S }) => number, changed: (this: { readonly [listState]: S }) => boolean, at: (this: { readonly [listState]: S }, index: number) => object | undefined): List => {
+    const list = {};
+    Object.defineProperty(list, listState, { value: state });
+    Object.defineProperty(list, "length", { get: length, enumerable: true, configurable: true });
+    Object.defineProperty(list, "changed", { get: changed, enumerable: true, configurable: true });
+    Object.defineProperty(list, "at", { value: at, enumerable: true, configurable: true, writable: true });
+    // Its properties are the ones `List` names, just defined.
+    return list as List;
 };
+
+/** What a hash index's list points at, a bucket or -1 for a key no bucket holds, and what it reads. */
+type Found = { bucket: number; readonly lookup: IndexLookup; readonly hash: HashView; readonly pool: Pool };
+type HashList = { readonly [listState]: Found };
+
+const hashLength = function (this: HashList): number {
+    const { bucket, hash } = this[listState];
+    return bucket < 0 ? 0 : hash.records[bucket * hash.stride + recordLength];
+};
+
+const hashChanged = function (this: HashList): boolean {
+    const { bucket, hash, lookup } = this[listState];
+    const since = lookup.since.value;
+    if (bucket < 0) return hash.cleared > since;
+    if (hash.ticks[bucket] > since) return true;
+    const { watched } = lookup;
+    for (let k = 0; k < watched.length; k++) if ((hash.watched.get(watched[k])?.[bucket] ?? Infinity) > since) return true;
+    return false;
+};
+
+const hashAt = function (this: HashList, position: number): object | undefined {
+    const found = this[listState];
+    const { bucket, hash } = found;
+    const record = bucket * hash.stride;
+    if (bucket < 0 || !(position >= 0 && position < hash.records[record + recordLength])) return undefined;
+    const at = (hash.records[record + recordStart] + position) * entryWords;
+    return rowAt(found.lookup, found.pool, position, hash.entries[at + 1], hash.entries[at + 2]);
+};
+
+const createFound = (lookup: IndexLookup, hash: HashView): Found => ({ bucket: -1, lookup, hash, pool: poolOf(lookup) });
+
+const createList = (found: Found): List => shareList(found, hashLength, hashChanged, hashAt);
 
 /** Words of the key a site encodes its arguments into. */
 const keyOf = (lookup: IndexLookup): Uint32Array => new Uint32Array(Math.max(1, lookup.index.words));
@@ -155,15 +204,21 @@ const destinationsOf = (parts: readonly KeyPart[], shape: Shape): readonly Desti
     return destinations;
 };
 
-/** A statement encoding argument `a${k}` into the key's words where it goes. */
-const encodeStatement = ({ part, scalar, word }: Destination, k: number): string => {
+/**
+ * Statements encoding argument `a${k}` into the key's words where it goes, each word into a constant `w${word}`: a
+ * scalar of one word directly, the rest through the key's array.
+ */
+const encodeStatement = (parts: readonly KeyPart[]) => ({ part, scalar, word }: Destination, k: number): string => {
     switch (scalar) {
-        case "i32": return `key[${word}] = ((a${k} | 0) ^ 0x80000000) >>> 0;`;
-        case "u32": return `key[${word}] = a${k} >>> 0;`;
-        case "f32": return `f32[0] = a${k}; key[${word}] = orderF32(u32[0]);`;
-        case "f64": return `f64[0] = a${k}; orderF64(u32[1], u32[0], key, ${word});`;
-        case "boolean": return `u8[0] = a${k}; key[${word}] = u8[0] === 0 ? 0 : 1;`;
-        default: return `encodeValue(parts[${part}], a${k}, key, ${word});`;
+        case "i32": return `const w${word} = ((a${k} | 0) ^ 0x80000000) >>> 0;`;
+        case "u32": return `const w${word} = a${k} >>> 0;`;
+        case "f32": return `f32[0] = a${k}; const w${word} = orderF32(u32[0]);`;
+        case "f64": return `f64[0] = a${k}; orderF64(u32[1], u32[0], key, ${word}); const w${word} = key[${word}], w${word + 1} = key[${word + 1}];`;
+        case "boolean": return `u8[0] = a${k}; const w${word} = u8[0] === 0 ? 0 : 1;`;
+        default: {
+            const words = Array.from({ length: partWords(parts[part]) }, (_, w) => `w${word + w} = key[${word + w}]`);
+            return `encodeValue(parts[${part}], a${k}, key, ${word});${words.length === 0 ? "" : ` const ${words.join(", ")};`}`;
+        }
     }
 };
 
@@ -180,18 +235,18 @@ const u8 = new Uint8Array(scratch);
  * A site's lookup of a hash index generated for its shape: one straight-line encoding of each argument into the key's
  * words, the hash and the probe inline. Null where code can't be generated, or for a shape it doesn't take.
  */
-const generatedFind = (lookup: IndexLookup, hash: HashView, shape: Shape, list: List, found: Found, pool: Pool): ((...values: unknown[]) => unknown) | null => {
+const generatedFind = (lookup: IndexLookup, hash: HashView, shape: Shape, list: List, found: Found): ((...values: unknown[]) => unknown) | null => {
     const { index } = lookup;
     const destinations = destinationsOf(index.parts, shape);
     if (!generating || destinations === null) return null;
     const { words } = index;
     const parameters = destinations.map((_, k) => `a${k}`);
-    const same = Array.from({ length: words }, (_, w) => ` && records[base + ${recordKey + w}] === key[${w}]`).join("");
+    const same = Array.from({ length: words }, (_, w) => ` && records[base + ${recordKey + w}] === w${w}`).join("");
     const body = [
         `return (${parameters.join(", ")}) => {`,
-        ...destinations.map(encodeStatement),
+        ...destinations.map(encodeStatement(index.parts)),
         "let h = 0x811C9DC5;",
-        ...Array.from({ length: words }, (_, w) => `h = Math.imul(h ^ key[${w}], 0x9E3779B1); h ^= h >>> 15;`),
+        ...Array.from({ length: words }, (_, w) => `h = Math.imul(h ^ w${w}, 0x9E3779B1); h ^= h >>> 15;`),
         "h = Math.imul(h ^ (h >>> 16), 0x85EBCA6B); h = Math.imul(h ^ (h >>> 13), 0xC2B2AE35); h = (h ^ (h >>> 16)) >>> 0;",
         "const slots = table.slots, records = table.records, mask = (slots.length >> 1) - 1;",
         "let bucket = -1;",
@@ -208,13 +263,17 @@ const generatedFind = (lookup: IndexLookup, hash: HashView, shape: Shape, list: 
             "if (row === undefined || archetype === undefined || pool.archetypes[0] !== archetypeId || pool.versions[0] !== archetype.version) return rowAt(lookup, pool, 0, archetypeId, table.entries[at + 2]);",
             "row.index = table.entries[at + 2];",
             "return row.value;",
-        ] : ["found.bucket = bucket;", "return list;"],
+        ] : [
+            "found.bucket = bucket;",
+            `if (bucket >= 0 && records[bucket * ${hash.stride} + ${recordLength}] > pool.rows.length) growPool(lookup, pool, records[bucket * ${hash.stride} + ${recordLength}], table.entries[records[bucket * ${hash.stride} + ${recordStart}] * ${entryWords} + 1]);`,
+            "return list;",
+        ],
         "};",
     ].join("\n");
     try {
-        const factory = new Function("key", "table", "found", "list", "pool", "lookup", "rowAt", "encodeValue", "parts", "orderF32", "orderF64", "f32", "f64", "u32", "u8", "archetypeAt", body);
+        const factory = new Function("key", "table", "found", "list", "pool", "lookup", "rowAt", "growPool", "encodeValue", "parts", "orderF32", "orderF64", "f32", "f64", "u32", "u8", "archetypeAt", body);
         // The factory returns the function its body above makes.
-        const made: (...values: unknown[]) => unknown = factory(new Uint32Array(Math.max(1, words)), hash, found, list, pool, lookup, rowAt, encodeValue, index.parts, orderF32, orderF64, f32, f64, u32, u8, lookup.archetypeAt);
+        const made: (...values: unknown[]) => unknown = factory(new Uint32Array(Math.max(1, words)), hash, found, list, found.pool, lookup, rowAt, growPool, encodeValue, index.parts, orderF32, orderF64, f32, f64, u32, u8, lookup.archetypeAt);
         return made;
     }
     catch {
@@ -235,10 +294,10 @@ export const createSite = (lookup: IndexLookup, shape: Shape): Site => {
 const createHashSite = (lookup: IndexLookup, hash: HashView, shape: Shape): Site => {
     const { index, unique } = lookup;
     const key = keyOf(lookup);
-    const found: Found = { bucket: -1 };
-    const list = createList(lookup, hash, found);
-    const pool: Pool = { rows: [], archetypes: [], versions: [] };
-    const generated = generatedFind(lookup, hash, shape, list, found, pool);
+    const found = createFound(lookup, hash);
+    const list = createList(found);
+    const { pool } = found;
+    const generated = generatedFind(lookup, hash, shape, list, found);
     if (generated !== null) return { find: generated };
     const { parts, words } = index;
     const forms = shape.map(form => typeof form === "number" ? form : 0);
@@ -246,9 +305,11 @@ const createHashSite = (lookup: IndexLookup, hash: HashView, shape: Shape): Site
         find: (...values) => {
             let next = 0;
             for (let p = 0; p < parts.length; p++) next = encodePart(parts[p], forms[p] ?? 0, values, next, key);
-            found.bucket = findBucket(hash, key, 0, hashWords(key, 0, words));
-            if (!unique) return list;
-            const { bucket } = found;
+            const bucket = found.bucket = findBucket(hash, key, 0, hashWords(key, 0, words));
+            if (!unique) {
+                if (bucket >= 0 && lengthOf(hash, bucket) > pool.rows.length) growPool(lookup, pool, lengthOf(hash, bucket), hash.entries[startOf(hash, bucket) * entryWords + 1]);
+                return list;
+            }
             if (bucket < 0 || lengthOf(hash, bucket) === 0) return null;
             const at = startOf(hash, bucket) * entryWords;
             return rowAt(lookup, pool, 0, hash.entries[at + 1], hash.entries[at + 2]);
@@ -262,47 +323,56 @@ type Range = { low: number; high: number; second: number; end: number };
 /** A sorted list's place as `at` walks it: the position in `order` of a block, the position of its first entry, and its length. */
 type Cursor = { k: number; first: number; length: number };
 
-/** A list of a sorted index's rows, in key order, then entity order. */
-const createSortedList = (lookup: IndexLookup, sorted: SortedView, range: Range, cursor: Cursor): List => {
-    const pool: Pool = { rows: [], archetypes: [], versions: [] };
-    const { words, stride } = sorted;
-    /** Whether a tree's ticks over the blocks around positions `low` to `high` are newer than `since`. */
-    const newer = (tree: Float64Array, low: number, high: number, since: number): boolean => {
-        const last = sorted.size - 1;
-        return treeMaximum(sorted, tree, blockAt(sorted, Math.min(last, Math.max(low - 1, 0))), blockAt(sorted, Math.min(last, high))) > since;
-    };
-    const runChanged = (low: number, high: number, since: number): boolean => {
-        if (newer(sorted.tree, low, high, since)) return true;
-        const { watched } = lookup;
-        for (let k = 0; k < watched.length; k++) {
-            const watch = sorted.watched.get(watched[k]);
-            if (watch === undefined || newer(watch.tree, low, high, since)) return true;
-        }
-        return false;
-    };
-    return {
-        get length(): number {
-            return range.high - range.low + range.end - range.second;
-        },
-        get changed(): boolean {
-            const since = lookup.since.value;
-            if (sorted.blocks === 0) return sorted.cleared > since;
-            return runChanged(range.low, range.high, since) || (range.end > range.second && runChanged(range.second, range.end, since));
-        },
-        at(index: number): object | undefined {
-            const first = range.high - range.low;
-            if (!(index >= 0 && index < first + range.end - range.second)) return undefined;
-            const position = index < first ? range.low + index : range.second + index - first;
-            if (!(position >= cursor.first && position < cursor.first + cursor.length)) {
-                cursor.k = blockAt(sorted, position);
-                cursor.first = firstPosition(sorted, cursor.k);
-                cursor.length = sorted.lengths[sorted.order[cursor.k]];
-            }
-            const base = blockBase(sorted, sorted.order[cursor.k]) + (position - cursor.first) * stride;
-            return rowAt(lookup, pool, index, sorted.entries[base + words + 1], sorted.entries[base + words + 2]);
-        },
-    };
+/** What a sorted index's list holds: its range, its cursor, and what it reads. */
+type Sorted = { readonly lookup: IndexLookup; readonly sorted: SortedView; readonly range: Range; readonly cursor: Cursor; readonly pool: Pool };
+type SortedList = { readonly [listState]: Sorted };
+
+/** Whether a tree's ticks over the blocks around positions `low` to `high` are newer than `since`. */
+const newer = (sorted: SortedView, tree: Float64Array, low: number, high: number, since: number): boolean => {
+    const last = sorted.size - 1;
+    return treeMaximum(sorted, tree, blockAt(sorted, Math.min(last, Math.max(low - 1, 0))), blockAt(sorted, Math.min(last, high))) > since;
 };
+
+const runChanged = (lookup: IndexLookup, sorted: SortedView, low: number, high: number, since: number): boolean => {
+    if (newer(sorted, sorted.tree, low, high, since)) return true;
+    const { watched } = lookup;
+    for (let k = 0; k < watched.length; k++) {
+        const watch = sorted.watched.get(watched[k]);
+        if (watch === undefined || newer(sorted, watch.tree, low, high, since)) return true;
+    }
+    return false;
+};
+
+const sortedLength = function (this: SortedList): number {
+    const { range } = this[listState];
+    return range.high - range.low + range.end - range.second;
+};
+
+const sortedChanged = function (this: SortedList): boolean {
+    const { lookup, sorted, range } = this[listState];
+    const since = lookup.since.value;
+    if (sorted.blocks === 0) return sorted.cleared > since;
+    return runChanged(lookup, sorted, range.low, range.high, since) || (range.end > range.second && runChanged(lookup, sorted, range.second, range.end, since));
+};
+
+const sortedAt = function (this: SortedList, index: number): object | undefined {
+    const state = this[listState];
+    const { sorted, range, cursor } = state;
+    const first = range.high - range.low;
+    if (!(index >= 0 && index < first + range.end - range.second)) return undefined;
+    const position = index < first ? range.low + index : range.second + index - first;
+    if (!(position >= cursor.first && position < cursor.first + cursor.length)) {
+        cursor.k = blockAt(sorted, position);
+        cursor.first = firstPosition(sorted, cursor.k);
+        cursor.length = sorted.lengths[sorted.order[cursor.k]];
+    }
+    const base = blockBase(sorted, sorted.order[cursor.k]) + (position - cursor.first) * sorted.stride;
+    return rowAt(state.lookup, state.pool, index, sorted.entries[base + sorted.words + 1], sorted.entries[base + sorted.words + 2]);
+};
+
+/** A list of a sorted index's rows, in key order, then entity order. */
+const createSortedList = (lookup: IndexLookup, sorted: SortedView, range: Range, cursor: Cursor, pool: Pool): List =>
+    shareList<Sorted>({ lookup, sorted, range, cursor, pool }, sortedLength, sortedChanged, sortedAt);
 
 /** Whether a value a lookup was given for a sorted part is a comparison: a sorted part's own values are never plain objects. */
 const isComparison = (value: unknown): value is { readonly [operator: string]: unknown } => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -318,8 +388,14 @@ const createSortedSite = (lookup: IndexLookup, sorted: SortedView, shape: Shape)
     const objects: unknown[] = new Array<unknown>(parts.length).fill(undefined);
     const range: Range = { low: 0, high: 0, second: 0, end: 0 };
     const cursor: Cursor = { k: 0, first: 0, length: 0 };
-    const list = createSortedList(lookup, sorted, range, cursor);
-    const pool: Pool = { rows: [], archetypes: [], versions: [] };
+    const pool = poolOf(lookup);
+    const list = createSortedList(lookup, sorted, range, cursor, pool);
+    /** The list, its pool grown first when it's longer than any before. */
+    const listed = (): List => {
+        const length = range.high - range.low + range.end - range.second;
+        if (length > pool.rows.length && sorted.blocks > 0) growPool(lookup, pool, length, sorted.entries[blockBase(sorted, sorted.order[0]) + sorted.words + 1]);
+        return list;
+    };
     const found = { k: 0, offset: 0 };
     /**
      * The first position whose key's first `count` words are after the probe's, or not before them. A lower bound, the
@@ -382,7 +458,7 @@ const createSortedSite = (lookup: IndexLookup, sorted: SortedView, shape: Shape)
         if (given === 0) {
             range.low = 0;
             range.high = sorted.size;
-            return list;
+            return listed();
         }
         const last = given - 1;
         const lastForm = shape[last];
@@ -393,7 +469,7 @@ const createSortedSite = (lookup: IndexLookup, sorted: SortedView, shape: Shape)
             encode(last, lastForm, values, next);
             range.low = at(words, false);
             range.high = at(words, true);
-            if (!unique || given < parts.length) return list;
+            if (!unique || given < parts.length) return listed();
             if (range.high === range.low) return null;
             bound(sorted, probe, objects, words, false, found);
             const base = blockBase(sorted, sorted.order[found.k]) + found.offset * sorted.stride;
@@ -427,7 +503,7 @@ const createSortedSite = (lookup: IndexLookup, sorted: SortedView, shape: Shape)
             range.end = high;
             if (range.second >= range.end) range.second = range.end = 0;
         }
-        return list;
+        return listed();
     };
     return {
         find: (a0?: unknown, a1?: unknown, a2?: unknown, a3?: unknown, a4?: unknown, a5?: unknown, a6?: unknown, a7?: unknown,

@@ -9,7 +9,7 @@ import { journalEnd } from './journal.js';
 import { encodeStored, hashWords, keyPartsOf, missing, release as releaseInterned, retain, type KeyPart } from './index-keys.js';
 import {
     bucketFor, coverBuckets, coverEntities, createHashTable, entryWords, insertEntry, lengthOf, loadHashTable, mergeEntries, place, placeAll, recordHash,
-    recordKey, rehash, relocate, releaseHashTable, removeEntry, startOf, tidyHashTable, unwatchHashComponent, watchHashComponent, type HashTable,
+    recordKey, rehash, relocate, slotsHold, releaseHashTable, removeEntry, startOf, tidyHashTable, unwatchHashComponent, watchHashComponent, type HashTable,
 } from './index-hash.js';
 import { allocateArray, freeArray } from './arrays.js';
 import { buildKernel, buildViews, maximumPartitions, phases, pieceEntities, planWords, runBuildStep, scalarCodes, writePlan, type BuildViews, type HashBuild, type Phase } from './index-build.js';
@@ -1008,8 +1008,8 @@ const sizeTable = (state: State, build: Build): HashBuild => {
         freeArray(state.memory, hash.entries);
         hash.entries = allocateArray(state.memory, Int32Array, Math.max(64, capacity) * entryWords);
     }
-    // The slots hold as many buckets as they can at half full; more are placed here once filled.
-    const filling = build.make(2 * buckets + 2 <= build.slots);
+    // Buckets past what the slots hold are placed here once filled.
+    const filling = build.make(slotsHold(build.slots, buckets));
     placePlan(state, pooled, filling);
     return filling;
 };

@@ -68,11 +68,19 @@ describe("Index.create", () => {
         expect(Index.create({ name: "indexCreateTest/again", key: [cell], components: { has: [shown] } })).not.toBe(first);
     });
     it("throws for key parts that aren't components of data, are listed twice, or are sets", () => {
-        expect(() => untyped({ name: "bad", key: [] })).toThrow(`Index "bad" needs a key`);
+        expect(() => untyped({ name: "bad" })).toThrow(`Index "bad" needs a key`);
+        expect(() => untyped({ name: "bad", key: amount })).toThrow(`Index "bad" needs a key`);
         expect(() => untyped({ name: "bad", key: [unregistered] })).toThrow(`key part "indexCreateTest/unregistered", which isn't a registered component of data`);
         expect(() => untyped({ name: "bad", key: [handle] })).toThrow("isn't a registered component of data");
         expect(() => untyped({ name: "bad", key: [amount, amount] })).toThrow(`lists key part "indexCreateTest/amount" twice`);
         expect(() => untyped({ name: "bad", key: [tags] })).toThrow("a set or map");
+    });
+    it("takes an empty key, holding the entities with its has and not, and isn't unique then", () => {
+        expect(() => Index.create({ key: [] })).not.toThrow();
+        expect(() => Index.create({ key: [], sorted: true, components: { has: [amount], not: [shown] } })).not.toThrow();
+        expect(() => untyped({ name: "bad", key: [], unique: true })).toThrow(`Index "bad" is unique without a key`);
+        expect(() => untyped({ name: "bad", key: [], components: { has: [shown], not: [shown] } })).toThrow("which it holds by");
+        expect(() => untyped({ name: "bad", key: [], components: { has: [unregistered] } })).toThrow("isn't a registered component");
     });
     it("orders sorted parts that have an order: numbers, booleans, entities, strings and tuples of them", () => {
         expect(() => Index.create({ key: [cell, amount, name, parent], sorted: true })).not.toThrow();

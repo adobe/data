@@ -11,10 +11,10 @@ import type { Created } from './created.js';
 import type { Declaration } from './declaration.js';
 import type { Index } from './index-type.js';
 
-/** `not` excludes what the index holds by: its key parts and `has`. */
+/** `not` excludes what the index holds by: its key parts and `has`. An index without a key isn't unique. */
 type Validate<D extends Declaration> = {
     readonly components?: { readonly not?: readonly Exclude<Component.Key, D["key"][number] | Listed<Property<D, "components">, "has">>[] };
-};
+} & (D["key"] extends readonly [] ? { readonly unique?: false } : unknown);
 
 /** Whether a schema's values have an order: numbers, booleans, entities and fixed-length tuples of them, and strings. */
 const ordered = (schema: Schema): boolean => {
@@ -30,14 +30,15 @@ const collection = (schema: Schema): boolean => "type" in schema && (schema.type
  * Declares an index over components' values and returns it; nothing is built until a world's system or finalizer uses
  * it. It holds the entities with every key part and every component in `has`, and none in `not`, keyed by the values
  * of `key`, compared part by part: numbers and tuples by value, an entity with its generation, so a stale one finds
- * nothing.
+ * nothing. With an empty key it holds those entities, every entity but the resource entity when `has` and `not` are
+ * empty too, and its lookup takes no key and gives them all, in entity order.
  * - `sorted`: keeps key order, numbers numerically, NaN last, booleans false first, strings by code point, tuples
  *   element by element, then entity order, so a lookup takes a prefix of the key whose last part may be a comparison.
  * - `unique`: at most one entity per key: a lookup by a whole key returns its row or null. When two entities share a
  *   key, the one with the lower entity index is kept, and the run that found them reports an `"index"` failure.
  *
  * Throws if a key part isn't a registered component of data, is listed twice or is a set or map, a sorted part has no
- * order, its object parts live on different threads, or `has` or `not` names a key that isn't a registered component
+ * order, its object parts live on different threads, it's unique without a key, or `has` or `not` names a key that isn't a registered component
  * or `not` names a key part or a `has` component.
  */
 export const create = <const D extends Declaration>(declaration: D & Validate<D>): Index<D> => {
@@ -45,7 +46,8 @@ export const create = <const D extends Declaration>(declaration: D & Validate<D>
     const name = nameOf(declaration.name, id, "index");
     const fail = (message: string): never => { throw new Error(`Index "${name}" ${message}.`); };
     const { key, components, sorted } = declaration;
-    if (!Array.isArray(key) || key.length === 0) fail("needs a key: a list of components");
+    if (!Array.isArray(key)) fail("needs a key: a list of components");
+    if (key.length === 0 && declaration.unique === true) fail("is unique without a key: it holds at most one entity per key");
     const threads = new Set<string>();
     const parts = new Set<symbol>();
     for (const part of key) {

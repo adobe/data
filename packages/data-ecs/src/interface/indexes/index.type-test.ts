@@ -57,8 +57,17 @@ const byServerId = Index.create({ key: [serverId], unique: true, components: { h
 const clips = Index.create({ key: [track, start], sorted: true, components: { has: [clip] } });
 const tasksOf = Index.create({ key: [owner], components: { not: [archived] } });
 const named = Index.create({ key: [label, serverId], sorted: true, unique: true });
+// With an empty key, an index holds the entities with every `has` component and no `not` one; with neither, every entity.
+const living = Index.create({ key: [], components: { has: [health], not: [archived] } });
+check<Equal<typeof living, Index<{ readonly key: readonly []; readonly components: { readonly has: readonly [typeof health]; readonly not: readonly [typeof archived] } }>>>();
+const everything = Index.create({ key: [] });
+const inOrder = Index.create({ key: [], sorted: true, components: { has: [start] } });
 // @ts-expect-error a key is a list of components
-Index.create({ key: [] });
+Index.create({ key: [health, 3] });
+// @ts-expect-error an index without a key holds no key once
+Index.create({ key: [], unique: true });
+// @ts-expect-error `not` excludes `has`
+Index.create({ key: [], components: { has: [archived], not: [archived] } });
 // @ts-expect-error `not` excludes neither key parts nor `has`
 Index.create({ key: [owner], components: { has: [archived], not: [owner] } });
 
@@ -129,6 +138,35 @@ System.create({ lookup: { names: { index: named, read: [label] } } }, ({ lookup 
     check<Equal<typeof some.length, number>>();
     const all = lookup.names();
     void all.at(0)[label];
+});
+
+// A lookup through an index without a key takes none and gives every row it holds, in entity order.
+export const census = System.create({
+    lookup: { living: { index: living, read: [health], changed: [health] }, all: { index: everything }, ordered: { index: inOrder, read: [start] } },
+}, ({ lookup }) => {
+    const rows = lookup.living();
+    check<Equal<typeof rows.length, number>>();
+    check<Equal<typeof rows.changed, boolean>>();
+    check<Equal<ReturnType<typeof rows.at>, { readonly entity: Entity } & { readonly [health]: number }>>();
+    void lookup.all().at(0).entity;
+    void lookup.ordered().at(0)[start];
+    // @ts-expect-error a lookup without a key takes none
+    lookup.living(1);
+    // @ts-expect-error rows hold only what every entity the index holds has
+    void lookup.all().at(0)[health];
+});
+System.create({
+    kernel: "cpu",
+    components: { write: [velocity] },
+    lookup: { living: { index: living, read: [health] } },
+}, () => {});
+System.create({
+    components: { write: [health] },
+    // @ts-expect-error a system doesn't write what it reads through an index
+    lookup: { living: { index: living, read: [health] } },
+}, () => {});
+System.create({ components: { read: [start], write: [playhead] }, order: inOrder }, row => {
+    row[playhead] = row[start];
 });
 
 // Finalizers look up through indexes too.

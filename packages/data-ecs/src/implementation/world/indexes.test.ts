@@ -705,3 +705,26 @@ describe("a lookup's rows across sync points", () => {
         expect(weights).toEqual([10, 11]);
     });
 });
+
+describe("a long list's rows", () => {
+    it("are each its own while the list is valid, at its start, its middle and its end", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        const count = 1300;
+        await world.run(System.create(({ commands }) => {
+            for (let i = 0; i < count; i++) commands.spawn([rank])({ [rank]: (i * 7919) % count });
+        }));
+        let fromStart: number[] = [];
+        let fromEnd: number[] = [];
+        await world.run(System.create({ lookup: { ranks: { index: byRank, read: [rank] } } }, ({ lookup }) => {
+            const all = lookup.ranks();
+            // Every row held at once, then read.
+            const held = Array.from({ length: all.length }, (_, i) => all.at(i));
+            fromStart = held.map(row => row[rank]);
+            const reversed = Array.from({ length: all.length }, (_, i) => all.at(all.length - 1 - i));
+            fromEnd = reversed.map(row => row[rank]);
+        }));
+        const expected = Array.from({ length: count }, (_, i) => i);
+        expect(fromStart).toEqual(expected);
+        expect(fromEnd).toEqual([...expected].reverse());
+    });
+});

@@ -370,8 +370,12 @@ type Range = { low: number; high: number; second: number; end: number };
 /** A sorted list's place as `at` walks it: the position in `order` of a block, the position of its first entry, and its length. */
 type Cursor = { k: number; first: number; length: number };
 
-/** What a sorted index's list holds: its range, its cursor, and what it reads. */
-type Sorted = { readonly lookup: IndexLookup; readonly sorted: SortedView; readonly range: Range; readonly cursor: Cursor; readonly pool: Pool };
+/**
+ * What a sorted index's list holds: its range, its cursor, and what it reads; the rows of its last `madeAhead`
+ * positions past its first ones in `tail`, by their distance from its end, so a list read from its end, highest
+ * first, has its rows made ahead too.
+ */
+type Sorted = { readonly lookup: IndexLookup; readonly sorted: SortedView; readonly range: Range; readonly cursor: Cursor; readonly pool: Pool; readonly tail: Pool };
 type SortedList = { readonly [listState]: Sorted };
 
 /** Whether a tree's ticks over the blocks around positions `low` to `high` are newer than `since`. */
@@ -406,7 +410,8 @@ const sortedAt = function (this: SortedList, index: number): object | undefined 
     const state = this[listState];
     const { sorted, range, cursor } = state;
     const first = range.high - range.low;
-    if (!(index >= 0 && index < first + range.end - range.second)) return undefined;
+    const length = first + range.end - range.second;
+    if (!(index >= 0 && index < length)) return undefined;
     const position = index < first ? range.low + index : range.second + index - first;
     if (!(position >= cursor.first && position < cursor.first + cursor.length)) {
         cursor.k = blockAt(sorted, position);
@@ -414,12 +419,15 @@ const sortedAt = function (this: SortedList, index: number): object | undefined 
         cursor.length = sorted.lengths[sorted.order[cursor.k]];
     }
     const base = blockBase(sorted, sorted.order[cursor.k]) + (position - cursor.first) * sorted.stride;
-    return rowAt(state.lookup, state.pool, index, sorted.entries[base + sorted.words + 1], sorted.entries[base + sorted.words + 2]);
+    const archetypeId = sorted.entries[base + sorted.words + 1];
+    const row = sorted.entries[base + sorted.words + 2];
+    if (index < madeAhead || length - index > madeAhead) return rowAt(state.lookup, state.pool, index, archetypeId, row);
+    return rowAt(state.lookup, state.tail, length - 1 - index, archetypeId, row);
 };
 
 /** A list of a sorted index's rows, in key order, then entity order. */
-const createSortedList = (lookup: IndexLookup, sorted: SortedView, range: Range, cursor: Cursor, pool: Pool): List =>
-    shareList<Sorted>({ lookup, sorted, range, cursor, pool }, sortedLength, sortedChanged, sortedAt);
+const createSortedList = (lookup: IndexLookup, sorted: SortedView, range: Range, cursor: Cursor, pool: Pool, tail: Pool): List =>
+    shareList<Sorted>({ lookup, sorted, range, cursor, pool, tail }, sortedLength, sortedChanged, sortedAt);
 
 /** Whether a value a lookup was given for a sorted part is a comparison: a sorted part's own values are never plain objects. */
 const isComparison = (value: unknown): value is { readonly [operator: string]: unknown } => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -436,11 +444,17 @@ const createSortedSite = (lookup: IndexLookup, sorted: SortedView, shape: Shape)
     const range: Range = { low: 0, high: 0, second: 0, end: 0 };
     const cursor: Cursor = { k: 0, first: 0, length: 0 };
     const pool = poolOf(lookup);
-    const list = createSortedList(lookup, sorted, range, cursor, pool);
-    /** The list, its pool grown first when it's longer than any before. */
+    const tail = poolOf(lookup);
+    const list = createSortedList(lookup, sorted, range, cursor, pool, tail);
+    /** The list, its pools grown first when it's longer than any before, bound to the archetype of its last entry. */
     const listed = (): List => {
         const length = range.high - range.low + range.end - range.second;
-        if (length > pool.ahead && sorted.blocks > 0) growPool(lookup, pool, length, sorted.entries[blockBase(sorted, sorted.order[0]) + sorted.words + 1]);
+        if (length > pool.ahead && sorted.blocks > 0) {
+            const last = sorted.order[sorted.blocks - 1];
+            const archetypeId = sorted.entries[blockBase(sorted, last) + (sorted.lengths[last] - 1) * sorted.stride + sorted.words + 1];
+            growPool(lookup, pool, length, archetypeId);
+            if (length > madeAhead) growPool(lookup, tail, length - madeAhead, archetypeId);
+        }
         return list;
     };
     const found = { k: 0, offset: 0 };

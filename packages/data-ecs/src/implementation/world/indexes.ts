@@ -35,6 +35,8 @@ export type WorldIndex = {
     readonly has: readonly number[];
     readonly not: readonly number[];
     readonly parts: readonly KeyPart[];
+    /** Whether a part holds objects, whose values the index interns. */
+    readonly objects: boolean;
     readonly words: number;
     readonly unique: boolean;
     /** By archetype id: 1 when it holds that archetype's entities, 2 when not, 0 until checked; and those it holds. */
@@ -107,6 +109,7 @@ export const acquireIndex = (state: State, definition: IndexDefinition): WorldIn
         has: (components?.has ?? []).map(component => idOf(state, component)),
         not: (components?.not ?? []).map(component => idOf(state, component)),
         parts,
+        objects: parts.some(part => part.kind === "object"),
         words,
         unique: unique === true,
         member: new Int8Array(16),
@@ -220,7 +223,7 @@ const holdWords = (index: WorldIndex, words: Uint32Array, at: number, hold: bool
 
 /** Each object part's value in bucket `bucket`'s key, interned once more or once less. */
 const holdKey = (hash: HashTable, index: WorldIndex, bucket: number, hold: boolean): void => {
-    if (index.parts.some(part => part.kind === "object")) holdWords(index, hash.records, bucket * hash.stride + recordKey, hold);
+    if (index.objects) holdWords(index, hash.records, bucket * hash.stride + recordKey, hold);
 };
 
 /** A key's values, for a failure's message: those of a row holding it. */
@@ -522,7 +525,7 @@ const patch = (state: State, index: WorldIndex, hash: HashTable, count: number, 
         const row = scanned >= 0 ? pendingRows[k] : entities.row[entity];
         encodeRow(index, archetype, row, key, 0, false);
         // A value nothing held is interned now, once for this entry, with the rest of its key.
-        const fresh = unknownValue(index, key);
+        const fresh = index.objects && unknownValue(index, key);
         if (fresh) encodeRow(index, archetype, row, key, 0, true);
         const bucket = bucketFor(hash, key, 0, hashWords(key, 0, words), tick);
         if (bucket === old) {
@@ -579,7 +582,7 @@ const patchSorted = (state: State, index: WorldIndex, sorted: SortedTable, count
         const archetype = state.archetypes[archetypeId];
         const row = scanned >= 0 ? pendingRows[k] : entities.row[entity];
         encodeRow(index, archetype, row, key, 0, false);
-        const fresh = unknownValue(index, key);
+        const fresh = index.objects && unknownValue(index, key);
         if (fresh) encodeRow(index, archetype, row, key, 0, true);
         if (old >= 0 && !fresh && sameStoredKey(sorted, old, key, 0)) {
             relocateSorted(sorted, entity, archetypeId, row);

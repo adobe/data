@@ -111,6 +111,8 @@ export type Archetype = {
     counted: boolean;
     /** Incremented whenever arrays are replaced, so cached views can be refreshed. */
     version: number;
+    /** How many times any of the world's archetypes' arrays were replaced, shared by them all. */
+    readonly replaced: { count: number };
     /** The world's archetypes created or bumped since the layout directory's last flush (`layout-directory.ts`). */
     readonly bumped: Archetype[];
     /** Whether this archetype is in `bumped`. */
@@ -120,6 +122,7 @@ export type Archetype = {
 /** Moves the version on once arrays are replaced, and lists the archetype for the layout directory's next flush. */
 const bump = (archetype: Archetype): void => {
     archetype.version++;
+    archetype.replaced.count++;
     if (archetype.listed) return;
     archetype.listed = true;
     archetype.bumped.push(archetype);
@@ -179,7 +182,7 @@ export const startTicks = (memory: Memory, archetype: Archetype, storage: Storag
  * Creates an archetype, listed in `bumped` for the layout directory's next flush; storages of components a joined
  * thread fills, by `remote`, hold their tags.
  */
-export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, ticked: ReadonlySet<number>, bumped: Archetype[], remote: readonly (MoveLog | undefined)[]): Archetype => {
+export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, ticked: ReadonlySet<number>, bumped: Archetype[], replaced: { count: number }, remote: readonly (MoveLog | undefined)[]): Archetype => {
     const storages = components.map(component => createStorage(memory, component, layouts[component], initialCapacity, resource || ticked.has(component)));
     const storageById: (Storage | undefined)[] = [];
     for (const storage of storages) storageById[storage.component] = storage;
@@ -198,6 +201,7 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
         resource,
         objects: storages.some(storage => storage.layout.kind === "object"),
         version: 0,
+        replaced,
         bumped,
         listed: true,
         logs: null,

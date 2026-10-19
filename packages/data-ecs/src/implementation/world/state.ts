@@ -35,6 +35,8 @@ export type State = {
     readonly archetypes: Archetype[];
     /** Archetypes created or bumped since the layout directory's last flush. */
     readonly bumped: Archetype[];
+    /** How many times any archetype's arrays were replaced: rows bound to them are current while it stays the same. */
+    readonly replaced: { count: number };
     /** Where other threads find archetypes and the entity table in the shared memory; null without shared memory. */
     readonly directory: LayoutDirectory | null;
     readonly archetypeByKey: Map<string, Archetype>;
@@ -189,6 +191,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         entities: createEntities(memory),
         archetypes: [],
         bumped: [],
+        replaced: { count: 0 },
         directory: createLayoutDirectory(memory),
         archetypeByKey: new Map(),
         ids: new Map(),
@@ -363,7 +366,7 @@ export const archetypeOf = (state: State, components: readonly number[]): Archet
     const key = components.join(",");
     const existing = state.archetypeByKey.get(key);
     if (existing !== undefined) return existing;
-    const archetype = createArchetype(state.memory, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)), state.ticked, state.bumped, state.remote);
+    const archetype = createArchetype(state.memory, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)), state.ticked, state.bumped, state.replaced, state.remote);
     state.archetypes.push(archetype);
     state.archetypeByKey.set(key, archetype);
     return archetype;

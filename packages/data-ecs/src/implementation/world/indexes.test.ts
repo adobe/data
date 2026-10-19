@@ -684,3 +684,24 @@ describe("lists and their rows", () => {
         expect(sameAccessors(sorted[2], sorted[3]) && sameAccessors(sorted[2], sorted[4])).toBe(true);
     });
 });
+
+describe("a lookup's rows across sync points", () => {
+    it("read the arrays their archetype grew into, after a sync point replaced them", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(spawnCells, { cells: [[0, 0], [0, 0]] });
+        let weights: number[] = [];
+        const read = System.create({ lookup: { near: { index: grid, read: [weight] } } }, ({ lookup }) => {
+            const near = lookup.near([0, 0]);
+            weights = Array.from({ length: near.length }, (_, i) => near.at(i)[weight]);
+        });
+        await world.run(read);
+        expect(weights).toEqual([0, 1]);
+        // Enough spawns into the same archetype to grow its arrays, and new weights for the two already read.
+        await world.run(spawnCells, { cells: Array.from({ length: 200 }, () => [5, 5]) });
+        await world.run(System.create({ components: { write: [weight], read: [cell] } }, row => {
+            if (row[cell][0] === 0) row[weight] += 10;
+        }));
+        await world.run(read);
+        expect(weights).toEqual([10, 11]);
+    });
+});

@@ -50,7 +50,7 @@ export const createThreadIndex = (rows: RowHost, archetypeAt: (id: number) => Lo
     };
     const index: IndexView = { parts, words, unique: setup.unique, hash, sorted };
     const since: Since = { value: 0 };
-    const lookup = lookupFunction({ rows, archetypeAt, index, unique: setup.unique, reads: setup.reads, readIds: setup.readIds, watched: watchedPositions, since });
+    const lookup = lookupFunction({ rows, archetypeAt, index, unique: setup.unique, reads: setup.reads, readIds: setup.readIds, watched: watchedPositions, since, replaced: null });
     const count = recordWordsOf(setup.sorted, setup.watched);
     let record: Float64Array = none64;
     const refresh = (buffer: ArrayBufferLike): void => {

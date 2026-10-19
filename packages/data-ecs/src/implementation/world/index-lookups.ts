@@ -38,6 +38,11 @@ export type IndexLookup = {
     readonly readIds: readonly number[];
     readonly watched: readonly number[];
     readonly since: Since;
+    /**
+     * How many times the world's archetypes' arrays were replaced, while which rows bound to them stay current: on the
+     * world's thread. Null on a joined thread, whose rows check their archetype's version each time.
+     */
+    readonly replaced: { readonly count: number } | null;
 };
 
 /** The lookup behind each function bodies are given, for the plugin's call sites. */
@@ -47,7 +52,14 @@ const lookups = new WeakMap<object, IndexLookup>();
 export const indexLookupOf = (lookup: unknown): IndexLookup | undefined => typeof lookup === "function" ? lookups.get(lookup) : undefined;
 
 /** Rows a list's `at` gives, each bound to the archetype of the entry it was last pointed at, made by `make`. */
-type Pool = { readonly rows: Row[]; readonly archetypes: number[]; readonly versions: number[]; readonly make: (archetype: RowArchetype) => Row };
+type Pool = {
+    readonly rows: Row[];
+    readonly archetypes: number[];
+    readonly versions: number[];
+    readonly make: (archetype: RowArchetype) => Row;
+    /** The lookup's `replaced` count when every row was last checked against its archetype's version. */
+    replaced: number;
+};
 
 /** Each lookup's maker of rows, so every row its sites give shares one hidden class. */
 const makers = new WeakMap<IndexLookup, (archetype: RowArchetype) => Row>();
@@ -55,7 +67,7 @@ const makers = new WeakMap<IndexLookup, (archetype: RowArchetype) => Row>();
 const poolOf = (lookup: IndexLookup): Pool => {
     let make = makers.get(lookup);
     if (make === undefined) makers.set(lookup, make = sharedRows(lookup.rows, lookup.reads, lookup.readIds));
-    return { rows: [], archetypes: [], versions: [], make };
+    return { rows: [], archetypes: [], versions: [], make, replaced: lookup.replaced?.count ?? 0 };
 };
 
 /** Binds row `n` of a pool to an archetype, making it first if the pool has none there yet. */
@@ -78,20 +90,39 @@ const growPool = (lookup: IndexLookup, pool: Pool, length: number, archetypeId: 
     for (let n = pool.rows.length; n < length; n++) bindRow(pool, n, archetypeId, archetype);
 };
 
+/** Binds again the rows whose archetype's arrays were replaced since the pool last checked, on the world's thread. */
+const refreshPool = (lookup: IndexLookup, pool: Pool, replaced: { readonly count: number }): void => {
+    for (let n = 0; n < pool.rows.length; n++) {
+        const archetype = lookup.archetypeAt(pool.archetypes[n]);
+        if (archetype !== undefined && archetype.version !== pool.versions[n]) bindRow(pool, n, pool.archetypes[n], archetype);
+    }
+    pool.replaced = replaced.count;
+};
+
 /** Binds row `n` again to an entry's archetype, or makes it, when its archetype or that's arrays changed. */
 const reboundAt = (lookup: IndexLookup, pool: Pool, n: number, archetypeId: number, row: number): object | undefined => {
+    const { replaced } = lookup;
+    if (replaced !== null && pool.replaced !== replaced.count) refreshPool(lookup, pool, replaced);
     const archetype = lookup.archetypeAt(archetypeId);
     if (archetype === undefined) return undefined;
-    const found = bindRow(pool, n, archetypeId, archetype);
+    const current = pool.rows[n];
+    const found = current !== undefined && pool.archetypes[n] === archetypeId && pool.versions[n] === archetype.version ? current : bindRow(pool, n, archetypeId, archetype);
     found.index = row;
     return found.value;
 };
 
-/** Points row `n` of a pool at an entry's archetype and row, binding it again only when its archetype or that's arrays changed. */
+/** Whether row `n` of a pool is bound to its archetype's current arrays, on a joined thread. */
+const currentVersion = (lookup: IndexLookup, pool: Pool, n: number, archetypeId: number): boolean =>
+    pool.versions[n] === lookup.archetypeAt(archetypeId)?.version;
+
+/**
+ * Points row `n` of a pool at an entry's archetype and row, binding it again only when its archetype or that's arrays
+ * changed: on the world's thread, when any archetype's were replaced since the pool last checked.
+ */
 const rowAt = (lookup: IndexLookup, pool: Pool, n: number, archetypeId: number, row: number): object | undefined => {
     const found = pool.rows[n];
-    const archetype = lookup.archetypeAt(archetypeId);
-    if (found === undefined || archetype === undefined || pool.archetypes[n] !== archetypeId || pool.versions[n] !== archetype.version) return reboundAt(lookup, pool, n, archetypeId, row);
+    const { replaced } = lookup;
+    if (found === undefined || pool.archetypes[n] !== archetypeId || (replaced === null ? !currentVersion(lookup, pool, n, archetypeId) : pool.replaced !== replaced.count)) return reboundAt(lookup, pool, n, archetypeId, row);
     found.index = row;
     return found.value;
 };
@@ -541,5 +572,6 @@ export const createIndexLookup = (state: State, index: IndexView, declared: { re
         readIds: reads.map(key => idOf(state, key)),
         watched: (declared.changed ?? []).map(key => idOf(state, key)),
         since,
+        replaced: state.replaced,
     });
 };

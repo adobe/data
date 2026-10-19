@@ -99,7 +99,8 @@ of the browser or node, and a joined thread's `dispose` closes only a `MessagePo
 All derived from declarations and, for terminal systems, the plugin's analysis of their bodies; none is a flag.
 
 - **A system's thread** is the thread of every object component and object resource it names in `read`, `write`,
-  `added`, `changed`, `lookup`, `up` and resource `is`. Components in `has` and `not` are structural, and read a shared
+  `added`, `changed`, `lookup`, `up` and resource `is`, and the key parts of the indexes it looks up through or orders
+  its rows by. Components in `has` and `not` are structural, and read a shared
   presence word, so they don't place it. With no objects, a kernel runs on the pool and any other system on `world`.
   Render systems and `kernel: "gpu"` systems are on `world`, with `gpuDevice`.
 - **Errors when declared:** objects of two threads in one system or finalizer, in types and when it's created, which
@@ -125,8 +126,9 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   it's issued, an add's when its system's commands are queued on the world's thread, or when it's issued on a joined
   one, where it drops and its system fails, so the issuing paths check nothing while no joined thread fills objects.
   A `transfer` value reaches its own thread through a run's input instead (see Transfers).
-- **`up` runs only on `world`:** a system declaring it can't be placed on a joined thread, which refuses the claim, or
-  fails the system's registration once the thread is joined.
+- **`up` and `order` run only on `world`:** a system declaring either can't be placed on a joined thread, which refuses
+  the claim, or fails the system's registration once the thread is joined. So does a lookup through an index with an
+  object key part, which the world keeps on its own thread; one keyed by structs is read where the system runs.
 
 ## Mechanisms
 
@@ -207,7 +209,15 @@ thread, the tick it takes, its `lastRun`, its tier within the task and where its
 waiting: it waits asynchronously on the one signal word that both task posts and its runs' completions bump, so the
 world can always reach it. The world spins about 20 µs for a task before it waits, and a thread that finished one
 spins as long for the next, each about one wake-up's latency, since a tick's tasks follow each other closely.
-Consecutive tiers whose systems are all on one joined thread go as one task, with no barrier between them.
+Consecutive tiers whose systems are all on one joined thread go as one task, with no barrier between them, unless a
+later one uses an index: it starts a task of its own, after the world refreshes the index for it, so it sees the
+earlier tiers' writes.
+
+**Indexes across the pool:** a kernel's lookups through indexes read the index's arrays in the memory at addresses its
+run's parameters give, refreshed by the world before each run, its WASM through the ring and its JS readers through
+the task's message. A hash index is built again in phases (`index-build.ts`), each a task of a reserved kernel number
+through the rings, its plan in the memory: workers claim fixed pieces of entity indexes or fixed partitions of the
+slots, so the index doesn't depend on which worker ran what. A phase a worker failed runs again on the world's thread.
 
 **A joined thread returns to its event loop at least once a tick,** so its timers, rendering and promises' callbacks
 run however fast the world ticks: the world bumps a run word in the log header once a run's or tick's tiers are done,
@@ -392,6 +402,10 @@ consecutive tiers all on that thread are one task, which stops after a tier with
   comes by message, before the task.
 - **A thread that's gone** settles its task in flight: its systems are skipped, each with a `"thread"` failure, and
   later tiers still run.
+- **Lookups through indexes:** for each, the world keeps a record in the memory, posted with the system's setup, and
+  writes into it before each task where the index's arrays are, its counts and ticks, and the system's `lastRun`; the
+  thread points views of the same structures at them before the system runs, so its lookups are the world's own code,
+  call sites with their own lists included. The record is freed with the system's other holdings.
 - **Removal:** each system placed on a thread has a removed word there, a line of its own in the memory, kept with its
   index there and posted with its setup. `world.remove` sets it before it returns, and the thread checks it, one
   atomic load, before it runs each system of a task, a tail's included, so a task posted before the removal, in flight
@@ -846,11 +860,31 @@ to it, main showing its state in the DOM, and a loader worker moving each textur
 - New, in chromium: `transfer` (a 1 MB ArrayBuffer and a 1024 by 1024 ImageBitmap, loader to its thread, N = 100),
   134 µs a transfer.
 
+### Built: indexes
+
+Indexes on pool workers and joined threads: kernels' lookups through them in WASM and JS on workers, systems on joined
+threads looking up through indexes of struct keys, and hash indexes built again across the pool.
+
+- Interface: none beyond the indexes' own (`design.md`, "Indexes").
+- Contract: a system on a joined thread may look up through an index whose key parts are structs; one with an object
+  key part, `order` and `up` keep a system on the world's thread.
+- Tests: kernels across 0, 1 and 3 workers, WASM and JS, over hash, sorted and unique lookups and `changed`, through
+  key moves, despawns and spawns (JS red with parameters not refreshed); systems on a joined thread against the same
+  systems in a world running them itself (red without refreshing records each task, and red fusing a tier that writes
+  a key part with the tier reading it); records and the index released on removal (red without freeing records); the
+  same index built across 0 to 3 workers and the same as rows grouped by hand, unique conflicts included, in node and
+  chromium (red with entity order broken within a partition).
+- New: `index rebuild 1M workers` 6.7 ms against 27 on the world's thread alone, `grid neighbors 100K workers` 179 ns a
+  row.
+
 ## Not built
 
 - **Several loops per world,** such as fixed-step physics beside rendering.
 - **Overlapping ticks by access sets:** starting tick N+1's tiers that don't conflict with tick N's, beyond tails. Ticks with independent halves would justify it.
 - **Per-component write epochs** for read-only readers outside the schedule of large struct data; they shrink the conflict window without closing it.
+- **Ordered systems off the world's thread:** commands from a worker's claimed pieces come back as one segment, so a
+  piece order across workers needs a segment per piece; and indexes with object parts on the joined thread that holds
+  their objects.
 
 ## Not planned
 

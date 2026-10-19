@@ -13,6 +13,7 @@ import { handoffBenchmarks } from "./handoff.js";
 import { finalizedBenchmarks } from "./finalized.js";
 import { tailBenchmarks } from "./tails.js";
 import { transferBenchmarks } from "./transfers.js";
+import { indexBenchmarks } from "./indexes.js";
 
 /** Every worker's copy bandwidth together, through browser workers running the calibration script. */
 const browserThreadsBandwidth = async (): Promise<Curve> => {
@@ -76,6 +77,7 @@ const gpuFastest = async (device: GPUDevice, run: () => Promise<unknown>, batch 
 
 const benchmarks = (device: GPUDevice): readonly Benchmark[] => [
     ...placed([main, pooled]),
+    ...indexBenchmarks.filter(benchmark => benchmark.name.endsWith(" workers")),
     wake,
     {
         name: "loop tick idle",

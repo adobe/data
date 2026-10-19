@@ -24,12 +24,13 @@ How to use the ECS. Each excerpt comes from a test in this folder; the link unde
 **Advanced**
 
 12. [Lookups](#12-lookups)
-13. [Kernels](#13-kernels)
-14. [Reductions](#14-reductions)
-15. [GPU kernels and render systems](#15-gpu-kernels-and-render-systems)
-16. [Hierarchies](#16-hierarchies)
-17. [Identity and ids](#17-identity-and-ids)
-18. [Threads](#18-threads)
+13. [Indexes](#13-indexes)
+14. [Kernels](#14-kernels)
+15. [Reductions](#15-reductions)
+16. [GPU kernels and render systems](#16-gpu-kernels-and-render-systems)
+17. [Hierarchies](#17-hierarchies)
+18. [Identity and ids](#18-identity-and-ids)
+19. [Threads](#19-threads)
 
 ## Setup
 
@@ -376,26 +377,74 @@ check<Equal<Extract<Component.With<typeof instanced>, typeof transform | typeof 
 
 Reading another entity's components by id, from a system. To be written.
 
-### 13. Kernels
+### 13. Indexes
+
+```ts
+// An index finds entities by their components' values: here, those with a crowded count, by their cell.
+const grid = Index.create({ key: [cell], components: { has: [crowded] } });
+
+// A lookup through it gives the rows with a key, in entity order.
+const count = System.create({ components: { read: [cell], write: [crowded] }, lookup: { at: { index: grid } } }, (row, { lookup }) => {
+    const [x, y] = row[cell];
+    row[crowded] = lookup.at([x, y]).length;
+});
+```
+
+[`13-indexes.test.ts`](13-indexes.test.ts#L27-L34)
+
+```ts
+// A sorted index keeps its key's order: lookups take a range, and `order` runs a system's rows in it.
+const byScore = Index.create({ key: [score], sorted: true, components: { has: [player] } });
+
+const winners: string[] = [];
+const leaders = System.create({ lookup: { scores: { index: byScore, read: [player] } } }, ({ lookup }) => {
+    winners.length = 0;
+    const high = lookup.scores({ ">=": 90 });
+    for (let i = 0; i < high.length; i++) winners.push(high.at(i)[player]);
+});
+
+const board: string[] = [];
+const list = System.create({ components: { read: [player] }, order: byScore }, row => {
+    board.push(row[player]);
+});
+```
+
+[`13-indexes.test.ts`](13-indexes.test.ts#L36-L49)
+
+```ts
+// A unique index gives one row, or null.
+const byServerId = Index.create({ key: [serverId], unique: true });
+let found: number | null = null;
+const find = System.create({ input: { type: "object", properties: { id: { type: "integer" } } }, lookup: { byId: { index: byServerId } } }, ({ input, lookup }) => {
+    found = lookup.byId(input.id)?.entity ?? null;
+});
+```
+
+[`13-indexes.test.ts`](13-indexes.test.ts#L51-L56)
+
+A list stays valid until its call site runs again. Lists and rows read only what the index holds and its lookup's
+`read` names, and `list.changed` tells whether an entity entered, left or moved in it since the system last ran.
+
+### 14. Kernels
 
 Systems compiled to run across workers. To be written.
 
-### 14. Reductions
+### 15. Reductions
 
 One value computed from many rows. To be written.
 
-### 15. GPU kernels and render systems
+### 16. GPU kernels and render systems
 
 Systems that run or draw on the GPU. To be written.
 
-### 16. Hierarchies
+### 17. Hierarchies
 
 Running rows parent first, through a reference. To be written.
 
-### 17. Identity and ids
+### 18. Identity and ids
 
 How systems and keys stay the same across reloads. To be written.
 
-### 18. Threads
+### 19. Threads
 
 Sharing a world with another thread, which joins it to run systems and observe. To be written.

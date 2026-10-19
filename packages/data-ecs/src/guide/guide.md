@@ -170,9 +170,11 @@ await using world = createWorld({ [cadence]: { kind: "fixed", step: 10 }, [alway
 world.add(advance);
 // An observer is notified when its value changes, at most once per frame.
 const ticked = new Promise<number>(resolve => world.observe.resource(elapsed)(value => { if (value >= 30) resolve(value); }));
+// remove: takes a system added off every tick again.
+world.remove(advance);
 ```
 
-[`04-ticks.test.ts`](04-ticks.test.ts#L15-L30)
+[`04-ticks.test.ts`](04-ticks.test.ts#L15-L32)
 
 ## Intermediate
 

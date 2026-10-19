@@ -26,6 +26,14 @@ export type LoopPlatform = Pick<LoopHost, "frame" | "timer" | "now">;
 export type Loop = {
     /** Adds a system to every tick from the next one on. Throws for a conflict with one already added, or input. */
     readonly add: (system: Definition) => void;
+    /**
+     * Removes a value `add` was given from every tick from the next one on, returning the composite ticks ran and the
+     * one they run now, null once none is added; null without a change, for a value not added. Throws, removing
+     * nothing, when the systems left conflict with no order between them.
+     */
+    readonly remove: (system: Definition) => { readonly previous: Composite; readonly next: Composite | null } | null;
+    /** The composite ticks run now: the added systems', or null while none is added. */
+    readonly current: () => Composite | null;
     /** A run arrived: the next beat runs a tick. */
     readonly arrived: () => void;
     /** Stops ticking; a tick in progress finishes. */
@@ -118,7 +126,7 @@ export const createLoop = (host: LoopHost): Loop => {
     const isDue = (settings: LoopSettings, time: number): boolean =>
         settings.always || runArrived || (settings.wake <= time && settings.wake !== served);
 
-    const runTicks = async (settings: LoopSettings, time: number, ticking: Composite): Promise<void> => {
+    const runTicks = async (settings: LoopSettings, time: number, first: Composite): Promise<void> => {
         const { cadence } = settings;
         const wake = settings.wake;
         if (cadence.kind === "frame") {
@@ -127,7 +135,7 @@ export const createLoop = (host: LoopHost): Loop => {
             clock.tick = ticks++;
             previous = time;
             if (wake <= time) served = wake;
-            await host.tick(ticking, clock);
+            await host.tick(first, clock);
             return;
         }
         const { step } = cadence;
@@ -140,7 +148,9 @@ export const createLoop = (host: LoopHost): Loop => {
         reached += Math.max(behind, 0) * step;
         if (wake <= time) served = wake;
         for (let i = 1; i <= count; i++) {
-            if (stopped) return;
+            // Each tick runs what's added as it starts: systems removed since the last one aren't in it.
+            const ticking = composite;
+            if (stopped || ticking === null) return;
             clock.now = start + i * step;
             clock.delta = step;
             clock.tick = ticks++;
@@ -210,6 +220,19 @@ export const createLoop = (host: LoopHost): Loop => {
             composite = candidate;
             schedule();
         },
+        remove: system => {
+            const at = systems.indexOf(system);
+            if (at < 0 || composite === null) return null;
+            const left = systems.filter((_, k) => k !== at);
+            const next: Composite | null = left.length === 0 ? null : { kind: "composite", name: "tick", declaration: { name: "tick", systems: left } };
+            // Throws for members that conflict with no ordering path left between them.
+            if (next !== null) scheduleOf(next);
+            const previous = composite;
+            systems.splice(at, 1);
+            composite = next;
+            return { previous, next };
+        },
+        current: () => composite,
         arrived: () => {
             if (composite === null) return;
             runArrived = true;

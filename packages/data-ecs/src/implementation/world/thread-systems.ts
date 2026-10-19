@@ -51,7 +51,8 @@ import {
 export const tailSnapshots = { late: 0, switched: 0 };
 
 /** A system the world places on this thread: its index here, its id, and the world's numbers for the keys it names. */
-export type SystemSetup = { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] };
+/** A system or finalizer the world places here; a system with the byte offset of its removed word. */
+export type SystemSetup = { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[]; readonly removed?: number };
 
 /** A joined thread's view of a storage of the world's, in shared memory, or of this thread's objects, in its mirror. */
 type ThreadStorage = RowStorage & { readonly component: number };
@@ -435,14 +436,49 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         }
     };
 
+    /** By index: the byte offset of the word the world sets once it removed the system there, which no task runs from then on. */
+    const removedWords: (number | undefined)[] = [];
+    /** By index: the block of its tail's last task, whose view goes with it. */
+    const tailBlocks: (number | undefined)[] = [];
+    /** Systems the world removed, dropped once the thread finished `sequence`, the last task posted before. */
+    const unplacing: { readonly indexes: readonly number[]; readonly sequence: number }[] = [];
+
     /** Records the systems the world places here; one this thread never imported fails each task that names it. */
     const setup = (systems: readonly SystemSetup[]): void => {
         name(systems);
-        for (const { index, id } of systems) {
+        for (const { index, id, removed } of systems) {
             const item = itemOfId(id);
             const definition = item === undefined ? undefined : definitionOf(item);
             runners[index] = definition === undefined || !isLeaf(definition) ? null : createThreadRunner(runnerHost, definition);
+            removedWords[index] = removed;
         }
+    };
+
+    /** Drops what's held for removed systems no task runs again, and tells the world, so it may place their indexes again. */
+    const dropUnplaced = (): void => {
+        if (unplacing.length === 0) return;
+        const done = Atomics.load(control, taskDoneWord);
+        const dropped: number[] = [];
+        for (let k = unplacing.length - 1; k >= 0; k--) {
+            const { indexes, sequence } = unplacing[k];
+            if (sequence > done) continue;
+            unplacing.splice(k, 1);
+            for (const index of indexes) {
+                runners[index] = undefined;
+                removedWords[index] = undefined;
+                const block = tailBlocks[index];
+                if (block !== undefined) tailControls.delete(block);
+                tailBlocks[index] = undefined;
+                dropped.push(index);
+            }
+        }
+        if (dropped.length > 0) host.post({ protocol: protocolName, kind: "unplaced", indexes: dropped });
+    };
+
+    /** The world removed systems here: dropped once the last task posted before them is done. */
+    const unplace = (indexes: readonly number[], sequence: number): void => {
+        unplacing.push({ indexes, sequence });
+        dropUnplaced();
     };
 
     const finalizers = createThreadFinalizers({
@@ -523,6 +559,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         catch (error) {
             failTask(posted, error);
         }
+        dropUnplaced();
         return Atomics.load(control, taskDoneWord) === posted;
     };
 
@@ -576,7 +613,11 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
             completion[result + resultStart] = completion[result + resultEnd] = 0;
             // A failed tier stops the task after it: later tiers are skipped.
             if (failedTier >= 0 && tier > failedTier) continue;
-            const runner = runners[payload[base + systemIndex]];
+            const index = payload[base + systemIndex];
+            // Removed since the task was posted: it runs no more, and gives back nothing.
+            const removed = removedWords[index];
+            if (removed !== undefined && Atomics.load(words, removed >>> 2) !== 0) continue;
+            const runner = runners[index];
             const tick = payload[base + systemTick];
             rowHost.tick = sync = tick;
             running.error = undefined;
@@ -585,6 +626,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
             let error: unknown = undefined;
             const tail = payload[base + systemTail];
             if (tail !== 0 && runner !== null && runner !== undefined) {
+                tailBlocks[index] = tail;
                 // A tail writes no commands, so no segment.
                 const outcome = runner.runTail(payload[base + systemLastRun], input, tailControl(tail), payload[payloadSync], k, stamps);
                 if (outcome.executed) flags |= executedFlag;
@@ -658,6 +700,9 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         process,
         /** Whether a task waits for what it needs. */
         waiting: (): boolean => pending >= 0,
+        unplace,
+        /** For tests of what a thread holds: how many systems the world placed here that it keeps. */
+        systems: (): number => runners.filter(runner => runner !== undefined).length,
     };
 };
 

@@ -24,7 +24,7 @@ import { samePath, type TypedArray } from '../../interface/registry/layout.js';
 import { inputFor } from './input.js';
 import { createUp, type Run } from './up.js';
 import { labelOf, labelOfItem } from '../../interface/registry/index.js';
-import type { RemoteSystem } from './remote-systems.js';
+import type { RemoteSystem, TaskChannel } from './remote-systems.js';
 import { releaseDirectory, type Directory } from './directories.js';
 import type { GpuEngine } from './gpu.js';
 
@@ -93,6 +93,8 @@ export type Runner = {
  * is collected or removed, and keep it until then without keeping the system.
  */
 export type Holdings = {
+    /** Set once its system is removed, so no run calls its body again, its rows' included. */
+    removed: boolean;
     released: boolean;
     /** Its kernel's reduction partials, in the arena. */
     partials: Float64Array | null;
@@ -104,15 +106,29 @@ export type Holdings = {
     gpu: GpuEngine | null;
     readonly prefix: string;
     readonly afterSync: WeakRef<() => void> | null;
+    /** For a system placed on a joined thread: its channel and its index there, which it stops being once removed. */
+    remote: { readonly channel: TaskChannel; readonly index: number } | null;
 };
 
 /** Holdings of a runner that holds nothing beyond its JS values. */
-export const holdingNothing = (): Holdings => ({ released: false, partials: null, up: null, directories: [], gpu: null, prefix: "", afterSync: null });
+export const holdingNothing = (remote: Holdings["remote"] = null): Holdings => ({ removed: false, released: false, partials: null, up: null, directories: [], gpu: null, prefix: "", afterSync: null, remote });
+
+/**
+ * Stops a runner at once, as its system is removed: no run calls its body again, and on a joined thread no task runs it
+ * once this returns. What it holds is released later, once no run in progress uses it.
+ */
+export const stopHoldings = (holdings: Holdings): void => {
+    holdings.removed = true;
+    const { remote } = holdings;
+    holdings.remote = null;
+    remote?.channel.unplace(remote.index);
+};
 
 /** Releases what a runner holds, once: no run may use it again. */
 export const releaseHoldings = (state: State, holdings: Holdings): void => {
     if (holdings.released) return;
     holdings.released = true;
+    stopHoldings(holdings);
     if (holdings.partials !== null) freeArray(state.memory, holdings.partials);
     holdings.partials = null;
     holdings.up?.release();
@@ -334,15 +350,16 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const values = context.value;
         const filters = filtersOf(archetype);
         // Every row passes, so nothing is filtered.
+        // A body may remove its own system, after which no row of it runs.
         if (since < 0 || filters.length === 0) {
-            for (let index = 0, count = archetype.count; index < count; index++) {
+            for (let index = 0, count = archetype.count; index < count && !holdings.removed; index++) {
                 row.index = index;
                 system.body(value, values);
             }
             return;
         }
         forEachPassingRange(filters, since, 0, archetype.count, (start, end) => {
-            for (let index = start; index < end; index++) {
+            for (let index = start; index < end && !holdings.removed; index++) {
                 row.index = index;
                 system.body(value, values);
             }
@@ -419,7 +436,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const parentRow = parentArchetype < 0 ? null : bindParent(state.archetypes[parentArchetype]);
         const upContext = context.value;
         upContext.up = parentRow === null ? null : parentRow.value;
-        for (let n = start; n < end; n++) {
+        for (let n = start; n < end && !holdings.removed; n++) {
             row.index = rows[n];
             if (parentRow !== null) parentRow.index = parents[n];
             system.body(row.value, upContext);
@@ -695,8 +712,8 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     };
 
     const holdings: Holdings = {
-        released: false, partials: null, up, directories: kernel?.directories ?? [], gpu: null, prefix: `${leafNumber}:`,
-        afterSync: partialCount > 0 ? new WeakRef(sizeSlots) : null,
+        removed: false, released: false, partials: null, up, directories: kernel?.directories ?? [], gpu: null, prefix: `${leafNumber}:`,
+        afterSync: partialCount > 0 ? new WeakRef(sizeSlots) : null, remote: null,
     };
 
     const conditionIs = (resources?.is ?? []).map(key => idOf(state, key));
@@ -731,6 +748,8 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
 
     const start = (input: unknown, workers: Workers | null, index: number): readonly Chunk[] => {
         ran = false;
+        // Removed during the run it's in: its body isn't called again.
+        if (holdings.removed) return noChunks;
         // A system whose conditions don't hold is skipped, successfully, and keeps its `lastRun`.
         if (!holds()) return noChunks;
         const tick = ++state.tick;
@@ -854,4 +873,26 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         remote: null,
         lastRun: () => lastRun,
     };
+};
+
+const nothing: readonly never[] = [];
+
+/** What runs read in place of a runner whose system was removed during them: it runs nothing. */
+export const removedRunner: Runner = {
+    kernel: null,
+    placement: "cpu",
+    touches: nothing,
+    writes: nothing,
+    looks: nothing,
+    resourceWrites: nothing,
+    matched: () => nothing,
+    load: async () => {},
+    setup: () => null,
+    start: () => nothing,
+    targets: nothing,
+    finish: () => null,
+    afterSync: null,
+    holdings: { ...holdingNothing(), removed: true, released: true },
+    remote: null,
+    lastRun: () => 0,
 };

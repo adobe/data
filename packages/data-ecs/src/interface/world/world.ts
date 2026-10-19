@@ -25,6 +25,13 @@ export type World = {
      * to one already added that conflicts with it, and on a joined thread; failures appear in the `report` resource.
      */
     add(system: System<void>): void;
+    /**
+     * Takes a value passed to `add`. Once it returns, that system's body is never called again, and its memory is
+     * released. A system added both alone and within an added composite stays until both are removed; constraints
+     * naming a removed system are ignored. Removing a value that isn't added does nothing. Throws, removing nothing, when
+     * the systems left would conflict with no ordering path between them, as `add` does, and on a joined thread.
+     */
+    remove(system: System<void>): void;
     readonly observe: Observers;
     /**
      * Lets another thread join this world through `port`, one end of a channel to it, of the browser or node: a

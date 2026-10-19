@@ -80,6 +80,16 @@ export type TaskChannel = {
     readonly completed: (message: Extract<import('./joining.js').ToWorld, { kind: "completed" }>) => void;
     /** Places a system on the thread, posting its setup; returns its index there. */
     readonly place: (state: State, leaf: Leaf) => number;
+    /**
+     * Stops running the system at an index there: once this returns the thread runs it in no task, a task already
+     * posted included, through a word in the memory the thread checks before each system it runs. The index is placed
+     * again only once the thread says it dropped what it held for it, after every task posted before.
+     */
+    readonly unplace: (index: number) => void;
+    /** The thread dropped what it held for systems unplaced at these indexes. */
+    readonly unplaced: (indexes: readonly number[]) => void;
+    /** For tests of what a world holds: how many indexes there hold a system, or are held until the thread drops it. */
+    readonly placed: () => number;
     /** Places a finalizer on the thread, posting its setup; returns its index there. Throws for one the thread can't name. */
     readonly placeFinalizer: (state: State, finalizer: FinalizerLeaf) => number;
     /** The finalizer placed at an index there, for its failures there. */
@@ -314,11 +324,52 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         return { id, keys };
     };
 
+    /** By index there: the offset of its removed word, a line of its own, kept for the index's next system. */
+    const removedWords: number[] = [];
+    /** Indexes the thread dropped, placed again before new ones; and those it hasn't dropped yet. */
+    const freeIndexes: number[] = [];
+    const unplacing = new Set<number>();
+    const removedWord = (index: number): Int32Array => new Int32Array(arena.memory.buffer, removedWords[index], 1);
+
     const place = (state: State, leaf: Leaf): number => {
         const { id, keys } = setupOf(state, leaf, "System", keysOf(leaf));
-        const index = placed++;
-        post({ protocol: "@adobe/data-ecs/join@1", kind: "systems", systems: [{ index, id, keys }] });
+        const index = freeIndexes.pop() ?? placed++;
+        const removed = removedWords[index] ??= arena.allocate(lineBytes);
+        Atomics.store(removedWord(index), 0, 0);
+        post({ protocol: "@adobe/data-ecs/join@1", kind: "systems", systems: [{ index, id, keys, removed }] });
         return index;
+    };
+
+    const unplace = (index: number): void => {
+        if (ended || removedWords[index] === undefined || unplacing.has(index)) return;
+        Atomics.store(removedWord(index), 0, 1);
+        unplacing.add(index);
+        // The thread drops it once it finished every task posted so far, which may run it up to its word.
+        post({ protocol: "@adobe/data-ecs/join@1", kind: "unplace", indexes: [index], sequence });
+    };
+
+    /** Tails of systems unplaced, whose blocks go once the world settled their last task. */
+    const retired: Tail[] = [];
+    const freeRetired = (): void => {
+        for (let k = retired.length - 1; k >= 0; k--) {
+            if (retired[k].unresolved) continue;
+            freeTail(state, retired[k]);
+            retired.splice(k, 1);
+        }
+    };
+
+    const unplaced = (indexes: readonly number[]): void => {
+        for (const index of indexes) {
+            if (!unplacing.delete(index)) continue;
+            // A tail's block goes with its system, which no task uses again.
+            for (let k = owned.length - 1; k >= 0; k--) {
+                if (owned[k].remote.index !== index) continue;
+                retired.push(owned[k]);
+                owned.splice(k, 1);
+            }
+            freeIndexes.push(index);
+        }
+        freeRetired();
     };
 
     const finalizers: FinalizerLeaf[] = [];
@@ -348,12 +399,16 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
             resolve?.(true);
         },
         place,
+        unplace,
+        unplaced,
+        placed: () => placed - freeIndexes.length,
         placeFinalizer,
         finalizerAt: index => finalizers[index],
         stops,
         dropped: false,
         wake,
         rewind: () => {
+            if (retired.length > 0) freeRetired();
             if (!wrote || ended) return;
             wrote = false;
             const needed = Atomics.load(control, ringNeededWord);
@@ -372,8 +427,9 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         },
         free: () => {
             freeStops(stops);
-            for (const tail of owned) freeTail(state, tail);
+            for (const tail of [...owned, ...retired]) freeTail(state, tail);
             arena.free(raw, blockBytes);
+            for (const offset of removedWords) if (offset !== undefined) arena.free(offset, lineBytes);
             arena.free(ring.offset, ring.bytes);
             if (payload.bytes > 0) arena.free(payload.offset, payload.bytes);
             if (completion.bytes > 0) arena.free(completion.offset, completion.bytes);
@@ -456,7 +512,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         targets,
         finish: failed => failed || (remote.result.flags & ranFlag) === 0 || targets.length === 0 ? null : folds,
         afterSync: null,
-        holdings: holdingNothing(),
+        holdings: holdingNothing({ channel, index }),
         remote,
         lastRun: () => remote.lastRun,
     };

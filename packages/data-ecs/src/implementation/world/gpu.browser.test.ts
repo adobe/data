@@ -9,6 +9,9 @@ import { System } from "../../interface/system/system.js";
 import { read, readEach, readEntity, readResource, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
+import { always } from "../../interface/resources/always.js";
+import { clock } from "../../interface/resources/clock.js";
+import { Observe } from "../../interface/observe/observe.js";
 
 const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
 const position = Symbol("gpuTest/position");
@@ -204,6 +207,9 @@ const watch = System.create({ name: "gpuTest/watch", components: { changed: [pos
 
 const frame = System.create({ name: "gpuTest/frame", systems: [move, reset, moveAgain] });
 
+/** Added while others come and go, so ticks go on. */
+const steady = System.create({ name: "gpuTest/steady" }, () => {});
+
 const device = async (): Promise<GPUDevice> => {
     const adapter = await navigator.gpu.requestAdapter();
     if (adapter === null) throw new Error("No WebGPU adapter.");
@@ -215,6 +221,39 @@ const positions = async (world: ReturnType<typeof createWorld>): Promise<Vec3[]>
 
 let nextDevice: GPUDevice | null = null;
 const setDevice = System.create({ name: "gpuTest/setDevice", resources: { write: [gpuDevice] } }, ({ resources }) => { resources[gpuDevice] = nextDevice; });
+
+describe("removing GPU systems", () => {
+    it("releases the GPU records of a render system and a GPU kernel once they're removed", async () => {
+        const world = createWorld({ [workers]: 0, [always]: true, [gpuDevice]: await device() });
+        await world.run(spawn);
+        let drawn = 0;
+        const draw = System.render({ name: "gpuTest/drawUntilRemoved", shader: { accessors: { place: position } }, after: [move] }, () => { drawn++; });
+        const ticks = async (count: number): Promise<void> => {
+            const from = (await Observe.toPromise(world.observe.resource(clock))).tick;
+            await new Promise<void>(resolve => {
+                const stop = world.observe.resource(clock)(({ tick }) => {
+                    if (tick < from + count) return;
+                    queueMicrotask(() => stop());
+                    resolve();
+                });
+            });
+        };
+        world.add(steady);
+        await ticks(2);
+        const before = await world.tables();
+        world.add(draw);
+        world.add(move);
+        await ticks(3);
+        expect((await world.tables()).gpu).toBeGreaterThan(before.gpu);
+        world.remove(draw);
+        world.remove(move);
+        const removed = drawn;
+        await ticks(3);
+        expect(drawn).toBe(removed);
+        expect((await world.tables()).gpu).toBe(before.gpu);
+        await world.dispose();
+    });
+});
 
 describe("the gpuDevice resource", () => {
     it("moves GPU kernels onto the device once a system sets it", async () => {

@@ -137,6 +137,9 @@ const placementOf = (definition: Definition): string | null => {
 /** For tests: how many joined threads a joined world has a channel to, to move runs' inputs through. */
 export const peersOf = new WeakMap<World, () => number>();
 
+/** For tests of what a thread holds: how many of the systems the world placed on a joined thread it keeps. */
+export const tablesOf = new WeakMap<World, () => { readonly systems: number }>();
+
 /** Reports an error thrown by an observer's notify, as an event listener's would be. */
 const rethrow = (error: unknown): void => queueMicrotask(() => { throw error; });
 
@@ -550,6 +553,12 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 else systems.setup(message.systems);
                 return systems?.process();
             }
+            case "unplace": {
+                if (systems !== null) return systems.unplace(message.indexes, message.sequence);
+                // Never set up, so nothing ran them.
+                for (let k = setups.length - 1; k >= 0; k--) if (message.indexes.includes(setups[k].index)) setups.splice(k, 1);
+                return post({ protocol: protocolName, kind: "unplaced", indexes: message.indexes });
+            }
             case "finalizers": {
                 if (systems === null) finalizerSetups.push(...message.finalizers);
                 else systems.setupFinalizers(message.finalizers);
@@ -737,6 +746,9 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         add: () => {
             throw new Error("Systems are added to ticks on the world's thread.");
         },
+        remove: () => {
+            throw new Error("Systems are removed from ticks on the world's thread.");
+        },
         share: () => {
             throw new Error("Only the world's thread shares it.");
         },
@@ -765,5 +777,6 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         [Symbol.asyncDispose]: () => world.dispose(),
     };
     peersOf.set(world, () => peers.size);
+    tablesOf.set(world, () => ({ systems: systems?.systems() ?? 0 }));
     return world;
 };

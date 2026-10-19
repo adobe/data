@@ -57,6 +57,8 @@ export type GpuEngine = {
     readonly record: (key: string, words: Uint32Array) => number;
     /** Frees the records and index blocks of keys starting with `prefix`, a system's, once nothing runs it again. */
     readonly release: (prefix: string) => void;
+    /** For tests of what a world holds: how many records and index blocks it keeps. */
+    readonly records: () => number;
     readonly markCpuWrites: (archetype: Archetype, storage: Storage) => void;
     readonly markGpuWrites: (archetype: Archetype, storage: Storage) => void;
     /** Whether a storage has GPU writes the CPU hasn't seen. */
@@ -325,6 +327,7 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         uploadIndexes,
         record,
         release,
+        records: () => slots.size + indexBlocks.size,
         markCpuWrites,
         markGpuWrites,
         isAhead: storage => {

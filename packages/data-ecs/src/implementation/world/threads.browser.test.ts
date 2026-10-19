@@ -15,6 +15,7 @@ import { remoteFinalizersCases } from "./remote-finalizers.cases.js";
 import { tailsCases } from "./tails.cases.js";
 import { transfersCases } from "./transfers.cases.js";
 import { lifetimeCases } from "./lifetime.cases.js";
+import { removalCases } from "./removal.cases.js";
 
 // Real workers in chromium: the cases over the fixtures' sources, as node runs them built.
 workersCases(() => import("./workers.fixture.js"));
@@ -34,3 +35,4 @@ remoteFinalizersCases(() => import("./remote-finalizers.fixture.js"));
 tailsCases(() => import("./tails.fixture.js"));
 transfersCases(() => import("./transfers.fixture.js"));
 lifetimeCases(() => import("./lifetime.fixture.js"));
+removalCases(() => import("./removal.fixture.js"));

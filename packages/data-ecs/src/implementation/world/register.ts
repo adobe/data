@@ -1,7 +1,7 @@
 import type { Leaf } from '../../interface/system/leaf.js';
 import { idOfItem, idOfKey, labelOf, requireDefinition, threadOf, type Definition } from '../../interface/registry/index.js';
 import { createRemoteRunner, unplaceable } from './remote-systems.js';
-import { createRunner, releaseHoldings, type Holdings, type Runner } from './runner.js';
+import { createRunner, releaseHoldings, removedRunner, stopHoldings, type Holdings, type Runner } from './runner.js';
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, observe, unobserve, type Key, type State } from './state.js';
 import { labelOfItem } from '../../interface/registry/index.js';
@@ -13,9 +13,17 @@ export type Registration = { readonly resources: readonly Key[]; readonly ticked
 export type Registrar = {
     /** Validates and records a system with all its members. Throws without recording anything on failure. */
     readonly register: (system: Definition) => Registration;
-    /** A registered system's schedule. */
+    /** A registered system's schedule; undefined for one not registered, or holding a system forgotten since. */
     readonly registered: (system: Definition) => Schedule | undefined;
+    /** A leaf's runner, or one that runs nothing for a leaf not registered, as a system removed during a run is. */
     readonly runnerOf: (leaf: Leaf) => Runner;
+    /**
+     * Forgets systems, as removing them does: their schedules, and leaves' runners, which no run calls again once this
+     * returns. Returns what releases what the runners held, for once no run in progress uses them.
+     */
+    readonly forget: (systems: readonly Definition[]) => () => void;
+    /** Every system in a tree, the root included. */
+    readonly systemsOf: (root: Definition) => readonly Definition[];
     /** A kernel runner's index, as workers know it. */
     readonly kernelIndexOf: (runner: Runner) => number;
     /** Every registered kernel runner. */
@@ -89,8 +97,17 @@ const placedRunner = (state: State, leaf: Leaf, since = 0): Runner => {
  */
 type Entry = { readonly leaf: WeakRef<Leaf>; holdings: Holdings; readonly observed: readonly number[]; released: boolean };
 
-/** What the registrar keeps of a registered system until it's collected: a leaf's entry, and whether it's still registered. */
-type Registered = { readonly entry: Entry | null; registered: boolean };
+/**
+ * What the finalization registry keeps of a system until it's collected, holding nothing of it: whether it's registered
+ * now, as one rolled back or forgotten isn't, and for a leaf its entry.
+ */
+type Registered = { entry: Entry | null; registered: boolean };
+
+/**
+ * What the registrar keeps of a system it registered, by the system: its record in the registry, its schedule, and the
+ * count of forgettings it was last found whole at. Kept across forgetting, so registering it again records nothing more.
+ */
+type Kept = { readonly held: Registered; schedule: Schedule | null; checked: number };
 
 /**
  * What a world keeps of each system it registered lives as long as the system's value: schedules and runners by
@@ -98,8 +115,10 @@ type Registered = { readonly entry: Entry | null; registered: boolean };
  * buffers and its `lastRun`. What a runner holds beyond its JS values is released once its system is collected.
  */
 export const createRegistrar = (state: State): Registrar => {
-    const schedules = new WeakMap<Definition, Schedule>();
+    const records = new WeakMap<Definition, Kept>();
     const runners = new WeakMap<Leaf, Runner>();
+    /** Moves on whenever systems are forgotten, so a composite holding one is found to need registering again. */
+    let forgettings = 0;
     /** Every registered leaf, for what goes over every runner: rare, at placements, device changes and kernel loads. */
     const live = new Set<Entry>();
     let scheduleCount = 0;
@@ -117,6 +136,7 @@ export const createRegistrar = (state: State): Registrar => {
      */
     const collected = new FinalizationRegistry<Registered>(record => {
         if (!record.registered) return;
+        record.registered = false;
         scheduleCount--;
         if (record.entry !== null) release(record.entry);
     });
@@ -140,13 +160,13 @@ export const createRegistrar = (state: State): Registrar => {
     };
 
     const register = (root: Definition): Registration => {
-        const added: { readonly system: Definition; readonly schedule: Schedule; readonly record: Registered; readonly runner: Runner | null }[] = [];
+        const added: { readonly system: Definition; readonly schedule: Schedule; readonly entry: Entry | null; readonly runner: Runner | null }[] = [];
         const resources = new Set<Key>();
         for (const system of systemsOf(root)) {
-            if (schedules.has(system)) continue;
+            if (records.get(system)?.held.registered === true) continue;
             const schedule = scheduleOf(system);
             if (!isLeaf(system)) {
-                added.push({ system, schedule, record: { entry: null, registered: true }, runner: null });
+                added.push({ system, schedule, entry: null, runner: null });
                 continue;
             }
             // Creating the system checked its declaration; registering it gives its keys ids in this world.
@@ -158,15 +178,25 @@ export const createRegistrar = (state: State): Registrar => {
             }
             const runner = placedRunner(state, system);
             const entry: Entry = { leaf: new WeakRef(system), holdings: runner.holdings, observed: observedBy(system).map(key => idOf(state, key)), released: false };
-            added.push({ system, schedule, record: { entry, registered: true }, runner });
+            added.push({ system, schedule, entry, runner });
         }
         let observing = false;
         const kernels: Runner[] = [];
-        for (const { system, schedule, record, runner } of added) {
-            schedules.set(system, schedule);
+        for (const { system, schedule, entry, runner } of added) {
+            const record = records.get(system);
+            if (record === undefined) {
+                const held: Registered = { entry, registered: true };
+                records.set(system, { held, schedule, checked: forgettings });
+                collected.register(system, held);
+            }
+            else {
+                Object.assign(record.held, { entry, registered: true });
+                record.schedule = schedule;
+                record.checked = forgettings;
+                // Runs that read a removed runner for it read the new one.
+                if (runner !== null) state.runnersVersion++;
+            }
             scheduleCount++;
-            collected.register(system, record);
-            const { entry } = record;
             if (runner === null || entry === null || !isLeaf(system)) continue;
             runners.set(system, runner);
             live.add(entry);
@@ -180,11 +210,13 @@ export const createRegistrar = (state: State): Registrar => {
         // New `changed` filters observe more components, so kernels that muted their stamps must load again.
         if (observing) eachRunner((_, runner) => { if (runner.kernel?.stale() === true && !kernels.includes(runner)) kernels.push(runner); });
         const rollback = (): void => {
-            for (const { system, record, runner } of added) {
-                schedules.delete(system);
+            for (const { system, entry, runner } of added) {
+                const record = records.get(system);
+                if (record !== undefined) {
+                    Object.assign(record.held, { entry: null, registered: false });
+                    record.schedule = null;
+                }
                 scheduleCount--;
-                record.registered = false;
-                const { entry } = record;
                 if (runner === null || entry === null || !isLeaf(system)) continue;
                 runners.delete(system);
                 release(entry);
@@ -194,12 +226,40 @@ export const createRegistrar = (state: State): Registrar => {
         return { resources: [...resources], ticked, kernels, rollback };
     };
 
-    const registered = (system: Definition): Schedule | undefined => schedules.get(system);
+    const registered = (system: Definition): Schedule | undefined => {
+        const record = records.get(system);
+        if (record === undefined || !record.held.registered || record.schedule === null) return undefined;
+        if (record.checked !== forgettings) {
+            // A composite holding a system forgotten since registers again, its other members keeping their runners.
+            for (const tier of record.schedule.tiers) for (const leaf of tier) if (!runners.has(leaf)) return undefined;
+            record.checked = forgettings;
+        }
+        return record.schedule;
+    };
 
-    const runnerOf = (leaf: Leaf): Runner => {
-        const runner = runners.get(leaf);
-        if (runner === undefined) throw new Error(`System "${labelOfItem(leaf)}" isn't registered.`);
-        return runner;
+    /** A leaf's runner; for one forgotten, as a removed system is, one that runs nothing. */
+    const runnerOf = (leaf: Leaf): Runner => runners.get(leaf) ?? removedRunner;
+
+    const forget = (systems: readonly Definition[]): (() => void) => {
+        const stopped: Entry[] = [];
+        for (const system of systems) {
+            const record = records.get(system);
+            if (record === undefined || !record.held.registered) continue;
+            const { entry } = record.held;
+            Object.assign(record.held, { entry: null, registered: false });
+            record.schedule = null;
+            scheduleCount--;
+            if (entry === null || !isLeaf(system)) continue;
+            runners.delete(system);
+            live.delete(entry);
+            // No run calls its body again from here, on any thread; what it holds goes once no run uses it.
+            stopHoldings(entry.holdings);
+            stopped.push(entry);
+        }
+        forgettings++;
+        state.runnersVersion++;
+        state.placement++;
+        return () => { for (const entry of stopped) release(entry); };
     };
 
     const kernels = (): readonly Runner[] => {
@@ -251,5 +311,5 @@ export const createRegistrar = (state: State): Registrar => {
 
     const sizes = () => ({ schedules: scheduleCount, runners: live.size, kernels: state.kernelIndexes.size });
 
-    return { register, registered, runnerOf, kernelIndexOf: runner => runner.kernel?.index ?? -1, kernels, placeGpuKernels, crossing, place, sizes };
+    return { register, registered, runnerOf, forget, systemsOf, kernelIndexOf: runner => runner.kernel?.index ?? -1, kernels, placeGpuKernels, crossing, place, sizes };
 };

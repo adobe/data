@@ -67,6 +67,8 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
     }
     /** What its finalizers threw, by their index on this thread, for the world's next report. */
     | { readonly kind: "finalized"; readonly errors: readonly (readonly [number, WorkerError])[] }
+    /** It dropped what it held for the systems unplaced at these indexes, which the world may place again. */
+    | { readonly kind: "unplaced"; readonly indexes: readonly number[] }
 );
 
 /** From the world's thread to a joined one. */
@@ -80,8 +82,16 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
         readonly kind: "joined"; readonly memory: WebAssembly.Memory; readonly control: number; readonly waits: boolean; readonly log: number | null;
         readonly tasks: number | null; readonly thread: number;
     }
-    /** Systems the world places on the thread, each by its index there and its id, with the world's numbers for its keys. */
-    | { readonly kind: "systems"; readonly systems: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
+    /**
+     * Systems the world places on the thread, each by its index there and its id, with the world's numbers for its keys
+     * and the byte offset of its removed word, which the thread checks before it runs the system.
+     */
+    | { readonly kind: "systems"; readonly systems: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[]; readonly removed: number }[] }
+    /**
+     * Systems the world removed, by their indexes there, whose removed words are set: the thread drops what it holds
+     * for them once it finished task `sequence`, the last posted before, and says so.
+     */
+    | { readonly kind: "unplace"; readonly indexes: readonly number[]; readonly sequence: number }
     /** Finalizers the world places on the thread, as systems are: each one's index there, its id, and the world's numbers for its keys. */
     | { readonly kind: "finalizers"; readonly finalizers: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
     /**

@@ -17,6 +17,11 @@ const added: void = world.add(main);
 // @ts-expect-error a system with input can't be added, since ticks pass none
 world.add(move);
 void added;
+// Removing takes a value passed to add, which takes no input.
+const removed: void = world.remove(main);
+// @ts-expect-error a system with input was never added
+world.remove(move);
+void removed;
 
 // Built-in resources.
 check<Equal<Resource.Value<typeof gpuDevice>, GPUDevice | null>>();

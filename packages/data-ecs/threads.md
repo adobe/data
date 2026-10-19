@@ -87,7 +87,7 @@ const joined = join(port, { threads: ["main"] });
 ```
 
 `join`, the implementation's, returns the same `World` type; the interface names neither it nor its port or options,
-which it infers from `share`. Its `run` and `observe` work as on the world's thread, `add` and `share` throw there, and
+which it infers from `share`. Its `run` and `observe` work as on the world's thread, `add`, `remove` and `share` throw there, and
 its `dispose` disconnects this thread; disposing on the world's thread disposes the world, and joined threads' runs
 reject from then on. `share` returns nothing: a joined thread's progress (`"joining"`, `"joined"` once the threads it
 claims are its own, `"gone"` once they're released) and its claims are the implementation's own storage, which
@@ -392,6 +392,16 @@ consecutive tiers all on that thread are one task, which stops after a tier with
   comes by message, before the task.
 - **A thread that's gone** settles its task in flight: its systems are skipped, each with a `"thread"` failure, and
   later tiers still run.
+- **Removal:** each system placed on a thread has a removed word there, a line of its own in the memory, kept with its
+  index there and posted with its setup. `world.remove` sets it before it returns, and the thread checks it, one
+  atomic load, before it runs each system of a task, a tail's included, so a task posted before the removal, in flight
+  or fused with later tiers, runs no more of it; the world posts no later task holding it. The world then posts
+  `unplace` with the sequence of the last task it posted, and once the thread finished that task it drops what it holds
+  for the system, its runner and its tail block's view, and answers `unplaced`: so no task names the index after the
+  thread forgot it. The world frees the system's tail block once that tail's last task settled, and places another
+  system at the index only once the answer arrived, as stop lists hold an entity's index until each thread finalized it.
+  A task's completion, rather than the next sync point, is what makes the drop safe: a thread left with no system gets
+  no more tasks, and replays nothing until one comes.
 
 ### Finalizers on other threads
 
@@ -572,7 +582,8 @@ Memory isn't shared, so the world runs inline, and `share` and `join` throw.
   the world's thread, 4 bytes of tag per row of each remote storage, beside its ticks; on the joined thread, its columns
   and ticks, and 8 bytes per row of the archetypes it holds objects of, for its entity column.
 - **Joined threads:** per thread, its control words and 64 run slots, 16 KiB; per pair of joined threads one of which
-  fills objects, a `MessageChannel`.
+  fills objects, a `MessageChannel`; per index a system was placed at there, a 64-byte line for its removed word, kept
+  for the index's next system.
 - **Mailboxes:** per subscription, its control words and three slots, each sized to the largest result delivered.
 - **Tail buffers:** only once a fallback snapshot was taken: passing rows times their declared struct reads, kept for the next.
 - **Stop lists:** per sync point with stops, a 16-byte header, and per finalizer 16 bytes and per stop 16 bytes, 4 per

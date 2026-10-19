@@ -27,4 +27,9 @@ it("runs added systems on every tick", async () => {
     const ticked = new Promise<number>(resolve => world.observe.resource(elapsed)(value => { if (value >= 30) resolve(value); }));
     expect(await ticked).toBeGreaterThanOrEqual(30);
     expect((await Observe.toPromise(world.observe.resource(clock))).delta).toBe(10);
+    // remove: takes a system added off every tick again.
+    world.remove(advance);
+    const stopped = await Observe.toPromise(world.observe.resource(elapsed));
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(await Observe.toPromise(world.observe.resource(elapsed))).toBe(stopped);
 });

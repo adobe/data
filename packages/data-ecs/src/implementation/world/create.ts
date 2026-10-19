@@ -26,6 +26,7 @@ import { platformWorkers, type WorkerPlatform, type WorkerPort } from './worker-
 import { createPublisher } from './publish.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
+import type { Schedule } from '../../interface/registry/schedule.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
 import { ensureProgramResources, activate, finalizerCrossing, placeFinalizers } from './activate.js';
 import { firstKeyOf, isWorldWritten, kindOf, programVersion, type Composite } from '../../interface/registry/index.js';
@@ -82,6 +83,10 @@ export type Tables = {
     readonly journalReaders: number;
     /** Bytes the arena holds. */
     readonly arena: number;
+    /** By joined thread with claims: how many indexes there hold a system, or are held until it drops one. */
+    readonly joined: readonly number[];
+    /** GPU records and index blocks, 0 without a device. */
+    readonly gpu: number;
     readonly workers: readonly { readonly kernels: number }[];
 };
 
@@ -299,16 +304,17 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     /**
      * Runs a registered system or composite, ending in a sync point, then, with `deliver`, delivers to observers. One
-     * async step for both, so a run awaits nothing more.
+     * async step for both, so a run awaits nothing more. `registered` is its schedule as it was registered, which it
+     * runs if a system it holds was removed since, skipping that system.
      */
-    const perform = async (definition: Definition, value: unknown, deliver: boolean): Promise<Report> => {
+    const perform = async (definition: Definition, value: unknown, deliver: boolean, registered: Schedule | undefined): Promise<Report> => {
         // Resources added between runs move the resource entity, whose structs a tail may still read.
         if (ensured.version !== programVersion() && state.channels.length > 0) await drainTails();
         ensureProgramResources(state, ensured);
         if (observers.start()) await reloadObserved();
         if (workersChanged()) await followWorkers();
         if (deviceChanged()) await followDevice();
-        const schedule = registrar.registered(definition);
+        const schedule = registrar.registered(definition) ?? registered;
         if (schedule === undefined) throw new Error(`System "${labelOfItem(definition)}" didn't register.`);
         // An input that moved to a joined thread runs only there: that thread went since, its claims with it.
         if (isHeld(value) && (definition.kind === "composite" || registrar.runnerOf(definition).remote?.channel !== value.channel)) {
@@ -357,14 +363,17 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
      * tick's values. The report then holds the failures of observers that delivery notified, its own included, without
      * notifying them again.
      */
-    const tick = (composite: Composite, clockValue: Clock): Promise<void> => enqueue(async () => {
-        if (disposed) return;
+    const tick = (_: Composite, clockValue: Clock): Promise<void> => enqueue(async () => {
+        // What's added as the tick starts: systems removed since the loop asked for it aren't in it.
+        const composite = loop.current();
+        if (disposed || composite === null) return;
         let report: Report;
         try {
             if (registrar.registered(composite) === undefined) {
                 ensureResources(state, loopResources);
                 await complete(registrar.register(composite));
             }
+            const schedule = registrar.registered(composite);
             if (reports.length > 0 && readsReport(composite)) {
                 await Promise.all(reports.map(pending => pending.tails));
                 flushReports();
@@ -374,7 +383,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 if (waiting !== null) await waiting;
             }
             writeOwn(clock, clockValue);
-            report = await perform(composite, undefined, false);
+            report = await perform(composite, undefined, false, schedule);
         }
         catch (error) {
             report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: [], dropped: 0, warnings: [] };
@@ -465,10 +474,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         }
         const ran = definition;
         const registering = registration;
+        const schedule = registrar.registered(ran);
         loop.arrived();
-        return enqueue(registering === null ? () => perform(ran, value, true) : async () => {
+        return enqueue(registering === null ? () => perform(ran, value, true, schedule) : async () => {
             await complete(registering);
-            return perform(ran, value, true);
+            return perform(ran, value, true, schedule);
         });
     };
 
@@ -502,6 +512,17 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         add: system => {
             checkLive();
             loop.add(requireDefinition(system));
+        },
+        remove: system => {
+            const definition = requireDefinition(system);
+            if (disposed) return;
+            const change = loop.remove(definition);
+            if (change === null) return;
+            // What's still added keeps its runners; the rest, the composite ticks ran included, is forgotten.
+            const kept = new Set(change.next === null ? [] : registrar.systemsOf(change.next));
+            const release = registrar.forget(registrar.systemsOf(change.previous).filter(each => !kept.has(each)));
+            // What they held goes once the run or tick in progress, which may still use it, is done.
+            void enqueue(async () => release());
         },
         dispose: () => {
             disposed = true;
@@ -539,6 +560,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 directories: state.directories.size,
                 journalReaders: state.journal.readers,
                 arena: state.memory.held(),
+                joined: state.channels.map(channel => channel.placed()),
+                gpu: state.gpu?.records() ?? 0,
                 workers: workers.map(result => ({ kernels: result.kernels ?? -1 })),
             };
         }),

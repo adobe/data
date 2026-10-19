@@ -542,6 +542,7 @@ export const createSharing = (host: SharingHost) => {
         switch (message.kind) {
             case "join": return join(thread, message.threads, message.waits, message.lock, message.imported);
             case "completed": return thread.tasks?.completed(message);
+            case "unplaced": return thread.tasks?.unplaced(message.indexes);
             case "finalized": {
                 const { tasks } = thread;
                 if (tasks === null) return;

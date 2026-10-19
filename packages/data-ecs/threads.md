@@ -409,7 +409,9 @@ consecutive tiers all on that thread are one task, which stops after a tier with
 - **Removal:** each system placed on a thread has a removed word there, a line of its own in the memory, kept with its
   index there and posted with its setup. `world.remove` sets it before it returns, and the thread checks it, one
   atomic load, before it runs each system of a task, a tail's included, so a task posted before the removal, in flight
-  or fused with later tiers, runs no more of it; the world posts no later task holding it. The world then posts
+  or fused with later tiers, runs no more of it; the world posts no later task holding it, even one whose tiers it
+  read before a body removed it while it waited for the thread: it gathers a task's systems, skipping removed ones,
+  after the task's last await. The world then posts
   `unplace` with the sequence of the last task it posted, and once the thread finished that task it drops what it holds
   for the system, its runner and its tail block's view, and answers `unplaced`: so no task names the index after the
   thread forgot it. The world frees the system's tail block once that tail's last task settled, and places another

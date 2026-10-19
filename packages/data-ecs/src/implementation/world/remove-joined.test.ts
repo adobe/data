@@ -7,7 +7,8 @@ import type { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { tablesOf } from "./join.js";
-import { calls, first, firstTail, removal, second, secondTail, ticking } from "./remove.test-helper.js";
+import type { LoopPlatform } from "./loop.js";
+import { calls, first, firstTail, removal, removerTail, second, secondTail, ticking } from "./remove.test-helper.js";
 
 // Removing systems placed on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
 
@@ -30,9 +31,28 @@ const timerFrames = { frame: (callback: (time: number) => void) => {
     return () => clearTimeout(handle);
 } };
 
-/** A world ticking a millisecond apart, shared with a thread on this one claiming "removeTest". */
-const joined = async (): Promise<{ readonly world: CreatedWorld; readonly remote: World; readonly ticks: (count: number) => Promise<void>; readonly close: () => Promise<void> }> => {
-    const world = createWorld({ [workers]: 0, [always]: true }, { loop: timerFrames });
+/**
+ * Timer frames until `immediate` is set, then each frame as soon as the last tick ends, before the thread on this one
+ * runs that tick's tails: the next tick waits for them, and their bodies run while it does.
+ */
+const switchableFrames = (): { immediate: boolean; readonly frame: LoopPlatform["frame"] } => {
+    const frames = {
+        immediate: false,
+        frame: (callback: (time: number) => void): (() => void) => {
+            if (!frames.immediate) return timerFrames.frame(callback);
+            let cancelled = false;
+            queueMicrotask(() => {
+                if (!cancelled) callback(performance.now());
+            });
+            return () => { cancelled = true; };
+        },
+    };
+    return frames;
+};
+
+/** A world ticking on `frames`, a millisecond apart by default, shared with a thread on this one claiming "removeTest". */
+const joined = async (frames: Pick<LoopPlatform, "frame"> = timerFrames): Promise<{ readonly world: CreatedWorld; readonly remote: World; readonly ticks: (count: number) => Promise<void>; readonly close: () => Promise<void> }> => {
+    const world = createWorld({ [workers]: 0, [always]: true }, { loop: frames });
     const channel = new MessageChannel();
     world.share(channel.port1);
     const remote = join(channel.port2, { threads: ["removeTest"] });
@@ -46,6 +66,7 @@ const joined = async (): Promise<{ readonly world: CreatedWorld; readonly remote
     const close = async (): Promise<void> => {
         removal.world = null;
         removal.armed = false;
+        removal.target = null;
         await remote.dispose();
         await world.dispose();
     };
@@ -95,6 +116,54 @@ describe("removing systems on a joined thread", () => {
             await close();
         });
     }
+
+    it("posts no task naming a tail removed while the next tick waited for its thread to finish the last", async () => {
+        const frames = switchableFrames();
+        const { world, remote, ticks, close } = await joined(frames);
+        world.add(firstTail);
+        world.add(secondTail);
+        await ticks(3);
+        expect(await held(world, remote)).toEqual([2, 2]);
+        // From the next tick on, each starts as the last ends and waits for the last's tails, which run meanwhile: the
+        // tails of the tick `ticks` sees now are still posted, and the first of them removes the second.
+        frames.immediate = true;
+        await ticks(1);
+        const ran = calls.secondTail;
+        removal.armed = true;
+        await ticks(3);
+        removal.armed = false;
+        frames.immediate = false;
+        expect(calls.secondTail).toBe(ran);
+        expect(await settled(world, remote, ticks, [1, 1])).toEqual([1, 1]);
+        world.remove(firstTail);
+        expect(await settled(world, remote, ticks, [0, 0])).toEqual([0, 0]);
+        await close();
+    });
+
+    it("posts no task naming a blocking tier's system removed while the next tick waited for its thread to finish the last", async () => {
+        const frames = switchableFrames();
+        const { world, remote, ticks, close } = await joined(frames);
+        world.add(first);
+        world.add(second);
+        world.add(removerTail);
+        await ticks(3);
+        expect(await held(world, remote)).toEqual([3, 3]);
+        // As above: the next tick waits for the tail of the tick seen now, which removes `second`, before it posts the
+        // task its tiers are one of.
+        frames.immediate = true;
+        await ticks(1);
+        const ran = calls.second;
+        removal.target = second;
+        await ticks(3);
+        frames.immediate = false;
+        expect(removal.target).toBe(null);
+        expect(calls.second).toBe(ran);
+        expect(await settled(world, remote, ticks, [2, 2])).toEqual([2, 2]);
+        world.remove(first);
+        world.remove(removerTail);
+        expect(await settled(world, remote, ticks, [0, 0])).toEqual([0, 0]);
+        await close();
+    });
 
     it("places an index again only once the thread dropped what it held for it", async () => {
         const { world, remote, ticks, close } = await joined();

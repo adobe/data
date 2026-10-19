@@ -256,11 +256,23 @@ const settled = (state: State, folds: ReadonlyMap<unknown, Fold> | null, outcome
     return failed;
 };
 
-/** Adds the systems of `runners` on `channel`'s thread to the task being gathered, with tier `tier` within it. */
+/**
+ * Adds the systems of `runners` on `channel`'s thread to the task being gathered, with tier `tier` within it. One removed
+ * since its tier was read, by a body that ran meanwhile, is left out, giving back nothing, as one its thread skipped:
+ * the thread drops it once the tasks posted before its removal are done, so a later task can't name it. The caller
+ * posts the task with no await between, and `channel` has none in flight, so nothing else reads the result reset.
+ */
 const gather = (prepared: Prepared, runners: readonly Runner[], channel: TaskChannel, tier: number): void => {
     for (let i = 0; i < runners.length; i++) {
         const { remote } = runners[i];
         if (remote === null || remote.channel !== channel) continue;
+        if (runners[i].holdings.removed) {
+            const { result } = remote;
+            result.flags = 0;
+            result.segment = undefined;
+            result.error = undefined;
+            continue;
+        }
         liftColumnStamps(runners[i]);
         prepared.systems.push(remote);
         prepared.tiers.push(tier);
@@ -297,8 +309,9 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
             if (waiting !== null) await waiting;
         }
         if (gpu !== null) await readAhead(state, gpu, prepared.runners[v]);
-        gather(prepared, prepared.runners[v], channel, v - first);
     }
+    // Gathered once nothing more is awaited, so a system removed while this waited is in no tier of the task.
+    for (let v = first; v <= last; v++) gather(prepared, prepared.runners[v], channel, v - first);
     const done = await post(state, prepared, channel, args);
     const { outcome } = prepared;
     for (let v = first; v <= last; v++) {

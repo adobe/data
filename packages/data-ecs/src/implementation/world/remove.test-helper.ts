@@ -28,8 +28,11 @@ Resource.register(secondRuns, { type: { type: "integer", default: 0 } });
 /** How many times each system's body was called on this thread. */
 export const calls = { first: 0, second: 0, firstTail: 0, secondTail: 0 };
 
-/** Where systems on this thread remove others: a world on this thread, for tests on one thread. */
-export const removal: { world: World | null; armed: boolean } = { world: null, armed: false };
+/**
+ * Where systems on this thread remove others: a world on this thread, for tests on one thread; and what `removerTail`
+ * removes next.
+ */
+export const removal: { world: World | null; armed: boolean; target: System | null } = { world: null, armed: false, target: null };
 
 const spin = (milliseconds: number): void => {
     const end = performance.now() + milliseconds;
@@ -55,6 +58,14 @@ export const firstTail = System.create({ name: "removeTest/firstTail", resources
     calls.firstTail += resources[mark].length;
     spin(resources[pause]);
     if (removal.armed) removal.world?.remove(secondTail);
+});
+
+/** Terminal, so a tail: removes `removal.target`, once, when it's set. */
+export const removerTail = System.create({ name: "removeTest/removerTail", resources: { read: [mark] } }, ({ resources }) => {
+    void resources[mark];
+    const { target } = removal;
+    removal.target = null;
+    if (target !== null) removal.world?.remove(target);
 });
 
 export const secondTail = System.create({ name: "removeTest/secondTail", resources: { read: [mark] }, after: [firstTail] }, ({ resources }) => {

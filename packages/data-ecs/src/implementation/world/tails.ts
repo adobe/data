@@ -168,18 +168,20 @@ const prepare = (state: State, tail: Tail): void => {
 
 /**
  * After a sync point: posts the tails of `runners`, those of each channel as one task in schedule order. Each channel
- * must have no task in flight. Resolves with their outcome once every task settled.
+ * must have no task in flight. Resolves with their outcome once every task settled. A tail removed since `runners` were
+ * read, by a body that ran while the caller waited for its channel, is in no task: its thread drops it once the tasks
+ * posted before its removal are done.
  */
 export const postTails = (state: State, runners: readonly Runner[], leaves: readonly Leaf[], tiers: readonly number[], args: unknown): Promise<TailOutcome> => {
     const channels: TaskChannel[] = [];
-    for (const runner of runners) if (runner.remote !== null && !channels.includes(runner.remote.channel)) channels.push(runner.remote.channel);
+    for (const runner of runners) if (runner.remote !== null && !runner.holdings.removed && !channels.includes(runner.remote.channel)) channels.push(runner.remote.channel);
     const tasks = channels.map(channel => {
         const systems: RemoteSystem[] = [];
         const order: number[] = [];
         const tails: Tail[] = [];
         for (let k = 0; k < runners.length; k++) {
             const remote = runners[k].remote;
-            if (remote === null || remote.channel !== channel) continue;
+            if (remote === null || remote.channel !== channel || runners[k].holdings.removed) continue;
             const tail = tailOf(state, runners[k], leaves[k]);
             prepare(state, tail);
             systems.push(remote);

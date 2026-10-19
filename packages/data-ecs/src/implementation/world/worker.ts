@@ -418,6 +418,10 @@ const handle = async (message: ToWorker): Promise<void> => {
         }
         return;
     }
+    if (message.kind === "tables") {
+        channel.post({ kind: "tables", task: message.task, kernels: kernels.size });
+        return;
+    }
     if (message.kind === "kernels") {
         try {
             refreshMemory();

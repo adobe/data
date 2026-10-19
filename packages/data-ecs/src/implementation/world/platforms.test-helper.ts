@@ -31,7 +31,7 @@ export const countingWorkers = (base: WorkerPlatform | null = platformWorkers())
                 port.post(message, transfer);
             },
             onMessage: handler => port.onMessage(message => {
-                if (message.spill !== null) spilled++;
+                if (message.kind !== "tables" && message.spill !== null) spilled++;
                 handler(message);
             }),
             terminate: () => {

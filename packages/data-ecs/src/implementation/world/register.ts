@@ -30,6 +30,8 @@ export type Registrar = {
     readonly crossing: (threads: readonly string[], imported: ReadonlySet<string>) => string | null;
     /** Places each registered system again, as claims were made or released: on its joined thread, or here. */
     readonly place: () => void;
+    /** For tests of what a world holds: how many schedules, runners and kernel indexes it keeps. */
+    readonly sizes: () => { readonly schedules: number; readonly runners: number; readonly kernels: number };
 };
 
 /** Every system in a tree, the root included. */
@@ -180,5 +182,7 @@ export const createRegistrar = (state: State): Registrar => {
         state.placement++;
     };
 
-    return { register, registered, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, kernels: () => [...kernelIndexes.keys()], placeGpuKernels, crossing, place };
+    const sizes = () => ({ schedules: schedules.size, runners: runners.size, kernels: kernelIndexes.size });
+
+    return { register, registered, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, kernels: () => [...kernelIndexes.keys()], placeGpuKernels, crossing, place, sizes };
 };

@@ -13,7 +13,7 @@ type Request = Task extends infer T ? T extends Task ? Omit<T, "task"> : never :
  * A task's commands, plus its error if it failed partway; what it issued before the error still applies. A message
  * task's commands and spawns are its segment of its worker's command ring, which the world drains.
  */
-export type TaskResult = { readonly commands: CommandBuffer; readonly segment?: Segment; readonly error?: Error };
+export type TaskResult = { readonly commands: CommandBuffer; readonly segment?: Segment; readonly error?: Error; readonly kernels?: number };
 
 /** A WASM kernel task: everything is a number, so it travels through shared memory instead of a message. */
 export type FastTask = {
@@ -134,6 +134,7 @@ export const createPool = (ports: readonly WorkerPort[], arena: Memory): Pool =>
             const pending = slot.pending.get(message.task);
             slot.pending.delete(message.task);
             if (pending === undefined) return;
+            if (message.kind === "tables") return pending.settle({ commands: emptyBuffer, kernels: message.kernels });
             const { start, end, spill } = message;
             const wrote = end > start || spill !== null;
             if (wrote) written = true;

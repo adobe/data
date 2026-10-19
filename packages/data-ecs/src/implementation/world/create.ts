@@ -69,10 +69,27 @@ export type WorldOptions = {
 };
 
 /**
- * A world as the implementation gives it, for tests and benchmarks: also `threads`, each shared thread's progress in
- * the order they were shared, which the interface leaves out.
+ * How much a world holds, by table, for tests that what a system holds lives only as long as it: on the world's
+ * thread, and on each pool worker.
  */
-export type CreatedWorld = World & { readonly threads: Observe<readonly ThreadProgress[]> };
+export type Tables = {
+    readonly schedules: number;
+    readonly runners: number;
+    readonly kernels: number;
+    readonly observed: number;
+    readonly afterSync: number;
+    readonly directories: number;
+    readonly journalReaders: number;
+    /** Bytes the arena holds. */
+    readonly arena: number;
+    readonly workers: readonly { readonly kernels: number }[];
+};
+
+/**
+ * A world as the implementation gives it, for tests and benchmarks: also `threads`, each shared thread's progress in
+ * the order they were shared, and `tables`, how much it holds, which the interface leaves out.
+ */
+export type CreatedWorld = World & { readonly threads: Observe<readonly ThreadProgress[]>; readonly tables: () => Promise<Tables> };
 
 /** The loop's state, added to a world when its first tick runs. */
 const loopResources: readonly Key[] = [cadence, always, wake, clock, reportResource];
@@ -494,6 +511,19 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         },
         [Symbol.asyncDispose]: () => world.dispose(),
         threads: sharing.progress,
+        tables: () => enqueue(async () => {
+            const current: Pool | null = pool;
+            const workers = current === null ? [] : await Promise.all(Array.from({ length: current.size }, (_, worker) => current.request(worker, { kind: "tables" })));
+            return {
+                ...registrar.sizes(),
+                observed: state.observed.size,
+                afterSync: state.afterSync.size,
+                directories: state.directories.size,
+                journalReaders: state.journal.readers,
+                arena: state.memory.held(),
+                workers: workers.map(result => ({ kernels: result.kernels ?? -1 })),
+            };
+        }),
         observe: {
             // Stored values match each resource's registered schema, so they have its type.
             resource: <R extends Resource.Key>(key: R) => observers.resource(key) as Observe<ReadonlyResourceValue<R>>,

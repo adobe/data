@@ -44,6 +44,8 @@ export type Memory = {
     /** Returns a 64-byte aligned offset of a block with at least `bytes`. Contents are unspecified. */
     readonly allocate: (bytes: number) => number;
     readonly free: (offset: number, bytes: number) => void;
+    /** Bytes in blocks allocated and not freed, for tests of what a world holds. */
+    readonly held: () => number;
 };
 
 const sizeClass = (bytes: number): number => Math.max(0, Math.ceil(Math.log2(Math.max(bytes, minimumBlockBytes) / minimumBlockBytes)));
@@ -55,11 +57,13 @@ export const createMemory = (shared = sharedMemoryAvailable()): Memory => {
     const memory = new WebAssembly.Memory({ initial: 1, maximum: shared ? maximumPages : 1, shared });
     const freeBlocks: number[][] = [];
     let top = shared ? headerBytes : 0;
+    let held = 0;
     const header = shared ? new Uint32Array(memory.buffer, 0, headerBytes / 4) : new Uint32Array(headerBytes / 4);
     header[pagesWord] = memory.buffer.byteLength / pageBytes;
 
     const allocate = (bytes: number): number => {
         const size = sizeClass(bytes);
+        held += minimumBlockBytes * 2 ** size;
         const reused = freeBlocks[size]?.pop();
         if (reused !== undefined) return reused;
         const offset = top;
@@ -76,8 +80,10 @@ export const createMemory = (shared = sharedMemoryAvailable()): Memory => {
     };
 
     const free = (offset: number, bytes: number): void => {
-        (freeBlocks[sizeClass(bytes)] ??= []).push(offset);
+        const size = sizeClass(bytes);
+        held -= minimumBlockBytes * 2 ** size;
+        (freeBlocks[size] ??= []).push(offset);
     };
 
-    return { memory, shared, header, allocate, free };
+    return { memory, shared, header, allocate, free, held: () => held };
 };

@@ -49,6 +49,8 @@ export type ToWorker =
     /** New components' schemas; none for a value that isn't data. */
     | { readonly kind: "layout"; readonly schemas: readonly (readonly [number, Schema | undefined])[] }
     | { readonly kind: "kernels"; readonly task: number; readonly kernels: readonly KernelSetup[] }
+    /** For tests of what a world holds: how many kernels this worker keeps. */
+    | { readonly kind: "tables"; readonly task: number }
     | {
         readonly kind: "run";
         readonly task: number;
@@ -74,7 +76,8 @@ export type WorkerError = { readonly name: string; readonly message: string; rea
  */
 export type FromWorker =
     | { readonly kind: "done"; readonly task: number; readonly start: number; readonly end: number; readonly spill: Uint8Array | null }
-    | { readonly kind: "failed"; readonly task: number; readonly start: number; readonly end: number; readonly spill: Uint8Array | null; readonly error: WorkerError };
+    | { readonly kind: "failed"; readonly task: number; readonly start: number; readonly end: number; readonly spill: Uint8Array | null; readonly error: WorkerError }
+    | { readonly kind: "tables"; readonly task: number; readonly kernels: number };
 
 /**
  * Tasks a worker's ring holds, and f64 words per task: twelve fields, then scalars. The fields are kernel, archetype,

@@ -35,6 +35,13 @@ export type Expression =
     /** Reads inside convert boolean columns to booleans: a position where `true` and `1` differ. */
     | { readonly kind: "observe"; readonly value: Expression }
     | { readonly kind: "lane"; readonly intrinsic: number; readonly lane: number; readonly value: Expression }
+    /** A lookup through an index's list, in the local `list` holds, and its rows, in the locals `row` holds: as in `Program`. */
+    | { readonly kind: "listLength"; readonly list: number; readonly lookup: number }
+    | { readonly kind: "listChanged"; readonly list: number; readonly lookup: number }
+    | { readonly kind: "rowLeaf"; readonly row: number; readonly lookup: number; readonly leaf: number }
+    | { readonly kind: "rowEntity"; readonly row: number; readonly lookup: number }
+    /** Whether the row in `row` was found: `true` or `null` in JS, so it tests as a lookup's result does. */
+    | { readonly kind: "rowFound"; readonly row: number; readonly lookup: number }
     // JS only:
     | { readonly kind: "nullish"; readonly value: "null" | "undefined" }
     | { readonly kind: "string"; readonly value: string }
@@ -57,6 +64,9 @@ export type Statement =
     | { readonly kind: "next" }
     /** An intrinsic region, as in `Program`; only GPU kernels have them. */
     | { readonly kind: "intrinsic"; readonly id: number; readonly name: string; readonly intrinsic: Program.Intrinsic; readonly operands: readonly (readonly Expression[])[]; readonly body: Out }
+    /** A lookup through an index, as in `Program`, by `probe`, into the locals `list` and `first` hold. */
+    | { readonly kind: "probe"; readonly list: number; readonly first: number; readonly lookup: number; readonly probe: number; readonly values: readonly Expression[] }
+    | { readonly kind: "listRow"; readonly row: number; readonly list: number; readonly lookup: number; readonly index: Expression }
     // JS only:
     | { readonly kind: "lookup"; readonly local: number; readonly lookup: number; readonly entity: Expression }
     /**

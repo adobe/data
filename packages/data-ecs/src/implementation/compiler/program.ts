@@ -39,7 +39,16 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
     const handles = new Map<number, number>();
     const handleOf = (node: Expression): number | undefined => {
         const inner = unwrap(node);
+        // A row a lookup through an index gave tests as found, as a lookup's result does.
+        if (inner.kind === "rowFound") return handleFor(inner.row);
         return inner.kind !== "local" ? undefined : inner.local === upLocal ? upHandle : handles.get(inner.local);
+    };
+    /** The handle of a local holding a lookup through an index's list or row, made at its first use. */
+    const handleFor = (local: number): number => {
+        const existing = handles.get(local);
+        if (existing !== undefined) return existing;
+        handles.set(local, handles.size);
+        return handles.size - 1;
     };
     /** Whether `handle` found its entity, or for `up`, whether the call's rows have a parent. */
     const found = (handle: number): Program.Expression => handle === upHandle ? { kind: "upFound" } : { kind: "found", handle };
@@ -133,6 +142,11 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
                 return value && { kind: "lane", intrinsic: node.intrinsic, lane: node.lane, value };
             }
             case "element": return leaf(node, guards) ?? undefined;
+            // A row's leaves read NaN where there's no row, in JS kernels as in WASM, so they need no guard.
+            case "listLength": return { kind: "listLength", handle: handleFor(node.list) };
+            case "listChanged": return { kind: "listChanged", handle: handleFor(node.list) };
+            case "rowLeaf": return { kind: "rowLeaf", handle: handleFor(node.row), leaf: node.leaf };
+            case "rowEntity": return { kind: "rowEntity", handle: handleFor(node.row) };
             default: return undefined;
         }
     };
@@ -189,6 +203,14 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
             case "branchIf": {
                 const test = expression(node.test, guards, true);
                 return test && [{ kind: "branchIf", depth: depth(node.label, labels), test }];
+            }
+            case "probe": {
+                const values = all(node.values, item => expression(item, guards, false));
+                return values && [{ kind: "probe", list: handleFor(node.list), first: handleFor(node.first), probe: node.probe, values }];
+            }
+            case "listRow": {
+                const index = expression(node.index, guards, false);
+                return index && [{ kind: "listRow", row: handleFor(node.row), list: handleFor(node.list), index }];
             }
             case "lookup": {
                 const entity = expression(node.entity, guards, false);

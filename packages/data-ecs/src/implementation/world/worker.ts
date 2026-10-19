@@ -8,7 +8,8 @@ import { claimPiece } from './claims.js';
 import { controlWords, done, epoch, idleKernel, lineWords, posted, ringBase, ringCapacity, ringCursor, ringNeeded, ringSize, signal, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
 import { beginCommand, createRingWriter, encoderOf, endSegment, noExtent, objectStart, putComponent, putStart, putValue, startSegment, type Encoder, type Extent } from './command-ring.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
-import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
+import { indexParameterCount, instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
+import { createIndexReader, createIndexSource, sourceFromParameters, type IndexReader } from './index-readers.js';
 import { coveringBuffer, pageBytes, pagesWord } from './memory.js';
 import { endpointChannel, scopeChannel } from './port.js';
 import {
@@ -48,7 +49,10 @@ type LoadedKernel = {
     readonly setup: KernelSetup;
     readonly kernel: Kernel;
     readonly wasm: WasmRun | null;
-    readonly lookups: readonly ((entity: Entity) => readonly unknown[] | null)[];
+    /** By lookup: a function by entity, or for a lookup through an index its reader, pointed at the index by each task. */
+    readonly lookups: readonly unknown[];
+    /** Its lookups through indexes' readers, in lookup order, with the parameters each takes. */
+    readonly readers: readonly { readonly reader: IndexReader; readonly watched: number; readonly count: number }[];
     /**
      * Where its spawns are staged, one batch per set of components its lists name, with its spawners, and its commands,
      * which write into this worker's command ring; made on first run, once its components' layouts are known.
@@ -196,6 +200,12 @@ const createLookup = (lookup: LookupSetup) => (entity: Entity): readonly unknown
     });
 };
 
+/** An archetype as an index reader reads its rows: its entities and columns, from the layout directory. */
+const readerArchetype = (id: number) => {
+    const archetype = archetypeAt(id);
+    return archetype === undefined ? undefined : { version: archetype.version, entities: archetype.entities, column: (component: number, view: keyof Views) => archetype.storages.get(component)?.views[view] };
+};
+
 /** The one element a muted tick column's stores land on. */
 const mutedColumn = new Float64Array(1);
 
@@ -289,12 +299,18 @@ const run = (message: RunMessage): void => {
     const { commands } = stagingOf(loaded);
     const { wasm } = loaded;
     if (wasm !== null && loaded.setup.wasm !== null) {
-        wasm(message.start, message.end, message.tick, message.lastRun, ...addresses,
+        wasm(message.start, message.end, message.tick, message.lastRun, ...addresses, ...message.lookups, ...message.indexes,
             ...scalarValues(loaded.setup.wasm.scalars, message.resources, message.args),
             ...message.partials < 0 ? [] : [message.partials]);
         return;
     }
     const partials = message.partials < 0 ? noPartials : new Float64Array(memoryBuffer, message.partials);
+    // Lookups through indexes read the index where the task's parameters say it is now.
+    let at = 0;
+    for (const { reader, watched, count } of loaded.readers) {
+        sourceFromParameters(reader.source, memoryViews, message.indexes, at, watched);
+        at += count;
+    }
     forEachPassingRange(filters, message.lastRun, message.start, message.end, (start, end) =>
         loaded.kernel(columns, start, end, message.resources, loaded.lookups, loaded.setup.keys, message.args, commands, message.tick, partials, 0));
 };
@@ -307,7 +323,16 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
         return { module, wasm };
     }));
     // A kernel loaded again binds its columns again, since they may differ, such as muted ones now stamped.
-    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup), staging: null, bound: [] }));
+    setups.forEach((setup, i) => {
+        const readers = setup.indexes.map(({ lookup, reader, watched }) => ({
+            lookup,
+            reader: createIndexReader(reader, createIndexSource(reader.kind), readerArchetype),
+            watched,
+            count: indexParameterCount({ kind: reader.kind, words: reader.words, stride: reader.stride, probe: () => null, rowLeaf: () => null, watched }),
+        }));
+        const lookups = setup.lookups.map((lookup, k): unknown => readers.find(found => found.lookup === k)?.reader ?? createLookup(lookup));
+        kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets), wasm: loaded[i].wasm, lookups, readers, staging: null, bound: [] });
+    });
 };
 
 /** A split's claims, as this worker sees them. */

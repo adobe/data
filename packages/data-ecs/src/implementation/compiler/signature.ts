@@ -5,7 +5,8 @@ import { fail } from './failure.js';
 import type { Lists } from './lists.js';
 import type { ModuleScope } from './module-scope.js';
 
-export type Lookup = { readonly name: string; readonly read: readonly string[] };
+/** A lookup by entity, or through an index (`index`), whose calls take a key and give a list of rows. */
+export type Lookup = { readonly name: string; readonly read: readonly string[]; readonly index: boolean };
 
 /** The reference rows run down, and what the context's `up` reads of the entity it names. */
 export type Up = { readonly through: string; readonly read: readonly string[] };
@@ -109,7 +110,16 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
                 break;
             case "lookup":
                 for (const [lookup, value] of properties(property.value, "lookup")) {
-                    lookups.push({ name: lookup, read: keyLists(value.value, `lookup.${lookup}`, ["read", "has", "not"], lists).get("read") ?? [] });
+                    // The index is a value the world resolves; only that a lookup goes through one changes how it compiles.
+                    const fields = properties(value.value, `lookup.${lookup}`);
+                    const index = fields.some(([field]) => field === "index");
+                    const listed = fields.filter(([field]) => field !== "index");
+                    const read = listed.flatMap(([field, item]) => {
+                        if (index ? field !== "read" && field !== "changed" : field !== "read" && field !== "has" && field !== "not") return fail(item, `lookup.${lookup}.${field} is not allowed in a kernel declaration`);
+                        const names = identifiers(item.value, `lookup.${lookup}.${field}`, lists);
+                        return field === "read" ? names : [];
+                    });
+                    lookups.push({ name: lookup, read, index });
                 }
                 break;
             case "up": {

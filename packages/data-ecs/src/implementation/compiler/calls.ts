@@ -300,6 +300,51 @@ const contribute = (reduced: number, node: SimpleCallExpression, scope: Scope, o
     return none;
 };
 
+const comparisonOperators: ReadonlySet<string> = new Set(["==", "!=", "<", "<=", ">", ">="]);
+
+/** An object literal whose every key is a comparison's operator, so it's a comparison rather than a struct key part. */
+const comparisonOf = (node: SourceExpression): readonly (readonly [string, SourceExpression])[] | null => {
+    if (node.type !== "ObjectExpression" || node.properties.length === 0) return null;
+    const operators: [string, SourceExpression][] = [];
+    for (const property of node.properties) {
+        if (property.type !== "Property" || property.computed || property.kind !== "init" || property.method) return null;
+        const name = property.key.type === "Literal" && typeof property.key.value === "string" ? property.key.value : property.key.type === "Identifier" ? property.key.name : null;
+        if (name === null || !comparisonOperators.has(name) || property.value.type === "ObjectPattern" || property.value.type === "ArrayPattern"
+            || property.value.type === "AssignmentPattern" || property.value.type === "RestElement") return null;
+        operators.push([name, property.value]);
+    }
+    return operators;
+};
+
+/**
+ * A call of a lookup through an index: each argument a key part's value, given by its scalar leaves, and the last
+ * possibly a comparison literal. The call site gets its own list and first row, which the world binds to the index.
+ */
+const probe = (lookup: number, node: SimpleCallExpression, scope: Scope, out: Out): Value => {
+    const unit = scope.unit;
+    const values: Expression[] = [];
+    const leavesIn = (source: SourceExpression): string => {
+        const leaves = leavesOf(toData(unit.expression(source, scope, out), source, scope));
+        for (const leaf of leaves) values.push(temporary(scope, out, "key", observe(unit, leaf.expression)));
+        return JSON.stringify(leaves.map(leaf => leaf.path));
+    };
+    const parts = node.arguments.map((item, index) => {
+        const source = argument(item);
+        const comparison = comparisonOf(source);
+        if (comparison === null) return `{ kind: "value", paths: ${leavesIn(source)} }`;
+        if (index !== node.arguments.length - 1) return fail(source, "only a lookup's last key part may be a comparison");
+        return `{ kind: "comparison", operators: [${comparison.map(([operator, operand]) => `{ operator: ${JSON.stringify(operator)}, paths: ${leavesIn(operand)} }`).join(", ")}] }`;
+    });
+    const site = unit.probes.length;
+    unit.probes.push(`{ lookup: ${lookup}, arguments: [${parts.join(", ")}] }`);
+    const list = fresh(unit, "list");
+    const first = fresh(unit, "first");
+    unit.handles.add(list);
+    unit.handles.add(first);
+    out.push({ kind: "probe", list, first, lookup, probe: site, values });
+    return { kind: "indexed", lookup, list, first };
+};
+
 /** Compiles a call: a `Math` function, a command, a lookup, a reduction or a helper. */
 export const call = (node: SimpleCallExpression, scope: Scope, out: Out): Value => {
     if (node.optional) return fail(node, "optional calls are not in the kernel subset");
@@ -314,11 +359,20 @@ export const call = (node: SimpleCallExpression, scope: Scope, out: Out): Value 
             if (callee.owner === "commands") return command(callee.name, node, scope, out);
             return scalarValue({ kind: "math", name: callee.name, arguments: node.arguments.map(item => scalarArgument(item, scope, out)) });
         case "lookup": {
+            if (scope.unit.signature.lookups[callee.lookup]?.index === true) return probe(callee.lookup, node, scope, out);
             if (node.arguments.length !== 1) return fail(node, "a lookup takes one entity");
             const entity = scalarArgument(node.arguments[0], scope, out);
             const found = fresh(scope.unit, "found");
             out.push({ kind: "lookup", local: found, lookup: callee.lookup, entity });
             return { kind: "found", lookup: callee.lookup, expression: local(found) };
+        }
+        case "listAt": {
+            if (node.arguments.length !== 1) return fail(node, "a list's at takes a row's position");
+            const index = scalarArgument(node.arguments[0], scope, out);
+            const row = fresh(scope.unit, "row");
+            scope.unit.handles.add(row);
+            out.push({ kind: "listRow", row, list: callee.list, lookup: callee.lookup, index });
+            return { kind: "indexRow", lookup: callee.lookup, row };
         }
         case "function":
             return inline(callee, node, scope, out);

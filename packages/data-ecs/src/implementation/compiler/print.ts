@@ -40,6 +40,12 @@ export const printExpression = (unit: Unit, expression: Expression, observed: bo
         case "math": return `Math.${expression.name}(${expression.arguments.map(print).join(", ")})`;
         case "observe": return printExpression(unit, expression.value, true);
         case "lane": return print(expression.value);
+        // Lookups through indexes read through their reader, `l${lookup}`, and the handles each site holds.
+        case "listLength": return `l${expression.lookup}.length(${localName(unit, expression.list)})`;
+        case "listChanged": return `l${expression.lookup}.changed(${localName(unit, expression.list)})`;
+        case "rowLeaf": return `l${expression.lookup}.leaf(${localName(unit, expression.row)}, ${expression.leaf})`;
+        case "rowEntity": return `l${expression.lookup}.entity(${localName(unit, expression.row)})`;
+        case "rowFound": return `(${localName(unit, expression.row)}.f === 1 ? true : null)`;
         case "nullish": return expression.value;
         case "string": return JSON.stringify(expression.value);
         case "element": return `${print(expression.object)}${expression.optional ? "?." : ""}[${print(expression.index)}]`;
@@ -84,6 +90,8 @@ const printStatement = (unit: Unit, statement: Statement, labels: Labels): strin
         case "next": return `continue ${rowLabel};`;
         case "intrinsic": return printStatements(unit, statement.body, labels);
         case "lookup": return `const ${localName(unit, statement.local)} = l${statement.lookup}(${value(statement.entity)});`;
+        case "probe": return `l${statement.lookup}.probe(${[statement.probe, localName(unit, statement.list), localName(unit, statement.first), ...statement.values.map(value)].join(", ")});`;
+        case "listRow": return `l${statement.lookup}.row(${localName(unit, statement.row)}, ${localName(unit, statement.list)}, ${value(statement.index)});`;
         case "spawn": return `const ${localName(unit, statement.local)} = spawn${statement.list}(${statement.values.map(value).join(", ")});`;
         case "begin": return `commands.begin(${statement.command}, ${value(statement.entity)});`;
         case "value": return `commands.value(${statement.key}, ${value(statement.value)});`;

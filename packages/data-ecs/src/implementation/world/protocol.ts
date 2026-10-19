@@ -1,6 +1,7 @@
 import type { Schema } from '../../interface/schema/schema.js';
 import type { Endpoint } from './port.js';
 import type { WasmScalar } from './wasm.js';
+import type { IndexReaderSetup } from './index-readers.js';
 
 /** Where a kernel column comes from in any archetype it matches. */
 export type Source = { readonly kind: "entity" } | { readonly kind: "field" | "changed" | "chunks"; readonly id: number; readonly leaf: number };
@@ -18,6 +19,8 @@ export type KernelSetup = {
     /** Tick columns nothing observes: they point at a dummy element. */
     readonly muted: readonly boolean[];
     readonly lookups: readonly LookupSetup[];
+    /** By lookup through an index: its lookup, how its JS reader reads it, and how many components it watches. */
+    readonly indexes: readonly { readonly lookup: number; readonly reader: IndexReaderSetup; readonly watched: number }[];
     /** Component ids, used as `keys` so command values name components by id. */
     readonly keys: readonly number[];
     /** By key index: what each component stored in linear memory starts at, for a spawn leaving it out; null for the rest, whose start the world resolves. */
@@ -65,6 +68,9 @@ export type ToWorker =
         readonly args: unknown;
         /** The byte address of this chunk's reduction partials, or -1 for a kernel without reductions. */
         readonly partials: number;
+        /** A WASM kernel's lookup parameters, and its lookups through indexes', which JS kernels' readers read too. */
+        readonly lookups: readonly number[];
+        readonly indexes: readonly number[];
     };
 
 export type WorkerError = { readonly name: string; readonly message: string; readonly stack?: string };

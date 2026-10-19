@@ -50,6 +50,7 @@ const chunkAlignment = 16;
 const claimsPerWorker = 8;
 
 const noPartials = new Float64Array(0);
+const noIndexParameters: readonly number[] = [];
 
 /**
  * Runs one leaf system. Each run takes a new tick, which becomes the system's `lastRun`.
@@ -172,13 +173,25 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const changedIds = (query?.changed ?? []).map(key => idOf(state, key));
     const resourceChanged = resources?.changed ?? [];
     const filtered = addedIds.length + changedIds.length + resourceChanged.length > 0;
+    const indexLookups = acquireLookups(state, declaration.lookup);
     let kernel: BoundKernel | null = null;
     if (declaration.kernel !== undefined) {
         const description = kernelOf(leaf);
-        if (description === undefined) throw new Error(`System "${label}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
-        kernel = bindKernel(state, leaf, description);
+        if (description === undefined) {
+            indexLookups.release();
+            throw new Error(`System "${label}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
+        }
+        try {
+            kernel = bindKernel(state, leaf, description, indexLookups.byName);
+        }
+        catch (error) {
+            indexLookups.release();
+            throw error;
+        }
     }
-    const indexLookups = acquireLookups(state, declaration.lookup);
+    /** A kernel's lookups through indexes' WASM parameters for the current run, as `refreshIndexes` gave them at its start. */
+    let indexParameters: readonly number[] = noIndexParameters;
+    const indexed = kernel?.indexes.some(found => found !== null) === true;
     /** Its `lastRun` while it runs, which its index lookups' lists compare with. */
     const lookupSince: Since = { value: since };
     const placement = leaf.kind === "render" ? "render" : declaration.kernel === "gpu" && state.gpu !== null ? "gpu" : "cpu";
@@ -395,7 +408,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const lookups = bound.lookupParameters();
         const { scalars } = bound.wasm;
         const call = wasmArguments;
-        call.length = 4 + addresses.length + lookups.length + scalars.length + (partials < 0 ? 0 : 1);
+        call.length = 4 + addresses.length + lookups.length + indexParameters.length + scalars.length + (partials < 0 ? 0 : 1);
         call[0] = start;
         call[1] = end;
         call[2] = tick;
@@ -403,6 +416,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         let at = 4;
         for (let k = 0; k < addresses.length; k++) call[at++] = addresses[k];
         for (let k = 0; k < lookups.length; k++) call[at++] = lookups[k];
+        for (let k = 0; k < indexParameters.length; k++) call[at++] = indexParameters[k];
         for (let k = 0; k < scalars.length; k++) call[at++] = scalarValue(scalars[k], values, args);
         if (partials >= 0) call[at] = partials;
         Reflect.apply(compiled.run, undefined, call);
@@ -431,6 +445,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             kernel.compiled()?.run(start, end, tick, -1,
                 ...kernel.columnsOf(archetype).map(column => column.byteOffset),
                 ...kernel.lookupParameters(),
+                ...indexParameters,
                 rows.byteOffset, parents.byteOffset, parentArchetype >= 0 ? 1 : 0,
                 ...ups.map((_, k) => parentColumns[k]?.byteOffset ?? 0),
                 ...scalarValues(kernel.wasm.scalars, values, args),
@@ -461,6 +476,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const parentColumns = run.parent < 0 ? noColumns : kernel.upColumnsOf(state.archetypes[run.parent]);
         const scalars = [
             ...kernel.lookupParameters(),
+            ...indexParameters,
             run.rows.byteOffset, run.parents.byteOffset, run.parent >= 0 ? 1 : 0,
             ...(kernel.description.upColumns ?? []).map((_, k) => parentColumns[k]?.byteOffset ?? 0),
             ...scalarValues(kernel.wasm.scalars, values, args),
@@ -507,7 +523,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         }
         const runLocally = (run: Run): void => runUpRows(matches[run.owner], run.parent, run.rows, run.parents, run.start, run.end, values, args, tick, slot);
         const parallel = workers !== null && kernel !== null && kernel.wasm !== null && kernel.compiled() !== null && partialCount === 0
-            && kernel.lookupParameters().length + 3 + (kernel.description.upColumns?.length ?? 0) + kernel.wasm.scalars.length <= maximumScalars;
+            && kernel.lookupParameters().length + indexParameters.length + 3 + (kernel.description.upColumns?.length ?? 0) + kernel.wasm.scalars.length <= maximumScalars;
         if (!parallel || workers === null) {
             try {
                 for (let runs = next(); runs !== null; runs = next()) for (const run of runs) runLocally(run);
@@ -547,7 +563,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     /** WASM kernels with few enough scalars dispatch through shared memory. */
     const isFast = (bound: BoundKernel | null): boolean =>
         bound !== null && bound.wasm !== null && bound.compiled() !== null
-        && bound.lookupParameters().length + bound.wasm.scalars.length + (partialCount > 0 ? 2 : 0) <= maximumScalars;
+        && bound.lookupParameters().length + indexParameters.length + bound.wasm.scalars.length + (partialCount > 0 ? 2 : 0) <= maximumScalars;
     /** Rows below which an archetype runs on the main thread. Shared-memory dispatch is cheap enough that half the size pays off. */
     const minimumFor = (workers: Workers): number => isFast(kernel) ? workers.minimumChunk / 2 : workers.minimumChunk;
 
@@ -559,7 +575,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const { count } = archetype;
         const { pool } = workers;
         const bound = kernel;
-        const scalars = bound !== null && bound.wasm !== null ? [...bound.lookupParameters(), ...scalarValues(bound.wasm.scalars, values, args)] : [];
+        const scalars = bound !== null && bound.wasm !== null ? [...bound.lookupParameters(), ...indexParameters, ...scalarValues(bound.wasm.scalars, values, args)] : [];
         const fast = isFast(bound);
         const participants = Math.min(pool.size, Math.ceil(count / minimumFor(workers)));
         const aligned = (rows: number): number => Math.ceil(rows / chunkAlignment) * chunkAlignment;
@@ -578,7 +594,10 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const size = aligned(Math.ceil(count / participants));
         const chunks: Chunk[] = [];
         for (let start = 0; start < count; start += size) {
-            const message = { kind: "run", kernel: index, archetype: archetype.id, start, end: Math.min(count, start + size), tick, lastRun: since, resources: values, args, partials: partialCount === 0 ? -1 : partialAddress(takeSlots(1)) } as const;
+            const message = {
+                kind: "run", kernel: index, archetype: archetype.id, start, end: Math.min(count, start + size), tick, lastRun: since, resources: values, args,
+                partials: partialCount === 0 ? -1 : partialAddress(takeSlots(1)), lookups: bound === null ? noIndexParameters : bound.lookupParameters(), indexes: indexParameters,
+            } as const;
             const worker = workers.next;
             workers.next = (worker + 1) % pool.size;
             chunks.push(pool.request(worker, message));
@@ -782,6 +801,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             context.bind();
             if (declaration.input !== undefined) context.value.input = args;
+            if (indexed && kernel !== null) indexParameters = kernel.refreshIndexes(lastRun);
             if (placement === "render") {
                 refreshMatches();
                 runRender();

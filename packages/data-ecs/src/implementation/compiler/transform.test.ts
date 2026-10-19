@@ -177,6 +177,7 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                 }
                 case "lane": return evaluate(node.value);
                 case "upFound": case "upLeaf": throw new Error("programs reading up aren't interpreted here");
+                case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": throw new Error("lookups through indexes aren't interpreted here");
             }
         };
         const execute = (statements: readonly Program.Statement[]): Signal => {
@@ -217,6 +218,7 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                     handles[statement.handle] = lookup(Number(evaluate(statement.entity)));
                     return normal;
                 }
+                case "probe": case "listRow": throw new Error("lookups through indexes aren't interpreted here");
             }
         };
         accumulators.forEach((local, k) => { locals[local] = carried[k] ?? NaN; });

@@ -2,11 +2,13 @@ import { allocateArray, freeArray } from './arrays.js';
 import type { State } from './state.js';
 
 /**
- * A lookup's directory for WASM kernels: per archetype id, a match flag, then the column address of each component
- * the lookup reads. It lives in shared memory, so workers read the same one. Rebuilt at sync points when archetypes
- * are created or grow, since both change column addresses.
+ * A lookup's directory for WASM kernels: per archetype id, a match flag, then for a lookup through an index the address
+ * of the archetype's entities, then the column address of each component the lookup reads. It lives in shared memory,
+ * so workers read the same one. Rebuilt at sync points when archetypes are created or grow, since both change column
+ * addresses.
  */
 export type Directory = {
+    readonly entities: boolean;
     readonly read: readonly number[];
     readonly has: readonly number[];
     readonly not: readonly number[];
@@ -17,7 +19,7 @@ export type Directory = {
     built: number;
 };
 
-const words = (directory: Directory): number => 1 + directory.read.length;
+const words = (directory: Directory): number => 1 + (directory.entities ? 1 : 0) + directory.read.length;
 
 const layoutOf = (state: State): number => {
     let layout = state.archetypes.length;
@@ -39,17 +41,19 @@ export const refreshDirectory = (state: State, directory: Directory, layout = la
         const { storageById } = archetype;
         const matches = !archetype.resource && [...read, ...has].every(component => storageById[component] !== undefined) && not.every(component => storageById[component] === undefined);
         records[base] = matches ? 1 : 0;
+        const first = directory.entities ? 2 : 1;
+        if (directory.entities) records[base + 1] = matches ? archetype.entities.byteOffset : 0;
         read.forEach((component, i) => {
             const storage = storageById[component];
-            records[base + 1 + i] = matches && storage !== undefined ? storage.views.u8.byteOffset : 0;
+            records[base + first + i] = matches && storage !== undefined ? storage.views.u8.byteOffset : 0;
         });
     });
     directory.count = state.archetypes.length;
     directory.built = layout;
 };
 
-export const createDirectory = (state: State, read: readonly number[], has: readonly number[], not: readonly number[]): Directory => {
-    const directory: Directory = { read, has, not, records: allocateArray(state.memory, Int32Array, 16), count: 0, built: -1 };
+export const createDirectory = (state: State, read: readonly number[], has: readonly number[], not: readonly number[], entities = false): Directory => {
+    const directory: Directory = { entities, read, has, not, records: allocateArray(state.memory, Int32Array, 16), count: 0, built: -1 };
     state.directories.add(directory);
     refreshDirectory(state, directory);
     return directory;

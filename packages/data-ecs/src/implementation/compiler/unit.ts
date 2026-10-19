@@ -60,6 +60,12 @@ export type Unit = {
     readonly upColumnIndex: Map<string, number>;
     /** Parent columns read where a boolean's identity is observable. */
     readonly upBooleans: Set<number>;
+    /** Each call site of a lookup through an index, as `KernelDescription.probes` lists it, as source text. */
+    readonly probes: string[];
+    /** The row leaves bodies read, as `KernelDescription.rowLeaves` lists them, by `JSON.stringify` of each. */
+    readonly rowLeaves: string[];
+    /** Locals holding lists and rows of lookups through indexes, which are handles each kernel instance makes once. */
+    readonly handles: Set<number>;
     /** Helpers and constants being inlined, to reject recursion. */
     readonly active: Set<string>;
     readonly next: () => number;
@@ -75,7 +81,7 @@ export const createUnit = (signature: Signature, module: Module, lists: Lists, e
     return {
         signature, module, lists, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
         used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map(), up: new Set() },
-        up, upColumns: [], upColumnIndex: new Map(), upBooleans: new Set(),
+        up, upColumns: [], upColumnIndex: new Map(), upBooleans: new Set(), probes: [], rowLeaves: [], handles: new Set(),
         next: () => counter++, expression, statement,
     };
 };

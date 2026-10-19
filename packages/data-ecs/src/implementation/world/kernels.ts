@@ -9,6 +9,9 @@ import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKer
 import { createDirectory, lookupParameters, type Directory } from './directories.js';
 import { generateWgsl, type WgslKernel } from './wgsl.js';
 import { labelOf, labelOfItem } from '../../interface/registry/index.js';
+import type { WorldIndex } from './indexes.js';
+import { kernelIndexesOf, refreshSource, writeIndexParameters, type KernelIndex } from './kernel-indexes.js';
+import { createIndexReader, createIndexSource, type IndexReaderSetup } from './index-readers.js';
 
 /** A kernel without lookups passes no lookup parameters; read-only, so one is shared. */
 const noParameters: readonly number[] = [];
@@ -19,7 +22,12 @@ export type BoundKernel = {
     readonly index: number;
     /** Its lookups' directories, which the world keeps current until they're released. */
     readonly directories: readonly Directory[];
-    readonly lookups: readonly ReturnType<typeof createArrayLookup>[];
+    /** By lookup: a function by entity, or for a lookup through an index its reader, which `refreshIndexes` points at the index. */
+    readonly lookups: readonly unknown[];
+    /** By lookup, its index for a lookup through one, else null. */
+    readonly indexes: readonly (KernelIndex | null)[];
+    /** Points the JS readers at their indexes as they are now, and returns the WASM parameters of every lookup through one. */
+    readonly refreshIndexes: (since: number) => readonly number[];
     /** What a worker needs to run the kernel, with component ids in place of keys; replaced by each load. */
     setup: {
         readonly sources: readonly Source[];
@@ -27,6 +35,8 @@ export type BoundKernel = {
         readonly strides: readonly number[];
         readonly offsets: readonly number[];
         readonly lookups: readonly LookupSetup[];
+        /** By lookup through an index: its lookup, how its JS reader reads it, and how many components it watches. */
+        readonly indexes: readonly { readonly lookup: number; readonly reader: IndexReaderSetup; readonly watched: number }[];
         readonly keys: readonly number[];
         readonly starts: readonly unknown[];
         /** The component ids of each list the kernel spawns, in the order its spawner takes values. */
@@ -73,7 +83,7 @@ const leafType = (layout: Layout, path: readonly (number | string)[]): Type | nu
  * Binds a kernel to the world's components and layouts. Registering the kernel checked it against its declaration and
  * schemas (`checkKernel`), so a mismatch here is an invariant broken.
  */
-export const bindKernel = (state: State, leaf: Leaf, description: KernelDescription): BoundKernel => {
+export const bindKernel = (state: State, leaf: Leaf, description: KernelDescription, byName: ReadonlyMap<string, WorldIndex> = new Map()): BoundKernel => {
     const { lookup, components: query } = leaf.declaration;
     const fail = (message: string): never => { throw new Error(`Kernel "${labelOfItem(leaf)}": ${message}`); };
     const booleans: boolean[] = [];
@@ -110,8 +120,25 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     });
     const declaredLookups = description.lookups.map(lookupName => lookup?.[lookupName] ?? fail(`unknown lookup "${lookupName}".`));
     const { up } = leaf.declaration;
+    const indexes = kernelIndexesOf(state, description, declaredLookups, byName, fail);
+    /** Each lookup through an index's reader for the JS kernel, over its index's own arrays. */
+    const readers = indexes.map(bound => bound === null ? null : { bound, reader: createIndexReader(bound.reader, createIndexSource(bound.reader.kind), id => {
+        const archetype = state.archetypes[id];
+        return archetype === undefined ? undefined : { version: archetype.version, entities: archetype.entities, column: (component, view) => archetype.storageById[component]?.views[view] };
+    }) });
     // The runner passes `up`'s lookup after these, since it records each row's parent as it orders the rows.
-    const lookups = declaredLookups.map(declared => createArrayLookup(state, declared));
+    const lookups: readonly unknown[] = declaredLookups.map((declared, k): unknown => readers[k]?.reader ?? createArrayLookup(state, declared));
+    const indexParameters: number[] = [];
+    const refreshIndexes = (since: number): readonly number[] => {
+        let at = 0;
+        for (const found of readers) {
+            if (found === null) continue;
+            refreshSource(found.reader.source, found.bound, since);
+            at = writeIndexParameters(found.bound, since, indexParameters, at);
+        }
+        indexParameters.length = at;
+        return indexParameters;
+    };
     const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => idOf(state, key));
     const keys = description.keys.map(key => commandIdOf(state, key));
     const spawns = description.spawns.map(list => list.map(k => keys[k]));
@@ -121,6 +148,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         strides,
         offsets,
         lookups: declaredLookups.map(declared => ({ read: ids(declared.read), has: ids("has" in declared ? declared.has : undefined), not: ids("not" in declared ? declared.not : undefined) })),
+        indexes: indexes.flatMap(bound => bound === null ? [] : [{ lookup: bound.lookup, reader: bound.reader, watched: bound.watched.length }]),
         keys,
         starts: keys.map(id => state.starts[id]),
         spawns,
@@ -172,9 +200,10 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;
     const useWasm = state.wasm && state.memory.shared && description.program !== null;
-    const directories = useWasm ? setup.lookups.map(lookupSetup => createDirectory(state, lookupSetup.read, lookupSetup.has, lookupSetup.not)) : [];
-    const wasmLookups: WasmLookup[] = setup.lookups.map(lookupSetup => ({
-        reads: lookupSetup.read.length,
+    // A lookup through an index's directory also holds each archetype's entities, which its rows' `entity` reads.
+    const directories = useWasm ? setup.lookups.map((lookupSetup, k) => createDirectory(state, lookupSetup.read, lookupSetup.has, lookupSetup.not, indexes[k] !== null)) : [];
+    const wasmLookups: WasmLookup[] = setup.lookups.map((lookupSetup, k) => ({
+        reads: lookupSetup.read.length + (indexes[k] === null ? 0 : 1),
         leaf: (read, path) => {
             const component = lookupSetup.read[read];
             const layout = component === undefined ? undefined : state.layouts[component];
@@ -195,7 +224,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     // An `up` kernel's runner passes only the rows that pass its filters.
     const filterCount = up !== undefined ? 0 : (query?.added?.length ?? 0) + (query?.changed?.length ?? 0);
     const generate = (muted: readonly boolean[]): WasmKernel | null => useWasm && description.program !== null
-        ? generateWasm(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, state.simd, filterCount, wasmLookups, upWasmColumns, description.reductions.map(reduction => reduction.operator))
+        ? generateWasm(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, state.simd, filterCount, wasmLookups, upWasmColumns,
+            description.reductions.map(reduction => reduction.operator), indexes.map(bound => bound?.wasm ?? null), (description.probes ?? []).map(probe => probe.lookup))
         : null;
     let muted = mutedNow();
     let index = state.kernelIndexes.get(description.url);
@@ -209,6 +239,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         index,
         directories,
         lookups,
+        indexes,
+        refreshIndexes,
         setup: { ...setup, muted, up: upSetup },
         columnsOf: archetype => {
             const columns = columnsOf(archetype);

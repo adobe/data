@@ -19,6 +19,16 @@ export type Value =
     | { readonly kind: "snapshot"; readonly snapshot: Snapshot; readonly path: Path }
     | { readonly kind: "found"; readonly lookup: number; readonly expression: Expression }
     | { readonly kind: "lookup"; readonly lookup: number }
+    /**
+     * What a call of a lookup through an index gave: its list, in local `list`, and its first row, in local `first`, which
+     * a unique index's result is read as.
+     */
+    | { readonly kind: "indexed"; readonly lookup: number; readonly list: number; readonly first: number }
+    /** A list's `at`, which takes a row's position. */
+    | { readonly kind: "listAt"; readonly lookup: number; readonly list: number }
+    /** A row a lookup through an index gave, in local `row`, and a component of it, `read` an index into the lookup's read, at `path`. */
+    | { readonly kind: "indexRow"; readonly lookup: number; readonly row: number }
+    | { readonly kind: "rowRead"; readonly lookup: number; readonly row: number; readonly read: number; readonly path: Path }
     /** A resource the kernel reduces into, by its index in `Signature.reduced`. */
     | { readonly kind: "reducer"; readonly reduced: number }
     /**
@@ -42,7 +52,7 @@ export const scalarValue = (expression: Expression): Value => ({ kind: "scalar",
 
 const describe: { readonly [K in Value["kind"]]: string } = {
     scalar: "a number", dynamic: "a value", tuple: "a tuple", struct: "a struct", component: "a component value",
-    snapshot: "a component value", found: "a lookup result", lookup: "a lookup", reducer: "a reduction", function: "a helper",
+    snapshot: "a component value", found: "a lookup result", lookup: "a lookup", indexed: "a lookup's list", listAt: "a list's at", indexRow: "a lookup's row", rowRead: "a value of a lookup's row", reducer: "a reduction", function: "a helper",
     method: "a method", row: "row", context: "the context", resources: "the resources", lookups: "the lookups", reducers: "the reductions", commands: "commands", math: "Math", namespace: "a namespace",
 };
 

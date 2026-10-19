@@ -169,6 +169,12 @@ System.create({
 
 System.create({
     kernel: "cpu",
+    components: { read: [cell], write: [velocity] },
+    lookup: { near: { index: grid, changed: [position] } },
+}, () => {});
+
+System.create({
+    kernel: "cpu",
     components: { write: [velocity] },
     // @ts-expect-error kernels look up only through indexes of struct keys
     lookup: { names: { index: named } },

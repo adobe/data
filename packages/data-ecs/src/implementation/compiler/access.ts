@@ -85,6 +85,25 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
             }
             return { kind: "dynamic", expression: { kind: "element", object: value.expression, index: number(index), optional } };
         }
+        case "indexed":
+            // A unique index's result is its first row.
+            if (name === "length") return scalarValue({ kind: "listLength", list: value.list, lookup: value.lookup });
+            if (name === "changed") return scalarValue({ kind: "listChanged", list: value.list, lookup: value.lookup });
+            if (name === "at") return { kind: "listAt", lookup: value.lookup, list: value.list };
+            return access({ kind: "indexRow", lookup: value.lookup, row: value.first }, key, node, scope, optional);
+        case "indexRow": {
+            if (name === "entity") return scalarValue({ kind: "rowEntity", row: value.row, lookup: value.lookup });
+            const lookup = signature.lookups[value.lookup];
+            const read = key.kind === "binding" ? (lookup?.read ?? []).indexOf(key.name) : -1;
+            if (lookup === undefined || key.kind !== "binding" || read < 0) return fail(node, "a lookup's row is indexed by a component in that lookup's read, or .entity");
+            const used = scope.unit.used.lookups;
+            used.set(lookup.name, (used.get(lookup.name) ?? new Set()).add(key.name));
+            return { kind: "rowRead", lookup: value.lookup, row: value.row, read, path: [] };
+        }
+        case "rowRead":
+            return name === undefined
+                ? fail(node, "component values are indexed by literal elements or field names")
+                : { ...value, path: [...value.path, name] };
         case "dynamic":
             return { kind: "dynamic", expression: element(node, scope, value.expression, key, optional) };
         case "tuple":

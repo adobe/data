@@ -92,6 +92,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             `shapes: [${[...unit.shapes].join(", ")}],`,
             `resources: [${resources.join(", ")}],`,
             `lookups: [${lookups.map(lookup => JSON.stringify(lookup.name)).join(", ")}],`,
+            ...unit.probes.length === 0 ? [] : [`probes: [${unit.probes.join(", ")}],`, `rowLeaves: [${unit.rowLeaves.join(", ")}],`],
             ...up === null ? [] : ["up: true,", `upColumns: [${unit.upColumns.join(", ")}],`],
             `keys: [${keys.join(", ")}],`,
             `spawns: ${JSON.stringify(unit.spawns)},`,
@@ -113,6 +114,8 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             ...[...unit.upBooleans].map(index => `const ub${index} = upBooleans[${index}];`),
             ...unit.upColumns.map((_, index) => `const us${index} = upStrides[${index}], uo${index} = upOffsets[${index}];`),
             ...strided.map(index => `const s${index} = strides[${index}], o${index} = offsets[${index}];`),
+            // Each lookup through an index's site holds its list and rows in handles its reader fills, made once.
+            ...[...unit.handles].map(handle => `const ${localName(unit, handle)} = { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0, g: 0, h: 0 };`),
             "return (columns, start, end, resources, lookups, keys, args, commands, tick, partials, partial, rows, parents, upColumns, found) => {",
             ...locals,
             preludeCode,

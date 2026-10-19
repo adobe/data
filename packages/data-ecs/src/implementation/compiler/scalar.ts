@@ -6,6 +6,15 @@ import { local, type Expression } from './ir.js';
 import { snapshotLeaf } from './snapshot.js';
 import { describeValue, type Value } from './value.js';
 
+/** The `rowLeaves` index of a leaf bodies read of a lookup's rows, listed once. */
+const rowLeafIndex = (unit: Scope["unit"], lookup: number, read: number, path: readonly (number | string)[]): number => {
+    const text = JSON.stringify([lookup, read, path]);
+    const index = unit.rowLeaves.indexOf(text);
+    if (index >= 0) return index;
+    unit.rowLeaves.push(text);
+    return unit.rowLeaves.length - 1;
+};
+
 /** A component in `write` is readable too. */
 export const requireReadable = (node: Node, scope: Scope, component: string): void => {
     const { signature } = scope.unit;
@@ -24,6 +33,13 @@ export const scalar = (value: Value, node: Node, scope: Scope): Expression => {
             return fieldRead(scope.unit, value.component, value.path);
         case "snapshot":
             return local(snapshotLeaf(scope.unit, value.snapshot, value.path));
+        // A row tests as found, so a unique index's result compares with null as a lookup's does.
+        case "indexed":
+            return { kind: "rowFound", row: value.first, lookup: value.lookup };
+        case "indexRow":
+            return { kind: "rowFound", row: value.row, lookup: value.lookup };
+        case "rowRead":
+            return { kind: "rowLeaf", row: value.row, lookup: value.lookup, leaf: rowLeafIndex(scope.unit, value.lookup, value.read, value.path) };
         default:
             return fail(node, `expected a number or boolean, not ${describeValue(value)}`);
     }

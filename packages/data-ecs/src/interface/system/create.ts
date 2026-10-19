@@ -57,7 +57,7 @@ type Lists<D extends Declaration> = {
 
 type Kernel = {
     readonly components?: { readonly read?: readonly StructComponent[]; readonly write?: readonly StructComponent[] };
-    readonly lookup?: { readonly [name: string]: { readonly read?: readonly StructComponent[]; readonly index?: Index<{ readonly key: readonly StructComponent[] }> } };
+    readonly lookup?: { readonly [name: string]: { readonly read?: readonly StructComponent[]; readonly changed?: readonly Component.Key[]; readonly index?: Index<{ readonly key: readonly StructComponent[] }> } };
     readonly up?: { readonly read?: readonly StructComponent[] };
     readonly resources?: { readonly read?: readonly StructResource[]; readonly write?: never };
 };

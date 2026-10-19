@@ -51,6 +51,9 @@ const declared = (node: Identifier, value: Value, binding: Binding, scope: Scope
             out.push(snapshotDeclaration(snapshot));
             return { kind: "snapshot", snapshot, path: [] };
         }
+        // A row's values are read where they're used: a const reads them lazily, a let holds a copy.
+        case "rowRead":
+            return binding === "let" ? dataValue(mapLeaves(toData(value, node, scope), copy)) : value;
         default:
             return binding === "let" ? fail(node, `a let can't hold ${describeValue(value)}; use const`) : value;
     }

@@ -36,7 +36,8 @@ export type Shape = { readonly component: Key; readonly leaves: readonly Path[] 
 /**
  * Processes rows `start` to `end` (exclusive). Change filters are applied by the caller, which passes only passing ranges.
  * - `resources`: values in `KernelDescription.resources` order.
- * - `lookups`: functions in `KernelDescription.lookups` order, returning the lookup's `read` values in declared order, or `null`.
+ * - `lookups`: functions in `KernelDescription.lookups` order, returning the lookup's `read` values in declared order, or `null`;
+ *   for a lookup through an index, its reader (`world/index-readers.ts`).
  * - `keys`: `KernelDescription.keys`, for anything that needs a component's key.
  * - `commands`: issue commands without allocating: values are evaluated first, then `begin`, then each `value` or
  *   `component`, naming components by index into `keys`; a spawn calls its list's spawner with the values.
@@ -46,7 +47,7 @@ export type Kernel = (
     start: number,
     end: number,
     resources: readonly unknown[],
-    lookups: readonly ((entity: Entity) => readonly unknown[] | null)[],
+    lookups: readonly unknown[],
     keys: readonly (Key | number)[],
     args: unknown,
     commands: KernelCommands,
@@ -127,7 +128,18 @@ export namespace Program {
         /** `upColumns[column]` at the row's parent row; only under a test proving `upFound`. */
         | { readonly kind: "upLeaf"; readonly column: number }
         /** Lane `lane` of intrinsic region `intrinsic`'s result, which `value` computes from the region's body. */
-        | { readonly kind: "lane"; readonly intrinsic: number; readonly lane: number; readonly value: Expression };
+        | { readonly kind: "lane"; readonly intrinsic: number; readonly lane: number; readonly value: Expression }
+        /** How many rows the list in `handle` holds, a lookup through an index's result. */
+        | { readonly kind: "listLength"; readonly handle: number }
+        /** Whether that list changed since the system last ran (`System`'s `changed` of a list). */
+        | { readonly kind: "listChanged"; readonly handle: number }
+        /**
+         * A scalar leaf of a row a lookup through an index gave, in row handle `handle`: `KernelDescription.rowLeaves[leaf]`.
+         * Reads NaN for no row.
+         */
+        | { readonly kind: "rowLeaf"; readonly handle: number; readonly leaf: number }
+        /** The entity of that row, or NaN for no row. */
+        | { readonly kind: "rowEntity"; readonly handle: number };
 
     export type Statement =
         | { readonly kind: "set"; readonly local: number; readonly value: Expression }
@@ -147,6 +159,13 @@ export namespace Program {
         | { readonly kind: "next" }
         /** Looks `entity` up through lookup `lookup` (an index into `KernelDescription.lookups`), into `handle`. */
         | { readonly kind: "find"; readonly handle: number; readonly lookup: number; readonly entity: Expression }
+        /**
+         * Looks the key `values` give up through `KernelDescription.probes[probe]`'s index, into list handle `list`, and
+         * its first row into row handle `first`, found when the list isn't empty.
+         */
+        | { readonly kind: "probe"; readonly list: number; readonly first: number; readonly probe: number; readonly values: readonly Expression[] }
+        /** Row `index` of list handle `list`, into row handle `row`, found when it's within the list. */
+        | { readonly kind: "listRow"; readonly row: number; readonly list: number; readonly index: Expression }
         /**
          * A call to a function that matches a WGSL builtin. `body` is the function inlined; `operands` are its arguments'
          * lanes. WGSL emits the builtin and reads its result's lanes; other backends run `body` and read each lane's `value`.
@@ -174,12 +193,27 @@ export type Program = {
     readonly body: readonly Program.Statement[];
 };
 
+/**
+ * How a call of a lookup through an index gives its key: per argument, a key part's value by the paths of its scalar
+ * leaves, in the order the call's values pass them, or for the last, a comparison's operators, each with its operand's.
+ */
+export type ProbeArgument =
+    | { readonly kind: "value"; readonly paths: readonly Path[] }
+    | { readonly kind: "comparison"; readonly operators: readonly { readonly operator: string; readonly paths: readonly Path[] }[] };
+
+/** A call site of a lookup through an index: its lookup, an index into `KernelDescription.lookups`, and its arguments. */
+export type Probe = { readonly lookup: number; readonly arguments: readonly ProbeArgument[] };
+
 /** What the compiler emits for one kernel system. */
 export type KernelDescription = {
     readonly columns: readonly Column[];
     readonly shapes: readonly Shape[];
     readonly resources: readonly Key[];
     readonly lookups: readonly string[];
+    /** Each call site of a lookup through an index. */
+    readonly probes?: readonly Probe[];
+    /** The scalar leaves bodies read of rows lookups through indexes gave: lookup, `read` index and path. */
+    readonly rowLeaves?: readonly (readonly [number, number, Path])[];
     /** Whether it reads `up`, and the scalar leaves of the parent's components it reads. */
     readonly up?: boolean;
     readonly upColumns?: readonly Column[];

@@ -36,6 +36,37 @@ export type WasmLookup = {
     readonly leaf: (read: number, path: readonly (number | string)[]) => Omit<WasmColumn, "component"> | null;
 };
 
+/** Where a probe's value goes in the key's words, and the stored type it's converted to first. */
+export type WasmKeyValue = { readonly word: number; readonly scalar: "f32" | "f64" | "i32" | "u32" | "boolean" };
+
+/**
+ * A call site of a lookup through an index: where its values go in the key's words, in order. A hash index takes the
+ * whole key; a sorted one a prefix, the first `prefixWords` words compared, and possibly a comparison on the next
+ * part, each operator's operand values and the words compared with them.
+ */
+export type WasmProbe = {
+    readonly values: readonly WasmKeyValue[];
+    readonly prefixWords: number;
+    readonly comparisons: readonly { readonly operator: string; readonly values: readonly WasmKeyValue[]; readonly words: number }[] | null;
+};
+
+/**
+ * A lookup through an index: its structure, its key's words, what a hash index's bucket records or a sorted index's
+ * entries hold per entry, its probes, the leaves bodies read of its rows (read index and column), and how many
+ * components it watches. Its directory records are a match flag, the archetype's entities address, then each read's.
+ */
+export type WasmIndexLookup = {
+    readonly kind: "hash" | "sorted";
+    readonly words: number;
+    readonly stride: number;
+    readonly probe: (probe: number) => WasmProbe | null;
+    readonly rowLeaf: (leaf: number) => { readonly read: number; readonly column: Omit<WasmColumn, "component"> } | null;
+    readonly watched: number;
+};
+
+/** The parameters each lookup through an index takes, after the lookup parameters, all as f64. */
+export const indexParameterCount = (lookup: WasmIndexLookup): number => lookup.kind === "hash" ? 7 + lookup.watched : 11 + lookup.watched;
+
 export type WasmKernel = {
     /** Compile asynchronously: browsers limit synchronous compiles on the main thread. */
     readonly bytes: Uint8Array;
@@ -95,7 +126,7 @@ const op = {
     block: 0x02, loop: 0x03, if: 0x04, else: 0x05, end: 0x0b, br: 0x0c, brIf: 0x0d, call: 0x10, drop: 0x1a, select: 0x1b,
     localGet: 0x20, localSet: 0x21, localTee: 0x22,
     i32Load: 0x28, f32Load: 0x2a, f64Load: 0x2b, i32Load8u: 0x2d, i32Store: 0x36, f32Store: 0x38, f64Store: 0x39, i32Store8: 0x3a,
-    i32Const: 0x41, f64Const: 0x44,
+    i32Const: 0x41, f64Const: 0x44, i32ReinterpretF32: 0xbc, i64ReinterpretF64: 0xbd, i32LtU: 0x49, i32GtU: 0x4b, i32LeU: 0x4d, i32GtS: 0x4a, f64Load2: 0x2b,
     i32Eqz: 0x45, i32GeS: 0x4e,
     f64Eq: 0x61, f64Ne: 0x62, f64Lt: 0x63, f64Gt: 0x64, f64Le: 0x65, f64Ge: 0x66,
     i32Eq: 0x46, i32LtS: 0x48, i32LeS: 0x4c, i32Clz: 0x67, i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32And: 0x71, i32Or: 0x72, i32Xor: 0x73, i32Shl: 0x74, i32ShrS: 0x75, i32ShrU: 0x76,
@@ -171,6 +202,10 @@ export const generateWasm = (
     upColumns: readonly WasmColumn[] = [],
     /** Each accumulator's operator, in `reductions` order. */
     operators: readonly Reduction[] = [],
+    /** By lookup, for those through an index, how it reads its index; null for a lookup by entity. */
+    indexLookups: readonly (WasmIndexLookup | null)[] = [],
+    /** By probe, its lookup: `KernelDescription.probes[k].lookup`. */
+    probeLookups: readonly number[] = [],
 ): WasmKernel | null => {
     const program = withoutIntrinsics(source);
     const scalars: WasmScalar[] = [];
@@ -198,12 +233,26 @@ export const generateWasm = (
 
     /** Each handle's lookup, from the `find`s into it; a handle used by two lookups isn't supported. */
     const lookupOfHandle = new Map<number, number>();
+    const claim = (handle: number, lookup: number): void => {
+        const existing = lookupOfHandle.get(handle);
+        if ((existing !== undefined && existing !== lookup) || lookup >= lookups.length) throw unsupported;
+        lookupOfHandle.set(handle, lookup);
+    };
+    /** Each probe's lookup, by the probe's index. */
+    const lookupOfProbe: ReadonlyMap<number, number> = new Map(probeLookups.map((lookup, probe) => [probe, lookup]));
     const collectFinds = (statements: readonly Statement[]): void => {
         for (const statement of statements) {
-            if (statement.kind === "find") {
-                const existing = lookupOfHandle.get(statement.handle);
-                if ((existing !== undefined && existing !== statement.lookup) || statement.lookup >= lookups.length) throw unsupported;
-                lookupOfHandle.set(statement.handle, statement.lookup);
+            if (statement.kind === "find") claim(statement.handle, statement.lookup);
+            else if (statement.kind === "probe") {
+                const lookup = lookupOfProbe.get(statement.probe);
+                if (lookup === undefined || indexLookups[lookup] === null || indexLookups[lookup] === undefined) throw unsupported;
+                claim(statement.list, lookup);
+                claim(statement.first, lookup);
+            }
+            else if (statement.kind === "listRow") {
+                const lookup = lookupOfHandle.get(statement.list);
+                if (lookup === undefined) throw unsupported;
+                claim(statement.row, lookup);
             }
             else if (statement.kind === "if") { collectFinds(statement.consequent); collectFinds(statement.alternate); }
             else if (statement.kind === "block" || statement.kind === "loop") collectFinds(statement.body);
@@ -230,6 +279,13 @@ export const generateWasm = (
                 const lookup = lookupOfHandle.get(expression.handle);
                 const leaf = lookup === undefined ? null : lookups[lookup]?.leaf(expression.read, expression.path);
                 return leaf?.boolean === true ? "boolean" : "number";
+            }
+            case "listLength": case "rowEntity": return "number";
+            case "listChanged": return "boolean";
+            case "rowLeaf": {
+                const lookup = lookupOfHandle.get(expression.handle);
+                const leaf = lookup === undefined ? null : indexLookups[lookup]?.rowLeaf(expression.leaf);
+                return leaf?.column.boolean === true ? "boolean" : "number";
             }
             // Regions are inlined before generating.
             case "lane": throw unsupported;
@@ -300,8 +356,17 @@ export const generateWasm = (
     /** For `up`: the rows' and their parents' rows' addresses, whether there's a parent, then each parent column's address. */
     const upMode = program.up === true;
     const upParameters = upMode ? 3 + upColumns.length : 0;
-    const upParameter = (index: number): number => 4 + columns.length + 2 * filters + lookupParameters + index;
-    const scalarParameter = (index: number): number => 4 + columns.length + 2 * filters + lookupParameters + upParameters + index;
+    /** Each lookup through an index's parameters, after the lookup parameters: `indexParameterCount` of them, as f64. */
+    const indexOffsets: number[] = [];
+    let indexParameters = 0;
+    for (let lookup = 0; lookup < lookups.length; lookup++) {
+        indexOffsets.push(indexParameters);
+        const index = indexLookups[lookup];
+        if (index !== null && index !== undefined) indexParameters += indexParameterCount(index);
+    }
+    const indexParameter = (lookup: number, index: number): number => 4 + columns.length + 2 * filters + lookupParameters + indexOffsets[lookup] + index;
+    const upParameter = (index: number): number => 4 + columns.length + 2 * filters + lookupParameters + indexParameters + index;
+    const scalarParameter = (index: number): number => 4 + columns.length + 2 * filters + lookupParameters + indexParameters + upParameters + index;
     const code: number[] = [];
     const extraLocals: number[] = [];
     let localBase = 0;
@@ -411,6 +476,10 @@ export const generateWasm = (
                 code.push(op.localGet, ...unsigned(handleLocal(expression.handle, "found")), op.f64ConvertI32U);
                 return;
             case "lookupLeaf": return emitLookupLeaf(expression.handle, expression.read, expression.path);
+            case "listLength": return emitListLength(expression.handle);
+            case "listChanged": return emitListChanged(expression.handle);
+            case "rowLeaf": return emitRowLeaf(expression.handle, expression.leaf);
+            case "rowEntity": return emitRowEntity(expression.handle);
         }
     };
 
@@ -655,6 +724,473 @@ export const generateWasm = (
         labels.pop();
     };
 
+    // ---- Lookups through indexes: probes of a hash table or searches of a sorted index's blocks, and their lists' rows. ----
+
+    const get = (index: number): number[] => [op.localGet, ...unsigned(index)];
+    const put = (index: number): number[] => [op.localSet, ...unsigned(index)];
+    const tee = (index: number): number[] => [op.localTee, ...unsigned(index)];
+    const constant = (value: number): number[] => [op.i32Const, ...signed(value | 0)];
+    const load = (offset: number): number[] => [op.i32Load, 2, ...unsigned(offset)];
+
+    /** By lookup through an index, its parameters as locals: addresses and counts as i32, ticks as f64. */
+    let indexLocals: number[][] = [];
+    /** Which of a hash index's and a sorted index's parameters are f64. */
+    const hashTicks = new Set([5, 6]);
+    const sortedTicks = new Set([9, 10]);
+    const convertIndexParameters = (): void => {
+        indexLocals = [];
+        for (let lookup = 0; lookup < lookups.length; lookup++) {
+            const index = indexLookups[lookup];
+            const locals: number[] = [];
+            indexLocals.push(locals);
+            if (index === null || index === undefined) continue;
+            const ticks = index.kind === "hash" ? hashTicks : sortedTicks;
+            for (let k = 0; k < indexParameterCount(index); k++) {
+                const f64 = ticks.has(k);
+                const target = scratch(f64 ? f64Type : i32Type);
+                code.push(...get(indexParameter(lookup, k)));
+                if (!f64) code.push(...truncations.i32TruncSatF64U);
+                code.push(...put(target));
+                locals.push(target);
+            }
+        }
+    };
+    const indexLocal = (lookup: number, k: number): number => indexLocals[lookup][k];
+    /** The lookup a handle is of, and its index's description. */
+    const indexOf = (handle: number): { readonly lookup: number; readonly index: WasmIndexLookup } => {
+        const lookup = lookupOfHandle.get(handle);
+        const index = lookup === undefined ? undefined : indexLookups[lookup];
+        if (lookup === undefined || index === null || index === undefined) throw unsupported;
+        return { lookup, index };
+    };
+    /** A list handle's i32 locals: a hash list's start, length and bucket; a sorted list's runs and cursor. */
+    const listLocal = (handle: number, part: "start" | "length" | "bucket" | "low" | "high" | "second" | "end" | "k" | "first" | "count"): number => {
+        const key = `${handle}:list:${part}`;
+        let index = handleLocals.get(key);
+        if (index === undefined) handleLocals.set(key, index = scratch(i32Type));
+        return index;
+    };
+    /** The key's words of a lookup's probes, as i32 locals. */
+    const keyLocals = new Map<string, number>();
+    const keyLocal = (lookup: number, word: number): number => {
+        const key = `${lookup}:${word}`;
+        let index = keyLocals.get(key);
+        if (index === undefined) keyLocals.set(key, index = scratch(i32Type));
+        return index;
+    };
+
+    /** Encodes the f64 on the stack, converted to `value`'s stored type as a store converts it, into the key's words where it goes. */
+    const encodeKey = (lookup: number, value: WasmKeyValue): void => {
+        const word = keyLocal(lookup, value.word);
+        switch (value.scalar) {
+            case "i32":
+                emitToInt32();
+                code.push(...constant(0x80000000), op.i32Xor, ...put(word));
+                return;
+            case "u32":
+                emitToInt32();
+                code.push(...put(word));
+                return;
+            case "boolean":
+                emitToInt32();
+                code.push(...constant(0xFF), op.i32And, ...constant(0), op.i32Ne, ...put(word));
+                return;
+            case "f32": {
+                const bits = scratch(i32Type);
+                code.push(op.f32DemoteF64, op.i32ReinterpretF32, ...tee(bits));
+                // NaN last, -0 as +0, a negative's bits flipped, a positive's sign set.
+                code.push(...constant(0x7F800000), op.i32And, ...constant(0x7F800000), op.i32Eq);
+                code.push(...get(bits), ...constant(0x7FFFFF), op.i32And, ...constant(0), op.i32Ne, op.i32And);
+                code.push(op.if, i32Type, ...constant(-1), op.else);
+                code.push(...get(bits), ...constant(0x80000000), op.i32Eq, op.if, i32Type, ...constant(0x80000000), op.else);
+                code.push(...get(bits), ...constant(31), op.i32ShrU, op.if, i32Type, ...get(bits), ...constant(-1), op.i32Xor, op.else, ...get(bits), ...constant(0x80000000), op.i32Or, op.end);
+                code.push(op.end, op.end, ...put(word));
+                return;
+            }
+            default: {
+                const wide = scratch(0x7e);
+                const high = scratch(i32Type);
+                const low = scratch(i32Type);
+                const next = keyLocal(lookup, value.word + 1);
+                code.push(op.i64ReinterpretF64, ...tee(wide), op.i64Const, 32, op.i64ShrU, op.i32WrapI64, ...put(high));
+                code.push(...get(wide), op.i32WrapI64, ...put(low));
+                code.push(...get(high), ...constant(0x7FF00000), op.i32And, ...constant(0x7FF00000), op.i32Eq);
+                code.push(...get(high), ...constant(0xFFFFF), op.i32And, ...get(low), op.i32Or, ...constant(0), op.i32Ne, op.i32And);
+                code.push(op.if, 0x40, ...constant(-1), ...put(word), ...constant(-1), ...put(next), op.else);
+                code.push(...get(high), ...constant(0x80000000), op.i32Eq, ...get(low), op.i32Eqz, op.i32And);
+                code.push(op.if, 0x40, ...constant(0x80000000), ...put(word), ...constant(0), ...put(next), op.else);
+                code.push(...get(high), ...constant(31), op.i32ShrU);
+                code.push(op.if, 0x40, ...get(high), ...constant(-1), op.i32Xor, ...put(word), ...get(low), ...constant(-1), op.i32Xor, ...put(next));
+                code.push(op.else, ...get(high), ...constant(0x80000000), op.i32Or, ...put(word), ...get(low), ...put(next), op.end);
+                code.push(op.end, op.end);
+                return;
+            }
+        }
+    };
+
+    /** Points row handle `row` at an entry's archetype and row, found when its archetype holds what the lookup reads. */
+    const bindRow = (row: number, lookup: number, archetype: number, entryRow: number): void => {
+        const found = handleLocal(row, "found");
+        const record = handleLocal(row, "record");
+        const words = 1 + lookups[lookup].reads;
+        code.push(...constant(0), ...put(found));
+        code.push(op.block, 0x40);
+        code.push(...get(archetype), ...get(directoryCount(lookup)), op.i32GeU, op.brIf, 0);
+        code.push(...get(directory(lookup)), ...get(archetype), ...constant(4 * words), op.i32Mul, op.i32Add, ...tee(record));
+        code.push(...load(0), op.i32Eqz, op.brIf, 0);
+        code.push(...get(entryRow), ...put(handleLocal(row, "row")), ...constant(1), ...put(found));
+        code.push(op.end);
+    };
+
+    /** Fenwick tree sum of the lengths of the blocks before position `k` (an i32 local), left on the stack. */
+    const emitPrefix = (lookup: number, k: number): void => {
+        const node = scratch(i32Type);
+        const sum = scratch(i32Type);
+        const counts = indexLocal(lookup, 5);
+        code.push(...constant(0), ...put(sum), ...get(k), ...put(node));
+        code.push(op.block, 0x40, op.loop, 0x40);
+        code.push(...get(node), op.i32Eqz, op.brIf, 1);
+        code.push(...get(sum), ...get(counts), ...get(node), ...constant(2), op.i32Shl, op.i32Add, ...load(0), op.i32Add, ...put(sum));
+        code.push(...get(node), ...get(node), ...constant(0), ...get(node), op.i32Sub, op.i32And, op.i32Sub, ...put(node), op.br, 0);
+        code.push(op.end, op.end, ...get(sum));
+    };
+
+    /** The position in `order` of the block holding entry position `position` (an i32 local), into `k`. */
+    const emitBlockAt = (lookup: number, position: number, k: number): void => {
+        const remaining = scratch(i32Type);
+        const step = scratch(i32Type);
+        const next = scratch(i32Type);
+        const blocks = indexLocal(lookup, 1);
+        const counts = indexLocal(lookup, 5);
+        code.push(...constant(0), ...put(k), ...get(position), ...put(remaining));
+        // The largest power of two at most `blocks`, or 0 without blocks.
+        code.push(...get(blocks), op.i32Eqz, op.if, i32Type, ...constant(0), op.else, ...constant(1), ...constant(31), ...get(blocks), op.i32Clz, op.i32Sub, op.i32Shl, op.end, ...put(step));
+        code.push(op.block, 0x40, op.loop, 0x40);
+        code.push(...get(step), op.i32Eqz, op.brIf, 1);
+        code.push(...get(k), ...get(step), op.i32Add, ...tee(next), ...get(blocks), op.i32LeU);
+        code.push(op.if, 0x40);
+        code.push(...get(counts), ...get(next), ...constant(2), op.i32Shl, op.i32Add, ...load(0), ...get(remaining), op.i32LeU);
+        code.push(op.if, 0x40, ...get(next), ...put(k), ...get(remaining), ...get(counts), ...get(next), ...constant(2), op.i32Shl, op.i32Add, ...load(0), op.i32Sub, ...put(remaining), op.end);
+        code.push(op.end);
+        code.push(...get(step), ...constant(1), op.i32ShrU, ...put(step), op.br, 0);
+        code.push(op.end, op.end);
+    };
+
+    /**
+     * Leaves 1 when the key at `address` (an i32 local) passes against the key's first `count` words: after them, or
+     * with `after` false, not before them, comparing unsigned words in order.
+     */
+    const emitPasses = (lookup: number, address: number, count: number, after: boolean): void => {
+        const passes = scratch(i32Type);
+        const word = scratch(i32Type);
+        code.push(...constant(after ? 0 : 1), ...put(passes));
+        code.push(op.block, 0x40);
+        for (let w = 0; w < count; w++) {
+            code.push(...get(address), ...load(4 * w), ...tee(word), ...get(keyLocal(lookup, w)), op.i32Ne);
+            code.push(op.if, 0x40, ...get(word), ...get(keyLocal(lookup, w)), op.i32GtU, ...put(passes), op.br, 1, op.end);
+        }
+        code.push(op.end, ...get(passes));
+    };
+
+    /**
+     * The first entry position whose key's first `count` words pass, into `result`: a search over the blocks' fences,
+     * then within a block. A lower bound leaves the list's cursor at its block.
+     */
+    const emitBound = (lookup: number, index: WasmIndexLookup, count: number, after: boolean, result: number, list: number): void => {
+        if (count === 0) {
+            code.push(...(after ? get(indexLocal(lookup, 6)) : constant(0)), ...put(result));
+            return;
+        }
+        const low = scratch(i32Type);
+        const high = scratch(i32Type);
+        const middle = scratch(i32Type);
+        const address = scratch(i32Type);
+        const block = scratch(i32Type);
+        const base = scratch(i32Type);
+        const fences = indexLocal(lookup, 0);
+        const blocks = indexLocal(lookup, 1);
+        const fenceBytes = 4 * (index.words + 1);
+        const entryBytes = 4 * index.stride;
+        const search = (from: () => void, length: () => void, at: () => void): void => {
+            code.push(...constant(0), ...put(low));
+            length();
+            code.push(...put(high));
+            code.push(op.block, 0x40, op.loop, 0x40);
+            code.push(...get(low), ...get(high), op.i32GeU, op.brIf, 1);
+            code.push(...get(low), ...get(high), op.i32Add, ...constant(1), op.i32ShrU, ...put(middle));
+            at();
+            code.push(...put(address));
+            emitPasses(lookup, address, count, after);
+            code.push(op.if, 0x40, ...get(middle), ...put(high), op.else, ...get(middle), ...constant(1), op.i32Add, ...put(low), op.end);
+            code.push(op.br, 0, op.end, op.end);
+            void from;
+        };
+        search(() => {}, () => code.push(...get(blocks)), () => code.push(...get(fences), ...get(middle), ...constant(fenceBytes), op.i32Mul, op.i32Add));
+        // Past the last block: the size.
+        code.push(...get(low), ...get(blocks), op.i32GeU, op.if, 0x40, ...get(indexLocal(lookup, 6)), ...put(result), op.else);
+        const k = scratch(i32Type);
+        code.push(...get(low), ...put(k));
+        code.push(...get(indexLocal(lookup, 2)), ...get(k), ...constant(2), op.i32Shl, op.i32Add, ...load(0), ...put(block));
+        code.push(...get(indexLocal(lookup, 4)), ...get(block), ...constant(entryBytes * 128), op.i32Mul, op.i32Add, ...put(base));
+        search(() => {}, () => code.push(...get(indexLocal(lookup, 3)), ...get(block), ...constant(2), op.i32Shl, op.i32Add, ...load(0)),
+            () => code.push(...get(base), ...get(middle), ...constant(entryBytes), op.i32Mul, op.i32Add));
+        emitPrefix(lookup, k);
+        if (!after) {
+            const first = scratch(i32Type);
+            code.push(...tee(first), ...get(low), op.i32Add, ...put(result));
+            code.push(...get(k), ...put(listLocal(list, "k")), ...get(first), ...put(listLocal(list, "first")));
+            code.push(...get(indexLocal(lookup, 3)), ...get(block), ...constant(2), op.i32Shl, op.i32Add, ...load(0), ...put(listLocal(list, "count")));
+        }
+        else code.push(...get(low), op.i32Add, ...put(result));
+        code.push(op.end);
+    };
+
+    /** Looks a key up, into list handle `list`, and its first row into `first`. */
+    const emitProbe = (list: number, first: number, probe: number, values: readonly Expression[]): void => {
+        const { lookup, index } = indexOf(list);
+        const plan = index.probe(probe);
+        if (plan === null) throw unsupported;
+        let next = 0;
+        const encode = (targets: readonly WasmKeyValue[]): void => {
+            for (const target of targets) {
+                const value = values[next++];
+                if (value === undefined) throw unsupported;
+                emit(value);
+                encodeKey(lookup, target);
+            }
+        };
+        encode(plan.values);
+        if (index.kind === "hash") {
+            const hash = scratch(i32Type);
+            const slot = scratch(i32Type);
+            const address = scratch(i32Type);
+            const filled = scratch(i32Type);
+            const base = scratch(i32Type);
+            const bucket = listLocal(list, "bucket");
+            const slots = indexLocal(lookup, 0);
+            const mask = indexLocal(lookup, 1);
+            const records = indexLocal(lookup, 2);
+            const recordBytes = 4 * index.stride;
+            code.push(...constant(0x811C9DC5), ...put(hash));
+            for (let w = 0; w < index.words; w++) {
+                code.push(...get(hash), ...get(keyLocal(lookup, w)), op.i32Xor, ...constant(0x9E3779B1), op.i32Mul, ...tee(hash), ...get(hash), ...constant(15), op.i32ShrU, op.i32Xor, ...put(hash));
+            }
+            code.push(...get(hash), ...get(hash), ...constant(16), op.i32ShrU, op.i32Xor, ...constant(0x85EBCA6B), op.i32Mul, ...put(hash));
+            code.push(...get(hash), ...get(hash), ...constant(13), op.i32ShrU, op.i32Xor, ...constant(0xC2B2AE35), op.i32Mul, ...put(hash));
+            code.push(...get(hash), ...get(hash), ...constant(16), op.i32ShrU, op.i32Xor, ...put(hash));
+            code.push(...get(hash), ...get(mask), op.i32And, ...put(slot), ...constant(-1), ...put(bucket));
+            code.push(op.block, 0x40, op.loop, 0x40);
+            code.push(...get(slots), ...get(slot), ...constant(8), op.i32Mul, op.i32Add, ...tee(address), ...load(4), ...tee(filled), op.i32Eqz, op.brIf, 1);
+            code.push(...get(address), ...load(0), ...get(hash), op.i32Eq, op.if, 0x40);
+            code.push(...get(records), ...get(filled), ...constant(1), op.i32Sub, ...constant(recordBytes), op.i32Mul, op.i32Add, ...put(base));
+            code.push(...constant(1));
+            for (let w = 0; w < index.words; w++) code.push(...get(base), ...load(16 + 4 * w), ...get(keyLocal(lookup, w)), op.i32Eq, op.i32And);
+            code.push(op.if, 0x40, ...get(filled), ...constant(1), op.i32Sub, ...put(bucket), op.br, 3, op.end);
+            code.push(op.end);
+            code.push(...get(slot), ...constant(1), op.i32Add, ...get(mask), op.i32And, ...put(slot), op.br, 0);
+            code.push(op.end, op.end);
+            code.push(...get(bucket), ...constant(0), op.i32LtS, op.if, 0x40, ...constant(0), ...put(listLocal(list, "start")), ...constant(0), ...put(listLocal(list, "length")));
+            code.push(op.else);
+            code.push(...get(records), ...get(bucket), ...constant(recordBytes), op.i32Mul, op.i32Add, ...tee(base), ...load(4), ...put(listLocal(list, "start")));
+            code.push(...get(base), ...load(8), ...put(listLocal(list, "length")));
+            code.push(op.end);
+        }
+        else {
+            const low = listLocal(list, "low");
+            const high = listLocal(list, "high");
+            const second = listLocal(list, "second");
+            const end = listLocal(list, "end");
+            code.push(...constant(0), ...put(second), ...constant(0), ...put(end), ...constant(0), ...put(listLocal(list, "count")));
+            if (plan.comparisons === null) {
+                emitBound(lookup, index, plan.prefixWords, false, low, list);
+                emitBound(lookup, index, plan.prefixWords, true, high, list);
+            }
+            else {
+                emitBound(lookup, index, plan.prefixWords, false, low, list);
+                emitBound(lookup, index, plan.prefixWords, true, high, list);
+                const bound = scratch(i32Type);
+                const unequalLow = scratch(i32Type);
+                const unequalHigh = scratch(i32Type);
+                code.push(...constant(-1), ...put(unequalLow));
+                const raise = (): void => { code.push(...get(bound), ...get(low), ...get(bound), ...get(low), op.i32GtS, op.select, ...put(low)); };
+                const lower = (): void => { code.push(...get(bound), ...get(high), ...get(bound), ...get(high), op.i32LtS, op.select, ...put(high)); };
+                for (const comparison of plan.comparisons) {
+                    encode(comparison.values);
+                    switch (comparison.operator) {
+                        case ">=": emitBound(lookup, index, comparison.words, false, bound, list); raise(); break;
+                        case ">": emitBound(lookup, index, comparison.words, true, bound, list); raise(); break;
+                        case "<": emitBound(lookup, index, comparison.words, false, bound, list); lower(); break;
+                        case "<=": emitBound(lookup, index, comparison.words, true, bound, list); lower(); break;
+                        case "==":
+                            emitBound(lookup, index, comparison.words, false, bound, list); raise();
+                            emitBound(lookup, index, comparison.words, true, bound, list); lower();
+                            break;
+                        case "!=":
+                            emitBound(lookup, index, comparison.words, false, unequalLow, list);
+                            emitBound(lookup, index, comparison.words, true, unequalHigh, list);
+                            break;
+                        default: throw unsupported;
+                    }
+                }
+                // An empty range, and without `!=`'s, one run; with it, the rows before and after the value.
+                code.push(...get(high), ...get(low), op.i32LtS, op.if, 0x40, ...get(low), ...put(high), op.end);
+                code.push(...get(unequalLow), ...constant(0), op.i32GeS, op.if, 0x40);
+                // second = max(low, min(high, unequalHigh)); end = high; high = min(high, max(low, unequalLow))
+                code.push(...get(unequalHigh), ...get(high), ...get(unequalHigh), ...get(high), op.i32LtS, op.select, ...put(second));
+                code.push(...get(second), ...get(low), ...get(second), ...get(low), op.i32GtS, op.select, ...put(second));
+                code.push(...get(high), ...put(end));
+                code.push(...get(unequalLow), ...get(low), ...get(unequalLow), ...get(low), op.i32GtS, op.select, ...put(bound));
+                code.push(...get(bound), ...get(high), ...get(bound), ...get(high), op.i32LtS, op.select, ...put(high));
+                code.push(...get(second), ...get(end), op.i32GeS, op.if, 0x40, ...constant(0), ...put(second), ...constant(0), ...put(end), op.end);
+                code.push(op.end);
+            }
+            // The cursor holds the block of the last lower bound, which needn't be the first row's: `count` 0 marks it unknown.
+            code.push(...constant(0), ...put(listLocal(list, "count")));
+        }
+        emitListRowAt(first, list, () => code.push(op.f64Const, ...float64(0)));
+    };
+
+    /** How many rows a list holds, as an i32 on the stack. */
+    const emitListCount = (list: number): void => {
+        const { index } = indexOf(list);
+        if (index.kind === "hash") code.push(...get(listLocal(list, "length")));
+        else code.push(...get(listLocal(list, "high")), ...get(listLocal(list, "low")), op.i32Sub, ...get(listLocal(list, "end")), ...get(listLocal(list, "second")), op.i32Sub, op.i32Add);
+    };
+
+    const emitListLength = (list: number): void => {
+        emitListCount(list);
+        code.push(op.f64ConvertI32U);
+    };
+
+    /** Points row handle `row` at row `index` (an f64 the callback leaves) of list handle `list`, or at none outside it. */
+    const emitListRowAt = (row: number, list: number, index: () => void): void => {
+        const { lookup, index: structure } = indexOf(list);
+        const value = scratch(f64Type);
+        const position = scratch(i32Type);
+        const archetype = scratch(i32Type);
+        const entryRow = scratch(i32Type);
+        const entry = scratch(i32Type);
+        code.push(...constant(0), ...put(handleLocal(row, "found")));
+        index();
+        code.push(...tee(value), op.f64Const, ...float64(0), op.f64Ge, ...get(value));
+        emitListCount(list);
+        code.push(op.f64ConvertI32U, op.f64Lt, op.i32And, op.if, 0x40);
+        code.push(...get(value), ...truncations.i32TruncSatF64U, ...put(position));
+        if (structure.kind === "hash") {
+            code.push(...get(indexLocal(lookup, 3)), ...get(listLocal(list, "start")), ...get(position), op.i32Add, ...constant(12), op.i32Mul, op.i32Add, ...put(entry));
+            code.push(...get(entry), ...load(4), ...put(archetype), ...get(entry), ...load(8), ...put(entryRow));
+        }
+        else {
+            const runLength = scratch(i32Type);
+            const k = listLocal(list, "k");
+            const first = listLocal(list, "first");
+            const count = listLocal(list, "count");
+            // The position among the entries: in the first run, or the second.
+            code.push(...get(listLocal(list, "high")), ...get(listLocal(list, "low")), op.i32Sub, ...tee(runLength), ...get(position), op.i32GtU);
+            code.push(op.if, i32Type, ...get(listLocal(list, "low")), ...get(position), op.i32Add, op.else, ...get(listLocal(list, "second")), ...get(position), op.i32Add, ...get(runLength), op.i32Sub, op.end, ...put(position));
+            // Outside the cursor's block: find it.
+            code.push(...get(position), ...get(first), op.i32Sub, ...get(count), op.i32GeU, op.if, 0x40);
+            emitBlockAt(lookup, position, k);
+            emitPrefix(lookup, k);
+            code.push(...put(first));
+            code.push(...get(indexLocal(lookup, 3)), ...get(indexLocal(lookup, 2)), ...get(k), ...constant(2), op.i32Shl, op.i32Add, ...load(0), ...constant(2), op.i32Shl, op.i32Add, ...load(0), ...put(count));
+            code.push(op.end);
+            const entryBytes = 4 * structure.stride;
+            code.push(...get(indexLocal(lookup, 4)), ...get(indexLocal(lookup, 2)), ...get(k), ...constant(2), op.i32Shl, op.i32Add, ...load(0), ...constant(entryBytes * 128), op.i32Mul, op.i32Add);
+            code.push(...get(position), ...get(first), op.i32Sub, ...constant(entryBytes), op.i32Mul, op.i32Add, ...put(entry));
+            code.push(...get(entry), ...load(4 * (structure.words + 1)), ...put(archetype), ...get(entry), ...load(4 * (structure.words + 2)), ...put(entryRow));
+        }
+        bindRow(row, lookup, archetype, entryRow);
+        code.push(op.end);
+    };
+
+    const emitListRow = (row: number, list: number, index: Expression): void => emitListRowAt(row, list, () => emit(index));
+
+    /** Leaves 1 when a segment tree's ticks over the blocks around entry positions `low` to `high` (i32 locals) are newer than `since`. */
+    const emitRunChanged = (lookup: number, tree: number, low: number, high: number): void => {
+        const from = scratch(i32Type);
+        const to = scratch(i32Type);
+        const position = scratch(i32Type);
+        const node = scratch(i32Type);
+        const limit = scratch(i32Type);
+        const maximum = scratch(f64Type);
+        const size = indexLocal(lookup, 6);
+        const leaves = indexLocal(lookup, 8);
+        // Clamped to the entries: max(low - 1, 0) and min(high, size - 1), then their blocks.
+        code.push(...get(low), ...constant(1), op.i32Sub, ...tee(position), ...constant(0), ...get(position), ...constant(0), op.i32GtS, op.select, ...tee(position));
+        code.push(...get(size), ...constant(1), op.i32Sub, ...get(position), ...get(size), ...constant(1), op.i32Sub, op.i32LtS, op.select, ...put(position));
+        emitBlockAt(lookup, position, from);
+        code.push(...get(high), ...get(size), ...constant(1), op.i32Sub, ...get(high), ...get(size), ...constant(1), op.i32Sub, op.i32LtS, op.select, ...put(position));
+        emitBlockAt(lookup, position, to);
+        code.push(op.f64Const, ...float64(0), ...put(maximum));
+        code.push(...get(from), ...get(leaves), op.i32Add, ...put(node), ...get(to), ...get(leaves), op.i32Add, ...constant(1), op.i32Add, ...put(limit));
+        code.push(op.block, 0x40, op.loop, 0x40);
+        code.push(...get(node), ...get(limit), op.i32GeU, op.brIf, 1);
+        code.push(...get(node), ...constant(1), op.i32And, op.if, 0x40);
+        code.push(...get(maximum), ...get(tree), ...get(node), ...constant(3), op.i32Shl, op.i32Add, op.f64Load, 3, 0, op.f64Max, ...put(maximum), ...get(node), ...constant(1), op.i32Add, ...put(node));
+        code.push(op.end);
+        code.push(...get(limit), ...constant(1), op.i32And, op.if, 0x40);
+        code.push(...get(limit), ...constant(1), op.i32Sub, ...tee(limit), ...constant(3), op.i32Shl, ...get(tree), op.i32Add, op.f64Load, 3, 0, ...get(maximum), op.f64Max, ...put(maximum));
+        code.push(op.end);
+        code.push(...get(node), ...constant(1), op.i32ShrU, ...put(node), ...get(limit), ...constant(1), op.i32ShrU, ...put(limit), op.br, 0);
+        code.push(op.end, op.end);
+        code.push(...get(maximum), ...get(indexLocal(lookup, 10)), op.f64Gt);
+    };
+
+    /** Whether a list changed since its system last ran, as an f64 of 0 or 1. */
+    const emitListChanged = (list: number): void => {
+        const { lookup, index } = indexOf(list);
+        if (index.kind === "hash") {
+            const bucket = listLocal(list, "bucket");
+            const since = indexLocal(lookup, 6);
+            code.push(...get(bucket), ...constant(0), op.i32LtS, op.if, i32Type, ...get(indexLocal(lookup, 5)), ...get(since), op.f64Gt, op.else);
+            code.push(...get(indexLocal(lookup, 4)), ...get(bucket), ...constant(3), op.i32Shl, op.i32Add, op.f64Load, 3, 0, ...get(since), op.f64Gt);
+            for (let k = 0; k < index.watched; k++) code.push(...get(indexLocal(lookup, 7 + k)), ...get(bucket), ...constant(3), op.i32Shl, op.i32Add, op.f64Load, 3, 0, ...get(since), op.f64Gt, op.i32Or);
+            code.push(op.end, op.f64ConvertI32U);
+            return;
+        }
+        const trees = [indexLocal(lookup, 7), ...Array.from({ length: index.watched }, (_, k) => indexLocal(lookup, 11 + k))];
+        code.push(...get(indexLocal(lookup, 1)), op.i32Eqz, op.if, i32Type, ...get(indexLocal(lookup, 9)), ...get(indexLocal(lookup, 10)), op.f64Gt, op.else);
+        code.push(...constant(0));
+        for (const tree of trees) {
+            emitRunChanged(lookup, tree, listLocal(list, "low"), listLocal(list, "high"));
+            code.push(op.i32Or);
+            code.push(...get(listLocal(list, "end")), ...get(listLocal(list, "second")), op.i32GtS, op.if, i32Type);
+            emitRunChanged(lookup, tree, listLocal(list, "second"), listLocal(list, "end"));
+            code.push(op.else, ...constant(0), op.end, op.i32Or);
+        }
+        code.push(op.end, op.f64ConvertI32U);
+    };
+
+    /** A leaf of a row handle's row, through its directory record's column `word`, or NaN without a row. */
+    const emitRecordLeaf = (handle: number, word: number, column: Omit<WasmColumn, "component">): void => {
+        const { view, stride, offset, boolean } = column;
+        code.push(...get(handleLocal(handle, "found")), op.if, f64Type);
+        code.push(...get(handleLocal(handle, "record")), op.i32Load, 2, ...unsigned(4 * word));
+        code.push(...get(handleLocal(handle, "row")), ...constant(stride), op.i32Mul, op.i32Add);
+        const memory = (align: number): number[] => [align, ...unsigned(offset)];
+        if (boolean) code.push(view === "u8" ? op.i32Load8u : op.i32Load, ...memory(view === "u8" ? 0 : 2), op.i32Const, 0, op.i32Ne, op.f64ConvertI32U);
+        else if (view === "f32") code.push(op.f32Load, ...memory(2), op.f64PromoteF32);
+        else if (view === "i32") code.push(op.i32Load, ...memory(2), op.f64ConvertI32S);
+        else if (view === "u32") code.push(op.i32Load, ...memory(2), op.f64ConvertI32U);
+        else if (view === "u8") code.push(op.i32Load8u, ...memory(0), op.f64ConvertI32U);
+        else code.push(op.f64Load, ...memory(3));
+        code.push(op.else, op.f64Const, ...float64(NaN), op.end);
+    };
+
+    const emitRowLeaf = (row: number, leaf: number): void => {
+        const { index } = indexOf(row);
+        const found = index.rowLeaf(leaf);
+        if (found === null) throw unsupported;
+        // Word 1 is the archetype's entities, so a read's column is at 2 + read.
+        emitRecordLeaf(row, 2 + found.read, found.column);
+    };
+
+    const emitRowEntity = (row: number): void => {
+        indexOf(row);
+        emitRecordLeaf(row, 1, { view: "f64", stride: 8, offset: 0, boolean: false });
+    };
+
     /** Sets the chunk tick of the row `rowOffset` rows past the current one, unless every row's chunk is stamped up front. */
     const stampChunk = (chunks: number, rowOffset: number): void => {
         if (everyRow.has(chunks)) return;
@@ -699,6 +1235,8 @@ export const generateWasm = (
                 return;
             case "next": code.push(op.br, ...unsigned(labels.length - 1 - labels.lastIndexOf("next"))); return;
             case "find": return emitFind(current.handle, current.lookup, current.entity);
+            case "probe": return emitProbe(current.list, current.first, current.probe, current.values);
+            case "listRow": return emitListRow(current.row, current.list, current.index);
         }
     };
 
@@ -837,7 +1375,7 @@ export const generateWasm = (
                 for (const parameter of expression.arguments) rowsEmit(parameter);
                 emitVectorMath(expression.name, expression.arguments.length);
                 return;
-            case "found": case "lookupLeaf": case "upFound": case "upLeaf": throw notVectorizable;
+            case "found": case "lookupLeaf": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": throw notVectorizable;
         }
     };
 
@@ -1326,7 +1864,7 @@ export const generateWasm = (
     };
 
     try {
-        const parameterCount = 4 + columns.length + 2 * filters + lookupParameters + upParameters;
+        const parameterCount = 4 + columns.length + 2 * filters + lookupParameters + indexParameters + upParameters;
         collectFinds(program.body);
         /** Leaves 1 if any filter's tick at `(row >> shift) * 8` in its `parameter` array is newer than `lastRun`. */
         const anyNewer = (parameter: (filter: number) => number, shift: number): void => {
@@ -1397,7 +1935,9 @@ export const generateWasm = (
                 });
             });
             handleLocals.clear();
+            keyLocals.clear();
             if (lookupParameters > 0) convertLookupParameters();
+            if (indexParameters > 0) convertIndexParameters();
             stampRangeChunks();
             if (mode === "rows") rowsLoop();
             if (mode === "lanes") {
@@ -1477,7 +2017,7 @@ export const generateWasm = (
         if (scalars.length !== discovered) throw unsupported;
         const vectorized = mode !== "scalar";
 
-        const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(2 * filters).fill(i32Type), ...new Array<number>(lookupParameters).fill(f64Type), ...new Array<number>(upParameters).fill(i32Type), ...scalars.map(() => f64Type), ...accumulators.length > 0 ? [i32Type] : []];
+        const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(2 * filters).fill(i32Type), ...new Array<number>(lookupParameters).fill(f64Type), ...new Array<number>(indexParameters).fill(f64Type), ...new Array<number>(upParameters).fill(i32Type), ...scalars.map(() => f64Type), ...accumulators.length > 0 ? [i32Type] : []];
         const localTypesList = [...new Array<number>(program.locals).fill(f64Type)];
         // Locals in order: program locals, then extras in creation order; the row index was the first extra.
         const declared = [...localTypesList.map(type => [1, type]), ...extraLocals.map(type => [1, type])];

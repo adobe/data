@@ -81,8 +81,10 @@ export type Tables = {
     readonly observed: number;
     readonly afterSync: number;
     readonly directories: number;
-    /** Indexes it keeps, for some registered system or finalizer. */
+    /** Indexes it keeps, for some registered system or finalizer, and how many builds of them ran in phases, and across the pool. */
     readonly indexes: number;
+    readonly phasedBuilds: number;
+    readonly pooledBuilds: number;
     readonly journalReaders: number;
     /** Bytes the arena holds. */
     readonly arena: number;
@@ -564,6 +566,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 afterSync: state.afterSync.size,
                 directories: state.directories.size,
                 indexes: state.indexes.size,
+                phasedBuilds: state.phasedBuilds,
+                pooledBuilds: state.pooledBuilds,
                 journalReaders: state.journal.readers,
                 arena: state.memory.held(),
                 joined: state.channels.map(channel => channel.placed()),

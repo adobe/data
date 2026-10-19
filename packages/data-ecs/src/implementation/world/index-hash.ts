@@ -96,7 +96,7 @@ export const coverEntities = (table: HashTable, length: number): void => {
 };
 
 /** Grows what's by bucket id to hold `count` buckets. */
-const coverBuckets = (table: HashTable, count: number): void => {
+export const coverBuckets = (table: HashTable, count: number): void => {
     const capacity = table.ticks.length;
     if (capacity >= count) return;
     const length = Math.max(count, 2 * capacity);
@@ -132,7 +132,7 @@ export const findBucket = (table: HashView, key: Uint32Array, at: number, hash: 
 };
 
 /** Places a bucket in the table by its hash; the table has a free slot. */
-const place = (slots: Uint32Array, bucket: number, hash: number): void => {
+export const place = (slots: Uint32Array, bucket: number, hash: number): void => {
     const mask = (slots.length >> 1) - 1;
     let slot = hash & mask;
     while (slots[2 * slot + 1] !== 0) slot = (slot + 1) & mask;
@@ -141,7 +141,7 @@ const place = (slots: Uint32Array, bucket: number, hash: number): void => {
 };
 
 /** Empties the table at a capacity for `buckets`, at most half full. */
-const rehash = (table: HashTable, buckets: number): void => {
+export const rehash = (table: HashTable, buckets: number): void => {
     let capacity = minimumSlots;
     while (capacity < 2 * buckets + 2) capacity *= 2;
     if (2 * capacity !== table.slots.length) {
@@ -152,7 +152,7 @@ const rehash = (table: HashTable, buckets: number): void => {
 };
 
 /** Places every bucket not freed in the table again. */
-const placeAll = (table: HashTable): void => {
+export const placeAll = (table: HashTable): void => {
     const { records, stride } = table;
     for (let bucket = 0; bucket < table.count; bucket++) if (!isFreed(table, bucket)) place(table.slots, bucket, records[bucket * stride + recordHash]);
 };
@@ -183,7 +183,7 @@ export const bucketFor = (table: HashTable, key: Uint32Array, at: number, hash: 
 };
 
 /** Spare slots a segment of `length` entries gets: an eighth, at least 4. */
-const capacityFor = (length: number): number => length + Math.max(4, length >> 3);
+export const capacityFor = (length: number): number => length + Math.max(4, length >> 3);
 
 /** A segment of `capacity` entries at the end of the buffer, growing it as needed; returns its first entry. */
 const allocateSegment = (table: HashTable, capacity: number): number => {

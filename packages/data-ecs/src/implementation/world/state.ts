@@ -175,6 +175,9 @@ export type State = {
     valuesWritten: number;
     /** Unique indexes' conflicts refreshes found, for the report of the run in progress. */
     readonly indexFailures: Failure[];
+    /** Indexes built in phases so far, and of them across the pool, for tests of how builds run. */
+    phasedBuilds: number;
+    pooledBuilds: number;
     /** Components finalizers' indexes follow since the last run, whose ticks and kernels' stamps start before the next. */
     readonly watchesPending: number[];
 };
@@ -248,6 +251,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         written: [],
         valuesWritten: 0,
         indexFailures: [],
+        phasedBuilds: 0,
+        pooledBuilds: 0,
         watchesPending: [],
     };
 };

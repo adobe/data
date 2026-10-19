@@ -1,3 +1,4 @@
+import { buildKernel, buildViews, phases, readPlan, runBuildStep } from './index-build.js';
 import type { Entity } from '../../interface/entity/entity.js';
 import { createBlock, endBlock, locate, reserveFrom, tableLength, type Block } from './entities.js';
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
@@ -359,6 +360,24 @@ const runWasm = (loaded: LoadedKernel, archetypeId: number, start: number, end: 
     }
 };
 
+/** Runs a build step's task (`index-build.ts`): its phase over the pieces or partitions it claims, or its even share. */
+const runBuildTask = (payloads: Float64Array, base: number, buffer: ArrayBufferLike, message: Extract<ToWorker, { kind: "window" }>): void => {
+    const views = buildViews(memoryBuffer);
+    const plan = readPlan(views.f64, payloads[base + taskFields]);
+    const phase = phases[payloads[base + 1]];
+    const start = payloads[base + 2];
+    const end = payloads[base + 3];
+    const line = payloads[base + 8];
+    const grain = payloads[base + 9];
+    if (line < 0) return runBuildStep(views, plan, phase, start, end);
+    const participants = payloads[base + 11];
+    const words = new Int32Array(buffer, message.claims + line * lineWords * 4, participants * lineWords);
+    const self = payloads[base + 10];
+    for (let piece = claimPiece(words, self, participants); piece >= 0; piece = claimPiece(words, self, participants)) {
+        runBuildStep(views, plan, phase, start + piece * grain, Math.min(end, start + (piece + 1) * grain));
+    }
+};
+
 /**
  * Runs tasks from this worker's ring in shared memory, blocking between them, until the main thread asks it to leave;
  * then it returns to handling messages.
@@ -381,7 +400,8 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
             try {
                 refreshMemory();
                 const kernel = payloads[base];
-                if (kernel !== idleKernel) {
+                if (kernel === buildKernel) runBuildTask(payloads, base, buffer, message);
+                else if (kernel !== idleKernel) {
                     const loaded = kernels.get(kernel);
                     if (loaded === undefined) throw new Error("Worker can't run this task.");
                     const line = payloads[base + 8];

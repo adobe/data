@@ -353,7 +353,8 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
             }
             const uses = prepared.uses[t];
             if (uses.length !== 0) {
-                refreshUses(state, uses);
+                const building = refreshUses(state, uses, workers?.pool ?? null);
+                if (building !== null) await building;
                 if (state.indexFailures.length !== 0) (outcome.failures ??= []).push(...state.indexFailures.splice(0));
             }
             const only = remote === runners.length ? runners[0]?.remote?.channel : undefined;

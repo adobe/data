@@ -76,6 +76,12 @@ const check = (condition: boolean, message: string): void => {
 };
 
 const inline = (): World => createWorld({ [workers]: 0 });
+/** Every hardware thread but the world's. */
+const threads = navigator.hardwareConcurrency - 1;
+const pooled = (): World => createWorld({ [workers]: threads });
+
+/** A kernel touching nothing, so a world's pool starts, as it does with its first kernel. */
+const startPool = System.create({ name: "indexes/startPool", kernel: "cpu", components: { has: [marked] } }, () => {});
 
 /** Indexes `index idle` keeps, each over its own thousand entities. */
 const idleIndexes = 1000;
@@ -124,6 +130,62 @@ const seedParticles = System.create({ name: "indexes/seedParticles" }, ({ comman
         commands.spawn([place, cell])({ [place]: [x, y, z], [cell]: [Math.floor(x), Math.floor(y), Math.floor(z)] });
     }
 });
+/** The same on a kernel: on the pool, each row's 27 probes in straight-line code. */
+const neighborsKernel = System.create({ name: "indexes/neighborsKernel", kernel: "cpu", components: { read: [place, cell], write: [amount] }, lookup: { near: { index: grid, read: [place] } } }, (row, { lookup }) => {
+    const [cx, cy, cz] = row[cell];
+    const [x] = row[place];
+    let push = 0;
+    for (let dz = -1; dz <= 1; dz++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                const near = lookup.near([cx + dx, cy + dy, cz + dz]);
+                for (let i = 0; i < near.length; i++) {
+                    const [nx] = near.at(i)[place];
+                    push += nx - x;
+                }
+            }
+        }
+    }
+    row[amount] = push;
+});
+const seedKernelParticles = System.create({ name: "indexes/seedKernelParticles" }, ({ commands }) => {
+    for (let i = 0; i < particles; i++) {
+        const x = ((i * 7919) % 1000) / 10;
+        const y = ((i * 104729) % 1000) / 10;
+        const z = ((i * 1299709) % 100) / 10;
+        commands.spawn([place, cell, amount])({ [place]: [x, y, z], [cell]: [Math.floor(x), Math.floor(y), Math.floor(z)], [amount]: 0 });
+    }
+});
+
+/** Particles of `rekey 1M`, drifting through cells of 4 units. */
+const drifting = million;
+const drift = System.create({ name: "indexes/drift", kernel: "cpu", components: { write: [place] } }, row => {
+    const [x, y, z] = row[place];
+    row[place] = [x + 0.25, y, z];
+});
+/** The cell a particle is in, written only when it crosses into another, so the index's work is the crossings. */
+const rekeyCells = System.create({ name: "indexes/rekeyCells", kernel: "cpu", components: { read: [place], write: [cell], changed: [place] }, after: [drift] }, row => {
+    const [x, y, z] = row[place];
+    const [cx, cy, cz] = row[cell];
+    const nx = Math.floor(x / 4);
+    const ny = Math.floor(y / 4);
+    const nz = Math.floor(z / 4);
+    if (nx !== cx || ny !== cy || nz !== cz) row[cell] = [nx, ny, nz];
+});
+const coarse = Index.create({ name: "indexes/coarse", key: [cell], components: { has: [place] } });
+/** Uses `coarse` once, so a run refreshes it. */
+const lookCoarse = System.create({ name: "indexes/lookCoarse", lookup: { coarse: { index: coarse } }, after: [rekeyCells] }, ({ lookup }) => { found += lookup.coarse([0, 0, 0]).length; });
+const frame = System.create({ name: "indexes/frame", systems: [drift, rekeyCells, lookCoarse] });
+const seedDrifting = System.create({ name: "indexes/seedDrifting" }, ({ commands }) => {
+    for (let i = 0; i < drifting; i++) {
+        const x = (i * 7919) % 4000 / 10;
+        const y = (i * 104729) % 4000 / 10;
+        commands.spawn([place, cell])({ [place]: [x, y, 0], [cell]: [Math.floor(x / 4), Math.floor(y / 4), 0] });
+    }
+});
+/** The same frame without the index: what computing the key costs alone. */
+const frameUnindexed = System.create({ name: "indexes/frameUnindexed", systems: [drift, rekeyCells] });
+
 let pushed = 0;
 const neighbors = System.create({ name: "indexes/neighbors", components: { read: [place, cell] }, lookup: { near: { index: grid, read: [place] } } }, (row, { lookup }) => {
     const [cx, cy, cz] = row[cell];
@@ -227,6 +289,55 @@ export const indexBenchmarks: readonly Benchmark[] = [
         },
     },
     {
+        name: "index rebuild 1M workers",
+        operation: "Building a hash index of 1M entities again after a system moved every one of them to another key, across the pool: an index whose keys all change at once.",
+        per: "entities",
+        n: million,
+        typical: [10_000, 1_000_000],
+        best: { bytes: 24, basis: "Each entity reads its 8-byte key and location and writes a 12-byte entry.", on: "threads" },
+        run: async () => {
+            const world = pooled();
+            await world.run(seedKeys, { count: million, marked: 0 });
+            await world.run(startPool);
+            await world.run(lookOnce);
+            const best = await after(async () => { flip = -flip; await world.run(rekeyAll); }, () => world.run(lookOnce), 12, 2);
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "rekey 1M",
+        operation: "A frame of 1M particles drifting a quarter unit, a kernel writing each one's cell of 4 units only when it crosses into another, and the index on the cell refreshed for its reader: a computed key kept as a component.",
+        per: "rows",
+        n: drifting,
+        typical: [10_000, 1_000_000],
+        best: { bytes: 36, basis: "Each row reads and writes its 12-byte position and reads its 12-byte cell; a crossing also moves its 12-byte entry." },
+        run: async () => {
+            const world = inline();
+            await world.run(seedDrifting);
+            await world.run(lookCoarse);
+            const best = await fastest(() => world.run(frame), 1000, 2);
+            check(found > 0, "rekey 1M: nothing found");
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "rekey 1M unindexed",
+        operation: "The frame of `rekey 1M` without the index: the drift and the kernel computing each particle's cell, what the key costs before the index keeps it.",
+        per: "rows",
+        n: drifting,
+        typical: [10_000, 1_000_000],
+        best: { bytes: 36, basis: "Each row reads and writes its 12-byte position and reads its 12-byte cell." },
+        run: async () => {
+            const world = inline();
+            await world.run(seedDrifting);
+            const best = await fastest(() => world.run(frameUnindexed), 1000, 2);
+            await world.dispose();
+            return best;
+        },
+    },
+    {
         name: "unique lookup 1M",
         operation: "1M lookups by key through a unique index, each reading one value of the row it finds, in a main-thread system: a replication map from server ids to entities.",
         per: "lookups",
@@ -303,6 +414,21 @@ export const indexBenchmarks: readonly Benchmark[] = [
             await world.run(seedParticles);
             const best = await fastest(() => world.run(neighbors), 3000, 2);
             check(Number.isFinite(pushed), "grid neighbors 100K main: no push");
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "grid neighbors 100K workers",
+        operation: "Each of 100K particles reading the positions of those in the 27 cells around its own through a hash index on its cell, in a kernel across the pool: a uniform grid broadphase.",
+        per: "rows",
+        n: particles,
+        typical: [1_000, 100_000],
+        best: { bytes: 1000, basis: "Each row probes 27 buckets, a 64-byte line each, and reads about 270 neighbors' 12-byte entries and positions.", on: "threads" },
+        run: async () => {
+            const world = pooled();
+            await world.run(seedKernelParticles);
+            const best = await fastest(() => world.run(neighborsKernel), 3000, 2);
             await world.dispose();
             return best;
         },

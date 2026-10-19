@@ -318,6 +318,30 @@ const isOrdered = (bucket: readonly number[]): boolean => bucket.every((entity, 
 let incremental: readonly (readonly number[])[] = [];
 const probe = System.create({ name: "indexesTest/probe", lookup: { near: { index: grid } } }, ({ lookup }) => { incremental = bucketsOf(key => lookup.near(key)); });
 
+const folded = Symbol("indexesTest/folded");
+declare module "@adobe/data-ecs" {
+    interface Components {
+        [folded]: { type: number };
+    }
+}
+Component.register(folded, { type: { type: "number" } });
+
+/** A list's entities folded into one number, by position: what `foldNear` writes. */
+const foldOf = (bucket: readonly number[]): number => bucket.reduce((sum, entity, i) => sum + (entity % 997) * (i + 1), 0);
+
+/** A kernel folding the entities of its row's own cell's list, so kernels' lookups are checked against the same index. */
+const foldNear = System.create({
+    name: "indexesTest/foldNear", kernel: "cpu",
+    components: { read: [cell], write: [folded] },
+    lookup: { near: { index: grid } },
+}, (row, { lookup }) => {
+    const [x, y] = row[cell];
+    const near = lookup.near([x, y]);
+    let sum = 0;
+    for (let i = 0; i < near.length; i++) sum += (near.at(i).entity % 997) * (i + 1);
+    row[folded] = sum;
+});
+
 /** Moves each row whose weight is below `share` of 1000 to the cell `cell` gives it, so keys change during runs. */
 const rekey = System.create({
     name: "indexesTest/rekey", input: { type: "object", properties: { share: { type: "number" }, seed: { type: "integer" } } },
@@ -327,9 +351,9 @@ const rekey = System.create({
 });
 
 describe("an incrementally refreshed hash index", () => {
-    it.each([[16, 12345], [2, 678]])("equals one built from scratch after random spawns, despawns, moves and key writes, its buckets in entity order, over %i cells", async (cellCount, seed) => {
+    it.each([[16, 12345, true], [2, 678, false]])("equals one built from scratch after random spawns, despawns, moves and key writes, its buckets in entity order, as kernels read it too, over %i cells, WASM %s", async (cellCount, seed, wasm) => {
         cells = allCells.slice(0, cellCount);
-        await using world = createWorld({ [workers]: 0 });
+        await using world = createWorld({ [workers]: 0 }, { wasm });
         const next = random(seed);
         const pick = <T>(list: readonly T[]): T | undefined => list[Math.floor(next() * list.length)];
         let held = 0;
@@ -340,7 +364,7 @@ describe("an incrementally refreshed hash index", () => {
             for (let k = 0; k < operations; k++) plan.push([pick(["spawn", "spawn", "spawn", "spawn", "despawn", "hide", "show", "weigh", "unweigh", "set"]) ?? "spawn", pick(living), Math.floor(next() * 1000)]);
             await world.run(System.create(({ commands }) => {
                 for (const [operation, entity, value] of plan) {
-                    if (operation === "spawn") commands.spawn([cell, weight])({ [cell]: cells[value % cells.length], [weight]: value });
+                    if (operation === "spawn") commands.spawn([cell, weight, folded])({ [cell]: cells[value % cells.length], [weight]: value, [folded]: 0 });
                     else if (entity === undefined) continue;
                     else if (operation === "despawn") commands.despawn(entity);
                     else if (operation === "hide") commands.add(entity, hidden);
@@ -357,6 +381,10 @@ describe("an incrementally refreshed hash index", () => {
             await world.run(System.create({ lookup: { near: { index: scratch } } }, ({ lookup }) => { rebuilt = bucketsOf(key => lookup.near(key)); }));
             expect(incremental).toEqual(rebuilt);
             expect(incremental.every(isOrdered)).toBe(true);
+            await world.run(foldNear);
+            const rows = await Observe.toPromise(world.observe.select({ required: [folded] }));
+            const kernel = await Promise.all(rows.map(entity => Observe.toPromise(world.observe.entity(entity, { required: [cell, folded] }))));
+            expect(kernel.map(values => values?.[folded])).toEqual(kernel.map(values => values === null ? undefined : foldOf(rebuilt[allCells.findIndex(([x, y]) => x === values[cell][0] && y === values[cell][1])])));
             held = Math.max(held, incremental.reduce((sum, bucket) => sum + bucket.length, 0));
         }
         expect(held).toBeGreaterThan(400);
@@ -548,9 +576,22 @@ const rerank = System.create({
     if ((row[weight] * 7919 + input.seed) % 1000 < input.share * 1000) row[rank] = (row[weight] * 31 + input.seed * 17) % 1000;
 });
 
+/** A kernel folding the entities of its row's lane's range of ranks within 50 of its own, so kernels' sorted lookups are checked against the same index. */
+const foldLane = System.create({
+    name: "indexesTest/foldLane", kernel: "cpu",
+    components: { read: [lane, rank], write: [folded] },
+    lookup: { lanes: { index: byLaneRank } },
+}, (row, { lookup }) => {
+    const r = row[rank];
+    const near = lookup.lanes(row[lane], { ">=": r - 50, "<": r + 50 });
+    let sum = 0;
+    for (let i = 0; i < near.length; i++) sum += (near.at(i).entity % 997) * (i + 1);
+    row[folded] = sum;
+});
+
 describe("an incrementally refreshed sorted index", () => {
-    it("equals one built from scratch after random spawns, despawns, moves and key writes, its blocks split and dropped", async () => {
-        await using world = createWorld({ [workers]: 0 });
+    it.each([[true], [false]])("equals one built from scratch after random spawns, despawns, moves and key writes, its blocks split and dropped, as kernels read it too, WASM %s", async wasm => {
+        await using world = createWorld({ [workers]: 0 }, { wasm });
         const next = random(4242);
         const pick = <T>(list: readonly T[]): T | undefined => list[Math.floor(next() * list.length)];
         let held = 0;
@@ -561,7 +602,7 @@ describe("an incrementally refreshed sorted index", () => {
             for (let k = 0; k < operations; k++) plan.push([pick(["spawn", "spawn", "spawn", "despawn", "despawn", "weigh", "unweigh", "set", "lane"]) ?? "spawn", pick(living), Math.floor(next() * 1000)]);
             await world.run(System.create(({ commands }) => {
                 for (const [operation, entity, value] of plan) {
-                    if (operation === "spawn") commands.spawn([lane, rank, weight])({ [lane]: (value % 3) - 1, [rank]: value % 7 === 0 ? 500 : value, [weight]: value });
+                    if (operation === "spawn") commands.spawn([lane, rank, weight, folded])({ [lane]: (value % 3) - 1, [rank]: value % 7 === 0 ? 500 : value, [weight]: value, [folded]: 0 });
                     else if (entity === undefined) continue;
                     else if (operation === "despawn") commands.despawn(entity);
                     else if (operation === "weigh") commands.add(entity, weight, value);
@@ -584,6 +625,21 @@ describe("an incrementally refreshed sorted index", () => {
             }));
             expect(incrementalRanks).toEqual(rebuiltRanks);
             expect(incrementalLanes).toEqual(rebuiltLanes);
+            // A kernel's ranges, each row's, against the same ranges from the index built from scratch.
+            await world.run(foldLane);
+            const rows = await Observe.toPromise(world.observe.select({ required: [folded] }));
+            const kernel = await Promise.all(rows.map(entity => Observe.toPromise(world.observe.entity(entity, { required: [lane, rank, folded] }))));
+            let expected: readonly number[] = [];
+            await world.run(System.create({ lookup: { lanes: { index: scratch } } }, ({ lookup }) => {
+                expected = kernel.map(values => {
+                    if (values === null) return -1;
+                    const list = lookup.lanes(values[lane], { ">=": values[rank] - 50, "<": values[rank] + 50 });
+                    let sum = 0;
+                    for (let i = 0; i < list.length; i++) sum += (list.at(i).entity % 997) * (i + 1);
+                    return sum;
+                });
+            }));
+            expect(kernel.map(values => values?.[folded] ?? -1)).toEqual(expected);
             held = Math.max(held, incrementalRanks.length);
             // Once its blocks have split, every entity of a lane goes, so whole blocks empty and are dropped.
             if (step === 40) await world.run(System.create({ components: { read: [lane] } }, (row, { commands }) => { if (row[lane] < 1) commands.despawn(row.entity); }));

@@ -254,6 +254,7 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 ## Next
 
 - `loop tick add remove`, a new system each tick: about 2 µs more a tick since indexes (above), in `System.create` and `add`, as more garbage; the paths a run of an existing system takes measure as before.
+- Index rebuilds across the pool: `index rebuild 1M workers` 6.7 ms, nine workers 4.3× one, every phase scattering or gathering by partition; an estimated 2–3 ms if the scatters reached memory bandwidth. Rebuilds are rare, a refresh moving more than an eighth of an index.
 - Single-tier runs on workers: workers asleep at the start of a run take 60–135 µs to see the task, and 2–4 of 9 find nothing left to claim.
 - Idle cores clock down: after 5 ms idle, even the main thread runs move 2–4× slower per frame, and keeping one other core busy removes most of it, at 10M too. That's the OS's power policy, not something dispatch can avoid without spending power.
 - Emit and other command-heavy kernels: the sync point dominates.

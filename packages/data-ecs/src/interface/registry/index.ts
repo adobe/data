@@ -6,7 +6,7 @@ export { declarationOf, firstKeyOf, identifiedKeys, keyOfId, kindOf, labelOf, ne
 export type { Item } from './program.js';
 export { definitionOf, programFinalizers, programRules, programVersion, requireDefinition } from './program.js';
 export type { Schedule } from './schedule.js';
-export { accessOf, isLeaf, reducedBy, scheduleOf } from './schedule.js';
+export { accessOf, isLeaf, isSynced, reducedBy, scheduleOf } from './schedule.js';
 export type { RuleFacts, Strata } from './strata.js';
 export { strataOf } from './strata.js';
 export type { Placed } from './threads.js';

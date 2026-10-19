@@ -52,4 +52,6 @@ export type Declaration = {
     readonly after?: readonly System<unknown>[];
     /** Runs inside the span of the systems listed: after what they follow and before what follows them. */
     readonly during?: readonly System<unknown>[];
+    /** Runs after the sync point of each run and tick it's added to, reading what that sync point left; writes nothing. */
+    readonly synced?: true;
 };

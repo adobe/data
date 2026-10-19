@@ -112,10 +112,29 @@ const checkPlacement = (leaf: Leaf): void => {
 };
 
 /**
+ * Throws for what a synced system can't declare: it only reads, after a sync point, so it writes and reduces into
+ * nothing, takes no input, isn't a kernel or a render system, has no `up`, and is ordered with nothing.
+ */
+const checkSynced = (leaf: Leaf): void => {
+    const { name, declaration } = leaf;
+    const { synced } = declaration;
+    if (synced === undefined) return;
+    const fail = (message: string): never => { throw new Error(`System "${name}" is synced, so it ${message}.`); };
+    if (synced !== true) throw new Error(`System "${name}": synced is true or left out.`);
+    if (leaf.kind === "render") fail("records no GPU work");
+    if (declaration.kernel !== undefined) fail("isn't a kernel");
+    if ((declaration.components?.write?.length ?? 0) + (declaration.resources?.write?.length ?? 0) > 0) fail("writes nothing");
+    if (reducedBy(leaf).length > 0) fail("reduces into nothing");
+    if (declaration.input !== undefined) fail("takes no input");
+    if (declaration.up !== undefined) fail("has no up");
+    if ((declaration.before?.length ?? 0) + (declaration.after?.length ?? 0) + (declaration.during?.length ?? 0) > 0) fail("is ordered with nothing");
+};
+
+/**
  * Throws for a leaf that names a component or resource that isn't registered as one, lists a key in both `read` and
  * `write`, writes a reference, has a lookup reading a component it writes, takes input that isn't an object schema,
- * uses object components and resources of different threads, or whose reductions, conditions, `up` or placement
- * can't hold.
+ * uses object components and resources of different threads, declares what a synced system can't, or whose reductions,
+ * conditions, `up` or placement can't hold.
  */
 export const checkLeaf = (leaf: Leaf): void => {
     const { name, declaration } = leaf;
@@ -153,6 +172,7 @@ export const checkLeaf = (leaf: Leaf): void => {
     for (const key of components?.write ?? []) {
         if (declarationOf(key)?.reference !== undefined) throw new Error(`System "${name}" writes "${labelOf(key)}", a reference, which changes only through commands.`);
     }
+    checkSynced(leaf);
     checkReductions(leaf);
     checkConditions(leaf);
     checkPlacement(leaf);

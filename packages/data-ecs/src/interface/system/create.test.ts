@@ -124,6 +124,16 @@ describe("System.create", () => {
             [{ kernel: "gpu", components: { write: [position], changed: [position] } }, "can't run on the GPU: GPU kernels don't support change filters yet"],
             [{ kernel: "gpu", components: { read: [position] }, lookup: { others: { read: [position] } } }, "can't run on the GPU: GPU kernels don't support lookups yet"],
             [{ kernel: "gpu", components: { has: [position] }, reduce: { [total]: "+" } }, "can't run on the GPU: GPU kernels don't support reductions yet"],
+            [{ synced: false, resources: { read: [time] } }, "synced is true or left out"],
+            [{ synced: true, components: { write: [position] } }, "is synced, so it writes nothing"],
+            [{ synced: true, resources: { write: [time] } }, "is synced, so it writes nothing"],
+            [{ synced: true, components: { has: [position] }, reduce: { [total]: "+" } }, "is synced, so it reduces into nothing"],
+            [{ synced: true, input: { type: "object", properties: {} } }, "is synced, so it takes no input"],
+            [{ synced: true, kernel: "cpu", components: { read: [position] } }, "is synced, so it isn't a kernel"],
+            [{ synced: true, components: { read: [position] }, up: { through: parent } }, "is synced, so it has no up"],
+            [{ synced: true, resources: { read: [time] }, after: [System.create(() => {})] }, "is synced, so it is ordered with nothing"],
+            [{ synced: true, resources: { read: [time] }, before: [System.create(() => {})] }, "is synced, so it is ordered with nothing"],
+            [{ synced: true, resources: { read: [time] }, during: [System.create(() => {})] }, "is synced, so it is ordered with nothing"],
         ];
         rejected.forEach(([declaration, message], index) => {
             expect(() => create({ name: `typesSystemTest/rejected/${index}`, ...declaration })).toThrow(message);
@@ -172,6 +182,17 @@ describe("System.create of a composite", () => {
         expect(() => System.create({ name: "typesSystemTest/cycle", systems: [first, second, looped] })).toThrow("Ordering cycle");
         expect(labelOfItem(System.create({ name: "typesSystemTest/unordered", systems: [first] }))).toBe("typesSystemTest/unordered");
     });
+    it("runs synced members after its sync point, in no tier, never conflicting and ignoring constraints naming them", () => {
+        const write = System.create({ name: "typesSystemTest/syncedWriter", components: { write: [position] } }, row => { row[position] += 1; });
+        const watch = System.create({ name: "typesSystemTest/synced", synced: true, components: { read: [position] } }, row => { void row[position]; });
+        const later = System.create({ name: "typesSystemTest/afterSynced", components: { read: [position] }, after: [watch, write] }, row => { void row[position]; });
+        const free = System.create({ name: "typesSystemTest/afterSyncedOnly", resources: { read: [time] }, after: [watch] }, ({ resources }) => { void resources[time]; });
+        const schedule = scheduleOf(requireDefinition(System.create([write, watch, later, free])));
+        expect(schedule.tiers.map(tier => tier.map(leaf => leaf.name))).toEqual([["typesSystemTest/syncedWriter", "typesSystemTest/afterSyncedOnly"], ["typesSystemTest/afterSynced"]]);
+        expect(schedule.synced.map(leaf => leaf.name)).toEqual(["typesSystemTest/synced"]);
+        const alone = scheduleOf(requireDefinition(watch));
+        expect([alone.tiers.length, alone.synced.map(leaf => leaf.name)]).toEqual([0, ["typesSystemTest/synced"]]);
+    });
     it("rejects a member no constructor returned, and an input field two members declare differently", () => {
         expect(() => System.create({ name: "typesSystemTest/forged", systems: [{ name: "typesSystemTest/showMember" }] })).toThrow('member "typesSystemTest/showMember" isn\'t a system a System constructor returned');
         const move = System.create({ name: "typesSystemTest/moveBy", input: { type: "object", properties: { distance: { type: "number" } } } }, () => {});
@@ -196,6 +217,7 @@ describe("System.render", () => {
         const render: (declaration: object) => unknown = declaration => Reflect.apply(System.render, undefined, [declaration, () => {}]);
         expect(() => System.render({ name: "typesSystemTest/drawReserved", shader: { accessors: { loop: height } } }, () => {})).toThrow(`System "typesSystemTest/drawReserved" can't render: "loop" isn't usable as a WGSL function name.`);
         expect(() => render({ name: "typesSystemTest/drawReduced", shader: { accessors: {} }, reduce: { [total]: "+" } })).toThrow("can't reduce: a render system records GPU work rather than running rows");
+        expect(() => render({ name: "typesSystemTest/drawSynced", shader: { accessors: {} }, synced: true })).toThrow("is synced, so it records no GPU work");
         expect(labelOfItem(System.render({ name: "typesSystemTest/drawReserved", shader: { accessors: {} } }, () => {}))).toBe("typesSystemTest/drawReserved");
     });
 });

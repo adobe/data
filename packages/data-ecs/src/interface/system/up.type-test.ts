@@ -73,3 +73,7 @@ System.create({
     // @ts-expect-error up orders rows, so it needs components
     up: { through: parent, read: [world] },
 }, () => {});
+
+// A synced system reads what a sync point left, in no order.
+// @ts-expect-error a synced system has no up
+System.create({ synced: true, components: { read: [local] }, up: { through: parent, read: [local] } }, () => {});

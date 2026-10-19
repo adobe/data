@@ -20,7 +20,8 @@ type Reduced<D> = keyof Property<D, "reduce"> & Resource.Key;
 
 /**
  * What a body uses besides its row, by kind, under the declaration's own keys: each is present only when the
- * declaration declares something of its kind. `commands` is there for every system but a GPU kernel.
+ * declaration declares something of its kind. `commands` is there for every system but a GPU kernel, a render system
+ * and a synced system.
  */
 export type Context<D extends Declaration> =
     ([Resources<D>] extends [never] ? {} : {
@@ -39,7 +40,7 @@ export type Context<D extends Declaration> =
         /** The parent's `up.read` values, or null for a row without a parent. */
         readonly up: { readonly [K in Listed<Property<D, "up">, "read"> & Component.Key]: Component.Value<K> } | null;
     } : {})
-    & (D extends { readonly kernel: "gpu" } | { readonly shader: object } ? {} : { readonly commands: Commands });
+    & (D extends { readonly kernel: "gpu" } | { readonly shader: object } | { readonly synced: true } ? {} : { readonly commands: Commands });
 
 /** `(row, context)` for a system with `components`, `(context)` for one without, and `(gpu, context)` for a render system. */
 export type Body<D extends Declaration> =

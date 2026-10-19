@@ -135,7 +135,7 @@ const tailingOf = (context: ExecuteContext, schedule: Schedule): Tailing | null 
         if (kept.length > 0) rest.push(kept);
     });
     if (leaves.length === 0) return null;
-    return { schedule: { tiers: rest, reductions: schedule.reductions }, runners: leaves.map(context.runnerOf), leaves, tiers };
+    return { schedule: { tiers: rest, reductions: schedule.reductions, synced: schedule.synced }, runners: leaves.map(context.runnerOf), leaves, tiers };
 };
 
 type Outcome = { failures: Failure[] | null; skipped: string[] | null };

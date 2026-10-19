@@ -75,6 +75,22 @@ type GpuKernel = {
     readonly order?: { readonly "error: GPU kernels have no order yet": true };
 };
 
+/**
+ * A synced system only reads, after a sync point: it writes and reduces into nothing, takes no input, isn't a kernel,
+ * has no `up`, and is ordered with nothing.
+ */
+type Synced = {
+    readonly kernel?: never;
+    readonly components?: { readonly write?: never };
+    readonly resources?: { readonly write?: never };
+    readonly reduce?: never;
+    readonly input?: never;
+    readonly up?: never;
+    readonly before?: never;
+    readonly after?: never;
+    readonly during?: never;
+};
+
 type Validate<D extends Declaration> =
     Lists<D>
     & IndexLookups<D>
@@ -85,6 +101,7 @@ type Validate<D extends Declaration> =
     // `up` and `order` order rows, so a system without them has neither, and one has at most one of them.
     & (Property<D, "components"> extends undefined ? { readonly up?: { readonly [key: string]: never }; readonly order?: { readonly "error: a system without components runs once, in no order": true } } : {})
     & (D extends { readonly up: object } ? { readonly order?: { readonly "error: up and order both decide the order of its rows": true } } : {})
+    & (D extends { readonly synced: true } ? Synced : {})
     & { readonly shader?: never };
 
 /** The body of a system that declares nothing, which runs once per run with its commands. */
@@ -110,8 +127,9 @@ type Checked<C> = C extends Alone ? unknown : C extends CompositeDeclaration ? {
  * isn't registered as its kind, lists a key in both `read` and `write`, writes a reference, a lookup reads a component
  * it writes or goes through an index keyed by one, or reads through an index what not every entity it holds has, its
  * rows are ordered by an index it isn't sorted or keyed by what it writes, its object components and resources live on different threads, or its reductions, conditions, `up`, `order` or
- * placement can't hold; or if a composite's member isn't a system a constructor returned, or two members declare an
- * input field with different schemas.
+ * placement can't hold, or it's synced and writes, reduces, takes input, is a kernel, has `up` or is ordered; or if a
+ * composite's member isn't a system a constructor returned, or two members declare an input field with different
+ * schemas. A composite's synced members run after its sync point, ordered with nothing.
  *
  * One argument, a body or a composite, is one overload, so a mistake in it is reported where it is rather than as no
  * overload matching.

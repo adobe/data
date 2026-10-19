@@ -2,7 +2,7 @@ import { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import type { Observe, Observers } from '../index.js';
 import { System } from '../system/system.js';
-import { main, move, position, time, total } from '../system/system.type-test.js';
+import { main, move, position, time, total, watchTime } from '../system/system.type-test.js';
 import type { Create } from './create.js';
 import type { World } from './world.js';
 
@@ -168,3 +168,8 @@ export type Failed = World.Failure;
 // A warning's type is inferred from the report's: World.Report["warnings"][number].
 // @ts-expect-error no World.Warning
 export type Warned = World.Warning;
+
+// A synced system is added to every run and tick, or run once after an empty sync point.
+const addedSynced: void = world.add(watchTime);
+const ranSynced: Promise<World.Report> = world.run(watchTime);
+void [addedSynced, ranSynced];

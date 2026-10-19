@@ -15,7 +15,9 @@ export type World = {
      * runs a system or composite, ending in a sync point, and resolves to what went wrong, if anything: systems,
      * finalizers, GPU work and observers that failed, systems skipped after a failed tier, and commands that did
      * nothing. Rejects only when the run can't happen or finish: registration fails, the world is disposed, its GPU
-     * device is lost, or its sync point can't apply a command's value.
+     * device is lost, or its sync point can't apply a command's value. Synced systems, the run's and those added, run
+     * after its sync point, before it resolves, their throws `"system"` failures in its report; a run of synced systems
+     * alone runs them once after an empty sync point, and doesn't wake the loop.
      */
     run<I>(system: System<I>, ...input: Input<NoInfer<I>>): Promise<Report>;
     /**
@@ -23,6 +25,9 @@ export type World = {
      * composite's members are. A tick runs on a beat of the `cadence` resource where `always` is set, `wake` is due or
      * a run arrived since the last tick, and only while some system is added. Throws for a system with no ordering path
      * to one already added that conflicts with it, and on a joined thread; failures appear in the `report` resource.
+     * A synced system runs after every run's and tick's sync point instead. It never conflicts and doesn't count as an
+     * added system for ticking. In a tick it sees the tick's report, which then holds its failures without notifying
+     * again.
      */
     add(system: System<void>): void;
     /**

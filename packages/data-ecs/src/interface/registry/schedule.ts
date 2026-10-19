@@ -31,11 +31,15 @@ const checkInputs = (leaves: readonly Leaf[]): void => {
 
 /**
  * Leaves in run order, grouped into tiers. Leaves in one tier have no ordering path between them. `reductions` are the
- * resources its leaves reduce into, each with how many of them contribute.
+ * resources its leaves reduce into, each with how many of them contribute. `synced` are its synced leaves, in no tier:
+ * they run after its sync point, ordered with nothing.
  */
-export type Schedule = { readonly tiers: readonly (readonly Leaf[])[]; readonly reductions: ReadonlyMap<Key, number> };
+export type Schedule = { readonly tiers: readonly (readonly Leaf[])[]; readonly reductions: ReadonlyMap<Key, number>; readonly synced: readonly Leaf[] };
 
 export const isLeaf = (system: Definition): system is Leaf => system.kind !== "composite";
+
+/** Whether a system is a synced leaf, which runs after a sync point rather than in a tier. */
+export const isSynced = (system: Definition): system is Leaf => system.kind !== "composite" && system.declaration.synced === true;
 
 /** Each system is an interval, from its start node to its end node. */
 const start = (unit: number): number => 2 * unit;
@@ -64,8 +68,12 @@ const graphOf = (root: Definition): Graph => {
     };
     visit(root);
     const successors = units.flatMap(() => [new Set<number>(), new Set<number>()]);
+    // A synced system is ordered with nothing, so constraints naming one are ignored.
     const resolve = (systems: readonly object[] | undefined): readonly number[] =>
-        (systems ?? []).flatMap(system => indexOf.get(firstItemOf(system)) ?? []);
+        (systems ?? []).flatMap(system => {
+            const unit = indexOf.get(firstItemOf(system));
+            return unit === undefined || isSynced(units[unit]) ? [] : [unit];
+        });
     units.forEach((system, unit) => {
         successors[start(unit)].add(end(unit));
         for (const member of members[unit]) {
@@ -125,7 +133,7 @@ const ordered = (reach: readonly Uint32Array[], a: number, b: number): boolean =
 const depthsOf = ({ units, successors }: Graph, order: readonly number[]): number[] => {
     const depth = successors.map(() => 0);
     for (const node of order) {
-        const step = node % 2 === 0 && isLeaf(units[node >>> 1]) ? 1 : 0;
+        const step = node % 2 === 0 && isLeaf(units[node >>> 1]) && !isSynced(units[node >>> 1]) ? 1 : 0;
         for (const next of successors[node]) depth[next] = Math.max(depth[next], depth[node] + (next === node + 1 ? step : 0));
     }
     return depth;
@@ -175,7 +183,8 @@ export const scheduleOf = (system: Definition): Schedule => {
  */
 const createSchedule = (system: Definition): Schedule => {
     const graph = graphOf(system);
-    const leaves = graph.units.flatMap((unit, index) => isLeaf(unit) ? [{ leaf: unit, unit: index }] : []);
+    const synced = graph.units.filter(isSynced);
+    const leaves = graph.units.flatMap((unit, index) => isLeaf(unit) && !isSynced(unit) ? [{ leaf: unit, unit: index }] : []);
     checkInputs(leaves.map(({ leaf }) => leaf));
     const accesses = leaves.map(({ leaf }) => accessOf(leaf));
     // Leaves that read a resource run after every leaf that reduces into it, so they read the finished fold.
@@ -201,5 +210,5 @@ const createSchedule = (system: Definition): Schedule => {
     const depth = depthsOf(graph, order);
     const tiers: Leaf[][] = [];
     for (const { leaf, unit } of leaves) (tiers[depth[start(unit)]] ??= []).push(leaf);
-    return { tiers: tiers.filter(tier => tier !== undefined), reductions };
+    return { tiers: tiers.filter(tier => tier !== undefined), reductions, synced };
 };

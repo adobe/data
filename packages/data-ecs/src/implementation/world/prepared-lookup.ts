@@ -41,40 +41,49 @@ const argumentsOf = (shape: Shape, values: readonly unknown[]): unknown[] => {
  */
 export const prepareLookup = (shape: Shape) => {
     const count = countOf(shape);
-    const values: unknown[] = new Array<unknown>(count).fill(undefined);
     let last: unknown = null;
     let site: Site | null = null;
     const sites = new WeakMap<object, Site>();
-    return {
-        find: (lookup: unknown, a0?: unknown, a1?: unknown, a2?: unknown, a3?: unknown, a4?: unknown, a5?: unknown, a6?: unknown, a7?: unknown,
-            a8?: unknown, a9?: unknown, a10?: unknown, a11?: unknown, a12?: unknown, a13?: unknown, a14?: unknown, a15?: unknown): unknown => {
-            if (lookup !== last || site === null) {
-                const found = indexLookupOf(lookup);
-                if (found === undefined || typeof lookup !== "function") {
-                    const given = [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15].slice(0, count);
-                    return typeof lookup === "function" ? Reflect.apply(lookup, undefined, argumentsOf(shape, given)) : undefined;
-                }
-                site = sites.get(lookup) ?? createSite(found, shape);
-                sites.set(lookup, site);
-                last = lookup;
-            }
-            if (count > 0) values[0] = a0;
-            if (count > 1) values[1] = a1;
-            if (count > 2) values[2] = a2;
-            if (count > 3) values[3] = a3;
-            if (count > 4) values[4] = a4;
-            if (count > 5) values[5] = a5;
-            if (count > 6) values[6] = a6;
-            if (count > 7) values[7] = a7;
-            if (count > 8) values[8] = a8;
-            if (count > 9) values[9] = a9;
-            if (count > 10) values[10] = a10;
-            if (count > 11) values[11] = a11;
-            if (count > 12) values[12] = a12;
-            if (count > 13) values[13] = a13;
-            if (count > 14) values[14] = a14;
-            if (count > 15) values[15] = a15;
-            return site.find(values);
-        },
+    /** The site for `lookup`, or null for a function that isn't an index lookup. */
+    const siteOf = (lookup: unknown): Site | null => {
+        const found = indexLookupOf(lookup);
+        if (found === undefined || typeof lookup !== "function") return null;
+        const made = sites.get(lookup) ?? createSite(found, shape);
+        sites.set(lookup, made);
+        last = lookup;
+        site = made;
+        return made;
     };
+    /** A call of a function that isn't an index lookup, with the arguments a call with literals would have passed. */
+    const asWritten = (lookup: unknown, values: readonly unknown[]): unknown =>
+        typeof lookup === "function" ? Reflect.apply(lookup, undefined, argumentsOf(shape, values)) : undefined;
+    // The commonest counts take exactly their arguments, so a call passes nothing more.
+    switch (count) {
+        case 1: return {
+            find: (lookup: unknown, a0: unknown): unknown => {
+                const current = lookup === last ? site : siteOf(lookup);
+                return current === null ? asWritten(lookup, [a0]) : current.find(a0);
+            },
+        };
+        case 2: return {
+            find: (lookup: unknown, a0: unknown, a1: unknown): unknown => {
+                const current = lookup === last ? site : siteOf(lookup);
+                return current === null ? asWritten(lookup, [a0, a1]) : current.find(a0, a1);
+            },
+        };
+        case 3: return {
+            find: (lookup: unknown, a0: unknown, a1: unknown, a2: unknown): unknown => {
+                const current = lookup === last ? site : siteOf(lookup);
+                return current === null ? asWritten(lookup, [a0, a1, a2]) : current.find(a0, a1, a2);
+            },
+        };
+        default: return {
+            find: (lookup: unknown, a0?: unknown, a1?: unknown, a2?: unknown, a3?: unknown, a4?: unknown, a5?: unknown, a6?: unknown, a7?: unknown,
+                a8?: unknown, a9?: unknown, a10?: unknown, a11?: unknown, a12?: unknown, a13?: unknown, a14?: unknown, a15?: unknown): unknown => {
+                const current = lookup === last ? site : siteOf(lookup);
+                if (current === null) return asWritten(lookup, [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15].slice(0, count));
+                return current.find(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15);
+            },
+        };
+    }
 };

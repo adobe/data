@@ -10,11 +10,14 @@ export const lookupComponentsOf = (lookup: Lookup): readonly Component.Key[] => 
     return [...lookup.read ?? [], ..."changed" in lookup ? lookup.changed ?? [] : [], ...key, ...components?.has ?? [], ...components?.not ?? []];
 };
 
+const none: readonly Component.Key[] = [];
+
 /**
  * The components whose changes the indexes of a declaration's lookups follow, which keep ticks and kernels' stamps
  * while it lives: each index's key parts, and what its lookups watch.
  */
 export const indexWatchesOf = (lookup: { readonly [name: string]: Lookup } | undefined): readonly Component.Key[] => {
+    if (lookup === undefined) return none;
     const keys: Component.Key[] = [];
     for (const name in lookup) {
         const declared = lookup[name];

@@ -302,12 +302,13 @@ const random = (seed: number): (() => number) => {
     };
 };
 
-/** Every cell a property test's entities take. */
-const cells: readonly (readonly [number, number])[] = Array.from({ length: 16 }, (_, k) => [k % 4, k >> 2]);
+/** Every cell a property test's entities take: sixteen, or two, so its buckets are long. */
+const allCells: readonly (readonly [number, number])[] = Array.from({ length: 16 }, (_, k) => [k % 4, k >> 2]);
+let cells: readonly (readonly [number, number])[] = allCells;
 
 /** Each cell's entities, through `lookup`, which must be in entity order. */
 const bucketsOf = (lookup: (key: readonly [number, number]) => { readonly length: number; at(index: number): { readonly entity: Entity } }): readonly (readonly number[])[] =>
-    cells.map(key => {
+    allCells.map(key => {
         const list = lookup(key);
         return Array.from({ length: list.length }, (_, i) => list.at(i).entity);
     });
@@ -326,16 +327,17 @@ const rekey = System.create({
 });
 
 describe("an incrementally refreshed hash index", () => {
-    it("equals one built from scratch after random spawns, despawns, moves and key writes, its buckets in entity order", async () => {
+    it.each([[16, 12345], [2, 678]])("equals one built from scratch after random spawns, despawns, moves and key writes, its buckets in entity order, over %i cells", async (cellCount, seed) => {
+        cells = allCells.slice(0, cellCount);
         await using world = createWorld({ [workers]: 0 });
-        const next = random(12345);
+        const next = random(seed);
         const pick = <T>(list: readonly T[]): T | undefined => list[Math.floor(next() * list.length)];
         let held = 0;
         for (let step = 0; step < 80; step++) {
             const living = await Observe.toPromise(world.observe.select({ required: [cell] }));
-            const operations = Math.floor(next() * 40);
+            const operations = Math.floor(next() * 60);
             const plan: (readonly [string, Entity | undefined, number])[] = [];
-            for (let k = 0; k < operations; k++) plan.push([pick(["spawn", "spawn", "despawn", "hide", "show", "weigh", "unweigh", "set"]) ?? "spawn", pick(living), Math.floor(next() * 1000)]);
+            for (let k = 0; k < operations; k++) plan.push([pick(["spawn", "spawn", "spawn", "spawn", "despawn", "hide", "show", "weigh", "unweigh", "set"]) ?? "spawn", pick(living), Math.floor(next() * 1000)]);
             await world.run(System.create(({ commands }) => {
                 for (const [operation, entity, value] of plan) {
                     if (operation === "spawn") commands.spawn([cell, weight])({ [cell]: cells[value % cells.length], [weight]: value });
@@ -357,6 +359,6 @@ describe("an incrementally refreshed hash index", () => {
             expect(incremental.every(isOrdered)).toBe(true);
             held = Math.max(held, incremental.reduce((sum, bucket) => sum + bucket.length, 0));
         }
-        expect(held).toBeGreaterThan(100);
+        expect(held).toBeGreaterThan(400);
     });
 });

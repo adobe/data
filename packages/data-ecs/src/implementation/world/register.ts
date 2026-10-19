@@ -80,7 +80,11 @@ const tickedBy = (leaf: Leaf): readonly Key[] =>
     [...leaf.declaration.components?.added ?? [], ...leaf.declaration.components?.changed ?? [], ...upObserved(leaf), ...indexObserved(leaf)];
 
 /** The components whose `changed` stamps a leaf reads, so kernels writing them must keep their stamps. */
-const observedBy = (leaf: Leaf): readonly Key[] => [...new Set([...leaf.declaration.components?.changed ?? [], ...upObserved(leaf), ...indexObserved(leaf)])];
+const observedBy = (leaf: Leaf): readonly Key[] => {
+    const indexed = indexObserved(leaf);
+    const observed = [...leaf.declaration.components?.changed ?? [], ...upObserved(leaf)];
+    return indexed.length === 0 ? observed : [...new Set([...observed, ...indexed])];
+};
 
 /** Every key a leaf names, as `keysOf` gives them, flattened. */
 const allKeysOf = (leaf: Leaf): readonly Key[] => {

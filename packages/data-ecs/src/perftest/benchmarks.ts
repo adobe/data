@@ -19,6 +19,7 @@ import { finalizedBenchmarks } from "./finalized.js";
 import { tailBenchmarks } from "./tails.js";
 import { readBenchmarks } from "./reads.js";
 import { systemBenchmarks } from "./systems.js";
+import { indexBenchmarks } from "./indexes.js";
 import { createWorld } from "../implementation/index.js";
 import { workers } from "../interface/resources/workers.js";
 
@@ -641,4 +642,5 @@ export const benchmarks: readonly Benchmark[] = [
     ...tailBenchmarks,
     ...readBenchmarks,
     ...systemBenchmarks,
+    ...indexBenchmarks,
 ];

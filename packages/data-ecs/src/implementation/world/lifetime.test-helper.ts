@@ -5,10 +5,34 @@ import { claimSystem } from "../../interface/registry/program.js";
 import { attachKernel, kernelOf } from "./attach-kernel.js";
 import type { CreatedWorld, Tables } from "./create.js";
 
-/** The garbage collector, where node runs with `--expose-gc`; null elsewhere, as in a browser. */
+/**
+ * What finishes V8's optimizing compiles in flight, where node runs with `--allow-natives-syntax`; null elsewhere. A
+ * compile on a background thread holds the objects it read, systems among them, as roots until it's installed, which
+ * a busy machine can put off past any number of collections.
+ */
+const compiles = (): (() => void) | null => {
+    try {
+        // A string, since `%` calls parse only with the flag, and not at all in TypeScript.
+        const finish: unknown = new Function("%FinalizeOptimization();");
+        return typeof finish === "function" ? () => { Reflect.apply(finish, undefined, []); } : null;
+    }
+    catch {
+        return null;
+    }
+};
+
+/**
+ * The garbage collector, once optimizing compiles in flight are finished, where node runs with `--expose-gc` and
+ * `--allow-natives-syntax`; null elsewhere, as in a browser.
+ */
 export const collector = (): (() => void) | null => {
     const gc: unknown = Reflect.get(globalThis, "gc");
-    return typeof gc === "function" ? () => { Reflect.apply(gc, undefined, []); } : null;
+    const finish = compiles();
+    if (typeof gc !== "function" || finish === null) return null;
+    return () => {
+        finish();
+        Reflect.apply(gc, undefined, []);
+    };
 };
 
 const task = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));

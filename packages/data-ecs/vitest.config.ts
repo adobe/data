@@ -12,8 +12,11 @@ const threads = "src/implementation/world/threads.test.ts";
 /** A test's timeout only guards against a hang, which no test asserts on: long enough for a machine busy elsewhere. */
 const timeouts = { testTimeout: 30000, hookTimeout: 30000 };
 
-/** Node exposes its collector, so tests of what a world holds can collect what nothing references (`lifetime.test-helper.ts`). */
-const execArgv = ["--expose-gc"];
+/**
+ * Node exposes its collector, and what finishes optimizing compiles in flight, which hold what they read, so tests of
+ * what a world holds can collect what nothing references (`lifetime.test-helper.ts`).
+ */
+const execArgv = ["--expose-gc", "--allow-natives-syntax"];
 
 // Three groups, one after another, so tests of real threads never share the machine with other tests: `*.test.ts` in
 // node, files in parallel; then the node tests of real threads; then `*.browser.test.ts` in chromium, with real

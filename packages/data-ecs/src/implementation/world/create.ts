@@ -13,7 +13,8 @@ import { gpuDevice } from '../../interface/resources/gpu-device.js';
 import { workers } from '../../interface/resources/workers.js';
 import { createGpu } from './gpu.js';
 import { readCell, writeCell } from './cells.js';
-import { finalizeAll, type Thrown } from './finalizers.js';
+import { finalizeAll, refreshFinalizerIndexes, type Thrown } from './finalizers.js';
+import { startWatches } from './indexes.js';
 import { createObservers } from './observers.js';
 import type { Observe } from '../../interface/observe/observe.js';
 import type { Report } from '../../interface/world/report.js';
@@ -80,6 +81,8 @@ export type Tables = {
     readonly observed: number;
     readonly afterSync: number;
     readonly directories: number;
+    /** Indexes it keeps, for some registered system or finalizer. */
+    readonly indexes: number;
     readonly journalReaders: number;
     /** Bytes the arena holds. */
     readonly arena: number;
@@ -311,7 +314,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         // Resources added between runs move the resource entity, whose structs a tail may still read.
         if (ensured.version !== programVersion() && state.channels.length > 0) await drainTails();
         ensureProgramResources(state, ensured);
-        if (observers.start()) await reloadObserved();
+        const watching = startWatches(state);
+        if (observers.start() || watching) await reloadObserved();
         if (workersChanged()) await followWorkers();
         if (deviceChanged()) await followDevice();
         const schedule = registrar.registered(definition) ?? registered;
@@ -538,6 +542,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                     activate(state);
                     if (state.finalizers.length > 0) {
                         if (state.gpu?.anyAhead() === true) await state.gpu.readback();
+                        refreshFinalizerIndexes(state);
                         errors = finalizeAll(state);
                     }
                 }
@@ -558,6 +563,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 observed: state.observed.size,
                 afterSync: state.afterSync.size,
                 directories: state.directories.size,
+                indexes: state.indexes.size,
                 journalReaders: state.journal.readers,
                 arena: state.memory.held(),
                 joined: state.channels.map(channel => channel.placed()),

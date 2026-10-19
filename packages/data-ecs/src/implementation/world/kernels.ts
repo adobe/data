@@ -120,7 +120,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         booleans,
         strides,
         offsets,
-        lookups: declaredLookups.map(declared => ({ read: ids(declared.read), has: ids(declared.has), not: ids(declared.not) })),
+        lookups: declaredLookups.map(declared => ({ read: ids(declared.read), has: ids("has" in declared ? declared.has : undefined), not: ids("not" in declared ? declared.not : undefined) })),
         keys,
         starts: keys.map(id => state.starts[id]),
         spawns,

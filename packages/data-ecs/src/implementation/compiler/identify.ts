@@ -51,16 +51,17 @@ const declaresInModule = (program: Program, name: string): boolean => {
 const isSymbolCall = (node: Expression | null | undefined): node is Expression =>
     node?.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.name === "Symbol";
 
-/** The package's namespaces whose constructors declare systems, rules and finalizers. */
-export type Namespace = "System" | "Rule" | "Finalizer";
+/** The package's namespaces whose constructors declare systems, rules, finalizers and indexes. */
+export type Namespace = "System" | "Rule" | "Finalizer" | "Index";
 
 const constructors: { readonly [N in Namespace]: ReadonlySet<string> } = {
     System: new Set(["create", "render"]),
     Rule: new Set(["create"]),
     Finalizer: new Set(["create", "changes"]),
+    Index: new Set(["create"]),
 };
 
-const isNamespace = (name: string): name is Namespace => name === "System" || name === "Rule" || name === "Finalizer";
+const isNamespace = (name: string): name is Namespace => name === "System" || name === "Rule" || name === "Finalizer" || name === "Index";
 
 /** Whether an import specifier, resolved from the module being transformed, is a module of the package exporting `namespace`. */
 export type ResolveNamespace = (source: string, namespace: Namespace) => Promise<boolean>;
@@ -116,7 +117,7 @@ const mayDeclare = /\.(create|render|changes)\(/;
  * TypeScript namespaces, class fields or CommonJS exports, have no id, nor does any symbol where `Symbol` or
  * `globalThis` isn't the global.
  *
- * The same bindings initialized by a constructor call of the package's `System`, `Rule` or `Finalizer`, imported under
+ * The same bindings initialized by a constructor call of the package's `System`, `Rule`, `Finalizer` or `Index`, imported under
  * any local name, give the call's declaration their id, which the constructor takes from the map: a kernel's call as
  * the kernel transform wrapped it too. Returns null when nothing is identified.
  */

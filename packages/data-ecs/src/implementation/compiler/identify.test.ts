@@ -80,8 +80,9 @@ const declared = (code: string | undefined): readonly (readonly [string, string]
 describe("identify, for systems, rules and finalizers", () => {
     test("gives the declaration of each top-level binding's constructor call its module's id and binding", async () => {
         const result = await identify([
-            `import { System as S, Rule, Finalizer } from "@adobe/data-ecs";`,
+            `import { System as S, Rule, Finalizer, Index } from "@adobe/data-ecs";`,
             `const move = S.create({ name: "move" }, () => {});`,
+            `export const grid = Index.create({ name: "grid" });`,
             `export const draw = S.render({ name: "draw" }, () => {}), main = S.create({ name: "main", systems: [move] });`,
             `const all = S.create([move]);`,
             `let shown = Rule.create({ name: "shown" });`,
@@ -89,7 +90,7 @@ describe("identify, for systems, rules and finalizers", () => {
             `export default Finalizer.changes({ name: "save" }, () => {});`,
         ].join("\n"));
         expect(declared(result?.code)).toEqual([
-            [`{ name: "move" }`, "src/keys.ts#move"], [`{ name: "draw" }`, "src/keys.ts#draw"], [`{ name: "main", systems: [move] }`, "src/keys.ts#main"],
+            [`{ name: "move" }`, "src/keys.ts#move"], [`{ name: "grid" }`, "src/keys.ts#grid"], [`{ name: "draw" }`, "src/keys.ts#draw"], [`{ name: "main", systems: [move] }`, "src/keys.ts#main"],
             [`{ name: "shown" }`, "src/keys.ts#shown"], [`{ name: "release" }`, "src/keys.ts#release"], [`{ name: "save" }`, "src/keys.ts#default"],
         ]);
         // A composite's list of members takes its id as a declaration does.

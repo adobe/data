@@ -28,7 +28,7 @@ const install = (): void => {
 };
 
 const consumer = `
-import { Archetype, Component, Rule, System, World, gpuDevice } from "@adobe/data-ecs";
+import { Archetype, Component, Index, Rule, System, World, gpuDevice } from "@adobe/data-ecs";
 export const position = Symbol("exportsTest/position");
 export const element = Symbol("exportsTest/element");
 export const shown = Symbol("exportsTest/shown");
@@ -43,6 +43,10 @@ export const showing = Rule.create({ components: { has: [element] }, derive: [sh
 export const move = System.create({ name: "exportsTest/move", components: { write: [position] } }, row => { row[position] += 1; });
 export const all = System.create({ name: "exportsTest/all", systems: [move] });
 export const draw = System.render({ name: "exportsTest/draw", shader: { accessors: {} } }, () => {});
+export const placed = Index.create({ name: "exportsTest/placed", key: [position], components: { has: [element] } });
+export const ranked = Index.create({ key: [position], sorted: true });
+export const after = System.create({ components: { read: [position] }, lookup: { next: { index: ranked, read: [position] } } }, (row, { lookup }) => { void lookup.next({ ">": row[position] }).length; });
+export const sortedName = (index: Index<{ readonly sorted: true }>): string => index.name;
 // How a world is created is the implementation's; the interface gives its type.
 declare const create: () => World;
 export const world = create();
@@ -127,6 +131,20 @@ describe("package exports", () => {
     it("let a consumer emit declarations for the values it makes from the public API", () => {
         expect(compile(consumer).messages).toEqual([]);
         expect(reachable(join(installed, "dist"), "index.d.ts").filter(internal)).toEqual([]);
+        // An index's type reads as it was declared, naming only the package root.
+        const emitted = readFileSync(join(temporary, "out", "index.d.ts"), "utf8");
+        expect(emitted).toContain(`export declare const placed: Index<{
+    readonly name: "exportsTest/placed";
+    readonly key: readonly [typeof position];
+    readonly components: {
+        readonly has: readonly [typeof element];
+    };
+}>;`);
+        expect(emitted).toContain(`export declare const ranked: Index<{
+    readonly key: readonly [typeof position];
+    readonly sorted: true;
+}>;`);
+        expect([...emitted.matchAll(/import\("([^"]+)"\)/g)].map(match => match[1]).filter(path => path !== "@adobe/data-ecs")).toEqual([]);
     }, 60_000);
     it("report a misdeclared system, and a composite of conflicting members, at the mistake rather than as no overload matching", () => {
         const reported = compile(misdeclared).messages;

@@ -16,6 +16,8 @@ import type { Leaf } from '../../interface/finalizer/created.js';
 import { newestKeyOf, threadOf } from '../../interface/registry/index.js';
 import type { TaskChannel } from './remote-systems.js';
 import { writeStops, type StopsOf } from './stop-lists.js';
+import { acquireLookups, refreshUses, type IndexLookups } from './indexes.js';
+import { indexWatchesOf } from './lookup-keys.js';
 
 /** A registered finalizer, resolved for a world: what it matches or watches, its context, and the buffer its commands go to. */
 export type FinalizerRunner = {
@@ -31,8 +33,15 @@ export type FinalizerRunner = {
     readonly target: { buffer: CommandBuffer };
     readonly commands: Commands;
     readonly reads: readonly Key[];
+    /** The indexes its lookups go through, held for the world's life. */
+    readonly indexes: IndexLookups;
     /** Where a joined thread fills its thread: its stops go to that thread's stop lists, and it runs there. */
     remote: RemoteFinalizer | null;
+};
+
+/** Before a sync point's finalizers run, or every live match's once the world is disposed: refreshes the indexes they look up through. */
+export const refreshFinalizerIndexes = (state: State): void => {
+    for (const runner of state.finalizers) if (runner.remote === null && runner.indexes.uses.length > 0) refreshUses(state, runner.indexes.uses);
 };
 
 /** A finalizer placed on a joined thread: its channel, and what its stop lists hold. */
@@ -58,16 +67,20 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
     // One on another thread than the world's runs there after the sync point, so it issues none, wherever it runs.
     const thread = finalizer.kind === "finalizer" ? threadOf(finalizer.declaration, "Finalizer", finalizer.name) : null;
     const commanding = thread === null || thread === "world";
+    const indexes = acquireLookups(state, declaration.lookup);
+    // Followed for the world's life, as finalizers are; their ticks start before the next run.
+    for (const key of indexWatchesOf(declaration.lookup)) state.watchesPending.push(idOf(state, key));
     return {
         finalizer,
         required: [...new Set([...reads, ...query?.has ?? []])].map(key => idOf(state, key)),
         excluded: (query?.not ?? []).map(key => idOf(state, key)),
         watches,
         matches: [],
-        context: createContext(state, declaration, commanding ? { commands } : {}),
+        context: createContext(state, declaration, commanding ? { commands, indexes: indexes.byName } : { indexes: indexes.byName }),
         target,
         commands,
         reads,
+        indexes,
         remote: null,
     };
 };

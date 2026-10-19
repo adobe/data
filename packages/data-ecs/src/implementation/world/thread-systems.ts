@@ -1205,8 +1205,8 @@ const localStorage = (component: number, layout: Layout, views: Views, values: u
 /** A lookup returning `read` values keyed by component, from this thread's views. */
 const lookupOf = (host: RunnerHost, lookup: Lookup) => {
     const read = (lookup.read ?? []).map(host.numberOf);
-    const has = (lookup.has ?? []).map(host.numberOf);
-    const not = (lookup.not ?? []).map(host.numberOf);
+    const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
+    const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
     const keys = lookup.read ?? [];
     return (entity: Entity): object | null => {
         const table = host.refreshEntities();

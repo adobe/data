@@ -22,6 +22,9 @@ import type { MoveLog } from './move-log.js';
 import type { TaskChannel } from './remote-systems.js';
 import type { Tail } from './tails.js';
 import { claimComponent } from './remote.js';
+import type { IndexDefinition } from '../../interface/registry/index.js';
+import type { WorldIndex } from './indexes.js';
+import type { Failure } from '../../interface/world/report.js';
 
 export type Key = string | symbol;
 
@@ -164,6 +167,16 @@ export type State = {
     readonly holds: Holds;
     /** Tails posted whose reads a later writer must still copy, or wait for (`tails.ts`). */
     readonly tails: Tail[];
+    /** The indexes some registered system or finalizer uses, by declaration (`indexes.ts`). */
+    readonly indexes: Map<IndexDefinition, WorldIndex>;
+    /** By component id: the tick of the last system run that wrote it, which indexes read to skip ticks no write moved. */
+    readonly written: number[];
+    /** The tick of the last sync point that wrote a command's value into a row. */
+    valuesWritten: number;
+    /** Unique indexes' conflicts refreshes found, for the report of the run in progress. */
+    readonly indexFailures: Failure[];
+    /** Components finalizers' indexes follow since the last run, whose ticks and kernels' stamps start before the next. */
+    readonly watchesPending: number[];
 };
 
 export const createState = (shared?: boolean, wasm = true, simd = true, gpu = false, initial: Map<Key, unknown> = new Map()): State => {
@@ -231,6 +244,11 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         unplacedSeen: new Set(),
         holds: createHolds(),
         tails: [],
+        indexes: new Map(),
+        written: [],
+        valuesWritten: 0,
+        indexFailures: [],
+        watchesPending: [],
     };
 };
 
@@ -292,6 +310,7 @@ export const idOf = (state: State, key: Key): number => {
     state.layouts.push(layout);
     state.starts.push(layout.kind === "constant" ? layout.value : defaultOf(key));
     state.commandable.push(false);
+    state.written.push(0);
     state.derived.push(declaration.derived === true);
     state.transfers.push(declaration.transfer === true);
     if (declaration.transfer === true) state.transferring = true;

@@ -13,6 +13,9 @@ export const attachKernelPath = posix(fileURLToPath(new URL(`../world/attach-ker
 /** The runtime hook for spawns whose values pass positionally. */
 export const prepareSpawnPath = posix(fileURLToPath(new URL(`../world/prepared-spawn${extension}`, import.meta.url)));
 
+/** The runtime hook for index lookups whose keys pass positionally. */
+export const prepareLookupPath = posix(fileURLToPath(new URL(`../world/prepared-lookup${extension}`, import.meta.url)));
+
 const intrinsicModules: ReadonlySet<string> = new Set(["src/interface/math/intrinsic.ts", "src/interface/math/intrinsic.js", "dist/interface/math/intrinsic.js"].map(path => `${packageRoot}/${path}`));
 
 /** Whether a file is the module math functions declare their WGSL builtins with. */
@@ -31,7 +34,7 @@ export const isSystemModule = (id: string): boolean => systemModules.has(posix(i
 
 const roots = ["src/interface/index.ts", "src/interface/index.js", "dist/interface/index.js", "src/index.ts", "src/index.js", "dist/index.js"];
 const namespaceModules: { readonly [namespace: string]: ReadonlySet<string> } = Object.fromEntries(
-    [["System", "system/system"], ["Rule", "rule/rule"], ["Finalizer", "finalizer/finalizer"]].map(([namespace, module]) => [namespace, new Set(
+    [["System", "system/system"], ["Rule", "rule/rule"], ["Finalizer", "finalizer/finalizer"], ["Index", "indexes/index-type"]].map(([namespace, module]) => [namespace, new Set(
         [`src/interface/${module}.ts`, `src/interface/${module}.js`, `dist/interface/${module}.js`, ...roots].map(path => `${packageRoot}/${path}`),
     )]),
 );

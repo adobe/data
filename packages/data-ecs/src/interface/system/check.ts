@@ -5,6 +5,7 @@ import { reducedBy, scheduleOf } from '../registry/schedule.js';
 import { conditional } from '../registry/schemas.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
+import { checkIndexLookup, lookupKeysOf } from '../registry/indexes.js';
 import type { Schema } from '../schema/schema.js';
 import type { Composite } from './composite.js';
 import type { Definition } from './definition.js';
@@ -82,6 +83,9 @@ const checkPlacement = (leaf: Leaf): void => {
         for (const key of lookups.flatMap(found => found.read ?? [])) {
             if (layoutOf(declarationOf(key)?.type).kind === "object") throw new Error(`Kernel "${name}": a lookup reads "${labelOf(key)}", which isn't stored in linear memory.`);
         }
+        for (const key of lookups.flatMap(lookupKeysOf)) {
+            if (layoutOf(declarationOf(key)?.type).kind === "object") throw new Error(`Kernel "${name}": a lookup goes through an index keyed by "${labelOf(key)}", which isn't stored in linear memory.`);
+        }
     }
     const reduces = reducedBy(leaf).length > 0;
     if (kernel === "gpu") {
@@ -107,8 +111,12 @@ export const checkLeaf = (leaf: Leaf): void => {
     checkWorldWritten(`System "${name}"`, resources?.write);
     const writes = new Set<Key>(components?.write);
     for (const lookupName in lookup) {
+        checkIndexLookup("System", name, lookupName, lookup[lookupName]);
         for (const key of lookup[lookupName].read ?? []) {
             if (writes.has(key)) throw new Error(`System "${name}": lookup "${lookupName}" reads "${labelOf(key)}", which the system writes.`);
+        }
+        for (const key of lookupKeysOf(lookup[lookupName])) {
+            if (writes.has(key)) throw new Error(`System "${name}": lookup "${lookupName}" goes through an index keyed by "${labelOf(key)}", which the system writes.`);
         }
     }
     if (input !== undefined) {
@@ -121,8 +129,9 @@ export const checkLeaf = (leaf: Leaf): void => {
     requireRegistered("System", name, "component", components?.has);
     requireRegistered("System", name, "component", components?.not);
     for (const lookupName in lookup) {
-        requireRegistered("System", name, "component", lookup[lookupName].has);
-        requireRegistered("System", name, "component", lookup[lookupName].not);
+        const found = lookup[lookupName];
+        requireRegistered("System", name, "component", "has" in found ? found.has : undefined);
+        requireRegistered("System", name, "component", "not" in found ? found.not : undefined);
     }
     for (const key of components?.write ?? []) {
         if (declarationOf(key)?.reference !== undefined) throw new Error(`System "${name}" writes "${labelOf(key)}", a reference, which changes only through commands.`);

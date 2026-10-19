@@ -3,6 +3,7 @@ export { Component } from './component/component.js';
 export { Entity } from './entity/entity.js';
 export { Finalizer } from './finalizer/finalizer.js';
 export { Gpu } from './gpu/gpu.js';
+export { Index } from './indexes/index-type.js';
 export * from './math/index.js';
 export * from './resources/index.js';
 export { Resource } from './resource/resource.js';

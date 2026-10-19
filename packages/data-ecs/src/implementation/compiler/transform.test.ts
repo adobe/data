@@ -881,6 +881,46 @@ describe("terminal bodies", () => {
     });
 });
 
+describe("index lookups in main-thread systems", () => {
+    /** Runs the transformed body once, recording each lookup as the runtime hook receives it. */
+    const looked = async (body: string, parameters = "({ lookup })", lookup = "near: { index: grid }"): Promise<{ readonly code: string; readonly calls: readonly unknown[] }> => {
+        const source = `const grid = "grid";\nconst system = System.create({ name: "a", lookup: { ${lookup} } }, ${parameters} => { ${body} });`;
+        const result = await transform(source);
+        if (result !== null && "failure" in result) return { code: result.failure.message, calls: [] };
+        const module = (result?.code ?? `${header}${source}`).split("\n").filter(line => !line.startsWith("import ")).join("\n");
+        const calls: unknown[] = [];
+        const prepare = (shape: unknown) => ({ find: (lookup: unknown, ...values: unknown[]) => { calls.push(["site", shape, Reflect.apply(String, undefined, [lookup]), values]); return { length: 0 }; } });
+        const system = new Function("System", "prepareLookup$", `${module}\nreturn system;`)({ create: (declaration: unknown, run: unknown) => ({ declaration, run }) }, prepare);
+        const named = (name: string) => Object.assign((...values: unknown[]) => { calls.push(["call", name, values]); return { length: 0 }; }, { toString: () => name });
+        system.run({ lookup: { near: named("near"), due: named("due"), other: named("other") } });
+        return { code: result?.code ?? source, calls };
+    };
+
+    test("pass literal tuples and comparisons flattened, through a site of each call", async () => {
+        const { calls } = await looked(`const x = 1; lookup.near([x, x + 1]); lookup.near([3, 4]); lookup.near(x); lookup.due(x, { ">=": x, "<": [x, 9] });`, "({ lookup })", "near: { index: grid }, due: { index: grid }");
+        expect(calls).toEqual([["site", [2], "near", [1, 2]], ["site", [2], "near", [3, 4]], ["site", [0], "near", [1]], ["site", [0, [[">=", 0], ["<", 2]]], "due", [1, 1, 1, 9]]]);
+    });
+
+    test.each([
+        ["the context's lookup", "context.lookup.near([1, 2]);", "(context)"],
+        ["a destructured lookup", "near([1, 2]);", "({ lookup: { near } })"],
+    ])("rewrite %s", async (_, body, parameters) => {
+        const { calls } = await looked(body, parameters);
+        expect(calls).toEqual([["site", [2], "near", [1, 2]]]);
+    });
+
+    test.each([
+        ["a lookup by entity", "lookup.other(1);", "near: { index: grid }, other: { read: [] }"],
+        ["a spread", "const key = [[1, 2]]; lookup.near(...key);", "near: { index: grid }"],
+        ["a lookup kept", "const near = lookup.near; near([1, 2]);", "near: { index: grid }"],
+        ["redeclared lookups", "{ const lookup = {}; } lookup.near([1, 2]);", "near: { index: grid }"],
+        ["a call inside another's key", "lookup.near(lookup.near(1).length);", "near: { index: grid }"],
+    ])("leave %s as written", async (_, body, lookup) => {
+        const { calls } = await looked(body, "({ lookup })", lookup);
+        expect(calls.some(call => Array.isArray(call) && call[0] === "call")).toBe(true);
+    });
+});
+
 describe("commands in main-thread systems", () => {
     /** Runs the transformed system's body once, recording each spawn's and add's keys and values as the runtime hooks receive them. */
     const spawned = async (body: string, parameters = "({ commands })", declaration = `{ name: "a" }`): Promise<{ readonly code: string; readonly calls: readonly unknown[] }> => {
@@ -1318,6 +1358,17 @@ describe("declared access", () => {
         expect(await failure(looking("[mass, position]", "(row, { lookup: { targets } }) => { const found = targets(row[target]); console.log(found); }"))).toBe("compiled");
         expect(await failure(looking("[mass, position]", "(row, { lookup: { targets } }) => { let found = targets(row[target]); console.log(found?.[mass]); }"))).toBe("compiled");
         expect(await failure(looking("[mass, position]", "(row, { lookup }) => { helper(lookup); console.log(row[target]); }"))).toBe("compiled");
+    });
+
+    test("a main-thread system reads every component it lists in a lookup through an index, from its lists' rows", async () => {
+        const looking = (lookup: string, body: string) => system(`components: { read: [target] }, lookup: { near: { index: grid, read: ${lookup} } }`, body);
+        const unread = "position is in lookup.near read but never read; remove it";
+        expect(await failure(looking("[mass, position]", "(row, { lookup }) => { const near = lookup.near(row[target]); for (let i = 0; i < near.length; i++) console.log(near.at(i)[mass], near.changed); }"))).toBe(unread);
+        expect(await failure(looking("[mass, position]", "(row, context) => { const other = context.lookup.near(row[target]).at(0); console.log(other[mass], other.entity); }"))).toBe(unread);
+        expect(await failure(looking("[mass, position]", "(row, { lookup: { near } }) => { console.log(near(row[target])?.[mass]); }"))).toBe(unread);
+        expect(await failure(looking("[mass, position]", "(row, { lookup }) => { const near = lookup.near(row[target]); console.log(near.at(0)[mass], near.at(1)[position]); }"))).toBe("compiled");
+        expect(await failure(looking("[mass, position]", "(row, { lookup }) => { helper(lookup.near(row[target])); }"))).toBe("compiled");
+        expect(await failure(looking("[mass, position]", "(row, { lookup }) => { const near = lookup.near(row[target]); const all = near.at; console.log(all); }"))).toBe("compiled");
     });
 
     test("a main-thread system reads every component it lists through a destructured row", async () => {

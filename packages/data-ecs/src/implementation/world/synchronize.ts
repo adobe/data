@@ -11,7 +11,7 @@ import { beginLog, logAppend, logMove, logSet, logSwap, publishLog, startTag, ta
 import { record } from './journal.js';
 import { indexOf, kill, locate, materialize, recycle, release, reserved, unreserve, type Reserved } from './entities.js';
 import { activate } from './activate.js';
-import { runFinalizers, type Thrown } from './finalizers.js';
+import { refreshFinalizerIndexes, runFinalizers, type Thrown } from './finalizers.js';
 import { settleStops } from './stop-lists.js';
 import { closureOf, derives, gainsOf } from './structure.js';
 import type { Plan } from './plan.js';
@@ -298,6 +298,7 @@ export const writeDefault = (state: State, storage: Storage, row: number, tick: 
 const writeValues = (state: State, queued: readonly Queued[], entry: number, to: Archetype, toRow: number, from: Archetype | null, tick: number): void => {
     const { plan } = state;
     if (plan.start[entry] < 0) return;
+    state.valuesWritten = tick;
     const fresh = plan.fresh.size === 0 ? undefined : plan.fresh.get(entry);
     writeRange(queued[plan.buffer[entry]].buffer, plan.start[entry], plan.end[entry], to, toRow, from, fresh, tick);
     const more = plan.more.size === 0 ? undefined : plan.more.get(entry);
@@ -599,6 +600,8 @@ export const prepareSync = (state: State, isolated = false): boolean => {
     const { structure, plan } = state;
     // Finalizers' spawns are reserved during the last sync point, so their batches are pending without a reservation.
     if (!syncPending(state, queued)) return false;
+    // Finalizers see indexes as of before the sync point applies, with nothing it spawns or moves.
+    if (!isolated) refreshFinalizerIndexes(state);
     plan.count = 0;
     plan.spawned = 0;
     plan.dropped = 0;

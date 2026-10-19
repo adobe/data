@@ -27,6 +27,8 @@ import { labelOf, labelOfItem } from '../../interface/registry/index.js';
 import type { RemoteSystem, TaskChannel } from './remote-systems.js';
 import { releaseDirectory, type Directory } from './directories.js';
 import type { GpuEngine } from './gpu.js';
+import { acquireLookups, type IndexLookups, type IndexUse } from './indexes.js';
+import type { Since } from './index-lookups.js';
 
 /**
  * One unit of a system's work for a run: the commands it issued, or for a worker's chunk its segment of the worker's
@@ -65,6 +67,8 @@ export type Runner = {
     readonly resourceWrites: readonly number[];
     /** The archetypes its query matches now. */
     readonly matched: () => readonly Archetype[];
+    /** The indexes its lookups go through, which a run refreshes before its tier. */
+    readonly indexes: readonly IndexUse[];
     /** Loads its kernel, and compiles its compute pipeline when it's placed on the GPU; rejects with the reason it can't be. */
     readonly load: () => Promise<void>;
     /** What workers need to load this system's kernel, given its index. */
@@ -102,6 +106,8 @@ export type Holdings = {
     readonly up: { readonly release: () => void } | null;
     /** Its kernel's lookup directories, which the world keeps current. */
     readonly directories: readonly Directory[];
+    /** The indexes its lookups go through, held while it lives. */
+    readonly indexes: IndexLookups | null;
     /** The GPU it last recorded on, and the prefix of its records' keys there. */
     gpu: GpuEngine | null;
     readonly prefix: string;
@@ -111,7 +117,7 @@ export type Holdings = {
 };
 
 /** Holdings of a runner that holds nothing beyond its JS values. */
-export const holdingNothing = (remote: Holdings["remote"] = null): Holdings => ({ removed: false, released: false, partials: null, up: null, directories: [], gpu: null, prefix: "", afterSync: null, remote });
+export const holdingNothing = (remote: Holdings["remote"] = null): Holdings => ({ removed: false, released: false, partials: null, up: null, directories: [], indexes: null, gpu: null, prefix: "", afterSync: null, remote });
 
 /**
  * Stops a runner at once, as its system is removed: no run calls its body again, and on a joined thread no task runs it
@@ -133,6 +139,7 @@ export const releaseHoldings = (state: State, holdings: Holdings): void => {
     holdings.partials = null;
     holdings.up?.release();
     for (const directory of holdings.directories) releaseDirectory(state, directory);
+    holdings.indexes?.release();
     // Records on a GPU the world has since left went with it.
     if (holdings.gpu !== null && holdings.gpu === state.gpu) holdings.gpu.release(holdings.prefix);
     if (holdings.afterSync !== null) state.afterSync.delete(holdings.afterSync);
@@ -171,6 +178,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         if (description === undefined) throw new Error(`System "${label}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
         kernel = bindKernel(state, leaf, description);
     }
+    const indexLookups = acquireLookups(state, declaration.lookup);
+    /** Its `lastRun` while it runs, which its index lookups' lists compare with. */
+    const lookupSince: Since = { value: since };
     const placement = leaf.kind === "render" ? "render" : declaration.kernel === "gpu" && state.gpu !== null ? "gpu" : "cpu";
     const failPlacement = (message: string): never => { throw new Error(`System "${label}" ${message}.`); };
     // Creating the system and registering its kernel checked its placement, reductions and accessors.
@@ -259,6 +269,8 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         targets: kernel === null ? targets : [],
         commands: leaf.kind === "render" || declaration.kernel === "gpu" ? undefined : commands,
         input: declaration.input !== undefined,
+        indexes: indexLookups.byName,
+        since: lookupSince,
     });
     /** Partials of the kernel's reductions, one slot per kernel call of a run, in the order its rows run. */
     const partialCount = partialLeaves.length;
@@ -712,7 +724,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     };
 
     const holdings: Holdings = {
-        removed: false, released: false, partials: null, up, directories: kernel?.directories ?? [], gpu: null, prefix: `${leafNumber}:`,
+        removed: false, released: false, partials: null, up, directories: kernel?.directories ?? [], indexes: indexLookups, gpu: null, prefix: `${leafNumber}:`,
         afterSync: partialCount > 0 ? new WeakRef(sizeSlots) : null, remote: null,
     };
 
@@ -753,6 +765,8 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         // A system whose conditions don't hold is skipped, successfully, and keeps its `lastRun`.
         if (!holds()) return noChunks;
         const tick = ++state.tick;
+        for (let k = 0; k < writes.length; k++) state.written[writes[k]] = tick;
+        lookupSince.value = lastRun;
         const args = ownInput(input);
         slotsUsed = 0;
         used = 0;
@@ -863,6 +877,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             refreshMatches();
             return matches;
         },
+        indexes: indexLookups.uses,
         load,
         setup,
         start,
@@ -886,6 +901,7 @@ export const removedRunner: Runner = {
     looks: nothing,
     resourceWrites: nothing,
     matched: () => nothing,
+    indexes: nothing,
     load: async () => {},
     setup: () => null,
     start: () => nothing,

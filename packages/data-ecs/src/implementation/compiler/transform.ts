@@ -4,13 +4,14 @@ import { children, isFunction } from './estree.js';
 import { fail, failureOf, type Failure } from './failure.js';
 import { isPending, type Link, type Linker } from './link.js';
 import { createModule, locateIn, type Module } from './module-scope.js';
-import { attachKernelPath, prepareSpawnPath } from './paths.js';
+import { attachKernelPath, prepareLookupPath, prepareSpawnPath } from './paths.js';
 import { spawnSites } from './spawns.js';
 import { kernelOf } from './signature.js';
 import { usedBy } from './body-access.js';
 import { requireExact } from './exact.js';
 import { createLists } from './lists.js';
 import { neverReachesCommands } from './terminal.js';
+import { lookupSites } from './lookups.js';
 import { terminalBodiesName } from '../world/terminal.js';
 
 export type Parse = (code: string) => Program;
@@ -150,6 +151,9 @@ export const transformKernels = async (
     const prepareAddName = uniqueName(code, "prepareAdd$");
     const spawnName = uniqueName(code, "spawn$");
     const terminal = uniqueName(code, "terminal$");
+    const prepareLookupName = uniqueName(code, "prepareLookup$");
+    const lookupName = uniqueName(code, "lookup$");
+    let looking = false;
     let terminals = false;
     const edits: Edit[] = [];
     const kernels: string[] = [];
@@ -185,6 +189,17 @@ export const transformKernels = async (
                 edits.push({ start: body.start, end: body.start, text: `${terminal}(` }, { start: body.end, end: body.end, text: ")" });
             }
             const spawns = positions === null || body === undefined || body.type === "SpreadElement" ? null : spawnSites(body, module.bindings, positions.context);
+            // Index lookups pass their key positionally, through a list of their own (`world/prepared-lookup.ts`).
+            const lookups = positions === null || body === undefined || body.type === "SpreadElement" || declaration?.type !== "ObjectExpression" ? [] : lookupSites(body, declaration, positions.context);
+            const spawned = spawns?.sites ?? [];
+            for (const site of lookups) {
+                if (spawned.some(other => other.start < site.end && site.start < other.end)) continue;
+                const name = `${lookupName}${prepared.length}`;
+                prepared.push(`const ${name} = ${prepareLookupName}(${JSON.stringify(site.shape)}).find;`);
+                looking = true;
+                const values = [site.callee, ...site.values].map(value => code.slice(value.start, value.end));
+                edits.push({ start: site.start, end: site.end, text: `${name}(${values.join(", ")})` });
+            }
             if (spawns !== null && spawns.sites.length > 0) {
                 for (const site of spawns.sites) {
                     const name = `${spawnName}${prepared.length}`;
@@ -221,6 +236,7 @@ export const transformKernels = async (
         ...kernels.length > 0 ? [`import { attachKernel as ${attach} } from ${JSON.stringify(attachKernelPath)};`] : [],
         ...spawning ? [`import { prepareSpawn as ${prepare} } from ${JSON.stringify(prepareSpawnPath)};`] : [],
         ...adding ? [`import { prepareAdd as ${prepareAddName} } from ${JSON.stringify(prepareSpawnPath)};`] : [],
+        ...looking ? [`import { prepareLookup as ${prepareLookupName} } from ${JSON.stringify(prepareLookupPath)};`] : [],
     ];
     const marking = terminals ? [`function ${terminal}(body) { const set = Symbol.for(${JSON.stringify(terminalBodiesName)}); (globalThis[set] || (globalThis[set] = new WeakSet())).add(body); return body; }`] : [];
     return { code: [...imports, result, ...prepared, ...marking].join("\n"), kernels, dependencies: [...dependencies] };

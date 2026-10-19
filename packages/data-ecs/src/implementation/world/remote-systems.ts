@@ -1,4 +1,5 @@
 import type { Leaf } from '../../interface/system/leaf.js';
+import { lookupComponentsOf } from './lookup-keys.js';
 import type { Leaf as FinalizerLeaf } from '../../interface/finalizer/created.js';
 import type { Report } from '../../interface/world/report.js';
 import { idOfItem, idOfKey, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
@@ -46,6 +47,8 @@ export type RemoteSystem = {
     readonly foldCount: number;
     /** Components it filters on with `changed`, whose GPU column stamps reach the thread as row ticks. */
     readonly changed: readonly number[];
+    /** Components it writes, as the tick of each task it's in marks them written. */
+    readonly writes: readonly number[];
     readonly declaresInput: boolean;
     lastRun: number;
     readonly result: RemoteResult;
@@ -283,7 +286,9 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
             const system = systems[k];
             const base = payloadSystems + k * systemFields;
             payloadView[base + systemIndex] = system.index;
-            payloadView[base + systemTick] = ++state.tick;
+            const tick = ++state.tick;
+            payloadView[base + systemTick] = tick;
+            for (let w = 0; w < system.writes.length; w++) state.written[system.writes[w]] = tick;
             payloadView[base + systemLastRun] = system.lastRun;
             payloadView[base + systemTier] = tiers[k];
             payloadView[base + systemFolds] = folds;
@@ -444,7 +449,7 @@ const keysOf = (leaf: Leaf): readonly symbol[] => {
         ...components?.read ?? [], ...components?.write ?? [], ...components?.has ?? [], ...components?.not ?? [], ...components?.added ?? [], ...components?.changed ?? [],
         ...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? [],
     ]);
-    for (const name in lookup) for (const key of [...lookup[name].read ?? [], ...lookup[name].has ?? [], ...lookup[name].not ?? []]) keys.add(key);
+    for (const name in lookup) for (const key of lookupComponentsOf(lookup[name])) keys.add(key);
     if (reduce !== undefined) for (const key of Object.getOwnPropertySymbols(reduce)) keys.add(key);
     return [...keys].filter((key): key is symbol => typeof key === "symbol");
 };
@@ -456,9 +461,13 @@ export const finalizerKeysOf = (finalizer: FinalizerLeaf): readonly symbol[] => 
     return [...keys].filter((key): key is symbol => typeof key === "symbol");
 };
 
-/** Why a leaf can't run on a joined thread, or null when it can: `up` runs only on the world's thread. */
-export const unplaceable = (leaf: Leaf, thread: string): string | null =>
-    leaf.declaration.up !== undefined ? `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and declares up, which runs only on the world's thread.` : null;
+/** Why a leaf can't run on a joined thread, or null when it can: `up`, and lookups through indexes, run only on the world's thread. */
+export const unplaceable = (leaf: Leaf, thread: string): string | null => {
+    if (leaf.declaration.up !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and declares up, which runs only on the world's thread.`;
+    const lookups = Object.values(leaf.declaration.lookup ?? {});
+    if (lookups.some(lookup => "index" in lookup)) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and looks up through an index, which runs only on the world's thread.`;
+    return null;
+};
 
 /**
  * A runner standing for a system placed on a joined thread: what the world's schedule needs of it, its matches for
@@ -493,6 +502,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         warning: { kind: "blocking", name: label, message: `System "${label}" runs on thread "${thread}", which a joined thread fills, so its tier waits for that thread.` },
         targets, folds, foldCount: folds.reduce((sum, leaves) => sum + leaves.length, 0),
         changed: (query?.changed ?? []).map(key => idOf(state, key)),
+        writes,
         declaresInput: declaration.input !== undefined,
         lastRun: since,
         result: { flags: 0, segment: undefined, error: undefined },
@@ -506,6 +516,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         looks,
         resourceWrites: resourceWritesOf(state, declaration),
         matched,
+        indexes: [],
         load: async () => {},
         setup: () => null,
         start: () => [],

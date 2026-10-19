@@ -10,6 +10,8 @@ import { ownTag } from './move-log.js';
 import { findResource, resourceCell, type ResourceCell } from './resources.js';
 import { idOf, type Key, type State } from './state.js';
 import { combine, contributed, identityOf, type ReductionTarget } from './reductions.js';
+import { createIndexLookup, type Since } from './index-lookups.js';
+import type { WorldIndex } from './indexes.js';
 
 /**
  * What an accessor row reads and writes: a storage, or a joined thread's view of one. A joined thread's own objects
@@ -113,7 +115,7 @@ const slotOf = (archetype: RowArchetype, id: number): Slot => {
     return { storage, view: viewOf(storage) };
 };
 
-const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly Key[], ids: readonly number[], writes: readonly Key[]): Row => {
+export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly Key[], ids: readonly number[], writes: readonly Key[]): Row => {
     const slots = ids.map(id => slotOf(archetype, id));
     // Its own prototype gives the row its own root map. Rows built from `{}` share one, and defining an accessor with a
     // different getter than an existing transition's makes V8 switch the object to slow dictionary properties.
@@ -188,8 +190,8 @@ export const rowBinder = (state: State, reads: readonly Key[], writes: readonly 
 const createMatcher = (state: State, lookup: Lookup) => {
     const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => idOf(state, key));
     const read = ids(lookup.read);
-    const has = ids(lookup.has);
-    const not = ids(lookup.not);
+    const has = ids("has" in lookup ? lookup.has : undefined);
+    const not = ids("not" in lookup ? lookup.not : undefined);
     const matcher = {
         read,
         archetype: null as Archetype | null,
@@ -252,20 +254,37 @@ export const createArrayLookup = (state: State, lookup: Lookup) => {
  */
 export type Context = { readonly value: { input?: unknown; up?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
 
-/** What a context holds beyond the declaration's resources and lookups. */
-type Extras = { readonly targets?: readonly ReductionTarget[]; readonly commands?: Commands; readonly input?: boolean };
+/**
+ * What a context holds beyond the declaration's resources and lookups, and for lookups through indexes, the index of
+ * each by name and the `lastRun` their lists compare with.
+ */
+type Extras = {
+    readonly targets?: readonly ReductionTarget[];
+    readonly commands?: Commands;
+    readonly input?: boolean;
+    readonly indexes?: ReadonlyMap<string, WorldIndex>;
+    readonly since?: Since;
+};
+
+/** The `lastRun` of a context without one, as a finalizer's: every list counts as changed. */
+const never: Since = { value: -1 };
 
 /** An object with its own prototype, so it gets its own root map, as rows do. */
 const own = (): object => Object.create({});
 
 /** Resource cells are resolved once per run: they move only at sync points. An unresolved resource throws on access. */
-export const createContext = (state: State, declaration: Pick<Declaration, "lookup" | "resources">, { targets = [], commands, input = false }: Extras = {}): Context => {
+export const createContext = (state: State, declaration: Pick<Declaration, "lookup" | "resources">, { targets = [], commands, input = false, indexes, since = never }: Extras = {}): Context => {
     const value: { input?: unknown; up?: unknown } = own();
     const { lookup, resources } = declaration;
     const names = Object.keys(lookup ?? {});
     if (names.length > 0) {
         const lookups = own();
-        for (const name of names) Object.defineProperty(lookups, name, { value: createObjectLookup(state, lookup?.[name] ?? {}), enumerable: true });
+        for (const name of names) {
+            const declared = lookup?.[name] ?? {};
+            const index = indexes?.get(name);
+            const found = index === undefined || !("index" in declared) ? createObjectLookup(state, declared) : createIndexLookup(state, index, declared, since);
+            Object.defineProperty(lookups, name, { value: found, enumerable: true });
+        }
         Object.defineProperty(value, "lookup", { value: lookups, enumerable: true });
     }
     const writes = new Set<Key>(resources?.write);

@@ -4,6 +4,7 @@ import type { Leaf } from '../system/leaf.js';
 import { firstItemOf, labelOfItem } from './items.js';
 import { requireDefinition } from './program.js';
 import { firstKeyOf, labelOf, sameDeclaration } from './names.js';
+import { lookupKeysOf } from './indexes.js';
 
 type Key = symbol;
 
@@ -138,11 +139,14 @@ export const reducedBy = (leaf: Leaf): readonly Key[] => {
     return reduce === undefined ? [] : Object.getOwnPropertySymbols(reduce).filter(key => Reflect.get(reduce, key) !== undefined);
 };
 
-/** Reads include change filters, since they observe writers' ticks. Presence-only lists don't conflict. Keys are each one's first symbol. */
+/**
+ * Reads include change filters, since they observe writers' ticks, and the key parts of indexes looked up through, which
+ * the index is found by. Presence-only lists don't conflict. Keys are each one's first symbol.
+ */
 export const accessOf = (leaf: Leaf): Access => {
     const { components, lookup, resources, up } = leaf.declaration;
     const reads = new Set<Key>([...components?.read ?? [], ...components?.added ?? [], ...components?.changed ?? [], ...resources?.read ?? [], ...resources?.changed ?? []].map(firstKeyOf));
-    for (const name in lookup) for (const key of lookup[name].read ?? []) reads.add(firstKeyOf(key));
+    for (const name in lookup) for (const key of [...lookup[name].read ?? [], ...lookupKeysOf(lookup[name])]) reads.add(firstKeyOf(key));
     if (up !== undefined) for (const key of [up.through, ...up.read ?? []]) reads.add(firstKeyOf(key));
     const writes = new Set<Key>([...components?.write ?? [], ...resources?.write ?? []].map(firstKeyOf));
     return { reads, writes, reduces: new Set(reducedBy(leaf).map(firstKeyOf)) };

@@ -62,6 +62,17 @@ const lookupNames = (declaration: ObjectExpression): readonly string[] | null =>
     return names.every(name => name !== null) ? names.filter(name => name !== null) : null;
 };
 
+/** The names of a declaration's lookups through an index: those declared as an object literal with `index`. */
+const indexLookupNames = (declaration: ObjectExpression): ReadonlySet<string> => {
+    const lookup = declaration.properties.find(property =>
+        property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === "lookup");
+    if (lookup?.type !== "Property" || lookup.value.type !== "ObjectExpression") return new Set();
+    return new Set(lookup.value.properties.flatMap(property =>
+        property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.value.type === "ObjectExpression"
+            && property.value.properties.some(field => field.type === "Property" && !field.computed && field.key.type === "Identifier" && field.key.name === "index")
+            ? [property.key.name] : []));
+};
+
 type Group = "resources" | "lookup" | "reduce";
 
 const isGroup = (name: string): name is Group => name === "resources" || name === "lookup" || name === "reduce";
@@ -71,7 +82,8 @@ const isGroup = (name: string): name is Group => name === "resources" || name ==
  * shows in its source. `row` and `context` are the indexes of those parameters, or -1 for none. The row and the
  * context's `resources`, `lookup` and `reduce` are indexed only by module-scope keys the body doesn't shadow, or
  * destructured by them, and never passed on, aliased or spread. A lookup's results are followed where each is indexed
- * by such keys or tested, directly or through a `const` declared once.
+ * by such keys or tested, directly or through a `const` declared once; a lookup through an index's lists where they're
+ * read for `length` and `changed`, and their rows from `at` as a lookup's results are.
  */
 export const usedBy = (declaration: ObjectExpression, body: Node, module: ModuleScope, positions: { readonly row: number; readonly context: number }): Used => {
     if (!isFunctionBody(body)) return unknown;
@@ -81,6 +93,7 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     const parameters = new Set(body.params.flatMap(parameter => patternNames(parameter)));
     const isKey = (name: string): boolean => module.has(name) && !counts.has(name) && !parameters.has(name);
     const lookups = lookupNames(declaration);
+    const indexed = indexLookupNames(declaration);
 
     const query = { read: new Set<string>(), write: new Set<string>() };
     const resources = { read: new Set<string>(), write: new Set<string>(), reduce: new Set<string>() };
@@ -98,6 +111,8 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     const groups = new Map<string, Group>();
     const callers = new Map<string, string>();
     const results = new Map<string, string>();
+    /** Names bound to a row an index lookup's list gave, by lookup. */
+    const rows = new Map<string, string>();
     /** The initializers `collect` followed: the context or a group, destructured or bound to a name. */
     const followed = new Set<Node>();
 
@@ -151,18 +166,35 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     if (row !== undefined && rowName === null && !destructure(row, rowNamed, key => query.read.add(key))) queryKnown = false;
     if (context !== undefined && contextName === null && !destructure(context, contextNamed(name => !counts.has(name)), () => unknownContext())) unknownContext();
 
-    /** A lookup's result `value`, a child of `parent`: indexed by a key, bound to a `const`, or tested. */
-    const result = (lookup: string, value: Node, parent: Node | undefined): void => {
+    /** A lookup's row `value`, a child of `ancestors[at]`: indexed by a key, read for `entity`, bound to a `const`, or tested. */
+    const rowOf = (lookup: string, value: Node, ancestors: readonly Node[], at: number): void => {
+        const parent = ancestors[at];
         if (parent?.type === "MemberExpression" && parent.object === value) {
             if (parent.computed && parent.property.type === "Identifier" && isKey(parent.property.name)) lookupReads.get(lookup)?.add(parent.property.name);
-            else unknownLookup(lookup);
+            else if (!(indexed.has(lookup) && !parent.computed && parent.property.type === "Identifier" && parent.property.name === "entity")) unknownLookup(lookup);
         }
-        else if (parent?.type === "VariableDeclarator" && parent.init === value && parent.id.type === "Identifier" && results.get(parent.id.name) === lookup) return;
+        else if (parent?.type === "VariableDeclarator" && parent.init === value && parent.id.type === "Identifier"
+            && (results.get(parent.id.name) === lookup || rows.get(parent.id.name) === lookup)) return;
         else if (!isTested(value, parent)) unknownLookup(lookup);
     };
-    /** A reference to a lookup's function, `callee`, a child of `parent`. */
-    const called = (lookup: string, callee: Node, parent: Node | undefined, grandparent: Node | undefined): void => {
-        if (parent?.type === "CallExpression" && parent.callee === callee) result(lookup, parent, grandparent);
+    /**
+     * A lookup's result `value`, a child of `ancestors[at]`: a row as `rowOf` takes it, or an index lookup's list, read
+     * for `length` and `changed`, its rows from `at` taken as rows.
+     */
+    const result = (lookup: string, value: Node, ancestors: readonly Node[], at: number): void => {
+        const parent = ancestors[at];
+        if (indexed.has(lookup) && parent?.type === "MemberExpression" && parent.object === value && !parent.computed && parent.property.type === "Identifier") {
+            const { name } = parent.property;
+            if (name === "length" || name === "changed") return;
+            const call = ancestors[at - 1];
+            if (name === "at" && call?.type === "CallExpression" && call.callee === parent) return rowOf(lookup, call, ancestors, at - 2);
+        }
+        rowOf(lookup, value, ancestors, at);
+    };
+    /** A reference to a lookup's function, `callee`, a child of `ancestors[at]`. */
+    const called = (lookup: string, callee: Node, ancestors: readonly Node[], at: number): void => {
+        const parent = ancestors[at];
+        if (parent?.type === "CallExpression" && parent.callee === callee) result(lookup, parent, ancestors, at - 1);
         else unknownLookup(lookup);
     };
 
@@ -182,6 +214,14 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
             && callee.property.type === "Identifier" && lookups?.includes(callee.property.name)) return callee.property.name;
         return undefined;
     };
+    /** The index lookup whose list's `at` a call calls: on a name bound to the list, or on the lookup's call itself. */
+    const rowCall = (call: Node): string | undefined => {
+        if (call.type !== "CallExpression" || call.callee.type !== "MemberExpression" || call.callee.computed
+            || call.callee.property.type !== "Identifier" || call.callee.property.name !== "at") return undefined;
+        const list = call.callee.object;
+        const lookup = list.type === "Identifier" ? results.get(list.name) : calledLookup(list);
+        return lookup !== undefined && indexed.has(lookup) ? lookup : undefined;
+    };
     /** Finds groups and lookups bound by `const` declarations declared once, and `const`s holding a lookup's result, before any reference is classified. */
     const collect = (node: Node, kind: string | undefined): void => {
         if (node.type === "VariableDeclarator" && kind === "const" && node.init) {
@@ -190,6 +230,8 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
             if (node.id.type === "Identifier" && once(node.id.name)) {
                 const lookup = calledLookup(node.init);
                 if (lookup !== undefined) results.set(node.id.name, lookup);
+                const listed = rowCall(node.init);
+                if (listed !== undefined) rows.set(node.id.name, listed);
                 if (group !== undefined) {
                     groups.set(node.id.name, group);
                     followed.add(node.init);
@@ -207,13 +249,15 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     };
     collect(body.body, undefined);
 
-    /** A use of group `group` at `node`, whose parent is `parent`. */
-    const useGroup = (group: Group, node: Node, parent: Node | undefined, grandparent: Node | undefined, above: Node | undefined): void => {
+    /** A use of group `group` at `node`, a child of `ancestors[at]`. */
+    const useGroup = (group: Group, node: Node, ancestors: readonly Node[], at: number): void => {
         if (followed.has(node)) return;
+        const parent = ancestors[at];
+        const grandparent = ancestors[at - 1];
         if (parent?.type !== "MemberExpression" || parent.object !== node) return unknownGroup(group);
         const { property } = parent;
         if (group === "lookup") {
-            if (!parent.computed && property.type === "Identifier" && lookups?.includes(property.name)) called(property.name, parent, grandparent, above);
+            if (!parent.computed && property.type === "Identifier" && lookups?.includes(property.name)) called(property.name, parent, ancestors, at - 1);
             else lookupsKnown = false;
             return;
         }
@@ -253,18 +297,21 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
         else if (name === contextName) {
             if (parent?.type === "MemberExpression" && parent.object === node && !parent.computed && parent.property.type === "Identifier") {
                 const property = parent.property.name;
-                if (isGroup(property)) useGroup(property, parent, grandparent, ancestors.at(-3), ancestors.at(-4));
+                if (isGroup(property)) useGroup(property, parent, ancestors, ancestors.length - 2);
                 return;
             }
             if (!followed.has(node)) unknownContext();
         }
         else {
+            const at = ancestors.length - 1;
             const group = groups.get(name);
-            if (group !== undefined) return useGroup(group, node, parent, grandparent, ancestors.at(-3));
+            if (group !== undefined) return useGroup(group, node, ancestors, at);
             const caller = callers.get(name);
-            if (caller !== undefined) return called(caller, node, parent, grandparent);
+            if (caller !== undefined) return called(caller, node, ancestors, at);
             const lookup = results.get(name);
-            if (lookup !== undefined) result(lookup, node, parent);
+            if (lookup !== undefined) return result(lookup, node, ancestors, at);
+            const row = rows.get(name);
+            if (row !== undefined) rowOf(row, node, ancestors, at);
         }
     };
 

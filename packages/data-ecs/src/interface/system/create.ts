@@ -1,4 +1,5 @@
 import type { Component } from '../component/component.js';
+import type { Index } from '../indexes/index-type.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
 import { nameOf } from '../registry/items.js';
 import { claimSystem } from '../registry/program.js';
@@ -16,10 +17,28 @@ import type { Listed, Property } from './property.js';
 import type { StructComponent, StructResource } from './struct.js';
 import type { System } from './system.js';
 import type { OneThread, ThreadsOf } from './threads.js';
+import type { HeldBy } from './values.js';
 
 type Reduced<D extends Declaration> = keyof Property<D, "reduce"> & Resource.Key;
 type Written<D, K extends "components" | "resources"> = Listed<Property<D, K>, "write">;
 type Is<D> = Listed<Property<D, "resources">, "is">;
+type Lookups<D> = Property<D, "lookup">;
+
+/**
+ * An index lookup reads and watches only what every entity its index holds has, and its system doesn't write what it
+ * finds rows by or reads through it.
+ */
+type IndexLookups<D> = {
+    readonly lookup?: {
+        readonly [N in keyof Lookups<D>]?: Lookups<D>[N] extends { readonly index: Index<infer I> }
+            ? {
+                readonly index?: Index<{ readonly key: readonly Exclude<Component.Key, Written<D, "components">>[] }>;
+                readonly read?: readonly Exclude<HeldBy<I>, Written<D, "components">>[];
+                readonly changed?: readonly HeldBy<I>[];
+            }
+            : unknown
+    };
+};
 
 /**
  * A key in `write` is readable too, so it isn't also in `read`. A system doesn't read or filter on what it reduces
@@ -38,7 +57,7 @@ type Lists<D extends Declaration> = {
 
 type Kernel = {
     readonly components?: { readonly read?: readonly StructComponent[]; readonly write?: readonly StructComponent[] };
-    readonly lookup?: { readonly [name: string]: { readonly read?: readonly StructComponent[] } };
+    readonly lookup?: { readonly [name: string]: { readonly read?: readonly StructComponent[]; readonly index?: Index<{ readonly key: readonly StructComponent[] }> } };
     readonly up?: { readonly read?: readonly StructComponent[] };
     readonly resources?: { readonly read?: readonly StructResource[]; readonly write?: never };
 };
@@ -53,6 +72,7 @@ type GpuKernel = {
 
 type Validate<D extends Declaration> =
     Lists<D>
+    & IndexLookups<D>
     & (D extends { readonly input: Schema } ? { readonly components?: { readonly added?: never; readonly changed?: never } } : {})
     & (D extends { readonly kernel: "cpu" | "gpu" } ? Kernel : {})
     & (D extends { readonly kernel: "gpu" } ? GpuKernel : {})
@@ -81,7 +101,7 @@ type Checked<C> = C extends Alone ? unknown : C extends CompositeDeclaration ? {
  *
  * Each run passes a composite's members one input, with every field of theirs. Throws if a system names a key that
  * isn't registered as its kind, lists a key in both `read` and `write`, writes a reference, a lookup reads a component
- * it writes, its object components and resources live on different threads, or its reductions, conditions, `up` or
+ * it writes or goes through an index keyed by one, or reads through an index what not every entity it holds has, its object components and resources live on different threads, or its reductions, conditions, `up` or
  * placement can't hold; or if a composite's member isn't a system a constructor returned, or two members declare an
  * input field with different schemas.
  *

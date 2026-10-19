@@ -68,8 +68,10 @@ export const requireExact = (declaration: ObjectExpression, used: Used, module: 
         for (const [lookup, value] of fields(declared.get("lookup"))) {
             const read = used.lookups.get(lookup);
             if (read === null) continue;
-            requireUsed(fields(value).get("read"), read ?? new Set(), lists,
-                name => `${name} is in lookup.${lookup} read but never read; remove it, or move it to lookup.${lookup} has to keep requiring it`);
+            const index = fields(value).has("index");
+            requireUsed(fields(value).get("read"), read ?? new Set(), lists, name => index
+                ? `${name} is in lookup.${lookup} read but never read; remove it`
+                : `${name} is in lookup.${lookup} read but never read; remove it, or move it to lookup.${lookup} has to keep requiring it`);
         }
     }
 };

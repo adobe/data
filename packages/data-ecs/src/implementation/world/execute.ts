@@ -17,6 +17,7 @@ import { liftColumnStamps, type RemoteSystem, type TaskChannel } from './remote-
 import { failureOf } from './failures.js';
 import { checkCommands } from './remote.js';
 import { firstKeyOf, labelOfItem } from '../../interface/registry/index.js';
+import { mergeUses, refreshUses, type IndexUse } from './indexes.js';
 
 /** Shared by every report without failures or skipped systems: they're read-only, so none needs its own. */
 const none: readonly never[] = [];
@@ -92,6 +93,8 @@ type Prepared = {
     readonly runners: Runner[][];
     /** How many of each tier's runners run on joined threads. */
     readonly remotes: number[];
+    /** The indexes each tier's runners look up through, refreshed before it. */
+    readonly uses: (readonly IndexUse[])[];
     /** The world's `runnersVersion` its runners were read at. */
     version: number;
     readonly started: (readonly Chunk[])[][];
@@ -144,7 +147,7 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
     let prepared = bySchedule.get(schedule);
     if (prepared === undefined) {
         prepared = {
-            runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), remotes: schedule.tiers.map(() => 0), version: -1,
+            runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), remotes: schedule.tiers.map(() => 0), uses: schedule.tiers.map(() => []), version: -1,
             started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)),
             systems: [], tiers: [], tasks: new Map(), warnings: [], warningCount: 0, warned: null, outcome: { failures: null, skipped: null },
             placement: -1, tailing: null,
@@ -163,6 +166,7 @@ const refresh = (context: ExecuteContext, schedule: Schedule, prepared: Prepared
         let remote = 0;
         for (let i = 0; i < tier.length; i++) if ((runners[i] = context.runnerOf(tier[i])).remote !== null) remote++;
         prepared.remotes[t] = remote;
+        prepared.uses[t] = mergeUses(runners);
     }
     prepared.version = context.state.runnersVersion;
 };
@@ -346,6 +350,11 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
                 const waiting = settleRunners(state, runners);
                 if (waiting !== null) await waiting;
             }
+            const uses = prepared.uses[t];
+            if (uses.length !== 0) {
+                refreshUses(state, uses);
+                if (state.indexFailures.length !== 0) (outcome.failures ??= []).push(...state.indexFailures.splice(0));
+            }
             const only = remote === runners.length ? runners[0]?.remote?.channel : undefined;
             if (only !== undefined && allOn(runners, only)) {
                 const last = await runFused(context, schedule, prepared, folds, args, t, only);
@@ -460,6 +469,8 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
             context.tails = postTails(state, tailing.runners, tailing.leaves, tailing.tiers, args);
         }
     }
+    // Conflicts unique indexes found while refreshing for finalizers.
+    if (state.indexFailures.length !== 0) (outcome.failures ??= []).push(...state.indexFailures.splice(0));
     const { failures, skipped } = outcome;
     // Released for collection: the next run starts them again.
     outcome.failures = outcome.skipped = null;

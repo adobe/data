@@ -136,6 +136,44 @@ const neighbors = System.create({ name: "indexes/neighbors", components: { read:
     pushed += push;
 });
 
+/** Ranks of `sorted range 1M`, one an entity, and the ranges it looks up, ten ranks each. */
+const ranked = Index.create({ name: "indexes/ranked", key: [serial], sorted: true, components: { has: [amount] } });
+const ranges = 10_000;
+const lookRanges = System.create({ name: "indexes/lookRanges", lookup: { ranked: { index: ranked, read: [amount] } } }, ({ lookup }) => {
+    let sum = 0;
+    for (let r = 0; r < ranges; r++) {
+        const start = (r * 7919) % (million - 10);
+        const range = lookup.ranked({ ">=": start, "<": start + 10 });
+        for (let i = 0; i < range.length; i++) sum += range.at(i)[amount];
+    }
+    summed = sum;
+});
+
+/** Entities `sorted page 100K` pages through, by a value one of them changes each run, the page the 20 after the first 100 with a small rank. */
+const pageRows = 100_000;
+const byAmount = Index.create({ name: "indexes/byAmount", key: [amount], sorted: true, components: { has: [key] } });
+const seedPage = System.create({ name: "indexes/seedPage" }, ({ commands }) => {
+    commands.spawn([amount, key, marked])({ [amount]: 0, [key]: 0, [marked]: true });
+    for (let i = 1; i < pageRows; i++) commands.spawn([amount, key])({ [amount]: (i * 7919) % pageRows, [key]: i });
+});
+const nudgeAmount = System.create({ name: "indexes/nudgeAmount", components: { has: [marked], write: [amount] } }, row => { row[amount] += 1; });
+let page: number[] = [];
+/** The page, recomputed only when what it reads changed: the 20 rows after the first 100 with a key below half, highest amounts first. */
+const readPage = System.create({ name: "indexes/readPage", lookup: { byAmount: { index: byAmount, read: [key], changed: [key] } }, after: [nudgeAmount] }, ({ lookup }) => {
+    const all = lookup.byAmount();
+    if (!all.changed) return;
+    const rows: number[] = [];
+    let skipped = 0;
+    for (let i = all.length - 1; i >= 0 && rows.length < 20; i--) {
+        const row = all.at(i);
+        if (row[key] >= pageRows / 2) continue;
+        if (skipped++ < 100) continue;
+        rows.push(row.entity);
+    }
+    page = rows;
+});
+const nudgeThenPage = System.create({ name: "indexes/nudgeThenPage", systems: [nudgeAmount, readPage] });
+
 export const indexBenchmarks: readonly Benchmark[] = [
     {
         name: "index idle",
@@ -217,6 +255,38 @@ export const indexBenchmarks: readonly Benchmark[] = [
             summed = 0;
             const best = await fastest(() => world.run(sumChildren), 2000, 3);
             check(summed > 0, "children lookup: nothing summed");
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "sorted range 1M",
+        operation: "10K lookups of a range of ten keys through a sorted index of 1M entities, each reading a value of its rows, in a main-thread system: timelines, intervals, nearest by order.",
+        per: "range lookups",
+        n: ranges,
+        typical: [100, 100_000],
+        best: { bytes: 192, basis: "Each lookup reads two lines of the blocks' first keys and ten 16-byte entries and their 4-byte values." },
+        run: async () => {
+            const world = inline();
+            await world.run(seedSerials);
+            const best = await fastest(() => world.run(lookRanges), 2000, 3);
+            check(summed === ranges * 10, "sorted range 1M: wrong sum");
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "sorted page 100K",
+        operation: "A run that changes one entity's value, and a system reading the 20 rows after the first 100 with a small key, highest values first, through a sorted index on the value, recomputed when it changed: `select page 100K` as a system reading an index.",
+        per: "rows",
+        n: pageRows,
+        typical: [1_000, 100_000],
+        best: { bytes: 16, basis: "Each row reads its 8-byte rank and its 8-byte value, as `select page 100K`'s rows do." },
+        run: async () => {
+            const world = inline();
+            await world.run(seedPage);
+            const best = await fastest(() => world.run(nudgeThenPage));
+            check(page.length === 20, "sorted page 100K: wrong page");
             await world.dispose();
             return best;
         },

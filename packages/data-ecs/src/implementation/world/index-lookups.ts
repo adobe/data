@@ -1,7 +1,8 @@
 import type { Archetype } from './archetype.js';
 import type { Scalar } from '../../interface/registry/layout.js';
-import { encodeScalar, encodeValue, hashWords, orderF32, orderF64, type KeyPart } from './index-keys.js';
-import { entryWords, findBucket, lengthOf, recordKey, recordLength, recordStart, startOf } from './index-hash.js';
+import { encodeScalar, encodeValue, hashWords, orderF32, orderF64, partWords, type KeyPart } from './index-keys.js';
+import { entryWords, findBucket, lengthOf, recordKey, recordLength, recordStart, startOf, type HashTable } from './index-hash.js';
+import { blockAt, blockBase, bound, firstPosition, treeMaximum, type SortedTable } from './index-sorted.js';
 import type { WorldIndex } from './indexes.js';
 import { createRow, type Row } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
@@ -64,9 +65,8 @@ export type List = { readonly length: number; readonly changed: boolean; at(inde
 /** What a list points at: a bucket, or -1 for a key no bucket holds. */
 type Found = { bucket: number };
 
-const createList = (lookup: IndexLookup, found: Found): List => {
+const createList = (lookup: IndexLookup, hash: HashTable, found: Found): List => {
     const pool: Pool = { rows: [], archetypes: [], versions: [] };
-    const { hash } = lookup.index;
     return {
         get length(): number {
             return found.bucket < 0 ? 0 : hash.records[found.bucket * hash.stride + recordLength];
@@ -168,7 +168,7 @@ const u8 = new Uint8Array(scratch);
  * A site's lookup of a hash index generated for its shape: one straight-line encoding of each argument into the key's
  * words, the hash and the probe inline. Null where code can't be generated, or for a shape it doesn't take.
  */
-const generatedFind = (lookup: IndexLookup, shape: Shape, list: List, found: Found, pool: Pool): ((...values: unknown[]) => unknown) | null => {
+const generatedFind = (lookup: IndexLookup, hash: HashTable, shape: Shape, list: List, found: Found, pool: Pool): ((...values: unknown[]) => unknown) | null => {
     const { index } = lookup;
     const destinations = destinationsOf(index.parts, shape);
     if (!generating || destinations === null) return null;
@@ -186,12 +186,12 @@ const generatedFind = (lookup: IndexLookup, shape: Shape, list: List, found: Fou
         "for (let slot = h & mask; ; slot = (slot + 1) & mask) {",
         "const filled = slots[2 * slot + 1]; if (filled === 0) break;",
         `if (slots[2 * slot] !== h) continue;`,
-        `const base = (filled - 1) * ${index.hash.stride};`,
+        `const base = (filled - 1) * ${hash.stride};`,
         `if (true${same}) { bucket = filled - 1; break; }`,
         "}",
         ...lookup.unique ? [
-            `if (bucket < 0 || records[bucket * ${index.hash.stride} + ${recordLength}] === 0) return null;`,
-            `const at = records[bucket * ${index.hash.stride} + ${recordStart}] * ${entryWords};`,
+            `if (bucket < 0 || records[bucket * ${hash.stride} + ${recordLength}] === 0) return null;`,
+            `const at = records[bucket * ${hash.stride} + ${recordStart}] * ${entryWords};`,
             "const archetypeId = table.entries[at + 1], archetype = archetypes[archetypeId], row = pool.rows[0];",
             "if (row === undefined || pool.archetypes[0] !== archetypeId || pool.versions[0] !== archetype.version) return rowAt(lookup, pool, 0, archetypeId, table.entries[at + 2]);",
             "row.index = table.entries[at + 2];",
@@ -202,7 +202,7 @@ const generatedFind = (lookup: IndexLookup, shape: Shape, list: List, found: Fou
     try {
         const factory = new Function("key", "table", "found", "list", "pool", "lookup", "rowAt", "encodeValue", "parts", "orderF32", "orderF64", "f32", "f64", "u32", "u8", "archetypes", body);
         // The factory returns the function its body above makes.
-        const made: (...values: unknown[]) => unknown = factory(new Uint32Array(Math.max(1, words)), index.hash, found, list, pool, lookup, rowAt, encodeValue, index.parts, orderF32, orderF64, f32, f64, u32, u8, lookup.state.archetypes);
+        const made: (...values: unknown[]) => unknown = factory(new Uint32Array(Math.max(1, words)), hash, found, list, pool, lookup, rowAt, encodeValue, index.parts, orderF32, orderF64, f32, f64, u32, u8, lookup.state.archetypes);
         return made;
     }
     catch {
@@ -213,14 +213,22 @@ const generatedFind = (lookup: IndexLookup, shape: Shape, list: List, found: Fou
 
 /** A site's lookup by `shape`: each argument a key part's value, or its scalars flattened, of the index's parts in order. */
 export const createSite = (lookup: IndexLookup, shape: Shape): Site => {
+    const { index } = lookup;
+    if (index.sorted !== null) return createSortedSite(lookup, index.sorted, shape);
+    if (index.hash === null) return { find: () => null };
+    return createHashSite(lookup, index.hash, shape);
+};
+
+/** A site's lookup of a hash index: by the whole key. */
+const createHashSite = (lookup: IndexLookup, hash: HashTable, shape: Shape): Site => {
     const { index, unique } = lookup;
     const key = keyOf(lookup);
     const found: Found = { bucket: -1 };
-    const list = createList(lookup, found);
+    const list = createList(lookup, hash, found);
     const pool: Pool = { rows: [], archetypes: [], versions: [] };
-    const generated = generatedFind(lookup, shape, list, found, pool);
+    const generated = generatedFind(lookup, hash, shape, list, found, pool);
     if (generated !== null) return { find: generated };
-    const { parts, words, hash } = index;
+    const { parts, words } = index;
     const forms = shape.map(form => typeof form === "number" ? form : 0);
     return {
         find: (...values) => {
@@ -232,6 +240,189 @@ export const createSite = (lookup: IndexLookup, shape: Shape): Site => {
             if (bucket < 0 || lengthOf(hash, bucket) === 0) return null;
             const at = startOf(hash, bucket) * entryWords;
             return rowAt(lookup, pool, 0, hash.entries[at + 1], hash.entries[at + 2]);
+        },
+    };
+};
+
+/** A sorted list's rows: positions `low` to `high`, and for a comparison with `"!="` a second run, `second` to `end`. */
+type Range = { low: number; high: number; second: number; end: number };
+
+/** A sorted list's place as `at` walks it: the position in `order` of a block, the position of its first entry, and its length. */
+type Cursor = { k: number; first: number; length: number };
+
+/** A list of a sorted index's rows, in key order, then entity order. */
+const createSortedList = (lookup: IndexLookup, sorted: SortedTable, range: Range, cursor: Cursor): List => {
+    const pool: Pool = { rows: [], archetypes: [], versions: [] };
+    const { words, stride } = sorted;
+    /** Whether a tree's ticks over the blocks around positions `low` to `high` are newer than `since`. */
+    const newer = (tree: Float64Array, low: number, high: number, since: number): boolean => {
+        const last = sorted.size - 1;
+        return treeMaximum(sorted, tree, blockAt(sorted, Math.min(last, Math.max(low - 1, 0))), blockAt(sorted, Math.min(last, high))) > since;
+    };
+    const runChanged = (low: number, high: number, since: number): boolean => {
+        if (newer(sorted.tree, low, high, since)) return true;
+        const { watched } = lookup;
+        for (let k = 0; k < watched.length; k++) {
+            const watch = sorted.watched.get(watched[k]);
+            if (watch === undefined || newer(watch.tree, low, high, since)) return true;
+        }
+        return false;
+    };
+    return {
+        get length(): number {
+            return range.high - range.low + range.end - range.second;
+        },
+        get changed(): boolean {
+            const since = lookup.since.value;
+            if (sorted.blocks === 0) return sorted.cleared > since;
+            return runChanged(range.low, range.high, since) || (range.end > range.second && runChanged(range.second, range.end, since));
+        },
+        at(index: number): object | undefined {
+            const first = range.high - range.low;
+            if (!(index >= 0 && index < first + range.end - range.second)) return undefined;
+            const position = index < first ? range.low + index : range.second + index - first;
+            if (!(position >= cursor.first && position < cursor.first + cursor.length)) {
+                cursor.k = blockAt(sorted, position);
+                cursor.first = firstPosition(sorted, cursor.k);
+                cursor.length = sorted.lengths[sorted.order[cursor.k]];
+            }
+            const base = blockBase(sorted, sorted.order[cursor.k]) + (position - cursor.first) * stride;
+            return rowAt(lookup, pool, index, sorted.entries[base + words + 1], sorted.entries[base + words + 2]);
+        },
+    };
+};
+
+/** Whether a value a lookup was given for a sorted part is a comparison: a sorted part's own values are never plain objects. */
+const isComparison = (value: unknown): value is { readonly [operator: string]: unknown } => typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * A site's lookup of a sorted index: a prefix of the key, whose last part may be a comparison, giving the rows in key
+ * order; for a unique index, a whole key of plain values gives the row or null.
+ */
+const createSortedSite = (lookup: IndexLookup, sorted: SortedTable, shape: Shape): Site => {
+    const { index, unique } = lookup;
+    const { parts } = index;
+    const probe = keyOf(lookup);
+    const objects: unknown[] = new Array<unknown>(parts.length).fill(undefined);
+    const range: Range = { low: 0, high: 0, second: 0, end: 0 };
+    const cursor: Cursor = { k: 0, first: 0, length: 0 };
+    const list = createSortedList(lookup, sorted, range, cursor);
+    const pool: Pool = { rows: [], archetypes: [], versions: [] };
+    const found = { k: 0, offset: 0 };
+    /**
+     * The first position whose key's first `count` words are after the probe's, or not before them. A lower bound, the
+     * first row `at` gives, leaves the cursor at its block.
+     */
+    const at = (count: number, after: boolean): number => {
+        if (count === 0) return after ? sorted.size : 0;
+        bound(sorted, probe, objects, count, after, found);
+        if (found.k >= sorted.blocks) return sorted.size;
+        const first = firstPosition(sorted, found.k);
+        if (!after) {
+            cursor.k = found.k;
+            cursor.first = first;
+            cursor.length = sorted.lengths[sorted.order[found.k]];
+        }
+        return first + found.offset;
+    };
+    /** Encodes part `p`'s value, the site's values from `next` as `form` passes it, into the probe; returns the next value. */
+    const encode = (p: number, form: number, values: readonly unknown[], next: number): number => {
+        const part = parts[p];
+        if (part.kind === "object") objects[p] = form === 0 ? values[next] : values.slice(next, next + form);
+        else if (form === 0) encodeValue(part, values[next], probe, part.first);
+        else if (part.kind === "leaves" && part.leaves.length === form && simpleTuple(part)) {
+            let word = part.first;
+            for (let k = 0; k < form; k++) word = encodeScalar(part.leaves[k].scalar, values[next + k], probe, word);
+        }
+        else encodeValue(part, values.slice(next, next + form), probe, part.first);
+        return next + Math.max(1, form);
+    };
+    /** The site's values, copied from its arguments, reused. */
+    const values: unknown[] = [];
+    let low = 0;
+    let high = 0;
+    let unequalLow = -1;
+    let unequalHigh = -1;
+    /** Narrows the range by an operator of the last part given, its operand the site's values from `next` as `operand` passes it. */
+    const compare = (last: number, words: number, operator: string, operand: number, from: readonly unknown[], next: number): void => {
+        encode(last, operand, from, next);
+        switch (operator) {
+            case ">=": low = Math.max(low, at(words, false)); break;
+            case ">": low = Math.max(low, at(words, true)); break;
+            case "<": high = Math.min(high, at(words, false)); break;
+            case "<=": high = Math.min(high, at(words, true)); break;
+            case "==": low = Math.max(low, at(words, false)); high = Math.min(high, at(words, true)); break;
+            case "!=": unequalLow = at(words, false); unequalHigh = at(words, true); break;
+            default: break;
+        }
+    };
+    const held: unknown[] = [undefined];
+    const find = (): unknown => {
+        cursor.length = 0;
+        cursor.first = 0;
+        range.second = range.end = 0;
+        const given = Math.min(shape.length, parts.length);
+        let next = 0;
+        for (let p = 0; p < given - 1; p++) {
+            const form = shape[p];
+            next = encode(p, typeof form === "number" ? form : 0, values, next);
+        }
+        if (given === 0) {
+            range.low = 0;
+            range.high = sorted.size;
+            return list;
+        }
+        const last = given - 1;
+        const lastForm = shape[last];
+        const prefix = parts[last].first;
+        const words = prefix + partWords(parts[last]);
+        const whole = typeof lastForm === "number" ? (lastForm === 0 ? values[next] : undefined) : undefined;
+        if (typeof lastForm === "number" && !(lastForm === 0 && isComparison(whole))) {
+            encode(last, lastForm, values, next);
+            range.low = at(words, false);
+            range.high = at(words, true);
+            if (!unique || given < parts.length) return list;
+            if (range.high === range.low) return null;
+            bound(sorted, probe, objects, words, false, found);
+            const base = blockBase(sorted, sorted.order[found.k]) + found.offset * sorted.stride;
+            return rowAt(lookup, pool, 0, sorted.entries[base + sorted.words + 1], sorted.entries[base + sorted.words + 2]);
+        }
+        // A comparison on the last part given, within the prefix before it.
+        low = at(prefix, false);
+        high = prefix === 0 ? sorted.size : at(prefix, true);
+        unequalLow = -1;
+        unequalHigh = -1;
+        if (typeof lastForm === "number") {
+            const comparison = isComparison(whole) ? whole : {};
+            for (const operator in comparison) {
+                held[0] = comparison[operator];
+                compare(last, words, operator, 0, held, 0);
+            }
+        }
+        else {
+            for (let k = 0; k < lastForm.length; k++) {
+                const [operator, operand] = lastForm[k];
+                compare(last, words, operator, operand, values, next);
+                next += Math.max(1, operand);
+            }
+        }
+        if (high < low) high = low;
+        range.low = low;
+        range.high = high;
+        if (unequalLow >= 0) {
+            range.high = Math.min(high, Math.max(low, unequalLow));
+            range.second = Math.max(low, Math.min(high, unequalHigh));
+            range.end = high;
+            if (range.second >= range.end) range.second = range.end = 0;
+        }
+        return list;
+    };
+    return {
+        find: (a0?: unknown, a1?: unknown, a2?: unknown, a3?: unknown, a4?: unknown, a5?: unknown, a6?: unknown, a7?: unknown,
+            a8?: unknown, a9?: unknown, a10?: unknown, a11?: unknown, a12?: unknown, a13?: unknown, a14?: unknown, a15?: unknown): unknown => {
+            values[0] = a0; values[1] = a1; values[2] = a2; values[3] = a3; values[4] = a4; values[5] = a5; values[6] = a6; values[7] = a7;
+            values[8] = a8; values[9] = a9; values[10] = a10; values[11] = a11; values[12] = a12; values[13] = a13; values[14] = a14; values[15] = a15;
+            return find();
         },
     };
 };

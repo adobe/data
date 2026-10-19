@@ -362,3 +362,232 @@ describe("an incrementally refreshed hash index", () => {
         expect(held).toBeGreaterThan(400);
     });
 });
+
+const rank = Symbol("indexesTest/rank");
+const lane = Symbol("indexesTest/lane");
+const flag = Symbol("indexesTest/flag");
+const pair = Symbol("indexesTest/pair");
+declare module "@adobe/data-ecs" {
+    interface Components {
+        [rank]: { type: number };
+        [lane]: { type: number };
+        [flag]: { type: boolean };
+        [pair]: { type: readonly [number, number] };
+    }
+}
+Component.register(rank, { type: { type: "number" } });
+Component.register(lane, { type: { type: "integer", minimum: -100, maximum: 100 } });
+Component.register(flag, { type: { type: "boolean" } });
+Component.register(pair, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } });
+
+const byRank = Index.create({ name: "indexesTest/byRank", key: [rank], sorted: true });
+const byLaneRank = Index.create({ name: "indexesTest/byLaneRank", key: [lane, rank], sorted: true, components: { has: [weight] } });
+const byName = Index.create({ name: "indexesTest/byName", key: [label], sorted: true, unique: true });
+const byFlagPair = Index.create({ name: "indexesTest/byFlagPair", key: [flag, pair], sorted: true });
+
+/** What a sorted lookup gave: its rows' entities and ranks, and whether it changed. */
+let ranked: { readonly ranks: readonly number[]; readonly changed: boolean } = { ranks: [], changed: false };
+const ranksOf = (list: { readonly length: number; readonly changed: boolean; at(index: number): { readonly [rank]: number } }) => ({
+    ranks: Array.from({ length: list.length }, (_, i) => list.at(i)[rank]),
+    changed: list.changed,
+});
+
+describe("sorted indexes on the main thread", () => {
+    const spawnRanks = System.create({ input: { type: "object", properties: { ranks: { type: "array", items: { type: "number" } } } } }, ({ input, commands }) => {
+        for (const value of input.ranks) commands.spawn([rank])({ [rank]: value });
+    });
+    const query = System.create({
+        input: { type: "object", properties: { kind: { type: "string" }, value: { type: "number" }, other: { type: "number" } } },
+        lookup: { ranks: { index: byRank, read: [rank] } },
+    }, ({ input, lookup }) => {
+        const { value, other } = input;
+        switch (input.kind) {
+            case "all": ranked = ranksOf(lookup.ranks()); break;
+            case "eq": ranked = ranksOf(lookup.ranks(value)); break;
+            case ">=": ranked = ranksOf(lookup.ranks({ ">=": value })); break;
+            case ">": ranked = ranksOf(lookup.ranks({ ">": value })); break;
+            case "<": ranked = ranksOf(lookup.ranks({ "<": value })); break;
+            case "<=": ranked = ranksOf(lookup.ranks({ "<=": value })); break;
+            case "between": ranked = ranksOf(lookup.ranks({ ">=": value, "<": other })); break;
+            case "!=": ranked = ranksOf(lookup.ranks({ "!=": value })); break;
+            case "== and !=": ranked = ranksOf(lookup.ranks({ ">": value, "!=": other })); break;
+            default: {
+                // A comparison held, not a literal: the plugin passes it whole.
+                const held = { ">": value, "<=": other };
+                ranked = ranksOf(lookup.ranks(held));
+            }
+        }
+    });
+    it("give rows in key order, numbers numerically with NaN last and -0 as +0, then by entity, for every comparison", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(spawnRanks, { ranks: [3, -1, NaN, 2, -0, 0, 2, Infinity, -Infinity, 10] });
+        await world.run(query, { kind: "all", value: 0, other: 0 });
+        expect(ranked.ranks).toEqual([-Infinity, -1, -0, 0, 2, 2, 3, 10, Infinity, NaN]);
+        expect(ranked.changed).toBe(true);
+        const ask = async (kind: string, value: number, other = 0) => {
+            await world.run(query, { kind, value, other });
+            return ranked.ranks;
+        };
+        expect(await ask("eq", 2)).toEqual([2, 2]);
+        expect(await ask("eq", 0)).toEqual([-0, 0]);
+        expect(await ask("eq", 5)).toEqual([]);
+        expect(await ask(">=", 2)).toEqual([2, 2, 3, 10, Infinity, NaN]);
+        expect(await ask(">", 2)).toEqual([3, 10, Infinity, NaN]);
+        expect(await ask("<", 2)).toEqual([-Infinity, -1, -0, 0]);
+        expect(await ask("<=", 2)).toEqual([-Infinity, -1, -0, 0, 2, 2]);
+        expect(await ask("between", -1, 3)).toEqual([-1, -0, 0, 2, 2]);
+        expect(await ask("!=", 2)).toEqual([-Infinity, -1, -0, 0, 3, 10, Infinity, NaN]);
+        expect(await ask("== and !=", -1, 3)).toEqual([-0, 0, 2, 2, 10, Infinity, NaN]);
+        expect(await ask("held", 0, 3)).toEqual([2, 2, 3]);
+        const all = await Observe.toPromise(world.observe.select({ required: [rank], order: { [rank]: true } }));
+        // Ties are in entity order.
+        let entities: readonly Entity[] = [];
+        await world.run(System.create({ lookup: { ranks: { index: byRank } } }, ({ lookup }) => {
+            const twos = lookup.ranks(2);
+            entities = [twos.at(0).entity, twos.at(1).entity];
+        }));
+        expect(entities[0] < entities[1]).toBe(true);
+        void all;
+    });
+    it("take a prefix of a compound key, its last part possibly a comparison", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        const model = Array.from({ length: 30 }, (_, k) => [(k % 3) - 1, 29 - k] as const);
+        await world.run(System.create(({ commands }) => {
+            model.forEach(([laneValue, rankValue], k) => commands.spawn([lane, rank, weight])({ [lane]: laneValue, [rank]: rankValue, [weight]: k }));
+        }));
+        let found: (readonly (readonly number[])[])[] = [];
+        await world.run(System.create({ lookup: { lanes: { index: byLaneRank, read: [lane, rank] } } }, ({ lookup }) => {
+            const read = (list: { readonly length: number; at(index: number): { readonly [lane]: number; readonly [rank]: number } }) => Array.from({ length: list.length }, (_, i) => [list.at(i)[lane], list.at(i)[rank]]);
+            found = [read(lookup.lanes(0)), read(lookup.lanes(1, { "<": 10 })), read(lookup.lanes({ "<": 0 })), read(lookup.lanes(-1, 26)), read(lookup.lanes(-1, 27))];
+        }));
+        const sorted = [...model].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        expect(found).toEqual([
+            sorted.filter(([l]) => l === 0),
+            sorted.filter(([l, r]) => l === 1 && r < 10),
+            sorted.filter(([l]) => l < 0),
+            sorted.filter(([l, r]) => l === -1 && r === 26),
+            [],
+        ]);
+    });
+    it("order strings by code point, booleans false first and tuples element by element", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(System.create(({ commands }) => {
+            for (const name of ["b", "a", "～", "\u{1F600}", "ab", ""]) commands.spawn([label])({ [label]: name });
+            for (const [on, x, y] of [[true, 1, 2], [false, 3, 0], [true, 1, 1], [false, -1, 5]] as const) commands.spawn([flag, pair])({ [flag]: on, [pair]: [x, y] });
+        }));
+        let names: string[] = [];
+        let pairs: (readonly [boolean, readonly [number, number]])[] = [];
+        let one: string | null = null;
+        let none: string | null = "x";
+        await world.run(System.create({ lookup: { names: { index: byName, read: [label] }, pairs: { index: byFlagPair, read: [flag, pair] } } }, ({ lookup }) => {
+            const all = lookup.names();
+            names = Array.from({ length: all.length }, (_, i) => all.at(i)[label]);
+            const ordered = lookup.pairs();
+            pairs = Array.from({ length: ordered.length }, (_, i) => [ordered.at(i)[flag], ordered.at(i)[pair]] as const);
+            one = lookup.names("ab")?.[label] ?? null;
+            none = lookup.names("zz")?.[label] ?? null;
+        }));
+        expect(names).toEqual(["", "a", "ab", "b", "～", "\u{1F600}"]);
+        expect(pairs).toEqual([[false, [-1, 5]], [false, [3, 0]], [true, [1, 1]], [true, [1, 2]]]);
+        expect(one).toBe("ab");
+        expect(none).toBe(null);
+    });
+    it("report changed for a range only when an entity entered, left or moved in it, or watched values changed, since the system last ran", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(spawnRanks, { ranks: Array.from({ length: 1000 }, (_, k) => k) });
+        await world.run(query, { kind: "between", value: 100, other: 110 });
+        expect(ranked).toMatchObject({ changed: true });
+        await world.run(query, { kind: "between", value: 100, other: 110 });
+        expect(ranked).toMatchObject({ changed: false, ranks: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109] });
+        const entities = await Observe.toPromise(world.observe.select({ required: [rank], order: { [rank]: true } }));
+        // A move far away isn't one here.
+        await world.run(System.create(({ commands }) => { commands.add(entities[900], rank, 950.5); }));
+        await world.run(query, { kind: "between", value: 100, other: 110 });
+        expect(ranked.changed).toBe(false);
+        await world.run(System.create(({ commands }) => { commands.add(entities[900], rank, 105.5); }));
+        await world.run(query, { kind: "between", value: 100, other: 110 });
+        expect(ranked).toMatchObject({ changed: true, ranks: [100, 101, 102, 103, 104, 105, 105.5, 106, 107, 108, 109] });
+        // Emptied, it's changed once.
+        await world.run(System.create(({ commands }) => { for (const entity of entities) commands.despawn(entity); }));
+        await world.run(query, { kind: "between", value: 100, other: 110 });
+        expect(ranked).toMatchObject({ changed: true, ranks: [] });
+        await world.run(query, { kind: "between", value: 100, other: 110 });
+        expect(ranked).toMatchObject({ changed: false, ranks: [] });
+    });
+    it("report a unique sorted index's conflicts, keeping the lower entity index", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(System.create(({ commands }) => {
+            commands.spawn([label])({ [label]: "one" });
+            commands.spawn([label])({ [label]: "two" });
+        }));
+        const [first, second] = await Observe.toPromise(world.observe.select({ required: [label] }));
+        let kept: Entity | null = null;
+        const find = System.create({ lookup: { names: { index: byName } } }, ({ lookup }) => { kept = lookup.names("one")?.entity ?? null; });
+        expect((await world.run(find)).failures).toEqual([]);
+        await world.run(System.create(({ commands }) => { commands.add(second, label, "one"); }));
+        const report = await world.run(find);
+        expect(kept).toBe(first);
+        expect(report.failures).toEqual([{ kind: "index", name: "indexesTest/byName", message: `Index "indexesTest/byName" is unique, and entities ${first} and ${second} both have key "one"; lookups give ${first}, the one with the lower entity index.`, stack: null }]);
+    });
+});
+
+let incrementalRanks: readonly number[] = [];
+let incrementalLanes: readonly (readonly number[])[] = [];
+const probeSorted = System.create({ name: "indexesTest/probeSorted", lookup: { lanes: { index: byLaneRank } } }, ({ lookup }) => {
+    const all = lookup.lanes();
+    incrementalRanks = Array.from({ length: all.length }, (_, i) => all.at(i).entity);
+    incrementalLanes = [-1, 0, 1].map(laneValue => {
+        const list = lookup.lanes(laneValue, { ">=": 100, "<": 600 });
+        return Array.from({ length: list.length }, (_, i) => list.at(i).entity);
+    });
+});
+const rerank = System.create({
+    name: "indexesTest/rerank", input: { type: "object", properties: { share: { type: "number" }, seed: { type: "integer" } } },
+    components: { read: [weight], write: [rank] }, before: [probeSorted],
+}, (row, { input }) => {
+    if ((row[weight] * 7919 + input.seed) % 1000 < input.share * 1000) row[rank] = (row[weight] * 31 + input.seed * 17) % 1000;
+});
+
+describe("an incrementally refreshed sorted index", () => {
+    it("equals one built from scratch after random spawns, despawns, moves and key writes, its blocks split and dropped", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        const next = random(4242);
+        const pick = <T>(list: readonly T[]): T | undefined => list[Math.floor(next() * list.length)];
+        let held = 0;
+        for (let step = 0; step < 60; step++) {
+            const living = await Observe.toPromise(world.observe.select({ required: [lane] }));
+            const operations = Math.floor(next() * 120);
+            const plan: (readonly [string, Entity | undefined, number])[] = [];
+            for (let k = 0; k < operations; k++) plan.push([pick(["spawn", "spawn", "spawn", "despawn", "despawn", "weigh", "unweigh", "set", "lane"]) ?? "spawn", pick(living), Math.floor(next() * 1000)]);
+            await world.run(System.create(({ commands }) => {
+                for (const [operation, entity, value] of plan) {
+                    if (operation === "spawn") commands.spawn([lane, rank, weight])({ [lane]: (value % 3) - 1, [rank]: value % 7 === 0 ? 500 : value, [weight]: value });
+                    else if (entity === undefined) continue;
+                    else if (operation === "despawn") commands.despawn(entity);
+                    else if (operation === "weigh") commands.add(entity, weight, value);
+                    else if (operation === "unweigh") commands.remove(entity, weight);
+                    else if (operation === "set") commands.add(entity, rank, value);
+                    else commands.add(entity, lane, (value % 3) - 1);
+                }
+            }));
+            await world.run(System.create({ systems: [rerank, probeSorted] }), { share: next() < 0.1 ? 0.9 : 0.05, seed: step });
+            const scratch = Index.create({ key: [lane, rank], sorted: true, components: { has: [weight] } });
+            let rebuiltRanks: readonly number[] = [];
+            let rebuiltLanes: readonly (readonly number[])[] = [];
+            await world.run(System.create({ lookup: { lanes: { index: scratch } } }, ({ lookup }) => {
+                const all = lookup.lanes();
+                rebuiltRanks = Array.from({ length: all.length }, (_, i) => all.at(i).entity);
+                rebuiltLanes = [-1, 0, 1].map(laneValue => {
+                    const list = lookup.lanes(laneValue, { ">=": 100, "<": 600 });
+                    return Array.from({ length: list.length }, (_, i) => list.at(i).entity);
+                });
+            }));
+            expect(incrementalRanks).toEqual(rebuiltRanks);
+            expect(incrementalLanes).toEqual(rebuiltLanes);
+            held = Math.max(held, incrementalRanks.length);
+            // Once its blocks have split, every entity of a lane goes, so whole blocks empty and are dropped.
+            if (step === 40) await world.run(System.create({ components: { read: [lane] } }, (row, { commands }) => { if (row[lane] < 1) commands.despawn(row.entity); }));
+        }
+        expect(held).toBeGreaterThan(250);
+    });
+});

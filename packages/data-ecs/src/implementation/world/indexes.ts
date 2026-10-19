@@ -442,9 +442,9 @@ const refresh = (state: State, index: WorldIndex, end: number, keyed: boolean, t
         }
         index.pass++;
     }
-    // Past what a patch takes, by the rows of the chunks that changed, it's built again without listing them.
+    // Past what a patch takes it's built again: listing stops once the rows found pass it.
     const most = Math.max(rebuildMinimum, sizeOf(index) / 8);
-    if (end - index.position > most || (keyed && changedEstimate(state, index, most - (end - index.position)))) return rebuildAny(state, index, tick, failures, pool);
+    if (end - index.position > most) return rebuildAny(state, index, tick, failures, pool);
     let count = 0;
     for (let at = index.position; at < end; at++) count = pend(index, journal.indexes[at - journal.first], -1, 0, count);
     if (keyed) {
@@ -462,6 +462,7 @@ const refresh = (state: State, index: WorldIndex, end: number, keyed: boolean, t
                     for (let row = chunk << chunkShift, end = Math.min(archetype.count, (chunk + 1) << chunkShift); row < end; row++) {
                         if (!whole && !(changed[row] > since)) continue;
                         count = marking ? pend(index, rows[row] >>> 0, id, row, count) : list(index, rows[row] >>> 0, id, row, count);
+                        if (count > most) return rebuildAny(state, index, tick, failures, pool);
                     }
                 }
             }
@@ -472,52 +473,6 @@ const refresh = (state: State, index: WorldIndex, end: number, keyed: boolean, t
     if (index.hash !== null) patch(state, index, index.hash, count, tick, failures);
     else if (index.sorted !== null) patchSorted(state, index, index.sorted, count, tick, failures);
     return null;
-};
-
-/**
- * Whether the rows of member archetypes' chunks whose key parts changed since the last refresh are more than `most`: by
- * the chunks, and when they are, by the rows' ticks, since a few writes spread over every chunk are a patch.
- */
-const changedEstimate = (state: State, index: WorldIndex, most: number): boolean => {
-    const since = index.refreshed;
-    let rows = 0;
-    for (const archetype of index.members) {
-        for (const part of index.keys) {
-            const storage = archetype.storageById[part];
-            if (storage === undefined || !storage.ticked || !writtenSince(state, part, since)) continue;
-            if (storage.columnChanged > since) rows += archetype.count;
-            else {
-                const { chunkChanged } = storage;
-                for (let chunk = 0, count = Math.ceil(archetype.count / 2 ** chunkShift); chunk < count; chunk++) {
-                    if (chunkChanged[chunk] > since) rows += Math.min(2 ** chunkShift, archetype.count - (chunk << chunkShift));
-                }
-            }
-            if (rows > most) return changedExactly(state, index, most);
-        }
-    }
-    return false;
-};
-
-/** Whether the rows of member archetypes whose key parts changed since the last refresh are more than `most`, by their ticks. */
-const changedExactly = (state: State, index: WorldIndex, most: number): boolean => {
-    const since = index.refreshed;
-    let rows = 0;
-    for (const archetype of index.members) {
-        for (const part of index.keys) {
-            const storage = archetype.storageById[part];
-            if (storage === undefined || !storage.ticked || !writtenSince(state, part, since)) continue;
-            if (storage.columnChanged > since) rows += archetype.count;
-            else {
-                const { changed, chunkChanged } = storage;
-                for (let chunk = 0, count = Math.ceil(archetype.count / 2 ** chunkShift); chunk < count; chunk++) {
-                    if (!(chunkChanged[chunk] > since)) continue;
-                    for (let row = chunk << chunkShift, end = Math.min(archetype.count, (chunk + 1) << chunkShift); row < end; row++) if (changed[row] > since) rows++;
-                }
-            }
-            if (rows > most) return true;
-        }
-    }
-    return false;
 };
 
 /**

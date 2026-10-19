@@ -216,14 +216,29 @@ const reserve = (table: HashTable, bucket: number, length: number): void => {
     records[base + recordCapacity] = capacity;
 };
 
-/** Moves `words` of entries from `from` to `to` within one buffer: by hand when few, which a native call would cost more than. */
+/**
+ * Moves `words` of entries, a multiple of `entryWords`, from `from` to `to` within one buffer: by hand, an entry a step,
+ * when few, which a native call would cost more than.
+ */
 const move = (entries: Int32Array, to: number, from: number, words: number): void => {
     if (words > 96) {
         entries.copyWithin(to, from, from + words);
         return;
     }
-    if (to < from) for (let k = 0; k < words; k++) entries[to + k] = entries[from + k];
-    else for (let k = words - 1; k >= 0; k--) entries[to + k] = entries[from + k];
+    if (to < from) {
+        for (let k = 0; k < words; k += 3) {
+            entries[to + k] = entries[from + k];
+            entries[to + k + 1] = entries[from + k + 1];
+            entries[to + k + 2] = entries[from + k + 2];
+        }
+    }
+    else {
+        for (let k = words - 3; k >= 0; k -= 3) {
+            entries[to + k + 2] = entries[from + k + 2];
+            entries[to + k + 1] = entries[from + k + 1];
+            entries[to + k] = entries[from + k];
+        }
+    }
 };
 
 /** Where entity index `index` is in a bucket, or where it would go, by binary search: `~position` when it isn't there. */

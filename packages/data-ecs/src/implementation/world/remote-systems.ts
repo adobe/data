@@ -8,7 +8,7 @@ import type { LocalIds, Segment } from './command-ring.js';
 import type { ToJoined } from './joining.js';
 import { lineWords, type WorkerError } from './protocol.js';
 import { reductionTargets, type ReductionTarget } from './reductions.js';
-import { resourceWritesOf, type Runner } from './runner.js';
+import { holdingNothing, resourceWritesOf, type Runner } from './runner.js';
 import { idOf, type Key, type State } from './state.js';
 import { logBoundedWord, logBoundWord, logSyncWord, type MoveLog } from './move-log.js';
 import { createStopWriter, freeStops, type StopWriter } from './stop-lists.js';
@@ -456,6 +456,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         targets,
         finish: failed => failed || (remote.result.flags & ranFlag) === 0 || targets.length === 0 ? null : folds,
         afterSync: null,
+        holdings: holdingNothing(),
         remote,
         lastRun: () => remote.lastRun,
     };

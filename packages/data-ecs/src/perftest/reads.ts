@@ -42,6 +42,9 @@ const seed = System.create({ name: "reads/seed", input: { type: "object", proper
 /** Writes the marked entity's value, so one entity observer is notified and an ordered selection is a candidate. */
 const nudge = System.create({ name: "reads/nudge", components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
 
+/** A kernel writing every row's rank, whose stamps it keeps only while something watches ranks change. */
+const advance = System.create({ name: "reads/advance", kernel: "cpu", components: { write: [rank] } }, row => { row[rank] += 1; });
+
 /** A system no entity matches: a run that changes nothing. */
 const idle = System.create({ name: "reads/idle", components: { has: [unmatched] } }, () => {});
 
@@ -100,6 +103,26 @@ export const readBenchmarks: readonly Benchmark[] = [
             copied = 0;
             const best = await fastest(() => world.run(System.create({ resources: { read: [level] } }, ({ resources }) => { copied = resources[level]; })), 300);
             check(copied === 3, "read run: wrong value");
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "read run changed",
+        operation: "Reading the ranks that changed through a run of a new system filtering on `changed`, with a kernel writing them: a read whose filter turns the kernel's stamps on while the system lives.",
+        per: "reads",
+        n: 1,
+        typical: [1, 100],
+        best: { bytes: 64, basis: "A read loads at least one cache line of a chunk's tick." },
+        run: async () => {
+            // Few rows, since a new system's first run reads every row.
+            const world = await seeded(100);
+            await world.run(advance);
+            copied = 0;
+            const best = await fastest(async () => {
+                await world.run(System.create({ components: { read: [rank], changed: [rank] } }, row => { copied += row[rank]; }));
+            }, 300);
+            check(copied > 0, "read run changed: nothing read");
             await world.dispose();
             return best;
         },

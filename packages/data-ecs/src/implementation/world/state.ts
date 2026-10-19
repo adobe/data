@@ -56,8 +56,15 @@ export type State = {
     readonly drains: CommandBuffer[];
     drained: number;
     resourceEntity: number;
-    /** Components some registered system filters on with `changed`, or an entity or query observer watches; only their kernel stamps are kept. */
+    /**
+     * Components some registered system filters on with `changed`, or an entity or query observer watches; only their
+     * kernel stamps are kept. By component id, how many do: each system while registered, each observer's watch for the
+     * world's life (`observe`).
+     */
     readonly observed: Set<number>;
+    readonly observedCounts: number[];
+    /** Workers' kernel indexes, by kernel module url, so they're bounded by code. */
+    readonly kernelIndexes: Map<string, number>;
     /** Components some registered system filters on with `added` or `changed`, or an entity or query observer watches; only they keep ticks. */
     readonly ticked: Set<number>;
     /** Main-thread spawns since the last sync point, by component set. */
@@ -81,8 +88,11 @@ export type State = {
     readonly directories: Set<Directory>;
     /** Workers the world may run kernels on; with none, kernels run on the main thread. */
     workers: number;
-    /** Called at the end of each sync point, to size what depends on archetypes, such as reduction partials. */
-    readonly afterSync: Set<() => void>;
+    /**
+     * Called at the end of each sync point, to size what depends on archetypes, such as reduction partials: each
+     * registered runner's hook, held weakly, so the runner lives only as long as its system.
+     */
+    readonly afterSync: Set<WeakRef<() => void>>;
     /** Accessor rows for main-thread systems, by the component ids they read and write. */
     readonly rows: Map<string, Row>;
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
@@ -139,6 +149,8 @@ export type State = {
     readonly channels: TaskChannel[];
     /** Moves on whenever systems are placed again, as claims are made or released. */
     placement: number;
+    /** Moves on whenever a registered system's runner is replaced, so runs read runners again only then. */
+    runnersVersion: number;
     /**
      * Failures of finalizers the next sync point reports: those on claimed threads that can't run there, which don't
      * activate, with every one found; and stops a thread that's gone never finalized.
@@ -176,6 +188,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         drained: 0,
         resourceEntity: -1,
         observed: new Set(),
+        observedCounts: [],
+        kernelIndexes: new Map(),
         referencesWritten: [],
         journal: createJournal(),
         ticked: new Set(),
@@ -212,11 +226,25 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         threadTasks: new Map(),
         channels: [],
         placement: 0,
+        runnersVersion: 0,
         unplaced: [],
         unplacedSeen: new Set(),
         holds: createHolds(),
         tails: [],
     };
+};
+
+/** Counts one more system or observer watching a component's changes, so kernels keep its stamps. */
+export const observe = (state: State, id: number): void => {
+    state.observedCounts[id] = (state.observedCounts[id] ?? 0) + 1;
+    state.observed.add(id);
+};
+
+/** Counts one fewer; kernels that muted its stamps before keep them until they load again for another reason. */
+export const unobserve = (state: State, id: number): void => {
+    const count = (state.observedCounts[id] ?? 0) - 1;
+    state.observedCounts[id] = count;
+    if (count <= 0) state.observed.delete(id);
 };
 
 /** The id of a component or resource the world has met, or undefined. */

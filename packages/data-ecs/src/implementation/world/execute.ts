@@ -90,6 +90,10 @@ const contribute = (state: State, folds: ReadonlyMap<unknown, Fold>, runner: Run
  */
 type Prepared = {
     readonly runners: Runner[][];
+    /** How many of each tier's runners run on joined threads. */
+    readonly remotes: number[];
+    /** The world's `runnersVersion` its runners were read at. */
+    version: number;
     readonly started: (readonly Chunk[])[][];
     /** For tasks on joined threads: the systems of the one being posted and their tiers in it, and by channel, the tier's task. */
     readonly systems: RemoteSystem[];
@@ -140,13 +144,27 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
     let prepared = bySchedule.get(schedule);
     if (prepared === undefined) {
         prepared = {
-            runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)),
+            runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), remotes: schedule.tiers.map(() => 0), version: -1,
+            started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)),
             systems: [], tiers: [], tasks: new Map(), warnings: [], warningCount: 0, warned: null, outcome: { failures: null, skipped: null },
             placement: -1, tailing: null,
         };
         bySchedule.set(schedule, prepared);
     }
+    if (prepared.version !== context.state.runnersVersion) refresh(context, schedule, prepared);
     return prepared;
+};
+
+/** Reads a schedule's runners again, once one was replaced, as moving to or from a GPU device or a joined thread does. */
+const refresh = (context: ExecuteContext, schedule: Schedule, prepared: Prepared): void => {
+    for (let t = 0; t < schedule.tiers.length; t++) {
+        const tier = schedule.tiers[t];
+        const runners = prepared.runners[t];
+        let remote = 0;
+        for (let i = 0; i < tier.length; i++) if ((runners[i] = context.runnerOf(tier[i])).remote !== null) remote++;
+        prepared.remotes[t] = remote;
+    }
+    prepared.version = context.state.runnersVersion;
 };
 
 /**
@@ -265,13 +283,8 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
     const { state } = context;
     const { gpu } = state;
     let last = first;
-    while (last + 1 < schedule.tiers.length) {
-        const next = prepared.runners[last + 1];
-        const leaves = schedule.tiers[last + 1];
-        for (let i = 0; i < leaves.length; i++) next[i] = context.runnerOf(leaves[i]);
-        if (!allOn(next, channel)) break;
-        last++;
-    }
+    if (prepared.version !== state.runnersVersion) refresh(context, schedule, prepared);
+    while (last + 1 < schedule.tiers.length && allOn(prepared.runners[last + 1], channel)) last++;
     if (channel.busy()) await channel.idle();
     for (let v = first; v <= last; v++) {
         if (state.tails.length !== 0) {
@@ -325,9 +338,10 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
     try {
         for (let t = 0; t < schedule.tiers.length; t++) {
             const tier = schedule.tiers[t];
+            // A tick in progress takes up runners replaced since it started from its next tier on.
+            if (prepared.version !== state.runnersVersion) refresh(context, schedule, prepared);
             const runners = prepared.runners[t];
-            let remote = 0;
-            for (let i = 0; i < tier.length; i++) if ((runners[i] = context.runnerOf(tier[i])).remote !== null) remote++;
+            const remote = prepared.remotes[t];
             if (state.tails.length !== 0) {
                 const waiting = settleRunners(state, runners);
                 if (waiting !== null) await waiting;

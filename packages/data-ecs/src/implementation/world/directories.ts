@@ -55,6 +55,12 @@ export const createDirectory = (state: State, read: readonly number[], has: read
     return directory;
 };
 
+/** Stops keeping a directory, freeing its records, once no kernel looks up through it again. */
+export const releaseDirectory = (state: State, directory: Directory): void => {
+    if (!state.directories.delete(directory)) return;
+    freeArray(state.memory, directory.records);
+};
+
 /** At a sync point: brings every directory up to date with the archetypes. */
 export const refreshDirectories = (state: State): void => {
     if (state.directories.size === 0) return;

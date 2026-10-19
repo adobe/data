@@ -31,6 +31,8 @@ import type * as Tails from "./tails.fixture.js";
 import { tailsCases } from "./tails.cases.js";
 import type * as Transfers from "./transfers.fixture.js";
 import { transfersCases } from "./transfers.cases.js";
+import type * as Lifetime from "./lifetime.fixture.js";
+import { lifetimeCases } from "./lifetime.cases.js";
 
 // Real worker threads in node: the cases over fixtures `vitest.fixtures.ts` built, each typed as its source, which it's built from.
 workersCases((): Promise<typeof Workers> => builtFixture("workers"));
@@ -49,3 +51,4 @@ threadSystemsCases((): Promise<typeof ThreadSystems> => builtFixture("thread-sys
 remoteFinalizersCases((): Promise<typeof RemoteFinalizers> => builtFixture("remote-finalizers"));
 tailsCases((): Promise<typeof Tails> => builtFixture("tails"));
 transfersCases((): Promise<typeof Transfers> => builtFixture("transfers"));
+lifetimeCases((): Promise<typeof Lifetime> => builtFixture("lifetime"));

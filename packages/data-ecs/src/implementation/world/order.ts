@@ -337,5 +337,15 @@ export const createOrder = (memory: Memory) => {
         return view;
     };
 
-    return { load, insert, remove, isAt, setParent, tidy, current, live: () => live };
+    /** Frees the slot arrays in the arena, once nothing runs the order again. */
+    const release = (): void => {
+        if (rows.length === 0) return;
+        freeArray(memory, rows);
+        freeArray(memory, parents);
+        rows = parents = new Int32Array(0);
+        size = live = groups = 0;
+        view = null;
+    };
+
+    return { load, insert, remove, isAt, setParent, tidy, current, live: () => live, release };
 };

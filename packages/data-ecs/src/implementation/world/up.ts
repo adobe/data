@@ -671,5 +671,14 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
         return { next, clear };
     };
 
-    return { levels, filtered };
+    /** Frees what it holds in the arena and stops its reading of the journal, once nothing runs it again. */
+    const release = (): void => {
+        state.journal.readers--;
+        order.release();
+        if (list.length > 0) freeArray(state.memory, list);
+        if (parentList.length > 0) freeArray(state.memory, parentList);
+        list = parentList = new Int32Array(0);
+    };
+
+    return { levels, filtered, release };
 };

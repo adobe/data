@@ -7,7 +7,7 @@ import { journalEnd } from './journal.js';
 import { chunkShift } from './kernel.js';
 import { compileQuery, countOf, createSelectScratch, elsewhere, matchesArchetype, readEntity, selectInto, type CompiledQuery, type EntityOptions, type QueryOptions } from './reads.js';
 import type { MoveLog } from './move-log.js';
-import { idOf, startTicking, type Key, type State } from './state.js';
+import { idOf, observe, startTicking, type Key, type State } from './state.js';
 import { labelOf } from '../../interface/registry/index.js';
 
 type Notify = (value: unknown) => void;
@@ -484,7 +484,8 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
     const start = (): boolean => {
         if (pending.length === 0) return false;
         startTicking(state, pending);
-        for (const id of pending) state.observed.add(id);
+        // Watched for the world's life: watches are bounded by its components.
+        for (const id of pending) observe(state, id);
         pending.length = 0;
         for (const entry of entities) {
             entry.seen = state.tick;
@@ -492,11 +493,6 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
         }
         for (const observer of queries) observer.watching = true;
         return true;
-    };
-
-    /** After a failed registration's rollback, which restores the kernels' stamps it had: keeps those observers watch. */
-    const reassert = (): void => {
-        for (const id of requested) state.observed.add(id);
     };
 
     /** Notifies the observers of each entity whose watched components the run changed. */
@@ -618,5 +614,5 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
     /** A failure for the next delivery's report. */
     const defer = (failure: Failure): void => { deferred.push(failure); };
 
-    return { resource, entity, query, readback, deliver, start, reassert, defer };
+    return { resource, entity, query, readback, deliver, start, defer };
 };

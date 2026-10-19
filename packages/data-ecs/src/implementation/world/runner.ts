@@ -25,6 +25,8 @@ import { inputFor } from './input.js';
 import { createUp, type Run } from './up.js';
 import { labelOf, labelOfItem } from '../../interface/registry/index.js';
 import type { RemoteSystem } from './remote-systems.js';
+import { releaseDirectory, type Directory } from './directories.js';
+import type { GpuEngine } from './gpu.js';
 
 /**
  * One unit of a system's work for a run: the commands it issued, or for a worker's chunk its segment of the worker's
@@ -77,10 +79,47 @@ export type Runner = {
     readonly finish: (failed: boolean) => readonly Float64Array[] | null;
     /** For the registrar to call after each sync point once the runner is registered: sizes its reduction partials. */
     readonly afterSync: (() => void) | null;
+    /** What it holds that the world must release once nothing runs it again. */
+    readonly holdings: Holdings;
     /** For a system placed on a joined thread, which runs it there (`remote-systems.ts`); null for one that runs here. */
     readonly remote: RemoteSystem | null;
     /** The tick it last ran at, which a runner placing it elsewhere starts from. */
     readonly lastRun: () => number;
+};
+
+/**
+ * What a runner holds beyond its own JS values: blocks of the arena, the world's records of it, and its hook after each
+ * sync point, held weakly. Plain data that holds nothing of its system, so the registrar can release it once the system
+ * is collected or removed, and keep it until then without keeping the system.
+ */
+export type Holdings = {
+    released: boolean;
+    /** Its kernel's reduction partials, in the arena. */
+    partials: Float64Array | null;
+    /** Its `up` order, in the arena, and its reading of the journal. */
+    readonly up: { readonly release: () => void } | null;
+    /** Its kernel's lookup directories, which the world keeps current. */
+    readonly directories: readonly Directory[];
+    /** The GPU it last recorded on, and the prefix of its records' keys there. */
+    gpu: GpuEngine | null;
+    readonly prefix: string;
+    readonly afterSync: WeakRef<() => void> | null;
+};
+
+/** Holdings of a runner that holds nothing beyond its JS values. */
+export const holdingNothing = (): Holdings => ({ released: false, partials: null, up: null, directories: [], gpu: null, prefix: "", afterSync: null });
+
+/** Releases what a runner holds, once: no run may use it again. */
+export const releaseHoldings = (state: State, holdings: Holdings): void => {
+    if (holdings.released) return;
+    holdings.released = true;
+    if (holdings.partials !== null) freeArray(state.memory, holdings.partials);
+    holdings.partials = null;
+    holdings.up?.release();
+    for (const directory of holdings.directories) releaseDirectory(state, directory);
+    // Records on a GPU the world has since left went with it.
+    if (holdings.gpu !== null && holdings.gpu === state.gpu) holdings.gpu.release(holdings.prefix);
+    if (holdings.afterSync !== null) state.afterSync.delete(holdings.afterSync);
 };
 
 /** The resources a declaration writes or reduces into, by id. */
@@ -226,7 +265,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         needed = Math.max(1, needed) * partialCount;
         if (slots.length >= needed) return;
         if (slots.length > 0) freeArray(state.memory, slots);
-        slots = allocateArray(state.memory, Float64Array, Math.max(needed, 2 * slots.length));
+        slots = holdings.partials = allocateArray(state.memory, Float64Array, Math.max(needed, 2 * slots.length));
     };
     /** The first of `count` slots for the next kernel calls, each starting at its operators' identities. */
     const takeSlots = (count: number): number => {
@@ -525,6 +564,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const runOnGpu = (values: readonly unknown[], args: unknown, tick: number): void => {
         const gpu = state.gpu;
         if (gpu === null || pipeline === null || kernel === null) return failPlacement("isn't loaded on the GPU");
+        holdings.gpu = gpu;
         const { sources } = kernel.setup;
         const scalars = scalarValues(pipeline.kernel.scalars, values, args);
         const dispatches: { readonly offset: number; readonly count: number }[] = [];
@@ -573,6 +613,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const runUpOnGpu = (values: readonly unknown[], args: unknown, tick: number): void => {
         const gpu = state.gpu;
         if (gpu === null || pipeline === null || kernel === null || up === null) return failPlacement("isn't loaded on the GPU");
+        holdings.gpu = gpu;
         const order = up.levels(matches);
         const fresh = order !== uploadedOrder;
         const rowsAddress = gpu.uploadIndexes(`${leafNumber}:rows`, order.rows, order.size, fresh);
@@ -631,6 +672,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         // The device may be set to null after the system registered.
         if (gpu === null) return failPlacement("needs a world with a gpu device");
         if (typeof accessors === "string") return;
+        holdings.gpu = gpu;
         const group = declaration.shader?.group ?? 0;
         const tables = matches.filter(archetype => archetype.count > 0).map(archetype => {
             words[0] = archetype.count;
@@ -650,6 +692,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             gpu.discard();
             throw error;
         }
+    };
+
+    const holdings: Holdings = {
+        released: false, partials: null, up, directories: kernel?.directories ?? [], gpu: null, prefix: `${leafNumber}:`,
+        afterSync: partialCount > 0 ? new WeakRef(sizeSlots) : null,
     };
 
     const conditionIs = (resources?.is ?? []).map(key => idOf(state, key));
@@ -803,6 +850,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         targets,
         finish,
         afterSync: partialCount > 0 ? sizeSlots : null,
+        holdings,
         remote: null,
         lastRun: () => lastRun,
     };

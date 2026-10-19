@@ -6,7 +6,7 @@ import type { LookupSetup, Source , KernelSetup } from './protocol.js';
 import { createArrayLookup } from './rows.js';
 import { commandIdOf, idOf, type Key, type State } from './state.js';
 import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
-import { createDirectory, lookupParameters } from './directories.js';
+import { createDirectory, lookupParameters, type Directory } from './directories.js';
 import { generateWgsl, type WgslKernel } from './wgsl.js';
 import { labelOf, labelOfItem } from '../../interface/registry/index.js';
 
@@ -15,6 +15,10 @@ const noParameters: readonly number[] = [];
 
 export type BoundKernel = {
     readonly description: KernelDescription;
+    /** Workers' index for it: one per kernel's code, its module's url, so new values of one kernel share it. */
+    readonly index: number;
+    /** Its lookups' directories, which the world keeps current until they're released. */
+    readonly directories: readonly Directory[];
     readonly lookups: readonly ReturnType<typeof createArrayLookup>[];
     /** What a worker needs to run the kernel, with component ids in place of keys; replaced by each load. */
     setup: {
@@ -37,7 +41,10 @@ export type BoundKernel = {
     readonly upColumnsOf: (archetype: Archetype) => readonly TypedArray[];
     /** Imports the kernel module and compiles its WASM for the components observed now; `kernel` throws until it resolves. */
     readonly load: () => Promise<void>;
-    /** Whether the observed components changed since the last load, so its stamps need regenerating. */
+    /**
+     * Whether it needs loading: it never was, or a component whose stamps it muted is observed now. One no longer
+     * observed keeps its stamps until it loads again for another reason, so a filter coming and going reloads nothing.
+     */
     readonly stale: () => boolean;
     /** Whether workers have an older load than the main thread; `loadedOnWorkers` records that they caught up. */
     readonly staleOnWorkers: () => boolean;
@@ -191,12 +198,16 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         ? generateWasm(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, state.simd, filterCount, wasmLookups, upWasmColumns, description.reductions.map(reduction => reduction.operator))
         : null;
     let muted = mutedNow();
+    let index = state.kernelIndexes.get(description.url);
+    if (index === undefined) state.kernelIndexes.set(description.url, index = state.kernelIndexes.size);
     let loaded: Kernel | null = null;
     let loadedFor: string | null = null;
     let workersFor: string | null = null;
     let compiled: { readonly module: WebAssembly.Module; readonly run: WasmRun } | null = null;
     const bound: BoundKernel = {
         description,
+        index,
+        directories,
         lookups,
         setup: { ...setup, muted, up: upSetup },
         columnsOf: archetype => {
@@ -207,7 +218,14 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         wasm: generate(muted),
         compiled: () => compiled,
         kernel: () => loaded ?? fail("its module isn't loaded."),
-        stale: () => loadedFor !== mutedNow().join(),
+        stale: () => {
+            if (loadedFor === null) return true;
+            for (let k = 0; k < sources.length; k++) {
+                const source = sources[k];
+                if (muted[k] && source.kind !== "entity" && state.observed.has(source.id)) return true;
+            }
+            return false;
+        },
         staleOnWorkers: () => workersFor !== loadedFor,
         loadedOnWorkers: () => { workersFor = loadedFor; },
         unloadedOnWorkers: () => { workersFor = null; },

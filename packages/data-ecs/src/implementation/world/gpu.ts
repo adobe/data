@@ -55,6 +55,8 @@ export type GpuEngine = {
     readonly uploadIndexes: (key: string, array: Int32Array, count: number, changed: boolean) => number;
     /** Writes a record for `key` (one per system and archetype) and returns its dynamic offset. */
     readonly record: (key: string, words: Uint32Array) => number;
+    /** Frees the records and index blocks of keys starting with `prefix`, a system's, once nothing runs it again. */
+    readonly release: (prefix: string) => void;
     readonly markCpuWrites: (archetype: Archetype, storage: Storage) => void;
     readonly markGpuWrites: (archetype: Archetype, storage: Storage) => void;
     /** Whether a storage has GPU writes the CPU hasn't seen. */
@@ -95,6 +97,9 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
     const freeBlocks: number[][] = [];
     let records = device.createBuffer({ size: 64 * recordBytes, usage: recordUsage });
     const slots = new Map<string, number>();
+    /** Record slots released, reused before new ones. */
+    const freeSlots: number[] = [];
+    let nextSlot = 0;
     let groups: { render: GPUBindGroup; compute: GPUBindGroup } | null = null;
     let encoder: GPUCommandEncoder | null = null;
     let lostReason: string | null = null;
@@ -215,7 +220,7 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
     const record = (key: string, words: Uint32Array): number => {
         let slot = slots.get(key);
         if (slot === undefined) {
-            slot = slots.size;
+            slot = freeSlots.pop() ?? nextSlot++;
             // Records written earlier in this run may not be bound yet, so they move with the buffer.
             if ((slot + 1) * recordBytes > records.size) records = replace(records, records.size * 2, recordUsage, slot * recordBytes);
             slots.set(key, slot);
@@ -224,6 +229,19 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         scratch.set(words.subarray(0, recordWords));
         device.queue.writeBuffer(records, slot * recordBytes, scratch);
         return slot * recordBytes;
+    };
+
+    const release = (prefix: string): void => {
+        for (const [key, slot] of slots) {
+            if (!key.startsWith(prefix)) continue;
+            slots.delete(key);
+            freeSlots.push(slot);
+        }
+        for (const [key, block] of indexBlocks) {
+            if (!key.startsWith(prefix)) continue;
+            indexBlocks.delete(key);
+            (freeBlocks[sizeClass(block.bytes)] ??= []).push(block.offset);
+        }
     };
 
     const markCpuWrites = (archetype: Archetype, storage: Storage): void => {
@@ -306,6 +324,7 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         upload,
         uploadIndexes,
         record,
+        release,
         markCpuWrites,
         markGpuWrites,
         isAhead: storage => {

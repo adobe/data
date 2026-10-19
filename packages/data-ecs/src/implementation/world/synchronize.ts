@@ -711,7 +711,7 @@ export const applySync = (state: State): readonly Thrown[] => {
         cleanUp(state, queued);
     }
     // Only after a sync point that applied, so a failing one keeps its own error.
-    for (const after of state.afterSync) after();
+    for (const after of state.afterSync) after.deref()?.();
     return errors;
 };
 

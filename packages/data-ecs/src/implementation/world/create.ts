@@ -164,10 +164,27 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         return started;
     };
 
+    /**
+     * Whether a kernel loaded here since workers last caught up, or workers lost their loads: only then may one be
+     * behind, so runs of systems without kernels look at no kernel.
+     */
+    let workersBehind = false;
+
+    /** Loads kernels here, rejecting with the first failure only once every load has settled; workers are then behind. */
+    const load = (runners: readonly Runner[]): Promise<void> => {
+        if (runners.length === 0) return Promise.resolve();
+        workersBehind = true;
+        return loadAll(runners);
+    };
+
     /** Gives workers every kernel whose main-thread load is newer than theirs, including ones a failed registration reloaded. */
     const loadOnWorkers = async (): Promise<void> => {
+        if (workerCount === 0 || !workersBehind) return;
         const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);
-        if (workerCount === 0 || behind.length === 0) return;
+        if (behind.length === 0) {
+            workersBehind = false;
+            return;
+        }
         const workers = pool ?? startPool();
         if (workers === null) return;
         context.publish();
@@ -176,6 +193,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         const failed = results.find(result => result.error !== undefined);
         if (failed?.error !== undefined) throw failed.error;
         for (const runner of behind) runner.kernel?.loadedOnWorkers();
+        workersBehind = false;
     };
 
     /** Adds resources, then loads kernels on the main thread and in every worker. Undoes the registration if loading fails. */
@@ -188,12 +206,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             startTicking(state, ticked);
             // Workers see the new tick arrays before the next run's tasks.
             context.publish();
-            await loadAll(kernels);
+            await load(kernels);
             await loadOnWorkers();
         }
         catch (error) {
             registration.rollback();
-            observers.reassert();
             throw error;
         }
     };
@@ -202,7 +219,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     const reloadObserved = async (): Promise<void> => {
         // Workers see the new tick arrays before the next run's tasks.
         context.publish();
-        await loadAll(registrar.kernels().filter(runner => runner.kernel?.stale() === true));
+        await load(registrar.kernels().filter(runner => runner.kernel?.stale() === true));
         await loadOnWorkers();
     };
 
@@ -243,7 +260,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         }
         state.gpu = device === null ? null : createGpu(device);
         state.touched = device === null ? null : new Set();
-        await loadAll(registrar.placeGpuKernels());
+        await load(registrar.placeGpuKernels());
         await loadOnWorkers();
     };
 
@@ -274,6 +291,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         context.workers = null;
         context.publish = () => {};
         for (const runner of registrar.kernels()) runner.kernel?.unloadedOnWorkers();
+        workersBehind = true;
         // The old pool releases its control state once its workers have left their windows; runs don't wait for it.
         if (old !== null) void old.terminate();
         await loadOnWorkers();

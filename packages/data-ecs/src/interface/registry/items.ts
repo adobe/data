@@ -72,6 +72,14 @@ const numberedFor = (name: string): string => {
     return label;
 };
 
+/** An item without an id is forgotten once collected: its name's count and numbered label go with it. */
+const forgotten = new FinalizationRegistry<{ readonly name: string; readonly numbered: string }>(({ name, numbered }) => {
+    labels.delete(numbered);
+    const count = (named.get(name) ?? 0) - 1;
+    if (count > 0) named.set(name, count);
+    else named.delete(name);
+});
+
 /**
  * Records an item under its id: a value of an item `registeredAs` found shares its entry, and any other is a new item.
  */
@@ -84,6 +92,7 @@ export const recordItem = (item: Registered, id: string | undefined, existing: o
     const entry: Entry = { kind: item.kind, declaration: item.declaration, name: item.name, id, numbered: numberedFor(item.name), first: item };
     named.set(item.name, (named.get(item.name) ?? 0) + 1);
     if (id !== undefined) identified.set(id, entry);
+    else forgotten.register(item, { name: item.name, numbered: entry.numbered });
     entries.set(item, entry);
 };
 

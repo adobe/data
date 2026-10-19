@@ -50,8 +50,10 @@ import {
 /** For tests: tails on this thread that read every row from a snapshot, being late, and that switched to one at a chunk. */
 export const tailSnapshots = { late: 0, switched: 0 };
 
-/** A system the world places on this thread: its index here, its id, and the world's numbers for the keys it names. */
-/** A system or finalizer the world places here; a system with the byte offset of its removed word. */
+/**
+ * A system or finalizer the world places on this thread: its index here, its id, and the world's numbers for the keys
+ * it names; for a system, the byte offset of its removed word.
+ */
 export type SystemSetup = { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[]; readonly removed?: number };
 
 /** A joined thread's view of a storage of the world's, in shared memory, or of this thread's objects, in its mirror. */

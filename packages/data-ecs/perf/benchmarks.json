@@ -1088,5 +1088,122 @@
             "bytes": 256,
             "basis": "A transfer moves its values' handles in one message, the bytes staying where they are, and the run's slot and completion lines between cores."
         }
+    },
+    "read observe": {
+        "operation": "Reading a resource through an observer's first value, `Observe.toPromise(world.observe.resource(key))`: a value read from outside the world.",
+        "per": "reads",
+        "n": 1,
+        "typical": [
+            1,
+            100
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "A read loads at least one cache line of the resource's cell."
+        }
+    },
+    "read run": {
+        "operation": "Reading a resource through a run of a new system that copies it out: a value read from outside the world through a system made for the read.",
+        "per": "reads",
+        "n": 1,
+        "typical": [
+            1,
+            100
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "A read loads at least one cache line of the resource's cell."
+        }
+    },
+    "read run changed": {
+        "operation": "Reading the ranks that changed through a run of a new system filtering on `changed`, with a kernel writing them: a read whose filter turns the kernel's stamps on while the system lives.",
+        "per": "reads",
+        "n": 1,
+        "typical": [
+            1,
+            100
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "A read loads at least one cache line of a chunk's tick."
+        }
+    },
+    "observe 1K entities": {
+        "operation": "A run that changes nothing with an entity observer on each of 1K entities: what watching entities costs each frame.",
+        "per": "observers",
+        "n": 1000,
+        "typical": [
+            10,
+            1000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each observer reads its entity's 8-byte location and its component's 8-byte changed tick."
+        }
+    },
+    "observe 1K entities one changed": {
+        "operation": "A run that changes one of 1K entities, each with an entity observer: what watching entities costs each frame while one of them changes.",
+        "per": "observers",
+        "n": 1000,
+        "typical": [
+            10,
+            1000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each observer reads its entity's 8-byte location and its component's 8-byte changed tick."
+        }
+    },
+    "select page 100K": {
+        "operation": "A run that changes one entity's order component under a `select` observer with `where`, `order` and a 20-row `page` over 100K entities: a sorted, filtered list of a UI, recomputed after a change.",
+        "per": "rows",
+        "n": 100000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each row reads its 8-byte rank and its 8-byte value."
+        }
+    },
+    "loop tick add remove": {
+        "operation": "Ticks back to back, each adding a new system with a change filter over 100 rows and removing the one the last tick added: systems that come and go with what a UI shows.",
+        "per": "ticks",
+        "n": 10000,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "A tick reads at least one cache line of its systems' state."
+        }
+    },
+    "loop tick add remove again": {
+        "operation": "Ticks back to back, each adding or removing one module's system with a change filter over 100 rows: a feature switched on and off.",
+        "per": "ticks",
+        "n": 10000,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "A tick reads at least one cache line of its systems' state."
+        }
+    },
+    "loop tick idle after add remove": {
+        "operation": "Ticks with nothing changed after 60,000 ticks that each added a new system and removed the last: what systems that came and went leave behind in every tick.",
+        "per": "ticks",
+        "n": 10000,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "A tick reads at least one cache line of its systems' state."
+        }
     }
 }

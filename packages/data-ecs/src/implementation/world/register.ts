@@ -4,8 +4,8 @@ import { createRemoteRunner, unplaceable } from './remote-systems.js';
 import { createRunner, releaseHoldings, removedRunner, stopHoldings, type Holdings, type Runner } from './runner.js';
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, observe, unobserve, type Key, type State } from './state.js';
-import { labelOfItem } from '../../interface/registry/index.js';
-import { indexWatchesOf, lookupComponentsOf } from './lookup-keys.js';
+import { labelOfItem, orderKeysOf } from '../../interface/registry/index.js';
+import { indexWatchesOf, lookupComponentsOf, orderComponentsOf } from './lookup-keys.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
 /** `ticked`: components the new systems filter on, which must keep ticks before they run. */
@@ -62,6 +62,7 @@ const keysOf = (leaf: Leaf): { readonly components: readonly Key[]; readonly res
     for (const name in lookup) components.push(...lookupComponentsOf(lookup[name]));
     const { up } = leaf.declaration;
     if (up !== undefined) components.push(up.through, ...up.read ?? []);
+    components.push(...orderComponentsOf(leaf.declaration));
     return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? [], ...reducedBy(leaf)] };
 };
 
@@ -72,8 +73,12 @@ const upObserved = (leaf: Leaf): readonly Key[] => {
     return up === undefined || !filtered ? [] : [up.through, ...up.read ?? []];
 };
 
-/** The components whose changes indexes a leaf looks up through follow: their key parts, and what its lookups watch. */
-const indexObserved = (leaf: Leaf): readonly Key[] => indexWatchesOf(leaf.declaration.lookup);
+/** The components whose changes indexes a leaf looks up through or orders by follow: their key parts, and what its lookups watch. */
+const indexObserved = (leaf: Leaf): readonly Key[] => {
+    const ordered = orderKeysOf(leaf.declaration);
+    const looked = indexWatchesOf(leaf.declaration.lookup);
+    return ordered.length === 0 ? looked : [...looked, ...ordered];
+};
 
 /** The components a leaf needs ticks on: those it filters on, and those `upObserved` and `indexObserved` give. */
 const tickedBy = (leaf: Leaf): readonly Key[] =>

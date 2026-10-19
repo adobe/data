@@ -186,3 +186,44 @@ System.create({
     // @ts-expect-error GPU kernels can't use lookups
     lookup: { near: { index: grid } },
 }, () => {});
+
+// `order` runs a system's rows in a sorted index's order.
+System.create({ components: { read: [start], write: [playhead] }, order: clips }, row => {
+    row[playhead] = row[start];
+});
+System.create({ kernel: "cpu", components: { read: [start], write: [playhead] }, order: clips }, row => {
+    row[playhead] = row[start];
+});
+// A sorted index typed by its declaration is one of `Index<{ readonly sorted: true }>`.
+const ordering: Index<{ readonly sorted: true }> = clips;
+void ordering;
+// @ts-expect-error a hash index has no order
+System.create({ components: { write: [velocity] }, order: grid }, () => {});
+// @ts-expect-error a hash index isn't one of `Index<{ readonly sorted: true }>`
+const unordered: Index<{ readonly sorted: true }> = grid;
+void unordered;
+// @ts-expect-error a system without components runs once, in no order
+System.create({ order: clips }, () => {});
+System.create({
+    components: { read: [clip], write: [playhead] },
+    up: { through: owner },
+    // @ts-expect-error `up` orders rows too
+    order: clips,
+}, () => {});
+System.create({
+    components: { write: [start] },
+    // @ts-expect-error a system doesn't write what its rows are ordered by
+    order: clips,
+}, () => {});
+System.create({
+    kernel: "gpu",
+    components: { write: [velocity] },
+    // @ts-expect-error GPU kernels have no order yet
+    order: clips,
+}, () => {});
+System.create({
+    kernel: "cpu",
+    components: { write: [velocity] },
+    // @ts-expect-error kernels are ordered only by indexes of struct keys
+    order: named,
+}, () => {});

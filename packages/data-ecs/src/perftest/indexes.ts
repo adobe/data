@@ -186,6 +186,28 @@ const seedDrifting = System.create({ name: "indexes/seedDrifting" }, ({ commands
 /** The same frame without the index: what computing the key costs alone. */
 const frameUnindexed = System.create({ name: "indexes/frameUnindexed", systems: [drift, rekeyCells] });
 
+/** Rows of `order run 100K`, ranked in a scattered order. */
+const orderedRows = 100_000;
+const byRank = Index.create({ name: "indexes/byRank", key: [serial], sorted: true, components: { has: [amount] } });
+const seedRanked = System.create({ name: "indexes/seedRanked" }, ({ commands }) => {
+    for (let i = 0; i < orderedRows; i++) {
+        if (i < orderedRows / 100) commands.spawn([serial, amount, marked])({ [serial]: (i * 7919) % orderedRows, [amount]: i });
+        else commands.spawn([serial, amount])({ [serial]: (i * 7919) % orderedRows, [amount]: i });
+    }
+});
+let accumulated = 0;
+/** Sums its rows' amounts, weighting each by the sum so far, so the order rows run in is part of the result. */
+const inRankOrder = System.create({ name: "indexes/inRankOrder", components: { read: [amount] }, order: byRank }, row => {
+    accumulated = (accumulated * 31 + row[amount]) % 1000003;
+});
+const inStorageOrder = System.create({ name: "indexes/inStorageOrder", components: { read: [amount] } }, row => {
+    accumulated = (accumulated * 31 + row[amount]) % 1000003;
+});
+const changedInRankOrder = System.create({ name: "indexes/changedInRankOrder", components: { read: [amount], changed: [amount] }, order: byRank }, row => {
+    accumulated = (accumulated * 31 + row[amount]) % 1000003;
+});
+const bumpMarked = System.create({ name: "indexes/bumpMarked", components: { write: [amount], has: [marked] } }, row => { row[amount] += 1; });
+
 let pushed = 0;
 const neighbors = System.create({ name: "indexes/neighbors", components: { read: [place, cell] }, lookup: { near: { index: grid, read: [place] } } }, (row, { lookup }) => {
     const [cx, cy, cz] = row[cell];
@@ -333,6 +355,52 @@ export const indexBenchmarks: readonly Benchmark[] = [
             const world = inline();
             await world.run(seedDrifting);
             const best = await fastest(() => world.run(frameUnindexed), 1000, 2);
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "order run 100K",
+        operation: "A main-thread system running 100K rows in the order of a sorted index whose ranks are scattered through storage: views laid out by sibling rank, timelines in time order.",
+        per: "rows",
+        n: orderedRows,
+        typical: [100, 100_000],
+        best: { bytes: 20, basis: "Each row reads its 12-byte entry in key order and its 8-byte value." },
+        run: async () => {
+            const world = inline();
+            await world.run(seedRanked);
+            const best = await fastest(() => world.run(inRankOrder), 2000, 3);
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "order run 100K storage order",
+        operation: "The system of `order run 100K` without `order`, its rows in storage order: what running the rows costs alone.",
+        per: "rows",
+        n: orderedRows,
+        typical: [100, 100_000],
+        best: { bytes: 8, basis: "Each row reads its 8-byte value." },
+        run: async () => {
+            const world = inline();
+            await world.run(seedRanked);
+            const best = await fastest(() => world.run(inStorageOrder), 2000, 3);
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "order filtered 100K 1%",
+        operation: "A main-thread system with a change filter running, in a sorted index's order, the 1% of 100K rows that changed since it last ran: reacting to edits in document order.",
+        per: "rows changed",
+        n: orderedRows / 100,
+        typical: [10, 10_000],
+        best: { bytes: 40, basis: "Each changed row reads its tick, its entry's position and its 12-byte entry, and its 8-byte value." },
+        run: async () => {
+            const world = inline();
+            await world.run(seedRanked);
+            await world.run(changedInRankOrder);
+            const best = await after(() => world.run(bumpMarked), () => world.run(changedInRankOrder));
             await world.dispose();
             return best;
         },

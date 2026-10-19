@@ -133,6 +133,12 @@ const counting = System.create({
 });
 const keepTicking = System.create({ name: "indexJoinedTest/keepTicking" }, () => {});
 
+const ranks = Index.create({ name: "indexJoinedTest/ranks", key: [rank], sorted: true });
+/** A system of the joined thread whose rows are in an index's order, which runs only on the world's thread. */
+const inOrder = System.create({ name: "indexJoinedTest/inOrder", components: { read: [rank], write: [label] }, order: ranks }, row => {
+    row[label] = String(row[rank]);
+});
+
 /** Each entity's label, sorted, as the world or the thread that fills its objects reads it. */
 const labels = async (holder: World, world: World): Promise<readonly string[]> => {
     const entities = await Observe.toPromise(world.observe.select({ required: [label] }));
@@ -229,13 +235,14 @@ describe("systems on a joined thread looking up through indexes", () => {
         await remote.dispose();
         await world.dispose();
     });
-    it("throw for an index with an object key part, which the world keeps on its own thread", async () => {
+    it("throw for an index with an object key part, which the world keeps on its own thread, and for an order", async () => {
         const world = createWorld({ [workers]: 0 });
         const channel = new MessageChannel();
         world.share(channel.port1);
         const remote = join(channel.port2, { threads: ["indexJoinedTest"] });
         await joinedStatus(world);
         await expect(world.run(byName)).rejects.toThrow('looks up through index "indexJoinedTest/names", whose key part "indexJoinedTest/name" is an object, so it runs only on the world\'s thread.');
+        await expect(world.run(inOrder)).rejects.toThrow("orders its rows by an index, which runs only on the world's thread");
         await remote.dispose();
         await world.dispose();
     });

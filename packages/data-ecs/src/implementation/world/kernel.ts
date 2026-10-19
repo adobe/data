@@ -179,7 +179,7 @@ export namespace Program {
  */
 export type Program = {
     readonly locals: number;
-    /** Runs a list of rows, each with its parent's row, reading the parent's columns through `upLeaf`. */
+    /** Runs a list of rows, each with its parent's row for `up`, reading the parent's columns through `upLeaf`. */
     readonly up?: true;
     readonly handles?: number;
     readonly names?: readonly string[];
@@ -217,6 +217,8 @@ export type KernelDescription = {
     /** Whether it reads `up`, and the scalar leaves of the parent's components it reads. */
     readonly up?: boolean;
     readonly upColumns?: readonly Column[];
+    /** Whether it runs a list of rows in an index's order, as `up`'s rows run, without parents. */
+    readonly ordered?: boolean;
     readonly keys: readonly Key[];
     /** The components of each list the kernel spawns, as indexes into `keys`, in the order its spawner takes values. */
     readonly spawns: readonly (readonly number[])[];

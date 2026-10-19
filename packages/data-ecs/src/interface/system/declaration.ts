@@ -1,3 +1,4 @@
+import type { Index } from '../indexes/index-type.js';
 import type { Resource } from '../resource/resource.js';
 import type { Schema } from '../schema/schema.js';
 import type { ComponentAccess, Lookup, ResourceAccess, Up } from './access.js';
@@ -32,6 +33,12 @@ export type Declaration = {
      * its parent moves it. Rows on or under a parent cycle don't run.
      */
     readonly up?: Up;
+    /**
+     * Runs the rows it matches that this sorted index holds, in key order and then entity order; with change filters,
+     * the rows that pass, in that order. Commands, reductions and side effects follow it. Like a lookup through the
+     * index, it reads the index's key parts and doesn't write them. Not with `up`.
+     */
+    readonly order?: Index<{ readonly sorted: true }>;
     readonly resources?: ResourceAccess;
     /** The resources its body contributes to, each with the operator its `reduce` trait declares. */
     readonly reduce?: { readonly [K in Reduced]?: OperatorOf<K> };

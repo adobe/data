@@ -50,3 +50,6 @@ export const checkIndexLookup = (what: "System" | "Finalizer", name: string, loo
     check("reads", lookup.read);
     check("watches", lookup.changed);
 };
+
+/** The key parts a system's rows are ordered by: its `order` index's, or none. */
+export const orderKeysOf = (declaration: { readonly order?: unknown }): readonly Key[] => indexDefinitionOf(declaration.order)?.declaration.key ?? [];

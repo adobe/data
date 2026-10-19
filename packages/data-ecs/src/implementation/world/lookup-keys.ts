@@ -1,5 +1,5 @@
 import type { Lookup } from '../../interface/system/access.js';
-import { indexOfLookup } from '../../interface/registry/index.js';
+import { indexDefinitionOf, indexOfLookup } from '../../interface/registry/index.js';
 import type { Component } from '../../interface/component/component.js';
 
 /** Every component a lookup names: what it reads, matches on and watches, and for an index lookup the index's own. */
@@ -26,4 +26,12 @@ export const indexWatchesOf = (lookup: { readonly [name: string]: Lookup } | und
         keys.push(...index.declaration.key, ..."changed" in declared ? declared.changed ?? [] : []);
     }
     return keys;
+};
+
+/** Every component the index a declaration orders its rows by names: its key parts, `has` and `not`. */
+export const orderComponentsOf = (declaration: { readonly order?: unknown }): readonly Component.Key[] => {
+    const index = indexDefinitionOf(declaration.order);
+    if (index === undefined) return none;
+    const { key, components } = index.declaration;
+    return [...key, ...components?.has ?? [], ...components?.not ?? []];
 };

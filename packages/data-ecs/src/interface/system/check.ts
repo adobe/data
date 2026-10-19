@@ -5,7 +5,8 @@ import { reducedBy, scheduleOf } from '../registry/schedule.js';
 import { conditional } from '../registry/schemas.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
-import { checkIndexLookup, lookupKeysOf } from '../registry/indexes.js';
+import { checkIndexLookup, indexDefinitionOf, lookupKeysOf, orderKeysOf } from '../registry/indexes.js';
+import { labelOfItem } from '../registry/items.js';
 import type { Schema } from '../schema/schema.js';
 import type { Composite } from './composite.js';
 import type { Definition } from './definition.js';
@@ -64,13 +65,26 @@ const checkConditions = (leaf: Leaf): void => {
 
 /**
  * Throws for what a leaf's kind and placement rule out: `up` without components or through a key that isn't a
- * reference component, a kernel's lookup of a value outside linear memory, a GPU kernel's change filters, lookups and
+ * reference component, `order` by anything but a sorted index, without components, with `up` or on the GPU, a kernel's lookup of a value outside linear memory, a GPU kernel's change filters, lookups and
  * reductions, and a render system's reductions.
  */
 const checkPlacement = (leaf: Leaf): void => {
     const { name } = leaf;
-    const { kernel, components, lookup, up, resources } = leaf.declaration;
+    const { kernel, components, lookup, up, resources, order } = leaf.declaration;
     const fail = (message: string): never => { throw new Error(`System "${name}" ${message}.`); };
+    if (order !== undefined) {
+        const index = indexDefinitionOf(order);
+        if (index === undefined) fail("orders its rows by a value Index.create didn't return");
+        else if (index.declaration.sorted !== true) fail(`orders its rows by index "${labelOfItem(index)}", which isn't sorted`);
+        if (components === undefined) fail("orders its rows without components, so it runs once");
+        if (up !== undefined) fail("uses both up and order, which both decide the order of its rows");
+        if (kernel === "gpu") fail("can't run on the GPU: GPU kernels have no order yet");
+        if (kernel !== undefined) {
+            for (const key of orderKeysOf(leaf.declaration)) {
+                if (layoutOf(declarationOf(key)?.type).kind === "object") throw new Error(`Kernel "${name}": its rows are ordered by an index keyed by "${labelOf(key)}", which isn't stored in linear memory.`);
+            }
+        }
+    }
     if (up !== undefined) {
         if (components === undefined) fail("uses up, which orders rows, without components");
         if (kindOf(up.through) !== "component" || declarationOf(up.through)?.reference === undefined) {
@@ -118,6 +132,9 @@ export const checkLeaf = (leaf: Leaf): void => {
         for (const key of lookupKeysOf(lookup[lookupName])) {
             if (writes.has(key)) throw new Error(`System "${name}": lookup "${lookupName}" goes through an index keyed by "${labelOf(key)}", which the system writes.`);
         }
+    }
+    for (const key of orderKeysOf(declaration)) {
+        if (writes.has(key)) throw new Error(`System "${name}": its rows are ordered by an index keyed by "${labelOf(key)}", which the system writes.`);
     }
     if (input !== undefined) {
         const schema: Schema = input;

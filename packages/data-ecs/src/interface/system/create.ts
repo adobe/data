@@ -40,6 +40,9 @@ type IndexLookups<D> = {
     };
 };
 
+/** A system's rows are ordered by an index whose key parts it doesn't write. */
+type Order<D> = { readonly order?: Index<{ readonly key: readonly Exclude<Component.Key, Written<D, "components">>[] }> };
+
 /**
  * A key in `write` is readable too, so it isn't also in `read`. A system doesn't read or filter on what it reduces
  * into, since the fold is only finished after every contributor runs. A condition in `is` is readable too, and isn't
@@ -59,6 +62,7 @@ type Kernel = {
     readonly components?: { readonly read?: readonly StructComponent[]; readonly write?: readonly StructComponent[] };
     readonly lookup?: { readonly [name: string]: { readonly read?: readonly StructComponent[]; readonly changed?: readonly Component.Key[]; readonly index?: Index<{ readonly key: readonly StructComponent[] }> } };
     readonly up?: { readonly read?: readonly StructComponent[] };
+    readonly order?: Index<{ readonly key: readonly StructComponent[] }>;
     readonly resources?: { readonly read?: readonly StructResource[]; readonly write?: never };
 };
 
@@ -68,16 +72,19 @@ type GpuKernel = {
     readonly components?: { readonly added?: never; readonly changed?: never };
     readonly resources?: { readonly changed?: never };
     readonly reduce?: { readonly [K in Resource.Key]?: never };
+    readonly order?: { readonly "error: GPU kernels have no order yet": true };
 };
 
 type Validate<D extends Declaration> =
     Lists<D>
     & IndexLookups<D>
+    & Order<D>
     & (D extends { readonly input: Schema } ? { readonly components?: { readonly added?: never; readonly changed?: never } } : {})
     & (D extends { readonly kernel: "cpu" | "gpu" } ? Kernel : {})
     & (D extends { readonly kernel: "gpu" } ? GpuKernel : {})
-    // `up` orders rows, so a system without them has none.
-    & (Property<D, "components"> extends undefined ? { readonly up?: { readonly [key: string]: never } } : {})
+    // `up` and `order` order rows, so a system without them has neither, and one has at most one of them.
+    & (Property<D, "components"> extends undefined ? { readonly up?: { readonly [key: string]: never }; readonly order?: { readonly "error: a system without components runs once, in no order": true } } : {})
+    & (D extends { readonly up: object } ? { readonly order?: { readonly "error: up and order both decide the order of its rows": true } } : {})
     & { readonly shader?: never };
 
 /** The body of a system that declares nothing, which runs once per run with its commands. */
@@ -101,7 +108,8 @@ type Checked<C> = C extends Alone ? unknown : C extends CompositeDeclaration ? {
  *
  * Each run passes a composite's members one input, with every field of theirs. Throws if a system names a key that
  * isn't registered as its kind, lists a key in both `read` and `write`, writes a reference, a lookup reads a component
- * it writes or goes through an index keyed by one, or reads through an index what not every entity it holds has, its object components and resources live on different threads, or its reductions, conditions, `up` or
+ * it writes or goes through an index keyed by one, or reads through an index what not every entity it holds has, its
+ * rows are ordered by an index it isn't sorted or keyed by what it writes, its object components and resources live on different threads, or its reductions, conditions, `up`, `order` or
  * placement can't hold; or if a composite's member isn't a system a constructor returned, or two members declare an
  * input field with different schemas.
  *

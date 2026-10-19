@@ -27,7 +27,7 @@ const upHandle = -1;
  * guard proving the lookup found its entity, since JS would throw where WASM reads NaN. With `nameOf`, the program
  * carries each local's name.
  */
-export const toProgram = (statements: readonly Statement[], nameOf?: (local: number) => string, accumulators: readonly number[] = [], upLocal: number | null = null): Program | null => {
+export const toProgram = (statements: readonly Statement[], nameOf?: (local: number) => string, accumulators: readonly number[] = [], upLocal: number | null = null, listed = upLocal !== null): Program | null => {
     const locals = new Map<number, number>();
     const localIndex = (local: number): number => {
         const existing = locals.get(local);
@@ -224,7 +224,7 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
     const body = block(statements, [], none);
     if (body === undefined) return null;
     const counted = { ...intrinsics === 0 ? {} : { intrinsics }, ...accumulators.length === 0 ? {} : { reductions: accumulators.map(localIndex) } };
-    if (upLocal !== null) Object.assign(counted, { up: true });
+    if (listed) Object.assign(counted, { up: true });
     if (nameOf === undefined) return { locals: locals.size, handles: handles.size, ...counted, body };
     const names: string[] = [];
     for (const [original, dense] of locals) names[dense] = nameOf(original);

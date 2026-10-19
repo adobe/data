@@ -1,5 +1,5 @@
 import type { IndexDefinition } from '../../interface/registry/index.js';
-import { indexOfLookup, labelOfItem } from '../../interface/registry/index.js';
+import { indexDefinitionOf, indexOfLookup, labelOfItem } from '../../interface/registry/index.js';
 import type { Failure } from '../../interface/world/report.js';
 import type { Lookup } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
@@ -1140,9 +1140,10 @@ const scanWatched = (state: State, index: WorldIndex, component: number, tick: n
 /** An index a runner looks up through, with the components its lookups there watch. */
 export type IndexUse = { readonly index: WorldIndex; readonly watching: readonly number[] };
 
-/** The indexes a declaration's lookups go through, acquired for one user: by lookup name, as uses, and their release. */
+/** The indexes a declaration's lookups go through and its rows are ordered by, acquired for one user: by lookup name, its order's, as uses, and their release. */
 export type IndexLookups = {
     readonly byName: ReadonlyMap<string, WorldIndex>;
+    readonly ordered: WorldIndex | null;
     readonly uses: readonly IndexUse[];
     readonly release: () => void;
 };
@@ -1150,26 +1151,32 @@ export type IndexLookups = {
 const noUses: readonly IndexUse[] = [];
 const noIndexes: ReadonlyMap<string, WorldIndex> = new Map();
 /** What a declaration without lookups through indexes acquires. */
-const noLookups: IndexLookups = { byName: noIndexes, uses: noUses, release: () => {} };
+const noLookups: IndexLookups = { byName: noIndexes, ordered: null, uses: noUses, release: () => {} };
 
 /** Acquires the indexes a declaration's lookups go through, watching what they watch, once each per index. */
-export const acquireLookups = (state: State, lookup: { readonly [name: string]: Lookup } | undefined): IndexLookups => {
-    if (lookup === undefined) return noLookups;
+export const acquireLookups = (state: State, lookup: { readonly [name: string]: Lookup } | undefined, order?: unknown): IndexLookups => {
+    const ordering = indexDefinitionOf(order) ?? null;
+    if (lookup === undefined && ordering === null) return noLookups;
     const byName = new Map<string, WorldIndex>();
     const watching = new Map<WorldIndex, Set<number>>();
-    for (const name in lookup) {
-        const found = indexOfLookup(lookup[name]);
-        if (found === undefined) continue;
-        let index = byName.size === 0 ? undefined : [...watching.keys()].find(other => other.definition === found);
+    const acquired = (found: IndexDefinition): WorldIndex => {
+        let index = [...watching.keys()].find(other => other.definition === found);
         if (index === undefined) {
             index = acquireIndex(state, found);
             watching.set(index, new Set());
         }
+        return index;
+    };
+    for (const name in lookup) {
+        const found = indexOfLookup(lookup[name]);
+        if (found === undefined) continue;
+        const index = acquired(found);
         byName.set(name, index);
         const declared = lookup[name];
         for (const key of "changed" in declared ? declared.changed ?? [] : []) watching.get(index)?.add(idOf(state, key));
     }
-    if (byName.size === 0) return noLookups;
+    const ordered = ordering === null ? null : acquired(ordering);
+    if (watching.size === 0) return noLookups;
     const uses = [...watching].map(([index, components]): IndexUse => {
         for (const component of components) watchIndex(state, index, component);
         return { index, watching: [...components] };
@@ -1177,6 +1184,7 @@ export const acquireLookups = (state: State, lookup: { readonly [name: string]: 
     let released = false;
     return {
         byName,
+        ordered,
         uses,
         release: () => {
             if (released) return;

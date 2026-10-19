@@ -20,6 +20,7 @@ const parent = Symbol("indexCreateTest/parent");
 const unregistered = Symbol("indexCreateTest/unregistered");
 const handle = Symbol("indexCreateTest/handle");
 const view = Symbol("indexCreateTest/view");
+const title = Symbol("indexCreateTest/title");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -33,6 +34,7 @@ declare module "@adobe/data-ecs" {
         [parent]: { type: Entity; reference: "owner" };
         [handle]: { type: () => void };
         [view]: { type: { readonly label: string }; thread: "main" };
+        [title]: { type: string; thread: "main" };
     }
 }
 Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
@@ -45,6 +47,7 @@ Component.register(shown, { type: { const: true } });
 Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(handle, {});
 Component.register(view, { type: { type: "object", properties: { label: { type: "string" } } }, thread: "main" });
+Component.register(title, { type: { type: "string" }, thread: "main" });
 
 /** Declares as an untyped caller would, bypassing the types' checks. */
 const untyped = (declaration: object): unknown => Reflect.apply(Index.create, undefined, [declaration]);
@@ -109,5 +112,28 @@ describe("systems and finalizers looking up through an index", () => {
         expect(() => untypedSystem({ name: "bad", kernel: "cpu", components: { write: [amount] }, lookup: { near: { index: Index.create({ key: [name] }) } } })).toThrow(`keyed by "indexCreateTest/name", which isn't stored in linear memory`);
         expect(() => Reflect.apply(Finalizer.create, undefined, [{ name: "bad", components: { read: [amount] }, lookup: { near: { index: grid, read: [name] } } }, () => {}])).toThrow(`Finalizer "bad": lookup "near" reads`);
         expect(labelOfItem(grid)).toBe("indexCreateTest/grid");
+    });
+});
+
+describe("systems ordering their rows by an index", () => {
+    const ranked = Index.create({ name: "indexCreateTest/ranked", key: [amount], sorted: true, components: { has: [cell] } });
+    const untypedSystem = (declaration: object): unknown => Reflect.apply(System.create, undefined, [declaration, () => {}]);
+    it("read the index's key parts, for ordering and conflicts, and are placed by them", () => {
+        const ordered = System.create({ name: "indexCreateTest/ordered", components: { read: [cell] }, order: ranked }, row => { void row[cell]; });
+        const leaf = requireDefinition(ordered);
+        expect(isLeaf(leaf) ? [...accessOf(leaf).reads] : null).toEqual([cell, amount]);
+        const writer = System.create({ name: "indexCreateTest/rankWriter", components: { write: [amount] } }, row => { row[amount] = 0; });
+        expect(() => System.create([ordered, writer])).toThrow(`both access "indexCreateTest/amount" and one writes it`);
+        const byTitle = Index.create({ key: [title], sorted: true });
+        expect(threadOf({ order: byTitle }, "System", "placed")).toBe("main");
+    });
+    it("throw for an order by what isn't a sorted index, without components, with up, on the GPU, or writing its key", () => {
+        expect(() => untypedSystem({ name: "bad", components: { read: [cell] }, order: { name: "fake" } })).toThrow(`System "bad" orders its rows by a value Index.create didn't return`);
+        expect(() => untypedSystem({ name: "bad", components: { read: [cell] }, order: Index.create({ name: "indexCreateTest/hashed", key: [amount] }) })).toThrow(`orders its rows by index "indexCreateTest/hashed", which isn't sorted`);
+        expect(() => untypedSystem({ name: "bad", order: ranked })).toThrow("orders its rows without components");
+        expect(() => untypedSystem({ name: "bad", components: { read: [cell] }, up: { through: parent }, order: ranked })).toThrow("uses both up and order");
+        expect(() => untypedSystem({ name: "bad", kernel: "gpu", components: { write: [cell] }, order: ranked })).toThrow("GPU kernels have no order yet");
+        expect(() => untypedSystem({ name: "bad", components: { write: [amount] }, order: ranked })).toThrow(`its rows are ordered by an index keyed by "indexCreateTest/amount", which the system writes`);
+        expect(() => untypedSystem({ name: "bad", kernel: "cpu", components: { write: [amount] }, order: Index.create({ key: [name], sorted: true }) })).toThrow(`ordered by an index keyed by "indexCreateTest/name", which isn't stored in linear memory`);
     });
 });

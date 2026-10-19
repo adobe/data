@@ -1,5 +1,5 @@
 import { threadOfDeclaration } from './declarations.js';
-import { lookupKeysOf } from './indexes.js';
+import { lookupKeysOf, orderKeysOf } from './indexes.js';
 import { declarationOf, kindOf, labelOf } from './names.js';
 
 type Key = symbol;
@@ -13,12 +13,13 @@ type Lists = {
 
 /**
  * What places a system or finalizer: the names it reads, writes or filters on by change, but not `has` and `not`, and
- * the key parts of the indexes it looks up through.
+ * the key parts of the indexes it looks up through or orders its rows by.
  */
 export type Placed = {
     readonly components?: Lists;
     readonly lookup?: { readonly [name: string]: { readonly read?: readonly Key[]; readonly index?: unknown } };
     readonly up?: { readonly read?: readonly Key[] };
+    readonly order?: unknown;
     readonly resources?: Lists;
 };
 
@@ -55,6 +56,7 @@ export const threadOf = (declaration: Placed, what: "System" | "Finalizer", name
         add("component", lookupKeysOf(lookup[name]));
     }
     add("component", up?.read);
+    add("component", orderKeysOf(declaration));
     add("resource", resources?.read);
     add("resource", resources?.write);
     add("resource", resources?.changed);

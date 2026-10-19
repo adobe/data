@@ -9,13 +9,14 @@ import type { KeyOf } from './values.js';
 type Lookups<D> = Property<D, "lookup">;
 type LookupReads<D> = { [L in keyof Lookups<D>]: Listed<Lookups<D>[L], "read"> }[keyof Lookups<D>];
 type LookupKeys<D> = { [L in keyof Lookups<D>]: Lookups<D>[L] extends { readonly index: Index<infer I> } ? KeyOf<I>[number] : never }[keyof Lookups<D>];
+type OrderKeys<D> = Property<D, "order"> extends Index<infer I> ? KeyOf<I>[number] : never;
 type Components<D> = Property<D, "components">;
 type Resources<D> = Property<D, "resources">;
 
-/** The components that place a declaration: those it reads, writes or filters on by change, and the keys it looks up by. */
+/** The components that place a declaration: those it reads, writes or filters on by change, and the keys it looks up and orders by. */
 type Placing<D> =
     | Listed<Components<D>, "read"> | Listed<Components<D>, "write"> | Listed<Components<D>, "added"> | Listed<Components<D>, "changed">
-    | LookupReads<D> | LookupKeys<D> | Listed<Property<D, "up">, "read">;
+    | LookupReads<D> | LookupKeys<D> | Listed<Property<D, "up">, "read"> | OrderKeys<D>;
 
 /** The resources that place a declaration: those it reads, writes, filters on by change, or reads as a condition. */
 type PlacingResources<D> =

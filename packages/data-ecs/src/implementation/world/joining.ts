@@ -86,7 +86,7 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
      * Systems the world places on the thread, each by its index there and its id, with the world's numbers for its keys
      * and the byte offset of its removed word, which the thread checks before it runs the system.
      */
-    | { readonly kind: "systems"; readonly systems: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[]; readonly removed: number }[] }
+    | { readonly kind: "systems"; readonly systems: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[]; readonly removed: number; readonly indexes: readonly (readonly [string, number])[] }[] }
     /**
      * Systems the world removed, by their indexes there, whose removed words are set: the thread drops what it holds
      * for them once it finished task `sequence`, the last posted before, and says so.

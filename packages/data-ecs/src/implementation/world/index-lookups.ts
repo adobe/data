@@ -1,10 +1,8 @@
-import type { Archetype } from './archetype.js';
 import type { Scalar } from '../../interface/registry/layout.js';
 import { encodeScalar, encodeValue, hashWords, orderF32, orderF64, partWords, type KeyPart } from './index-keys.js';
-import { entryWords, findBucket, lengthOf, recordKey, recordLength, recordStart, startOf, type HashTable } from './index-hash.js';
-import { blockAt, blockBase, bound, firstPosition, treeMaximum, type SortedTable } from './index-sorted.js';
-import type { WorldIndex } from './indexes.js';
-import { createRow, type Row } from './rows.js';
+import { entryWords, findBucket, lengthOf, recordKey, recordLength, recordStart, startOf, type HashView } from './index-hash.js';
+import { blockAt, blockBase, bound, firstPosition, treeMaximum, type SortedView } from './index-sorted.js';
+import { createRow, type Row, type RowArchetype, type RowHost } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
 
 /** A system's `lastRun` while it runs, which its lists' `changed` compares with: -1 in finalizers, which have none. */
@@ -17,10 +15,23 @@ export type Since = { value: number };
  */
 export type Shape = readonly (number | readonly (readonly [string, number])[])[];
 
-/** A main-thread lookup through an index, behind the function a body calls. */
+/** What a lookup reads of an index: on the world's thread the index, on a joined thread its views of it. */
+export type IndexView = {
+    readonly parts: readonly KeyPart[];
+    readonly words: number;
+    readonly unique: boolean;
+    readonly hash: HashView | null;
+    readonly sorted: SortedView | null;
+};
+
+/** An archetype a lookup's rows bind to, by its id: the world's, or a joined thread's view of it. */
+export type LookupArchetype = RowArchetype & { readonly version: number };
+
+/** A lookup through an index from a body, behind the function it calls, on the world's thread or a joined thread. */
 export type IndexLookup = {
-    readonly state: State;
-    readonly index: WorldIndex;
+    readonly rows: RowHost;
+    readonly archetypeAt: (id: number) => LookupArchetype | undefined;
+    readonly index: IndexView;
     readonly unique: boolean;
     /** What rows read, and the components whose changes its lists report. */
     readonly reads: readonly Key[];
@@ -39,11 +50,12 @@ export const indexLookupOf = (lookup: unknown): IndexLookup | undefined => typeo
 type Pool = { readonly rows: Row[]; readonly archetypes: number[]; readonly versions: number[] };
 
 /** Points row `n` of a pool at an entry's archetype and row, binding it again only when its archetype or that's arrays changed. */
-const rowAt = (lookup: IndexLookup, pool: Pool, n: number, archetypeId: number, row: number): object => {
-    const archetype: Archetype = lookup.state.archetypes[archetypeId];
+const rowAt = (lookup: IndexLookup, pool: Pool, n: number, archetypeId: number, row: number): object | undefined => {
+    const archetype = lookup.archetypeAt(archetypeId);
+    if (archetype === undefined) return undefined;
     let found = pool.rows[n];
     if (found === undefined) {
-        found = pool.rows[n] = createRow(lookup.state, archetype, lookup.reads, lookup.readIds, []);
+        found = pool.rows[n] = createRow(lookup.rows, archetype, lookup.reads, lookup.readIds, []);
         pool.archetypes[n] = archetypeId;
         pool.versions[n] = archetype.version;
     }
@@ -65,7 +77,7 @@ export type List = { readonly length: number; readonly changed: boolean; at(inde
 /** What a list points at: a bucket, or -1 for a key no bucket holds. */
 type Found = { bucket: number };
 
-const createList = (lookup: IndexLookup, hash: HashTable, found: Found): List => {
+const createList = (lookup: IndexLookup, hash: HashView, found: Found): List => {
     const pool: Pool = { rows: [], archetypes: [], versions: [] };
     return {
         get length(): number {
@@ -168,7 +180,7 @@ const u8 = new Uint8Array(scratch);
  * A site's lookup of a hash index generated for its shape: one straight-line encoding of each argument into the key's
  * words, the hash and the probe inline. Null where code can't be generated, or for a shape it doesn't take.
  */
-const generatedFind = (lookup: IndexLookup, hash: HashTable, shape: Shape, list: List, found: Found, pool: Pool): ((...values: unknown[]) => unknown) | null => {
+const generatedFind = (lookup: IndexLookup, hash: HashView, shape: Shape, list: List, found: Found, pool: Pool): ((...values: unknown[]) => unknown) | null => {
     const { index } = lookup;
     const destinations = destinationsOf(index.parts, shape);
     if (!generating || destinations === null) return null;
@@ -192,17 +204,17 @@ const generatedFind = (lookup: IndexLookup, hash: HashTable, shape: Shape, list:
         ...lookup.unique ? [
             `if (bucket < 0 || records[bucket * ${hash.stride} + ${recordLength}] === 0) return null;`,
             `const at = records[bucket * ${hash.stride} + ${recordStart}] * ${entryWords};`,
-            "const archetypeId = table.entries[at + 1], archetype = archetypes[archetypeId], row = pool.rows[0];",
-            "if (row === undefined || pool.archetypes[0] !== archetypeId || pool.versions[0] !== archetype.version) return rowAt(lookup, pool, 0, archetypeId, table.entries[at + 2]);",
+            "const archetypeId = table.entries[at + 1], archetype = archetypeAt(archetypeId), row = pool.rows[0];",
+            "if (row === undefined || archetype === undefined || pool.archetypes[0] !== archetypeId || pool.versions[0] !== archetype.version) return rowAt(lookup, pool, 0, archetypeId, table.entries[at + 2]);",
             "row.index = table.entries[at + 2];",
             "return row.value;",
         ] : ["found.bucket = bucket;", "return list;"],
         "};",
     ].join("\n");
     try {
-        const factory = new Function("key", "table", "found", "list", "pool", "lookup", "rowAt", "encodeValue", "parts", "orderF32", "orderF64", "f32", "f64", "u32", "u8", "archetypes", body);
+        const factory = new Function("key", "table", "found", "list", "pool", "lookup", "rowAt", "encodeValue", "parts", "orderF32", "orderF64", "f32", "f64", "u32", "u8", "archetypeAt", body);
         // The factory returns the function its body above makes.
-        const made: (...values: unknown[]) => unknown = factory(new Uint32Array(Math.max(1, words)), hash, found, list, pool, lookup, rowAt, encodeValue, index.parts, orderF32, orderF64, f32, f64, u32, u8, lookup.state.archetypes);
+        const made: (...values: unknown[]) => unknown = factory(new Uint32Array(Math.max(1, words)), hash, found, list, pool, lookup, rowAt, encodeValue, index.parts, orderF32, orderF64, f32, f64, u32, u8, lookup.archetypeAt);
         return made;
     }
     catch {
@@ -220,7 +232,7 @@ export const createSite = (lookup: IndexLookup, shape: Shape): Site => {
 };
 
 /** A site's lookup of a hash index: by the whole key. */
-const createHashSite = (lookup: IndexLookup, hash: HashTable, shape: Shape): Site => {
+const createHashSite = (lookup: IndexLookup, hash: HashView, shape: Shape): Site => {
     const { index, unique } = lookup;
     const key = keyOf(lookup);
     const found: Found = { bucket: -1 };
@@ -251,7 +263,7 @@ type Range = { low: number; high: number; second: number; end: number };
 type Cursor = { k: number; first: number; length: number };
 
 /** A list of a sorted index's rows, in key order, then entity order. */
-const createSortedList = (lookup: IndexLookup, sorted: SortedTable, range: Range, cursor: Cursor): List => {
+const createSortedList = (lookup: IndexLookup, sorted: SortedView, range: Range, cursor: Cursor): List => {
     const pool: Pool = { rows: [], archetypes: [], versions: [] };
     const { words, stride } = sorted;
     /** Whether a tree's ticks over the blocks around positions `low` to `high` are newer than `since`. */
@@ -299,7 +311,7 @@ const isComparison = (value: unknown): value is { readonly [operator: string]: u
  * A site's lookup of a sorted index: a prefix of the key, whose last part may be a comparison, giving the rows in key
  * order; for a unique index, a whole key of plain values gives the row or null.
  */
-const createSortedSite = (lookup: IndexLookup, sorted: SortedTable, shape: Shape): Site => {
+const createSortedSite = (lookup: IndexLookup, sorted: SortedView, shape: Shape): Site => {
     const { index, unique } = lookup;
     const { parts } = index;
     const probe = keyOf(lookup);
@@ -432,21 +444,26 @@ const wholeShapes: Shape[] = [];
 const wholeShape = (count: number): Shape => wholeShapes[count] ??= new Array<number>(count).fill(0);
 
 /**
- * A lookup through an index for a main-thread body: called with a key, as code the plugin didn't rewrite calls it,
- * it makes a new list each time; the plugin's call sites reuse their own (`prepared-lookup.ts`).
+ * The function a body calls for a lookup through an index: called with a key, as code the plugin didn't rewrite calls
+ * it, it makes a new list each time; the plugin's call sites reuse their own (`prepared-lookup.ts`).
  */
-export const createIndexLookup = (state: State, index: WorldIndex, declared: { readonly read?: readonly Key[]; readonly changed?: readonly Key[] }, since: Since): (...key: unknown[]) => unknown => {
+export const lookupFunction = (lookup: IndexLookup): (...key: unknown[]) => unknown => {
+    const call = (...key: unknown[]): unknown => createSite(lookup, wholeShape(key.length)).find(...key);
+    lookups.set(call, lookup);
+    return call;
+};
+
+/** A lookup through one of the world's indexes, for a main-thread body or finalizer. */
+export const createIndexLookup = (state: State, index: IndexView, declared: { readonly read?: readonly Key[]; readonly changed?: readonly Key[] }, since: Since): (...key: unknown[]) => unknown => {
     const reads = declared.read ?? [];
-    const lookup: IndexLookup = {
-        state,
+    return lookupFunction({
+        rows: state,
+        archetypeAt: id => state.archetypes[id],
         index,
         unique: index.unique,
         reads,
         readIds: reads.map(key => idOf(state, key)),
         watched: (declared.changed ?? []).map(key => idOf(state, key)),
         since,
-    };
-    const call = (...key: unknown[]): unknown => createSite(lookup, wholeShape(key.length)).find(...key);
-    lookups.set(call, lookup);
-    return call;
+    });
 };

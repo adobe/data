@@ -1,0 +1,242 @@
+import { describe, expect, it } from "vitest";
+import { Component } from "../../interface/component/component.js";
+import { Index } from "../../interface/indexes/index-type.js";
+import { Observe } from "../../interface/observe/observe.js";
+import { always } from "../../interface/resources/always.js";
+import { clock } from "../../interface/resources/clock.js";
+import { workers } from "../../interface/resources/workers.js";
+import { System } from "../../interface/system/system.js";
+import type { World } from "../../interface/world/world.js";
+import { createWorld, join, type CreatedWorld } from "./create.js";
+import { backToBack } from "./loop.js";
+
+// Systems on a joined thread looking up through the world's indexes, the world and the thread on this one, against a
+// world running them itself.
+
+const cell = Symbol("indexJoinedTest/cell");
+const weight = Symbol("indexJoinedTest/weight");
+const serial = Symbol("indexJoinedTest/serial");
+const target = Symbol("indexJoinedTest/target");
+const lane = Symbol("indexJoinedTest/lane");
+const rank = Symbol("indexJoinedTest/rank");
+const label = Symbol("indexJoinedTest/label");
+const name = Symbol("indexJoinedTest/name");
+
+declare module "@adobe/data-ecs" {
+    export interface Threads {
+        indexJoinedTest: true;
+    }
+    interface Components {
+        [cell]: { type: readonly [number, number] };
+        [weight]: { type: number };
+        [serial]: { type: number };
+        [target]: { type: number };
+        [lane]: { type: number };
+        [rank]: { type: number };
+        [label]: { type: string; thread: "indexJoinedTest" };
+        [name]: { type: string; thread: "indexJoinedTest" };
+    }
+}
+Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
+Component.register(weight, { type: { type: "number" } });
+Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
+Component.register(target, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
+Component.register(lane, { type: { type: "integer", minimum: 0, maximum: 1000 } });
+Component.register(rank, { type: { type: "number" } });
+Component.register(label, { type: { type: "string", default: "" }, thread: "indexJoinedTest" });
+Component.register(name, { type: { type: "string" }, thread: "indexJoinedTest" });
+
+const grid = Index.create({ name: "indexJoinedTest/grid", key: [cell], components: { has: [weight] } });
+const serials = Index.create({ name: "indexJoinedTest/serials", key: [serial], unique: true, components: { has: [weight] } });
+const lanes = Index.create({ name: "indexJoinedTest/lanes", key: [lane, rank], sorted: true });
+const names = Index.create({ name: "indexJoinedTest/names", key: [name] });
+
+/** On the joined thread, in the tier before the lookups, so a task of consecutive tiers there would see the index before it: moves some cells. */
+const shift = System.create({ name: "indexJoinedTest/shift", components: { read: [serial], write: [cell, label] } }, row => {
+    if (row[serial] % 17 !== 0) return;
+    const [x, y] = row[cell];
+    row[cell] = [(x + 1) % 13, y];
+    row[label] = "";
+});
+
+/** On the joined thread: each cell's neighbors' count and weights, whether its list changed, and its serial's target's weight. */
+const describeCells = System.create({
+    name: "indexJoinedTest/describeCells",
+    components: { read: [cell, target], write: [label] },
+    lookup: { near: { index: grid, read: [weight], changed: [weight] }, bySerial: { index: serials, read: [weight] } },
+    after: [shift],
+}, (row, { lookup }) => {
+    const [x, y] = row[cell];
+    let found = 0;
+    let sum = 0;
+    for (let dx = -1; dx <= 1; dx++) {
+        const near = lookup.near([x + dx, y]);
+        for (let i = 0; i < near.length; i++) {
+            sum += near.at(i)[weight];
+            found++;
+        }
+    }
+    const followed = lookup.bySerial(row[target]);
+    row[label] = `${found}:${sum}:${lookup.near([x, y]).changed}:${followed === null ? "none" : followed[weight]}`;
+});
+
+/** On the joined thread: the rows of the row's lane within 5 of its rank, in key order. */
+const describeRanks = System.create({
+    name: "indexJoinedTest/describeRanks",
+    components: { read: [lane, rank], write: [label] },
+    lookup: { inLane: { index: lanes, read: [rank] } },
+    after: [describeCells],
+}, (row, { lookup }) => {
+    const r = row[rank];
+    const near = lookup.inLane(row[lane], { ">=": r - 5, "<=": r + 5 });
+    const ranks: number[] = [];
+    for (let i = 0; i < near.length; i++) ranks.push(near.at(i)[rank]);
+    row[label] = ranks.join(",");
+});
+
+const tick = System.create({ name: "indexJoinedTest/tick", systems: [shift, describeCells, describeRanks] });
+
+const seed = System.create({ name: "indexJoinedTest/seed" }, ({ commands }) => {
+    for (let k = 0; k < 200; k++) commands.spawn([cell, weight, serial, target, label])({ [cell]: [k % 13, k % 7], [weight]: k % 5, [serial]: k, [target]: (k * 7) % 230, [label]: "" });
+    for (let k = 0; k < 150; k++) commands.spawn([lane, rank, label])({ [lane]: k % 3, [rank]: (k * 37) % 97, [label]: "" });
+});
+
+/** Moves cells, changes weights and ranks, despawns some and spawns others. */
+const stir = System.create({ name: "indexJoinedTest/stir", input: { type: "object", properties: { round: { type: "integer" } } }, components: { read: [serial], write: [cell, weight] } }, (row, { input, commands }) => {
+    const [x, y] = row[cell];
+    if ((row[serial] + input.round) % 9 === 0) row[cell] = [(x + 1) % 13, y];
+    if ((row[serial] + input.round) % 11 === 0) row[weight] = row[weight] + 1;
+    if ((row[serial] + input.round) % 23 === 0) commands.despawn(row.entity);
+    if (row[serial] % 50 === input.round) commands.spawn([cell, weight, serial, target, label])({ [cell]: [input.round, 3], [weight]: 2, [serial]: 1000 + row[serial], [target]: row[serial], [label]: "" });
+});
+const rerank = System.create({ name: "indexJoinedTest/rerank", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [rank] } }, (row, { input }) => {
+    if ((row[rank] + input.round) % 5 === 0) row[rank] = (row[rank] * 3 + 1) % 97;
+});
+
+/** A system of the joined thread looking up through an index of its strings, which the world keeps on its own thread. */
+const byName = System.create({
+    name: "indexJoinedTest/byName",
+    components: { read: [name], write: [label] },
+    lookup: { named: { index: names } },
+}, (row, { lookup }) => {
+    row[label] = String(lookup.named(row[name]).length);
+});
+
+/** On the joined thread, added and removed: labels each cell by its bucket's length. */
+const counting = System.create({
+    name: "indexJoinedTest/counting",
+    components: { read: [cell], write: [label] },
+    lookup: { near: { index: grid, changed: [weight] } },
+}, (row, { lookup }) => {
+    const [x, y] = row[cell];
+    row[label] = String(lookup.near([x, y]).length);
+});
+const keepTicking = System.create({ name: "indexJoinedTest/keepTicking" }, () => {});
+
+/** Each entity's label, sorted, as the world or the thread that fills its objects reads it. */
+const labels = async (holder: World, world: World): Promise<readonly string[]> => {
+    const entities = await Observe.toPromise(world.observe.select({ required: [label] }));
+    const values = await Promise.all(entities.map(entity => Observe.toPromise(holder.observe.entity(entity, { required: [label] }))));
+    return values.map(value => value?.[label] ?? "missing").sort();
+};
+
+/** Seeds, then ticks around changes; every label after each tick, and the warnings of each tick. */
+const scenario = async (world: CreatedWorld, holder: World): Promise<{ readonly labels: readonly (readonly string[])[]; readonly warnings: readonly (readonly string[])[] }> => {
+    const seen: (readonly string[])[] = [];
+    const warnings: (readonly string[])[] = [];
+    await world.run(seed);
+    for (let round = 0; round < 5; round++) {
+        const report = await world.run(tick);
+        expect(report.failures).toEqual([]);
+        warnings.push(report.warnings.map(warning => warning.name));
+        seen.push(await labels(holder, world));
+        await world.run(stir, { round });
+        await world.run(rerank, { round });
+    }
+    return { labels: seen, warnings };
+};
+
+/** Once the last thread shared has joined. */
+const joinedStatus = (world: CreatedWorld): Promise<void> => new Promise(resolve => {
+    let done = false;
+    const stop = world.threads(threads => {
+        if (done || threads.at(-1)?.status !== "joined") return;
+        done = true;
+        queueMicrotask(() => stop());
+        resolve();
+    });
+});
+
+describe("systems on a joined thread looking up through indexes", () => {
+    it("find what the world's own systems find: hash buckets, unique rows, sorted ranges and changes", async () => {
+        const inline = createWorld({ [workers]: 0 });
+        const alone = await scenario(inline, inline);
+        await inline.dispose();
+        const world = createWorld({ [workers]: 0 });
+        const channel = new MessageChannel();
+        world.share(channel.port1);
+        const remote = join(channel.port2, { threads: ["indexJoinedTest"] });
+        await joinedStatus(world);
+        const there = await scenario(world, remote);
+        expect(there.labels).toEqual(alone.labels);
+        expect(alone.labels.flat().some(text => text.includes("true"))).toBe(true);
+        // The systems ran there, their tiers waiting for the thread.
+        expect(there.warnings.every(names => names.includes("indexJoinedTest/describeCells"))).toBe(true);
+        expect(alone.warnings.flat()).toEqual([]);
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("release the index and its records once the last system using it there is removed", async () => {
+        const driver = backToBack();
+        const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
+        const channel = new MessageChannel();
+        world.share(channel.port1);
+        const remote = join(channel.port2, { threads: ["indexJoinedTest"] });
+        await joinedStatus(world);
+        await world.run(seed);
+        /** Once `count` more ticks ran. */
+        const ticks = async (count: number): Promise<void> => {
+            const first = (await Observe.toPromise(world.observe.resource(clock))).tick;
+            await new Promise<void>(resolve => {
+                const stop = world.observe.resource(clock)(({ tick }) => {
+                    if (tick < first + count) return;
+                    queueMicrotask(() => stop());
+                    resolve();
+                });
+            });
+        };
+        world.add(keepTicking);
+        // Ticks of what an index is keyed by and watches stay once started, as any component's do, and task blocks keep their size.
+        for (let round = 0; round < 2; round++) {
+            world.add(counting);
+            await ticks(2);
+            world.remove(counting);
+            await ticks(4);
+        }
+        const before = await world.tables();
+        world.add(counting);
+        await ticks(2);
+        const added = await world.tables();
+        expect(added.indexes).toBe(before.indexes + 1);
+        expect(added.arena).toBeGreaterThan(before.arena);
+        world.remove(counting);
+        await ticks(4);
+        const removed = await world.tables();
+        expect(removed.indexes).toBe(before.indexes);
+        expect(removed.arena).toBe(before.arena);
+        expect(removed.joined).toEqual(before.joined);
+        driver.close();
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("throw for an index with an object key part, which the world keeps on its own thread", async () => {
+        const world = createWorld({ [workers]: 0 });
+        const channel = new MessageChannel();
+        world.share(channel.port1);
+        const remote = join(channel.port2, { threads: ["indexJoinedTest"] });
+        await joinedStatus(world);
+        await expect(world.run(byName)).rejects.toThrow('looks up through index "indexJoinedTest/names", whose key part "indexJoinedTest/name" is an object, so it runs only on the world\'s thread.');
+        await remote.dispose();
+        await world.dispose();
+    });
+});

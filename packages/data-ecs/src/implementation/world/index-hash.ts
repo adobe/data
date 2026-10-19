@@ -49,6 +49,9 @@ export type HashTable = {
     readonly watched: Map<number, Float64Array>;
 };
 
+/** What lookups read of a hash table: on the world's thread the table, on a joined thread its views of it. */
+export type HashView = Pick<HashTable, "words" | "stride" | "slots" | "records" | "ticks" | "cleared" | "entries"> & { readonly watched: ReadonlyMap<number, Float64Array> };
+
 const minimumSlots = 16;
 
 export const createHashTable = (memory: Memory, words: number): HashTable => ({
@@ -104,13 +107,13 @@ const coverBuckets = (table: HashTable, count: number): void => {
 };
 
 /** A bucket's segment's first entry, length and capacity. */
-export const startOf = (table: HashTable, bucket: number): number => table.records[bucket * table.stride + recordStart];
-export const lengthOf = (table: HashTable, bucket: number): number => table.records[bucket * table.stride + recordLength];
+export const startOf = (table: HashView, bucket: number): number => table.records[bucket * table.stride + recordStart];
+export const lengthOf = (table: HashView, bucket: number): number => table.records[bucket * table.stride + recordLength];
 const capacityOf = (table: HashTable, bucket: number): number => table.records[bucket * table.stride + recordCapacity];
 const isFreed = (table: HashTable, bucket: number): boolean => capacityOf(table, bucket) === freedCapacity;
 
 /** Whether bucket `bucket`'s key is the `words` of `key` from `at`. */
-const sameKey = (table: HashTable, bucket: number, key: Uint32Array, at: number): boolean => {
+const sameKey = (table: HashView, bucket: number, key: Uint32Array, at: number): boolean => {
     const { records, words } = table;
     const base = bucket * table.stride + recordKey;
     for (let k = 0; k < words; k++) if (records[base + k] !== key[at + k]) return false;
@@ -118,7 +121,7 @@ const sameKey = (table: HashTable, bucket: number, key: Uint32Array, at: number)
 };
 
 /** The bucket of a key, by its hash, or -1 when none holds it. */
-export const findBucket = (table: HashTable, key: Uint32Array, at: number, hash: number): number => {
+export const findBucket = (table: HashView, key: Uint32Array, at: number, hash: number): number => {
     const { slots } = table;
     const mask = (slots.length >> 1) - 1;
     for (let slot = hash & mask; ; slot = (slot + 1) & mask) {

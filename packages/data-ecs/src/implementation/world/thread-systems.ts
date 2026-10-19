@@ -2,7 +2,7 @@ import type { Entity } from '../../interface/entity/entity.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Lookup } from '../../interface/system/access.js';
-import { declarationOf, definitionOf, firstKeyOf, isLeaf, itemOfId, keyOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration } from '../../interface/registry/index.js';
+import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, itemOfId, keyOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration } from '../../interface/registry/index.js';
 import { layoutOf, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { stampChanged, writeOf } from './archetype.js';
 import { emptyViews } from './arrays.js';
@@ -30,6 +30,7 @@ import { combine, contributed, identityOf, reductionTargetsOf, type ReductionTar
 import { rowBinderOf, type Row, type RowArchetype, type RowHost, type RowStorage } from './rows.js';
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
 import { createThreadFinalizers } from './thread-finalizers.js';
+import { createThreadIndex, type ThreadIndex } from './thread-indexes.js';
 import { chunkShift } from './kernel.js';
 import {
     doneWord, endWord, headExecuted, headRan, progressWord, snapshotFlagsWord, snapshotLayout, snapshotOffsetWord, snapshotResourceArchetypeWord,
@@ -54,7 +55,8 @@ export const tailSnapshots = { late: 0, switched: 0 };
  * A system or finalizer the world places on this thread: its index here, its id, and the world's numbers for the keys
  * it names; for a system, the byte offset of its removed word.
  */
-export type SystemSetup = { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[]; readonly removed?: number };
+/** A system the world places on this thread: its index here, id, keys' numbers, removed word, and by lookup name its index records. */
+export type SystemSetup = { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[]; readonly removed?: number; readonly indexes?: readonly (readonly [string, number])[] };
 
 /** A joined thread's view of a storage of the world's, in shared memory, or of this thread's objects, in its mirror. */
 type ThreadStorage = RowStorage & { readonly component: number };
@@ -448,10 +450,10 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
     /** Records the systems the world places here; one this thread never imported fails each task that names it. */
     const setup = (systems: readonly SystemSetup[]): void => {
         name(systems);
-        for (const { index, id, removed } of systems) {
+        for (const { index, id, removed, indexes } of systems) {
             const item = itemOfId(id);
             const definition = item === undefined ? undefined : definitionOf(item);
-            runners[index] = definition === undefined || !isLeaf(definition) ? null : createThreadRunner(runnerHost, definition);
+            runners[index] = definition === undefined || !isLeaf(definition) ? null : createThreadRunner(runnerHost, definition, new Map(indexes));
             removedWords[index] = removed;
         }
     };
@@ -740,11 +742,13 @@ type ThreadRunner = {
     readonly writeFolds: (completion: Float64Array, at: number) => void;
 };
 
+const noRecords: ReadonlyMap<string, number> = new Map();
+
 /** A resource's cell on this thread, as of a run. */
 type ThreadCell = { storage: ThreadStorage | undefined; row: number };
 
 /** Runs one system here, as the world's runner runs a main-thread system (`runner.ts`). */
-const createThreadRunner = (host: RunnerHost, leaf: Leaf): ThreadRunner => {
+const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<string, number> = noRecords): ThreadRunner => {
     const { declaration } = leaf;
     // Method parameters are bivariant, so the runtime can see any leaf's body with erased parameter types.
     const system: { body(subject: unknown, context?: unknown): void } = leaf;
@@ -804,9 +808,36 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf): ThreadRunner => {
         Object.defineProperty(value, "resources", { value: values, enumerable: true });
     }
     const names = Object.keys(declaration.lookup ?? {});
+    /** Its lookups through indexes, whose views each run points at the index's arrays. */
+    const threadIndexes: ThreadIndex[] = [];
     if (names.length > 0) {
         const lookups = own();
-        for (const name of names) Object.defineProperty(lookups, name, { value: lookupOf(host, declaration.lookup?.[name] ?? {}), enumerable: true });
+        for (const name of names) {
+            const declared = declaration.lookup?.[name] ?? {};
+            const index = indexOfLookup(declared);
+            const record = records.get(name);
+            let found: unknown;
+            if (index === undefined || record === undefined) found = lookupOf(host, declared);
+            else {
+                const reads = declared.read ?? [];
+                const threadIndex = createThreadIndex(host.rows, host.archetypeAt, {
+                    layouts: index.declaration.key.map(key => {
+                        const layout = host.layoutOf(key);
+                        if (layout === undefined) throw new Error(`"${labelOf(key)}" has no registered schema; import the module that registers it.`);
+                        return layout;
+                    }),
+                    sorted: index.declaration.sorted === true,
+                    unique: index.declaration.unique === true,
+                    reads,
+                    readIds: reads.map(numberOf),
+                    watched: "changed" in declared ? declared.changed?.length ?? 0 : 0,
+                    record,
+                });
+                threadIndexes.push(threadIndex);
+                found = threadIndex.lookup;
+            }
+            Object.defineProperty(lookups, name, { value: found, enumerable: true });
+        }
         Object.defineProperty(value, "lookup", { value: lookups, enumerable: true });
     }
     if (targets.length > 0) {
@@ -916,6 +947,10 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf): ThreadRunner => {
             /** -1 passes every row. */
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             bind();
+            if (threadIndexes.length !== 0) {
+                const buffer = host.refresh();
+                for (let k = 0; k < threadIndexes.length; k++) threadIndexes[k].refresh(buffer);
+            }
             if (declaration.input !== undefined) value.input = ownInput(input);
             if (query === undefined) {
                 outcome.ran = since < 0;

@@ -35,6 +35,8 @@ import type * as Lifetime from "./lifetime.fixture.js";
 import { lifetimeCases } from "./lifetime.cases.js";
 import type * as Removal from "./removal.fixture.js";
 import { removalCases } from "./removal.cases.js";
+import type * as IndexWorkers from "./index-workers.fixture.js";
+import { indexWorkersCases } from "./index-workers.cases.js";
 
 // Real worker threads in node: the cases over fixtures `vitest.fixtures.ts` built, each typed as its source, which it's built from.
 workersCases((): Promise<typeof Workers> => builtFixture("workers"));
@@ -55,3 +57,4 @@ tailsCases((): Promise<typeof Tails> => builtFixture("tails"));
 transfersCases((): Promise<typeof Transfers> => builtFixture("transfers"));
 lifetimeCases((): Promise<typeof Lifetime> => builtFixture("lifetime"));
 removalCases((): Promise<typeof Removal> => builtFixture("removal"));
+indexWorkersCases((): Promise<typeof IndexWorkers> => builtFixture("index-workers"));

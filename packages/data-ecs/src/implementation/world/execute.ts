@@ -288,7 +288,8 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
     const { gpu } = state;
     let last = first;
     if (prepared.version !== state.runnersVersion) refresh(context, schedule, prepared);
-    while (last + 1 < schedule.tiers.length && allOn(prepared.runners[last + 1], channel)) last++;
+    // A tier using an index starts a task of its own, after the index is refreshed for it.
+    while (last + 1 < schedule.tiers.length && allOn(prepared.runners[last + 1], channel) && prepared.uses[last + 1].length === 0) last++;
     if (channel.busy()) await channel.idle();
     for (let v = first; v <= last; v++) {
         if (state.tails.length !== 0) {

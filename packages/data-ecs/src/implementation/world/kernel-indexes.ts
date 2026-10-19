@@ -101,7 +101,7 @@ export const kernelIndexesOf = (state: State, description: KernelDescription, lo
     });
 
 /** Writes a lookup through an index's WASM parameters into `out` from `at`, as of now: its arrays' addresses, counts and ticks. */
-export const writeIndexParameters = (bound: KernelIndex, since: number, out: number[], at: number): number => {
+export const writeIndexParameters = (bound: Pick<KernelIndex, "index" | "watched">, since: number, out: number[], at: number): number => {
     const { hash, sorted } = bound.index;
     let next = at;
     if (hash !== null) {

@@ -2,7 +2,8 @@ import type { Leaf } from '../../interface/system/leaf.js';
 import { lookupComponentsOf } from './lookup-keys.js';
 import type { Leaf as FinalizerLeaf } from '../../interface/finalizer/created.js';
 import type { Report } from '../../interface/world/report.js';
-import { idOfItem, idOfKey, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
+import { declarationOf, idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
+import { layoutOf } from '../../interface/registry/layout.js';
 import type { Archetype } from './archetype.js';
 import { chunkShift } from './kernel.js';
 import type { LocalIds, Segment } from './command-ring.js';
@@ -10,6 +11,9 @@ import type { ToJoined } from './joining.js';
 import { lineWords, type WorkerError } from './protocol.js';
 import { reductionTargets, type ReductionTarget } from './reductions.js';
 import { holdingNothing, resourceWritesOf, type Runner } from './runner.js';
+import { acquireLookups, type IndexLookups, type WorldIndex } from './indexes.js';
+import { writeIndexParameters } from './kernel-indexes.js';
+import { recordWordsOf } from './thread-indexes.js';
 import { idOf, type Key, type State } from './state.js';
 import { logBoundedWord, logBoundWord, logSyncWord, type MoveLog } from './move-log.js';
 import { createStopWriter, freeStops, type StopWriter } from './stop-lists.js';
@@ -54,7 +58,12 @@ export type RemoteSystem = {
     readonly result: RemoteResult;
     /** Its block and snapshot once it ran as a tail (`tails.ts`). */
     tail: Tail | null;
+    /** Its lookups through indexes: each index, the components it watches there, and the record each task's parameters are written to. */
+    readonly indexes: readonly RemoteIndex[];
 };
+
+/** A lookup through an index by a system on a joined thread: the thread reads the index's arrays where its record says. */
+type RemoteIndex = { readonly index: WorldIndex; readonly watched: readonly number[]; readonly record: number };
 
 /** The world's end of a joined thread's task block and command ring. */
 export type TaskChannel = {
@@ -82,7 +91,7 @@ export type TaskChannel = {
     /** A task's message, when its completion says one follows. */
     readonly completed: (message: Extract<import('./joining.js').ToWorld, { kind: "completed" }>) => void;
     /** Places a system on the thread, posting its setup; returns its index there. */
-    readonly place: (state: State, leaf: Leaf) => number;
+    readonly place: (state: State, leaf: Leaf, indexes: readonly (readonly [string, number])[]) => number;
     /**
      * Stops running the system at an index there: once this returns the thread runs it in no task, a task already
      * posted included, through a word in the memory the thread checks before each system it runs. The index is placed
@@ -250,6 +259,18 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         return true;
     };
 
+    /** Parameters of an index lookup, reused, and a view of the memory they're copied into. */
+    const parameters: number[] = [];
+    let words = new Float64Array(0);
+    /** Writes where each index a system looks up through keeps its arrays, as of now, into its records for the thread. */
+    const writeRecords = (system: RemoteSystem): void => {
+        if (words.buffer !== arena.memory.buffer) words = new Float64Array(arena.memory.buffer);
+        for (const { index, watched, record } of system.indexes) {
+            const count = writeIndexParameters({ index, watched }, system.lastRun, parameters, 0);
+            for (let k = 0; k < count; k++) words[record / 8 + k] = parameters[k];
+        }
+    };
+
     /** The systems of the task in flight, kept as posted: the caller reuses what it passed. */
     const flight: RemoteSystem[] = [];
     let flying: Promise<boolean> | null = null;
@@ -294,6 +315,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
             payloadView[base + systemFolds] = folds;
             payloadView[base + systemTail] = tails ? system.tail?.block ?? 0 : 0;
             folds += system.foldCount;
+            if (system.indexes.length !== 0) writeRecords(system);
         }
         // An input that moved to the thread is there already: the message names it, and the task takes it.
         if (input && isHeld(args)) {
@@ -336,12 +358,12 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
     const unplacing = new Set<number>();
     const removedWord = (index: number): Int32Array => new Int32Array(arena.memory.buffer, removedWords[index], 1);
 
-    const place = (state: State, leaf: Leaf): number => {
+    const place = (state: State, leaf: Leaf, indexes: readonly (readonly [string, number])[]): number => {
         const { id, keys } = setupOf(state, leaf, "System", keysOf(leaf));
         const index = freeIndexes.pop() ?? placed++;
         const removed = removedWords[index] ??= arena.allocate(lineBytes);
         Atomics.store(removedWord(index), 0, 0);
-        post({ protocol: "@adobe/data-ecs/join@1", kind: "systems", systems: [{ index, id, keys, removed }] });
+        post({ protocol: "@adobe/data-ecs/join@1", kind: "systems", systems: [{ index, id, keys, removed, indexes }] });
         return index;
     };
 
@@ -461,12 +483,43 @@ export const finalizerKeysOf = (finalizer: FinalizerLeaf): readonly symbol[] => 
     return [...keys].filter((key): key is symbol => typeof key === "symbol");
 };
 
-/** Why a leaf can't run on a joined thread, or null when it can: `up`, and lookups through indexes, run only on the world's thread. */
+/**
+ * Why a leaf can't run on a joined thread, or null when it can: `up`, and lookups through indexes with an object key
+ * part, which live on the world's thread, run only there.
+ */
 export const unplaceable = (leaf: Leaf, thread: string): string | null => {
     if (leaf.declaration.up !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and declares up, which runs only on the world's thread.`;
-    const lookups = Object.values(leaf.declaration.lookup ?? {});
-    if (lookups.some(lookup => "index" in lookup)) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and looks up through an index, which runs only on the world's thread.`;
+    for (const lookup of Object.values(leaf.declaration.lookup ?? {})) {
+        const index = indexOfLookup(lookup);
+        const object = index?.declaration.key.find(key => layoutOf(declarationOf(key)?.type).kind === "object");
+        if (index !== undefined && object !== undefined) {
+            return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object)}" is an object, so it runs only on the world's thread.`;
+        }
+    }
     return null;
+};
+
+/** The records of a declaration's lookups through indexes, in the memory, by lookup name; and their release with the indexes. */
+const remoteIndexesOf = (state: State, lookup: Leaf["declaration"]["lookup"], acquired: IndexLookups): { readonly indexes: readonly RemoteIndex[]; readonly named: readonly (readonly [string, number])[]; readonly holding: IndexLookups } => {
+    if (acquired.byName.size === 0) return { indexes: [], named: [], holding: acquired };
+    const indexes: RemoteIndex[] = [];
+    const named: (readonly [string, number])[] = [];
+    for (const [name, index] of acquired.byName) {
+        const declared = lookup?.[name];
+        const watched = (declared !== undefined && "changed" in declared ? declared.changed ?? [] : []).map(key => idOf(state, key));
+        const record = state.memory.allocate(8 * recordWordsOf(index.sorted !== null, watched.length));
+        indexes.push({ index, watched, record });
+        named.push([name, record]);
+    }
+    const holding: IndexLookups = {
+        ...acquired,
+        release: () => {
+            acquired.release();
+            for (const { index, watched, record } of indexes) state.memory.free(record, 8 * recordWordsOf(index.sorted !== null, watched.length));
+            indexes.length = 0;
+        },
+    };
+    return { indexes, named, holding };
 };
 
 /**
@@ -480,7 +533,8 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
     const label = labelOfItem(leaf);
     const problem = unplaceable(leaf, thread);
     if (problem !== null) throw new Error(problem);
-    const index = channel.place(state, leaf);
+    const lookups = remoteIndexesOf(state, declaration.lookup, acquireLookups(state, declaration.lookup));
+    const index = channel.place(state, leaf, lookups.named);
     const required = [...new Set([...query?.read ?? [], ...query?.write ?? [], ...query?.has ?? [], ...query?.added ?? [], ...query?.changed ?? []])].map(key => idOf(state, key));
     const excluded = (query?.not ?? []).map(key => idOf(state, key));
     const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
@@ -507,6 +561,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         lastRun: since,
         result: { flags: 0, segment: undefined, error: undefined },
         tail: null,
+        indexes: lookups.indexes,
     };
     return {
         kernel: null,
@@ -516,14 +571,14 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         looks,
         resourceWrites: resourceWritesOf(state, declaration),
         matched,
-        indexes: [],
+        indexes: lookups.holding.uses,
         load: async () => {},
         setup: () => null,
         start: () => [],
         targets,
         finish: failed => failed || (remote.result.flags & ranFlag) === 0 || targets.length === 0 ? null : folds,
         afterSync: null,
-        holdings: holdingNothing({ channel, index }),
+        holdings: { ...holdingNothing({ channel, index }), indexes: lookups.holding },
         remote,
         lastRun: () => remote.lastRun,
     };

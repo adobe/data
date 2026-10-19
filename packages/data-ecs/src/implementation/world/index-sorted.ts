@@ -52,6 +52,10 @@ export type SortedTable = {
     cleared: number;
 };
 
+/** What lookups read of a sorted table: on the world's thread the table, on a joined thread its views of it. */
+export type SortedView = Pick<SortedTable, "words" | "stride" | "parts" | "objects" | "entries" | "lengths" | "order" | "blocks" | "counts" | "tree" | "leaves" | "fences" | "size" | "cleared">
+    & { readonly watched: ReadonlyMap<number, { readonly tree: Float64Array }> };
+
 const minimumBlocks = 8;
 
 export const createSortedTable = (memory: Memory, words: number, parts: readonly KeyPart[]): SortedTable => ({
@@ -129,7 +133,7 @@ const allocateBlock = (table: SortedTable, tick: number): number => {
 };
 
 /** The first word of block `block`'s entries. */
-export const blockBase = (table: SortedTable, block: number): number => block * blockEntries * table.stride;
+export const blockBase = (table: SortedView, block: number): number => block * blockEntries * table.stride;
 
 // Fenwick tree of the blocks' lengths, by position in `order`.
 
@@ -193,14 +197,14 @@ const addCount = (table: SortedTable, k: number, delta: number): void => {
 };
 
 /** The position of the first entry of the block at position `k`: the lengths of the blocks before it. */
-export const firstPosition = (table: SortedTable, k: number): number => {
+export const firstPosition = (table: SortedView, k: number): number => {
     let sum = 0;
     for (let node = k; node > 0; node -= node & -node) sum += table.counts[node];
     return sum;
 };
 
 /** The position in `order` of the block holding entry position `position`, where `position < size`; or `blocks`. */
-export const blockAt = (table: SortedTable, position: number): number => {
+export const blockAt = (table: SortedView, position: number): number => {
     const { counts, blocks } = table;
     let k = 0;
     let remaining = position;
@@ -231,7 +235,7 @@ export const stampWatched = (table: SortedTable, component: number, block: numbe
 };
 
 /** The largest of a tree's ticks over positions `from` to `to`, inclusive. */
-export const treeMaximum = (table: SortedTable, tree: Float64Array, from: number, to: number): number => {
+export const treeMaximum = (table: SortedView, tree: Float64Array, from: number, to: number): number => {
     let maximum = 0;
     for (let low = from + table.leaves, high = to + table.leaves + 1; low < high; low >>= 1, high >>= 1) {
         if ((low & 1) === 1) maximum = Math.max(maximum, tree[low++]);
@@ -252,7 +256,7 @@ export const refreshWatchedTree = (table: SortedTable, component: number): void 
  * Compares the first `count` words of a key in `words` at `base`, an entry's or a fence's, with `probe`'s: by word,
  * an object part by its value, the probe's being `values[part]`. Negative when the key is before the probe.
  */
-export const compareKey = (table: SortedTable, words: Uint32Array, base: number, probe: Uint32Array, values: readonly unknown[], count: number): number => {
+export const compareKey = (table: SortedView, words: Uint32Array, base: number, probe: Uint32Array, values: readonly unknown[], count: number): number => {
     if (!table.objects) {
         for (let k = 0; k < count; k++) {
             const a = words[base + k];
@@ -293,7 +297,7 @@ const compareEntry = (table: SortedTable, words: Uint32Array, base: number, prob
  * binary search over the fences, then within a block. Returns the block's position in `order` and the offset in it,
  * in `found`.
  */
-export const bound = (table: SortedTable, probe: Uint32Array, values: readonly unknown[], count: number, after: boolean, found: { k: number; offset: number }): void => {
+export const bound = (table: SortedView, probe: Uint32Array, values: readonly unknown[], count: number, after: boolean, found: { k: number; offset: number }): void => {
     if (!table.objects) {
         boundWords(table, probe, count, after ? 1 : 0, found);
         return;
@@ -331,7 +335,7 @@ export const bound = (table: SortedTable, probe: Uint32Array, values: readonly u
  * `bound` for keys of words alone: a key passes when its first `count` words, compared word by word, are after the
  * probe's, or with `after` 0, not before them.
  */
-const boundWords = (table: SortedTable, probe: Uint32Array, count: number, after: number, found: { k: number; offset: number }): void => {
+const boundWords = (table: SortedView, probe: Uint32Array, count: number, after: number, found: { k: number; offset: number }): void => {
     const { order, lengths, stride, fences, entries } = table;
     const fenceWords = table.words + 1;
     let low = 0;

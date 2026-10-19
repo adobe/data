@@ -16,6 +16,7 @@ import { tailsCases } from "./tails.cases.js";
 import { transfersCases } from "./transfers.cases.js";
 import { lifetimeCases } from "./lifetime.cases.js";
 import { removalCases } from "./removal.cases.js";
+import { indexWorkersCases } from "./index-workers.cases.js";
 
 // Real workers in chromium: the cases over the fixtures' sources, as node runs them built.
 workersCases(() => import("./workers.fixture.js"));
@@ -36,3 +37,4 @@ tailsCases(() => import("./tails.fixture.js"));
 transfersCases(() => import("./transfers.fixture.js"));
 lifetimeCases(() => import("./lifetime.fixture.js"));
 removalCases(() => import("./removal.fixture.js"));
+indexWorkersCases(() => import("./index-workers.fixture.js"));

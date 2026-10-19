@@ -53,12 +53,15 @@ export const indexLookupOf = (lookup: unknown): IndexLookup | undefined => typeo
 
 /** Rows a list's `at` gives, each bound to the archetype of the entry it was last pointed at, made by `make`. */
 type Pool = {
-    readonly rows: Row[];
+    /** By position: its row, or undefined for one not made yet. */
+    readonly rows: (Row | undefined)[];
     readonly archetypes: number[];
     readonly versions: number[];
     readonly make: (archetype: RowArchetype) => Row;
     /** The lookup's `replaced` count when every row was last checked against its archetype's version. */
     replaced: number;
+    /** The longest list a lookup made rows ahead for. */
+    ahead: number;
 };
 
 /** Each lookup's maker of rows, so every row its sites give shares one hidden class. */
@@ -67,33 +70,46 @@ const makers = new WeakMap<IndexLookup, (archetype: RowArchetype) => Row>();
 const poolOf = (lookup: IndexLookup): Pool => {
     let make = makers.get(lookup);
     if (make === undefined) makers.set(lookup, make = sharedRows(lookup.rows, lookup.reads, lookup.readIds));
-    return { rows: [], archetypes: [], versions: [], make, replaced: lookup.replaced?.count ?? 0 };
+    return { rows: [], archetypes: [], versions: [], make, replaced: lookup.replaced?.count ?? 0, ahead: 0 };
 };
 
 /** Binds row `n` of a pool to an archetype, making it first if the pool has none there yet. */
 const bindRow = (pool: Pool, n: number, archetypeId: number, archetype: LookupArchetype): Row => {
-    let found = pool.rows[n];
-    if (found === undefined) found = pool.rows[n] = pool.make(archetype);
+    const { rows } = pool;
+    // Positions before `n` are filled first, so the arrays stay dense.
+    while (rows.length < n) {
+        rows.push(undefined);
+        pool.archetypes.push(-1);
+        pool.versions.push(-1);
+    }
+    let found = rows[n];
+    if (found === undefined) found = rows[n] = pool.make(archetype);
     else found.bind(archetype);
     pool.archetypes[n] = archetypeId;
     pool.versions[n] = archetype.version;
     return found;
 };
 
+/** Rows a lookup makes ahead of `at`, at most: a long list's later rows are made as `at` reaches them. */
+const madeAhead = 256;
+
 /**
- * Makes a pool's rows up to `length`, bound to an archetype entries likely have, when a site's lookup found a list
- * longer than any before. Making them here, not in `at`, keeps the one-time work out of the path a body inlines.
+ * Makes a pool's rows up to `length`, at most `madeAhead`, bound to an archetype entries likely have, when a site's
+ * lookup found a list longer than any before. Making them here, not in `at`, keeps the one-time work out of the path a
+ * body inlines.
  */
 const growPool = (lookup: IndexLookup, pool: Pool, length: number, archetypeId: number): void => {
+    pool.ahead = length;
     const archetype = lookup.archetypeAt(archetypeId);
     if (archetype === undefined) return;
-    for (let n = pool.rows.length; n < length; n++) bindRow(pool, n, archetypeId, archetype);
+    const end = Math.min(length, madeAhead);
+    for (let n = pool.rows.length; n < end; n++) bindRow(pool, n, archetypeId, archetype);
 };
 
 /** Binds again the rows whose archetype's arrays were replaced since the pool last checked, on the world's thread. */
 const refreshPool = (lookup: IndexLookup, pool: Pool, replaced: { readonly count: number }): void => {
     for (let n = 0; n < pool.rows.length; n++) {
-        const archetype = lookup.archetypeAt(pool.archetypes[n]);
+        const archetype = pool.rows[n] === undefined ? undefined : lookup.archetypeAt(pool.archetypes[n]);
         if (archetype !== undefined && archetype.version !== pool.versions[n]) bindRow(pool, n, pool.archetypes[n], archetype);
     }
     pool.replaced = replaced.count;
@@ -296,7 +312,7 @@ const generatedFind = (lookup: IndexLookup, hash: HashView, shape: Shape, list: 
             "return row.value;",
         ] : [
             "found.bucket = bucket;",
-            `if (bucket >= 0 && records[bucket * ${hash.stride} + ${recordLength}] > pool.rows.length) growPool(lookup, pool, records[bucket * ${hash.stride} + ${recordLength}], table.entries[records[bucket * ${hash.stride} + ${recordStart}] * ${entryWords} + 1]);`,
+            `if (bucket >= 0 && records[bucket * ${hash.stride} + ${recordLength}] > pool.ahead) growPool(lookup, pool, records[bucket * ${hash.stride} + ${recordLength}], table.entries[records[bucket * ${hash.stride} + ${recordStart}] * ${entryWords} + 1]);`,
             "return list;",
         ],
         "};",
@@ -338,7 +354,7 @@ const createHashSite = (lookup: IndexLookup, hash: HashView, shape: Shape): Site
             for (let p = 0; p < parts.length; p++) next = encodePart(parts[p], forms[p] ?? 0, values, next, key);
             const bucket = found.bucket = findBucket(hash, key, 0, hashWords(key, 0, words));
             if (!unique) {
-                if (bucket >= 0 && lengthOf(hash, bucket) > pool.rows.length) growPool(lookup, pool, lengthOf(hash, bucket), hash.entries[startOf(hash, bucket) * entryWords + 1]);
+                if (bucket >= 0 && lengthOf(hash, bucket) > pool.ahead) growPool(lookup, pool, lengthOf(hash, bucket), hash.entries[startOf(hash, bucket) * entryWords + 1]);
                 return list;
             }
             if (bucket < 0 || lengthOf(hash, bucket) === 0) return null;
@@ -424,7 +440,7 @@ const createSortedSite = (lookup: IndexLookup, sorted: SortedView, shape: Shape)
     /** The list, its pool grown first when it's longer than any before. */
     const listed = (): List => {
         const length = range.high - range.low + range.end - range.second;
-        if (length > pool.rows.length && sorted.blocks > 0) growPool(lookup, pool, length, sorted.entries[blockBase(sorted, sorted.order[0]) + sorted.words + 1]);
+        if (length > pool.ahead && sorted.blocks > 0) growPool(lookup, pool, length, sorted.entries[blockBase(sorted, sorted.order[0]) + sorted.words + 1]);
         return list;
     };
     const found = { k: 0, offset: 0 };

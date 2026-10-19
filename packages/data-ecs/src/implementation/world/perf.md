@@ -248,10 +248,12 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **Grouping with each slot's hash beside its bucket in thread scratch:** 7.4 ms single-worker either way; kept, since it reads less.
 - **Building again whenever changed chunks' rows pass an eighth:** `rekey 1M` 46.9 ms, built every frame, since 6% of rows crossing touch every chunk. Counting the rows' own ticks then: 25.9 ms.
 - **Merging a refresh's operations sorted by `Array.prototype.sort` with a comparator:** 25% of `rekey 1M`'s profile. A counting sort by bucket and an insertion sort within each: 14.1 ms.
+- **Schedule depths as an `Int32Array`,** after `loop tick add remove` grew 234–241 → 260–272 ms with indexes (85b434cb, measured alternating against 2898bf26 and at each later commit): `createSchedule`'s 223 eager deopts on the depths array's map went to 3, but the benchmark didn't move, and timing its sections shows a schedule costs the same, about 2.9 µs, before and after. A larger inlining budget, and runners not making `order`'s closures, didn't move it either. Timed in the benchmark, `System.create` takes about 1 µs more a tick and `add` 0.9 µs more, and a micro-benchmark of `System.create` alone collects garbage half again as long; not found yet (Next).
 - **Ordered bodies listing their rows before running them,** as kernels' runs do: `order run 100K` 34.5 ns a row against 31.4 walking the entries.
 
 ## Next
 
+- `loop tick add remove`, a new system each tick: about 2 µs more a tick since indexes (above), in `System.create` and `add`, as more garbage; the paths a run of an existing system takes measure as before.
 - Single-tier runs on workers: workers asleep at the start of a run take 60–135 µs to see the task, and 2–4 of 9 find nothing left to claim.
 - Idle cores clock down: after 5 ms idle, even the main thread runs move 2–4× slower per frame, and keeping one other core busy removes most of it, at 10M too. That's the OS's power policy, not something dispatch can avoid without spending power.
 - Emit and other command-heavy kernels: the sync point dominates.

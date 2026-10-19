@@ -1205,5 +1205,202 @@
             "bytes": 64,
             "basis": "A tick reads at least one cache line of its systems' state."
         }
+    },
+    "index idle": {
+        "operation": "A run of a system looking up through 1,000 indexes when nothing they hold changed: what keeping an index costs each frame while its entities rest.",
+        "per": "indexes",
+        "n": 1000,
+        "typical": [
+            1,
+            100
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each index reads its journal position and its key's last write, 8 bytes each."
+        }
+    },
+    "index refresh 1M 1%": {
+        "operation": "Refreshing a hash index of 1M entities after a system moved 1% of them to other keys: an index kept current as some entities change their key each frame.",
+        "per": "keys changed",
+        "n": 10000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 48,
+            "basis": "Each changed row reads its 8-byte key and tick, and moves a 12-byte entry out of one bucket and into another."
+        }
+    },
+    "index rebuild 1M main": {
+        "operation": "Building a hash index of 1M entities again after a system moved every one of them to another key, on the world's thread: an index whose keys all change at once.",
+        "per": "entities",
+        "n": 1000000,
+        "typical": [
+            10000,
+            1000000
+        ],
+        "best": {
+            "bytes": 24,
+            "basis": "Each entity reads its 8-byte key and location and writes a 12-byte entry."
+        }
+    },
+    "index rebuild 1M workers": {
+        "operation": "Building a hash index of 1M entities again after a system moved every one of them to another key, across the pool: an index whose keys all change at once.",
+        "per": "entities",
+        "n": 1000000,
+        "typical": [
+            10000,
+            1000000
+        ],
+        "best": {
+            "bytes": 24,
+            "basis": "Each entity reads its 8-byte key and location and writes a 12-byte entry.",
+            "on": "threads"
+        }
+    },
+    "rekey 1M": {
+        "operation": "A frame of 1M particles drifting a quarter unit, a kernel writing each one's cell of 4 units only when it crosses into another, and the index on the cell refreshed for its reader: a computed key kept as a component.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            10000,
+            1000000
+        ],
+        "best": {
+            "bytes": 36,
+            "basis": "Each row reads and writes its 12-byte position and reads its 12-byte cell; a crossing also moves its 12-byte entry."
+        }
+    },
+    "rekey 1M unindexed": {
+        "operation": "The frame of `rekey 1M` without the index: the drift and the kernel computing each particle's cell, what the key costs before the index keeps it.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            10000,
+            1000000
+        ],
+        "best": {
+            "bytes": 36,
+            "basis": "Each row reads and writes its 12-byte position and reads its 12-byte cell."
+        }
+    },
+    "order run 100K": {
+        "operation": "A main-thread system running 100K rows in the order of a sorted index whose ranks are scattered through storage: views laid out by sibling rank, timelines in time order.",
+        "per": "rows",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 20,
+            "basis": "Each row reads its 12-byte entry in key order and its 8-byte value."
+        }
+    },
+    "order run 100K storage order": {
+        "operation": "The system of `order run 100K` without `order`, its rows in storage order: what running the rows costs alone.",
+        "per": "rows",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 8,
+            "basis": "Each row reads its 8-byte value."
+        }
+    },
+    "order filtered 100K 1%": {
+        "operation": "A main-thread system with a change filter running, in a sorted index's order, the 1% of 100K rows that changed since it last ran: reacting to edits in document order.",
+        "per": "rows changed",
+        "n": 1000,
+        "typical": [
+            10,
+            10000
+        ],
+        "best": {
+            "bytes": 40,
+            "basis": "Each changed row reads its tick, its entry's position and its 12-byte entry, and its 8-byte value."
+        }
+    },
+    "unique lookup 1M": {
+        "operation": "1M lookups by key through a unique index, each reading one value of the row it finds, in a main-thread system: a replication map from server ids to entities.",
+        "per": "lookups",
+        "n": 1000000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 24,
+            "basis": "Each lookup reads its bucket's 8-byte slot and its 12-byte entry, and a 4-byte value."
+        }
+    },
+    "children lookup": {
+        "operation": "Each of 10K parents summing a value of its ten children through an index on their parent reference, in a main-thread system: a reverse relationship.",
+        "per": "children",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each child is a 12-byte entry and a 4-byte value read."
+        }
+    },
+    "sorted range 1M": {
+        "operation": "10K lookups of a range of ten keys through a sorted index of 1M entities, each reading a value of its rows, in a main-thread system: timelines, intervals, nearest by order.",
+        "per": "range lookups",
+        "n": 10000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 192,
+            "basis": "Each lookup reads two lines of the blocks' first keys and ten 16-byte entries and their 4-byte values."
+        }
+    },
+    "sorted page 100K": {
+        "operation": "A run that changes one entity's value, and a system reading the 20 rows after the first 100 with a small key, highest values first, through a sorted index on the value, recomputed when it changed: `select page 100K` as a system reading an index.",
+        "per": "rows",
+        "n": 100000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each row reads its 8-byte rank and its 8-byte value, as `select page 100K`'s rows do."
+        }
+    },
+    "grid neighbors 100K main": {
+        "operation": "Each of 100K particles reading the positions of those in the 27 cells around its own through a hash index on its cell, in a main-thread system: a uniform grid broadphase.",
+        "per": "rows",
+        "n": 100000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 1000,
+            "basis": "Each row probes 27 buckets, a 64-byte line each, and reads about 270 neighbors' 12-byte entries and positions."
+        }
+    },
+    "grid neighbors 100K workers": {
+        "operation": "Each of 100K particles reading the positions of those in the 27 cells around its own through a hash index on its cell, in a kernel across the pool: a uniform grid broadphase.",
+        "per": "rows",
+        "n": 100000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 1000,
+            "basis": "Each row probes 27 buckets, a 64-byte line each, and reads about 270 neighbors' 12-byte entries and positions.",
+            "on": "threads"
+        }
     }
 }

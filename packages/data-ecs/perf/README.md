@@ -95,171 +95,201 @@ History, ns per N, oldest first:
 
 ### node 24.15.0
 
-Latest `feecbf80+`, 2026-10-19. Copy bandwidth in GB/s by working set:
-- One thread: 120 at 512 KB, 94 at 2 MB, 62.5 at 8 MB, 70.6 at 32 MB, 91.9 at 128 MB.
-- All workers: 833 at 512 KB, 246 at 2 MB, 243 at 8 MB, 234 at 32 MB, 210 at 128 MB.
+Latest `45cb8487+`, 2026-10-19. Copy bandwidth in GB/s by working set:
+- One thread: 120 at 512 KB, 117 at 2 MB, 73.7 at 8 MB, 71.5 at 32 MB, 96.7 at 128 MB.
+- All workers: 883 at 512 KB, 245 at 2 MB, 239 at 8 MB, 238 at 32 MB, 208 at 128 MB.
 
 | Benchmark | Per | N | Typical N | ms | ns per N | Best ns per N | × best | Room, ms | Change |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| create | spawns | 1M | 100–100K | 58.5 | 58.5 | 0.4 | 146× | 58.1 | −1% |
-| create flat | spawns | 1M | 100–100K | 67.3 | 67.3 | 0.4 | 168× | 66.9 | +1% |
-| create flat dynamic | spawns | 1M | 100–100K | 91.1 | 91.1 | 0.4 | 228× | 90.7 | −3% |
-| move | matched rows | 250K | 1K–1M | 0.0904 | 0.362 | 0.3 | 1.21× | 0.0155 | −1% |
-| churn | rows visited | 1M | 1K–100K | 14.9 | 14.9 | 0.241 | 61.8× | 14.7 | +2% |
-| retag | rows visited | 1M | 1K–100K | 32.2 | 32.2 | 0.325 | 99.2× | 31.9 | −4% |
-| sparse changed | rows in the archetype | 1M | 10K–1M | 0.321 | 0.321 | 0.0686 | 4.67× | 0.252 | −0% |
-| sparse changed clustered | rows in the archetype | 1M | 10K–1M | 0.024 | 0.024 | 0.00275 | 8.75× | 0.0213 | +5% |
-| follow | rows | 1M | 1K–100K | 3.84 | 3.84 | 0.433 | 8.88× | 3.41 | −2% |
-| emit | rows | 1M | 1K–100K | 8.79 | 8.79 | 0.283 | 31.1× | 8.51 | −0% |
-| reduce | rows | 1M | 1K–1M | 0.505 | 0.505 | 0.0333 | 15.2× | 0.471 | −2% |
-| chain | row passes | 6M | 6K–6M | 1.52 | 0.254 | 0.0333 | 7.62× | 1.32 | −1% |
-| up depth 10 | rows | 1M | 1K–100K | 2.06 | 2.06 | 0.233 | 8.86× | 1.83 | −1% |
-| up depth 1000 | rows | 1M | 1K–100K | 2.38 | 2.38 | 0.233 | 10.2× | 2.14 | −4% |
-| up one root changed | rows | 1M | 1K–100K | 0.0202 | 0.0202 | 0.000065 | 310× | 0.0201 | −2% |
-| up after a spawn | rows | 1M | 1K–100K | 2.08 | 2.08 | 0.233 | 8.93× | 1.85 | −2% |
-| up filtered after churn | rows | 1M | 1K–100K | 0.0399 | 0.0399 | 0.000114 | 350× | 0.0398 | −3% |
-| up filtered after tagged churn | rows | 1M | 1K–100K | 0.0365 | 0.0365 | 0.000114 | 321× | 0.0364 | −8% |
-| up filtered after a reparent | rows | 1M | 1K–100K | 0.0198 | 0.0198 | 0.000065 | 304× | 0.0197 | −4% |
-| up load | spawns | 1M | 1K–100K | 211 | 211 | 0.566 | 373× | 211 | −2% |
-| up small tree in a big world | tree rows | 1K | 100–10K | 0.0111 | 11.1 | 0.233 | 47.6× | 0.0108 | −3% |
-| main thread | row reads | 50K | 1K–100K | 0.335 | 6.71 | 0.0999 | 67.2× | 0.33 | +1% |
-| select | rows | 1M | 100–100K | 8.22 | 8.22 | 0.0666 | 123× | 8.15 | −0% |
-| move workers | matched rows | 250K | 1K–1M | 0.0193 | 0.0772 | 0.0432 | 1.79× | 0.00849 | −48% faster |
-| follow workers | rows | 1M | 1K–100K | 0.582 | 0.582 | 0.0624 | 9.32× | 0.52 | −11% faster |
-| run idle | runs | 1 | 1–1 | 0.000416 | 416 | 0.533 | 781× | 0.000415 | +11% slower |
-| run 50 idle | systems | 50 | 10–200 | 0.00537 | 107 | 0.533 | 202× | 0.00535 | −7% |
-| sync point one spawn | runs | 1 | 1–1 | 0.000916 | 916 | 1.07 | 860× | 0.000915 | +5% |
+| create | spawns | 1M | 100–100K | 58.1 | 58.1 | 0.4 | 145× | 57.7 | −1% |
+| create flat | spawns | 1M | 100–100K | 65.1 | 65.1 | 0.4 | 163× | 64.7 | −3% |
+| create flat dynamic | spawns | 1M | 100–100K | 91.8 | 91.8 | 0.4 | 229× | 91.4 | +1% |
+| move | matched rows | 250K | 1K–1M | 0.0902 | 0.361 | 0.3 | 1.2× | 0.0153 | −0% |
+| churn | rows visited | 1M | 1K–100K | 15.1 | 15.1 | 0.242 | 62.4× | 14.8 | +1% |
+| retag | rows visited | 1M | 1K–100K | 32.2 | 32.2 | 0.325 | 99.1× | 31.9 | −0% |
+| sparse changed | rows in the archetype | 1M | 10K–1M | 0.323 | 0.323 | 0.0686 | 4.7× | 0.254 | +1% |
+| sparse changed clustered | rows in the archetype | 1M | 10K–1M | 0.023 | 0.023 | 0.00275 | 8.35× | 0.0202 | −5% |
+| follow | rows | 1M | 1K–100K | 3.89 | 3.89 | 0.433 | 8.98× | 3.46 | +1% |
+| emit | rows | 1M | 1K–100K | 8.8 | 8.8 | 0.283 | 31.1× | 8.52 | +0% |
+| reduce | rows | 1M | 1K–1M | 0.504 | 0.504 | 0.0333 | 15.1× | 0.471 | −0% |
+| chain | row passes | 6M | 6K–6M | 1.56 | 0.261 | 0.0333 | 7.82× | 1.36 | +3% |
+| up depth 10 | rows | 1M | 1K–100K | 2.05 | 2.05 | 0.233 | 8.8× | 1.82 | −1% |
+| up depth 1000 | rows | 1M | 1K–100K | 2.41 | 2.41 | 0.233 | 10.3× | 2.17 | +1% |
+| up one root changed | rows | 1M | 1K–100K | 0.021 | 0.021 | 0.0000651 | 323× | 0.021 | +4% |
+| up after a spawn | rows | 1M | 1K–100K | 2.09 | 2.09 | 0.233 | 8.97× | 1.86 | +0% |
+| up filtered after churn | rows | 1M | 1K–100K | 0.0408 | 0.0408 | 0.000114 | 358× | 0.0407 | +2% |
+| up filtered after tagged churn | rows | 1M | 1K–100K | 0.0434 | 0.0434 | 0.000114 | 380× | 0.0433 | +19% slower |
+| up filtered after a reparent | rows | 1M | 1K–100K | 0.0197 | 0.0197 | 0.0000651 | 303× | 0.0197 | −0% |
+| up load | spawns | 1M | 1K–100K | 208 | 208 | 0.567 | 368× | 208 | −1% |
+| up small tree in a big world | tree rows | 1K | 100–10K | 0.0109 | 10.9 | 0.233 | 46.8× | 0.0107 | −2% |
+| main thread | row reads | 50K | 1K–100K | 0.328 | 6.57 | 0.1 | 65.7× | 0.324 | −2% |
+| select | rows | 1M | 100–100K | 8.16 | 8.16 | 0.0667 | 122× | 8.09 | −1% |
+| move workers | matched rows | 250K | 1K–1M | 0.0192 | 0.0768 | 0.0408 | 1.88× | 0.00901 | −0% |
+| follow workers | rows | 1M | 1K–100K | 0.588 | 0.588 | 0.0589 | 9.98× | 0.529 | +1% |
+| run idle | runs | 1 | 1–1 | 0.000416 | 416 | 0.533 | 780× | 0.000415 | +0% |
+| run 50 idle | systems | 50 | 10–200 | 0.00567 | 113 | 0.533 | 213× | 0.00564 | +5% |
+| sync point one spawn | runs | 1 | 1–1 | 0.000916 | 916 | 1.07 | 859× | 0.000915 | +0% |
 | move 1K | matched rows | 1K | 1K–100K | 0.000708 | 0.708 | 0.3 | 2.36× | 0.000408 | +0% |
-| move 10K | matched rows | 10K | 1K–100K | 0.00433 | 0.433 | 0.3 | 1.45× | 0.00134 | −1% |
-| main thread 1K | row reads | 1K | 1K–100K | 0.00658 | 6.58 | 0.0999 | 65.9× | 0.00648 | −1% |
-| main thread 10K | row reads | 10K | 1K–100K | 0.0622 | 6.22 | 0.0999 | 62.2× | 0.0612 | −2% |
-| up depth 10 10K | rows | 10K | 1K–100K | 0.0178 | 1.78 | 0.233 | 7.62× | 0.0154 | −2% |
-| spawn bulk | spawns | 100K | 100–100K | 2.55 | 25.5 | 0.2 | 127× | 2.53 | −0% |
-| spawn bulk kernel | spawns | 100K | 100–100K | 1.03 | 10.3 | 0.233 | 44.3× | 1.01 | −1% |
-| spawn singles | spawns | 4 | 1–10 | 0.00117 | 291 | 0.333 | 876× | 0.00116 | +4% |
-| spawn sixteen archetypes | spawns | 100K | 100–100K | 4 | 40 | 0.2 | 200× | 3.98 | −8% |
-| despawn bulk | despawns | 100K | 100–100K | 4.42 | 44.2 | 0.133 | 332× | 4.41 | −7% |
-| despawn bulk kernel | despawns | 100K | 100–100K | 4.48 | 44.8 | 0.166 | 269× | 4.46 | −17% faster |
-| despawn one | despawns | 1 | 1–10 | 0.00158 | 1,583 | 0.799 | 1,981× | 0.00158 | −3% |
-| add tag | entities moved | 100K | 100–100K | 9.5 | 95 | 0.133 | 714× | 9.49 | −7% |
-| add tag kernel | entities moved | 100K | 100–100K | 8.38 | 83.8 | 0.166 | 504× | 8.37 | −6% |
-| add tag from four archetypes | entities moved | 100K | 100–100K | 9.73 | 97.3 | 0.133 | 730× | 9.71 | −6% |
-| add value | entities moved | 100K | 100–100K | 9.65 | 96.5 | 0.166 | 580× | 9.63 | −1% |
-| add several | entities moved | 100K | 100–100K | 13.2 | 132 | 0.2 | 663× | 13.2 | −1% |
-| remove tag | entities moved | 100K | 100–100K | 7.03 | 70.3 | 0.133 | 528× | 7.02 | −2% |
-| remove tag kernel | entities moved | 100K | 100–100K | 5.95 | 59.5 | 0.166 | 357× | 5.93 | −1% |
-| remove tag from four archetypes | entities moved | 100K | 100–100K | 7.41 | 74.1 | 0.133 | 556× | 7.4 | −7% |
-| remove several | entities moved | 100K | 100–100K | 7.94 | 79.4 | 0.133 | 596× | 7.93 | +1% |
-| add replace | entities | 100K | 100–100K | 7.69 | 76.9 | 0.0999 | 770× | 7.68 | −0% |
-| spawn bulk kernel workers | spawns | 100K | 100–100K | 0.681 | 6.81 | 0.0336 | 203× | 0.678 | −4% |
-| loop tick idle | ticks | 10K | 1–1 | 18.6 | 1,855 | 0.533 | 3,482× | 18.5 | −7% |
-| sync point grow 100 archetypes workers | archetypes grown | 100 | 1–100 | 0.756 | 7,563 | 0.0768 | 98,442× | 0.756 | −16% faster |
-| wake | round trips | 10K | 1–100 | 7.17 | 717 | 1.07 | 673× | 7.16 | −3% |
-| emit main | rows | 1M | 1K–100K | 8.72 | 8.72 | 0.283 | 30.8× | 8.44 | −2% |
-| emit workers | rows | 1M | 1K–100K | 6.18 | 6.18 | 0.0408 | 151× | 6.14 | −5% |
-| remote run | runs | 1K | 1–100 | 9.52 | 9,518 | 1.6 | 5,956× | 9.52 | −11% faster |
-| mailbox resource | ticks | 1K | 1–1 | 5.23 | 5,230 | 0.533 | 9,818× | 5.23 | +2% |
-| mailbox select 10K | ticks | 1K | 1–1 | 752 | 752,444 | 1,998 | 377× | 750 | −4% |
-| log replay | moves | 10K | 1–10K | 0.206 | 20.6 | 1.07 | 19.4× | 0.196 | +1% |
-| log rebuild 100K | rows | 100K | 1K–100K | 0.305 | 3.05 | 0.499 | 6.11× | 0.255 | −8% |
-| handoff | ticks | 1K | 1–1 | 10.1 | 10,091 | 10.7 | 947× | 10.1 | −17% faster |
-| fused tiers | ticks | 1K | 1–1 | 6.76 | 6,755 | 2.13 | 3,170× | 6.75 | −4% |
-| despawn objects 10K | despawns | 10K | 1–10K | 0.8 | 80 | 0.466 | 172× | 0.795 | −4% |
-| tail prompt | ticks | 1K | 1–1 | 18.7 | 18,705 | 102 | 183× | 18.6 | −12% faster |
-| tail late snapshot 10K | rows copied | 10K | 100–10K | 0.0697 | 6.97 | 1.43 | 4.87× | 0.0554 | −18% faster |
-| tail overlap | ticks | 100 | 1–1 | 243 | 2,431,830 | 12,652 | 192× | 242 | −5% |
-| tail overlap waiting | ticks | 100 | 1–1 | 460 | 4,597,763 | 6,326 | 727× | 459 | −3% |
-| read observe | reads | 1 | 1–100 | 0.000541 | 541 | 0.533 | 1,016× | 0.00054 |  |
-| read run | reads | 1 | 1–100 | 0.00971 | 9,708 | 0.533 | 18,224× | 0.00971 |  |
-| read run changed | reads | 1 | 1–100 | 0.012 | 12,042 | 0.533 | 22,605× | 0.012 |  |
-| observe 1K entities | observers | 1K | 10–1K | 0.0259 | 25.9 | 0.133 | 195× | 0.0258 |  |
-| observe 1K entities one changed | observers | 1K | 10–1K | 0.026 | 26 | 0.133 | 196× | 0.0259 |  |
-| select page 100K | rows | 100K | 1K–100K | 1.12 | 11.2 | 0.133 | 84.3× | 1.11 |  |
-| loop tick add remove | ticks | 10K | 1–1 | 236 | 23,621 | 0.533 | 44,342× | 236 |  |
-| loop tick add remove again | ticks | 10K | 1–1 | 214 | 21,432 | 0.533 | 40,233× | 214 |  |
-| loop tick idle after add remove | ticks | 10K | 1–1 | 19.4 | 1,942 | 0.533 | 3,646× | 19.4 |  |
+| move 10K | matched rows | 10K | 1K–100K | 0.00437 | 0.437 | 0.3 | 1.46× | 0.00138 | +1% |
+| main thread 1K | row reads | 1K | 1K–100K | 0.00667 | 6.67 | 0.1 | 66.7× | 0.00657 | +1% |
+| main thread 10K | row reads | 10K | 1K–100K | 0.0625 | 6.25 | 0.1 | 62.6× | 0.0615 | +1% |
+| up depth 10 10K | rows | 10K | 1K–100K | 0.0179 | 1.79 | 0.233 | 7.68× | 0.0156 | +1% |
+| spawn bulk | spawns | 100K | 100–100K | 2.56 | 25.6 | 0.2 | 128× | 2.54 | +1% |
+| spawn bulk kernel | spawns | 100K | 100–100K | 1.04 | 10.4 | 0.233 | 44.4× | 1.01 | +0% |
+| spawn singles | spawns | 4 | 1–10 | 0.00117 | 291 | 0.333 | 875× | 0.00116 | −0% |
+| spawn sixteen archetypes | spawns | 100K | 100–100K | 4 | 40 | 0.2 | 200× | 3.98 | +0% |
+| despawn bulk | despawns | 100K | 100–100K | 4.43 | 44.3 | 0.133 | 332× | 4.42 | +0% |
+| despawn bulk kernel | despawns | 100K | 100–100K | 4.48 | 44.8 | 0.167 | 269× | 4.47 | +0% |
+| despawn one | despawns | 1 | 1–10 | 0.00158 | 1,583 | 0.8 | 1,979× | 0.00158 | +0% |
+| add tag | entities moved | 100K | 100–100K | 9.62 | 96.2 | 0.133 | 722× | 9.61 | +1% |
+| add tag kernel | entities moved | 100K | 100–100K | 8.47 | 84.7 | 0.167 | 508× | 8.45 | +1% |
+| add tag from four archetypes | entities moved | 100K | 100–100K | 9.86 | 98.6 | 0.133 | 740× | 9.85 | +1% |
+| add value | entities moved | 100K | 100–100K | 9.6 | 96 | 0.167 | 576× | 9.58 | −1% |
+| add several | entities moved | 100K | 100–100K | 13.1 | 131 | 0.2 | 655× | 13.1 | −1% |
+| remove tag | entities moved | 100K | 100–100K | 7.06 | 70.6 | 0.133 | 530× | 7.05 | +0% |
+| remove tag kernel | entities moved | 100K | 100–100K | 6.03 | 60.3 | 0.167 | 362× | 6.02 | +1% |
+| remove tag from four archetypes | entities moved | 100K | 100–100K | 7.79 | 77.9 | 0.133 | 585× | 7.78 | +5% |
+| remove several | entities moved | 100K | 100–100K | 7.85 | 78.5 | 0.133 | 589× | 7.83 | −1% |
+| add replace | entities | 100K | 100–100K | 7.83 | 78.3 | 0.1 | 783× | 7.82 | +2% |
+| spawn bulk kernel workers | spawns | 100K | 100–100K | 0.676 | 6.76 | 0.0317 | 213× | 0.673 | −1% |
+| loop tick idle | ticks | 10K | 1–1 | 18.8 | 1,881 | 0.533 | 3,527× | 18.8 | +1% |
+| sync point grow 100 archetypes workers | archetypes grown | 100 | 1–100 | 0.823 | 8,232 | 0.0725 | 113,518× | 0.823 | +9% |
+| wake | round trips | 10K | 1–100 | 7.07 | 707 | 1.07 | 663× | 7.06 | −1% |
+| emit main | rows | 1M | 1K–100K | 8.86 | 8.86 | 0.283 | 31.3× | 8.58 | +2% |
+| emit workers | rows | 1M | 1K–100K | 6.26 | 6.26 | 0.0385 | 162× | 6.22 | +1% |
+| remote run | runs | 1K | 1–100 | 9.62 | 9,621 | 1.6 | 6,015× | 9.62 | +1% |
+| mailbox resource | ticks | 1K | 1–1 | 5.22 | 5,224 | 0.533 | 9,798× | 5.22 | −0% |
+| mailbox select 10K | ticks | 1K | 1–1 | 754 | 754,225 | 2,000 | 377× | 752 | +0% |
+| log replay | moves | 10K | 1–10K | 0.205 | 20.5 | 1.07 | 19.2× | 0.194 | −1% |
+| log rebuild 100K | rows | 100K | 1K–100K | 0.312 | 3.12 | 0.5 | 6.24× | 0.262 | +2% |
+| handoff | ticks | 1K | 1–1 | 10.8 | 10,790 | 10.7 | 1,012× | 10.8 | +7% |
+| fused tiers | ticks | 1K | 1–1 | 6.22 | 6,219 | 2.13 | 2,916× | 6.22 | −8% |
+| despawn objects 10K | despawns | 10K | 1–10K | 0.817 | 81.7 | 0.467 | 175× | 0.813 | +2% |
+| tail prompt | ticks | 1K | 1–1 | 19.7 | 19,692 | 102 | 193× | 19.6 | +5% |
+| tail late snapshot 10K | rows copied | 10K | 100–10K | 0.0705 | 7.05 | 1.43 | 4.92× | 0.0561 | +1% |
+| tail overlap | ticks | 100 | 1–1 | 254 | 2,544,020 | 12,664 | 201× | 253 | +5% |
+| tail overlap waiting | ticks | 100 | 1–1 | 460 | 4,595,614 | 6,332 | 726× | 459 | −0% |
+| read observe | reads | 1 | 1–100 | 0.000541 | 541 | 0.533 | 1,015× | 0.00054 | −0% |
+| read run | reads | 1 | 1–100 | 0.0116 | 11,625 | 0.533 | 21,802× | 0.0116 | +20% slower |
+| read run changed | reads | 1 | 1–100 | 0.0127 | 12,708 | 0.533 | 23,833× | 0.0127 | +6% |
+| observe 1K entities | observers | 1K | 10–1K | 0.024 | 24 | 0.133 | 180× | 0.0239 | −7% |
+| observe 1K entities one changed | observers | 1K | 10–1K | 0.0249 | 24.9 | 0.133 | 187× | 0.0248 | −4% |
+| select page 100K | rows | 100K | 1K–100K | 1.15 | 11.5 | 0.133 | 86.1× | 1.13 | +2% |
+| loop tick add remove | ticks | 10K | 1–1 | 268 | 26,830 | 0.533 | 50,319× | 268 | +14% slower |
+| loop tick add remove again | ticks | 10K | 1–1 | 203 | 20,335 | 0.533 | 38,138× | 203 | −5% |
+| loop tick idle after add remove | ticks | 10K | 1–1 | 19.9 | 1,986 | 0.533 | 3,724× | 19.9 | +2% |
+| index idle | indexes | 1K | 1–100 | 0.00946 | 9.46 | 0.133 | 71× | 0.00932 |  |
+| index refresh 1M 1% | keys changed | 10K | 100–100K | 1.69 | 169 | 0.4 | 423× | 1.69 |  |
+| index rebuild 1M main | entities | 1M | 10K–1M | 27.5 | 27.5 | 0.2 | 137× | 27.3 |  |
+| index rebuild 1M workers | entities | 1M | 10K–1M | 6.52 | 6.52 | 0.0272 | 240× | 6.5 |  |
+| rekey 1M | rows | 1M | 10K–1M | 14.3 | 14.3 | 0.3 | 47.8× | 14 |  |
+| rekey 1M unindexed | rows | 1M | 10K–1M | 4.84 | 4.84 | 0.3 | 16.1× | 4.54 |  |
+| order run 100K | rows | 100K | 100–100K | 3.12 | 31.2 | 0.167 | 187× | 3.11 |  |
+| order run 100K storage order | rows | 100K | 100–100K | 2.84 | 28.4 | 0.0667 | 426× | 2.83 |  |
+| order filtered 100K 1% | rows changed | 1K | 10–10K | 0.179 | 179 | 0.333 | 537× | 0.179 |  |
+| unique lookup 1M | lookups | 1M | 100–100K | 45.2 | 45.2 | 0.2 | 226× | 45 |  |
+| children lookup | children | 100K | 100–100K | 3.27 | 32.7 | 0.133 | 245× | 3.25 |  |
+| sorted range 1M | range lookups | 10K | 100–100K | 8.4 | 840 | 1.6 | 525× | 8.39 |  |
+| sorted page 100K | rows | 100K | 1K–100K | 0.0234 | 0.234 | 0.133 | 1.76× | 0.0101 |  |
+| grid neighbors 100K main | rows | 100K | 1K–100K | 1,110 | 11,099 | 8.33 | 1,332× | 1,109 |  |
+| grid neighbors 100K workers | rows | 100K | 1K–100K | 17.8 | 178 | 1.13 | 158× | 17.7 |  |
 
 History, ns per N, oldest first:
 
-| Benchmark | `d4c15d3b` 10-18 | `ba222da0` 10-18 | `71b7652e` 10-18 | `3fdcd402` 10-18 | `eb4a7301+` 10-18 | `3c43e8ac` 10-18 | `dcec1e13+` 10-18 | `feecbf80+` 10-19 |
+| Benchmark | `ba222da0` 10-18 | `71b7652e` 10-18 | `3fdcd402` 10-18 | `eb4a7301+` 10-18 | `3c43e8ac` 10-18 | `dcec1e13+` 10-18 | `feecbf80+` 10-19 | `45cb8487+` 10-19 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| create | 59.1 | 60.1 | 61 | 57.1 | 58.3 | 58.8 | 59 | 58.5 |
-| create flat | 67.4 | 67.1 | 68.3 | 63.9 | 66.2 | 66 | 66.9 | 67.3 |
-| create flat dynamic | 91.8 | 96.4 | 96.4 | 91 | 92.6 | 92.5 | 94.2 | 91.1 |
-| move | 0.362 | 0.367 | 0.361 | 0.36 | 0.364 | 0.362 | 0.366 | 0.362 |
-| churn | 14.9 | 14.8 | 14.9 | 14.3 | 14.8 | 14.4 | 14.6 | 14.9 |
-| retag | 33.1 | 34.1 | 37 | 35.6 | 32.8 | 32.9 | 33.5 | 32.2 |
-| sparse changed | 0.319 | 0.316 | 0.335 | 0.321 | 0.424 | 0.519 | 0.322 | 0.321 |
-| sparse changed clustered | 0.0226 | 0.023 | 0.0238 | 0.0226 | 0.0253 | 0.0262 | 0.023 | 0.024 |
-| follow | 3.82 | 3.89 | 3.82 | 3.87 | 3.95 | 3.92 | 3.91 | 3.84 |
-| emit | 8.86 | 8.85 | 8.72 | 8.78 | 9.01 | 9.03 | 8.83 | 8.79 |
-| reduce | 0.504 | 0.513 | 0.504 | 0.504 | 0.504 | 0.504 | 0.513 | 0.505 |
-| chain | 0.258 | 0.261 | 0.26 | 0.258 | 0.258 | 0.26 | 0.257 | 0.254 |
-| up depth 10 | 2.04 | 2.08 | 2.06 | 2.04 | 2.1 | 2.07 | 2.08 | 2.06 |
-| up depth 1000 | 2.41 | 2.43 | 2.39 | 2.38 | 2.4 | 2.62 | 2.48 | 2.38 |
-| up one root changed | 0.0203 | 0.0223 | 0.0225 | 0.02 | 0.0305 | 0.0351 | 0.0205 | 0.0202 |
-| up after a spawn | 2.08 | 2.08 | 2.12 | 2.09 | 2.45 | 2.7 | 2.12 | 2.08 |
-| up filtered after churn | 0.0418 | 0.0448 | 0.0426 | 0.0422 | 0.05 | 0.0554 | 0.041 | 0.0399 |
-| up filtered after tagged churn | 0.0413 | 0.0433 | 0.0393 | 0.0386 | 0.0478 | 0.0519 | 0.0398 | 0.0365 |
-| up filtered after a reparent | 0.0204 | 0.0198 | 0.0192 | 0.0194 | 0.0206 | 0.0206 | 0.0207 | 0.0198 |
-| up load | 218 | 219 | 229 | 210 | 211 | 211 | 215 | 211 |
-| up small tree in a big world | 10.8 | 11.5 | 10.6 | 10.8 | 11.2 | 11.3 | 11.5 | 11.1 |
-| main thread | 6.62 | 7 | 6.93 | 6.64 | 6.77 | 7.05 | 6.64 | 6.71 |
-| select | 8.44 | 8.28 | 8.37 | 8.16 | 8.25 | 8.21 | 8.24 | 8.22 |
-| move workers | 0.0782 | 0.0775 | 0.0768 | 0.0777 | 0.0852 | 0.0825 | 0.147 | 0.0772 |
-| follow workers | 0.619 | 0.599 | 0.586 | 0.587 | 0.648 | 0.643 | 0.654 | 0.582 |
-| run idle | 375 | 375 | 416 | 375 | 375 | 375 | 375 | 416 |
-| run 50 idle | 114 | 117 | 113 | 113 | 115 | 114 | 115 | 107 |
-| sync point one spawn | 875 | 875 | 875 | 875 | 916 | 916 | 875 | 916 |
-| move 1K | 0.666 | 0.708 | 0.708 | 0.708 | 0.708 | 0.708 | 0.708 | 0.708 |
-| move 10K | 0.433 | 0.433 | 0.429 | 0.433 | 0.446 | 0.433 | 0.437 | 0.433 |
-| main thread 1K | 6.67 | 6.67 | 6.67 | 6.67 | 6.75 | 6.71 | 6.67 | 6.58 |
-| main thread 10K | 6.26 | 6.25 | 6.27 | 6.28 | 6.43 | 6.3 | 6.37 | 6.22 |
-| up depth 10 10K | 1.77 | 1.77 | 1.77 | 1.77 | 1.81 | 1.77 | 1.8 | 1.78 |
-| spawn bulk | 25.8 | 25.6 | 25.4 | 25.3 | 25.8 | 25.8 | 25.5 | 25.5 |
-| spawn bulk kernel | 10.4 | 10.4 | 10.3 | 10.3 | 10.3 | 10.4 | 10.4 | 10.3 |
-| spawn singles | 281 | 291 | 281 | 281 | 291 | 291 | 281 | 291 |
-| spawn sixteen archetypes | 39.6 | 40.5 | 40.3 | 39.9 | 42.2 | 42.7 | 43.6 | 40 |
-| despawn bulk | 43.5 | 45.9 | 44.5 | 43.8 | 45.6 | 46.5 | 47.6 | 44.2 |
-| despawn bulk kernel | 46.7 | 45.4 | 48.1 | 45.4 | 47.3 | 47.3 | 54.2 | 44.8 |
-| despawn one | 1,541 | 1,583 | 1,583 | 1,541 | 1,583 | 1,541 | 1,625 | 1,583 |
-| add tag | 101 | 101 | 97.1 | 95.4 | 96.2 | 96 | 102 | 95 |
-| add tag kernel | 85.8 | 83.9 | 83.2 | 84.9 | 85.8 | 85.2 | 89.4 | 83.8 |
-| add tag from four archetypes | 105 | 106 | 97 | 97.7 | 99.3 | 99.1 | 103 | 97.3 |
-| add value | 96.4 | 96.9 | 98 | 96.6 | 97.3 | 97.3 | 97.6 | 96.5 |
-| add several | 140 | 142 | 130 | 130 | 134 | 133 | 133 | 132 |
-| remove tag | 70.8 | 70.8 | 69.9 | 70.3 | 72.8 | 70.6 | 71.7 | 70.3 |
-| remove tag kernel | 59.2 | 59.5 | 58.7 | 60.3 | 61.2 | 60.7 | 59.8 | 59.5 |
-| remove tag from four archetypes | 75 | 78.6 | 75.4 | 77.8 | 81 | 74.4 | 80.1 | 74.1 |
-| remove several | 78.6 | 77.5 | 79.4 | 78.2 | 80.9 | 78.7 | 78.8 | 79.4 |
-| add replace | 73.9 | 77.5 | 75.1 | 77.1 | 81.5 | 78.2 | 77.1 | 76.9 |
-| spawn bulk kernel workers | 7.09 | 7.03 | 6.75 | 7.09 | 6.99 | 7.07 | 7.11 | 6.81 |
-| loop tick idle | 1,958 | 1,968 | 1,925 | 1,847 | 1,886 | 1,900 | 1,988 | 1,855 |
-| sync point grow 100 archetypes workers | 8,506 | 8,873 | 8,378 | 8,989 | 9,718 | 9,643 | 8,954 | 7,563 |
-| wake | 735 | 790 | 730 | 710 | 742 | 746 | 741 | 717 |
-| emit main | 8.77 | 8.81 | 8.63 | 8.7 | 9.13 | 9.05 | 8.88 | 8.72 |
-| emit workers | 6.36 | 6.18 | 6.13 | 6.29 | 6.23 | 6.1 | 6.52 | 6.18 |
-| remote run | 12,459 | 13,527 | 13,626 | 9,375 | 9,988 | 10,373 | 10,660 | 9,518 |
-| mailbox resource | 3,488 | 5,565 | 5,380 | 4,977 | 5,297 | 5,294 | 5,150 | 5,230 |
-| mailbox select 10K | 783,864 | 781,906 | 782,098 | 745,676 | 770,295 | 767,713 | 784,134 | 752,444 |
-| log replay | 24 | 20.7 | 21.4 | 20.3 | 20.8 | 20.5 | 20.4 | 20.6 |
-| log rebuild 100K | 4.31 | 3.35 | 3.35 | 3.06 | 3.22 | 3 | 3.32 | 3.05 |
-| handoff |  | 11,253 | 10,960 | 10,447 | 10,856 | 10,871 | 12,096 | 10,091 |
-| fused tiers |  | 7,000 | 6,615 | 6,330 | 6,893 | 6,894 | 7,015 | 6,755 |
-| despawn objects 10K |  |  | 84.9 | 80.9 | 83.7 | 81.5 | 83.2 | 80 |
-| tail prompt |  |  |  | 17,336 | 20,432 | 20,084 | 21,347 | 18,705 |
-| tail late snapshot 10K |  |  |  | 7.02 | 8.23 | 8.73 | 8.48 | 6.97 |
-| tail overlap |  |  |  |  |  | 2,506,557 | 2,556,813 | 2,431,830 |
-| tail overlap waiting |  |  |  |  |  | 4,699,517 | 4,760,798 | 4,597,763 |
-| read observe |  |  |  |  |  |  |  | 541 |
-| read run |  |  |  |  |  |  |  | 9,708 |
-| read run changed |  |  |  |  |  |  |  | 12,042 |
-| observe 1K entities |  |  |  |  |  |  |  | 25.9 |
-| observe 1K entities one changed |  |  |  |  |  |  |  | 26 |
-| select page 100K |  |  |  |  |  |  |  | 11.2 |
-| loop tick add remove |  |  |  |  |  |  |  | 23,621 |
-| loop tick add remove again |  |  |  |  |  |  |  | 21,432 |
-| loop tick idle after add remove |  |  |  |  |  |  |  | 1,942 |
+| create | 60.1 | 61 | 57.1 | 58.3 | 58.8 | 59 | 58.5 | 58.1 |
+| create flat | 67.1 | 68.3 | 63.9 | 66.2 | 66 | 66.9 | 67.3 | 65.1 |
+| create flat dynamic | 96.4 | 96.4 | 91 | 92.6 | 92.5 | 94.2 | 91.1 | 91.8 |
+| move | 0.367 | 0.361 | 0.36 | 0.364 | 0.362 | 0.366 | 0.362 | 0.361 |
+| churn | 14.8 | 14.9 | 14.3 | 14.8 | 14.4 | 14.6 | 14.9 | 15.1 |
+| retag | 34.1 | 37 | 35.6 | 32.8 | 32.9 | 33.5 | 32.2 | 32.2 |
+| sparse changed | 0.316 | 0.335 | 0.321 | 0.424 | 0.519 | 0.322 | 0.321 | 0.323 |
+| sparse changed clustered | 0.023 | 0.0238 | 0.0226 | 0.0253 | 0.0262 | 0.023 | 0.024 | 0.023 |
+| follow | 3.89 | 3.82 | 3.87 | 3.95 | 3.92 | 3.91 | 3.84 | 3.89 |
+| emit | 8.85 | 8.72 | 8.78 | 9.01 | 9.03 | 8.83 | 8.79 | 8.8 |
+| reduce | 0.513 | 0.504 | 0.504 | 0.504 | 0.504 | 0.513 | 0.505 | 0.504 |
+| chain | 0.261 | 0.26 | 0.258 | 0.258 | 0.26 | 0.257 | 0.254 | 0.261 |
+| up depth 10 | 2.08 | 2.06 | 2.04 | 2.1 | 2.07 | 2.08 | 2.06 | 2.05 |
+| up depth 1000 | 2.43 | 2.39 | 2.38 | 2.4 | 2.62 | 2.48 | 2.38 | 2.41 |
+| up one root changed | 0.0223 | 0.0225 | 0.02 | 0.0305 | 0.0351 | 0.0205 | 0.0202 | 0.021 |
+| up after a spawn | 2.08 | 2.12 | 2.09 | 2.45 | 2.7 | 2.12 | 2.08 | 2.09 |
+| up filtered after churn | 0.0448 | 0.0426 | 0.0422 | 0.05 | 0.0554 | 0.041 | 0.0399 | 0.0408 |
+| up filtered after tagged churn | 0.0433 | 0.0393 | 0.0386 | 0.0478 | 0.0519 | 0.0398 | 0.0365 | 0.0434 |
+| up filtered after a reparent | 0.0198 | 0.0192 | 0.0194 | 0.0206 | 0.0206 | 0.0207 | 0.0198 | 0.0197 |
+| up load | 219 | 229 | 210 | 211 | 211 | 215 | 211 | 208 |
+| up small tree in a big world | 11.5 | 10.6 | 10.8 | 11.2 | 11.3 | 11.5 | 11.1 | 10.9 |
+| main thread | 7 | 6.93 | 6.64 | 6.77 | 7.05 | 6.64 | 6.71 | 6.57 |
+| select | 8.28 | 8.37 | 8.16 | 8.25 | 8.21 | 8.24 | 8.22 | 8.16 |
+| move workers | 0.0775 | 0.0768 | 0.0777 | 0.0852 | 0.0825 | 0.147 | 0.0772 | 0.0768 |
+| follow workers | 0.599 | 0.586 | 0.587 | 0.648 | 0.643 | 0.654 | 0.582 | 0.588 |
+| run idle | 375 | 416 | 375 | 375 | 375 | 375 | 416 | 416 |
+| run 50 idle | 117 | 113 | 113 | 115 | 114 | 115 | 107 | 113 |
+| sync point one spawn | 875 | 875 | 875 | 916 | 916 | 875 | 916 | 916 |
+| move 1K | 0.708 | 0.708 | 0.708 | 0.708 | 0.708 | 0.708 | 0.708 | 0.708 |
+| move 10K | 0.433 | 0.429 | 0.433 | 0.446 | 0.433 | 0.437 | 0.433 | 0.437 |
+| main thread 1K | 6.67 | 6.67 | 6.67 | 6.75 | 6.71 | 6.67 | 6.58 | 6.67 |
+| main thread 10K | 6.25 | 6.27 | 6.28 | 6.43 | 6.3 | 6.37 | 6.22 | 6.25 |
+| up depth 10 10K | 1.77 | 1.77 | 1.77 | 1.81 | 1.77 | 1.8 | 1.78 | 1.79 |
+| spawn bulk | 25.6 | 25.4 | 25.3 | 25.8 | 25.8 | 25.5 | 25.5 | 25.6 |
+| spawn bulk kernel | 10.4 | 10.3 | 10.3 | 10.3 | 10.4 | 10.4 | 10.3 | 10.4 |
+| spawn singles | 291 | 281 | 281 | 291 | 291 | 281 | 291 | 291 |
+| spawn sixteen archetypes | 40.5 | 40.3 | 39.9 | 42.2 | 42.7 | 43.6 | 40 | 40 |
+| despawn bulk | 45.9 | 44.5 | 43.8 | 45.6 | 46.5 | 47.6 | 44.2 | 44.3 |
+| despawn bulk kernel | 45.4 | 48.1 | 45.4 | 47.3 | 47.3 | 54.2 | 44.8 | 44.8 |
+| despawn one | 1,583 | 1,583 | 1,541 | 1,583 | 1,541 | 1,625 | 1,583 | 1,583 |
+| add tag | 101 | 97.1 | 95.4 | 96.2 | 96 | 102 | 95 | 96.2 |
+| add tag kernel | 83.9 | 83.2 | 84.9 | 85.8 | 85.2 | 89.4 | 83.8 | 84.7 |
+| add tag from four archetypes | 106 | 97 | 97.7 | 99.3 | 99.1 | 103 | 97.3 | 98.6 |
+| add value | 96.9 | 98 | 96.6 | 97.3 | 97.3 | 97.6 | 96.5 | 96 |
+| add several | 142 | 130 | 130 | 134 | 133 | 133 | 132 | 131 |
+| remove tag | 70.8 | 69.9 | 70.3 | 72.8 | 70.6 | 71.7 | 70.3 | 70.6 |
+| remove tag kernel | 59.5 | 58.7 | 60.3 | 61.2 | 60.7 | 59.8 | 59.5 | 60.3 |
+| remove tag from four archetypes | 78.6 | 75.4 | 77.8 | 81 | 74.4 | 80.1 | 74.1 | 77.9 |
+| remove several | 77.5 | 79.4 | 78.2 | 80.9 | 78.7 | 78.8 | 79.4 | 78.5 |
+| add replace | 77.5 | 75.1 | 77.1 | 81.5 | 78.2 | 77.1 | 76.9 | 78.3 |
+| spawn bulk kernel workers | 7.03 | 6.75 | 7.09 | 6.99 | 7.07 | 7.11 | 6.81 | 6.76 |
+| loop tick idle | 1,968 | 1,925 | 1,847 | 1,886 | 1,900 | 1,988 | 1,855 | 1,881 |
+| sync point grow 100 archetypes workers | 8,873 | 8,378 | 8,989 | 9,718 | 9,643 | 8,954 | 7,563 | 8,232 |
+| wake | 790 | 730 | 710 | 742 | 746 | 741 | 717 | 707 |
+| emit main | 8.81 | 8.63 | 8.7 | 9.13 | 9.05 | 8.88 | 8.72 | 8.86 |
+| emit workers | 6.18 | 6.13 | 6.29 | 6.23 | 6.1 | 6.52 | 6.18 | 6.26 |
+| remote run | 13,527 | 13,626 | 9,375 | 9,988 | 10,373 | 10,660 | 9,518 | 9,621 |
+| mailbox resource | 5,565 | 5,380 | 4,977 | 5,297 | 5,294 | 5,150 | 5,230 | 5,224 |
+| mailbox select 10K | 781,906 | 782,098 | 745,676 | 770,295 | 767,713 | 784,134 | 752,444 | 754,225 |
+| log replay | 20.7 | 21.4 | 20.3 | 20.8 | 20.5 | 20.4 | 20.6 | 20.5 |
+| log rebuild 100K | 3.35 | 3.35 | 3.06 | 3.22 | 3 | 3.32 | 3.05 | 3.12 |
+| handoff | 11,253 | 10,960 | 10,447 | 10,856 | 10,871 | 12,096 | 10,091 | 10,790 |
+| fused tiers | 7,000 | 6,615 | 6,330 | 6,893 | 6,894 | 7,015 | 6,755 | 6,219 |
+| despawn objects 10K |  | 84.9 | 80.9 | 83.7 | 81.5 | 83.2 | 80 | 81.7 |
+| tail prompt |  |  | 17,336 | 20,432 | 20,084 | 21,347 | 18,705 | 19,692 |
+| tail late snapshot 10K |  |  | 7.02 | 8.23 | 8.73 | 8.48 | 6.97 | 7.05 |
+| tail overlap |  |  |  |  | 2,506,557 | 2,556,813 | 2,431,830 | 2,544,020 |
+| tail overlap waiting |  |  |  |  | 4,699,517 | 4,760,798 | 4,597,763 | 4,595,614 |
+| read observe |  |  |  |  |  |  | 541 | 541 |
+| read run |  |  |  |  |  |  | 9,708 | 11,625 |
+| read run changed |  |  |  |  |  |  | 12,042 | 12,708 |
+| observe 1K entities |  |  |  |  |  |  | 25.9 | 24 |
+| observe 1K entities one changed |  |  |  |  |  |  | 26 | 24.9 |
+| select page 100K |  |  |  |  |  |  | 11.2 | 11.5 |
+| loop tick add remove |  |  |  |  |  |  | 23,621 | 26,830 |
+| loop tick add remove again |  |  |  |  |  |  | 21,432 | 20,335 |
+| loop tick idle after add remove |  |  |  |  |  |  | 1,942 | 1,986 |
+| index idle |  |  |  |  |  |  |  | 9.46 |
+| index refresh 1M 1% |  |  |  |  |  |  |  | 169 |
+| index rebuild 1M main |  |  |  |  |  |  |  | 27.5 |
+| index rebuild 1M workers |  |  |  |  |  |  |  | 6.52 |
+| rekey 1M |  |  |  |  |  |  |  | 14.3 |
+| rekey 1M unindexed |  |  |  |  |  |  |  | 4.84 |
+| order run 100K |  |  |  |  |  |  |  | 31.2 |
+| order run 100K storage order |  |  |  |  |  |  |  | 28.4 |
+| order filtered 100K 1% |  |  |  |  |  |  |  | 179 |
+| unique lookup 1M |  |  |  |  |  |  |  | 45.2 |
+| children lookup |  |  |  |  |  |  |  | 32.7 |
+| sorted range 1M |  |  |  |  |  |  |  | 840 |
+| sorted page 100K |  |  |  |  |  |  |  | 0.234 |
+| grid neighbors 100K main |  |  |  |  |  |  |  | 11,099 |
+| grid neighbors 100K workers |  |  |  |  |  |  |  | 178 |
 
 ## Benchmarks
 
@@ -906,3 +936,108 @@ Ticks with nothing changed after 60,000 ticks that each added a new system and r
 
 - **N:** 10K ticks; usually 1–1.
 - **Best:** 64 bytes per N at the copy bandwidth of one thread, the fastest it measured. A tick reads at least one cache line of its systems' state.
+
+### index idle
+
+A run of a system looking up through 1,000 indexes when nothing they hold changed: what keeping an index costs each frame while its entities rest.
+
+- **N:** 1K indexes; usually 1–100.
+- **Best:** 16 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each index reads its journal position and its key's last write, 8 bytes each.
+
+### index refresh 1M 1%
+
+Refreshing a hash index of 1M entities after a system moved 1% of them to other keys: an index kept current as some entities change their key each frame.
+
+- **N:** 10K keys changed; usually 100–100K.
+- **Best:** 48 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each changed row reads its 8-byte key and tick, and moves a 12-byte entry out of one bucket and into another.
+
+### index rebuild 1M main
+
+Building a hash index of 1M entities again after a system moved every one of them to another key, on the world's thread: an index whose keys all change at once.
+
+- **N:** 1M entities; usually 10K–1M.
+- **Best:** 24 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each entity reads its 8-byte key and location and writes a 12-byte entry.
+
+### index rebuild 1M workers
+
+Building a hash index of 1M entities again after a system moved every one of them to another key, across the pool: an index whose keys all change at once.
+
+- **N:** 1M entities; usually 10K–1M.
+- **Best:** 24 bytes per N at the copy bandwidth of all workers, the fastest it measured. Each entity reads its 8-byte key and location and writes a 12-byte entry.
+
+### rekey 1M
+
+A frame of 1M particles drifting a quarter unit, a kernel writing each one's cell of 4 units only when it crosses into another, and the index on the cell refreshed for its reader: a computed key kept as a component.
+
+- **N:** 1M rows; usually 10K–1M.
+- **Best:** 36 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each row reads and writes its 12-byte position and reads its 12-byte cell; a crossing also moves its 12-byte entry.
+
+### rekey 1M unindexed
+
+The frame of `rekey 1M` without the index: the drift and the kernel computing each particle's cell, what the key costs before the index keeps it.
+
+- **N:** 1M rows; usually 10K–1M.
+- **Best:** 36 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each row reads and writes its 12-byte position and reads its 12-byte cell.
+
+### order run 100K
+
+A main-thread system running 100K rows in the order of a sorted index whose ranks are scattered through storage: views laid out by sibling rank, timelines in time order.
+
+- **N:** 100K rows; usually 100–100K.
+- **Best:** 20 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each row reads its 12-byte entry in key order and its 8-byte value.
+
+### order run 100K storage order
+
+The system of `order run 100K` without `order`, its rows in storage order: what running the rows costs alone.
+
+- **N:** 100K rows; usually 100–100K.
+- **Best:** 8 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each row reads its 8-byte value.
+
+### order filtered 100K 1%
+
+A main-thread system with a change filter running, in a sorted index's order, the 1% of 100K rows that changed since it last ran: reacting to edits in document order.
+
+- **N:** 1K rows changed; usually 10–10K.
+- **Best:** 40 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each changed row reads its tick, its entry's position and its 12-byte entry, and its 8-byte value.
+
+### unique lookup 1M
+
+1M lookups by key through a unique index, each reading one value of the row it finds, in a main-thread system: a replication map from server ids to entities.
+
+- **N:** 1M lookups; usually 100–100K.
+- **Best:** 24 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each lookup reads its bucket's 8-byte slot and its 12-byte entry, and a 4-byte value.
+
+### children lookup
+
+Each of 10K parents summing a value of its ten children through an index on their parent reference, in a main-thread system: a reverse relationship.
+
+- **N:** 100K children; usually 100–100K.
+- **Best:** 16 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each child is a 12-byte entry and a 4-byte value read.
+
+### sorted range 1M
+
+10K lookups of a range of ten keys through a sorted index of 1M entities, each reading a value of its rows, in a main-thread system: timelines, intervals, nearest by order.
+
+- **N:** 10K range lookups; usually 100–100K.
+- **Best:** 192 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each lookup reads two lines of the blocks' first keys and ten 16-byte entries and their 4-byte values.
+
+### sorted page 100K
+
+A run that changes one entity's value, and a system reading the 20 rows after the first 100 with a small key, highest values first, through a sorted index on the value, recomputed when it changed: `select page 100K` as a system reading an index.
+
+- **N:** 100K rows; usually 1K–100K.
+- **Best:** 16 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each row reads its 8-byte rank and its 8-byte value, as `select page 100K`'s rows do.
+
+### grid neighbors 100K main
+
+Each of 100K particles reading the positions of those in the 27 cells around its own through a hash index on its cell, in a main-thread system: a uniform grid broadphase.
+
+- **N:** 100K rows; usually 1K–100K.
+- **Best:** 1,000 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each row probes 27 buckets, a 64-byte line each, and reads about 270 neighbors' 12-byte entries and positions.
+
+### grid neighbors 100K workers
+
+Each of 100K particles reading the positions of those in the 27 cells around its own through a hash index on its cell, in a kernel across the pool: a uniform grid broadphase.
+
+- **N:** 100K rows; usually 1K–100K.
+- **Best:** 1,000 bytes per N at the copy bandwidth of all workers, the fastest it measured. Each row probes 27 buckets, a 64-byte line each, and reads about 270 neighbors' 12-byte entries and positions.

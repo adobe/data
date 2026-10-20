@@ -87,7 +87,8 @@ const joined = join(port, { threads: ["main"] });
 ```
 
 `join`, the implementation's, returns the same `World` type; the interface names neither it nor its port or options,
-which it infers from `share`. Its `run` and `observe` work as on the world's thread, `add`, `remove` and `share` throw there, and
+which it infers from `share`. Its `run` and `observe` work as on the world's thread, its `add` and `remove` take only synced systems, which run
+there, `share` throws there, and
 its `dispose` disconnects this thread; disposing on the world's thread disposes the world, and joined threads' runs
 reject from then on. `share` returns nothing: a joined thread's progress (`"joining"`, `"joined"` once the threads it
 claims are its own, `"gone"` once they're released) and its claims are the implementation's own storage, which
@@ -126,9 +127,12 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   it's issued, an add's when its system's commands are queued on the world's thread, or when it's issued on a joined
   one, where it drops and its system fails, so the issuing paths check nothing while no joined thread fills objects.
   A `transfer` value reaches its own thread through a run's input instead (see Transfers).
-- **Synced systems, `up` and `order` run only on `world`:** a system that's synced or declares either can't be placed
-  on a joined thread, which refuses the claim, or fails the system's registration once the thread is joined. So does a lookup through an index with an
-  object key part, which the world keeps on its own thread; one keyed by structs is read where the system runs.
+- **`up` and `order` run only on `world`:** a system that declares either can't be placed on a joined thread, which
+  refuses the claim, or fails the system's registration once the thread is joined. So does a lookup through an index with
+  an object key part, which the world keeps on its own thread; one keyed by structs is read where the system runs.
+- **Synced systems** are placed as other systems are, and run on their thread after the world's sync points (see Synced
+  systems on joined threads); a joined thread's own, which its `add` or `run` takes, run there whatever they read, and
+  read only structs and the objects of the threads it fills.
 
 ## Mechanisms
 
@@ -147,8 +151,9 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 - **Failures of ticks** are in the `report` resource. A thread that dies doesn't reject a run or a tick: its systems
   are in `skipped`, each with a `"thread"` failure, and later tiers still run. A tier that waited for a joined thread
   is in the report's `warnings`.
-- **Synced systems** run on `world` after each run's and tick's sync point, then observers are delivered. They never
-  make the loop tick, and a run of them alone doesn't wake it. While a tick's tails run on, its synced systems run at
+- **Synced systems** run on `world` after each run's and tick's sync point, then observers are delivered; those on
+  joined threads are posted to them in the same pass. They never make the loop tick, and a run of them alone doesn't
+  wake it. While a tick's tails run on, its synced systems run at
   once with its values, unless one reads `report`, when the tick waits for its tails first so it sees the tick's.
 - **Observers** notify after each run or tick that changed what they observe; nothing promises a notification before
   `run` resolves. A quiet loop delivers nothing.
@@ -309,7 +314,7 @@ thread as its only writer, drained by the world's thread at the sync point. Comm
   Web Locks, and with claims the ids of the systems and finalizers it imported; it posts nothing else until the lock is
   held. The world refuses a thread claiming `world`, one thread twice, one another joined thread claims, or one a
   registered system or a finalizer of the program runs on that the thread can't run: one without an id, naming a key
-  without one, synced or declaring `up`, or one it didn't import, checked again between runs as its claims are made; it's refused
+  without one, declaring `up`, or one it didn't import, checked again between runs as its claims are made; it's refused
   with its status `"gone"` and its runs rejecting. Else the world places the thread's control words and slots in the
   memory, and writes `"joined"` and the claims. With claims, between runs, the claimed threads' object components and
   object resources become the thread's (see Object columns on other threads), each announced by message with its id; it
@@ -468,6 +473,53 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   structure epoch; (b) the world waits for remote finalizers inside the sync point, exact timing for about a 10 µs
   round trip per sync point with such stops.
 
+### Synced systems on joined threads
+
+A synced system runs on a joined thread when that thread's `add` or `run` took it, as its own, or when the threads it
+names objects of are ones that thread claims (`joined-synced.ts` on the world's thread, `thread-synced.ts` there).
+
+- **Its own:** the thread declares it to the world once, by its own number for it, with what it reads by its numbers
+  for its keys and the ids of the indexes it looks up through; it needs no id, since its value runs only there. The
+  world stands a system of its own for it, which it registers, adds and removes as the thread says, and runs as its
+  runs: so its keys and indexes are the world's, its ticks start, and its runner, which never runs, finds what it
+  matches. Once its value is collected there, the thread says so and the world forgets it; and once the thread is gone,
+  every one of its own.
+- **Its block:** a tail block (see Tails) and a line of its own: posts so far, what the thread did with the last one,
+  its removed word, the run it's owed to, the sync of the thread's log it's as of, and the tick it takes and the
+  `lastRun` it filters by. The thread is posted its index there, its block, the world's numbers for its keys and the
+  records of its index lookups, written before each post as for systems on joined threads.
+- **Posting:** after each run's and tick's sync point, in the synced pass, the world posts one whose conditions hold
+  and that has no change filters, or one whose filter may pass: a resource it filters on changed since its `lastRun`,
+  or a chunk of an archetype it matches was stamped, or its column stamped by a GPU kernel, which reaches the thread as
+  row ticks. One a run named, from either thread, is posted after each sync point until it ran. Posting refreshes the
+  indexes it looks up through and reads back what the GPU wrote that it reads, then writes its block, its posts word
+  last, and wakes the thread once for the pass, unless the thread hasn't read the last wake.
+- **Running:** the thread replays its objects through the newest sync first, then claims the post as a tail claims its
+  rows, by adding to its progress word, so the claim and the world's cancel are one order; once claimed, a post stays
+  as it is until its done word reaches its end. It runs the system with the tail's code, from where its rows are or the
+  copy a writer took, its lookups and index lookups reading the shared memory, and stores what it did, then its done
+  word. A thread whose objects the world rebuilt past the post's sync gives the claim back, and one owed to a run asks
+  to be posted again between runs. It returns to its event loop once it ran a post before it goes on.
+- **Writers:** before a tier or the world writes what a post reads (a resource or a struct component it reads or
+  filters on, in its rows, the clock or a GPU readback), the world copies the rest of its rows and resources, as for a
+  late tail, once; before one writes what its lookups read or watch, or the key parts of the indexes they go through,
+  it waits for a post the thread claimed to finish and cancels one it hasn't, past the cancels below.
+- **Sync points:** each, and what moves rows outside one (registration, resources added between runs, a GPU device
+  change, a thread joining or leaving), waits for every post the thread claimed and cancels the rest, which the next
+  post, for the newest sync, replaces: a thread that fell behind runs once, for the newest. After four posts of a system
+  cancelled in a row, writers and sync points wait for the next one instead, so a thread slower to claim than the world
+  is to write still runs it at least once in five sync points; at a frame's cadence the thread claims well before. A
+  post owed to a run that a move outside a sync point cancelled is posted again between runs.
+- **Ticks and reports:** a post takes a tick after its sync point, which becomes its `lastRun` once the thread ran it.
+  What a body throws is a `"system"` failure in a later run's report, named by the system's label on its thread; in a
+  joined thread's `run` of its own, in that run's report, which resolves once a post for it ran there, or once it was
+  removed before one did.
+- **Removal:** on the thread, `remove` stops it at once, from its next row on, and the world removes the system it
+  stands; on the world's thread, as other systems placed on joined threads: its removed word is set, which the thread
+  checks before it claims a post, and the thread drops it and says so. Its block and records are freed once the thread
+  said so and no post is live, or the thread left.
+- **Counts:** while one is placed, the directory's counts are kept current, as while a thread holds claims.
+
 ### Struct observers and mailboxes
 
 A joined thread posts its query once at subscribe; the first value comes later, as `Observe` allows. The world's thread
@@ -590,6 +642,7 @@ Memory isn't shared, so the world runs inline, and `share` and `join` throw.
 | A late tail and the world's work after its writer, together over a beat | the two overlap: `tail overlap` 2.53 ms a tick of a 2.5 ms tail and 2 ms of work, against 4.70 for `tail overlap waiting`, in node |
 | Commands and staged spawns from a worker kernel or joined thread | ring writes; the private spill and its message only past the ring's size |
 | `run` from a joined thread | one slot and notify; resolves through a word |
+| A synced system on a joined thread, per sync point | a check of its filters, a post into its block and at most one notify per thread; the next writer copies what it hasn't read, the next sync point waits only for a post in progress: `joined synced resource` 6.4–6.8 µs a tick against 5.0–5.4 for `mailbox resource`, `joined synced 10K` 0.30 ms against 0.75, in node |
 | Struct observers on a joined thread, per tick | candidate check on the world's thread, a mailbox write of changed results, at most one notify |
 | Structural change touching archetypes with remote objects | one log entry per row moved, replayed once on that thread, `log replay` 21 ns a move in node |
 | A thread rebuilding after its log dropped entries | a pass over its archetypes' rows, `log rebuild 100K` 3.2 ns a row in node |
@@ -610,6 +663,8 @@ Memory isn't shared, so the world runs inline, and `share` and `join` throw.
   fills objects, a `MessageChannel`; per index a system was placed at there, a 64-byte line for its removed word, kept
   for the index's next system.
 - **Mailboxes:** per subscription, its control words and three slots, each sized to the largest result delivered.
+- **Synced systems on joined threads:** per system, a block of four lines, a record per index lookup, and, once a writer
+  copied what it reads, a snapshot as a tail's.
 - **Tail buffers:** only once a fallback snapshot was taken: passing rows times their declared struct reads, kept for the next.
 - **Stop lists:** per sync point with stops, a 16-byte header, and per finalizer 16 bytes and per stop 16 bytes, 4 per
   object read and its linear reads' bytes, each column on 8 bytes, kept until a later block is acknowledged; and on the
@@ -887,6 +942,26 @@ threads looking up through indexes of struct keys, and hash indexes built again 
   chromium (red with entity order broken within a partition).
 - New: `index rebuild 1M workers` 6.7 ms against 27 on the world's thread alone, `grid neighbors 100K workers` 179 ns a
   row.
+
+### Built: synced systems on joined threads
+
+A joined thread's `add` and `remove` take synced systems, its `run` one of its own, which run there after the world's
+sync points, posted into blocks of their own, and synced systems placed on the joined thread filling their objects run
+there the same way (`joined-synced.ts`, `thread-synced.ts`, `thread-directory.ts`).
+
+- Interface: the documentation of `World.add` and `World.remove`; no types.
+- Contract: on a joined thread `add` and `remove` take only synced systems, whose keys need ids, and `run` runs one of
+  its own there; each runs after the world's sync points, once for the newest when the thread fell behind, reading
+  structs and the objects of the threads it fills as of one sync point; its failures are in a later run's report, a
+  run's in that run's; a synced system naming objects of a thread a joined thread claims is placed there, no longer
+  refused.
+- Tests: on one thread through a `MessageChannel`, resources and rows with change filters, composites, lookups by entity
+  with `changed`, keyless and keyed index lookups, runs with their failures, added ones' failures in a later report,
+  removal freeing what both threads held, refusals of other systems, placement by objects with world runs, and a thread
+  that's gone; in node and chromium against a joined worker, 1,000 rows read and looked up while the world ticks back
+  to back writing them, every run of one tick's values (red without copying: 4,398 rows of another tick's; red without
+  the lookups' waits: 42,000; red with the sync point not waiting: 69).
+- New: `joined synced resource`, `joined synced 10K`.
 
 ## Not built
 

@@ -94,6 +94,8 @@ Synced systems (P1 of the observers plan), alternating against `af4c72f4`: every
 - **Conditions are checked only by a runner that has some:** `synced idle 100` 94 → 86 ns, `run 50 idle` 90 → 80 ns.
 - **A run starts on the runner's first buffer and chunk directly,** with nothing staged yet to stage: `synced idle 100` 86 → 78–83 ns, `run 50 idle` 80 → 73 ns.
 - **Each list of synced systems keeps its runners,** read again only once runners change, with whether any looks up through an index, rather than finding each runner by its system twice a pass: `synced idle 100` 144 → 122 ns.
+
+Synced systems on joined threads (P3 of the observers plan), alternating against `ffea07de`: every node benchmark touched within noise (`run idle`, `run 50 idle`, `run synced`, `synced idle 100`, `loop tick idle`, `sync point one spawn`, `remote run`, `mailbox resource`, `handoff`, `fused tiers`, `tail prompt`, `read run`, `read run synced`, `loop tick add remove`, `select`, `create`, `follow`), and in chromium `loop tick idle`, `remote run`, `mailbox resource` and `mailbox select 10K`. New: `joined synced resource` 6.4–6.8 µs a tick against 5.0–5.4 for `mailbox resource` in node, 9.3 against 6.6–7.0 in chromium; `joined synced 10K` 0.30 ms against 0.75 for `mailbox select 10K` in node, 0.28 against 0.73 in chromium. Back to back, the world outruns the thread's wake-up, so most posts are cancelled before the thread claims them and the 10K sort runs about one tick in five there; the world's cost is the sync points and writers waiting for posts in progress, and the waited-for post after four cancelled ones.
 - **A run of synced systems alone skips its sync point** while nothing is queued and there's no GPU, joined thread or tail: `run synced` 375 → 208 ns, `read run synced` 8.8 → 7.7 µs.
 
 ## Where the gains came from
@@ -199,6 +201,9 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **Single-threaded move matches the adobe/data ECS** (0.095 ms against 0.09 ms): four tight vec3 rows are three full vectors, as its separate x, y and z arrays are.
 
 ## Tried and not kept
+
+- **A synced system on a joined thread whose unclaimed post a writer cancels rather than copies:** `joined synced resource` 6.0–6.3 µs a tick against 6.2–6.6 copying, within noise; kept copying, since a thread that claims between the writer and the sync point then still runs. Worth revisiting if copying a large read set per tick shows in a profile.
+- **Waiting for the post after one cancelled (`cancelsBeforeWaiting` 1), or after sixteen:** at 1 the thread runs at least every other sync point, but the world waits for its wake-up nearly every other tick back to back: `joined synced resource` 11.4–15.8 µs in chromium against 9.3 at 4, `joined synced 10K` 0.50 ms in node against 0.30. At 16, 6.4 µs and 0.11 ms in node, 9.2 µs and 0.12 ms in chromium, the thread up to 17 sync points behind. Without waiting at all, `joined synced 10K` never ran in chromium in 3,000 back-to-back ticks: every post was cancelled first. Kept 4. Worth revisiting with a cadence-aware limit, such as milliseconds behind rather than posts.
 
 - **A loop spawner as the only spawner:** about twice the generated one (numbers above). Kept only where code can't be generated. Worth revisiting if engines specialize a shared loop's keyed reads per shape.
 - **Prepared spawn sites calling the shape's column writers:** one site spawning into four archetypes made each writer call see four closures, `create` 103 ns and `create flat` 76 ns, against 58 and 66 ns through a positional spawner generated per site key order and shape.

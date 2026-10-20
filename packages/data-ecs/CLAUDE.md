@@ -35,3 +35,9 @@ The ECS runs every frame, so performance is a requirement, not a polish step, an
 when a measured win conflicts with a style or design preference, take the win and state the trade. Keep work per run, per system and per
 row as low as it can be, and allocate nothing on those paths: reuse arrays, buffers and objects, share read-only
 empties, and avoid closures, spreads and awaits there. Measure changes with `pnpm perf` against the recorded baseline.
+
+## Memory
+
+Decisions about working on this package live in `memory.md`; add new ones there.
+
+@memory.md

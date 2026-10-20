@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Observe, Resource, System } from "../index.js";
+import { Component, Resource, System } from "../index.js";
 import { createWorld } from "../implementation/index.js";
 
 const health = Symbol("health");
@@ -36,18 +36,23 @@ const healths: number[] = [];
 const watch = System.create({ synced: true, components: { read: [health] } }, row => {
     healths.push(row[health]);
 });
+let counted = 0;
+const readSeen = System.create({ synced: true, resources: { read: [seen] } }, ({ resources }) => {
+    counted = resources[seen];
+});
 
 it("applies commands at the sync point that ends each run", async () => {
     await using world = createWorld();
     await world.run(frame);
-    expect(await Observe.toPromise(world.observe.resource(seen))).toBe(0);
-    const [hero] = await Observe.toPromise(world.observe.select({ required: [health] }));
-    expect((await Observe.toPromise(world.observe.entity(hero, { required: [health] })))?.[health]).toBe(5);
+    await world.run(readSeen);
+    expect(counted).toBe(0);
     await world.run(count);
-    expect(await Observe.toPromise(world.observe.resource(seen))).toBe(1);
+    await world.run(readSeen);
+    expect(counted).toBe(1);
 });
 
 it("runs synced systems after each sync point", async () => {
+    healths.length = 0;
     await using world = createWorld();
     world.add(watch);
     await world.run(spawn);

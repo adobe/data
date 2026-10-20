@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createWorld } from "../../implementation/index.js";
-import { Observe, workers } from "../../index.js";
+import { System, workers } from "../../index.js";
 import { count, frame } from "./particles.js";
 
 /** The same simulation in plain f64 JS. */
@@ -22,7 +22,9 @@ describe("particles", () => {
         const frames = [0.5, 0.25, 1 / 60, 1 / 60];
         let positions: readonly (readonly number[])[] = [];
         for (const seconds of frames) positions = await frame(world, seconds);
-        expect(await Observe.toPromise(world.observe.resource(count))).toBe(100);
+        let spawned = 0;
+        await world.run(System.create({ synced: true, resources: { read: [count] } }, ({ resources }) => { spawned = resources[count]; }));
+        expect(spawned).toBe(100);
         const expected = reference(frames);
         expect(positions).toHaveLength(expected.length);
         positions.forEach((position, i) => position.forEach((value, axis) => expect(value).toBeCloseTo(expected[i][axis], 3)));

@@ -1,4 +1,5 @@
 import { join } from '../../implementation/index.js';
+import { System } from '../../index.js';
 import { attachSurface, stats } from './sprites.js';
 
 /**
@@ -11,6 +12,14 @@ const overlay = (text: string): void => {
     const element = document.querySelector("#stats");
     if (element !== null) element.textContent = text;
 };
+
+let latest = { sprites: 0, frames: 0 };
+// Added on this thread, it runs here after each of the world's frames that changed stats.
+const show = System.create({ name: "transferSprites/show", synced: true, resources: { read: [stats], changed: [stats] } }, ({ resources }) => {
+    const { sprites, frames } = resources[stats];
+    latest = { sprites, frames };
+    overlay(`${sprites} sprites, each a texture the loader decoded and moved to the world's worker · frame ${frames}`);
+});
 
 const start = async (): Promise<void> => {
     const canvas = document.querySelector("canvas");
@@ -27,14 +36,12 @@ const start = async (): Promise<void> => {
     const joined = join(forMain.port2);
     // Moved to the world's thread in the run's input: the canvas is drawn there from now on.
     await joined.run(attachSurface, { canvas: canvas.transferControlToOffscreen() });
-    joined.observe.resource(stats)(({ sprites, frames }) => overlay(`${sprites} sprites, each a texture the loader decoded and moved to the world's worker · frame ${frames}`));
+    joined.add(show);
     /** For automated checks. */
-    Reflect.set(globalThis, "sampleStats", () => new Promise(resolve => {
-        const stop = joined.observe.resource(stats)(value => {
-            queueMicrotask(() => stop());
-            resolve(value);
-        });
-    }));
+    Reflect.set(globalThis, "sampleStats", async () => {
+        await joined.run(show);
+        return latest;
+    });
 };
 
 void start();

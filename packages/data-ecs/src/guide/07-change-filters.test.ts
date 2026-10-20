@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Observe, Resource, System } from "../index.js";
+import { Component, Resource, System } from "../index.js";
 import { createWorld } from "../implementation/index.js";
 
 const score = Symbol("score");
@@ -45,16 +45,23 @@ const bump = System.create({ components: { write: [score], has: [boss] } }, row 
     row[score] += 10;
 });
 
+const shownValues: number[] = [];
+const readShown = System.create({ synced: true, components: { read: [shown] } }, row => {
+    shownValues.push(row[shown]);
+});
+
 it("runs systems only for what changed since they last ran", async () => {
     await using world = createWorld();
     await world.run(load);
     await world.run(load);
-    expect(await Observe.toPromise(world.observe.count({ required: [score] }))).toBe(2);
+    await world.run(readShown);
+    expect(shownValues).toEqual([-1, -1]);
     await world.run(show);
     await world.run(bump);
     await world.run(show);
-    const [first] = await Observe.toPromise(world.observe.select({ required: [boss] }));
-    expect((await Observe.toPromise(world.observe.entity(first, { required: [shown] })))?.[shown]).toBe(10);
+    shownValues.length = 0;
+    await world.run(readShown);
+    expect(shownValues.sort((a, b) => a - b)).toEqual([0, 10]);
 });
 
 // Runs only while each resource in is is neither null nor false, and each in not is; is reads it narrowed.
@@ -64,6 +71,11 @@ const step = System.create({ resources: { is: [map], not: [paused], write: [step
 const pause = System.create({ resources: { write: [paused] } }, ({ resources }) => { resources[paused] = true; });
 const open = System.create({ resources: { write: [map] } }, ({ resources }) => { resources[map] = { width: 4 }; });
 
+let stepped = 0;
+const readSteps = System.create({ synced: true, resources: { read: [steps] } }, ({ resources }) => {
+    stepped = resources[steps];
+});
+
 it("runs systems only while their conditions hold", async () => {
     await using world = createWorld();
     await world.run(step);
@@ -71,5 +83,6 @@ it("runs systems only while their conditions hold", async () => {
     await world.run(step);
     await world.run(pause);
     await world.run(step);
-    expect(await Observe.toPromise(world.observe.resource(steps))).toBe(4);
+    await world.run(readSteps);
+    expect(stepped).toBe(4);
 });

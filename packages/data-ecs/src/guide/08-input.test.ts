@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Observe, System } from "../index.js";
+import { Component, System } from "../index.js";
 import { createWorld } from "../implementation/index.js";
 
 const health = Symbol("health");
@@ -22,11 +22,16 @@ const hit = System.create({
     row[health] -= input.amount;
 });
 
+const healths: number[] = [];
+const read = System.create({ synced: true, components: { read: [health] } }, row => {
+    healths.push(row[health]);
+});
+
 it("runs a system with a value", async () => {
     await using world = createWorld();
     await world.run(spawn);
     // Systems with input are run, not added; a composite's input has every field its members declare.
     await world.run(hit, { amount: 3 });
-    const [entity] = await Observe.toPromise(world.observe.select({ required: [health] }));
-    expect((await Observe.toPromise(world.observe.entity(entity, { required: [health] })))?.[health]).toBe(7);
+    await world.run(read);
+    expect(healths).toEqual([7]);
 });

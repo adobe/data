@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Observe, Resource, System, always, cadence, clock } from "../index.js";
+import { Resource, System, always, cadence, clock } from "../index.js";
 import { createWorld } from "../implementation/index.js";
 
 const elapsed = Symbol("elapsed");
@@ -17,19 +17,33 @@ const advance = System.create({ resources: { read: [clock], write: [elapsed] } }
     resources[elapsed] += resources[clock].delta;
 });
 
+// Added, a synced system reacts to changes: with elapsed in changed, it runs after each tick that changed it.
+let reached: (value: number) => void = () => {};
+const watch = System.create({ synced: true, resources: { read: [elapsed], changed: [elapsed] } }, ({ resources }) => {
+    if (resources[elapsed] >= 30) reached(resources[elapsed]);
+});
+
+let read = { elapsed: 0, delta: 0 };
+const readTime = System.create({ synced: true, resources: { read: [elapsed, clock] } }, ({ resources }) => {
+    read = { elapsed: resources[elapsed], delta: resources[clock].delta };
+});
+
 it("runs added systems on every tick", async () => {
     // cadence ticks once per animation frame by default; fixed ticks every step milliseconds, each with that delta.
     // A tick runs only after a run arrives, unless always is set.
     await using world = createWorld({ [cadence]: { kind: "fixed", step: 10 }, [always]: true });
+    const ticked = new Promise<number>(resolve => { reached = resolve; });
     // add: runs a system on every tick.
     world.add(advance);
-    // An observer is notified when its value changes, at most once per frame.
-    const ticked = new Promise<number>(resolve => world.observe.resource(elapsed)(value => { if (value >= 30) resolve(value); }));
+    world.add(watch);
     expect(await ticked).toBeGreaterThanOrEqual(30);
-    expect((await Observe.toPromise(world.observe.resource(clock))).delta).toBe(10);
+    await world.run(readTime);
+    expect(read.delta).toBe(10);
     // remove: takes a system added off every tick again.
     world.remove(advance);
-    const stopped = await Observe.toPromise(world.observe.resource(elapsed));
+    await world.run(readTime);
+    const stopped = read.elapsed;
     await new Promise(resolve => setTimeout(resolve, 50));
-    expect(await Observe.toPromise(world.observe.resource(elapsed))).toBe(stopped);
+    await world.run(readTime);
+    expect(read.elapsed).toBe(stopped);
 });

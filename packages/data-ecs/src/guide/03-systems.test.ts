@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Observe, Resource, System, Vec3 } from "../index.js";
+import { Component, Resource, System, Vec3 } from "../index.js";
 import { createWorld } from "../implementation/index.js";
 
 const position = Symbol("position");
@@ -47,13 +47,22 @@ const count = System.create({ resources: { write: [frames] } }, ({ resources }) 
     resources[frames] += 1;
 });
 
+// A synced system reads what the runs before it left, and changes nothing: run one to read the world, or add one to
+// react to it.
+const moved: Vec3[] = [];
+let counted = 0;
+const read = System.create({ synced: true, components: { read: [position], not: [frozen] }, resources: { read: [frames] } }, (row, { resources }) => {
+    moved.push(row[position]);
+    counted = resources[frames];
+});
+
 it("runs a system once per entity, or once", async () => {
     await using world = createWorld();
     // run: runs a system once.
     await world.run(spawn);
     await world.run(move);
     await world.run(count);
-    const [moving] = await Observe.toPromise(world.observe.select({ required: [position], not: [frozen] }));
-    expect((await Observe.toPromise(world.observe.entity(moving, { required: [position] })))?.[position]).toEqual([1, 0, 0]);
-    expect(await Observe.toPromise(world.observe.resource(frames))).toBe(1);
+    await world.run(read);
+    expect(moved).toEqual([[1, 0, 0]]);
+    expect(counted).toBe(1);
 });

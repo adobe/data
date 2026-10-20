@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Observe, Rule, System } from "../index.js";
+import { Component, Rule, System } from "../index.js";
 import { createWorld } from "../implementation/index.js";
 
 const mesh = Symbol("mesh");
@@ -41,10 +41,18 @@ const hide = System.create({ components: { has: [sprite] } }, (row, { commands }
     commands.add(row.entity, hidden);
 });
 
+const layers: number[] = [];
+const read = System.create({ synced: true, components: { read: [layer], has: [drawn] } }, row => {
+    layers.push(row[layer]);
+});
+
 it("derives components from the components an entity has", async () => {
     await using world = createWorld();
     await world.run(spawn);
-    expect(await Observe.toPromise(world.observe.count({ required: [drawn, layer] }))).toBe(2);
+    await world.run(read);
+    expect(layers).toEqual([1, 1]);
     await world.run(hide);
-    expect(await Observe.toPromise(world.observe.count({ required: [drawn, layer] }))).toBe(1);
+    layers.length = 0;
+    await world.run(read);
+    expect(layers).toEqual([1]);
 });

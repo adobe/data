@@ -1,5 +1,5 @@
 import { createWorld } from '../../../implementation/index.js';
-import { Gpu, Observe, System, gpuDevice } from '../../../index.js';
+import { Gpu, System, gpuDevice } from '../../../index.js';
 import { createDraw, enabled, move, moveOnCpu, position, spawn, visible } from './particles.js';
 
 /**
@@ -61,10 +61,15 @@ const start = async (): Promise<void> => {
     await ready;
     const frame = System.create({ name: "gpuParticles/frame", systems: [...moving, draw] });
     await world.run(spawn, { count, width: canvas.width, height: canvas.height });
-    /** For automated checks: a few drawn particles' positions, which observers read back from the GPU. */
+    /** For automated checks: a few drawn particles' positions, which a synced system reads back from the GPU. */
+    const probed: (readonly number[])[] = [];
+    const probe = System.create({ name: "gpuParticles/probe", synced: true, components: { read: [position], has: [visible, enabled] } }, row => {
+        if (probed.length < 3) probed.push(row[position]);
+    });
     Reflect.set(globalThis, "sampleProbe", async () => {
-        const drawn = await Observe.toPromise(world.observe.select({ required: [position, visible, enabled] }));
-        return Promise.all(drawn.slice(0, 3).map(async entity => (await Observe.toPromise(world.observe.entity(entity, { required: [position] })))?.[position] ?? null));
+        probed.length = 0;
+        await world.run(probe);
+        return [...probed];
     });
 
     // At most two frames of GPU work in flight, so the CPU can't run ahead of the GPU.

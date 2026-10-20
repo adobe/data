@@ -1,4 +1,4 @@
-import { Component, Observe, Resource, System, Vec3, type World } from '../../index.js';
+import { Component, Resource, System, Vec3, type World } from '../../index.js';
 
 export const position = Symbol("particles/position");
 export const velocity = Symbol("particles/velocity");
@@ -66,10 +66,20 @@ export const setDelta = System.create({
 
 export const main = System.create({ name: "particles/main", systems: [spawn, gravity, integrate] });
 
+// Reads every position the frame left, in spawn order.
+const positions: Vec3[] = [];
+const read = System.create({
+    name: "particles/read",
+    synced: true,
+    components: { read: [position] },
+}, row => {
+    positions.push(row[position]);
+});
+
 export const frame = async (world: World, seconds: number): Promise<readonly Vec3[]> => {
     await world.run(setDelta, { seconds });
     await world.run(main);
-    // Each read is an observer's first value.
-    const particles = await Observe.toPromise(world.observe.select({ required: [position] }));
-    return Promise.all(particles.map(async entity => (await Observe.toPromise(world.observe.entity(entity, { required: [position] })))?.[position] ?? [0, 0, 0]));
+    positions.length = 0;
+    await world.run(read);
+    return [...positions];
 };

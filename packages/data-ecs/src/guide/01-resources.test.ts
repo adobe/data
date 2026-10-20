@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Observe, Resource } from "../index.js";
+import { Resource, System } from "../index.js";
 import { createWorld } from "../implementation/index.js";
 
 // A resource is a key whose value a world holds once.
@@ -23,13 +23,19 @@ Resource.register(names, { type: { type: "map", keys: { type: "string" }, values
 // A value that isn't data has no schema and is stored as it is. A type that allows null starts there.
 Resource.register(audio, {});
 
+// Systems read a world: a synced one only reads, after the world's changes apply.
+let values: readonly unknown[] = [];
+const read = System.create({ synced: true, resources: { read: [gravity, names, audio] } }, ({ resources }) => {
+    values = [resources[gravity], resources[names], resources[audio]];
+});
+
 it("holds one value per world", async () => {
     // A world starts each resource at its default, or at the value given when it's created.
     await using earth = createWorld();
     await using moon = createWorld({ [gravity]: -1.6 });
-    // Observe.toPromise reads an observer's current value.
-    expect(await Observe.toPromise(earth.observe.resource(gravity))).toBe(-9.8);
-    expect(await Observe.toPromise(moon.observe.resource(gravity))).toBe(-1.6);
-    expect(await Observe.toPromise(earth.observe.resource(names))).toEqual(new Map());
-    expect(await Observe.toPromise(earth.observe.resource(audio))).toBe(null);
+    // run: runs a system once.
+    await earth.run(read);
+    expect(values).toEqual([-9.8, new Map(), null]);
+    await moon.run(read);
+    expect(values[0]).toBe(-1.6);
 });

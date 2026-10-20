@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Archetype, Component, Observe, System, Vec3 } from "../index.js";
+import { Archetype, Component, System, Vec3 } from "../index.js";
 import { createWorld } from "../implementation/index.js";
 
 // A component is a key whose values entities hold, declared and registered as a resource is.
@@ -34,13 +34,25 @@ export const defeat = System.create({ components: { has: [enemy] } }, (row, { co
     commands.remove(row.entity, enemy);
 });
 
+// A synced system reads them back, once per entity with its components.
+const foes: Vec3[] = [];
+const readFoes = System.create({ synced: true, components: { read: [position], has: [enemy] } }, row => {
+    foes.push(row[position]);
+});
+let particles = 0;
+const countParticles = System.create({ synced: true, components: { has: Particle } }, () => {
+    particles += 1;
+});
+
 it("spawns entities with components", async () => {
     await using world = createWorld();
     await world.run(spawn);
-    const [foe] = await Observe.toPromise(world.observe.select({ required: [enemy] }));
-    const values = await Observe.toPromise(world.observe.entity(foe, { required: [position] }));
-    expect(values?.[position]).toEqual([0, 10, 0]);
-    expect(await Observe.toPromise(world.observe.count({ required: Particle }))).toBe(1);
+    await world.run(readFoes);
+    await world.run(countParticles);
+    expect(foes).toEqual([[0, 10, 0]]);
+    expect(particles).toBe(1);
     await world.run(defeat);
-    expect(await Observe.toPromise(world.observe.count({ required: [enemy] }))).toBe(0);
+    foes.length = 0;
+    await world.run(readFoes);
+    expect(foes).toEqual([]);
 });

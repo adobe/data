@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Observe, System } from "../index.js";
+import { Component, System } from "../index.js";
 import { createWorld } from "../implementation/index.js";
 
 const health = Symbol("health");
@@ -27,13 +27,18 @@ const heal = System.create({ components: { write: [health] }, after: [hit] }, ro
 // between them may run in parallel. { systems, after, ... } declares one with a name or constraints.
 const frame = System.create([heal, hit]);
 
+const healths: number[] = [];
+const read = System.create({ synced: true, components: { read: [health] } }, row => {
+    healths.push(row[health]);
+});
+
 it("orders a composite's members by their constraints", async () => {
     await using world = createWorld();
     await world.run(spawn);
     await world.run(frame);
-    const [entity] = await Observe.toPromise(world.observe.select({ required: [health] }));
+    await world.run(read);
     // hit, 10 - 4 = 6, then heal, min(12, 10).
-    expect((await Observe.toPromise(world.observe.entity(entity, { required: [health] })))?.[health]).toBe(10);
+    expect(healths).toEqual([10]);
 });
 
 // Phases are systems that do nothing; a system during one runs after what the phase follows and before what follows it.

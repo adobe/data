@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Entity, Observe, System } from "../index.js";
+import { Component, Entity, System } from "../index.js";
 import { createWorld } from "../implementation/index.js";
 
 const ship = Symbol("ship");
@@ -40,14 +40,20 @@ const destroy = System.create({ components: { has: [ship] } }, (row, { commands 
     commands.despawn(row.entity);
 });
 
+const counts = { outlined: 0, targeting: 0, all: 0 };
+const countOutlined = System.create({ synced: true, components: { has: [outline] } }, () => { counts.outlined += 1; });
+const countTargeting = System.create({ synced: true, components: { has: [target] } }, () => { counts.targeting += 1; });
+const countAll = System.create({ synced: true, components: {} }, () => { counts.all += 1; });
+
 it("removes components with their host, and follows references", async () => {
     await using world = createWorld();
     await world.run(spawn);
     await world.run(deselect);
-    expect(await Observe.toPromise(world.observe.count({ required: [outline] }))).toBe(0);
+    await world.run(countOutlined);
+    expect(counts.outlined).toBe(0);
     await world.run(destroy);
-    expect(await Observe.toPromise(world.observe.count({ required: [parent] }))).toBe(0);
-    expect(await Observe.toPromise(world.observe.count({ required: [target] }))).toBe(0);
-    // The weak holder lives on without target.
-    expect(await Observe.toPromise(world.observe.count({}))).toBe(1);
+    await world.run(countTargeting);
+    await world.run(countAll);
+    // The owned entity is gone; the weak holder lives on without target.
+    expect(counts).toEqual({ outlined: 0, targeting: 0, all: 1 });
 });

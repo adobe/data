@@ -1,7 +1,7 @@
 /**
  * `<todo-row>`: one todo. Properties `label` and `done` drive it, and `done` is reflected as an attribute for styling;
- * `hidden` hides it, as it does any element. It dispatches `todo-toggle`, `todo-delete` and `todo-edit`, and never changes its properties itself: whoever owns
- * the todo writes them back. Editing is its own state, as focus is.
+ * `hidden` hides it, as it does any element. It dispatches `todo-toggle`, `todo-delete` and `todo-edit`, and never
+ * changes its properties itself: whoever owns the todo writes them back. Editing is its own state, as focus is.
  */
 
 const template = document.createElement("template");
@@ -45,7 +45,8 @@ const partsOf = (root: ShadowRoot): Parts => {
     const label = root.querySelector(".label");
     const edit = root.querySelector(".edit");
     const remove = root.querySelector(".delete");
-    if (!(toggle instanceof HTMLInputElement) || !(label instanceof HTMLElement) || !(edit instanceof HTMLInputElement) || !(remove instanceof HTMLButtonElement)) {
+    const found = toggle instanceof HTMLInputElement && label instanceof HTMLElement && edit instanceof HTMLInputElement && remove instanceof HTMLButtonElement;
+    if (!found) {
         throw new Error("todo-row's template is missing a part.");
     }
     return { toggle, label, edit, delete: remove };

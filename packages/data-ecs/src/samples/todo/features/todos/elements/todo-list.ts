@@ -29,9 +29,11 @@ const childOf = (list: HTMLElement, target: EventTarget | null): HTMLElement | n
     return null;
 };
 
-/** The nearest sibling the filter shows, in the direction given, or null. */
+const siblingOf = (node: Element, forward: boolean): Element | null => forward ? node.nextElementSibling : node.previousElementSibling;
+
+/** The nearest sibling shown, in the direction given, or null. */
 const shownSibling = (item: Element, forward: boolean): HTMLElement | null => {
-    for (let node = forward ? item.nextElementSibling : item.previousElementSibling; node !== null; node = forward ? node.nextElementSibling : node.previousElementSibling) {
+    for (let node = siblingOf(item, forward); node !== null; node = siblingOf(node, forward)) {
         if (node instanceof HTMLElement && node.checkVisibility()) return node;
     }
     return null;
@@ -53,7 +55,8 @@ const listen = (list: HTMLElement): void => {
         if (item === null || target === null) return;
         event.preventDefault();
         const bounds = target.getBoundingClientRect();
-        move(list, item, event.clientY < bounds.top + bounds.height / 2 ? target : target.nextElementSibling instanceof HTMLElement ? target.nextElementSibling : null);
+        const after = target.nextElementSibling instanceof HTMLElement ? target.nextElementSibling : null;
+        move(list, item, event.clientY < bounds.top + bounds.height / 2 ? target : after);
     });
     list.addEventListener("dragend", () => {
         dragged = null;

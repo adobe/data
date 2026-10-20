@@ -16,9 +16,8 @@ declare module "@adobe/data-ecs" {
 Resource.register(filters, { thread: "main" });
 
 /**
- * Hides each row the filter leaves out, as its todo or the filter changes. A row whose visibility stays the same isn't
- * written, and only rows hidden or shown again restyle: a new filter costs a pass over the rows and the style of those
- * that change, where one attribute of the list that style sheets select rows by restyles every row.
+ * Hides each row the filter leaves out, as its todo or the filter changes. A new filter passes every row, but writes
+ * only those whose visibility changes; restyling them costs far more than the pass (see the README).
  */
 export const filterRows = System.create({
     name: "filter/filterRows",

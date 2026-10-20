@@ -20,7 +20,7 @@ const install = (): void => {
     writeFileSync(join(installed, "package.json"), readFileSync(join(packageRoot, "package.json")));
     const config = ts.getParsedCommandLineOfConfigFile(join(packageRoot, "tsconfig.json"), { outDir: join(installed, "dist"), emitDeclarationOnly: true, composite: false, incremental: false, sourceMap: false }, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} });
     if (config === undefined) throw new Error("No tsconfig.json.");
-    const program = ts.createProgram([join(packageRoot, "src", "index.ts"), join(packageRoot, "src", "observe", "index.ts")], config.options);
+    const program = ts.createProgram([join(packageRoot, "src", "index.ts")], config.options);
     // Its own sources check without the test runner's Node types, as a consumer's build sees them.
     expect(messages([...ts.getPreEmitDiagnostics(program), ...program.emit().diagnostics])).toEqual([]);
     mkdirSync(join(temporary, "node_modules", "@webgpu"), { recursive: true });
@@ -56,31 +56,6 @@ export const observe = world.observe;
 export const query: World.Query<[typeof position]> = { required: [position], where: { [position]: { ">": 0 } } };
 export const selected = world.observe.select(query);
 export const counted = world.observe.count({ required: [position] });
-`;
-
-/** A consumer of the observer factories, emitting declarations for the observers it makes. */
-const observing = `
-import { Component, Resource, type Entity, World } from "@adobe/data-ecs";
-import { Observe } from "@adobe/data-ecs/observe";
-export const heat = Symbol("exportsTest/heat");
-export const hidden = Symbol("exportsTest/hidden");
-export const level = Symbol("exportsTest/level");
-declare module "@adobe/data-ecs" {
-    interface Components { [heat]: { type: number }; [hidden]: { type: true } }
-    interface Resources { [level]: { type: number } }
-}
-Component.register(heat, { type: { type: "number" } });
-Component.register(hidden, { type: { const: true } });
-Resource.register(level, { type: { type: "number", default: 0 } });
-declare const create: () => World;
-declare const entity: Entity;
-export const world = create();
-export const watched = Observe.entity(world, entity, { required: [heat], optional: [hidden] });
-export const leveled = Observe.resource(world, level);
-export const query: Observe.Query<[typeof heat]> = { required: [heat], where: { [heat]: { ">": 0 } }, order: { [heat]: false }, page: { offset: 0, limit: 10 } };
-export const selected = Observe.select(world, query);
-export const counted = Observe.count(world, { required: [heat], not: [hidden] });
-export const first = Observe.toPromise(counted);
 `;
 
 /** Every declaration file reachable from `file` by relative imports, relative to `directory`. */
@@ -170,17 +145,6 @@ describe("package exports", () => {
     readonly sorted: true;
 }>;`);
         expect([...emitted.matchAll(/import\("([^"]+)"\)/g)].map(match => match[1]).filter(path => path !== "@adobe/data-ecs")).toEqual([]);
-    }, 60_000);
-    it("let a consumer of @adobe/data-ecs/observe emit declarations naming only the package's entry points", () => {
-        expect(compile(observing).messages).toEqual([]);
-        expect(reachable(join(installed, "dist"), "observe/index.d.ts").filter(path => path.startsWith("interface/") && internal(path))).toEqual([]);
-        const emitted = readFileSync(join(temporary, "out", "index.d.ts"), "utf8");
-        expect([...emitted.matchAll(/import\("([^"]+)"\)/g)].map(match => match[1]).filter(path => path !== "@adobe/data-ecs" && path !== "@adobe/data-ecs/observe")).toEqual([]);
-        expect(emitted).toContain(`export declare const watched: Observe<({
-    readonly [heat]: number;
-} & {
-    readonly [hidden]?: true | undefined;
-}) | null>;`);
     }, 60_000);
     it("report a misdeclared system, and a composite of conflicting members, at the mistake rather than as no overload matching", () => {
         const reported = compile(misdeclared).messages;

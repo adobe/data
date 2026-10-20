@@ -9,7 +9,7 @@ import { builtIn, factory } from './observe-adapters.test-helper.js';
 
 /**
  * Tests' reads: each is an observer's first value, of the world's own observers, or with `ECS_OBSERVE=factory` in the
- * environment, of the factories of `@adobe/data-ecs/observe`, so the whole suite checks them too.
+ * environment, of the internal factories of `src/observe`, so the whole suite checks them too.
  */
 const reads = Reflect.get(globalThis, "process")?.env?.ECS_OBSERVE === "factory" ? factory : builtIn;
 

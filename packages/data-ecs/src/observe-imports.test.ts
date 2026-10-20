@@ -21,7 +21,7 @@ const specifiersOf = (file: string): string[] => {
     ].map(match => match[1]);
 };
 
-/** Whether `@adobe/data-ecs/observe` may import a specifier from `file`: the package root, or a module of its own. */
+/** Whether `src/observe` may import a specifier from `file`: the package root, or a module of its own. */
 const allowed = (file: string, specifier: string): boolean => {
     if (specifier === "@adobe/data-ecs") return true;
     if (!specifier.startsWith(".")) return false;
@@ -29,7 +29,7 @@ const allowed = (file: string, specifier: string): boolean => {
     return target === join(source, "index.js") || !relative(module, target).startsWith("..");
 };
 
-describe("@adobe/data-ecs/observe", () => {
+describe("src/observe, the observer factories", () => {
     it("imports only the package root and its own modules", () => {
         const files = filesOf(module);
         expect(files.length).toBeGreaterThan(0);

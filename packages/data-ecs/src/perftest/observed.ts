@@ -9,7 +9,7 @@ import { Observe } from "../observe/index.js";
 import type { Benchmark } from "./benchmark.js";
 import { fastest } from "./suite.js";
 
-// Benchmarks of the observer factories of `@adobe/data-ecs/observe`, beside the world's own observers' (`reads.ts`),
+// Benchmarks of the internal observer factories of `src/observe`, beside the world's own observers' (`reads.ts`),
 // and of both where only one side had one.
 
 const level = Symbol("observed/level");

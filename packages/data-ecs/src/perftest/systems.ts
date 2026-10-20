@@ -1,6 +1,6 @@
 import { Component } from "../interface/component/component.js";
 import { always } from "../interface/resources/always.js";
-import { clock } from "../interface/resources/clock.js";
+import { eachTick, nowOf } from "./synced.js";
 import { System } from "../interface/system/system.js";
 import { backToBack, createWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
@@ -40,7 +40,7 @@ const check = (condition: boolean, message: string): void => {
 
 /**
  * The fastest of `stretches` stretches of `churnTicks` ticks, after one to warm up, of a world with `idle` added and,
- * with `churn`, a system made for each tick added to the next and removed from the one after, through an observer of
+ * with `churn`, a system made for each tick added to the next and removed from the one after, by a synced system reading
  * its clock; then, with `after`, ticks with nothing added or removed. What the world holds is the same before and after.
  */
 const churning = async (churn: (() => System) | null, after: boolean, stretches = 5): Promise<number> => {
@@ -62,7 +62,7 @@ const churning = async (churn: (() => System) | null, after: boolean, stretches 
             let ticks = 0;
             let stretched = 0;
             let start = 0;
-            const unobserve = world.observe.resource(clock)(() => {
+            const unobserve = eachTick(world, () => {
                 if (churned !== null) {
                     if (added !== null) world.remove(added);
                     added = churned();
@@ -101,14 +101,14 @@ const churning = async (churn: (() => System) | null, after: boolean, stretches 
 
 /** Once `count` more ticks ran. */
 const ticks = async (world: ReturnType<typeof createWorld>, count: number): Promise<void> => {
-    let seen = -1;
+    const from = await nowOf(world);
+    let seen = 0;
     await new Promise<void>(resolve => {
-        const stop = world.observe.resource(clock)(({ tick }) => {
-            if (seen < 0) seen = tick;
-            if (tick < seen + count) return;
+        const stop = eachTick(world, () => {
+            if (++seen < count) return;
             queueMicrotask(() => stop());
             resolve();
-        });
+        }, from);
     });
 };
 

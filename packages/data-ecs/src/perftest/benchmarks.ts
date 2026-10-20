@@ -1,5 +1,6 @@
 import type { Component } from "../interface/component/component.js";
 import type { Entity } from "../interface/entity/entity.js";
+// The built-ins' own benchmark, `select`, reads through them until they're removed.
 import { toPromise } from "../interface/observe/to-promise.js";
 import { World } from "../interface/world/world.js";
 import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVisible } from "./flat.js";
@@ -23,6 +24,10 @@ import { systemBenchmarks } from "./systems.js";
 import { indexBenchmarks } from "./indexes.js";
 import { createWorld } from "../implementation/index.js";
 import { workers } from "../interface/resources/workers.js";
+// Last, so the bundle orders the modules the benchmarks share as it did before these imports.
+import { System } from "../interface/system/system.js";
+import { Observe } from "../observe/index.js";
+import { entitiesWith } from "./synced.js";
 
 /** A world whose kernels run on this thread, which the benchmarks without a placement measure; `workers` ones use the pool. */
 const inline = (): World => createWorld({ [workers]: 0 });
@@ -75,14 +80,15 @@ const structuralBest = async (sources: 1 | 4, before: (world: World) => Promise<
     return best;
 };
 
-const countOf = (world: World, required: readonly Component.Key[]): Promise<number> => toPromise(world.observe.count({ required }));
+/** How many entities have `required`, through the observer factories: only once nothing more is timed on `world`, which then keeps their system. */
+const countOf = (world: World, required: readonly Component.Key[]): Promise<number> => Observe.toPromise(Observe.count(world, { required }));
 
 /** A forest of 100K chains of 10, filtered propagation run once, and its roots. */
 const filteredForest = async (): Promise<{ readonly world: World; readonly roots: readonly Entity[] }> => {
     const world = inline();
     await world.run(forest, { roots: 100_000, depth: 10 });
     await world.run(propagateChanged);
-    return { world, roots: await toPromise(world.observe.select({ required: [hierarchyLocal], not: [hierarchyParent] })) };
+    return { world, roots: await entitiesWith(world, [hierarchyLocal], [hierarchyParent]) };
 };
 
 /** Bytes an `up` row moves at best: its own value read, its result written, its parent's result read, and its parent's row. */
@@ -151,7 +157,7 @@ export const benchmarks: readonly Benchmark[] = [
     },
     {
         name: "loop tick idle",
-        operation: "A world's loop ticking with nothing changed, driven back to back with `always` set, counted through an observer of its clock: the fixed cost of every tick.",
+        operation: "A world's loop ticking with nothing changed, driven back to back with `always` set, counted by a synced system reading its clock: the fixed cost of every tick.",
         per: "ticks",
         n: loopTicks,
         typical: [1, 1],
@@ -237,12 +243,17 @@ export const benchmarks: readonly Benchmark[] = [
         n: 1_000_000,
         typical: [100, 100_000],
         best: { bytes: 48, basis: "Each entity writes its 32 bytes of values, its 8-byte entity and its 8-byte location." },
-        run: () => fastest(async () => {
-            const world = inline();
-            await world.run(spawnFlat, { count: 1_000_000 });
-            check(await toPromise(world.observe.count({ required: [flatVisible, flatEnabled] })) === 250_000, "create flat: wrong count");
-            await world.dispose();
-        }, 5000, 2),
+        run: () => {
+            // Checked once, while warming up, so the timed runs are the spawns alone.
+            let checked = false;
+            return fastest(async () => {
+                const world = inline();
+                await world.run(spawnFlat, { count: 1_000_000 });
+                if (!checked) check(await countOf(world, [flatVisible, flatEnabled]) === 250_000, "create flat: wrong count");
+                checked = true;
+                await world.dispose();
+            }, 5000, 2);
+        },
     },
     {
         name: "create flat dynamic",
@@ -251,12 +262,16 @@ export const benchmarks: readonly Benchmark[] = [
         n: 1_000_000,
         typical: [100, 100_000],
         best: { bytes: 48, basis: "Each entity writes its 32 bytes of values, its 8-byte entity and its 8-byte location." },
-        run: () => fastest(async () => {
-            const world = inline();
-            await world.run(spawnFlatDynamic, { count: 1_000_000 });
-            check(await toPromise(world.observe.count({ required: [flatVisible, flatEnabled] })) === 250_000, "create flat dynamic: wrong count");
-            await world.dispose();
-        }, 5000, 2),
+        run: () => {
+            let checked = false;
+            return fastest(async () => {
+                const world = inline();
+                await world.run(spawnFlatDynamic, { count: 1_000_000 });
+                if (!checked) check(await countOf(world, [flatVisible, flatEnabled]) === 250_000, "create flat dynamic: wrong count");
+                checked = true;
+                await world.dispose();
+            }, 5000, 2);
+        },
     },
     {
         name: "move",
@@ -268,7 +283,7 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = inline();
             await world.run(spawn, { count: 1_000_000 });
-            check(await toPromise(world.observe.count({ required: [particlePosition, visible, enabled] })) === 250_000, "move: wrong count");
+            check((await entitiesWith(world, [particlePosition, visible, enabled])).length === 250_000, "move: wrong count");
             const { minimum } = await particlesFastest(() => world.run(move));
             await world.dispose();
             return minimum;
@@ -285,7 +300,7 @@ export const benchmarks: readonly Benchmark[] = [
             const world = await seeded(() => inline(), 1_000_000);
             let frame = 0;
             const best = await fastest(() => world.run(churn, { group: frame++ % 10 }));
-            check(await toPromise(world.observe.count({ required: [index] })) === 1_000_000, "churn: wrong count");
+            check(await countOf(world, [index]) === 1_000_000, "churn: wrong count");
             await world.dispose();
             return best;
         },
@@ -301,7 +316,7 @@ export const benchmarks: readonly Benchmark[] = [
             const world = await seeded(() => inline(), 1_000_000);
             let frame = 0;
             const best = await fastest(() => world.run(retag, { group: frame++ % 10 }));
-            check(await toPromise(world.observe.count({ required: [tag] })) > 0, "retag: no tags");
+            check(await countOf(world, [tag]) > 0, "retag: no tags");
             await world.dispose();
             return best;
         },
@@ -358,7 +373,7 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(() => inline(), 1_000_000);
             const best = await fastest(() => world.run(emit));
-            check(await toPromise(world.observe.count({ required: [hits] })) === 100_000, "emit: wrong count");
+            check(await countOf(world, [hits]) === 100_000, "emit: wrong count");
             await world.dispose();
             return best;
         },
@@ -373,7 +388,7 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(() => inline(), 1_000_000);
             const best = await fastest(() => world.run(reduce));
-            check(await toPromise(world.observe.resource(highest)) === 999_999 && await toPromise(world.observe.resource(indexSum)) === 999_999 * 500_000, "reduce: wrong fold");
+            check(await Observe.toPromise(Observe.resource(world, highest)) === 999_999 && await Observe.toPromise(Observe.resource(world, indexSum)) === 999_999 * 500_000, "reduce: wrong fold");
             await world.dispose();
             return best;
         },
@@ -431,7 +446,7 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = inline();
             await world.run(forest, { roots: 100_000, depth: 10 });
-            const roots = await toPromise(world.observe.select({ required: [hierarchyLocal], not: [hierarchyParent] }));
+            const roots = await entitiesWith(world, [hierarchyLocal], [hierarchyParent]);
             const best = await after(() => world.run(sprout, { entity: roots[0] }), () => world.run(propagate));
             await world.dispose();
             return best;
@@ -464,7 +479,12 @@ export const benchmarks: readonly Benchmark[] = [
         best: { bytes: chunkScan, basis: "Chunk ticks are scanned; the 9 moved rows are renumbered and run." },
         run: async () => {
             const { world, roots } = await filteredForest();
-            const [child] = await toPromise(world.observe.select({ required: [hierarchyParent], where: { [hierarchyParent]: roots[0] } }));
+            const found: { child: Entity | null } = { child: null };
+            await world.run(System.create({ synced: true, components: { read: [hierarchyParent] } }, row => {
+                if (found.child === null && row[hierarchyParent] === roots[0]) found.child = row.entity;
+            }));
+            const { child } = found;
+            if (child === null) throw new Error("up filtered after a reparent: no child");
             let frame = 0;
             const best = await after(() => world.run(reparent, { entity: child, to: roots[1 + (frame++ % 2)] }), () => world.run(propagateChanged));
             await world.dispose();
@@ -502,7 +522,7 @@ export const benchmarks: readonly Benchmark[] = [
             const world = inline();
             await world.run(spawn, { count: 1_000_000 });
             await world.run(forest, { roots: 100, depth: 10 });
-            const roots = await toPromise(world.observe.select({ required: [hierarchyLocal], not: [hierarchyParent] }));
+            const roots = await entitiesWith(world, [hierarchyLocal], [hierarchyParent]);
             const best = await after(() => world.run(sprout, { entity: roots[0] }), () => world.run(propagate));
             await world.dispose();
             return best;

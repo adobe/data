@@ -5,7 +5,7 @@ import type { Benchmark, Best } from "./benchmark.js";
 import { forest, propagate } from "./hierarchy.js";
 import { fastest as particlesFastest, move, spawn } from "./particles.js";
 import { chain, emit, fastest, follow, hits, observe, poke, seeded } from "./suite.js";
-import { toPromise } from "../interface/observe/to-promise.js";
+import { Observe } from "../observe/index.js";
 import * as structural from "./structural.js";
 import { bumpEach, fillEach, spawnEach } from "./growth.js";
 
@@ -104,7 +104,7 @@ export const placed = (placements: readonly Placement[]): readonly Benchmark[] =
             run: () => measured(placement, async world => {
                 await seeded(() => world, 1_000_000);
                 const best = await fastest(() => world.run(emit));
-                if (await toPromise(world.observe.count({ required: [hits] })) !== 100_000) throw new Error(`emit ${placement.label}: wrong count`);
+                if (await Observe.toPromise(Observe.count(world, { required: [hits] })) !== 100_000) throw new Error(`emit ${placement.label}: wrong count`);
                 return best;
             }),
         },

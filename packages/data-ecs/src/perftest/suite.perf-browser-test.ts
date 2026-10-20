@@ -82,7 +82,7 @@ const benchmarks = (device: GPUDevice): readonly Benchmark[] => [
     wake,
     {
         name: "loop tick idle",
-        operation: "A world's loop ticking with nothing changed, driven back to back with `always` set, counted through an observer of its clock: the fixed cost of every tick.",
+        operation: "A world's loop ticking with nothing changed, driven back to back with `always` set, counted by a synced system reading its clock: the fixed cost of every tick.",
         per: "ticks",
         n: loopTicks,
         typical: [1, 1],

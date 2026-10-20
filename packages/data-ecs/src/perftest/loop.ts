@@ -1,8 +1,8 @@
 import { always } from "../interface/resources/always.js";
-import { clock } from "../interface/resources/clock.js";
 import { System } from "../interface/system/system.js";
 import { backToBack, createWorld } from "../implementation/index.js";
 import { idle, unused } from "./suite.js";
+import { eachTick } from "./synced.js";
 
 /** Ticks in each timed stretch of `loopTickIdle`. */
 export const loopTicks = 10_000;
@@ -16,7 +16,7 @@ const idleSynced = Array.from({ length: syncedIdles }, (_, i) => System.create({
 /**
  * The fastest of `stretches` stretches of `loopTicks` ticks with nothing changed, after one to warm up: a world with
  * `always` set, one system no entity matches and `synced` synced systems none matches, driven back to back, counted
- * through an observer of its clock.
+ * by a synced system reading its clock.
  */
 export const loopTickIdle = async (stretches = 5, synced = 0): Promise<number> => {
     const driver = backToBack();
@@ -27,7 +27,7 @@ export const loopTickIdle = async (stretches = 5, synced = 0): Promise<number> =
             let ticks = 0;
             let stretch = 0;
             let start = 0;
-            const unobserve = world.observe.resource(clock)(() => {
+            const unobserve = eachTick(world, () => {
                 if (ticks++ % loopTicks !== 0) return;
                 const now = performance.now();
                 // The first stretch warms up.

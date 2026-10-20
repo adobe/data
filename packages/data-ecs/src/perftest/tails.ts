@@ -2,7 +2,7 @@
 import { Component } from "../interface/component/component.js";
 import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
-import { clock } from "../interface/resources/clock.js";
+import { eachTick, nowOf } from "./synced.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
@@ -166,7 +166,7 @@ const prompt = async (stretches = 5): Promise<number> => {
             let ticks = 0;
             let stretch = 0;
             let start = 0;
-            const unobserve = world.observe.resource(clock)(() => {
+            const unobserve = eachTick(world, () => {
                 if (ticks++ % tailTicks !== 0) return;
                 const now = performance.now();
                 if (stretch > 1) best = Math.min(best, now - start);
@@ -186,16 +186,12 @@ const prompt = async (stretches = 5): Promise<number> => {
     return best;
 };
 
-const nextTick = (world: World): Promise<void> => new Promise(resolve => {
-    let first = true;
-    const stop = world.observe.resource(clock)(() => {
-        if (first) {
-            first = false;
-            return;
-        }
+/** Once a tick after the one whose `now` is `after` ran. */
+const tickAfter = (world: World, after: number): Promise<void> => new Promise(resolve => {
+    const stop = eachTick(world, () => {
         queueMicrotask(() => stop());
         resolve();
-    });
+    }, after);
 });
 
 /**
@@ -212,7 +208,7 @@ const late = async (rounds = 30): Promise<number> => {
         world.add(lateTick);
         for (let round = 0; round < rounds; round++) {
             // Each run makes the next beat tick, which posts the tail behind `busy`.
-            const ticked = nextTick(world);
+            const ticked = tickAfter(world, await nowOf(world));
             await world.run(nothing);
             await ticked;
             const start = performance.now();
@@ -251,7 +247,7 @@ const overlap = async (waiting: boolean, stretches = 5): Promise<number> => {
             let ticks = 0;
             let stretch = 0;
             let start = 0;
-            const unobserve = world.observe.resource(clock)(() => {
+            const unobserve = eachTick(world, () => {
                 if (ticks++ % overlapTicks !== 0) return;
                 const now = performance.now();
                 if (stretch > 1) best = Math.min(best, now - start);

@@ -8,8 +8,10 @@ import type { World } from "../interface/world/world.js";
 import { createWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
 import { fastest } from "./suite.js";
+import { entitiesWith } from "./synced.js";
 
-// Benchmarks of reading a world from outside it: observers, and runs of systems that copy values out.
+// Benchmarks of reading a world from outside it: observers, and runs of systems that copy values out. The world's own
+// observers are measured here until they're removed, beside the factories' in `observed.ts`.
 
 const level = Symbol("reads/level");
 const value = Symbol("reads/value");
@@ -87,7 +89,7 @@ const lookups = async (system: System): Promise<{ readonly best: number; readonl
 };
 
 /** Every entity a seeded world holds. */
-const entitiesOf = (world: World): Promise<readonly Entity[]> => toPromise(world.observe.select({ required: [value] }));
+const entitiesOf = (world: World): Promise<readonly Entity[]> => entitiesWith(world, [value]);
 
 const seeded = async (count: number): Promise<World> => {
     const world = createWorld({ [workers]: 0 });

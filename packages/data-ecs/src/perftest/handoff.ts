@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
-import { clock } from "../interface/resources/clock.js";
+import { eachTick } from "./synced.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import { backToBack, createWorld, type CreatedWorld } from "../implementation/index.js";
@@ -109,7 +109,7 @@ const ticksBest = async (system: System<void>, stretches = 5): Promise<number> =
             let ticks = 0;
             let stretch = 0;
             let start = 0;
-            const unobserve = world.observe.resource(clock)(() => {
+            const unobserve = eachTick(world, () => {
                 if (ticks++ % handoffTicks !== 0) return;
                 const now = performance.now();
                 if (stretch > 1) best = Math.min(best, now - start);

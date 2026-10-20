@@ -1,15 +1,15 @@
 /// <reference types="node" />
 import { Component } from "../interface/component/component.js";
 import { Index } from "../interface/indexes/index-type.js";
-import { Observe } from "../interface/observe/observe.js";
 import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
-import { clock } from "../interface/resources/clock.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
 import { backToBack, createWorld } from "../implementation/index.js";
+import { Observe } from "../observe/index.js";
 import type { Benchmark } from "./benchmark.js";
+import { eachTick } from "./synced.js";
 
 // Benchmarks of a thread joined to a world: its runs, and its observers' mailboxes. The joined thread is `joined.ts`.
 
@@ -157,7 +157,7 @@ const mailboxBest = async (kind: Observed, system: System<void>, stretches = 5):
             let ticks = 0;
             let stretch = 0;
             let start = 0;
-            const unobserve = world.observe.resource(clock)(() => {
+            const unobserve = eachTick(world, () => {
                 if (ticks++ % mailboxTicks !== 0) return;
                 const now = performance.now();
                 if (stretch > 1) best = Math.min(best, now - start);
@@ -168,7 +168,7 @@ const mailboxBest = async (kind: Observed, system: System<void>, stretches = 5):
             });
             world.add(system);
         });
-        const counted = reads ? await Observe.toPromise(world.observe.resource(counter)) : 0;
+        const counted = reads ? await Observe.toPromise(Observe.resource(world, counter)) : 0;
         const stopped = await joined.ask({ kind: "stop" });
         if (stopped.kind !== "stopped" || stopped.notified === 0) throw new Error(`mailbox ${kind}: the joined thread saw nothing.`);
         // Timed only while the joined thread keeps up: one that stopped being woken costs the world nothing.
@@ -190,12 +190,16 @@ export const cadenceTicks = 100;
 const cadenceSamples = 1_000;
 const cadenceMilliseconds = 2;
 
-/** Frames `milliseconds` apart, as a display's are, each noting when it began. */
-const spaced = (milliseconds: number) => {
-    let began = 0;
+/**
+ * Frames `milliseconds` apart, as a display's are. The loop asks for the next frame once a tick is done, so each ask
+ * after a frame began tells `ended` how long that frame's tick took.
+ */
+const spaced = (milliseconds: number, ended: (milliseconds: number) => void) => {
+    let began = -1;
     return {
-        began: (): number => began,
         frame: (callback: (time: number) => void): (() => void) => {
+            if (began >= 0) ended(performance.now() - began);
+            began = -1;
             const timer = setTimeout(() => {
                 began = performance.now();
                 callback(began);
@@ -206,32 +210,30 @@ const spaced = (milliseconds: number) => {
 };
 
 /**
- * What the world's thread spends on `cadenceTicks` ticks of `system`, from each frame's start until the tick's
- * observers are notified, with frames far enough apart that a joined thread observing what it changes keeps up: the
- * cost of `kind` at a display's cadence rather than back to back. A tick's time varies with what else the machine runs,
- * a few ticks taking many times the rest, so it's the mean of the middle half of `cadenceSamples` ticks, about their
- * median, rather than the least; and a mean rather than the median itself, as chromium's timer steps are as long as a
- * tick.
+ * What the world's thread spends on `cadenceTicks` ticks of `system`, from each frame's start until its tick is done,
+ * with frames far enough apart that a joined thread observing what it changes keeps up: the cost of `kind` at a
+ * display's cadence rather than back to back. A tick's time varies with what else the machine runs, a few ticks taking
+ * many times the rest, so it's the mean of the middle half of `cadenceSamples` ticks, about their median, rather than
+ * the least; and a mean rather than the median itself, as chromium's timer steps are as long as a tick.
  */
 const cadenceMiddle = async (kind: Observed, system: System<void>): Promise<number> => {
-    const driver = spaced(cadenceMilliseconds);
+    const spent = new Float64Array(cadenceSamples);
+    let ticks = 0;
+    let finished = (): void => {};
+    const done = new Promise<void>(resolve => { finished = resolve; });
+    const driver = spaced(cadenceMilliseconds, milliseconds => {
+        const tick = ticks++ - cadenceSamples;
+        if (tick < 0 || tick >= cadenceSamples) return;
+        spent[tick] = milliseconds;
+        if (tick === cadenceSamples - 1) finished();
+    });
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
     const joined = await startJoined(world);
-    const spent = new Float64Array(cadenceSamples);
     try {
         await joined.ask({ kind });
-        await new Promise<void>(resolve => {
-            let ticks = 0;
-            const unobserve = world.observe.resource(clock)(() => {
-                const tick = ticks++ - cadenceSamples;
-                if (tick >= 0) spent[tick] = performance.now() - driver.began();
-                if (tick < cadenceSamples - 1) return;
-                unobserve();
-                resolve();
-            });
-            world.add(system);
-        });
-        const counted = await Observe.toPromise(world.observe.resource(counter));
+        world.add(system);
+        await done;
+        const counted = await Observe.toPromise(Observe.resource(world, counter));
         const stopped = await joined.ask({ kind: "stop" });
         if (stopped.kind !== "stopped" || stopped.last < counted - 2) throw new Error(`${kind} at a cadence: the joined thread saw ${stopped.kind === "stopped" ? stopped.last : "nothing"} of ${counted}.`);
     }
@@ -311,7 +313,7 @@ export const remoteBenchmarks: readonly Benchmark[] = [
     },
     {
         name: "mailbox resource cadence",
-        operation: "`mailbox resource` at a display's cadence, frames 2 ms apart, the joined thread keeping up: what the world's thread spends on a tick, from its frame until its observers are notified.",
+        operation: "`mailbox resource` at a display's cadence, frames 2 ms apart, the joined thread keeping up: what the world's thread spends on a tick, from its frame until the tick is done.",
         per: "ticks",
         n: cadenceTicks,
         typical: [1, 1],
@@ -320,7 +322,7 @@ export const remoteBenchmarks: readonly Benchmark[] = [
     },
     {
         name: "joined resource factory cadence",
-        operation: "`joined resource factory` at a display's cadence, frames 2 ms apart, the joined thread keeping up: what the world's thread spends on a tick, from its frame until its observers are notified.",
+        operation: "`joined resource factory` at a display's cadence, frames 2 ms apart, the joined thread keeping up: what the world's thread spends on a tick, from its frame until the tick is done.",
         per: "ticks",
         n: cadenceTicks,
         typical: [1, 1],

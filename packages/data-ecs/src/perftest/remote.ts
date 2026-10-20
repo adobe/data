@@ -1,5 +1,6 @@
 /// <reference types="node" />
 import { Component } from "../interface/component/component.js";
+import { Index } from "../interface/indexes/index-type.js";
 import { Observe } from "../interface/observe/observe.js";
 import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
@@ -45,6 +46,44 @@ const reverse = System.create({ name: "remote/reverse", kernel: "cpu", component
 /** Reverses the entities' order every tick. */
 export const reorder = System.create([flip, reverse]);
 
+/** What a joined thread's synced systems saw: the last value, and how many runs gave one. */
+export const syncedSeen = { last: 0, notified: 0 };
+
+/** On a joined thread, after each sync point that changed it: the observed resource, as `mailbox resource` gives it. */
+export const syncedCounter = System.create({ name: "remote/syncedCounter", synced: true, resources: { read: [counter], changed: [counter] } }, ({ resources }) => {
+    syncedSeen.last = resources[counter];
+    syncedSeen.notified++;
+});
+
+/** Every entity with a rank, in entity order. */
+const ranked = Index.create({ name: "remote/ranked", key: [], components: { has: [rank, order] } });
+const sortedKeys = { keys: new Float64Array(0), entities: new Float64Array(0), positions: new Uint32Array(0) };
+/**
+ * On a joined thread, after each sync point: the entities in `order`, as `mailbox select 10K` selects them, sorted from
+ * a scan of the index of every ranked entity into reused arrays.
+ */
+export const syncedSelect = System.create({ name: "remote/syncedSelect", synced: true, lookup: { all: { index: ranked, read: [order] } } }, ({ lookup }) => {
+    const list = lookup.all();
+    const count = list.length;
+    if (sortedKeys.keys.length < count) {
+        sortedKeys.keys = new Float64Array(count);
+        sortedKeys.entities = new Float64Array(count);
+        sortedKeys.positions = new Uint32Array(count);
+    }
+    const { keys, entities } = sortedKeys;
+    for (let k = 0; k < count; k++) {
+        const row = list.at(k);
+        if (row === null) continue;
+        keys[k] = row[order];
+        entities[k] = row.entity;
+    }
+    const positions = sortedKeys.positions.subarray(0, count);
+    for (let k = 0; k < count; k++) positions[k] = k;
+    positions.sort((a, b) => keys[a] - keys[b] || entities[a] - entities[b]);
+    syncedSeen.last = count;
+    syncedSeen.notified++;
+});
+
 /** Runs in each timed stretch of `remote run`, and ticks in each of the mailbox benchmarks'. */
 export const remoteRuns = 1_000;
 export const mailboxTicks = 1_000;
@@ -52,7 +91,7 @@ export const mailboxTicks = 1_000;
 export const selected = 10_000;
 
 /** What the joined thread is asked to do, and what it answers. */
-export type ToJoined = { readonly kind: "runs"; readonly stretches: number } | { readonly kind: "resource" } | { readonly kind: "select" } | { readonly kind: "stop" };
+export type ToJoined = { readonly kind: "runs"; readonly stretches: number } | { readonly kind: "resource" | "select" | "synced resource" | "synced select" } | { readonly kind: "stop" };
 export type FromJoined = { readonly kind: "ran"; readonly milliseconds: number } | { readonly kind: "observing" } | { readonly kind: "stopped"; readonly last: number; readonly notified: number };
 
 type Joined = { readonly ask: (message: ToJoined) => Promise<FromJoined>; readonly terminate: () => Promise<void> };
@@ -102,10 +141,10 @@ const remoteRun = async (stretches = 5): Promise<number> => {
  * The fastest of `stretches` stretches of `mailboxTicks` ticks on the world's thread, driven back to back, of `system`
  * while a joined thread observes through a mailbox what it changes, after one to warm up.
  */
-const mailboxBest = async (kind: "resource" | "select", system: System<void>, stretches = 5): Promise<number> => {
+const mailboxBest = async (kind: "resource" | "select" | "synced resource" | "synced select", system: System<void>, stretches = 5): Promise<number> => {
     const driver = backToBack();
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
-    if (kind === "select") await world.run(seedRanks, { count: selected });
+    if (kind === "select" || kind === "synced select") await world.run(seedRanks, { count: selected });
     const joined = await startJoined(world);
     let best = Infinity;
     try {
@@ -125,11 +164,11 @@ const mailboxBest = async (kind: "resource" | "select", system: System<void>, st
             });
             world.add(system);
         });
-        const counted = kind === "resource" ? await Observe.toPromise(world.observe.resource(counter)) : 0;
+        const counted = kind === "resource" || kind === "synced resource" ? await Observe.toPromise(world.observe.resource(counter)) : 0;
         const stopped = await joined.ask({ kind: "stop" });
         if (stopped.kind !== "stopped" || stopped.notified === 0) throw new Error(`mailbox ${kind}: the joined thread saw nothing.`);
         // Timed only while the joined thread keeps up: one that stopped being woken costs the world nothing.
-        if (kind === "resource" && stopped.last < counted - mailboxTicks) throw new Error(`mailbox ${kind}: the joined thread saw ${stopped.last} of ${counted}.`);
+        if ((kind === "resource" || kind === "synced resource") && stopped.last < counted - mailboxTicks) throw new Error(`mailbox ${kind}: the joined thread saw ${stopped.last} of ${counted}.`);
     }
     finally {
         await joined.terminate();
@@ -166,5 +205,23 @@ export const remoteBenchmarks: readonly Benchmark[] = [
         typical: [1, 1],
         best: { bytes: selected * 24, basis: "Each tick writes 10K 8-byte values, reads them to sort, and writes 10K 8-byte entities." },
         run: () => mailboxBest("select", reorder, 3),
+    },
+    {
+        name: "joined synced resource",
+        operation: "Ticks that change one resource a synced system a joined thread added reads after each sync point, posted to it and waking it once: `mailbox resource` as a synced system.",
+        per: "ticks",
+        n: mailboxTicks,
+        typical: [1, 1],
+        best: { bytes: 64, basis: "A tick reads at least one cache line of its system's state." },
+        run: () => mailboxBest("synced resource", count),
+    },
+    {
+        name: "joined synced 10K",
+        operation: "Ticks that reverse the order of 10K entities a synced system a joined thread added reads through an index and sorts after each sync point: `mailbox select 10K` as a synced system.",
+        per: "ticks",
+        n: mailboxTicks,
+        typical: [1, 1],
+        best: { bytes: selected * 24, basis: "Each tick writes 10K 8-byte values, reads them to sort, and sorts 10K 8-byte entities." },
+        run: () => mailboxBest("synced select", reorder, 3),
     },
 ];

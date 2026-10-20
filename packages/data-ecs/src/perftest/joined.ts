@@ -3,7 +3,7 @@ import type { MessagePort as NodeMessagePort } from "node:worker_threads";
 import { join } from "../implementation/index.js";
 import { scopeChannel } from "../implementation/world/port.js";
 import type { World } from "../interface/world/world.js";
-import { counter, empty, order, remoteRuns, type FromJoined, type ToJoined } from "./remote.js";
+import { counter, empty, order, remoteRuns, syncedCounter, syncedSeen, syncedSelect, type FromJoined, type ToJoined } from "./remote.js";
 import { handoffSystems } from "./handoff.js";
 import { release } from "./finalized.js";
 import { tailSystems } from "./tails.js";
@@ -67,7 +67,16 @@ channel.onMessage(async message => {
     }
     if (message.kind === "stop") {
         stop?.();
-        channel.post({ kind: "stopped", last, notified });
+        channel.post({ kind: "stopped", last: Math.max(last, syncedSeen.last), notified: notified + syncedSeen.notified });
+        return;
+    }
+    if (message.kind === "synced resource" || message.kind === "synced select") {
+        // A synced system of this thread's own, which the world posts here after each sync point.
+        const system = message.kind === "synced resource" ? syncedCounter : syncedSelect;
+        const world = remote;
+        world.add(system);
+        stop = () => world.remove(system);
+        channel.post({ kind: "observing" });
         return;
     }
     let first = true;

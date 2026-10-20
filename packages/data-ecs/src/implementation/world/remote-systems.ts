@@ -589,6 +589,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         remote,
         joined: null,
         lastRun: () => remote.lastRun,
+        restart: null,
     };
 };
 

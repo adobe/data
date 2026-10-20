@@ -68,18 +68,21 @@ const seeded = async (count: number): Promise<World> => {
 /** Every entity a seeded world holds. */
 const entitiesOf = (world: World): Promise<readonly Entity[]> => Observe.toPromise(Observe.select(world, { required: [value] }));
 
-/** The fastest of `rounds` timed runs of `run`, each after an untimed `prepare`. */
-const fastestPrepared = async (prepare: () => Promise<unknown>, run: () => Promise<unknown>, rounds = 300): Promise<number> => {
+/** As `fastest`: the fastest timed run of `run` within `budget` milliseconds of them, each after an untimed `prepare`. */
+const fastestPrepared = async (prepare: () => Promise<unknown>, run: () => Promise<unknown>, budget = 1000): Promise<number> => {
     for (let warm = 0; warm < 10; warm++) {
         await prepare();
         await run();
     }
     let best = Infinity;
-    for (let round = 0; round < rounds; round++) {
+    let spent = 0;
+    while (spent < budget) {
         await prepare();
         const start = performance.now();
         await run();
-        best = Math.min(best, performance.now() - start);
+        const time = performance.now() - start;
+        spent += time;
+        best = Math.min(best, time);
     }
     return best;
 };

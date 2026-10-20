@@ -64,13 +64,17 @@ export const rethrowLater = (error: unknown): void => {
     queueMicrotask(() => { throw error; });
 };
 
+const rethrowFailures = (report: { readonly failures: readonly { readonly name: string; readonly message: string }[] }): void => {
+    for (const failure of report.failures) rethrowLater(new Error(`${failure.name}: ${failure.message}`));
+};
+
+const ignore = (): void => {
+    // A disposed world runs nothing more: its observers' first values never come.
+};
+
 /** A run of the factories' own, whose report nothing returns: its failures are rethrown out of band. */
 const runOwn = (world: World, system: System): void => {
-    world.run(system).then(report => {
-        for (const failure of report.failures) rethrowLater(new Error(`${failure.name}: ${failure.message}`));
-    }, () => {
-        // A disposed world runs nothing more: its observers' first values never come.
-    });
+    world.run(system).then(rethrowFailures, ignore);
 };
 
 const noTasks: readonly (() => void)[] = [];

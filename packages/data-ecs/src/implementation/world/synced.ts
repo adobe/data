@@ -14,32 +14,41 @@ import { joinedOf, type JoinedSynced } from './joined-synced.js';
  * failures, and the index conflicts refreshing found: a promise only when refreshing or reading back waited.
  */
 export const runSynced = (context: ExecuteContext, own: readonly Leaf[], added: readonly Leaf[], failures: Failure[] | null): Failure[] | null | Promise<Failure[] | null> => {
-    const ownPass = passOf(context, own);
-    const addedPass = passOf(context, added);
+    const ownPass = passOf(context, own, false);
+    const addedPass = passOf(context, added, true);
     const waiting = ownPass.indexed || addedPass.indexed || context.state.gpu !== null ? prepare(context, ownPass, addedPass) : null;
     if (waiting !== null) return finishAfter(waiting, context, own, added, ownPass, addedPass, failures);
     return runAll(context, own, added, ownPass, addedPass, failures);
 };
 
 /**
- * A list's runners, read again once one was replaced or removed, and whether any looks up through an index. A runner
- * removed since it was read reads as removed, so a pass in progress skips it.
+ * A list's runners, read again once one was replaced or removed, or for another list, and whether any looks up through
+ * an index. A runner removed since it was read reads as removed, so a pass in progress skips it.
  */
-type Pass = { readonly runners: Runner[]; indexed: boolean; version: number; joined: readonly JoinedSynced[] | null };
+type Pass = { leaves: readonly Leaf[]; readonly runners: Runner[]; indexed: boolean; version: number; joined: readonly JoinedSynced[] | null };
 
-const passes = new WeakMap<ExecuteContext, WeakMap<readonly Leaf[], Pass>>();
-const emptyPass: Pass = { runners: [], indexed: false, version: -1, joined: [] };
+/**
+ * A context's passes: by list for runs' own synced systems, whose lists last as their schedules do; and one for those
+ * added, whose list is new whenever one is added or removed.
+ */
+type Passes = { readonly own: WeakMap<readonly Leaf[], Pass>; readonly added: Pass };
 
-const passOf = (context: ExecuteContext, leaves: readonly Leaf[]): Pass => {
+const passes = new WeakMap<ExecuteContext, Passes>();
+const noLeaves: readonly Leaf[] = [];
+const emptyPass: Pass = { leaves: noLeaves, runners: [], indexed: false, version: -1, joined: [] };
+const createPass = (leaves: readonly Leaf[]): Pass => ({ leaves, runners: [], indexed: false, version: -1, joined: null });
+
+const passOf = (context: ExecuteContext, leaves: readonly Leaf[], added: boolean): Pass => {
     if (leaves.length === 0) return emptyPass;
-    let byList = passes.get(context);
-    if (byList === undefined) passes.set(context, byList = new WeakMap());
-    let pass = byList.get(leaves);
-    if (pass === undefined) byList.set(leaves, pass = { runners: [], indexed: false, version: -1, joined: null });
+    let all = passes.get(context);
+    if (all === undefined) passes.set(context, all = { own: new WeakMap(), added: createPass(noLeaves) });
+    let pass = added ? all.added : all.own.get(leaves);
+    if (pass === undefined) all.own.set(leaves, pass = createPass(leaves));
     const { runnersVersion } = context.state;
-    if (pass.version !== runnersVersion) {
+    if (pass.version !== runnersVersion || pass.leaves !== leaves) {
         const { runners } = pass;
         runners.length = leaves.length;
+        pass.leaves = leaves;
         pass.indexed = false;
         pass.joined = null;
         for (let k = 0; k < leaves.length; k++) if ((runners[k] = context.runnerOf(leaves[k])).indexes.length > 0) pass.indexed = true;
@@ -94,9 +103,12 @@ const runAll = (context: ExecuteContext, own: readonly Leaf[], added: readonly L
     return failed;
 };
 
-/** The synced systems of a list placed on joined threads, which run there once posted (`joined-synced.ts`). */
-export const joinedIn = (context: ExecuteContext, leaves: readonly Leaf[]): readonly JoinedSynced[] => {
-    const pass = passOf(context, leaves);
+/**
+ * The synced systems of a list placed on joined threads, which run there once posted (`joined-synced.ts`): a run's own,
+ * or with `added`, those added.
+ */
+export const joinedIn = (context: ExecuteContext, leaves: readonly Leaf[], added: boolean): readonly JoinedSynced[] => {
+    const pass = passOf(context, leaves, added);
     if (pass.joined === null) pass.joined = joinedOf(pass.runners);
     return pass.joined;
 };

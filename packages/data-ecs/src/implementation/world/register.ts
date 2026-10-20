@@ -40,6 +40,12 @@ export type Registrar = {
     readonly crossing: (threads: readonly string[], imported: ReadonlySet<string>) => string | null;
     /** Places each registered system again, as claims were made or released: on its joined thread, or here. */
     readonly place: () => void;
+    /**
+     * Registers a forgotten synced leaf again at once, with the runner it had, run again as a new runner would be:
+     * registering it before found every key and resource it names, so nothing is left to do asynchronously. False when
+     * it can't, as for one never registered, or whose runner a run in progress may still read as removed.
+     */
+    readonly reregister: (leaf: Leaf) => boolean;
     /** For tests of what a world holds: how many schedules, runners and kernel indexes it keeps. */
     readonly sizes: () => { readonly schedules: number; readonly runners: number; readonly kernels: number };
 };
@@ -107,7 +113,8 @@ const allKeysOf = (leaf: Leaf): readonly Key[] => {
  * that runs here.
  */
 const syncedTargetOf = (state: State, leaf: Leaf): SyncedTarget | undefined => {
-    const target = state.synced.proxies.get(leaf)?.target ?? state.synced.targets.get(threadOf(leaf.declaration, "System", leaf.name) ?? "world");
+    const { proxies, targets } = state.synced;
+    const target = proxies.get(leaf)?.target ?? (targets.size === 0 ? undefined : targets.get(threadOf(leaf.declaration, "System", leaf.name) ?? "world"));
     return target === undefined || target.ended ? undefined : target;
 };
 
@@ -137,8 +144,10 @@ type Registered = { entry: Entry | null; registered: boolean };
 /**
  * What the registrar keeps of a system it registered, by the system: its record in the registry, its schedule, and the
  * count of forgettings it was last found whole at. Kept across forgetting, so registering it again records nothing more.
+ * For a forgotten leaf whose runner registering it again runs again (`Runner.restart`), `parked` is its entry then, the
+ * runner kept as its leaf's, stopped: adding a synced system again costs no new runner.
  */
-type Kept = { readonly held: Registered; schedule: Schedule | null; checked: number };
+type Kept = { readonly held: Registered; schedule: Schedule | null; checked: number; parked: Entry | null };
 
 /**
  * What a world keeps of each system it registered lives as long as the system's value: schedules and runners by
@@ -207,7 +216,7 @@ export const createRegistrar = (state: State): Registrar => {
                 idOf(state, key);
                 resources.add(key);
             }
-            const runner = placedRunner(state, system);
+            const runner = parkedRunner(system) ?? placedRunner(state, system);
             const entry: Entry = { leaf: new WeakRef(system), holdings: runner.holdings, observed: observedBy(system).map(key => idOf(state, key)), released: false };
             added.push({ system, schedule, entry, runner });
         }
@@ -217,7 +226,7 @@ export const createRegistrar = (state: State): Registrar => {
             const record = records.get(system);
             if (record === undefined) {
                 const held: Registered = { entry, registered: true };
-                records.set(system, { held, schedule, checked: forgettings });
+                records.set(system, { held, schedule, checked: forgettings, parked: null });
                 collected.register(system, held);
             }
             else {
@@ -260,6 +269,41 @@ export const createRegistrar = (state: State): Registrar => {
         return { resources: [...resources], ticked, kernels, rollback };
     };
 
+    /**
+     * A forgotten leaf's runner, run again as a new runner would be, where it would still run: here. Only once what it
+     * held was released, so no run in progress still reads it as removed.
+     */
+    const parkedRunner = (leaf: Leaf): Runner | null => {
+        const record = records.get(leaf);
+        const entry = record?.parked ?? null;
+        if (record === undefined || entry === null) return null;
+        record.parked = null;
+        const runner = runners.get(leaf);
+        if (runner === undefined || runner.restart === null || !entry.released || syncedTargetOf(state, leaf) !== undefined) return null;
+        runner.restart(0);
+        return runner;
+    };
+
+    const reregister = (leaf: Leaf): boolean => {
+        const record = records.get(leaf);
+        const old = record?.parked ?? null;
+        if (record === undefined || old === null || record.held.registered) return false;
+        // Components it starts observing make kernels that muted their stamps load again, asynchronously.
+        for (const id of old.observed) if (!state.observed.has(id)) return false;
+        const runner = parkedRunner(leaf);
+        if (runner === null) return false;
+        const entry: Entry = { leaf: old.leaf, holdings: runner.holdings, observed: old.observed, released: false };
+        record.held.entry = entry;
+        record.held.registered = true;
+        record.schedule = scheduleOf(leaf);
+        record.checked = forgettings;
+        scheduleCount++;
+        live.add(entry);
+        for (const id of entry.observed) observe(state, id);
+        state.runnersVersion++;
+        return true;
+    };
+
     const registered = (system: Definition): Schedule | undefined => {
         const record = records.get(system);
         if (record === undefined || !record.held.registered || record.schedule === null) return undefined;
@@ -271,7 +315,7 @@ export const createRegistrar = (state: State): Registrar => {
         return record.schedule;
     };
 
-    /** A leaf's runner; for one forgotten, as a removed system is, one that runs nothing. */
+    /** A leaf's runner; for one forgotten, as a removed system is, one that runs nothing: stopped, or `removedRunner`. */
     const runnerOf = (leaf: Leaf): Runner => runners.get(leaf) ?? removedRunner;
 
     const forget = (systems: readonly Definition[]): (() => void) => {
@@ -284,11 +328,13 @@ export const createRegistrar = (state: State): Registrar => {
             record.schedule = null;
             scheduleCount--;
             if (entry === null || !isLeaf(system)) continue;
-            runners.delete(system);
+            const runner = runners.get(system);
             live.delete(entry);
             // No run calls its body again from here, on any thread; what it holds goes once no run uses it.
             stopHoldings(entry.holdings);
             stopped.push(entry);
+            if (runner !== undefined && runner.restart !== null && runner.joined === null) record.parked = entry;
+            else runners.delete(system);
         }
         forgettings++;
         state.runnersVersion++;
@@ -350,5 +396,5 @@ export const createRegistrar = (state: State): Registrar => {
 
     const sizes = () => ({ schedules: scheduleCount, runners: live.size, kernels: state.kernelIndexes.size });
 
-    return { register, registered, runnerOf, forget, systemsOf, kernelIndexOf: runner => runner.kernel?.index ?? -1, kernels, placeGpuKernels, crossing, place, sizes };
+    return { register, registered, runnerOf, forget, reregister, systemsOf, kernelIndexOf: runner => runner.kernel?.index ?? -1, kernels, placeGpuKernels, crossing, place, sizes };
 };

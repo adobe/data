@@ -9,7 +9,7 @@ import { maximumScalars, type KernelSetup } from './protocol.js';
 import type { Segment } from './command-ring.js';
 import { createBuffer, createKernelCommands, emptyBuffer, stage, type CommandBuffer } from './buffer.js';
 import { createBatch, positionalSpawner, type SpawnBatch } from './staging.js';
-import { createBlock, endBlock, reserveFrom } from './entities.js';
+import { createBlock, endBlock, indexOf, reserveFrom } from './entities.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, parentBinder, rowBinder } from './rows.js';
@@ -95,6 +95,11 @@ export type Runner = {
     readonly joined: JoinedSynced | null;
     /** The tick it last ran at, which a runner placing it elsewhere starts from. */
     readonly lastRun: () => number;
+    /**
+     * For a runner the registrar may keep once its system is removed, to run it again when it's registered again: one
+     * here, of a synced system, holding nothing beyond its JS values. Makes it as a new runner from tick `since`.
+     */
+    readonly restart: ((since: number) => void) | null;
 };
 
 /**
@@ -121,6 +126,11 @@ export type Holdings = {
     /** For a system placed on a joined thread: what stops it running there once it's removed. */
     remote: { readonly unplace: () => void } | null;
 };
+
+/** Whether holdings hold nothing beyond their runner's JS values, so releasing them frees nothing. */
+const holdsNothing = (holdings: Holdings): boolean =>
+    holdings.partials === null && holdings.up === null && holdings.directories.length === 0 && (holdings.indexes === null || holdings.indexes.uses.length === 0)
+    && holdings.gpu === null && holdings.afterSync === null && holdings.remote === null;
 
 /** Holdings of a runner that holds nothing beyond its JS values. */
 export const holdingNothing = (remote: Holdings["remote"] = null): Holdings => ({ removed: false, released: false, partials: null, up: null, directories: [], indexes: null, gpu: null, prefix: "", afterSync: null, remote });
@@ -273,10 +283,16 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const noChunks: readonly Chunk[] = [];
     const noValues: readonly unknown[] = [];
     /** Whether a resource a `changed` filter names changed since the system last ran. */
+    const resourceChangedIds = resourceChanged.map(key => idOf(state, key));
     const resourcesChangedSince = (since: number): boolean => {
-        for (const key of resourceChanged) {
-            const { storage, row } = resourceCell(state, key);
-            if (storage.changed[row] > since) return true;
+        const index = indexOf(state.resourceEntity);
+        const archetype = state.archetypes[state.entities.archetype[index]];
+        const row = state.entities.row[index];
+        for (let k = 0; k < resourceChangedIds.length; k++) {
+            const storage = archetype?.storageById[resourceChangedIds[k]];
+            // Throws, as for a resource not in this world.
+            if (storage === undefined) resourceCell(state, resourceChanged[k]);
+            else if (storage.changed[row] > since) return true;
         }
         return false;
     };
@@ -982,6 +998,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         remote: null,
         joined: null,
         lastRun: () => lastRun,
+        restart: declaration.synced !== true || !holdsNothing(holdings) ? null : since => {
+            lastRun = since;
+            holdings.removed = false;
+            holdings.released = false;
+        },
     };
 };
 
@@ -1007,4 +1028,5 @@ export const removedRunner: Runner = {
     remote: null,
     joined: null,
     lastRun: () => 0,
+    restart: null,
 };

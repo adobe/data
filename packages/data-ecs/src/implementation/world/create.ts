@@ -44,7 +44,7 @@ import { wake } from '../../interface/resources/wake.js';
 import { stampChanged } from './archetype.js';
 import { failureOf } from './failures.js';
 import { createLoop, platformFrame, platformTimer, type Clock, type LoopPlatform } from './loop.js';
-import { createState, idOf, startTicking, type Key } from './state.js';
+import { createState, defaultOf, idOf, startTicking, type Key } from './state.js';
 import { indexOf } from './entities.js';
 import { isHeld } from './transfers.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
@@ -262,8 +262,16 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         return cell === undefined ? initialOf(state, key) : readCell(cell.storage, cell.row);
     };
 
-    // The resource's value matches its registered schema, `GPUDevice | null`.
-    const readDevice = (): ReadonlyResourceValue<typeof gpuDevice> => readResource(gpuDevice) as ReadonlyResourceValue<typeof gpuDevice>;
+    const deviceId = idOf(state, gpuDevice);
+    const deviceDefault = defaultOf(gpuDevice);
+    /** The `gpuDevice` resource's value, read each run, so without allocating. */
+    const readDevice = (): ReadonlyResourceValue<typeof gpuDevice> => {
+        const index = state.resourceEntity < 0 ? -1 : indexOf(state.resourceEntity);
+        const storage = index < 0 ? undefined : state.archetypes[state.entities.archetype[index]]?.storageById[deviceId];
+        const value = storage !== undefined ? readCell(storage, state.entities.row[index]) : state.initial.has(gpuDevice) ? state.initial.get(gpuDevice) : deviceDefault;
+        // The resource's value matches its registered schema, `GPUDevice | null`.
+        return value as ReadonlyResourceValue<typeof gpuDevice>;
+    };
 
     /**
      * Before and after each run: the world's GPU storage follows its `gpuDevice` resource, which the world sets to null
@@ -394,7 +402,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     /** Posts synced systems on joined threads after those here ran, then gives `failures`. */
     const postAfter = (failures: Failure[] | null, own: readonly Leaf[], added: readonly Leaf[], run: number): Failure[] | null | Promise<Failure[] | null> => {
-        const posting = postSynced(state, joinedIn(context, own), joinedIn(context, added), run, context.workers?.pool ?? null);
+        const posting = postSynced(state, joinedIn(context, own, false), joinedIn(context, added, true), run, context.workers?.pool ?? null);
         return posting === null ? failures : posting.then(() => failures);
     };
     // A post owed to a run, cancelled outside a sync point, is posted again between runs.
@@ -405,11 +413,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     });
 
     /**
-     * Registers a synced system `add` was given, before the next run, unless it was removed meanwhile; its failure is in
-     * the next pass's report.
+     * Registers a synced system `add` was given: at once when it can register again as it was (`Registrar.reregister`),
+     * otherwise before the next run, unless it was removed meanwhile; its failure is in the next pass's report.
      */
     const registerSynced = (system: Leaf): void => {
-        if (registrar.registered(system) !== undefined) return;
+        if (registrar.registered(system) !== undefined || registrar.reregister(system)) return;
         void enqueue(async () => {
             if (disposed || registrar.registered(system) !== undefined || !loop.synced().includes(system)) return;
             try {

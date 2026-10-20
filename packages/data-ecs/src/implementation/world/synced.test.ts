@@ -52,6 +52,9 @@ const watchReport = System.create({ name: "syncedTest/watchReport", synced: true
     seen.reports.push(resources[report].failures.length);
 });
 const raiseThenWatch = System.create([raise, watchLevel]);
+const watchLevelChanges = System.create({ name: "syncedTest/watchLevelChanges", synced: true, resources: { read: [level], changed: [level] } }, ({ resources }) => {
+    seen.levels.push(resources[level]);
+});
 
 /** The world a removing body acts on. */
 let current: World | null = null;
@@ -256,6 +259,38 @@ describe("synced systems", () => {
         current = null;
         await world.run(raise);
         expect(seen.levels).toEqual([1]);
+    });
+
+    it("pass their change filters on the first pass once added again, as when first added", async () => {
+        reset();
+        await using world = inline();
+        await world.run(raise);
+        world.add(watchLevelChanges);
+        world.add(watchAmounts);
+        await world.run(spawn);
+        await world.run(nothing);
+        expect([seen.levels, seen.amounts]).toEqual([[1], [1]]);
+        world.remove(watchLevelChanges);
+        world.remove(watchAmounts);
+        await world.run(nothing);
+        world.add(watchLevelChanges);
+        world.add(watchAmounts);
+        await world.run(nothing);
+        await world.run(nothing);
+        expect([seen.levels, seen.amounts]).toEqual([[1, 1], [1, 1]]);
+    });
+
+    it("run from the next pass once added again after the run that removed them, even for a run queued before", async () => {
+        reset();
+        await using world = inline();
+        world.add(watchLevel);
+        await world.run(nothing);
+        world.remove(watchLevel);
+        await world.run(nothing);
+        const queued = world.run(raise);
+        world.add(watchLevel);
+        await queued;
+        expect(seen.levels).toEqual([0, 1]);
     });
 
     it("can be placed on a joined thread", () => {

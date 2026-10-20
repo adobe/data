@@ -5,9 +5,9 @@ import type { Commands } from '../../interface/system/commands.js';
 import type { Layout, TypedArray } from '../../interface/registry/layout.js';
 import { stampChanged, writeF32Lanes, writeGeneral, writeOf, type Archetype, type Storage } from './archetype.js';
 import { readCell, writeCell } from './cells.js';
-import { locate } from './entities.js';
+import { indexOf, locate } from './entities.js';
 import { ownTag } from './move-log.js';
-import { findResource, resourceCell, type ResourceCell } from './resources.js';
+import { resourceCell } from './resources.js';
 import { idOf, type Key, type State } from './state.js';
 import { combine, contributed, identityOf, type ReductionTarget } from './reductions.js';
 import { createIndexLookup, type Since } from './index-lookups.js';
@@ -438,20 +438,31 @@ export const createContext = (state: State, declaration: Pick<Declaration, "look
     }
     const writes = new Set<Key>(resources?.write);
     const keys = [...new Set<Key>([...resources?.read ?? [], ...resources?.is ?? [], ...writes])];
-    const cells: (ResourceCell | undefined)[] = keys.map(() => undefined);
+    const ids = keys.map(key => idOf(state, key));
+    /** By key, its storage in the resource entity's archetype as of `bind`, and the entity's row there. */
+    const storages: (Storage | undefined)[] = keys.map(() => undefined);
+    let row = 0;
     if (keys.length > 0) {
         const values = own();
         keys.forEach((key, i) => {
-            const cellOf = (): ResourceCell => cells[i] ?? resourceCell(state, key);
             Object.defineProperty(values, key, {
                 get: () => {
-                    const { storage, row } = cellOf();
-                    return readCell(storage, row);
+                    const storage = storages[i];
+                    if (storage !== undefined) return readCell(storage, row);
+                    // Throws, as for a resource not in this world.
+                    const cell = resourceCell(state, key);
+                    return readCell(cell.storage, cell.row);
                 },
                 set: writes.has(key) ? (next: unknown) => {
-                    const { storage, row } = cellOf();
-                    writeCell(storage, row, next);
-                    stampChanged(storage, row, state.tick);
+                    let storage = storages[i];
+                    let at = row;
+                    if (storage === undefined) {
+                        const cell = resourceCell(state, key);
+                        storage = cell.storage;
+                        at = cell.row;
+                    }
+                    writeCell(storage, at, next);
+                    stampChanged(storage, at, state.tick);
                 } : undefined,
                 enumerable: true,
             });
@@ -478,7 +489,12 @@ export const createContext = (state: State, declaration: Pick<Declaration, "look
     if (input) value.input = undefined;
     if (commands !== undefined) Object.defineProperty(value, "commands", { value: commands, enumerable: true });
     const bind = (): void => {
-        for (let i = 0; i < keys.length; i++) cells[i] = findResource(state, keys[i]);
+        if (keys.length > 0) {
+            const index = state.resourceEntity < 0 ? -1 : indexOf(state.resourceEntity);
+            const archetype = index < 0 ? undefined : state.archetypes[state.entities.archetype[index]];
+            row = index < 0 ? 0 : state.entities.row[index];
+            for (let i = 0; i < keys.length; i++) storages[i] = archetype?.storageById[ids[i]];
+        }
         for (let t = 0; t < targets.length; t++) reduced[t]?.fill(identityOf(targets[t].operator));
     };
     return { value, bind, reduced };

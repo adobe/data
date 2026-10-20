@@ -558,6 +558,11 @@ export const readAhead = async (state: State, gpu: GpuEngine, runners: readonly 
         if (runner.placement !== "cpu") continue;
         for (const archetype of runner.matched()) add(archetype, runner.touches);
         if (runner.looks.length > 0) for (const archetype of state.archetypes) add(archetype, runner.looks);
+        // What its indexes hold entities by, so they're kept by the values the GPU wrote.
+        for (const { index } of runner.indexes) for (const archetype of state.archetypes) {
+            add(archetype, index.keys);
+            add(archetype, index.has);
+        }
     }
     if (storages.size === 0) return;
     if (state.tails.length !== 0) {

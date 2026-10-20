@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
+import { Index } from "../../interface/indexes/index-type.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
@@ -28,6 +29,12 @@ const warm = System.create({ name: "syncedGpuTest/warm", kernel: "gpu", componen
 let total = 0;
 const sum = System.create({ name: "syncedGpuTest/sum", synced: true, components: { read: [heat] } }, row => { total += row[heat]; });
 
+const byHeat = Index.create({ name: "syncedGpuTest/byHeat", key: [heat], sorted: true });
+let hot = 0;
+const countHot = System.create({ name: "syncedGpuTest/countHot", synced: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
+    hot = lookup.hot({ ">=": 150 }).length;
+});
+
 const device = async (): Promise<GPUDevice> => {
     const adapter = await navigator.gpu.requestAdapter();
     if (adapter === null) throw new Error("No WebGPU adapter.");
@@ -45,6 +52,17 @@ describe("synced systems over GPU kernels' writes", () => {
         total = 0;
         await world.run(sum);
         expect(total).toBe(4950 + 100 * 100);
+        await world.dispose();
+    });
+
+    it("look up through indexes kept by what a GPU kernel wrote in the run, read back before they're refreshed", async () => {
+        const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
+        await world.run(spawn);
+        world.add(countHot);
+        await world.run(warm);
+        expect(hot).toBe(50);
+        await world.run(warm);
+        expect(hot).toBe(100);
         await world.dispose();
     });
 });

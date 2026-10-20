@@ -9,7 +9,7 @@ import { joinedOf, type JoinedSynced } from './joined-synced.js';
 
 /**
  * Runs synced systems after a sync point, on this thread: those of the run, `own`, then those added, `added`, each once.
- * The indexes they look up through are refreshed and what the GPU wrote that they read is read back first; then each
+ * What the GPU wrote that they read, or their indexes hold by, is read back, then those indexes are refreshed; then each
  * runs, unless it was removed since, even by a body earlier in the pass. Returns `failures` with theirs, as `"system"`
  * failures, and the index conflicts refreshing found: a promise only when refreshing or reading back waited.
  */
@@ -65,10 +65,14 @@ const refreshIndexes = (context: ExecuteContext, pass: Pass, waiting: Promise<un
  * wait for, or null when nothing waits.
  */
 const prepare = (context: ExecuteContext, own: Pass, added: Pass): Promise<void> | null => {
-    const { state } = context;
-    let waiting = refreshIndexes(context, added, refreshIndexes(context, own, null));
-    const { gpu } = state;
-    if (gpu !== null && gpu.anyAhead()) (waiting ??= []).push(readAhead(state, gpu, [...own.runners, ...added.runners]));
+    const { gpu } = context.state;
+    // What the GPU wrote is read back first, so the indexes refresh from the values it wrote.
+    if (gpu !== null && gpu.anyAhead()) return readAhead(context.state, gpu, [...own.runners, ...added.runners]).then(() => refreshAll(context, own, added) ?? undefined);
+    return refreshAll(context, own, added);
+};
+
+const refreshAll = (context: ExecuteContext, own: Pass, added: Pass): Promise<void> | null => {
+    const waiting = refreshIndexes(context, added, refreshIndexes(context, own, null));
     return waiting === null ? null : Promise.all(waiting).then(() => undefined);
 };
 

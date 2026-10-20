@@ -226,10 +226,11 @@ const outcomeOf = async (tasks: readonly Promise<{ readonly done: boolean; reado
 };
 
 /**
- * For benchmarks and tests: a writer of what a tail still reads waits until the tail is done instead of copying the
- * rest, the alternative `tail overlap waiting` measures snapshots against.
+ * For benchmarks and tests: `wait`, a writer of what a tail still reads waits until the tail is done instead of copying
+ * the rest, the alternative `tail overlap waiting` measures snapshots against; and `copies`, the copies writers took,
+ * which tests wait for to order a thread's reads after one.
  */
-export const tailWriters = { wait: false };
+export const tailWriters = { wait: false, copies: 0 };
 
 /** How long the world spins for a tail's chunk before it waits: about one wake-up's latency. */
 const spinMilliseconds = 0.02;
@@ -411,6 +412,7 @@ export const copyRest = (state: State, tail: Copied): Promise<void> | null => {
     runs.length = 0;
     if (from < end) writeSnapshot(state, tail, from);
     const claimed = Atomics.exchange(control, progressWord, snapshotted);
+    tailWriters.copies++;
     // Rows the tail claimed while this copied it reads where they are.
     if (claimed < end) markOwn(state, tail, claimed);
     const target = Math.min(claimed, end);

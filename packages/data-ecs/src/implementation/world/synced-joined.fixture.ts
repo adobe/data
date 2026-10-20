@@ -4,14 +4,16 @@ import { always } from "../../interface/resources/always.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, type CreatedWorld } from "./create.js";
-import { backToBack } from "./loop.js";
+import type { LoopPlatform } from "./loop.js";
 import type { FromSyncedWorker, ToSyncedWorker } from "./synced-joined-worker.fixture.js";
-import { counter, seed, setStall, ticked } from "./synced-joined.test-helper.js";
+import { counter, gateWords, holdWord, reachedWord, releasedWord, seed, setStall, ticked } from "./synced-joined.test-helper.js";
+import { tailWriters } from "./tails.js";
 
 /**
  * Scenarios of synced systems a joined worker adds, run built in node and from source in chromium: a system over
  * every row, and one looking every row up by entity, while the world ticks on writing them, prompt and stalling
- * partway so the world's next writer is ready before they finish.
+ * partway so the world's next writer is likely ready before they finish; then, for the system over every row, each
+ * order forced, whatever the machine's timing: a writer ready while a run is partway, and a thread that fell behind.
  */
 
 type Worker = { readonly ask: (message: ToSyncedWorker, transfer?: readonly unknown[]) => Promise<FromSyncedWorker>; readonly terminate: () => Promise<void> };
@@ -64,43 +66,146 @@ const joined = async (world: CreatedWorld): Promise<Worker> => {
     return worker;
 };
 
+/**
+ * Frames back to back, as `backToBack`, until `gate`: from then on, a tick starts only when `next` says, and `asked`
+ * resolves once the loop asked for its next beat, so the last tick's sync point and posts are done.
+ */
+const steppedFrames = (): Partial<LoopPlatform> & { readonly gate: () => void; readonly asked: () => Promise<void>; readonly next: () => Promise<void>; readonly close: () => void } => {
+    const channel = new MessageChannel();
+    let pending: ((time: number) => void) | null = null;
+    let requested: (() => void) | null = null;
+    let gated = false;
+    const call = (): void => {
+        const callback = pending;
+        pending = null;
+        callback?.(performance.now());
+    };
+    channel.port1.onmessage = () => { if (!gated) call(); };
+    const asked = async (): Promise<void> => {
+        if (pending === null) await new Promise<void>(resolve => { requested = resolve; });
+    };
+    return {
+        frame: callback => {
+            pending = callback;
+            requested?.();
+            requested = null;
+            if (!gated) channel.port2.postMessage(null);
+            return () => {
+                if (pending === callback) pending = null;
+            };
+        },
+        gate: () => { gated = true; },
+        asked,
+        next: async () => {
+            await asked();
+            call();
+        },
+        close: () => {
+            channel.port1.close();
+            channel.port2.close();
+        },
+    };
+};
+
+/** A task later, so other threads' messages and the world's waits settle between checks. */
+const later = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+
 /** Ticks on until the counter passed `more` more. */
 const ticks = async (world: World, more: number): Promise<void> => {
     const now = await until(world.observe.resource(counter), () => true);
     await until(world.observe.resource(counter), value => value >= now + more);
 };
 
+/** What the worker's synced system saw so far. */
+const seenBy = async (worker: Worker): Promise<Extract<FromSyncedWorker, { readonly kind: "seen" }>> => {
+    const reply = await worker.ask({ kind: "seen" });
+    if (reply.kind !== "seen") throw new Error("synced-joined: the worker didn't say what it saw.");
+    return reply;
+};
+
+/**
+ * Gated, a run waiting partway, at the end of its first chunk, as each next step of the world starts: a tick, four
+ * times, then a run setting the stall back. Each run is released once the step's writer copied the rest, so it reads
+ * that from the copy. Returns the runs released and the runs that read from a copy meanwhile.
+ */
+const writerReadyPartway = async (world: World, worker: Worker, frames: ReturnType<typeof steppedFrames>, words: Int32Array) => {
+    const switched = (await seenBy(worker)).switched;
+    let released = Atomics.load(words, releasedWord);
+    const releases: number[] = [];
+    const step = async (start: () => Promise<unknown>): Promise<void> => {
+        while (Atomics.load(words, reachedWord) <= released) await later();
+        const reached = Atomics.load(words, reachedWord);
+        const copies = tailWriters.copies;
+        const started = start();
+        while (tailWriters.copies === copies) await later();
+        released = reached;
+        releases.push(reached);
+        Atomics.store(words, releasedWord, reached);
+        Atomics.notify(words, releasedWord);
+        await started;
+    };
+    await world.run(setStall, { pause: -1 });
+    for (let k = 0; k < 4; k++) await step(frames.next);
+    await step(() => world.run(setStall, { pause: 0 }));
+    return { released: releases, switched: (await seenBy(worker)).switched - switched };
+};
+
+/**
+ * Gated, the thread holds its event loop while the world ticks three times, then is released: it fell behind, and
+ * runs once, for the newest sync point. Returns the counters of the runs after the hold began, and the newest.
+ */
+const fellBehind = async (world: World, worker: Worker, frames: ReturnType<typeof steppedFrames>, words: Int32Array) => {
+    await worker.ask({ kind: "hold" });
+    const from = await until(world.observe.resource(counter), () => true);
+    for (let k = 0; k < 3; k++) await frames.next();
+    await frames.asked();
+    const newest = from + 3;
+    Atomics.store(words, holdWord, 1);
+    Atomics.notify(words, holdWord);
+    for (;;) {
+        const { seen } = await seenBy(worker);
+        if (seen.some(run => run.counter === newest && run.rows === 1000)) return { behind: seen.filter(run => run.counter > from).map(run => run.counter), newest };
+        await later();
+    }
+};
+
 /**
  * 1,000 rows while the world ticks back to back writing them, the worker's synced system over them prompt, then
- * stalling partway, then prompt again: what each run saw, how many ran from a copy, and the ticks there were.
+ * stalling partway, then prompt again; then, for the system over every row, gated, a writer ready while a run is
+ * partway, and the thread falling behind: what each run saw, how many ran from a copy, and how many ran.
  */
 export const continuous = async (system: "rows" | "lookups") => {
-    const driver = backToBack();
-    const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
+    const frames = steppedFrames();
+    const world = createWorld({ [workers]: 0, [always]: true }, { loop: frames });
     const worker = await joined(world);
+    const words = new Int32Array(new SharedArrayBuffer(gateWords * 4));
     await world.run(seed, { count: 1000 });
     world.add(ticked);
-    await worker.ask({ kind: "add", system });
+    await worker.ask({ kind: "add", system, gate: words });
     await ticks(world, 30);
     await world.run(setStall, { pause: 3 });
     await ticks(world, 30);
     await world.run(setStall, { pause: 0 });
     await ticks(world, 10);
-    const ticks_seen = await until(world.observe.resource(counter), () => true);
+    let partway: Awaited<ReturnType<typeof writerReadyPartway>> | null = null;
+    let behind: Awaited<ReturnType<typeof fellBehind>> | null = null;
+    if (system === "rows") {
+        frames.gate();
+        partway = await writerReadyPartway(world, worker, frames, words);
+        behind = await fellBehind(world, worker, frames, words);
+    }
     await world.dispose();
-    const reply = await worker.ask({ kind: "seen" });
+    const reply = await seenBy(worker);
     await worker.terminate();
-    driver.close();
-    if (reply.kind !== "seen") throw new Error("synced-joined: the worker didn't say what it saw.");
+    frames.close();
     const { seen } = reply;
     return {
         runs: seen.length,
-        ticks: ticks_seen,
         wrong: seen.reduce((sum, run) => sum + run.wrong, 0),
         fewest: Math.min(...seen.map(run => run.rows)),
         most: Math.max(...seen.map(run => run.rows)),
-        switched: reply.switched,
-        late: reply.late,
         timers: reply.timers,
+        partway,
+        behind,
     };
 };

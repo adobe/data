@@ -7,9 +7,11 @@ export const syncedJoinedCases = (load: () => Promise<typeof Fixture>) => descri
         const fixture = await load();
         const seen = await fixture.continuous("rows");
         expect({ wrong: seen.wrong, fewest: seen.fewest, most: seen.most }).toEqual({ wrong: 0, fewest: 1000, most: 1000 });
-        expect(seen.switched).toBeGreaterThan(0);
-        // Stalled, it fell behind, and ran once for the newest sync point.
-        expect(seen.runs).toBeLessThan(seen.ticks);
+        // Each run a writer was ready for partway read the rest from its copy.
+        expect(seen.partway?.released.length).toBe(5);
+        expect(seen.partway?.switched).toBe(5);
+        // Held, it fell behind, and ran once, for the newest sync point.
+        expect(seen.behind?.behind).toEqual([seen.behind?.newest]);
         // Its thread returned to its event loop meanwhile.
         expect(seen.timers).toBeGreaterThan(0);
     }, 30000);

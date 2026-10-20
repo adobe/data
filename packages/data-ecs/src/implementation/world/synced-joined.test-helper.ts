@@ -23,12 +23,44 @@ declare module "@adobe/data-ecs" {
 Component.register(stamp, { type: { type: "integer" } });
 Component.register(spot, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
 Resource.register(counter, { type: { type: "integer", default: 0 } });
-/** Milliseconds the synced systems spin partway through each run, so the world's next writer is ready before they finish. */
+/**
+ * Milliseconds the synced systems spin partway through each run, so the world's next writer is likely ready before they
+ * finish; negative, they wait there on the gate instead, until the world's thread releases them once a writer copied.
+ */
 Resource.register(stall, { type: { type: "number", default: 0 } });
 
 const spin = (milliseconds: number): void => {
     const until = performance.now() + milliseconds;
     while (performance.now() < until);
+};
+
+/**
+ * Shared words the world's thread and the joined thread order their steps by: the counter a run waits partway at, the
+ * counter the world's thread released runs through, and, once nonzero, the release of a thread holding its event loop.
+ */
+export const reachedWord = 0;
+export const releasedWord = 1;
+export const holdWord = 2;
+export const gateWords = 3;
+/** The joined thread's view of the gate, once the world's thread sent it. */
+export const gate: { words: Int32Array | null } = { words: null };
+
+/** Spins for `pause` milliseconds, or, negative, says it reached `value` and waits until it's released. */
+const pauseAt = (pause: number, value: number): void => {
+    const { words } = gate;
+    if (pause >= 0 || words === null) {
+        spin(pause);
+        return;
+    }
+    Atomics.store(words, reachedWord, value);
+    for (let released = Atomics.load(words, releasedWord); released < value; released = Atomics.load(words, releasedWord)) Atomics.wait(words, releasedWord, released);
+};
+
+/** Holds the joined thread's event loop until the world's thread releases it. */
+export const hold = (): void => {
+    const { words } = gate;
+    if (words === null) return;
+    while (Atomics.load(words, holdWord) === 0) Atomics.wait(words, holdWord, 0);
 };
 
 /** On the world's thread: the counter moves on once a tick, then every row's stamp and spot take it. */
@@ -52,7 +84,7 @@ export const setStall = System.create({ name: "syncedJoinedWorkerTest/setStall",
 export type Seen = { counter: number; rows: number; wrong: number };
 export const seen: Seen[] = [];
 
-/** Reads every row, which must all be of one tick, spinning after its first chunk while `stall` says so. */
+/** Reads every row, which must all be of one tick, pausing at the end of its first chunk while `stall` says so. */
 export const watchRows = System.create({ name: "syncedJoinedWorkerTest/watchRows", synced: true, components: { read: [stamp, spot] }, resources: { read: [counter, stall] } }, (row, { resources }) => {
     const value = resources[counter];
     let last = seen.at(-1);
@@ -60,7 +92,7 @@ export const watchRows = System.create({ name: "syncedJoinedWorkerTest/watchRows
     const [x, y, z] = row[spot];
     if (row[stamp] !== value || x !== value || y !== -value || z !== value) last.wrong++;
     last.rows++;
-    if (last.rows === 63) spin(resources[stall]);
+    if (last.rows === 63) pauseAt(resources[stall], value);
 });
 
 /** The entities `lookRows` looks up, which the joined thread fills in. */

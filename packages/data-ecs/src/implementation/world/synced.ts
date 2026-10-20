@@ -16,16 +16,19 @@ import { joinedOf, type JoinedSynced } from './joined-synced.js';
 export const runSynced = (context: ExecuteContext, own: readonly Leaf[], added: readonly Leaf[], failures: Failure[] | null): Failure[] | null | Promise<Failure[] | null> => {
     const ownPass = passOf(context, own, false);
     const addedPass = passOf(context, added, true);
+    // Those on joined threads are posted there, which reads back and refreshes what they read itself.
+    if (!ownPass.here && !addedPass.here) return context.state.indexFailures.length === 0 ? failures : runAll(context, own, added, ownPass, addedPass, failures);
     const waiting = ownPass.indexed || addedPass.indexed || context.state.gpu !== null ? prepare(context, ownPass, addedPass) : null;
     if (waiting !== null) return finishAfter(waiting, context, own, added, ownPass, addedPass, failures);
     return runAll(context, own, added, ownPass, addedPass, failures);
 };
 
 /**
- * A list's runners, read again once one was replaced or removed, or for another list, and whether any looks up through
- * an index. A runner removed since it was read reads as removed, so a pass in progress skips it.
+ * A list's runners, read again once one was replaced or removed, or for another list; whether any looks up through an
+ * index, and whether any runs on this thread rather than a joined one. A runner removed since it was read reads as
+ * removed, so a pass in progress skips it.
  */
-type Pass = { leaves: readonly Leaf[]; readonly runners: Runner[]; indexed: boolean; version: number; joined: readonly JoinedSynced[] | null };
+type Pass = { leaves: readonly Leaf[]; readonly runners: Runner[]; indexed: boolean; here: boolean; version: number; joined: readonly JoinedSynced[] | null };
 
 /**
  * A context's passes: by list for runs' own synced systems, whose lists last as their schedules do; and one for those
@@ -35,8 +38,8 @@ type Passes = { readonly own: WeakMap<readonly Leaf[], Pass>; readonly added: Pa
 
 const passes = new WeakMap<ExecuteContext, Passes>();
 const noLeaves: readonly Leaf[] = [];
-const emptyPass: Pass = { leaves: noLeaves, runners: [], indexed: false, version: -1, joined: [] };
-const createPass = (leaves: readonly Leaf[]): Pass => ({ leaves, runners: [], indexed: false, version: -1, joined: null });
+const emptyPass: Pass = { leaves: noLeaves, runners: [], indexed: false, here: false, version: -1, joined: [] };
+const createPass = (leaves: readonly Leaf[]): Pass => ({ leaves, runners: [], indexed: false, here: false, version: -1, joined: null });
 
 const passOf = (context: ExecuteContext, leaves: readonly Leaf[], added: boolean): Pass => {
     if (leaves.length === 0) return emptyPass;
@@ -50,8 +53,13 @@ const passOf = (context: ExecuteContext, leaves: readonly Leaf[], added: boolean
         runners.length = leaves.length;
         pass.leaves = leaves;
         pass.indexed = false;
+        pass.here = false;
         pass.joined = null;
-        for (let k = 0; k < leaves.length; k++) if ((runners[k] = context.runnerOf(leaves[k])).indexes.length > 0) pass.indexed = true;
+        for (let k = 0; k < leaves.length; k++) {
+            const runner = runners[k] = context.runnerOf(leaves[k]);
+            if (runner.indexes.length > 0) pass.indexed = true;
+            if (runner.joined === null) pass.here = true;
+        }
         pass.version = runnersVersion;
     }
     return pass;

@@ -483,43 +483,56 @@ names objects of are ones that thread claims (`joined-synced.ts` on the world's 
 One placed by its objects is named there by its id and its keys' ids, as systems placed there are: without them, it
 fails to register, its run rejecting and an added one's failure in a later report.
 
-- **Its own:** the thread declares it to the world once, by its own number for it, with what it reads by its numbers
-  for its keys and the ids of the indexes it looks up through, or, for an index without an id (one made in a
-  function), its declaration by those numbers, which the world makes an index like, one per declaration for every
-  thread, kept while the world lives; it needs no id, since its value runs only there. The
-  world stands a system of its own for it, which it registers, adds and removes as the thread says, and runs as its
-  runs: so its keys and indexes are the world's, its ticks start, and its runner, which never runs, finds what it
-  matches. Once its value is collected there, the thread says so and the world forgets it; and once the thread is gone,
-  every one of its own.
+- **Its own:** the thread declares it to the world once, by its own number for it, with what it reads by its numbers for
+  its keys and the ids of the indexes it looks up through, or, for an index without an id (one made in a function), its
+  declaration by those numbers, which the world makes an index like, one per declaration for every thread, kept while
+  the world lives; it needs no id, since its value runs only there. The world stands a system of its own for it, which
+  it registers, adds and removes as the thread says, and runs as its runs: so its keys and indexes are the world's, its
+  ticks start, and its runner, which never runs, finds what it matches. Once its value is collected there, the thread
+  says so and the world forgets it; and once the thread is gone, every one of its own.
 - **Its block:** a tail block (see Tails) and a line of its own: posts so far, what the thread did with the last one,
   its removed word, the run it's owed to, the sync of the thread's log it's as of, and the tick it takes and the
   `lastRun` it filters by. The thread is posted its index there, its block, the world's numbers for its keys and the
   records of its index lookups, written before each post as for systems on joined threads.
-- **Posting:** after each run's and tick's sync point, in the synced pass, the world posts one whose conditions hold
-  and that has no change filters, or one whose filter may pass: a resource it filters on changed since its `lastRun`,
-  or a chunk of an archetype it matches was stamped, or its column stamped by a GPU kernel, which reaches the thread as
-  row ticks. One a run named, from either thread, is posted after each sync point until it ran. Posting reads back what
-  the GPU wrote that it reads, or the indexes it looks up through hold by, then refreshes those indexes, then writes its
+- **Posting:** after each run's and tick's sync point, in the synced pass, the world posts one whose conditions hold and
+  that has no change filters, or one whose filter may pass: a resource it filters on changed since its `lastRun`, or a
+  chunk of an archetype it matches was stamped, or its column stamped by a GPU kernel, which reaches the thread as row
+  ticks. One a run named, from either thread, is posted after each sync point until it ran. Posting reads back what the
+  GPU wrote that it reads, or the indexes it looks up through hold by, then refreshes those indexes, then writes its
   block, holding its progress word at an opening value while it does, its posts word last and then opening it, so a
   thread that saw the last post's posts word claims nothing until the post is whole; then it wakes the thread once for
   the pass, unless the thread hasn't read the last wake.
+- **Posts holding copies:** one that reads only struct resources, with no rows or lookups, posts copies of what it
+  reads: its head's flags, as of the sync point, and its resources' values, in its block's last line when they fit, as
+  they do for up to 80 bytes, or a snapshot of its own; it opens as copied, so the thread reads only its block. Its
+  snapshot's words are written once, its flags only when they change, and its work's end is new for each post, so the
+  thread's done word from the last needs no reset: a post writes its block's first and last lines. It has two blocks.
+  The next post releases the last: one no claim reached it cancels, one the thread ran it takes the outcome of, which
+  the thread stores once it ran, reading nothing of the post after; one the thread is running it takes the outcome of as
+  its flags say, which is what the thread does with it, and it goes into the other block, whose post is done, since the
+  thread runs one post at a time. So only the newest is ever unclaimed, and neither writers, sync points nor posts wait
+  for one.
 - **Running:** the thread replays its objects through the newest sync first, then claims the post as a tail claims its
   rows, by adding to its progress word, so the claim and the world's cancel are one order; a claim finding it cancelled
-  marks the posts word read before it handled, which is that post's, and a claim of it the word read after; once claimed, a post stays
-  as it is until its done word reaches its end. It runs the system with the tail's code, from where its rows are or the
-  copy a writer took, its lookups and index lookups reading the shared memory, and stores what it did, then its done
-  word. A thread whose objects the world rebuilt past the post's sync gives the claim back, and one owed to a run asks
-  to be posted again between runs. It returns to its event loop once it ran a post before it goes on.
-- **Writers:** before a tier or the world writes what a post reads (a resource or a struct component it reads or
-  filters on, in its rows, the clock or a GPU readback), the world copies the rest of its rows and resources, as for a
-  late tail, once; before one writes what its lookups read or watch, or the key parts of the indexes they go through,
-  it waits for a post the thread claimed to finish and cancels one it hasn't, past the cancels below.
+  marks the posts word read before it handled, which is that post's, and a claim of it the word read after; once
+  claimed, a post stays as it is until its done word reaches its end, or, holding copies, until it says what the thread
+  did, the run it's owed to read first. It runs the system with the tail's code, from where its rows are or the copy,
+  its lookups and index lookups reading the shared memory, and stores what it did, then its done word. A thread whose
+  objects the world rebuilt past the post's sync gives the claim back, and one owed to a run asks to be posted again
+  between runs; one holding copies reads none of its objects, so they aren't replayed for it. It returns to its event
+  loop once it ran a post before it goes on.
+- **Writers:** posts holding copies need nothing of them. Before a tier or the world writes what another post reads (a
+  resource or a struct component it reads or filters on, in its rows, the clock or a GPU readback), the world copies the
+  rest of its rows and resources, as for a late tail, once; before one writes what its lookups read or watch, or the key
+  parts of the indexes they go through, it waits for a post the thread claimed to finish and cancels one it hasn't, past
+  the cancels below.
 - **Sync points:** each, and what moves rows outside one (registration, resources added between runs, a GPU device
-  change, a thread joining or leaving), waits for every post the thread claimed and cancels the rest, which the next
-  post, for the newest sync, replaces: a thread that fell behind runs once, for the newest. After four posts of a system
-  cancelled in a row, writers and sync points wait for the next one instead, so a thread slower to claim than the world
-  is to write still runs it at least once in five sync points; at a frame's cadence the thread claims well before. A
-  post owed to a run that a move outside a sync point cancelled is posted again between runs.
+  change, a thread joining or leaving), leaving posts holding copies alone, waits for every post the thread claimed and
+  cancels the rest, which the next post, for the newest sync, replaces: a thread that fell behind runs once, for the
+  newest. After four posts of a system cancelled in a row, writers and sync points wait for the next one instead, so a
+  thread slower to claim than the world is to write still runs it at least once in five sync points; at a frame's
+  cadence the thread claims well before. A post owed to a run that a move outside a sync point cancelled is posted again
+  between runs.
 - **Ticks and reports:** a post takes a tick after its sync point, which becomes its `lastRun` once the thread ran it.
   What a body throws is a `"system"` failure in a later run's report, named by the system's label on its thread; in a
   joined thread's `run` of its own, in that run's report, which resolves once a post for it ran there, or once it was
@@ -674,7 +687,8 @@ Memory isn't shared, so the world runs inline, and `share` and `join` throw.
   for the index's next system.
 - **Mailboxes:** per subscription, its control words and three slots, each sized to the largest result delivered.
 - **Synced systems on joined threads:** per system, a block of four lines, a record per index lookup, and, once a writer
-  copied what it reads, a snapshot as a tail's.
+  copied what it reads, a snapshot as a tail's; for one reading only struct resources, two blocks, and two snapshots of
+  its resources when they're over 80 bytes.
 - **Tail buffers:** only once a fallback snapshot was taken: passing rows times their declared struct reads, kept for the next.
 - **Stop lists:** per sync point with stops, a 16-byte header, and per finalizer 16 bytes and per stop 16 bytes, 4 per
   object read and its linear reads' bytes, each column on 8 bytes, kept until a later block is acknowledged; and on the

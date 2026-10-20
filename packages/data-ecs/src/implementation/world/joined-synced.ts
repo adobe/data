@@ -1,7 +1,9 @@
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Lookup } from '../../interface/system/access.js';
 import { idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
+import type { Archetype } from './archetype.js';
 import { readCell } from './cells.js';
+import { indexOf } from './entities.js';
 import { readAhead } from './execute.js';
 import { refreshUses, type WorldIndex } from './indexes.js';
 import { writeIndexParameters } from './kernel-indexes.js';
@@ -10,10 +12,12 @@ import { logSyncWord, type MoveLog } from './move-log.js';
 import { lineWords } from './protocol.js';
 import type { ToJoined } from './joining.js';
 import { keysOf, liftColumns } from './remote-systems.js';
-import { findResource } from './resources.js';
 import { createRunner, type Runner } from './runner.js';
 import { idOf, type Key, type State } from './state.js';
-import { doneWord, endWord, progressWord, snapshotFlagsWord, snapshotOffsetWord, snapshotRowsWord, snapshotStartWord, snapshotted, tailBlockWords, waitingWord } from './tail-blocks.js';
+import {
+    doneWord, endWord, headExecuted, headRan, progressWord, snapshotCapacityWord, snapshotFlagsWord, snapshotLayout, snapshotOffsetWord, snapshotResourceArchetypeWord,
+    snapshotResourceRowWord, snapshotRowsWord, snapshotStartWord, snapshotted, tailBlockWords, waitingWord, type SnapshotLayout,
+} from './tail-blocks.js';
 import { copyRest, waitDone, type Copied } from './tails.js';
 import { recordWordsOf } from './thread-indexes.js';
 import type { Pool } from './pool.js';
@@ -24,7 +28,9 @@ import { chunkShift } from './kernel.js';
 // The thread claims a post, reads the shared memory as of that sync point, and runs the system there. A writer of what
 // a post still reads first copies the rest of its rows and resources, as for tails, or, for what its lookups read,
 // waits for it to finish once it started and cancels it before; each sync point waits for a post in progress and
-// cancels the others, which the next post replaces, so a thread that fell behind runs once, for the newest.
+// cancels the others, which the next post replaces, so a thread that fell behind runs once, for the newest. A system
+// reading only struct resources posts copies of them, so neither writers nor sync points touch its posts: the next post
+// cancels one no claim reached, and is written into a second block while one runs, so the world never waits for it.
 
 /** A synced block: a tail block (`tail-blocks.ts`), then a line of its own. */
 const syncedLine = tailBlockWords;
@@ -88,6 +94,8 @@ export type JoinedSynced = Copied & {
     readonly filtered: boolean;
     readonly records: readonly Record[];
     readonly ticks: Float64Array;
+    /** For one reading only struct resources, no rows or lookups: its posts' two places. */
+    readonly contained: Contained | null;
     lastRun: number;
     /** While posted and not settled: the tick it takes, and whether a writer copied its reads already. */
     live: boolean;
@@ -102,6 +110,38 @@ export type JoinedSynced = Copied & {
     dropped: boolean;
     freed: boolean;
 };
+
+/**
+ * One of two places for posts of a system reading only struct resources: a block and where its snapshot is, and its
+ * post as written: its work's end, a new one for each post, so the thread's done word from the last needs no reset; its
+ * tick; and its head flags, written only when they change.
+ */
+type Slot = {
+    readonly block: number;
+    readonly control: Int32Array;
+    readonly ticks: Float64Array;
+    readonly snapshot: number;
+    /** Whether its snapshot is the block's own, so a post writes only its first and last lines. */
+    readonly inline: boolean;
+    /** Holding a post the thread may still claim or be running. */
+    live: boolean;
+    /** Whether its post's outcome was taken already, as the thread ran it, since it was running when the next was due. */
+    ahead: boolean;
+    end: number;
+    tick: number;
+    flags: number;
+};
+
+/**
+ * Posts of a system reading only struct resources hold its resources' values and head flags, so the thread reads only
+ * its block; the post after one the thread is running goes into the other block. The thread claims and runs one post
+ * at a time, so the other block's post is done by then, and only the newest is ever unclaimed.
+ */
+type Contained = { readonly layout: SnapshotLayout; readonly slots: readonly [Slot, Slot]; current: number };
+
+/** The bytes at the end of a synced block that hold a contained post's resources when they fit. */
+const inlineByte = (syncedLine + 12) * 4;
+const inlineBytes = syncedBlockBytes - inlineByte;
 
 /** What the world keeps of synced systems on joined threads. */
 export type SyncedState = {
@@ -199,22 +239,42 @@ export const createJoinedSyncedRunner = (state: State, leaf: Leaf, target: Synce
         records.push({ index, watched, record, words });
         named.push([name, record]);
     }
+    const resourceIds = ids([...resources?.read ?? [], ...resources?.is ?? [], ...resources?.not ?? [], ...resources?.changed ?? []]);
+    const layout = components === undefined && records.length === 0 && Object.keys(declaration.lookup ?? {}).length === 0 && resourceIds.every(isStruct)
+        ? snapshotLayout(1, [], resourceReads.strides)
+        : null;
+    const slotAt = (at: number, slotLayout: SnapshotLayout): Slot => {
+        const views = state.memory.memory.buffer;
+        const slotControl = new Int32Array(views, at, syncedBlockWords).fill(0);
+        // Resources that fit sit in the block's last line, with the post's other words, its snapshot laid out to end there.
+        const inline = slotLayout.bytes - slotLayout.resources[0] <= inlineBytes;
+        const snapshot = inline ? at + inlineByte - slotLayout.resources[0] : state.memory.allocate(slotLayout.bytes);
+        // What every post of it says of its snapshot but its flags.
+        slotControl[snapshotOffsetWord] = snapshot;
+        slotControl[snapshotCapacityWord] = 1;
+        slotControl[snapshotResourceArchetypeWord] = -1;
+        return {
+            block: at, control: slotControl, ticks: new Float64Array(views, at + tickSlot * 8, 2), snapshot, inline,
+            live: false, ahead: false, end: 0, tick: 0, flags: 0,
+        };
+    };
+    const contained: Contained | null = layout === null ? null : { layout, slots: [slotAt(block, layout), slotAt(state.memory.allocate(syncedBlockBytes), layout)], current: 0 };
     const index = target.free.pop() ?? target.placed.length;
     const proxy = state.synced.proxies.get(leaf);
     const synced: JoinedSynced = {
         target, index, label: proxy?.label ?? labelOfItem(leaf), runner: base,
         matched: base.matched,
         reads: ids([...components?.read ?? [], ...components?.added ?? [], ...components?.changed ?? []]).filter(isStruct),
-        resourceReads: ids([...resources?.read ?? [], ...resources?.is ?? [], ...resources?.not ?? [], ...resources?.changed ?? []]).filter(isStruct),
+        resourceReads: resourceIds.filter(isStruct),
         linear: reads.ids, strides: reads.strides, resources: resourceReads.ids, resourceStrides: resourceReads.strides,
         writes: [], resourceObjectWrites: [],
         added: ids(components?.added), changed: ids(components?.changed), resourceChanged: ids(resources?.changed),
         conditionIs: ids(resources?.is), conditionNot: ids(resources?.not),
-        query: components !== undefined, block, control, snapshot: null, end: 0, lastRun: since,
+        query: components !== undefined, block, control: contained?.slots[0].control ?? control, snapshot: null, end: 0, lastRun: since,
         gone: () => target.ended, idle: () => target.end,
         lookupReads: looked.reads, watched: looked.watched,
         filtered: (components?.added?.length ?? 0) + (components?.changed?.length ?? 0) + (resources?.changed?.length ?? 0) > 0,
-        records, ticks: new Float64Array(buffer, block + tickSlot * 8, 2),
+        records, ticks: contained?.slots[0].ticks ?? new Float64Array(buffer, block + tickSlot * 8, 2), contained,
         live: false, tick: 0, copied: false, cancels: 0, pending: -1, stopped: false, dropped: false, freed: false,
     };
     target.placed[index] = synced;
@@ -223,16 +283,28 @@ export const createJoinedSyncedRunner = (state: State, leaf: Leaf, target: Synce
     const keys = keysOf(leaf).map((key): readonly [number, string] => [idOf(state, key), idOfKey(key) ?? ""]);
     target.post({
         protocol: "@adobe/data-ecs/join@1", kind: "synced",
-        systems: [{ index, local: proxy?.local ?? null, id: proxy === undefined ? idOfItem(leaf) ?? null : null, keys, block, indexes: named }],
+        systems: [{ index, local: proxy?.local ?? null, id: proxy === undefined ? idOfItem(leaf) ?? null : null, keys, block, spare: contained?.slots[1].block ?? null, indexes: named }],
     });
     base.holdings.remote = { unplace: () => stop(state, synced) };
     return { ...base, joined: synced, lastRun: () => synced.lastRun };
 };
 
+/** A contained system's posts once the thread runs none of them any more. */
+const dropPosts = (synced: JoinedSynced, contained: Contained): void => {
+    synced.live = false;
+    for (const slot of contained.slots) slot.live = false;
+};
+
 /** Frees a stopped system's block and records once the thread dropped it, or left, and no post of it is live. */
 const tryFree = (state: State, synced: JoinedSynced): void => {
+    const { contained } = synced;
     if (synced.freed || !synced.stopped || synced.live || !(synced.dropped || synced.target.left)) return;
+    if (contained !== null && (contained.slots[0].live || contained.slots[1].live)) return;
     synced.freed = true;
+    if (contained !== null) {
+        state.memory.free(contained.slots[1].block, syncedBlockBytes);
+        for (const slot of contained.slots) if (!slot.inline) state.memory.free(slot.snapshot, contained.layout.bytes);
+    }
     if (synced.snapshot !== null) state.memory.free(synced.snapshot.offset, synced.snapshot.bytes);
     synced.snapshot = null;
     state.memory.free(synced.block, syncedBlockBytes);
@@ -252,11 +324,17 @@ const stop = (state: State, synced: JoinedSynced): void => {
     if (synced.stopped) return;
     synced.stopped = true;
     Atomics.store(synced.control, removedWord, 1);
+    if (synced.contained !== null) Atomics.store(synced.contained.slots[1].control, removedWord, 1);
     state.synced.pending.delete(synced);
     synced.pending = -1;
     state.synced.count--;
     if (state.synced.count === 0 && !state.claimed) state.counting = false;
     if (!synced.target.ended) synced.target.post({ protocol: "@adobe/data-ecs/join@1", kind: "unsynced", indexes: [synced.index] });
+    // Posts no sync point settles: released now, but one running, which is once the thread dropped it.
+    if (synced.contained !== null) {
+        synced.live = false;
+        for (const slot of synced.contained.slots) releaseSlot(synced, slot);
+    }
     tryFree(state, synced);
 };
 
@@ -266,6 +344,8 @@ export const droppedSynced = (state: State, target: SyncedTarget, indexes: reado
         const synced = target.placed[index];
         if (synced === undefined || !synced.stopped) continue;
         synced.dropped = true;
+        // Dropped between its posts, the thread runs none of them any more.
+        if (synced.contained !== null) dropPosts(synced, synced.contained);
         tryFree(state, synced);
     }
 };
@@ -279,16 +359,18 @@ export const endTarget = (state: State, target: SyncedTarget, left: boolean): vo
         if (synced === undefined) continue;
         state.synced.pending.delete(synced);
         synced.pending = -1;
+        if (synced.contained !== null) dropPosts(synced, synced.contained);
         tryFree(state, synced);
     }
 };
 
-const holding = (state: State, id: number): boolean => {
+/** Whether a resource holds a value, in the resource entity's archetype at its row. */
+const holdingIn = (state: State, archetype: Archetype | undefined, row: number, id: number): boolean => {
     // An object here may be a joined thread's own, which only it reads: that thread checks it.
     if (state.layouts[id].kind === "object") return true;
-    const cell = findResource(state, state.keys[id]);
-    if (cell === undefined) return false;
-    const held = readCell(cell.storage, cell.row);
+    const storage = archetype?.storageById[id];
+    if (storage === undefined) return false;
+    const held = readCell(storage, row);
     return held !== null && held !== false;
 };
 
@@ -297,14 +379,20 @@ const holding = (state: State, id: number): boolean => {
  * filters on changed or a chunk of a component it filters on in an archetype it matches was stamped since it last ran.
  */
 const mayRun = (state: State, synced: JoinedSynced): boolean => {
-    const { lastRun } = synced;
-    for (const id of synced.conditionIs) if (!holding(state, id)) return false;
-    for (const id of synced.conditionNot) if (holding(state, id)) return false;
-    if (!synced.filtered) return true;
-    for (const id of synced.resourceChanged) {
-        const cell = findResource(state, state.keys[id]);
-        if (cell !== undefined && cell.storage.changed[cell.row] > lastRun) return true;
+    const { lastRun, conditionIs, conditionNot, resourceChanged } = synced;
+    if (conditionIs.length + conditionNot.length + resourceChanged.length > 0) {
+        const index = state.resourceEntity < 0 ? -1 : indexOf(state.resourceEntity);
+        const archetype = index < 0 ? undefined : state.archetypes[state.entities.archetype[index]];
+        const row = index < 0 ? 0 : state.entities.row[index];
+        for (let k = 0; k < conditionIs.length; k++) if (!holdingIn(state, archetype, row, conditionIs[k])) return false;
+        for (let k = 0; k < conditionNot.length; k++) if (holdingIn(state, archetype, row, conditionNot[k])) return false;
+        if (!synced.filtered) return true;
+        for (let k = 0; k < resourceChanged.length; k++) {
+            const storage = archetype?.storageById[resourceChanged[k]];
+            if (storage !== undefined && storage.changed[row] > lastRun) return true;
+        }
     }
+    else if (!synced.filtered) return true;
     if (synced.added.length + synced.changed.length === 0) return false;
     for (const archetype of synced.matched()) {
         if (archetype.count === 0) continue;
@@ -327,9 +415,14 @@ const mayRun = (state: State, synced: JoinedSynced): boolean => {
 /** Parameters of an index lookup, reused, and a view of the memory they're copied into. */
 const parameters: number[] = [];
 let words = new Float64Array(0);
+let bytes = new Uint8Array(0);
 
 /** Writes a post into a system's block: its work's end, its filters' `lastRun`, its tick and the run it's for. */
 const write = (state: State, synced: JoinedSynced, tick: number): void => {
+    if (synced.contained !== null) {
+        writeContained(state, synced, synced.contained, tick, headOf(state, synced));
+        return;
+    }
     const { control } = synced;
     let rows = 0;
     if (synced.query) for (const archetype of synced.matched()) rows += archetype.count;
@@ -362,13 +455,124 @@ const write = (state: State, synced: JoinedSynced, tick: number): void => {
     synced.target.wake();
 };
 
+/**
+ * Writes a post of one reading only struct resources into its idle block: its head's flags as of this sync point and its
+ * resources' values, so the thread reads only the block, which opens as copied. Touches the block's first and last
+ * lines, and its snapshot's line when its flags change or its resources don't fit the last.
+ */
+const writeContained = (state: State, synced: JoinedSynced, contained: Contained, tick: number, flags: number): void => {
+    const slot = contained.slots[contained.current];
+    const { control, snapshot } = slot;
+    const end = ++slot.end;
+    Atomics.store(control, progressWord, opening);
+    control[endWord] = end;
+    if ((flags & headRan) !== 0 && state.resourceEntity >= 0) {
+        const index = indexOf(state.resourceEntity);
+        const archetype = state.archetypes[state.entities.archetype[index]];
+        const row = state.entities.row[index];
+        if (bytes.buffer !== state.memory.memory.buffer) bytes = new Uint8Array(state.memory.memory.buffer);
+        for (let k = 0; k < synced.resources.length; k++) {
+            const storage = archetype?.storageById[synced.resources[k]];
+            if (storage === undefined) continue;
+            const stride = synced.resourceStrides[k];
+            const from = storage.views.u8;
+            const source = row * stride;
+            const target = snapshot + contained.layout.resources[k];
+            for (let b = 0; b < stride; b++) bytes[target + b] = from[source + b];
+        }
+    }
+    if (flags !== slot.flags) control[snapshotFlagsWord] = flags;
+    control[outcomeWord] = notRun;
+    control[runsWord] = synced.pending < 0 ? 0 : synced.pending;
+    slot.ticks[0] = tick;
+    slot.ticks[1] = synced.lastRun;
+    slot.tick = tick;
+    slot.flags = flags;
+    slot.live = true;
+    slot.ahead = false;
+    synced.tick = tick;
+    synced.live = true;
+    // As for any post, a thread that sees its posted word sees the rest, and claims it once it's open.
+    Atomics.add(control, postedWord, 1);
+    Atomics.store(control, progressWord, snapshotted);
+    synced.target.wake();
+};
+
+/** A contained post's head flags as of this sync point: whether its conditions hold, and its filter passes. */
+const headOf = (state: State, synced: JoinedSynced): number => {
+    const index = state.resourceEntity < 0 ? -1 : indexOf(state.resourceEntity);
+    const archetype = index < 0 ? undefined : state.archetypes[state.entities.archetype[index]];
+    const row = index < 0 ? 0 : state.entities.row[index];
+    for (let k = 0; k < synced.conditionIs.length; k++) if (!holdingIn(state, archetype, row, synced.conditionIs[k])) return 0;
+    for (let k = 0; k < synced.conditionNot.length; k++) if (holdingIn(state, archetype, row, synced.conditionNot[k])) return 0;
+    if (!synced.filtered) return headPasses;
+    for (let k = 0; k < synced.resourceChanged.length; k++) {
+        const storage = archetype?.storageById[synced.resourceChanged[k]];
+        if (storage !== undefined && storage.changed[row] > synced.lastRun) return headPasses;
+    }
+    return headExecuted;
+};
+
+/** Head flags of a post whose conditions hold and whose filter passes, so its body runs. */
+const headPasses = headExecuted | headRan;
+
+/** Takes what the thread did with a contained post, or will do with one it's running: the tick it took, and the run it was for. */
+const takeOutcome = (synced: JoinedSynced, slot: Slot, outcome: number): void => {
+    if (outcome !== notRun) synced.cancels = 0;
+    if (outcome === ranExecuted && slot.tick > synced.lastRun) synced.lastRun = slot.tick;
+    if (outcome !== notRun && synced.pending >= 0 && slot.control[runsWord] >= synced.pending) synced.pending = -1;
+};
+
+/**
+ * Releases a contained post: one no claim reached, cancelled, or one the thread ran, its outcome taken unless it was
+ * already. The thread stores what it did as it finishes running, before its done word, and reads nothing of the post
+ * after, so a post that says what it did is done. One the thread is running stays live, its outcome taken as its head
+ * flags say, which is what the thread does with it: false then.
+ */
+const releaseSlot = (synced: JoinedSynced, slot: Slot): boolean => {
+    if (!slot.live) return true;
+    const { control } = slot;
+    if (Atomics.compareExchange(control, progressWord, snapshotted, cancelled) === snapshotted) {
+        slot.live = false;
+        return true;
+    }
+    const outcome = Atomics.load(control, outcomeWord);
+    if (outcome !== notRun || Atomics.load(control, doneWord) >= slot.end) {
+        slot.live = false;
+        if (!slot.ahead) takeOutcome(synced, slot, outcome);
+        return true;
+    }
+    if (!slot.ahead) {
+        slot.ahead = true;
+        takeOutcome(synced, slot, (slot.flags & headExecuted) !== 0 ? ranExecuted : ranSkipped);
+    }
+    return false;
+};
+
+/**
+ * Before a contained system's next post: releases its live post and readies an idle block, the other one when the
+ * thread is running that post; a promise only when both are in use, which the thread's running one post at a time
+ * leaves only for a thread that's gone.
+ */
+const release = (synced: JoinedSynced, contained: Contained): Promise<void> | null => {
+    synced.live = false;
+    if (releaseSlot(synced, contained.slots[contained.current])) return null;
+    contained.current = 1 - contained.current;
+    const other = contained.slots[contained.current];
+    if (releaseSlot(synced, other)) return null;
+    return waitDone({ control: other.control, gone: synced.gone, idle: synced.idle }, other.end).then(() => {
+        other.control[waitingWord] = 0;
+        releaseSlot(synced, other);
+    });
+};
+
 const noSynced: readonly JoinedSynced[] = [];
 
 /**
  * After a sync point: posts the synced systems on joined threads among those of the run, `own`, which are owed to run
- * `run` (0 for one of the world's), those added, `added`, that may run, and those still owed to a run. Reads back
- * what the GPU wrote that they read, or their indexes hold by, then refreshes those indexes, first; a promise only when
- * that waits.
+ * `run` (0 for one of the world's), those added, `added`, that may run, and those still owed to a run. A contained post
+ * still live is settled first, waiting only for one in progress. Reads back what the GPU wrote that they read, or
+ * their indexes hold by, then refreshes those indexes, first; a promise only when that waits.
  */
 export const postSynced = (state: State, own: readonly JoinedSynced[], added: readonly JoinedSynced[], run: number, pool: Pool | null): Promise<void> | null => {
     const { pending } = state.synced;
@@ -379,38 +583,93 @@ export const postSynced = (state: State, own: readonly JoinedSynced[], added: re
         pending.add(synced);
     }
     let posting: JoinedSynced[] | null = null;
-    for (const synced of pending) if (!synced.live) (posting ??= []).push(synced);
+    let waits: Promise<void>[] | null = null;
+    // Contained posts read nothing the GPU writes or an index holds, so with nothing to read back they're written at
+    // once, at one tick for the pass, their heads worked out once.
+    const { gpu } = state;
+    const direct = gpu === null || !gpu.anyAhead();
+    let tick = -1;
+    for (const synced of pending) {
+        const { contained } = synced;
+        if (synced.live) {
+            if (contained === null) continue;
+            const releasing = release(synced, contained);
+            // Released, it may have run for the newest run it's owed to.
+            if (synced.pending < 0) {
+                pending.delete(synced);
+                continue;
+            }
+            if (releasing !== null) {
+                waits = gather(waits, releasing);
+                (posting ??= []).push(synced);
+                continue;
+            }
+        }
+        if (contained !== null && direct) writeContained(state, synced, contained, tick < 0 ? tick = ++state.tick : tick, headOf(state, synced));
+        else (posting ??= []).push(synced);
+    }
     for (let k = 0; k < added.length; k++) {
         const synced = added[k];
-        if (synced.live || synced.stopped || synced.target.ended || synced.pending >= 0 || !mayRun(state, synced)) continue;
-        (posting ??= []).push(synced);
+        if (synced.stopped || synced.target.ended || synced.pending >= 0) continue;
+        const { contained } = synced;
+        if (synced.live) {
+            if (contained === null) continue;
+            const releasing = release(synced, contained);
+            // Its blocks both in use, it's posted once one is idle, if it may run then.
+            if (releasing !== null) {
+                waits = gather(waits, releasing);
+                (posting ??= []).push(synced);
+                continue;
+            }
+        }
+        if (contained !== null && direct) {
+            const flags = headOf(state, synced);
+            if (flags === headPasses) writeContained(state, synced, contained, tick < 0 ? tick = ++state.tick : tick, flags);
+        }
+        else if (mayRun(state, synced)) (posting ??= []).push(synced);
     }
-    if (posting === null) return null;
+    if (posting === null) return joinAll(waits);
     const chosen = posting;
-    const post = (): void => {
-        const tick = ++state.tick;
-        for (const synced of chosen) if (!synced.live && !synced.stopped && !synced.target.ended) write(state, synced, tick);
-    };
+    if (waits === null) return readThenPost(state, chosen, pool, false);
+    return Promise.all(waits).then(() => readThenPost(state, chosen, pool, true) ?? undefined);
+};
+
+/** Posts the chosen ones; `waited`: a contained one waited for is posted only if it may still run. */
+const postChosen = (state: State, chosen: readonly JoinedSynced[], waited: boolean): void => {
+    const tick = ++state.tick;
+    for (let k = 0; k < chosen.length; k++) {
+        const synced = chosen[k];
+        if (synced.live || synced.stopped || synced.target.ended) continue;
+        if (waited && synced.contained !== null && synced.pending < 0 && !mayRun(state, synced)) continue;
+        write(state, synced, tick);
+    }
+};
+
+/**
+ * Reads back what the GPU wrote that the chosen posts read, refreshes the indexes they look up through, then posts
+ * them: a promise only when that waits.
+ */
+const readThenPost = (state: State, chosen: readonly JoinedSynced[], pool: Pool | null, waited: boolean): Promise<void> | null => {
     const { gpu } = state;
     // What the GPU wrote is read back first, so the indexes refresh from the values it wrote.
-    if (gpu !== null && gpu.anyAhead()) return readAhead(state, gpu, chosen.map(synced => synced.runner)).then(() => refreshThenPost(state, chosen, pool, post) ?? undefined);
-    return refreshThenPost(state, chosen, pool, post);
+    if (gpu !== null && gpu.anyAhead()) return readAhead(state, gpu, chosen.map(synced => synced.runner)).then(() => refreshThenPost(state, chosen, pool, waited) ?? undefined);
+    return refreshThenPost(state, chosen, pool, waited);
 };
 
 /** Refreshes the indexes the chosen posts look up through, then posts them: a promise only when refreshing waits. */
-const refreshThenPost = (state: State, chosen: readonly JoinedSynced[], pool: Pool | null, post: () => void): Promise<void> | null => {
+const refreshThenPost = (state: State, chosen: readonly JoinedSynced[], pool: Pool | null, waited: boolean): Promise<void> | null => {
     let waiting: Promise<unknown>[] | null = null;
-    for (const synced of chosen) {
-        const uses = synced.runner.indexes;
+    for (let k = 0; k < chosen.length; k++) {
+        const uses = chosen[k].runner.indexes;
         if (uses.length === 0) continue;
         const building = refreshUses(state, uses, pool);
         if (building !== null) (waiting ??= []).push(building);
     }
     if (waiting === null) {
-        post();
+        postChosen(state, chosen, waited);
         return null;
     }
-    return Promise.all(waiting).then(post);
+    return Promise.all(waiting).then(() => postChosen(state, chosen, waited));
 };
 
 /** The synced systems on joined threads among runners. */

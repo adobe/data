@@ -43,13 +43,19 @@ export type Local = {
     stopped: number;
 };
 
-/** A synced system the world placed here: its block's views, the last post it ran, and its runner or local system. */
+/** A block the world posts a synced system into: its views, and the last post of it this thread handled. */
+type Block = { readonly control: Int32Array; readonly ticks: Float64Array; handled: number };
+
+/**
+ * A synced system the world placed here: its blocks' views, two for one reading only struct resources, whose posts
+ * hold copies of what they read, and its runner or local system.
+ */
 type Placed = {
     readonly index: number;
     readonly label: string;
-    readonly control: Int32Array;
-    readonly ticks: Float64Array;
-    handled: number;
+    readonly blocks: readonly Block[];
+    /** Whether its posts read only their blocks, never this thread's objects. */
+    readonly contained: boolean;
     /** One the world names by id, which lives as long as its module. */
     readonly runner: ThreadRunner | null;
     /** One of this thread's own, kept only while it lives. */
@@ -78,22 +84,24 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
     const setup = (systems: readonly SyncedSetup[]): void => {
         directory.name(systems);
         const buffer = directory.refresh();
-        for (const { index, local, id, block, indexes } of systems) {
+        for (const { index, local, id, block, spare, indexes } of systems) {
             const records = new Map(indexes);
-            const control = new Int32Array(buffer, block, syncedBlockWords);
-            const ticks = new Float64Array(buffer, block + tickSlot * 8, 2);
+            const blocks = (spare === null ? [block] : [block, spare]).map((at): Block => ({
+                control: new Int32Array(buffer, at, syncedBlockWords), ticks: new Float64Array(buffer, at + tickSlot * 8, 2), handled: 0,
+            }));
+            const contained = spare !== null;
             if (local !== null) {
                 const own = host.localOf(local);
                 if (own === undefined) continue;
                 own.runner = createThreadRunner(runnerHost, own.leaf, records);
                 own.placed = true;
-                placed[index] = { index, label: labelOfItem(own.leaf), control, ticks, handled: 0, runner: null, local: new WeakRef(own), stopped: false };
+                placed[index] = { index, label: labelOfItem(own.leaf), blocks, contained, runner: null, local: new WeakRef(own), stopped: false };
                 continue;
             }
             const item = id === null ? undefined : itemOfId(id);
             const definition = item === undefined ? undefined : definitionOf(item);
             const leaf = definition !== undefined && isLeaf(definition) ? definition : null;
-            placed[index] = { index, label: leaf === null ? String(id) : labelOfItem(leaf), control, ticks, handled: 0, runner: leaf === null ? null : createThreadRunner(runnerHost, leaf, records), local: null, stopped: false };
+            placed[index] = { index, label: leaf === null ? String(id) : labelOfItem(leaf), blocks, contained, runner: leaf === null ? null : createThreadRunner(runnerHost, leaf, records), local: null, stopped: false };
         }
     };
 
@@ -134,12 +142,15 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
         if (Atomics.load(control, runsWord) > 0) host.post({ protocol: protocolName, kind: "synced again" });
     };
 
-    /** Runs a new post of one placed here, if it has one and the world hasn't cancelled it; returns whether it did. */
-    const runPost = (entry: Placed, errors: [number, WorkerError][]): boolean => {
-        const { control } = entry;
+    /**
+     * Runs a new post in a block of one placed here, if it has one and the world hasn't cancelled it; returns whether
+     * it did, or the errors so far with what it threw.
+     */
+    const runPost = (entry: Placed, block: Block, errors: [number, WorkerError][] | null): [number, WorkerError][] | null | true | false => {
+        const { control } = block;
         // The post seen: one a claim finds cancelled is this one, as a later one is written only once it's cancelled.
         const seen = Atomics.load(control, postedWord);
-        if (seen === entry.handled) return false;
+        if (seen === block.handled) return false;
         const own = entry.local?.deref();
         const runner = entry.runner ?? own?.runner ?? null;
         if (entry.stopped || runner === null || Atomics.load(control, removedWord) !== 0) {
@@ -148,51 +159,65 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
             // One the world is writing is claimed once it's open.
             if (claimed >= opening) return false;
             if (claimed >= cancelled) {
-                entry.handled = seen;
+                block.handled = seen;
                 return false;
             }
             // Claimed, the post in the block stays until it's done, so its posted word is this one's.
-            entry.handled = Atomics.load(control, postedWord);
+            block.handled = Atomics.load(control, postedWord);
             finishUnrun(control);
             return false;
         }
         // This thread's objects are read as of the post's sync: replayed through the newest first.
-        if (mirror !== null && !host.current()) return false;
+        const bounded = mirror !== null && !entry.contained;
+        if (bounded && !host.current()) return false;
         const claimed = Atomics.add(control, progressWord, tailChunk);
         // One the world is writing is claimed once it's open. Claimed now, the post stays as it is until it's done, so
         // the posted word read after the claim is its own.
         if (claimed >= opening) return false;
         // Cancelled, it's the post seen: one written after it, whose posted word may already have moved, is claimed next.
         if (claimed >= cancelled) {
-            entry.handled = seen;
+            block.handled = seen;
             return false;
         }
-        entry.handled = Atomics.load(control, postedWord);
+        block.handled = Atomics.load(control, postedWord);
         const sync = Atomics.load(control, syncWord) >>> 0;
-        if (mirror !== null && mirror.through !== sync && (!host.current() || mirror.through !== sync)) {
+        if (bounded && mirror.through !== sync && (!host.current() || mirror.through !== sync)) {
             giveBack(control);
             return false;
         }
-        directory.rows.tick = entry.ticks[0];
-        const outcome = runner.runTail(entry.ticks[1], undefined, control, sync, 0, noStamps, claimed, outcomeWord);
+        directory.rows.tick = block.ticks[0];
+        // Read first: the world may write its next post here once this one says what it did.
         const runs = Atomics.load(control, runsWord);
+        const outcome = runner.runTail(block.ticks[1], undefined, control, sync, 0, noStamps, claimed, outcomeWord);
         const failure = outcome.error === undefined ? null : failureOf("system", entry.label, outcome.error);
         if (own !== undefined && runs > 0) {
             own.ran = Math.max(own.ran, runs);
             own.results.push({ through: runs, failure });
         }
-        else if (outcome.error !== undefined) errors.push([entry.index, errorOf(outcome.error)]);
+        else if (outcome.error !== undefined) {
+            const found = errors ?? [];
+            found.push([entry.index, errorOf(outcome.error)]);
+            return found;
+        }
         return true;
     };
 
-    /** Runs every new post here; returns how many ran. What an added one threw goes to the world, for its next report. */
+    /**
+     * Runs every new post here; returns how many ran. What an added one threw goes to the world, for its next report.
+     * Of a system's two blocks, only one holds a post it hasn't claimed, the newest.
+     */
     const process = (): number => {
         let ran = 0;
         let errors: [number, WorkerError][] | null = null;
         for (let k = 0; k < placed.length; k++) {
             const entry = placed[k];
             if (entry === undefined) continue;
-            if (runPost(entry, errors ??= [])) ran++;
+            for (let b = 0; b < entry.blocks.length; b++) {
+                const result = runPost(entry, entry.blocks[b], errors);
+                if (result === false) continue;
+                ran++;
+                if (result !== true) errors = result;
+            }
         }
         if (errors !== null && errors.length > 0) host.post({ protocol: protocolName, kind: "synced failed", errors });
         return ran;

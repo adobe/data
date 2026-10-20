@@ -64,6 +64,11 @@ export type SyncedSetup = {
     readonly keys: readonly (readonly [number, string])[];
     /** The byte offset of its block (`joined-synced.ts`). */
     readonly block: number;
+    /**
+     * For one reading only struct resources, the byte offset of a second block: its posts, in either, hold copies of
+     * what they read, so it runs them without this thread's objects.
+     */
+    readonly spare: number | null;
     readonly indexes: readonly (readonly [string, number])[];
 };
 

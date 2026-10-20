@@ -182,8 +182,12 @@ const mailboxBest = async (kind: Observed, system: System<void>, stretches = 5):
     return best;
 };
 
-/** Ticks in each timed stretch of the cadence benchmarks, and the milliseconds between their frames. */
+/**
+ * Ticks the cadence benchmarks give their time for, the ticks they time, after as many to warm up, and the milliseconds
+ * between their frames.
+ */
 export const cadenceTicks = 100;
+const cadenceSamples = 1_000;
 const cadenceMilliseconds = 2;
 
 /** Frames `milliseconds` apart, as a display's are, each noting when it began. */
@@ -202,27 +206,26 @@ const spaced = (milliseconds: number) => {
 };
 
 /**
- * The least the world's thread spends on `cadenceTicks` ticks of `system`, from each frame's start until the tick's
- * observers are notified, over `stretches` stretches after one to warm up, with frames far enough apart that a joined
- * thread observing what it changes keeps up: the cost of `kind` at a display's cadence rather than back to back.
+ * What the world's thread spends on `cadenceTicks` ticks of `system`, from each frame's start until the tick's
+ * observers are notified, with frames far enough apart that a joined thread observing what it changes keeps up: the
+ * cost of `kind` at a display's cadence rather than back to back. A tick's time varies with what else the machine runs,
+ * a few ticks taking many times the rest, so it's the mean of the middle half of `cadenceSamples` ticks, about their
+ * median, rather than the least; and a mean rather than the median itself, as chromium's timer steps are as long as a
+ * tick.
  */
-const cadenceBest = async (kind: Observed, system: System<void>, stretches = 8): Promise<number> => {
+const cadenceMiddle = async (kind: Observed, system: System<void>): Promise<number> => {
     const driver = spaced(cadenceMilliseconds);
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
     const joined = await startJoined(world);
-    let best = Infinity;
+    const spent = new Float64Array(cadenceSamples);
     try {
         await joined.ask({ kind });
         await new Promise<void>(resolve => {
             let ticks = 0;
-            let stretch = 0;
-            let spent = 0;
             const unobserve = world.observe.resource(clock)(() => {
-                spent += performance.now() - driver.began();
-                if (++ticks % cadenceTicks !== 0) return;
-                if (stretch > 0) best = Math.min(best, spent);
-                spent = 0;
-                if (stretch++ < stretches) return;
+                const tick = ticks++ - cadenceSamples;
+                if (tick >= 0) spent[tick] = performance.now() - driver.began();
+                if (tick < cadenceSamples - 1) return;
                 unobserve();
                 resolve();
             });
@@ -236,7 +239,10 @@ const cadenceBest = async (kind: Observed, system: System<void>, stretches = 8):
         await joined.terminate();
         await world.dispose();
     }
-    return best;
+    spent.sort();
+    let middle = 0;
+    for (let k = cadenceSamples >> 2; k < cadenceSamples - (cadenceSamples >> 2); k++) middle += spent[k];
+    return cadenceTicks * middle / (cadenceSamples >> 1);
 };
 
 export const remoteBenchmarks: readonly Benchmark[] = [
@@ -310,7 +316,7 @@ export const remoteBenchmarks: readonly Benchmark[] = [
         n: cadenceTicks,
         typical: [1, 1],
         best: { bytes: 64, basis: "A tick reads at least one cache line of its system's state." },
-        run: () => cadenceBest("resource", count),
+        run: () => cadenceMiddle("resource", count),
     },
     {
         name: "joined resource factory cadence",
@@ -319,6 +325,6 @@ export const remoteBenchmarks: readonly Benchmark[] = [
         n: cadenceTicks,
         typical: [1, 1],
         best: { bytes: 64, basis: "A tick reads at least one cache line of its system's state." },
-        run: () => cadenceBest("factory resource", count),
+        run: () => cadenceMiddle("factory resource", count),
     },
 ];

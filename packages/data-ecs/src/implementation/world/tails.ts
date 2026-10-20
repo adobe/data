@@ -236,7 +236,7 @@ export const tailWriters = { wait: false, copies: 0 };
 const spinMilliseconds = 0.02;
 
 /** Waits until the tail read through `target`, or its thread is gone. */
-export const waitDone = async (tail: Copied, target: number): Promise<void> => {
+export const waitDone = async (tail: Pick<Copied, "control" | "gone" | "idle">, target: number): Promise<void> => {
     const { control } = tail;
     const deadline = performance.now() + spinMilliseconds;
     while (Atomics.load(control, doneWord) < target && performance.now() < deadline);

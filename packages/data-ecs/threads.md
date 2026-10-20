@@ -332,8 +332,11 @@ thread as its only writer, drained by the world's thread at the sync point. Comm
   observers have values or a task is posted, beside an unread word the thread clears before it reads what's new, so the
   world notifies only a thread that has read every earlier wake; the last run the thread posted; and the last one the
   world completed. A thread whose unread word is set again once it read reads again rather than wait, since that wake's
-  notify may have found no waiter, and the next wake won't notify while the word is set. A party that can't wait
-  without blocking is woken by a posted message instead.
+  notify may have found no waiter, and the next wake won't notify while the word is set. A wake sets the unread word
+  before it bumps the signal, so a thread that read the signal past a wake finds the word set, or cleared it after, and
+  never waits with the word set for a wake it read; bumped first, the world paused between the two could leave it set
+  so, and no later wake notified the waiting thread. A party that can't wait without blocking is woken by a posted
+  message instead.
 
 ### Runs from joined threads
 

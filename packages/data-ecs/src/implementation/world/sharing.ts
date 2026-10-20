@@ -156,9 +156,12 @@ export const createSharing = (host: SharingHost) => {
     const wake = (thread: Joined): void => {
         const { control } = thread;
         if (control === null) return;
+        // Marked unread before the signal moves: a thread that read the signal past this wake then sees the word set, or
+        // cleared it after, so it's never left set for a wake the thread read, which would keep later wakes from
+        // notifying a thread waiting for them. A thread that hasn't read the last wake yet reads this one with it.
+        const read = Atomics.exchange(control, unreadWord, 1) === 0;
         Atomics.add(control, signalWord, 1);
-        // A thread that hasn't read the last wake yet reads this one with it.
-        if (Atomics.exchange(control, unreadWord, 1) !== 0) return;
+        if (!read) return;
         Atomics.notify(control, signalWord);
         if (!thread.waits) post(thread, { protocol: protocolName, kind: "wake" });
     };

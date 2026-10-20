@@ -28,7 +28,17 @@ export type Subscription =
         readonly page: { readonly offset: number; readonly limit: number } | null;
     };
 
-/** A lookup of a synced system a joined thread declares: its keys by that thread's numbers, its index by id. */
+/** An index without an id, by its declaration, its keys by a joined thread's numbers: the world makes one like it. */
+export type SyncedIndex = {
+    readonly name: string;
+    readonly key: readonly number[];
+    readonly has: readonly number[];
+    readonly not: readonly number[];
+    readonly sorted: boolean;
+    readonly unique: boolean;
+};
+
+/** A lookup of a synced system a joined thread declares: its keys by that thread's numbers, its index by id or declaration. */
 export type SyncedLookup = {
     readonly name: string;
     readonly read: readonly number[];
@@ -36,7 +46,7 @@ export type SyncedLookup = {
     readonly not: readonly number[];
     /** Null where it doesn't declare `changed`. */
     readonly changed: readonly number[] | null;
-    readonly index: string | null;
+    readonly index: string | SyncedIndex | null;
 };
 
 /** What a synced system a joined thread declares reads, by that thread's numbers for its keys. */

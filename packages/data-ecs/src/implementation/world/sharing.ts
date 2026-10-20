@@ -9,10 +9,11 @@ import { failureOf } from './failures.js';
 import {
     clean, completedWord, controlBytes, inputByMessage, inputLayoutOf, inputMoved, platformLocks, postedWord, protocolName, rejected, reported, runSlots,
     signalWord, unreadWord, slotInput, slotNumber, slotPayload, slotStatus, slotViews, slotWords, slotsWord, threadChannel, unposted,
-    type Subscription, type SyncedDeclaration, type ThreadChannel, type ToJoined, type ToWorld,
+    type Subscription, type SyncedDeclaration, type SyncedIndex, type ThreadChannel, type ToJoined, type ToWorld,
 } from './joining.js';
 import { createSyncedTarget, droppedSynced, endTarget, joinedRun, type SyncedTarget } from './joined-synced.js';
 import type { Leaf } from '../../interface/system/leaf.js';
+import { Index } from '../../interface/indexes/index-type.js';
 import { System } from '../../interface/system/system.js';
 import { alignFor, createMailbox, entityPlanOf, freeMailbox, publishSlot, writeSlot, writeValue, type MailboxWriter } from './mailbox.js';
 import { createMoveLog, freeMoveLog, type MoveLog } from './move-log.js';
@@ -648,6 +649,25 @@ export const createSharing = (host: SharingHost) => {
      * runs on that thread, with the keys and indexes it names by id; a run of that number runs it. One the world can't
      * declare, naming a key or index it never imported, is a failure in the next run's report.
      */
+    /** Indexes made for joined threads' synced systems from declarations without ids, by what they declare, kept while the world lives. */
+    const madeIndexes = new Map<string, ReturnType<typeof indexDefinitionOf>>();
+    /** An index like one a joined thread declared without an id: one per declaration, for every thread. */
+    const madeIndex = (thread: Joined, declared: SyncedIndex): ReturnType<typeof indexDefinitionOf> => {
+        const keys = (numbers: readonly number[]): Key[] => numbers.map(each => keyOf(thread, each));
+        const key = keys(declared.key);
+        const has = keys(declared.has);
+        const not = keys(declared.not);
+        const ids = (list: readonly Key[]): string => list.map(each => idOf(state, each)).join(",");
+        const identity = `${ids(key)}|${ids(has)}|${ids(not)}|${declared.sorted ? "s" : ""}${declared.unique ? "u" : ""}`;
+        let index = madeIndexes.get(identity);
+        if (index === undefined) {
+            // `Index.create` checks the declaration as the joined thread's was checked.
+            index = indexDefinitionOf(Reflect.apply(Index.create, undefined, [{ name: declared.name, key, sorted: declared.sorted, unique: declared.unique, components: { has, not } }]));
+            madeIndexes.set(identity, index);
+        }
+        return index;
+    };
+
     const declare = (thread: Joined, number: number, name: string, declared: SyncedDeclaration, added: boolean): void => {
         const target = thread.synced;
         if (target === null) return;
@@ -666,8 +686,8 @@ export const createSharing = (host: SharingHost) => {
                     lookup[each.name] = listed([["read", each.read], ["has", each.has], ["not", each.not], ["changed", each.changed]]);
                     continue;
                 }
-                const index = indexDefinitionOf(itemOfId(each.index));
-                if (index === undefined) throw new Error(`A joined thread's synced system looks up through index "${each.index}", which this world never imported.`);
+                const index = typeof each.index === "string" ? indexDefinitionOf(itemOfId(each.index)) : madeIndex(thread, each.index);
+                if (index === undefined) throw new Error(`A joined thread's synced system looks up through index "${String(each.index)}", which this world never imported.`);
                 lookup[each.name] = { index, ...listed([["read", each.read], ["changed", each.changed]]) };
             }
             const { components, resources } = declared;

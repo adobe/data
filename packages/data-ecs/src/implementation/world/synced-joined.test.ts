@@ -200,6 +200,32 @@ describe("synced systems on a joined thread", () => {
         await close();
     });
 
+    it("look up through indexes without ids, which the world makes from their declarations", async () => {
+        reset();
+        const { world, remote, close } = await joined();
+        await world.run(spawn, { at: 1 });
+        await world.run(spawn, { at: 11 });
+        // Made in a function, so the build gives them no id.
+        const made = (): readonly [Index<{ readonly key: readonly []; readonly components: { readonly has: readonly [typeof tagged, typeof cell] } }>, Index<{ readonly key: readonly [typeof cell]; readonly sorted: true; readonly components: { readonly has: readonly [typeof amount] } }>] => [
+            Index.create({ name: "syncedJoinedTest/madeTagged", key: [], components: { has: [tagged, cell] } }),
+            Index.create({ name: "syncedJoinedTest/madeByCell", key: [cell], sorted: true, components: { has: [amount] } }),
+        ];
+        const [madeTagged, madeByCell] = made();
+        const sizes = System.create({ name: "syncedJoinedTest/sizes", synced: true, lookup: { all: { index: madeTagged, changed: [cell] }, cells: { index: madeByCell, read: [amount] } } }, ({ lookup }) => {
+            const all = lookup.all();
+            seen.looked.push([all.changed]);
+            const high = lookup.cells({ ">=": 5 });
+            seen.tagged.push(all.length * 1000 + high.length * 100 + (high.at(0)?.[amount] ?? 0));
+        });
+        expect(await remote.run(sizes)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
+        await world.run(move);
+        expect(await remote.run(sizes)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
+        // Two tagged; then one cell at 11 or more, holding 11, then both, the first holding 1.
+        expect(seen.tagged).toEqual([2111, 2201]);
+        expect(seen.looked).toEqual([[true], [true]]);
+        await close();
+    });
+
     it("run from the joined thread, resolving once its body ran there, with its failure in the report", async () => {
         reset();
         const { world, remote, close } = await joined();

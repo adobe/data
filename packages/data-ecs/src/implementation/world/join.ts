@@ -10,7 +10,7 @@ import { layoutOf, type Layout, type Views } from '../../interface/registry/layo
 import { asEntity } from './entities.js';
 import {
     clean, completedWord, fitsInline, inputByMessage, inputLayoutOf, inputMoved, noInput, pending, platformLocks, postedWord, protocolName, runSlots, signalWord, unposted, unreadWord,
-    slotInput, slotNumber, slotPayload, slotSequence, slotStatus, slotViews, slotWords, slotsWord, threadChannel, type Subscription, type SyncedDeclaration, type SyncedLookup, type ThreadChannel, type ToJoined, type ToPeer, type ToWorld,
+    slotInput, slotNumber, slotPayload, slotSequence, slotStatus, slotViews, slotWords, slotsWord, threadChannel, type Subscription, type SyncedDeclaration, type SyncedIndex, type SyncedLookup, type ThreadChannel, type ToJoined, type ToPeer, type ToWorld,
 } from './joining.js';
 import { entityPlanOf, hasFresh, mailboxReader, readSlot, readValue, type MailboxReader } from './mailbox.js';
 import { currentBuffer, sharedMemoryAvailable } from './memory.js';
@@ -692,17 +692,20 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             const declared = lookup?.[name];
             if (declared === undefined) continue;
             const index = indexOfLookup(declared);
-            let indexId: string | null = null;
+            const read = readable(declared.read);
+            let indexed: string | SyncedIndex | null = null;
             if (index !== undefined) {
-                indexId = idOfItem(index) ?? null;
-                if (indexId === null) throw new Error(`Synced system "${label}" looks up through index "${labelOfItem(index)}", which has no id, so the world can't name it; the build gives top-level indexes one.`);
                 const object = index.declaration.key.find(key => layoutOf(declarationOf(key)?.type).kind === "object");
                 if (object !== undefined) throw new Error(`Synced system "${label}" looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object)}" is an object, so it runs only on the world's thread.`);
-                readable(index.declaration.key);
+                const { key, components: held, sorted, unique } = index.declaration;
+                // One without an id, made in a function, is named by its declaration, and the world makes one like it.
+                indexed = idOfItem(index) ?? {
+                    name: labelOfItem(index), key: readable(key), has: present(held?.has), not: present(held?.not), sorted: sorted === true, unique: unique === true,
+                };
             }
             lookups.push({
-                name, read: readable(declared.read), has: present("has" in declared ? declared.has : undefined), not: present("not" in declared ? declared.not : undefined),
-                changed: "changed" in declared && declared.changed !== undefined ? readable(declared.changed) : null, index: indexId,
+                name, read, has: present("has" in declared ? declared.has : undefined), not: present("not" in declared ? declared.not : undefined),
+                changed: "changed" in declared && declared.changed !== undefined ? readable(declared.changed) : null, index: indexed,
             });
         }
         return {

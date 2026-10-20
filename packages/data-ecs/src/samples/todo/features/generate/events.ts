@@ -1,0 +1,4 @@
+import { on, reported, type Connect } from "../../shared/connect.js";
+import { addGenerated } from "./model.js";
+
+export const connect: Connect = (world, root) => on(root, "todo-generate", event => void reported(world.run(addGenerated, { count: event.detail.count })));

@@ -1,0 +1,112 @@
+/**
+ * `<todo-list>`: holds rows as its children, in the order they're placed. Its `filter` property, reflected as an
+ * attribute, hides children by their `done` attribute: `"active"` hides done ones, `"completed"` the others. Dragging a
+ * child onto another, or Alt+ArrowUp and Alt+ArrowDown on a focused child, dispatches `todo-move` with the child and
+ * the one it should go before, null for the end; the list never moves children itself.
+ */
+
+export type Filter = "all" | "active" | "completed";
+
+const template = document.createElement("template");
+template.innerHTML = `
+<style>
+    :host { display: block; overflow-y: auto; }
+    :host([filter="active"]) ::slotted([done]),
+    :host([filter="completed"]) ::slotted(:not([done])) { display: none; }
+    .empty { margin: 0; padding: 32px 12px; text-align: center; color: var(--todo-muted, #9ca3af); }
+</style>
+<slot><p class="empty">Nothing to do.</p></slot>`;
+
+export type TodoListEvents = {
+    readonly "todo-move": CustomEvent<{ readonly item: HTMLElement; readonly before: HTMLElement | null }>;
+};
+
+const move = (list: HTMLElement, item: HTMLElement, before: HTMLElement | null): void => {
+    if (item === before) return;
+    list.dispatchEvent(new CustomEvent("todo-move", { detail: { item, before }, bubbles: true, composed: true }));
+};
+
+/** The list's child an event came from, or null. */
+const childOf = (list: HTMLElement, target: EventTarget | null): HTMLElement | null => {
+    for (let node = target instanceof Node ? target : null; node !== null; node = node.parentNode) {
+        if (node.parentNode === list) return node instanceof HTMLElement ? node : null;
+    }
+    return null;
+};
+
+/** The nearest sibling the filter shows, in the direction given, or null. */
+const shownSibling = (item: Element, forward: boolean): HTMLElement | null => {
+    for (let node = forward ? item.nextElementSibling : item.previousElementSibling; node !== null; node = forward ? node.nextElementSibling : node.previousElementSibling) {
+        if (node instanceof HTMLElement && node.checkVisibility()) return node;
+    }
+    return null;
+};
+
+const listen = (list: HTMLElement): void => {
+    let dragged: HTMLElement | null = null;
+    list.addEventListener("dragstart", event => {
+        dragged = childOf(list, event.target);
+        if (dragged !== null && event.dataTransfer !== null) event.dataTransfer.effectAllowed = "move";
+    });
+    list.addEventListener("dragover", event => {
+        if (dragged !== null) event.preventDefault();
+    });
+    list.addEventListener("drop", event => {
+        const item = dragged;
+        dragged = null;
+        const target = childOf(list, event.target);
+        if (item === null || target === null) return;
+        event.preventDefault();
+        const bounds = target.getBoundingClientRect();
+        move(list, item, event.clientY < bounds.top + bounds.height / 2 ? target : target.nextElementSibling instanceof HTMLElement ? target.nextElementSibling : null);
+    });
+    list.addEventListener("dragend", () => {
+        dragged = null;
+    });
+    list.addEventListener("keydown", event => {
+        if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+        const item = childOf(list, event.target);
+        if (item === null) return;
+        event.preventDefault();
+        if (event.key === "ArrowUp") {
+            const previous = shownSibling(item, false);
+            if (previous !== null) move(list, item, previous);
+        }
+        else {
+            const next = shownSibling(item, true);
+            if (next !== null) move(list, item, shownSibling(next, true));
+        }
+    });
+};
+
+export class TodoList extends HTMLElement {
+    #filter: Filter = "all";
+
+    constructor() {
+        super();
+        this.attachShadow({ mode: "open" }).append(template.content.cloneNode(true));
+        listen(this);
+    }
+
+    get filter(): Filter {
+        return this.#filter;
+    }
+
+    set filter(value: Filter) {
+        if (value === this.#filter) return;
+        this.#filter = value;
+        this.setAttribute("filter", value);
+    }
+}
+
+/** Defines `<todo-list>`, once. */
+export const defineTodoList = (): void => {
+    if (customElements.get("todo-list") === undefined) customElements.define("todo-list", TodoList);
+};
+
+declare global {
+    interface HTMLElementTagNameMap {
+        "todo-list": TodoList;
+    }
+    interface HTMLElementEventMap extends TodoListEvents {}
+}

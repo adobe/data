@@ -1,0 +1,16 @@
+import { Resource } from "../../../../index.js";
+
+export type Filter = "all" | "active" | "completed";
+
+export const filterSchema = { anyOf: [{ const: "all" }, { const: "active" }, { const: "completed" }] } as const;
+
+/** Which todos the list shows: all, those not done, or those done. */
+export const filter = Symbol("filter");
+
+declare module "@adobe/data-ecs" {
+    interface Resources {
+        [filter]: { type: Filter; thread: "main" };
+    }
+}
+
+Resource.register(filter, { type: { ...filterSchema, default: "all" }, thread: "main" });

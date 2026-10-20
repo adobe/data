@@ -6,7 +6,9 @@ import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
-import { blocking, seed, seen, setFailAt, ticked } from "./tails.test-helper.js";
+import { blocking, counter, seed, seen, setFailAt, ticked } from "./tails.test-helper.js";
+import { System } from "../../interface/system/system.js";
+import { toPromise } from "../../interface/observe/to-promise.js";
 
 // Tails, with the world and the thread filling "tailsTest" on this one, joined through a MessageChannel.
 
@@ -61,6 +63,32 @@ describe("tails", () => {
         world.add(ticked);
         const failed = await until(world.observe.resource(report), value => value.failures.length > 0);
         expect(failed.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["system", "tailsTest/watch", "tailsTest failure at 6"]]);
+        await remote.dispose();
+        await world.dispose();
+        driver.close();
+    });
+    it("leave synced systems each tick's values at once, and one reading the report its tick's, its tails' failures in it", async () => {
+        const driver = backToBack();
+        const { world, remote } = await joined({ loop: driver }, { [always]: true });
+        await world.run(seed, { count: 10 });
+        const counters: number[] = [];
+        const values = System.create({ synced: true, resources: { read: [counter] } }, ({ resources }) => { counters.push(resources[counter]); });
+        world.add(ticked);
+        world.add(values);
+        await until(world.observe.resource(counter), value => value >= 5);
+        world.remove(values);
+        // Every tick's counter once, as its sync point left it, though its tails ran on while the next tick went on.
+        const first = counters.findIndex(value => value > 0);
+        expect(counters.slice(first, first + 4)).toEqual([0, 1, 2, 3].map(k => counters[first] + k));
+        const reports: (readonly [number, readonly string[]])[] = [];
+        const reading = System.create({ synced: true, resources: { read: [counter, report] } }, ({ resources }) => {
+            reports.push([resources[counter], resources[report].failures.map(failure => failure.message)]);
+        });
+        world.add(reading);
+        const at = (await toPromise(world.observe.resource(counter))) + 4;
+        await world.run(setFailAt, { at });
+        await until(world.observe.resource(report), value => value.failures.length > 0);
+        expect(reports.filter(([value]) => value === at).map(([, messages]) => messages)).toEqual([[`tailsTest failure at ${at}`]]);
         await remote.dispose();
         await world.dispose();
         driver.close();

@@ -23,7 +23,7 @@ import { mergeUses, refreshUses, type IndexUse } from './indexes.js';
 const none: readonly never[] = [];
 const noChunks: readonly Chunk[] = [];
 /** The report of a run with nothing to report. */
-const clean: Report = { failures: none, skipped: none, dropped: 0, warnings: none };
+export const clean: Report = { failures: none, skipped: none, dropped: 0, warnings: none };
 
 export type ExecuteContext = {
     readonly state: State;
@@ -531,7 +531,7 @@ const disturbedBy = (state: State): { readonly archetypes: Set<Archetype>; reado
 };
 
 /** Before CPU systems read or write a storage, in their query or through a lookup, the GPU's writes to it come back. */
-const readAhead = async (state: State, gpu: GpuEngine, runners: readonly Runner[]): Promise<void> => {
+export const readAhead = async (state: State, gpu: GpuEngine, runners: readonly Runner[]): Promise<void> => {
     if (!gpu.anyAhead()) return;
     const storages = new Set<Storage>();
     const add = (archetype: Archetype, ids: readonly number[]): void => {

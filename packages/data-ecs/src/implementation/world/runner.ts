@@ -222,13 +222,13 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         return key;
     };
     let pipeline: { readonly compute: GPUComputePipeline; readonly kernel: WgslKernel } | null = null;
-    const holder: { buffer: CommandBuffer } = { buffer: createBuffer() };
-    /** This system's buffers, reused each run: the sync point clears them. */
-    const owned: CommandBuffer[] = [];
+    /** This system's buffers, reused each run: the sync point clears them. A run starts on the first. */
+    const owned: CommandBuffer[] = [createBuffer()];
+    const holder: { buffer: CommandBuffer } = { buffer: owned[0] };
     let used = 0;
     const nextBuffer = (): CommandBuffer => owned[used++] ??= createBuffer();
     /** Each owned buffer as a chunk, made once. */
-    const ownedChunks: ChunkResult[] = [];
+    const ownedChunks: ChunkResult[] = [{ commands: owned[0] }];
     /**
      * The kernel's spawn batches on the main thread, one per set of components its lists name, emptied at the start of
      * each run, and by batch the first row the current buffer hasn't staged yet.
@@ -280,11 +280,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const commands = createCommands(state, holder);
     const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], kernel?.setup.starts ?? [], spawners);
     // A kernel's reductions fold in its partials, so only a body that runs as written gets reducer functions. Render
-    // bodies and GPU kernels issue no commands.
+    // bodies, GPU kernels and synced systems issue no commands.
     const ownInput = inputFor(leaf);
     const context = createContext(state, declaration, {
         targets: kernel === null ? targets : [],
-        commands: leaf.kind === "render" || declaration.kernel === "gpu" ? undefined : commands,
+        commands: leaf.kind === "render" || declaration.kernel === "gpu" || declaration.synced === true ? undefined : commands,
         input: declaration.input !== undefined,
         indexes: indexLookups.byName,
         since: lookupSince,
@@ -819,6 +819,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         return value !== null && value !== false;
     };
     const holds = (): boolean => conditionIs.every(holding) && !conditionNot.some(holding);
+    const conditioned = conditionIs.length + conditionNot.length > 0;
 
     /** A GPU kernel that could never run on the GPU is rejected in every world, with or without one. */
     const load = async (): Promise<void> => {
@@ -845,19 +846,22 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         // Removed during the run it's in: its body isn't called again.
         if (holdings.removed) return noChunks;
         // A system whose conditions don't hold is skipped, successfully, and keeps its `lastRun`.
-        if (!holds()) return noChunks;
+        if (conditioned && !holds()) return noChunks;
         const tick = ++state.tick;
         for (let k = 0; k < writes.length; k++) state.written[writes[k]] = tick;
         lookupSince.value = lastRun;
         const args = ownInput(input);
         slotsUsed = 0;
-        used = 0;
         // The last run's spawns were committed, or dropped with its sync point.
         if (spawns) for (let b = 0; b < spawnBatches.length; b++) spawnBatches[b].count = unstaged[b] = 0;
         const chunks = runChunks;
-        // Truncated to one rather than emptied: emptying an array drops its backing store, which the push would allocate again.
-        chunks.length = 1;
-        chunks[0] = nextChunk();
+        // Truncated to one rather than emptied: emptying an array drops its backing store, which the push would allocate
+        // again. Setting the length costs a run more than the check, so it's set only when it differs.
+        if (chunks.length !== 1) chunks.length = 1;
+        // The first buffer, as `nextChunk` gives it, with nothing staged yet to stage.
+        used = 1;
+        holder.buffer = owned[0];
+        chunks[0] = ownedChunks[0];
         try {
             const resourcesChanged = resourceChanged.length > 0 && resourcesChangedSince(lastRun);
             /** -1 passes every row. */

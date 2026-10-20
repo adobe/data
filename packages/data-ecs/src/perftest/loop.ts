@@ -1,16 +1,24 @@
 import { always } from "../interface/resources/always.js";
 import { clock } from "../interface/resources/clock.js";
+import { System } from "../interface/system/system.js";
 import { backToBack, createWorld } from "../implementation/index.js";
-import { idle } from "./suite.js";
+import { idle, unused } from "./suite.js";
 
 /** Ticks in each timed stretch of `loopTickIdle`. */
 export const loopTicks = 10_000;
 
+/** Synced systems in `synced idle 100`. */
+export const syncedIdles = 100;
+
+/** Synced systems no entity matches, each run after every tick. */
+const idleSynced = Array.from({ length: syncedIdles }, (_, i) => System.create({ name: `loop/idleSynced${i}`, synced: true, components: { has: [unused] } }, () => {}));
+
 /**
  * The fastest of `stretches` stretches of `loopTicks` ticks with nothing changed, after one to warm up: a world with
- * `always` set, one system no entity matches, driven back to back, counted through an observer of its clock.
+ * `always` set, one system no entity matches and `synced` synced systems none matches, driven back to back, counted
+ * through an observer of its clock.
  */
-export const loopTickIdle = async (stretches = 5): Promise<number> => {
+export const loopTickIdle = async (stretches = 5, synced = 0): Promise<number> => {
     const driver = backToBack();
     const world = createWorld({ [always]: true }, { loop: driver });
     let best = Infinity;
@@ -29,6 +37,7 @@ export const loopTickIdle = async (stretches = 5): Promise<number> => {
                 unobserve();
                 resolve();
             });
+            for (let k = 0; k < synced; k++) world.add(idleSynced[k]);
             world.add(idle);
         });
     }

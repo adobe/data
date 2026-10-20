@@ -2,7 +2,8 @@ import type { Cadence } from '../../interface/resources/cadence.js';
 import type { Composite, Definition } from '../../interface/registry/index.js';
 import { labelOfItem } from '../../interface/registry/index.js';
 import { requireDefinition } from '../../interface/registry/program.js';
-import { isLeaf, scheduleOf } from '../../interface/registry/schedule.js';
+import { isLeaf, isSynced, scheduleOf } from '../../interface/registry/schedule.js';
+import type { Leaf } from '../../interface/system/leaf.js';
 
 /** What the loop reads of the world's resources before each beat. */
 export type LoopSettings = { readonly cadence: Cadence; readonly always: boolean; readonly wake: number };
@@ -24,16 +25,25 @@ export type LoopHost = {
 export type LoopPlatform = Pick<LoopHost, "frame" | "timer" | "now">;
 
 export type Loop = {
-    /** Adds a system to every tick from the next one on. Throws for a conflict with one already added, or input. */
+    /**
+     * Adds a system to every tick from the next one on, or a synced system to the synced systems. Throws for a conflict
+     * with one already added, or input.
+     */
     readonly add: (system: Definition) => void;
     /**
-     * Removes a value `add` was given from every tick from the next one on, returning the composite ticks ran and the
-     * one they run now, null once none is added; null without a change, for a value not added. Throws, removing
-     * nothing, when the systems left conflict with no order between them.
+     * Removes a value `add` was given from every tick from the next one on, returning the composite of the added
+     * systems before and after, null while none is added: the same one for a synced system added alone, which leaves
+     * it as it is. Null without a change, for a value not added. Throws, removing nothing, when the systems left
+     * conflict with no order between them.
      */
-    readonly remove: (system: Definition) => { readonly previous: Composite; readonly next: Composite | null } | null;
-    /** The composite ticks run now: the added systems', or null while none is added. */
+    readonly remove: (system: Definition) => { readonly previous: Composite | null; readonly next: Composite | null } | null;
+    /** The composite ticks run now: the added systems', or null while none is added that runs in a tier. */
     readonly current: () => Composite | null;
+    /**
+     * The synced systems to run after every run's and tick's sync point: those added alone and those within added
+     * composites, each once. A new array once they change, so a pass in progress keeps the one it started with.
+     */
+    readonly synced: () => readonly Leaf[];
     /** A run arrived: the next beat runs a tick. */
     readonly arrived: () => void;
     /** Stops ticking; a tick in progress finishes. */
@@ -100,13 +110,31 @@ const checkNoInput = (system: Definition, seen: Set<Definition> = new Set()): vo
     for (const member of system.declaration.systems) checkNoInput(requireDefinition(member), seen);
 };
 
+const noLeaves: readonly Leaf[] = [];
+
 /**
- * The world's loop: on beats of its cadence, while some system is added, it runs a tick where `always` is set, `wake`
- * is due or a run arrived since the last tick. A quiet loop schedules nothing until a run arrives or a wake time comes.
+ * The world's loop: on beats of its cadence, while some system is added that runs in a tier, it runs a tick where
+ * `always` is set, `wake` is due or a run arrived since the last tick. A quiet loop schedules nothing until a run
+ * arrives or a wake time comes. Synced systems don't make it tick.
  */
 export const createLoop = (host: LoopHost): Loop => {
+    /** The values added but synced systems added alone, which are in `alone`. */
     const systems: Definition[] = [];
     let composite: Composite | null = null;
+    /** `composite` while it has a tier, so ticks run. */
+    let ticking: Composite | null = null;
+    const alone: Leaf[] = [];
+    let synced: readonly Leaf[] = noLeaves;
+    const refreshSynced = (): void => {
+        const within = composite === null ? noLeaves : scheduleOf(composite).synced;
+        synced = within.length === 0 ? [...alone] : [...new Set([...alone, ...within])];
+    };
+    /** Sets the composite of the added systems, and whether it ticks. */
+    const compose = (next: Composite | null): void => {
+        composite = next;
+        ticking = next !== null && scheduleOf(next).tiers.length > 0 ? next : null;
+        refreshSynced();
+    };
     let runArrived = false;
     let stopped = false;
     /** A beat or wake timer is pending, cancelled by this. */
@@ -149,20 +177,20 @@ export const createLoop = (host: LoopHost): Loop => {
         if (wake <= time) served = wake;
         for (let i = 1; i <= count; i++) {
             // Each tick runs what's added as it starts: systems removed since the last one aren't in it.
-            const ticking = composite;
-            if (stopped || ticking === null) return;
+            const current = ticking;
+            if (stopped || current === null) return;
             clock.now = start + i * step;
             clock.delta = step;
             clock.tick = ticks++;
             previous = clock.now;
-            await host.tick(ticking, clock);
+            await host.tick(current, clock);
         }
     };
 
     const beat = async (time: number): Promise<void> => {
         cancel = null;
         waiting = false;
-        if (stopped || composite === null) return;
+        if (stopped || ticking === null) return;
         const settings = host.settings();
         if (!isDue(settings, time)) {
             schedule();
@@ -171,7 +199,7 @@ export const createLoop = (host: LoopHost): Loop => {
         runArrived = false;
         running = true;
         try {
-            await runTicks(settings, time, composite);
+            await runTicks(settings, time, ticking);
         }
         finally {
             running = false;
@@ -183,7 +211,7 @@ export const createLoop = (host: LoopHost): Loop => {
 
     /** Schedules the next beat, or a timer until the next wake time, or nothing while the loop is quiet. */
     const schedule = (): void => {
-        if (stopped || composite === null || running || cancel !== null) return;
+        if (stopped || ticking === null || running || cancel !== null) return;
         const settings = host.settings();
         const { cadence } = settings;
         const now = host.now();
@@ -211,16 +239,29 @@ export const createLoop = (host: LoopHost): Loop => {
         add: system => {
             if (stopped) throw new Error("The world is disposed.");
             checkNoInput(system);
+            if (isSynced(system)) {
+                if (alone.includes(system)) return;
+                alone.push(system);
+                refreshSynced();
+                return;
+            }
             if (systems.includes(system)) return;
             const next = [...systems, system];
             const candidate: Composite = { kind: "composite", name: "tick", declaration: { name: "tick", systems: next } };
             // Throws for members ordered in a cycle, or conflicting with no order between them.
             scheduleOf(candidate);
             systems.push(system);
-            composite = candidate;
+            compose(candidate);
             schedule();
         },
         remove: system => {
+            if (isSynced(system)) {
+                const at = alone.indexOf(system);
+                if (at < 0) return null;
+                alone.splice(at, 1);
+                refreshSynced();
+                return { previous: composite, next: composite };
+            }
             const at = systems.indexOf(system);
             if (at < 0 || composite === null) return null;
             const left = systems.filter((_, k) => k !== at);
@@ -229,12 +270,13 @@ export const createLoop = (host: LoopHost): Loop => {
             if (next !== null) scheduleOf(next);
             const previous = composite;
             systems.splice(at, 1);
-            composite = next;
+            compose(next);
             return { previous, next };
         },
-        current: () => composite,
+        current: () => ticking,
+        synced: () => synced,
         arrived: () => {
-            if (composite === null) return;
+            if (ticking === null) return;
             runArrived = true;
             if (waiting && cancel !== null) {
                 // A wake time may be far off; a run is due on the next beat.

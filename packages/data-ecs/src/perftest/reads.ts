@@ -108,6 +108,22 @@ export const readBenchmarks: readonly Benchmark[] = [
         },
     },
     {
+        name: "read run synced",
+        operation: "Reading a resource through a run of a new synced system that copies it out, which has no tiers and an empty sync point: as `read run`, through a synced system.",
+        per: "reads",
+        n: 1,
+        typical: [1, 100],
+        best: { bytes: 64, basis: "A read loads at least one cache line of the resource's cell." },
+        run: async () => {
+            const world = await seeded(10_000);
+            copied = 0;
+            const best = await fastest(() => world.run(System.create({ synced: true, resources: { read: [level] } }, ({ resources }) => { copied = resources[level]; })), 300);
+            check(copied === 3, "read run synced: wrong value");
+            await world.dispose();
+            return best;
+        },
+    },
+    {
         name: "read run changed",
         operation: "Reading the ranks that changed through a run of a new system filtering on `changed`, with a kernel writing them: a read whose filter turns the kernel's stamps on while the system lives.",
         per: "reads",

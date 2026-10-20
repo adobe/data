@@ -6,10 +6,10 @@ import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVis
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
 import { forest, local as hierarchyLocal, nudge, parent as hierarchyParent, propagate, propagateChanged, reparent, sprout, turnover, under } from "./hierarchy.js";
 import * as structural from "./structural.js";
-import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, index, indexSum, observe, poke, pokeCluster, position, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
+import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, idleSynced, index, indexSum, observe, poke, pokeCluster, position, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
 
 import type { Benchmark } from "./benchmark.js";
-import { loopTickIdle, loopTicks } from "./loop.js";
+import { loopTickIdle, loopTicks, syncedIdles } from "./loop.js";
 import { main, placed, pooled } from "./placed.js";
 import { wake } from "./wake.js";
 import { remoteBenchmarks } from "./remote.js";
@@ -124,6 +124,29 @@ export const benchmarks: readonly Benchmark[] = [
             await world.dispose();
             return best;
         },
+    },
+    {
+        name: "run synced",
+        operation: "Running one synced system no entity matches, in a world of 10K entities: a run with no tiers, its sync point empty, against `run idle`.",
+        per: "runs",
+        n: 1,
+        typical: [1, 1],
+        best: runBest,
+        run: async () => {
+            const world = await seeded(() => inline(), 10_000);
+            const best = await fastest(() => world.run(idleSynced));
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "synced idle 100",
+        operation: "Ticks as in `loop tick idle`, with a hundred synced systems no entity matches added, each run after every tick: the cost per synced system per pass, a hundredth of the tick's own cost included.",
+        per: "synced systems",
+        n: loopTicks * syncedIdles,
+        typical: [1, 100],
+        best: runBest,
+        run: () => loopTickIdle(5, syncedIdles),
     },
     {
         name: "loop tick idle",

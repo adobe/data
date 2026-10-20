@@ -209,6 +209,8 @@ export const reduce = System.create({ name: "suite/reduce", kernel: "cpu", compo
 
 /** A system no entity matches: what a run costs with nothing to do. */
 export const idle = System.create({ name: "suite/idle", components: { has: [unused] } }, () => {});
+/** A synced system no entity matches: a run of it alone has no tiers. */
+export const idleSynced = System.create({ name: "suite/idleSynced", synced: true, components: { has: [unused] } }, () => {});
 
 /** Fifty systems no entity matches, in one tier. */
 export const idles = System.create({

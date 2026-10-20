@@ -1,6 +1,6 @@
 import { Index, System, type Component, type Entity, type World } from '../index.js';
 import type { Observe } from './observe.js';
-import { createEntry, give, giveFirst, keysId, labelOf, none, noDelivery, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
+import { createEntry, give, giveFirst, keysId, labelOf, none, noDelivery, ownName, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
 
 /** An observed entity's value, shared by its observers, and by optional component whether it had it last. */
 type EntityEntry = Entry<object | null> & { readonly entity: Entity; readonly present: boolean[] };
@@ -49,7 +49,7 @@ type Finders = {
 };
 
 const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: string, required: readonly Component.Key[], optional: readonly Component.Key[]): EntityShape => {
-    const name = `Observe.entity(${labelOf(required)}${optional.length === 0 ? "" : `; ${labelOf(optional)}`})`;
+    const name = ownName(`Observe.entity(${labelOf(required)}${optional.length === 0 ? "" : `; ${labelOf(optional)}`})`);
     const rows: (LookupRow | null)[] = optional.map(() => null);
     /**
      * Reads an entry's entity, giving its value if it changed and first values to subscribers waiting up to `through`:

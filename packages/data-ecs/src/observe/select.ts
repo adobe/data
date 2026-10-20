@@ -3,7 +3,7 @@ import { compare, predicateOf } from './compare.js';
 import type { Observe } from './observe.js';
 import { createAll, createCount, createHeap, createSorted, inEntityOrder, indexOf, type Gather, type Page, type Term, type Values } from './plans.js';
 import {
-    createEntry, deliverAlso, give, giveFirst, keysId, labelOf, none, noDelivery, numberOf, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed,
+    createEntry, deliverAlso, give, giveFirst, keysId, labelOf, none, noDelivery, numberOf, ownName, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed,
     type Entry, type Read, type Shape, type WorldState,
 } from './world-state.js';
 
@@ -192,7 +192,7 @@ const rangedIndexes = new Map<string, Index<{ readonly key: readonly [Component.
 const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: string, counting: boolean, impossible: boolean, paged: boolean, required: readonly Component.Key[], not: readonly Component.Key[], where: readonly Component.Key[], terms: readonly Term[]): QueryShape => {
     const reads = unique([...where, ...terms.map(term => term.key)]);
     const has = unique([...required, ...reads]);
-    const name = `Observe.${counting ? "count" : "select"}(${labelOf(required)})`;
+    const name = ownName(`Observe.${counting ? "count" : "select"}(${labelOf(required)})`);
     const direction = terms.length > 0 && terms.every(term => term.ascending === terms[0].ascending) ? terms[0].ascending : null;
     const sortedKey = terms.map(term => term.key);
     // On a joined thread, a selection without a page sorts there, through an index without a key, rather than having

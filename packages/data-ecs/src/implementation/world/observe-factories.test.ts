@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Resource } from "../../interface/resource/resource.js";
@@ -182,6 +182,34 @@ describe("observer factories", () => {
         await world.run(writeOther);
         await world.run(nothing);
         expect(notified).toBe(3);
+    });
+
+    it("rethrow only their own systems' failures from their runs, not those of synced systems the world added", async () => {
+        await using world = await seeded(3);
+        const failing = System.create({ name: "observeFactoriesTest/failing", synced: true }, () => { throw new Error("added failed"); });
+        world.add(failing);
+        const caught: unknown[] = [];
+        const original = globalThis.queueMicrotask;
+        vi.spyOn(globalThis, "queueMicrotask").mockImplementation(callback => original(() => {
+            try {
+                callback();
+            }
+            catch (error) {
+                caught.push(error);
+            }
+        }));
+        try {
+            // Cold first values, from runs of the factories' own, each running the added system too.
+            expect(await Observe.toPromise(Observe.resource(world, level))).toBe(1);
+            expect(await Observe.toPromise(Observe.count(world, { required: [amount] }))).toBe(3);
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        finally {
+            vi.restoreAllMocks();
+        }
+        expect(caught).toEqual([]);
+        // The world's runs still report it.
+        expect((await world.run(nothing)).failures.map(failure => failure.name)).toEqual(["observeFactoriesTest/failing"]);
     });
 });
 

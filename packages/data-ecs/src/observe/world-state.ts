@@ -77,8 +77,20 @@ export const rethrowLater = (error: unknown): void => {
     queueMicrotask(() => { throw error; });
 };
 
+/**
+ * The names of the systems the factories make. A run of theirs runs every synced system the world added too; only these
+ * systems' failures are the factories' to rethrow.
+ */
+const ownNames = new Set<string>();
+
+/** Names a system the factories make. */
+export const ownName = (name: string): string => {
+    ownNames.add(name);
+    return name;
+};
+
 const rethrowFailures = (report: { readonly failures: readonly { readonly name: string; readonly message: string }[] }): void => {
-    for (const failure of report.failures) rethrowLater(new Error(`${failure.name}: ${failure.message}`));
+    for (const failure of report.failures) if (ownNames.has(failure.name)) rethrowLater(new Error(`${failure.name}: ${failure.message}`));
 };
 
 const ignore = (): void => {
@@ -86,7 +98,7 @@ const ignore = (): void => {
 };
 
 /** Runs nothing: a run of it resolves while its world lives. */
-const alive = System.create({ name: "Observe/alive", synced: true }, () => {});
+const alive = System.create({ name: ownName("Observe/alive"), synced: true }, () => {});
 
 /**
  * What a rejected run of the factories' own does: nothing for a disposed world, whose first values never come, and for
@@ -199,7 +211,7 @@ export const stateOf = (world: World): WorldState => {
         deliveries: [],
         idle: [],
         rejected: rejectedOf(world),
-        deliver: System.create({ name: "Observe/deliver", synced: true }, () => {
+        deliver: System.create({ name: ownName("Observe/deliver"), synced: true }, () => {
             const delivery = created.deliveries.shift();
             if (delivery === undefined) return;
             created.delivered = delivery.batch;
@@ -210,7 +222,7 @@ export const stateOf = (world: World): WorldState => {
     states.set(world, created);
     if (joined) return created;
     // Added before any shape's system, so in each pass it counts the pass before they run.
-    world.add(System.create({ name: "Observe/maintain", synced: true }, () => {
+    world.add(System.create({ name: ownName("Observe/maintain"), synced: true }, () => {
         created.pass++;
         if (created.idle.length > 0) sweepShapes(created);
     }));

@@ -1,6 +1,6 @@
 import { System, report, type Resource, type World } from '../index.js';
 import type { Observe } from './observe.js';
-import { createEntry, give, giveFirst, none, noDelivery, passed, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
+import { createEntry, give, giveFirst, none, noDelivery, ownName, passed, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
 
 /**
  * A resource's observers, sharing one value: `notifier`, added, gives the value after each pass whose sync point
@@ -29,7 +29,7 @@ const createShape = (state: WorldState, byKey: Map<Resource.Key, ResourceShape>,
     const entry = createEntry<unknown>(undefined);
     // A tick's report takes the failures of its synced systems after they ran, unstamped, so it's never held.
     const held = key !== report;
-    const label = `Observe.resource(${key.description ?? "?"})`;
+    const label = ownName(`Observe.resource(${key.description ?? "?"})`);
     // On a joined thread, first values come once a run of this system resolved, never in its pass: none to skip.
     const { joined } = state;
     const notifier = System.create({ name: label, synced: true, resources: { read: [key], changed: [key] } }, ({ resources }) => {

@@ -92,7 +92,7 @@ const alternateFilter = (world: World) => (repeat: number) => world.run(setFilte
 
 const benchmarkApp = async (n: number): Promise<void> => {
     document.body.innerHTML = markup;
-    const app = createApp({ root: document.body, list: found("todo-list"), filters: found("todo-filters"), summary: found("todo-summary"), toggleAll: found("todo-toggle-all") });
+    const app = createApp(document.body);
     await watchTicks(app.world);
     const { world } = app;
     // A new todo's row is created by a tick after the run that adds the todo: here by a run of the system that does.

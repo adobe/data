@@ -26,7 +26,7 @@ beforeEach(async () => {
     errors = [];
     console.error = (...values: unknown[]) => errors.push(values);
     document.body.innerHTML = markup;
-    app = createApp({ root: document.body, list: found("todo-list"), filters: found("todo-filters"), summary: found("todo-summary"), toggleAll: found("todo-toggle-all") });
+    app = createApp(document.body);
     await watchTicks(app.world);
 });
 

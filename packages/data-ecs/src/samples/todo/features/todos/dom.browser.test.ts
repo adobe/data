@@ -109,6 +109,19 @@ describe("the todos feature's DOM systems", () => {
         expect(shown(element)).toEqual(["- a", "- d", "- b", "- c"]);
     });
 
+    it("keep a moved row focused, so it can be moved again by keyboard", async () => {
+        const { world, element } = await createDriven();
+        await using _ = world;
+        for (const text of ["a", "b"]) await world.run(addTodo, { label: text });
+        await settled(world.run(addTodo, { label: "c" }));
+        const moved = rowsOf(element)[2];
+        moved?.focus();
+        expect(document.activeElement).toBe(moved);
+        await settled(world.run(moveTodo, { entity: todoAt(element, 2), before: todoAt(element, 0) }));
+        expect(shown(element)).toEqual(["- c", "- a", "- b"]);
+        expect(document.activeElement).toBe(moved);
+    });
+
     it("place the rows of todos added together in list order", async () => {
         const { world, element } = await createDriven();
         await using _ = world;

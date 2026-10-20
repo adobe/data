@@ -44,9 +44,17 @@ export const bindRows = System.create({
     element.done = item[done];
 });
 
+declare global {
+    interface ParentNode {
+        /** Moves a child without disconnecting it, so it keeps its focus and state; absent where unsupported. */
+        moveBefore?(node: Node, child: Node | null): void;
+    }
+}
+
 /**
  * Places each new or moved row after the row before it in list order. Rows pass in list order, so the one before is
- * always placed already; a row already there isn't touched, which keeps its focus.
+ * always placed already. A row already there isn't touched, and one in the list moves without leaving it, which keeps
+ * its focus.
  */
 export const placeRows = System.create({
     name: "todos/placeRows",
@@ -57,12 +65,12 @@ export const placeRows = System.create({
     lookup: { placed: { index: placed, read: [row] } },
 }, (item, { resources, lookup }) => {
     const element = item[row];
+    const parent = resources[list];
     const earlier = lookup.placed({ "<": item[order] });
-    const previous = earlier.length === 0 ? null : earlier.at(earlier.length - 1)[row];
-    if (previous === null) {
-        if (resources[list].firstElementChild !== element) resources[list].prepend(element);
-    }
-    else if (previous.nextElementSibling !== element) previous.after(element);
+    const before = earlier.length === 0 ? parent.firstElementChild : earlier.at(earlier.length - 1)[row].nextElementSibling;
+    if (before === element) return;
+    if (element.parentNode === parent && parent.moveBefore !== undefined) parent.moveBefore(element, before);
+    else parent.insertBefore(element, before);
 });
 
 Finalizer.create({ name: "todos/removeRows", components: { read: [row] } }, item => {

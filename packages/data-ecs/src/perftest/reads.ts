@@ -48,6 +48,44 @@ const advance = System.create({ name: "reads/advance", kernel: "cpu", components
 /** A system no entity matches: a run that changes nothing. */
 const idle = System.create({ name: "reads/idle", components: { has: [unmatched] } }, () => {});
 
+/** The entities `look` and `lookChanged` look up, each run. */
+let looked: readonly Entity[] = [];
+let found = 0;
+
+/** Looks up every entity of `looked` by entity, reading its value, after `nudge` where both run. */
+const look = System.create({ name: "reads/look", lookup: { values: { read: [value] } }, after: [nudge] }, ({ lookup }) => {
+    for (let i = 0; i < looked.length; i++) {
+        const row = lookup.values(looked[i]);
+        if (row !== null && row[value] >= 0) found++;
+    }
+});
+
+/** The same, with `changed`: counts the entities whose value may have changed since it last ran. */
+const lookChanged = System.create({ name: "reads/lookChanged", lookup: { values: { read: [value], changed: [value] } }, after: [nudge] }, ({ lookup }) => {
+    for (let i = 0; i < looked.length; i++) {
+        const row = lookup.values(looked[i]);
+        if (row !== null && row[value] >= 0 && row.changed) found++;
+    }
+});
+
+const nudgeThenLook = System.create({ name: "reads/nudgeThenLook", systems: [nudge, look] });
+const nudgeThenLookChanged = System.create({ name: "reads/nudgeThenLookChanged", systems: [nudge, lookChanged] });
+
+/** A run of `system` over a world of `observedEntities` entities `looked` names, `found` after the last. */
+const lookups = async (system: System): Promise<{ readonly best: number; readonly found: number }> => {
+    const world = await seeded(observedEntities);
+    looked = await entitiesOf(world);
+    await world.run(system);
+    found = 0;
+    const best = await fastest(() => world.run(system));
+    found = 0;
+    await world.run(system);
+    const result = { best, found };
+    looked = [];
+    await world.dispose();
+    return result;
+};
+
 /** Every entity a seeded world holds. */
 const entitiesOf = (world: World): Promise<readonly Entity[]> => toPromise(world.observe.select({ required: [value] }));
 
@@ -174,6 +212,58 @@ export const readBenchmarks: readonly Benchmark[] = [
             check(notified() > before, "observe 1K entities one changed: not notified");
             stop();
             await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "lookup 1K entities",
+        operation: "A system looking up 1K entities by entity, reading a value of each, with nothing changed: following references, without `changed`.",
+        per: "lookups",
+        n: observedEntities,
+        typical: [10, 1_000],
+        best: { bytes: 16, basis: "Each lookup reads its entity's 8-byte location and its 8-byte value." },
+        run: async () => {
+            const { best, found } = await lookups(look);
+            check(found === observedEntities, "lookup 1K entities: wrong count");
+            return best;
+        },
+    },
+    {
+        name: "lookup 1K entities changed",
+        operation: "The same with `changed`, with nothing changed: watching entities a system follows for changes since it last ran.",
+        per: "lookups",
+        n: observedEntities,
+        typical: [10, 1_000],
+        best: { bytes: 24, basis: "Each lookup reads its entity's 8-byte location, its 8-byte value and its 8-byte changed tick." },
+        run: async () => {
+            const { best, found } = await lookups(lookChanged);
+            check(found === 0, "lookup 1K entities changed: changed");
+            return best;
+        },
+    },
+    {
+        name: "lookup 1K entities one changed",
+        operation: "A run writing one of 1K entities, then a system looking up each by entity, reading its value, without `changed`.",
+        per: "lookups",
+        n: observedEntities,
+        typical: [10, 1_000],
+        best: { bytes: 16, basis: "Each lookup reads its entity's 8-byte location and its 8-byte value." },
+        run: async () => {
+            const { best, found } = await lookups(nudgeThenLook);
+            check(found === observedEntities, "lookup 1K entities one changed: wrong count");
+            return best;
+        },
+    },
+    {
+        name: "lookup 1K entities changed one changed",
+        operation: "The same with `changed`: one of the entities a system follows changed since it last ran.",
+        per: "lookups",
+        n: observedEntities,
+        typical: [10, 1_000],
+        best: { bytes: 24, basis: "Each lookup reads its entity's 8-byte location, its 8-byte value and its 8-byte changed tick." },
+        run: async () => {
+            const { best, found } = await lookups(nudgeThenLookChanged);
+            check(found === 1, "lookup 1K entities changed one changed: wrong count");
             return best;
         },
     },

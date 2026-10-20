@@ -21,7 +21,7 @@ done or none, clear those done, filter, and generate 10 or 1,000 todos.
     once and then only rows whose todo changed, after each run's and tick's sync point.
   - *Placed* by an observer system, `placeRows`, which runs the rows whose row or order changed in list order, through
     a sorted index, and puts each after the row before it, which is always placed already. A row already in place
-    isn't touched, which keeps its focus.
+    isn't touched, and one in the list moves with `moveBefore`, never leaving it, so it keeps its focus.
   - *Filtered* by the filter feature's observer system, `filterRows`, which sets `hidden` on rows whose visibility
     changes, as their todo or the filter changes.
   - *Removed* by a finalizer on the row, which runs whatever ends the todo, `world.dispose()` included.

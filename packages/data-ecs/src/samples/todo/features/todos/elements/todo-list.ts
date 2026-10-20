@@ -31,10 +31,10 @@ const childOf = (list: HTMLElement, target: EventTarget | null): HTMLElement | n
 
 const siblingOf = (node: Element, forward: boolean): Element | null => forward ? node.nextElementSibling : node.previousElementSibling;
 
-/** The nearest sibling shown, in the direction given, or null. */
+/** The nearest sibling not hidden, in the direction given, or null. Reading `hidden` forces no style recalculation. */
 const shownSibling = (item: Element, forward: boolean): HTMLElement | null => {
     for (let node = siblingOf(item, forward); node !== null; node = siblingOf(node, forward)) {
-        if (node instanceof HTMLElement && node.checkVisibility()) return node;
+        if (node instanceof HTMLElement && !node.hidden) return node;
     }
     return null;
 };

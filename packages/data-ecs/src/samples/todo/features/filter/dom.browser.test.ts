@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { workers, type Entity } from "../../../../index.js";
+import { Entity, workers } from "../../../../index.js";
 import { createWorld } from "../../../../implementation/index.js";
 import { settled, watchTicks } from "../../shared/ticks.test-helper.js";
 import * as todos from "../todos/dom.js";
@@ -61,4 +61,25 @@ it("shows the filter on its buttons, and hides the rows it leaves out, writing o
     await settled(world.run(setFilter, { filter: "all" }));
     expect(shown()).toBe("abc");
     observer.disconnect();
+});
+
+it("moves focus off a row it hides, to the nearest row it shows", async () => {
+    const list = document.createElement("todo-list");
+    document.body.append(list);
+    await using world = createWorld({ [workers]: 0, [todos.list]: list });
+    await watchTicks(world);
+    for (const system of [...todos.dom, ...dom]) world.add(system);
+    for (const text of ["a", "b", "c"]) await world.run(addTodo, { label: text });
+    await settled(world.run(addTodo, { label: "d" }));
+    const [a, b, c, d] = [...list.querySelectorAll("todo-row")];
+    const entityOf = (element: Element | undefined): Entity => (element === undefined ? undefined : todos.todoOf.get(element)) ?? Entity.none;
+    await world.run(toggleTodo, { entity: entityOf(b) });
+    await settled(world.run(toggleTodo, { entity: entityOf(c) }));
+    // Filtered out: b's nearest row shown is d, after c, which is hidden too.
+    b?.focus();
+    await settled(world.run(setFilter, { filter: "active" }));
+    expect(document.activeElement).toBe(d);
+    // Toggled out from under the filter: d has no row shown after it, so a gets the focus.
+    await settled(world.run(toggleTodo, { entity: entityOf(d) }));
+    expect(document.activeElement).toBe(a);
 });

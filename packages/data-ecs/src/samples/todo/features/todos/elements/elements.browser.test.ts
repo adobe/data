@@ -90,6 +90,20 @@ describe("todo-row", () => {
         expect(seen.map(event => event.detail)).toEqual([{ label: "Buy oat milk" }, { label: "Blurred" }]);
     });
 
+    it("isn't draggable while editing, so its text can be selected, and ignores Enter while composing", () => {
+        const row = createRow("Buy milk");
+        const seen = record(document.body, "todo-edit");
+        part(row, ".label", HTMLElement).dispatchEvent(new MouseEvent("dblclick"));
+        expect(row.draggable).toBe(false);
+        const edit = part(row, ".edit", HTMLInputElement);
+        edit.value = "Buy 牛乳";
+        edit.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true }));
+        expect(seen).toEqual([]);
+        edit.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+        expect(seen.map(event => event.detail)).toEqual([{ label: "Buy 牛乳" }]);
+        expect(row.draggable).toBe(true);
+    });
+
     it("is focusable and draggable once connected, and can be created before it is", () => {
         const row = document.createElement("todo-row");
         expect(row.hasAttribute("tabindex")).toBe(false);
@@ -183,5 +197,16 @@ describe("todo-entry", () => {
         input.value = "Draft";
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
         expect(input.value).toBe("");
+    });
+
+    it("ignores Enter while composing", () => {
+        const entry = document.createElement("todo-entry");
+        document.body.append(entry);
+        const seen = record(document.body, "todo-add");
+        const input = part(entry, "input", HTMLInputElement);
+        input.value = "牛乳";
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true }));
+        expect(seen).toEqual([]);
+        expect(input.value).toBe("牛乳");
     });
 });

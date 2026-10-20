@@ -19,7 +19,8 @@ export type TodoEntryEvents = {
 const listen = (host: HTMLElement, input: HTMLInputElement): void => {
     input.addEventListener("keydown", event => {
         if (event.key === "Escape") input.value = "";
-        if (event.key !== "Enter" || input.value.trim() === "") return;
+        // Enter while composing text picks the composition.
+        if (event.key !== "Enter" || event.isComposing || input.value.trim() === "") return;
         host.dispatchEvent(new CustomEvent("todo-add", { detail: { label: input.value }, bubbles: true, composed: true }));
         input.value = "";
     });

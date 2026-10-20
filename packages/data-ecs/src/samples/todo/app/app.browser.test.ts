@@ -150,6 +150,27 @@ describe("the todo app", () => {
         expect(found("todo-summary").hasAttribute("empty")).toBe(true);
     });
 
+    it("commits an edit when its field loses focus", async () => {
+        await type("Buy milk");
+        rowPart(0, ".label", HTMLElement).dispatchEvent(new MouseEvent("dblclick"));
+        const edit = rowPart(0, ".edit", HTMLInputElement);
+        edit.value = "Buy oat milk";
+        edit.blur();
+        await nextTick();
+        expect(shown()).toEqual(["- Buy oat milk"]);
+    });
+
+    it("ignores what a row asks once its todo is deleted", async () => {
+        await type("a");
+        await type("b");
+        // Both events come before the delete's run applies, so the edit and toggle find no todo.
+        rowPart(0, ".delete", HTMLButtonElement).click();
+        rowPart(0, ".toggle", HTMLInputElement).click();
+        rows()[0]?.dispatchEvent(new CustomEvent("todo-edit", { detail: { label: "late" }, bubbles: true, composed: true }));
+        await nextTick();
+        expect(shown()).toEqual(["- b"]);
+    });
+
     it("removes every row and stops listening when disposed", async () => {
         for (const text of ["a", "b"]) await type(text);
         await app.dispose();

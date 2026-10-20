@@ -52,10 +52,12 @@ const partsOf = (root: ShadowRoot): Parts => {
     return { toggle, label, edit, delete: remove };
 };
 
-const startEditing = (parts: Parts): void => {
+/** Starts editing. The row isn't draggable meanwhile, so the text being edited can be selected. */
+const startEditing = (host: HTMLElement, parts: Parts): void => {
     parts.edit.value = parts.label.textContent ?? "";
     parts.label.hidden = true;
     parts.edit.hidden = false;
+    host.draggable = false;
     parts.edit.focus();
 };
 
@@ -64,6 +66,7 @@ const stopEditing = (host: HTMLElement, parts: Parts, commit: boolean): void => 
     if (parts.edit.hidden) return;
     parts.edit.hidden = true;
     parts.label.hidden = false;
+    host.draggable = true;
     if (commit) dispatch(host, "todo-edit", { label: parts.edit.value });
 };
 
@@ -74,9 +77,10 @@ const listen = (host: HTMLElement, parts: Parts, done: () => boolean): void => {
         dispatch(host, "todo-toggle", null);
     });
     parts.delete.addEventListener("click", () => dispatch(host, "todo-delete", null));
-    parts.label.addEventListener("dblclick", () => startEditing(parts));
+    parts.label.addEventListener("dblclick", () => startEditing(host, parts));
     parts.edit.addEventListener("keydown", event => {
-        if (event.key === "Enter") stopEditing(host, parts, true);
+        // Enter while composing text picks the composition.
+        if (event.key === "Enter" && !event.isComposing) stopEditing(host, parts, true);
         else if (event.key === "Escape") stopEditing(host, parts, false);
     });
     parts.edit.addEventListener("blur", () => stopEditing(host, parts, true));

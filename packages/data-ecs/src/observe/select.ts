@@ -397,7 +397,8 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
         })
         : byRange !== null
             ? System.create({ name, synced: true, lookup: { list: { index: byRange, read: reads, changed: reads } } }, ({ lookup }) => {
-                track(null, entry => ownRange(entry, range => lookup.list(range), () => lookup.list()), fromSorted);
+                // A range is of a `where` condition on the index's key, which the query's type checked against its values.
+                track(null, entry => ownRange(entry, range => lookup.list(range as Parameters<typeof lookup.list>[0]), () => lookup.list()), fromSorted);
             })
             : System.create({ name, synced: true, lookup: { list: { index: keylessOf(has, not), read: reads, changed: reads } } }, ({ lookup }) => {
                 track(lookup.list(), null, fromKeyless);

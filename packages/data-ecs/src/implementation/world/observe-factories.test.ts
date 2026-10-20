@@ -142,6 +142,25 @@ describe("observer factories", () => {
         expect(await runnersOf(world)).toBe(scanned);
     });
 
+    it("notify subscribers whose first value was one held, while subscribing, of every later change", async () => {
+        await using world = await seeded(3);
+        const held = [Observe.resource(world, level)(() => {}), Observe.entity(world, spawned[0], { required: [amount] })(() => {}), Observe.count(world, { required: [amount], where: { [amount]: { ">": 1 } } })(() => {})];
+        await settle(world);
+        const levels: number[] = [];
+        const amounts: number[] = [];
+        const counts: number[] = [];
+        const stops = [
+            Observe.resource(world, level)(value => levels.push(value)),
+            Observe.entity(world, spawned[0], { required: [amount] })(value => amounts.push(value?.[amount] ?? -1)),
+            Observe.count(world, { required: [amount], where: { [amount]: { ">": 1 } } })(value => counts.push(value)),
+        ];
+        await world.run(raise);
+        await world.run(grow);
+        await world.run(grow);
+        expect([levels, amounts, counts]).toEqual([[1, 2], [1, 2, 3], [2, 3]]);
+        for (const stop of [...held, ...stops]) stop();
+    });
+
     it("keep the values of observers of another world apart", async () => {
         await using first = await seeded(3);
         await using second = await seeded(5);

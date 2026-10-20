@@ -187,7 +187,8 @@ export const becameIdle = (state: WorldState, shape: Shape): void => {
  * otherwise waiting for the next flush, which `wait` schedules. Returns the function that stops it.
  */
 export const subscribe = <T>(state: WorldState, shape: Shape, entry: Entry<T>, notify: (value: T) => void, wait: () => void): (() => void) => {
-    const subscriber: Subscriber<T> = { notify, batch: 0, pass: -1 };
+    // Before a first value given in a pass, its pass is one `give` never skips: not -1, which skips none.
+    const subscriber: Subscriber<T> = { notify, batch: 0, pass: -2 };
     entry.subscribers.push(subscriber);
     entry.live++;
     entry.idle = 0;
@@ -240,7 +241,7 @@ export const none: unique symbol = Symbol("Observe/none");
 /**
  * Gives an entry's value to its subscribers: a first value to each waiting for a flush up to `through`, whose throw
  * stops it and is rethrown out of band; and with `changed`, the value to the others but those that had their first in
- * pass `fresh`. Subscribers added meanwhile wait for a later pass. Returns the first error a later value's notify
+ * pass `fresh`, -1 for none. Subscribers added meanwhile wait for a later pass. Returns the first error a later value's notify
  * threw, or `failed` when it's already one.
  */
 export const give = <T>(entry: Entry<T>, through: number, changed: boolean, pass: number, fresh: number, failed: unknown): unknown => {

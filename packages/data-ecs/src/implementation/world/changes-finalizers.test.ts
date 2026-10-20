@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Finalizer, Resource, System, World } from "../../index.js";
-import { toPromise } from "../../interface/observe/to-promise.js";
+import { Observe } from "../../observe/index.js";
 import { createWorld } from "../index.js";
 
 const name = Symbol("changesFinalizers/name");
@@ -36,5 +36,5 @@ it("records each sync point's structural changes", async () => {
     await using world = createWorld();
     await world.run(spawn);
     await world.run(retire);
-    expect(await toPromise(world.observe.resource(journal))).toEqual(["ada: +2 -0 score null → 3", "ada: +0 -1 score 3 → null"]);
+    expect(await Observe.toPromise(Observe.resource(world, journal))).toEqual(["ada: +2 -0 score null → 3", "ada: +0 -1 score 3 → null"]);
 });

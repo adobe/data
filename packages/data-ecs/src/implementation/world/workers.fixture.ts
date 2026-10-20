@@ -172,6 +172,17 @@ const emit = System.create({
 const emitted = { seen: 0 };
 const countEmitted = System.create({ name: "workersTest/countEmitted", components: { added: [position], has: [spawned] } }, () => { emitted.seen++; });
 
+const gathered: Entity[] = [];
+const gatherPositioned = System.create({ name: "workersTest/gatherPositioned", synced: true, components: { has: [position] } }, row => { gathered.push(row.entity); });
+const gatherSpawned = System.create({ name: "workersTest/gatherSpawned", synced: true, components: { has: [spawned] } }, row => { gathered.push(row.entity); });
+
+/** The entities a synced row system passes, in storage order. */
+const storageOrder = async (world: World, gather: System<void>): Promise<Entity[]> => {
+    gathered.length = 0;
+    await world.run(gather);
+    return [...gathered];
+};
+
 /** Runs `use` with a world, then disposes it. */
 const using = async <T>(world: World, use: (world: World) => Promise<T>): Promise<T> => {
     try {
@@ -214,9 +225,9 @@ export const scattered = (count: number): Promise<readonly string[]> => using(cr
 export const ordered = (count: number): Promise<readonly unknown[]> => using(createWorld({ [workers]: count }, { minimumChunk: 64 }), async world => {
     await world.run(seed, { count: 2000 });
     for (let frame = 0; frame < 4; frame++) await world.run(main);
-    const [first] = await select(world, { required: [position] });
+    const [first] = await storageOrder(world, gatherPositioned);
     await world.run(stamp, { entity: first });
-    return [await read(world, first, offset), await readEach(world, await select(world, { required: [position] }), position)];
+    return [await read(world, first, offset), await readEach(world, await storageOrder(world, gatherPositioned), position)];
 });
 
 /** Kernel spawns from 1,015 rows over three archetypes: how many an `added` system saw, and the spawns' values. */
@@ -226,7 +237,7 @@ export const spawns = (count: number, edit: boolean): Promise<readonly unknown[]
     emitted.seen = 0;
     await world.run(countEmitted);
     await world.run(countEmitted);
-    const entities = await select(world, { required: [spawned] });
+    const entities = await storageOrder(world, gatherSpawned);
     return [emitted.seen, await readEach(world, entities, position), await readEach(world, entities, velocity), await readEach(world, entities, tagC)];
 });
 

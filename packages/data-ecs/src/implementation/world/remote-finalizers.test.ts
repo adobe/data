@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
@@ -94,7 +94,7 @@ describe("finalizers on a joined thread", () => {
             reused++;
             if (!finalized.includes(before)) reusedEarly++;
         });
-        const entities = await Observe.toPromise(world.observe.select({ required: [serial] }));
+        const entities = await Observe.toPromise(Observe.select(world, { required: [serial] }));
         for (const entity of entities) stopped.set(indexOf(entity), entity);
         const runs: Promise<unknown>[] = [];
         for (let k = 0; k < 20; k++) {

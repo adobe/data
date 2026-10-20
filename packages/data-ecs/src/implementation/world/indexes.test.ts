@@ -3,7 +3,7 @@ import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Index } from "../../interface/indexes/index-type.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -77,7 +77,7 @@ const lookAfter = System.create({ name: "indexesTest/lookAfter", lookup: { near:
 });
 const shiftThenLook = System.create({ name: "indexesTest/shiftThenLook", systems: [shift, lookAfter] });
 
-const entitiesOf = (world: CreatedWorld): Promise<readonly Entity[]> => Observe.toPromise(world.observe.select({ required: [cell] }));
+const entitiesOf = (world: CreatedWorld): Promise<readonly Entity[]> => Observe.toPromise(Observe.select(world, { required: [cell] }));
 
 describe("hash indexes on the main thread", () => {
     it("find a bucket's rows by key, in entity order, and nothing for a key no entity has", async () => {
@@ -148,7 +148,7 @@ describe("hash indexes on the main thread", () => {
             commands.spawn([label])({ [label]: "b" });
             commands.spawn([label])({ [label]: "a" });
         }));
-        const labeled = await Observe.toPromise(world.observe.select({ required: [label] }));
+        const labeled = await Observe.toPromise(Observe.select(world, { required: [label] }));
         await world.run(named, { name: "a" });
         expect(found).toEqual([labeled[0], labeled[2]]);
         await world.run(named, { name: "c" });
@@ -184,7 +184,7 @@ describe("unique indexes", () => {
             commands.spawn([serverId])({ [serverId]: 7 });
             commands.spawn([serverId])({ [serverId]: 8 });
         }));
-        const [first, second] = await Observe.toPromise(world.observe.select({ required: [serverId] }));
+        const [first, second] = await Observe.toPromise(Observe.select(world, { required: [serverId] }));
         const report = await world.run(find, { id: 7 });
         expect(report.failures).toEqual([]);
         expect(known).toBe(first);
@@ -269,9 +269,9 @@ describe("index lifetime", () => {
         expect(await tablesAfterCollecting(world)).toEqual(before);
         // A removed one forgets it.
         const ticks = async (count: number): Promise<void> => {
-            const first = (await Observe.toPromise(world.observe.resource(clock))).tick;
+            const first = (await Observe.toPromise(Observe.resource(world, clock))).tick;
             await new Promise<void>(resolve => {
-                const stop = world.observe.resource(clock)(({ tick }) => {
+                const stop = Observe.resource(world, clock)(({ tick }) => {
                     if (tick < first + count) return;
                     queueMicrotask(() => stop());
                     resolve();
@@ -358,7 +358,7 @@ describe("an incrementally refreshed hash index", () => {
         const pick = <T>(list: readonly T[]): T | undefined => list[Math.floor(next() * list.length)];
         let held = 0;
         for (let step = 0; step < 80; step++) {
-            const living = await Observe.toPromise(world.observe.select({ required: [cell] }));
+            const living = await Observe.toPromise(Observe.select(world, { required: [cell] }));
             const operations = Math.floor(next() * 60);
             const plan: (readonly [string, Entity | undefined, number])[] = [];
             for (let k = 0; k < operations; k++) plan.push([pick(["spawn", "spawn", "spawn", "spawn", "despawn", "hide", "show", "weigh", "unweigh", "set"]) ?? "spawn", pick(living), Math.floor(next() * 1000)]);
@@ -382,8 +382,8 @@ describe("an incrementally refreshed hash index", () => {
             expect(incremental).toEqual(rebuilt);
             expect(incremental.every(isOrdered)).toBe(true);
             await world.run(foldNear);
-            const rows = await Observe.toPromise(world.observe.select({ required: [folded] }));
-            const kernel = await Promise.all(rows.map(entity => Observe.toPromise(world.observe.entity(entity, { required: [cell, folded] }))));
+            const rows = await Observe.toPromise(Observe.select(world, { required: [folded] }));
+            const kernel = await Promise.all(rows.map(entity => Observe.toPromise(Observe.entity(world, entity, { required: [cell, folded] }))));
             expect(kernel.map(values => values?.[folded])).toEqual(kernel.map(values => values === null ? undefined : foldOf(rebuilt[allCells.findIndex(([x, y]) => x === values[cell][0] && y === values[cell][1])])));
             held = Math.max(held, incremental.reduce((sum, bucket) => sum + bucket.length, 0));
         }
@@ -467,7 +467,7 @@ describe("sorted indexes on the main thread", () => {
         expect(await ask("!=", 2)).toEqual([-Infinity, -1, -0, 0, 3, 10, Infinity, NaN]);
         expect(await ask("== and !=", -1, 3)).toEqual([-0, 0, 2, 2, 10, Infinity, NaN]);
         expect(await ask("held", 0, 3)).toEqual([2, 2, 3]);
-        const all = await Observe.toPromise(world.observe.select({ required: [rank], order: { [rank]: true } }));
+        const all = await Observe.toPromise(Observe.select(world, { required: [rank], order: { [rank]: true } }));
         // Ties are in entity order.
         let entities: readonly Entity[] = [];
         await world.run(System.create({ lookup: { ranks: { index: byRank } } }, ({ lookup }) => {
@@ -527,7 +527,7 @@ describe("sorted indexes on the main thread", () => {
         expect(ranked).toMatchObject({ changed: true });
         await world.run(query, { kind: "between", value: 100, other: 110 });
         expect(ranked).toMatchObject({ changed: false, ranks: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109] });
-        const entities = await Observe.toPromise(world.observe.select({ required: [rank], order: { [rank]: true } }));
+        const entities = await Observe.toPromise(Observe.select(world, { required: [rank], order: { [rank]: true } }));
         // A move far away isn't one here.
         await world.run(System.create(({ commands }) => { commands.add(entities[900], rank, 950.5); }));
         await world.run(query, { kind: "between", value: 100, other: 110 });
@@ -548,7 +548,7 @@ describe("sorted indexes on the main thread", () => {
             commands.spawn([label])({ [label]: "one" });
             commands.spawn([label])({ [label]: "two" });
         }));
-        const [first, second] = await Observe.toPromise(world.observe.select({ required: [label] }));
+        const [first, second] = await Observe.toPromise(Observe.select(world, { required: [label] }));
         let kept: Entity | null = null;
         const find = System.create({ lookup: { names: { index: byName } } }, ({ lookup }) => { kept = lookup.names("one")?.entity ?? null; });
         expect((await world.run(find)).failures).toEqual([]);
@@ -596,7 +596,7 @@ describe("an incrementally refreshed sorted index", () => {
         const pick = <T>(list: readonly T[]): T | undefined => list[Math.floor(next() * list.length)];
         let held = 0;
         for (let step = 0; step < 60; step++) {
-            const living = await Observe.toPromise(world.observe.select({ required: [lane] }));
+            const living = await Observe.toPromise(Observe.select(world, { required: [lane] }));
             const operations = Math.floor(next() * 120);
             const plan: (readonly [string, Entity | undefined, number])[] = [];
             for (let k = 0; k < operations; k++) plan.push([pick(["spawn", "spawn", "spawn", "despawn", "despawn", "weigh", "unweigh", "set", "lane"]) ?? "spawn", pick(living), Math.floor(next() * 1000)]);
@@ -627,8 +627,8 @@ describe("an incrementally refreshed sorted index", () => {
             expect(incrementalLanes).toEqual(rebuiltLanes);
             // A kernel's ranges, each row's, against the same ranges from the index built from scratch.
             await world.run(foldLane);
-            const rows = await Observe.toPromise(world.observe.select({ required: [folded] }));
-            const kernel = await Promise.all(rows.map(entity => Observe.toPromise(world.observe.entity(entity, { required: [lane, rank, folded] }))));
+            const rows = await Observe.toPromise(Observe.select(world, { required: [folded] }));
+            const kernel = await Promise.all(rows.map(entity => Observe.toPromise(Observe.entity(world, entity, { required: [lane, rank, folded] }))));
             let expected: readonly number[] = [];
             await world.run(System.create({ lookup: { lanes: { index: scratch } } }, ({ lookup }) => {
                 expected = kernel.map(values => {

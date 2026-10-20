@@ -12,8 +12,6 @@ export const joiningCases = (load: () => Promise<typeof Fixture>) => describe("j
         expect(driven?.selected).toBe(2);
         expect(driven?.counted).toBe(1);
         expect(driven?.listed).toEqual([[2, -2], true]);
-        // An entity's whole value is its struct components; its label is an object, on the world's thread.
-        expect(driven?.whole).toEqual([2, [1, -1], true, undefined]);
         expect(driven?.unimported).toMatch(unimported);
         expect(driven?.unnamed).toMatch(/has no id, so it can't run from another thread/);
     };

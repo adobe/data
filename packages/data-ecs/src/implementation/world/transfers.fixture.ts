@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import type { FromTransfersWorker, ToTransfersWorker } from "./transfers-worker.fixture.js";
@@ -109,7 +109,7 @@ export const late = async () => {
     const worldRun = await within(world.run(idle).then(() => "finished"), 10000, "waited");
     // Time for the loader's held runs to run, wrongly, while the filler can't take its input.
     await new Promise(resolve => setTimeout(resolve, 100));
-    const orderWhileBlocked = await Observe.toPromise(world.observe.resource(order));
+    const orderWhileBlocked = await Observe.toPromise(Observe.resource(world, order));
     Atomics.store(block, 0, 1);
     Atomics.notify(block, 0);
     const settled = await loader.ask({ kind: "settled" });

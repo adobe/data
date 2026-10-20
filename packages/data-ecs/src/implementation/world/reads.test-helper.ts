@@ -8,10 +8,10 @@ import type { World } from '../../interface/world/world.js';
 import { builtIn, factory } from './observe-adapters.test-helper.js';
 
 /**
- * Tests' reads: each is an observer's first value, of the world's own observers, or with `ECS_OBSERVE=factory` in the
- * environment, of the internal factories of `src/observe`, so the whole suite checks them too.
+ * Tests' reads: each is an observer's first value, of the internal factories of `src/observe`, or with
+ * `ECS_OBSERVE=built-in` in the environment, of the world's own observers.
  */
-const reads = Reflect.get(globalThis, "process")?.env?.ECS_OBSERVE === "factory" ? factory : builtIn;
+const reads = Reflect.get(globalThis, "process")?.env?.ECS_OBSERVE === "built-in" ? builtIn : factory;
 
 /** One component of an entity, or `null` if it's dead or lacks it. */
 export const read = async <C extends Component.Key>(world: World, entity: Entity, component: C): Promise<ReadonlyValue<C> | null> => {

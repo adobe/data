@@ -6,6 +6,7 @@ import { createWorld } from "./create.js";
 import { tablesAfterCollecting } from "./lifetime.test-helper.js";
 import { createLoop } from "./loop.js";
 import { unplaceable } from "./remote-systems.js";
+import { readResource } from "./reads.test-helper.js";
 
 const amount = Symbol("syncedTest/amount");
 const cell = Symbol("syncedTest/cell");
@@ -151,15 +152,9 @@ describe("synced systems", () => {
         world.add(failing);
         world.add(watchReport);
         await world.run(nothing);
-        // Observers are delivered after synced systems ran, so they see the report holding their failures.
-        await new Promise<void>(resolve => {
-            const stop = world.observe.resource(report)(value => {
-                if (value.failures.length === 0) return;
-                expect(value.failures.map(({ kind, name }) => [kind, name])).toEqual([["system", "syncedTest/failing"]]);
-                stop();
-                resolve();
-            });
-        });
+        while (seen.reports.length < 2) await new Promise(resolve => setTimeout(resolve, 1));
+        // Read once the tick ran, by a run of synced systems alone, which ticks nothing: the report holds their failures.
+        expect((await readResource(world, report)).failures.map(({ kind, name }) => [kind, name])).toEqual([["system", "syncedTest/failing"]]);
         // The run's pass, then the tick's: each saw the report as written, before the failures went in.
         expect(seen.reports).toEqual([0, 0]);
         // Putting the failures in notified nothing: a run of synced systems alone, waking no tick, doesn't run it again.

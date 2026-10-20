@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { System } from "../../index.js";
-import { toPromise } from "../../interface/observe/to-promise.js";
+import { Observe } from "../../observe/index.js";
 import { bump, score } from "./reevaluation.test-helper.js";
 import { createWorld } from "../index.js";
 
@@ -26,6 +26,6 @@ it("matches the keys and systems of a module evaluated again by id", async () =>
     const again: typeof import("./reevaluation.test-helper.js") = await import(/* @vite-ignore */ path);
     // Its key is the same component, and its system the same system, so a composite holds it once.
     await world.run(System.create({ name: "reevaluation/both", systems: [bump, again.bump] }));
-    const [entity] = await toPromise(world.observe.select({ required: [again.score] }));
-    expect((await toPromise(world.observe.entity(entity, { required: [again.score] })))?.[again.score]).toBe(2);
+    const [entity] = await Observe.toPromise(Observe.select(world, { required: [again.score] }));
+    expect((await Observe.toPromise(Observe.entity(world, entity, { required: [again.score] })))?.[again.score]).toBe(2);
 });

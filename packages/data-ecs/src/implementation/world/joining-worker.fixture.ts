@@ -1,7 +1,7 @@
 import type { MessagePort as NodeMessagePort } from "node:worker_threads";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { createWorld, join } from "./create.js";
 import { scopeChannel } from "./port.js";
 import { drive, idle, names, total, until, type Driven } from "./joining.test-helper.js";
@@ -59,8 +59,8 @@ channel.onMessage(async message => {
         const threads = await until(hosted.threads, shown => shown[0]?.status === "gone");
         channel.post({
             kind: "state",
-            total: await Observe.toPromise(hosted.observe.resource(total)),
-            names: await Observe.toPromise(hosted.observe.resource(names)),
+            total: await Observe.toPromise(Observe.resource(hosted, total)),
+            names: await Observe.toPromise(Observe.resource(hosted, names)),
             status: threads[0]?.status ?? null,
         });
     }

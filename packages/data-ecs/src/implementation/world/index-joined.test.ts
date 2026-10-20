@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
+import type { Entity } from "../../interface/entity/entity.js";
 import { Index } from "../../interface/indexes/index-type.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -143,11 +144,17 @@ const inOrder = System.create({ name: "indexJoinedTest/inOrder", components: { r
     row[label] = String(row[rank]);
 });
 
-/** Each entity's label, sorted, as the world or the thread that fills its objects reads it. */
+/** The entities `readLabels` reads, and their labels. */
+const reading: { entities: readonly Entity[]; labels: readonly string[] } = { entities: [], labels: [] };
+const readLabels = System.create({ name: "indexJoinedTest/readLabels", synced: true, lookup: { labeled: { read: [label] } } }, ({ lookup }) => {
+    reading.labels = reading.entities.map(entity => lookup.labeled(entity)?.[label] ?? "missing");
+});
+
+/** Each entity's label, sorted, as the world or the thread that fills its objects reads it, as of the last sync point. */
 const labels = async (holder: World, world: World): Promise<readonly string[]> => {
-    const entities = await Observe.toPromise(world.observe.select({ required: [label] }));
-    const values = await Promise.all(entities.map(entity => Observe.toPromise(holder.observe.entity(entity, { required: [label] }))));
-    return values.map(value => value?.[label] ?? "missing").sort();
+    reading.entities = await Observe.toPromise(Observe.select(world, { required: [label] }));
+    await holder.run(readLabels);
+    return [...reading.labels].sort();
 };
 
 /** Seeds, then ticks around changes; every label after each tick, and the warnings of each tick. */
@@ -206,9 +213,9 @@ describe("systems on a joined thread looking up through indexes", () => {
         await world.run(seed);
         /** Once `count` more ticks ran. */
         const ticks = async (count: number): Promise<void> => {
-            const first = (await Observe.toPromise(world.observe.resource(clock))).tick;
+            const first = (await Observe.toPromise(Observe.resource(world, clock))).tick;
             await new Promise<void>(resolve => {
-                const stop = world.observe.resource(clock)(({ tick }) => {
+                const stop = Observe.resource(world, clock)(({ tick }) => {
                     if (tick < first + count) return;
                     queueMicrotask(() => stop());
                     resolve();

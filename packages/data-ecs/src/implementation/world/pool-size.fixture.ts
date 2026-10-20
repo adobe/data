@@ -3,7 +3,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
-import { toPromise } from "../../interface/observe/to-promise.js";
+import { Observe } from "../../observe/index.js";
 import { countingWorkers } from "./platforms.test-helper.js";
 
 /** Scenarios of the `workers` resource sizing the pool, run built in node and from source in chromium. */
@@ -32,7 +32,7 @@ export const byDefault = async (): Promise<{ readonly resource: number | null; r
     const counting = countingWorkers();
     const world = createWorld({}, { minimumChunk: 64, pool: counting.platform });
     try {
-        const resource = await toPromise(world.observe.resource(workers));
+        const resource = await Observe.toPromise(Observe.resource(world, workers));
         await world.run(seed);
         await world.run(double);
         return { resource, started: counting.started() };

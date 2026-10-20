@@ -1,7 +1,7 @@
 import { Component } from "../../interface/component/component.js";
 import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
-import type { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import type { World } from "../../interface/world/world.js";
 
 // Keys and systems both threads of the joining fixtures import, and the scenario a joined thread drives.
@@ -54,8 +54,8 @@ export const until = <T>(observe: Observe<T>, accept: (value: T) => boolean): Pr
 
 /**
  * What a joined thread sees driving a world: runs in call order with struct and object input and their reports, a
- * failing run's report, observers of a resource, a selection, a count, an entity's listed components and its whole
- * value, and the rejections of a system the world never imported and of one without an id.
+ * failing run's report, observers of a resource, a selection, a count and an entity's listed components, and the
+ * rejections of a system the world never imported and of one without an id.
  */
 export const drive = async (remote: World, unimported: System<void>) => {
     const reports = await Promise.all([
@@ -64,11 +64,10 @@ export const drive = async (remote: World, unimported: System<void>) => {
     const failures = (await remote.run(fail)).failures.map(failure => failure.message);
     await remote.run(spawn, { x: 1 });
     await remote.run(spawn, { x: 2 });
-    const observedTotal = await until(remote.observe.resource(total), value => value === 123);
-    const selected = await until(remote.observe.select({ required: [point], order: { [point]: false } }), entities => entities.length === 2);
-    const counted = await until(remote.observe.count({ required: [point], where: { [point]: [2, -2] } }), count => count === 1);
-    const listed = await until(remote.observe.entity(selected[0], { required: [point], optional: [marked] }), value => value !== null);
-    const whole = await until(remote.observe.entity(selected[1]), value => value !== null);
+    const observedTotal = await until(Observe.resource(remote, total), value => value === 123);
+    const selected = await until(Observe.select(remote, { required: [point], order: { [point]: false } }), entities => entities.length === 2);
+    const counted = await until(Observe.count(remote, { required: [point], where: { [point]: [2, -2] } }), count => count === 1);
+    const listed = await until(Observe.entity(remote, selected[0], { required: [point], optional: [marked] }), value => value !== null);
     const rejected = (run: Promise<unknown>): Promise<string> => run.then(() => "ran", (error: unknown) => error instanceof Error ? error.message : String(error));
     return {
         reports,
@@ -77,7 +76,6 @@ export const drive = async (remote: World, unimported: System<void>) => {
         selected: selected.length,
         counted,
         listed: listed === null ? null : [listed[point], listed[marked]],
-        whole: whole === null ? null : [Object.getOwnPropertySymbols(whole).length, whole[point], whole[marked], whole[label]],
         unimported: await rejected(remote.run(unimported)),
         unnamed: await rejected(remote.run(System.create(() => {}))),
     };

@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import type { Entity } from "../../interface/entity/entity.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
@@ -95,10 +95,10 @@ export const diesHolding = async () => {
     const { worker } = await joined(world);
     await world.run(spawn, { from: 0, count: 4 });
     const stopped: Entity[] = [];
-    for (const value of [0, 1, 2]) stopped.push(...await Observe.toPromise(world.observe.select({ required: [serial], where: { [serial]: value } })));
+    for (const value of [0, 1, 2]) stopped.push(...await Observe.toPromise(Observe.select(world, { required: [serial], where: { [serial]: value } })));
     const despawned = new Set(stopped.map(indexOf));
     /** Live entities at the indexes of those despawned. */
-    const reused = async (): Promise<number> => (await Observe.toPromise(world.observe.select({ required: [serial] }))).filter(entity => despawned.has(indexOf(entity))).length;
+    const reused = async (): Promise<number> => (await Observe.toPromise(Observe.select(world, { required: [serial] }))).filter(entity => despawned.has(indexOf(entity))).length;
     await worker.ask({ kind: "spin" });
     await world.run(despawn, { serials: [0, 1, 2] });
     // Spawns while it lives take other indexes.

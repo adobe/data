@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -88,9 +88,9 @@ describe("lookups by entity with changed", () => {
         await world.run(edit, { action: "spawn" });
         /** Once `count` more ticks ran. */
         const ticks = async (count: number): Promise<void> => {
-            const first = (await Observe.toPromise(world.observe.resource(clock))).tick;
+            const first = (await Observe.toPromise(Observe.resource(world, clock))).tick;
             await new Promise<void>(resolve => {
-                const stop = world.observe.resource(clock)(({ tick }) => {
+                const stop = Observe.resource(world, clock)(({ tick }) => {
                     if (tick < first + count) return;
                     queueMicrotask(() => stop());
                     resolve();

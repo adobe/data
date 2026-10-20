@@ -3,7 +3,7 @@ import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { pageBytes } from "./memory.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { caption, changes, countWritten, crowd, flagCrowd, giveKept, kept, objectsThere, scenario, spawnKept, uid, unflagCrowd, write } from "./thread-systems.test-helper.js";
 
 // Systems on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
@@ -55,7 +55,7 @@ describe("systems on a joined thread", () => {
         // Moves past what the log holds, while the thread runs nothing and so replays nothing.
         for (let k = 0; k < 30; k++) await world.run(k % 2 === 0 ? flagCrowd : unflagCrowd);
         await world.run(countWritten);
-        expect(await Observe.toPromise(world.observe.resource(changes))).toBe(1);
+        expect(await Observe.toPromise(Observe.resource(world, changes))).toBe(1);
         await remote.dispose();
         await world.dispose();
     });
@@ -67,7 +67,7 @@ describe("systems on a joined thread", () => {
         expect(given.dropped).toBe(1);
         const spawned = await world.run(spawnKept);
         expect(spawned.failures.map(failure => [failure.name, failure.message])).toEqual([["threadSystemsTest/spawnKept", '"threadSystemsTest/kept" lives on thread "world", so a command on another thread gives it only its start or null.']]);
-        expect(await Observe.toPromise(world.observe.count({ required: [kept] }))).toBe(0);
+        expect(await Observe.toPromise(Observe.count(world, { required: [kept] }))).toBe(0);
         await remote.dispose();
         await world.dispose();
     });
@@ -80,9 +80,9 @@ describe("systems on a joined thread", () => {
         await leaving;
         expect(report.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["thread", "threadSystemsTest/write", 'Thread "threadSystemsTest" is gone, so its systems don\'t run.']]);
         expect(report.skipped).toEqual(["threadSystemsTest/write"]);
-        const [entity] = await Observe.toPromise(world.observe.select({ required: [uid] }));
+        const [entity] = await Observe.toPromise(Observe.select(world, { required: [uid] }));
         expect(await world.run(write)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
-        expect(await Observe.toPromise(world.observe.entity(entity, { required: [caption] }))).toEqual({ [caption]: "written" });
+        expect(await Observe.toPromise(Observe.entity(world, entity, { required: [caption] }))).toEqual({ [caption]: "written" });
         await world.dispose();
     });
     it("fail every system of a task the thread can't view the memory for, its first and a later one, rather than report they ran", async () => {

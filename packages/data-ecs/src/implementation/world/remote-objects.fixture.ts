@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld } from "./create.js";
@@ -46,7 +46,7 @@ export const watchedWhileApplying = async (count: number, observers: Observers =
     const driver = backToBack();
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
     await world.run(seed);
-    const [entity] = await Observe.toPromise(world.observe.select({ required: [serial], where: { [serial]: 0 } }));
+    const [entity] = await Observe.toPromise(Observe.select(world, { required: [serial], where: { [serial]: 0 } }));
     const worker = start();
     const { port1, port2 } = new MessageChannel();
     world.share(port1);

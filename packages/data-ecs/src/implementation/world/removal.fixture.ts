@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -68,19 +68,19 @@ export const removedMidTask = async () => {
         world.add(first);
         world.add(second);
         world.add(ticking);
-        await until(world.observe.resource(secondRuns), runs => runs >= 2);
+        await until(Observe.resource(world, secondRuns), runs => runs >= 2);
         const placed = (await world.tables()).joined;
         // `first` spins for 200 ms in each task from the next tick on; 50 ms into the first of them, `second` is removed.
         await world.run(setPause, { milliseconds: 200 });
         const removed = new Promise<number>(resolve => setTimeout(() => {
             world.remove(second);
-            resolve(Observe.toPromise(world.observe.resource(secondRuns)));
+            resolve(Observe.toPromise(Observe.resource(world, secondRuns)));
         }, 50));
         const atRemove = await removed;
         await world.run(setPause, { milliseconds: 0 });
-        const tick = (await Observe.toPromise(world.observe.resource(clock))).tick;
-        await until(world.observe.resource(clock), value => value.tick >= tick + 10);
-        const after = await Observe.toPromise(world.observe.resource(secondRuns));
+        const tick = (await Observe.toPromise(Observe.resource(world, clock))).tick;
+        await until(Observe.resource(world, clock), value => value.tick >= tick + 10);
+        const after = await Observe.toPromise(Observe.resource(world, secondRuns));
         let left = (await world.tables()).joined;
         for (let k = 0; k < 100 && left[0] !== 1; k++) left = (await later(10), await world.tables()).joined;
         world.remove(first);

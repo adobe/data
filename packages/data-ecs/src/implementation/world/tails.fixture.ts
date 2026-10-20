@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import type { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
@@ -67,8 +67,8 @@ const joined = async (world: CreatedWorld): Promise<{ readonly worker: Worker }>
 
 /** Ticks on until the counter passed `ticks` more. */
 const ticks = async (world: World, more: number): Promise<void> => {
-    const now = await until(world.observe.resource(counter), () => true);
-    await until(world.observe.resource(counter), value => value >= now + more);
+    const now = await until(Observe.resource(world, counter), () => true);
+    await until(Observe.resource(world, counter), value => value >= now + more);
 };
 
 /** What the worker's tails saw: their runs, those that saw another tick's structs or labels, the fewest rows, and snapshots. */
@@ -181,7 +181,7 @@ export const prompt = async () => {
     world.add(ticked);
     for (let tick = 1; tick <= 30; tick++) {
         await frames.next();
-        await until(world.observe.resource(counter), value => value >= tick);
+        await until(Observe.resource(world, counter), value => value >= tick);
         await watched(worker, tick, 1000);
     }
     await world.dispose();

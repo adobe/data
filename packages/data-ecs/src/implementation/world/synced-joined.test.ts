@@ -4,6 +4,7 @@ import type { Entity } from "../../interface/entity/entity.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { tablesOf } from "./join.js";
+import { Observe } from "../../observe/index.js";
 
 // Synced systems on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
 
@@ -167,7 +168,7 @@ describe("synced systems on a joined thread", () => {
         await world.run(spawn, { at: 1 });
         await world.run(spawn, { at: 2 });
         const [first, second] = await new Promise<readonly Entity[]>(resolve => {
-            const stop = world.observe.select({ required: [amount], order: { [amount]: true } })(entities => {
+            const stop = Observe.select(world, { required: [amount], order: { [amount]: true } })(entities => {
                 if (entities.length < 2) return;
                 queueMicrotask(() => stop());
                 resolve(entities);

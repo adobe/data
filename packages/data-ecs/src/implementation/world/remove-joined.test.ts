@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -60,8 +60,8 @@ const joined = async (frames: Pick<LoopPlatform, "frame"> = timerFrames): Promis
     removal.world = world;
     world.add(ticking);
     const ticks = async (count: number): Promise<void> => {
-        const from = (await Observe.toPromise(world.observe.resource(clock))).tick;
-        await until(world.observe.resource(clock), ({ tick }) => tick >= from + count);
+        const from = (await Observe.toPromise(Observe.resource(world, clock))).tick;
+        await until(Observe.resource(world, clock), ({ tick }) => tick >= from + count);
     };
     const close = async (): Promise<void> => {
         removal.world = null;

@@ -8,8 +8,9 @@ import { Rule } from "../../interface/rule/rule.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import type { Commands } from "../../interface/system/commands.js";
 import { System } from "../../interface/system/system.js";
+import type { World } from "../../interface/world/world.js";
 import { workers } from "../../interface/resources/workers.js";
-import { toPromise } from "../../interface/observe/to-promise.js";
+import { Observe } from "../../observe/index.js";
 import { count, read, readEntity, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 
@@ -66,6 +67,10 @@ const unit = Archetype.create([position, score, tag]);
 const made = Archetype.create([score, tag]);
 const marks = Archetype.create([other, label]);
 
+/** Every component of these tests an entity has, or `null` if it is dead. */
+const components = (world: World, entity: Entity) =>
+    Observe.toPromise(Observe.entity(world, entity, { optional: [position, score, health, label, tag, other, slot, bit0, bit1, bit2, bit3] }));
+
 /** Spawns and adds with literal values, which the plugin passes positionally, from one site over several lists. */
 const literals: Entity[] = [];
 const spawnLiterals = System.create({ name: "commandsTest/spawnLiterals" }, ({ commands }) => {
@@ -109,9 +114,9 @@ describe("spawn", () => {
             spawned.push(commands.spawn(plain)({ [score]: 5 }));
             spawned.push(commands.spawn([position, score])({ [position]: [6, 6, 6], [score]: 6 }));
         });
-        expect(await toPromise(world.observe.entity(spawned[0]))).toEqual({ [position]: [1, 2, 3], [score]: 4, [tag]: true });
-        expect(await toPromise(world.observe.entity(spawned[1]))).toEqual({ [score]: 5, [tag]: true });
-        expect(await toPromise(world.observe.entity(spawned[2]))).toEqual({ [position]: [6, 6, 6], [score]: 6 });
+        expect(await components(world, spawned[0])).toEqual({ [position]: [1, 2, 3], [score]: 4, [tag]: true });
+        expect(await components(world, spawned[1])).toEqual({ [score]: 5, [tag]: true });
+        expect(await components(world, spawned[2])).toEqual({ [position]: [6, 6, 6], [score]: 6 });
         await world.dispose();
     });
     it("starts a tag or a component whose type allows null, left out or given undefined, at true or null, never leaving it out", async () => {
@@ -122,7 +127,7 @@ describe("spawn", () => {
             spawned.push(commands.spawn(defaulted)({ [score]: 2, [label]: undefined, [tag]: undefined }));
             spawned.push(commands.spawn(defaulted)({ [score]: 3, [label]: "a", [tag]: true }));
         });
-        expect(await Promise.all(spawned.map(entity => toPromise(world.observe.entity(entity))))).toEqual([
+        expect(await Promise.all(spawned.map(entity => components(world, entity)))).toEqual([
             { [score]: 1, [label]: null, [tag]: true },
             { [score]: 2, [label]: null, [tag]: true },
             { [score]: 3, [label]: "a", [tag]: true },
@@ -135,7 +140,7 @@ describe("spawn", () => {
         await run(commands => {
             spawned = Reflect.apply(commands.spawn([score]), undefined, [{ [score]: 1, [position]: [1, 1, 1], [tag]: true, "commandsTest/score": 2 }]);
         });
-        expect(await toPromise(world.observe.entity(spawned))).toEqual({ [score]: 1 });
+        expect(await components(world, spawned)).toEqual({ [score]: 1 });
         await world.dispose();
     });
     it("gives the same spawner for a world and set of components, from any system, for a new list or another order", async () => {
@@ -164,7 +169,7 @@ describe("spawn", () => {
             for (let i = 0; i < 64; i++) spawned.push(commands.spawn(i % 2 === 0 ? archetypes[i % 16] : [...lists[i % 16]])({ [score]: i }));
         });
         for (let i = 0; i < 64; i++) {
-            expect(Object.getOwnPropertySymbols(await toPromise(world.observe.entity(spawned[i]))).length).toBe(1 + bits.filter((_, bit) => ((i % 16) & (1 << bit)) !== 0).length);
+            expect(Object.getOwnPropertySymbols(await components(world, spawned[i])).length).toBe(1 + bits.filter((_, bit) => ((i % 16) & (1 << bit)) !== 0).length);
             expect(await read(world, spawned[i], score)).toBe(i);
         }
         await world.dispose();
@@ -187,7 +192,7 @@ describe("literal values in a system's body", () => {
         const world = createWorld({ [workers]: 0 });
         literals.length = 0;
         await world.run(spawnLiterals);
-        expect(await Promise.all(literals.map(entity => toPromise(world.observe.entity(entity))))).toEqual([0, 1, 2, 3, 4, 5].map(i =>
+        expect(await Promise.all(literals.map(entity => components(world, entity)))).toEqual([0, 1, 2, 3, 4, 5].map(i =>
             i % 3 === 0 ? { [score]: i, [label]: null, [tag]: true } : i % 3 === 1 ? { [score]: i, [tag]: true } : { [score]: i, [label]: null }));
         await world.run(addLiterals);
         expect(await Promise.all(literals.map(entity => readEntity(world, entity, [score, health, label])))).toEqual([0, 1, 2, 3, 4, 5].map(i => ({ [score]: i, [health]: 5, [label]: "x" })));
@@ -205,7 +210,7 @@ describe("add and remove", () => {
             commands.add(entity, tag);
             commands.add(entity, [health, label, other], { [health]: 100 });
         });
-        expect(await toPromise(world.observe.entity(entity))).toEqual({ [position]: [0, 0, 0], [score]: 2, [tag]: true, [health]: 100, [label]: null, [other]: true, [slot]: 0 });
+        expect(await components(world, entity)).toEqual({ [position]: [0, 0, 0], [score]: 2, [tag]: true, [health]: 100, [label]: null, [other]: true, [slot]: 0 });
         await run(commands => { commands.add(entity, [score, health], { [score]: 3, [health]: 4 }); });
         expect(await readEntity(world, entity, [score, health])).toEqual({ [score]: 3, [health]: 4 });
         await world.dispose();
@@ -215,9 +220,9 @@ describe("add and remove", () => {
         let entity = Entity.none;
         await run(commands => { entity = commands.spawn([position, score, tag, other, health])({ [position]: [0, 0, 0], [score]: 1, [health]: 100 }); });
         await run(commands => { commands.remove(entity, tag); });
-        expect(await toPromise(world.observe.entity(entity))).toEqual({ [position]: [0, 0, 0], [score]: 1, [other]: true, [health]: 100, [slot]: 0 });
+        expect(await components(world, entity)).toEqual({ [position]: [0, 0, 0], [score]: 1, [other]: true, [health]: 100, [slot]: 0 });
         await run(commands => { commands.remove(entity, [other, health]); });
-        expect(await toPromise(world.observe.entity(entity))).toEqual({ [position]: [0, 0, 0], [score]: 1 });
+        expect(await components(world, entity)).toEqual({ [position]: [0, 0, 0], [score]: 1 });
         await world.dispose();
     });
     it("throw at first use for a key that isn't a component a command may add", async () => {
@@ -229,7 +234,7 @@ describe("add and remove", () => {
         await expect(run(commands => { Reflect.apply(commands.remove, commands, [entity, [level]]); })).rejects.toThrow("is a resource, not a component");
         // A kernel's command names a list declared in another module as if it were one component.
         await expect(run(commands => { Reflect.apply(commands.remove, commands, [entity, [[score]]]); })).rejects.toThrow("A command names a list of components where one component's symbol goes.");
-        expect(await toPromise(world.observe.entity(entity))).toEqual({ [score]: 1 });
+        expect(await components(world, entity)).toEqual({ [score]: 1 });
         await world.dispose();
     });
     it("move rows from several source archetypes in one sync point, keeping values, and stamping only what changed", async () => {
@@ -284,7 +289,7 @@ describe("spawners where code can't be generated", () => {
                 spawned.push(commands.spawn([score, bit2, label])({ [label]: "b", [score]: 8 }));
             });
             await world.run(literal);
-            expect(await Promise.all(spawned.map(entity => toPromise(world.observe.entity(entity))))).toEqual([
+            expect(await Promise.all(spawned.map(entity => components(world, entity)))).toEqual([
                 ...[0, 1, 2].map(i => ({ [position]: [i, i, i], [score]: i, [label]: null, [bit3]: true })),
                 { [score]: 9, [label]: "a" },
                 { [score]: 8, [label]: "b", [bit2]: true },
@@ -303,9 +308,9 @@ describe("kernels", () => {
         await run(commands => { for (let i = 0; i < 3; i++) commands.spawn([score])({ [score]: i }); });
         await world.run(spawnFrom);
         const spawned = await select(world, { required: [score, tag] });
-        expect(await Promise.all(spawned.map(entity => toPromise(world.observe.entity(entity))))).toEqual([10, 11, 12].map(value => ({ [score]: value, [tag]: true })));
+        expect(await Promise.all(spawned.map(entity => components(world, entity)))).toEqual([10, 11, 12].map(value => ({ [score]: value, [tag]: true })));
         await world.run(mark);
-        expect(await Promise.all(spawned.map(entity => toPromise(world.observe.entity(entity))))).toEqual([10, 11, 12].map(value => ({ [score]: value, [tag]: true, [other]: true, [label]: null, [slot]: 0 })));
+        expect(await Promise.all(spawned.map(entity => components(world, entity)))).toEqual([10, 11, 12].map(value => ({ [score]: value, [tag]: true, [other]: true, [label]: null, [slot]: 0 })));
         await world.run(unmark);
         expect(await count(world, { required: [other] })).toBe(0);
         expect(await count(world, { required: [tag, score] })).toBe(3);

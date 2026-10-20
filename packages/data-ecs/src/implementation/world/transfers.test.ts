@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Observe } from "../../interface/observe/observe.js";
+import type { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";

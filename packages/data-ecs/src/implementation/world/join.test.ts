@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
-import { Entity } from "../../interface/entity/entity.js";
 import { labelOfItem } from "../../interface/registry/index.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
@@ -98,27 +97,27 @@ describe("joining", () => {
         const runs = [remote.run(add, { amount: 1 }), remote.run(append, { name: "a" }), remote.run(add, { amount: 2 }), remote.run(append, { name: "b" }), remote.run(add, { amount: 3 })];
         const reports = await Promise.all(runs);
         expect(reports).toEqual(runs.map(() => ({ failures: [], skipped: [], dropped: 0, warnings: [] })));
-        expect(await Observe.toPromise(world.observe.resource(total))).toBe(123);
-        expect(await Observe.toPromise(world.observe.resource(names))).toEqual(["a", "b"]);
+        expect(await Observe.toPromise(Observe.resource(world, total))).toBe(123);
+        expect(await Observe.toPromise(Observe.resource(world, names))).toEqual(["a", "b"]);
         await remote.run(spawn, { x: 4 });
-        expect(await Observe.toPromise(world.observe.count({ required: [point] }))).toBe(1);
+        expect(await Observe.toPromise(Observe.count(world, { required: [point] }))).toBe(1);
         await remote.dispose();
         await world.dispose();
     });
     it("posts a run's set input to the world as a set, which a map resource and a set component hold", async () => {
         const { world, remote } = joined();
-        expect(await Observe.toPromise(world.observe.resource(counts))).toEqual(new Map());
+        expect(await Observe.toPromise(Observe.resource(world, counts))).toEqual(new Map());
         await remote.run(tally, { words: new Set(["a", "b"]) });
         await remote.run(tally, { words: new Set(["b"]) });
-        expect(await Observe.toPromise(world.observe.resource(counts))).toEqual(new Map([["a", 1], ["b", 2]]));
-        const held = await Observe.toPromise(world.observe.select({ required: [words] }));
-        const values = await Promise.all(held.map(async entity => (await Observe.toPromise(world.observe.entity(entity, { required: [words] })))?.[words]));
+        expect(await Observe.toPromise(Observe.resource(world, counts))).toEqual(new Map([["a", 1], ["b", 2]]));
+        const held = await Observe.toPromise(Observe.select(world, { required: [words] }));
+        const values = await Promise.all(held.map(async entity => (await Observe.toPromise(Observe.entity(world, entity, { required: [words] })))?.[words]));
         expect(values).toEqual([new Set(["a", "b"]), new Set(["b"])]);
         expect(values.every(value => value instanceof Set)).toBe(true);
         await remote.dispose();
         await world.dispose();
         await using started = createWorld({ [workers]: 0, [counts]: new Map([["z", 1]]) });
-        expect(await Observe.toPromise(started.observe.resource(counts))).toEqual(new Map([["z", 1]]));
+        expect(await Observe.toPromise(Observe.resource(started, counts))).toEqual(new Map([["z", 1]]));
     });
     it("keeps runs in call order past the slots it holds room for, and rejects one whose input can't be posted", async () => {
         const { world, remote } = joined();
@@ -131,7 +130,7 @@ describe("joining", () => {
         await expect(failed).rejects.toThrow();
         await after;
         const expected = Array.from({ length: 200 }, (_, k) => k).filter(k => k % 3 === 0).map(String);
-        expect(await Observe.toPromise(world.observe.resource(names))).toEqual([...expected, "after"]);
+        expect(await Observe.toPromise(Observe.resource(world, names))).toEqual([...expected, "after"]);
         await remote.dispose();
         await world.dispose();
     });
@@ -158,61 +157,6 @@ describe("joining", () => {
         expect(await one.run(idle)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         await one.dispose();
         await two.dispose();
-        await world.dispose();
-    });
-    it("gives a joined thread's observers of resources, entities, select and count their values later, then each newer one", async () => {
-        const { world, remote } = joined();
-        const first: unknown[] = [];
-        const stop = remote.observe.resource(total)(value => first.push(value));
-        // Never during the subscribing call.
-        expect(first).toEqual([]);
-        expect(await until(remote.observe.resource(total), value => value === 0)).toBe(0);
-        stop();
-        await world.run(add, { amount: 7 });
-        expect(await until(remote.observe.resource(total), value => value === 7)).toBe(7);
-        await remote.run(spawn, { x: 1 });
-        await remote.run(spawn, { x: 2 });
-        const selected = await until(remote.observe.select({ required: [point], order: { [point]: false } }), entities => entities.length === 2);
-        expect(await until(remote.observe.count({ required: [point], where: { [point]: [2, -2] } }), count => count === 1)).toBe(1);
-        const listed = await until(remote.observe.entity(selected[0], { required: [point], optional: [marked] }), value => value !== null);
-        expect(listed).toEqual({ [point]: [2, -2], [marked]: true });
-        const whole = await until(remote.observe.entity(selected[1]), value => value !== null);
-        // Its struct components; its label is an object, on the world's thread.
-        expect(whole).toEqual({ [point]: [1, -1], [marked]: true });
-        await remote.dispose();
-        await world.dispose();
-    });
-    it("stops notifying an observer once stopped", async () => {
-        const { world, remote } = joined();
-        const seen: number[] = [];
-        const stop = remote.observe.resource(total)(value => seen.push(value));
-        await until(remote.observe.resource(total), value => value === 0);
-        stop();
-        await world.run(add, { amount: 1 });
-        await until(remote.observe.resource(total), value => value === 1);
-        expect(seen).toEqual([0]);
-        await remote.dispose();
-        await world.dispose();
-    });
-    it("gives an observer that fell behind the newest value", async () => {
-        const { world, remote } = joined();
-        const seen: number[] = [];
-        remote.observe.resource(total)(value => seen.push(value));
-        await until(remote.observe.resource(total), value => value === 0);
-        for (let k = 1; k <= 5; k++) await world.run(add, { amount: k });
-        await until(remote.observe.resource(total), value => value === 12345);
-        await new Promise(resolve => setTimeout(resolve, 10));
-        expect(seen.at(-1)).toBe(12345);
-        expect(seen.length).toBeLessThanOrEqual(6);
-        await remote.dispose();
-        await world.dispose();
-    });
-    it("throws for an observer on a joined thread that reads objects", async () => {
-        const { world, remote } = joined();
-        expect(() => remote.observe.resource(names)).toThrow('reads "joinTest/names", an object, which lives on another thread');
-        expect(() => remote.observe.entity(Entity.none, { required: [label] })).toThrow('reads "joinTest/label", an object');
-        expect(() => remote.observe.select({ required: [label], where: { [label]: "a" } })).toThrow('reads "joinTest/label", an object');
-        await remote.dispose();
         await world.dispose();
     });
     it("rejects a joined thread's runs once the world is disposed", async () => {

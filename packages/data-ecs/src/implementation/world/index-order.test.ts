@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import { Index } from "../../interface/indexes/index-type.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -67,19 +67,22 @@ const seed = System.create({ name: "indexOrderTest/seed", input: { type: "object
 
 /** The lane and rank of every entity holding a weight, sorted by them, then by entity: the index's order. */
 const expected = async (world: CreatedWorld, only?: (weighed: number) => boolean): Promise<number[]> => {
-    const entities = await Observe.toPromise(world.observe.select({ required: [lane, rank, weight] }));
-    const rows = await Promise.all(entities.map(async entity => ({ entity, values: await Observe.toPromise(world.observe.entity(entity, { required: [lane, rank, weight] })) })));
+    const entities = await Observe.toPromise(Observe.select(world, { required: [lane, rank, weight] }));
+    const rows = await Promise.all(entities.map(async entity => ({ entity, values: await Observe.toPromise(Observe.entity(world, entity, { required: [lane, rank, weight] })) })));
     return rows
         .flatMap(({ entity, values }) => values === null || (only !== undefined && !only(values[weight])) ? [] : [{ entity, key: values[lane] * 1000 + values[rank] }])
         .sort((a, b) => a.key - b.key || (a.entity >>> 0) - (b.entity >>> 0))
         .map(({ key }) => key);
 };
 
-/** Markers' values in the order they were spawned: their archetype's rows', which a select lists in storage order. */
+const markerValues: number[] = [];
+const readMarkers = System.create({ name: "indexOrderTest/readMarkers", synced: true, components: { read: [marker] } }, row => { markerValues.push(row[marker]); });
+
+/** Markers' values in the order they were spawned: their archetype's rows', in storage order. */
 const markers = async (world: CreatedWorld): Promise<number[]> => {
-    const entities = await Observe.toPromise(world.observe.select({ required: [marker] }));
-    const values = await Promise.all(entities.map(entity => Observe.toPromise(world.observe.entity(entity, { required: [marker] }))));
-    return values.map(value => value?.[marker] ?? -1);
+    markerValues.length = 0;
+    await world.run(readMarkers);
+    return [...markerValues];
 };
 
 describe("systems ordering their rows by a sorted index", () => {
@@ -127,9 +130,9 @@ describe("systems ordering their rows by a sorted index", () => {
         await world.run(seed, { count: 10 });
         /** Once `count` more ticks ran. */
         const ticks = async (count: number): Promise<void> => {
-            const first = (await Observe.toPromise(world.observe.resource(clock))).tick;
+            const first = (await Observe.toPromise(Observe.resource(world, clock))).tick;
             await new Promise<void>(resolve => {
-                const stop = world.observe.resource(clock)(({ tick }) => {
+                const stop = Observe.resource(world, clock)(({ tick }) => {
                     if (tick < first + count) return;
                     queueMicrotask(() => stop());
                     resolve();

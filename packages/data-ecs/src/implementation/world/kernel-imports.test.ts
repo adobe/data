@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Entity, System, Vec3, World } from "../../index.js";
-import { toPromise } from "../../interface/observe/to-promise.js";
+import { Observe } from "../../observe/index.js";
 import { position, spark, sparks } from "./kernel-imports-sparks.test-helper.js";
 import { steer } from "./kernel-imports-steer.test-helper.js";
 import { createWorld } from "../index.js";
@@ -51,9 +51,9 @@ it("runs systems compiled as kernels", async () => {
         await world.run(chase);
         await world.run(integrate);
     }
-    const [follower] = await toPromise(world.observe.select({ required: [target] }));
-    expect((await toPromise(world.observe.entity(follower, { required: [position] })))?.[position][0]).toBeGreaterThan(9);
-    expect(await toPromise(world.observe.count({ required: [spark] }))).toBeGreaterThan(0);
+    const [follower] = await Observe.toPromise(Observe.select(world, { required: [target] }));
+    expect((await Observe.toPromise(Observe.entity(world, follower, { required: [position] })))?.[position][0]).toBeGreaterThan(9);
+    expect(await Observe.toPromise(Observe.count(world, { required: [spark] }))).toBeGreaterThan(0);
 });
 
 // A kernel's `add` and `remove` take an imported `Symbol(...)` as one key, and an imported list as a list.
@@ -68,6 +68,6 @@ it("removes an imported key in a kernel", async () => {
     await using world = createWorld({ [workers]: 0 });
     await world.run(ignite);
     await world.run(settle);
-    expect(await toPromise(world.observe.count({ required: [spark] }))).toBe(0);
-    expect(await toPromise(world.observe.count({ required: [position] }))).toBe(1);
+    expect(await Observe.toPromise(Observe.count(world, { required: [spark] }))).toBe(0);
+    expect(await Observe.toPromise(Observe.count(world, { required: [position] }))).toBe(1);
 });

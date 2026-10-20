@@ -1,11 +1,10 @@
 /// <reference types="node" />
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join } from "./create.js";
 import type { FromJoiningWorker, ToJoiningWorker } from "./joining-worker.fixture.js";
-import { Observe as Factories } from "../../observe/index.js";
 import { add, drive, names, total, until } from "./joining.test-helper.js";
 
 /**
@@ -75,8 +74,8 @@ export const worldHere = async () => {
         driven: reply.kind === "driven" ? reply.driven : null,
         claims,
         status: gone?.status ?? null,
-        total: await Observe.toPromise(world.observe.resource(total)),
-        names: await Observe.toPromise(world.observe.resource(names)),
+        total: await Observe.toPromise(Observe.resource(world, total)),
+        names: await Observe.toPromise(Observe.resource(world, names)),
     };
     await worker.terminate();
     await world.dispose();
@@ -134,7 +133,7 @@ export const scopes = async (observers: "built-in" | "factory" = "built-in") => 
     await worker.ask({ kind: "host scope" });
     const remote = join(worker.port);
     for (const amount of [4, 5, 6]) await remote.run(add, { amount });
-    const observed = await until(observers === "factory" ? Factories.resource(remote, total) : remote.observe.resource(total), value => value === 456);
+    const observed = await until(observers === "factory" ? Observe.resource(remote, total) : remote.observe.resource(total), value => value === 456);
     await remote.dispose();
     const state = await worker.ask({ kind: "state" });
     await worker.terminate();

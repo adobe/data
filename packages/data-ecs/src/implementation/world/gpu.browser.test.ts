@@ -11,7 +11,7 @@ import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 
 const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
 const position = Symbol("gpuTest/position");
@@ -229,9 +229,9 @@ describe("removing GPU systems", () => {
         let drawn = 0;
         const draw = System.render({ name: "gpuTest/drawUntilRemoved", shader: { accessors: { place: position } }, after: [move] }, () => { drawn++; });
         const ticks = async (count: number): Promise<void> => {
-            const from = (await Observe.toPromise(world.observe.resource(clock))).tick;
+            const from = (await Observe.toPromise(Observe.resource(world, clock))).tick;
             await new Promise<void>(resolve => {
-                const stop = world.observe.resource(clock)(({ tick }) => {
+                const stop = Observe.resource(world, clock)(({ tick }) => {
                     if (tick < from + count) return;
                     queueMicrotask(() => stop());
                     resolve();

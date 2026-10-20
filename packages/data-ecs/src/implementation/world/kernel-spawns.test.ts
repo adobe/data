@@ -68,7 +68,14 @@ const despawnMade = System.create({ name: "kernelSpawnsTest/despawnMade", compon
 const added = { seen: 0 };
 const countAdded = System.create({ name: "kernelSpawnsTest/countAdded", components: { added: [value], has: [made] } }, () => { added.seen++; });
 
-const valuesOf = async (world: ReturnType<typeof createWorld>): Promise<(number | null)[]> => readEach(world, await select(world, { required: [made] }), value);
+/** Each made entity's value, in storage order. */
+const madeValues: number[] = [];
+const readMade = System.create({ name: "kernelSpawnsTest/readMade", synced: true, components: { read: [value], has: [made] } }, row => { madeValues.push(row[value]); });
+const valuesOf = async (world: ReturnType<typeof createWorld>): Promise<number[]> => {
+    madeValues.length = 0;
+    await world.run(readMade);
+    return [...madeValues];
+};
 
 describe("kernel spawns", () => {
     it("land with their values and change ticks, seen once by an added filter", async () => {

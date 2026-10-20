@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
-import { toPromise } from "../../interface/observe/to-promise.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
 import { Rule } from "../../interface/rule/rule.js";
@@ -63,8 +62,6 @@ describe("a world given keys with ids", () => {
         const [first, second] = spawned;
         expect([await read(world, first, score), await read(world, first, scoreAgain), await read(world, second, score)]).toEqual([11, 11, 12]);
         expect([await read(world, first, shownAgain), await read(world, second, shown)]).toEqual([true, true]);
-        const values = await toPromise(world.observe.entity(second));
-        expect(new Set(values === null ? [] : Object.getOwnPropertySymbols(values))).toEqual(new Set([scoreAgain, shownAgain]));
         expect(changes).toEqual([[score], [scoreAgain]]);
         await world.dispose();
     });

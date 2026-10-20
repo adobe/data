@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
@@ -139,7 +139,7 @@ export const neverYields = async (ticks: number) => {
     const { worker } = await joined(world);
     await worker.ask({ kind: "spin" });
     world.add(count);
-    const counted = await within(until(world.observe.resource(changes), value => value >= ticks), 20000, -1);
+    const counted = await within(until(Observe.resource(world, changes), value => value >= ticks), 20000, -1);
     await worker.terminate();
     await world.dispose();
     driver.close();
@@ -176,7 +176,7 @@ export const ticksThere = async (ticks: number) => {
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
     const { worker } = await joined(world);
     world.add(countThere);
-    const counted = await reachedOrStopped(world.observe.resource(changes), ticks, 5000);
+    const counted = await reachedOrStopped(Observe.resource(world, changes), ticks, 5000);
     await worker.terminate();
     await world.dispose();
     driver.close();

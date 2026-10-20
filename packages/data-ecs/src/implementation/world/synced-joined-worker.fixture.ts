@@ -5,6 +5,7 @@ import { join } from "./create.js";
 import { scopeChannel } from "./port.js";
 import { countHot, gate, hold, hot, lookRows, looked, nextPhase, seen, stamp, watchRows, type Seen } from "./synced-joined.test-helper.js";
 import { tailSnapshots } from "./thread-systems.js";
+import { Observe } from "../../observe/index.js";
 
 /**
  * A thread joining a world through the port it's sent, claiming nothing, which adds one of its own synced systems
@@ -40,7 +41,7 @@ const timer = (): void => {
 /** The entities the world holds, once it holds `count`. */
 const entities = (world: World, count: number): Promise<readonly Entity[]> => new Promise(resolve => {
     let done = false;
-    const stop = world.observe.select({ required: [stamp] })(found => {
+    const stop = Observe.select(world, { required: [stamp] })(found => {
         if (done || found.length < count) return;
         done = true;
         queueMicrotask(() => stop());

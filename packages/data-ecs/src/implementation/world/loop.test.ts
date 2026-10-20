@@ -6,6 +6,7 @@ import { backToBack, createLoop, type Clock, type LoopSettings } from "./loop.js
 import { createWorld } from "./create.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
+import { Observe } from "../../observe/index.js";
 
 const count = Symbol("loopTest/count");
 declare module "@adobe/data-ecs" {
@@ -168,7 +169,7 @@ describe("a world's loop platform", () => {
         // At 60 frames a second, a timer's frames would take 1.6 s.
         await new Promise<void>(resolve => {
             let ticks = 0;
-            const unobserve = world.observe.resource(clock)(() => {
+            const unobserve = Observe.resource(world, clock)(() => {
                 if (++ticks < 100) return;
                 unobserve();
                 resolve();

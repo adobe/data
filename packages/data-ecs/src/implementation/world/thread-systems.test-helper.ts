@@ -1,6 +1,6 @@
 import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -175,27 +175,47 @@ const plain = (value: { readonly [key: symbol]: unknown } | null): { readonly [n
     return result;
 };
 
-/** The thread's objects of `entities`, as data, read where they live: on `threads`, the world itself inline, or the thread that fills them. */
+/** The thread's objects of `entities`, as data, read where they live: the world itself inline, or the thread that fills them. */
 export type Objects = (entities: readonly Entity[]) => Promise<readonly { readonly [name: string]: unknown }[]>;
 
-/** Objects read by a joined thread's observers, where it fills them. */
-export const objectsThere = (threads: World): Objects => entities =>
-    Promise.all(entities.map(async entity => plain(await Observe.toPromise(threads.observe.entity(entity, { required: [uid], optional: [caption, note] })))));
+/** The entities `readObjects` reads, and what it read of each. */
+const reading: { entities: readonly Entity[]; objects: readonly { readonly [name: string]: unknown }[] } = { entities: [], objects: [] };
 
-/** Objects of an inline world, which its own entity values hold. */
-const objectsInline: Objects = async entities => entities.map(() => ({}));
+/** Each entity's objects of the thread, as data, a note by its text: none for an entity that's dead or has no uid. */
+const readObjects = System.create({
+    name: "threadSystemsTest/readObjects",
+    synced: true,
+    lookup: { ids: { has: [uid] }, captions: { read: [caption] }, notes: { read: [note] } },
+}, ({ lookup }) => {
+    reading.objects = reading.entities.map(entity => {
+        const objects: { [name: string]: unknown } = {};
+        if (lookup.ids(entity) === null) return objects;
+        const captioned = lookup.captions(entity);
+        if (captioned !== null) objects.caption = captioned[caption];
+        const noted = lookup.notes(entity);
+        if (noted !== null) objects.note = noted[note]?.text ?? null;
+        return objects;
+    });
+});
+
+/** Objects read where they live by a synced run on `threads`, as of the world's last sync point: a joined thread's, or an inline world's own. */
+export const objectsThere = (threads: World): Objects => async entities => {
+    reading.entities = entities;
+    await threads.run(readObjects);
+    return reading.objects;
+};
 
 /** What a world holds after its runs: each entity by uid, its structs and the world's objects, and the thread's objects. */
 export const snapshot = async (world: World, objects: Objects): Promise<Snapshot> => {
-    const entities = await Observe.toPromise(world.observe.select({ required: [uid] }));
-    const here = await Promise.all(entities.map(async entity => plain(await Observe.toPromise(world.observe.entity(entity)))));
+    const entities = await Observe.toPromise(Observe.select(world, { required: [uid] }));
+    const here = await Promise.all(entities.map(async entity => plain(await Observe.toPromise(Observe.entity(world, entity, { optional: [uid, position, velocity, flagged, kept] })))));
     const there = await objects(entities);
     const listed = here.map((value, k) => [Number(value.uid), { ...value, ...there[k] }] as const);
     return {
         entities: listed.sort((a, b) => a[0] - b[0]),
-        total: await Observe.toPromise(world.observe.resource(total)),
-        changes: await Observe.toPromise(world.observe.resource(changes)),
-        painted: await Observe.toPromise(world.observe.resource(painted)),
+        total: await Observe.toPromise(Observe.resource(world, total)),
+        changes: await Observe.toPromise(Observe.resource(world, changes)),
+        painted: await Observe.toPromise(Observe.resource(world, painted)),
     };
 };
 
@@ -209,7 +229,7 @@ const comparable = ({ failures, skipped, dropped, warnings }: World.Report) => (
  * The runs both worlds take: seeds, ticks, a run with input, a failing run, and ticks with `repaint` disabled. Without
  * `objects`, the world is inline.
  */
-export const scenario = async (world: World, objects: Objects = objectsInline) => {
+export const scenario = async (world: World, objects: Objects = objectsThere(world)) => {
     const snapshots: Snapshot[] = [];
     const reports: unknown[] = [];
     const warnings: (readonly string[])[] = [];

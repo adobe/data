@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -79,9 +79,9 @@ const ticking = async (): Promise<{ readonly world: CreatedWorld; readonly ticks
     world.add(kept);
     /** Waits for `count` more ticks. */
     const ticks = async (count: number): Promise<void> => {
-        const first = (await Observe.toPromise(world.observe.resource(clock))).tick;
+        const first = (await Observe.toPromise(Observe.resource(world, clock))).tick;
         await new Promise<void>(resolve => {
-            const stop = world.observe.resource(clock)(({ tick }) => {
+            const stop = Observe.resource(world, clock)(({ tick }) => {
                 if (tick < first + count) return;
                 queueMicrotask(() => stop());
                 resolve();

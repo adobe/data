@@ -154,14 +154,20 @@ describe("finalizers", () => {
         let other = Entity.none;
         Finalizer.create({ name: "finalizersTest/pending", components: { read: [pendingHandle] } }, (_, { commands }) => { commands.despawn(other); });
         const reads = System.create({ name: "finalizersTest/reads", resources: { read: [level] } }, ({ resources }) => { void resources[level]; });
+        // Read after every run, as a read through a run of its own would apply the commands left for it.
+        let seen: string | null = null;
+        const watch = System.create({ name: "finalizersTest/watchOther", synced: true, lookup: { labels: { read: [label] } } }, ({ lookup }) => {
+            seen = lookup.labels(other)?.[label] ?? null;
+        });
         const world = createWorld({ [workers]: 0 });
+        world.add(watch);
         const run = step(world);
         let a = Entity.none;
         await run(commands => { a = commands.spawn([pendingHandle])({ [pendingHandle]: 1 }); other = commands.spawn([label])({ [label]: "other" }); });
         await run(commands => commands.despawn(a));
-        expect(await read(world, other, label)).toBe("other");
+        expect(seen).toBe("other");
         await world.run(reads);
-        expect(await read(world, other, label)).toBeNull();
+        expect(seen).toBeNull();
         await world.dispose();
     });
 

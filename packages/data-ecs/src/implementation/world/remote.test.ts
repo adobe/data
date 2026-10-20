@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -100,29 +100,12 @@ const statusOf = (world: CreatedWorld, status: "joined" | "gone") =>
 /** The entity a run of `spawn` spawned. */
 const spawnOne = async (world: World, x: number): Promise<Entity> => {
     await world.run(spawn, { x });
-    const [entity] = await Observe.toPromise(world.observe.select({ required: [point], where: { [point]: x } }));
+    const [entity] = await Observe.toPromise(Observe.select(world, { required: [point], where: { [point]: x } }));
     return entity;
 };
 
 describe("objects a joined thread fills", () => {
-    it("are the thread's own, at their starts or null as the world's commands give them, which its observers read", async () => {
-        const { world, remote } = joined();
-        await statusOf(world, "joined");
-        const entity = await spawnOne(world, 1);
-        const listed = remote.observe.entity(entity, { required: [point, caption], optional: [widget] });
-        expect(await until(listed, value => value !== null)).toEqual({ [point]: 1, [caption]: "none", [widget]: null });
-        await world.run(nullCaptions);
-        expect(await until(listed, value => value?.[caption] === null)).toEqual({ [point]: 1, [caption]: null, [widget]: null });
-        await world.run(restartCaptions);
-        expect(await until(listed, value => value?.[caption] === "none")).toEqual({ [point]: 1, [caption]: "none", [widget]: null });
-        // The whole entity: its structs and this thread's objects, not the world's.
-        expect(await until(remote.observe.entity(entity), value => value !== null)).toEqual({ [point]: 1, [caption]: "none", [widget]: null });
-        await world.run(dropCaptions);
-        expect(await until(listed, value => value === null)).toBeNull();
-        expect(await until(remote.observe.entity(entity, { required: [point], optional: [caption] }), value => value !== null)).toEqual({ [point]: 1 });
-        await remote.dispose();
-        await world.dispose();
-    });
+    // The cases of observers reading them are in `observe-joined-cases.test.ts`.
     it("take from the world's thread only their start or null, in commands and spawns", async () => {
         const { world, remote } = joined();
         await statusOf(world, "joined");
@@ -130,7 +113,7 @@ describe("objects a joined thread fills", () => {
         const message = '"remoteTest/caption" lives on thread "remoteTest", which a joined thread fills, so a command here gives it only its start or null.';
         expect((await world.run(giveCaption)).failures.map(failure => failure.message)).toEqual([message]);
         expect((await world.run(spawnCaptioned)).failures.map(failure => failure.message)).toEqual([message]);
-        expect(await Observe.toPromise(world.observe.count({ required: [caption] }))).toBe(1);
+        expect(await Observe.toPromise(Observe.count(world, { required: [caption] }))).toBe(1);
         await remote.dispose();
         await world.dispose();
     });
@@ -138,7 +121,7 @@ describe("objects a joined thread fills", () => {
         const { world, remote } = joined();
         await statusOf(world, "joined");
         const entity = await spawnOne(world, 6);
-        const listed = remote.observe.entity(entity, { required: [caption, widget] });
+        const listed = Observe.entity(remote, entity, { required: [caption, widget] });
         expect(await until(listed, value => value !== null)).toEqual({ [caption]: "none", [widget]: null });
         expect((await world.run(nullCaptionsKernel)).failures).toEqual([]);
         expect(await until(listed, value => value?.[caption] === null)).toEqual({ [caption]: null, [widget]: null });
@@ -148,14 +131,10 @@ describe("objects a joined thread fills", () => {
         await remote.dispose();
         await world.dispose();
     });
-    it("can't be read by observers on the world's thread; systems reading them run on the thread, their tiers warned of", async () => {
+    it("are read by systems that run on the thread, their tiers warned of", async () => {
         const { world, remote } = joined();
         await statusOf(world, "joined");
-        const entity = await spawnOne(world, 3);
-        expect(() => world.observe.entity(entity, { required: [caption] })(() => {})).toThrow('An observer reads "remoteTest/caption", an object a joined thread fills, which only an observer there reads.');
-        expect(() => world.observe.select({ required: [point, caption], where: { [caption]: "none" } })(() => {})).toThrow('An observer reads "remoteTest/caption"');
-        // Its whole value is the world's own.
-        expect(await Observe.toPromise(world.observe.entity(entity))).toEqual({ [point]: 3, [kept]: "k3" });
+        await spawnOne(world, 3);
         expect(await world.run(readCaptions)).toEqual({
             failures: [], skipped: [], dropped: 0,
             warnings: [{ kind: "blocking", name: "remoteTest/readCaptions", message: 'System "remoteTest/readCaptions" runs on thread "remoteTest", which a joined thread fills, so its tier waits for that thread.' }],
@@ -172,8 +151,8 @@ describe("objects a joined thread fills", () => {
         await remote.dispose();
         await statusOf(world, "gone");
         await world.run(after);
-        expect(await Observe.toPromise(world.observe.entity(first, { required: [caption, widget] }))).toEqual({ [caption]: null, [widget]: null });
-        expect(await Observe.toPromise(world.observe.entity(second, { required: [caption] }))).toEqual({ [caption]: "none" });
+        expect(await Observe.toPromise(Observe.entity(world, first, { required: [caption, widget] }))).toEqual({ [caption]: null, [widget]: null });
+        expect(await Observe.toPromise(Observe.entity(world, second, { required: [caption] }))).toEqual({ [caption]: "none" });
         expect((await world.run(readCaptions)).failures).toEqual([]);
         await world.dispose();
     });

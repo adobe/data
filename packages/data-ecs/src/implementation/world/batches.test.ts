@@ -6,7 +6,7 @@ import { System } from "../../interface/system/system.js";
 import { count, read, readEach, readEntity } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
-import { toPromise } from "../../interface/observe/to-promise.js";
+import { Observe } from "../../observe/index.js";
 import { createBuffer } from "./buffer.js";
 import { createCommands } from "./commands.js";
 import { createState } from "./state.js";
@@ -123,6 +123,6 @@ describe("spawns keyed by symbols", () => {
         });
         await using world = createWorld({ [workers]: 0 });
         await world.run(edit);
-        expect(await toPromise(world.observe.entity(spawned))).toEqual({ [score]: 1 });
+        expect(await Observe.toPromise(Observe.entity(world, spawned, { optional: [position, score, name, tag] }))).toEqual({ [score]: 1 });
     });
 });

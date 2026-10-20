@@ -272,7 +272,7 @@ describe("up", () => {
             await ecs.run(growParents);
             await ecs.run(shift);
             await ecs.run(propagateKernel);
-            return readEach(ecs, Object.values(mixed), world);
+            return await readEach(ecs, Object.values(mixed), world);
         }));
         expect(results[0]).toEqual(results[1]);
     });

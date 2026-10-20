@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import type { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -113,8 +113,8 @@ const later = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0)
 
 /** Ticks on until the counter passed `more` more. */
 const ticks = async (world: World, more: number): Promise<void> => {
-    const now = await until(world.observe.resource(counter), () => true);
-    await until(world.observe.resource(counter), value => value >= now + more);
+    const now = await until(Observe.resource(world, counter), () => true);
+    await until(Observe.resource(world, counter), value => value >= now + more);
 };
 
 /** What the worker's synced system saw so far. */
@@ -157,7 +157,7 @@ const writerReadyPartway = async (world: World, worker: Worker, frames: ReturnTy
  */
 const fellBehind = async (world: World, worker: Worker, frames: ReturnType<typeof steppedFrames>, words: Int32Array) => {
     await worker.ask({ kind: "hold" });
-    const from = await until(world.observe.resource(counter), () => true);
+    const from = await until(Observe.resource(world, counter), () => true);
     for (let k = 0; k < 3; k++) await frames.next();
     await frames.asked();
     const newest = from + 3;
@@ -226,7 +226,7 @@ export const gpuLookups = async (device: GPUDevice): Promise<readonly number[]> 
     for (let k = 1; k <= 2; k++) {
         Atomics.store(words, holdWord, 0);
         const counted = worker.ask({ kind: "count hot", gate: words });
-        await until(world.observe.resource(phase), value => value >= k);
+        await until(Observe.resource(world, phase), value => value >= k);
         await world.run(warm);
         Atomics.store(words, holdWord, 1);
         Atomics.notify(words, holdWord);

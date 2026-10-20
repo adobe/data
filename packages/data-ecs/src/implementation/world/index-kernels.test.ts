@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Index } from "../../interface/indexes/index-type.js";
-import { Observe } from "../../interface/observe/observe.js";
+import { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "./create.js";
@@ -135,9 +135,9 @@ const spawnLanes = System.create({ name: "indexKernelsTest/spawnLanes", input: {
 });
 
 const read = async (world: CreatedWorld, required: readonly Component.Key[], keys: readonly Component.Key[]): Promise<readonly unknown[][]> => {
-    const entities = await Observe.toPromise(world.observe.select({ required: [...required] }));
+    const entities = await Observe.toPromise(Observe.select(world, { required: [...required] }));
     // Entities of this world hold these components, by their schemas.
-    const rows = await Promise.all(entities.map(entity => Observe.toPromise(world.observe.entity(entity, { required: [...keys] })) as Promise<{ readonly [key: symbol]: unknown } | null>));
+    const rows = await Promise.all(entities.map(entity => Observe.toPromise(Observe.entity(world, entity, { required: [...keys] })) as Promise<{ readonly [key: symbol]: unknown } | null>));
     return rows.map(row => keys.map(key => row?.[key]));
 };
 
@@ -177,7 +177,7 @@ describe.each([[true], [false]])("kernels looking up through indexes, WASM %s", 
         await world.run(watch);
         const counted = async (): Promise<number> => (await read(world, [cell], [changes])).reduce((sum, [value]) => sum + Number(value), 0);
         expect(await counted()).toBe(20);
-        const entities = await Observe.toPromise(world.observe.select({ required: [cell] }));
+        const entities = await Observe.toPromise(Observe.select(world, { required: [cell] }));
         await world.run(System.create(({ commands }) => { commands.add(entities[0], weight, 100); }));
         await world.run(watch);
         // The rows of the changed entity's cell saw it change.

@@ -296,6 +296,28 @@ describe("synced systems on a joined thread", () => {
         await close();
     });
 
+    it("fail to register when placed on the joined thread filling their objects without an id, which it can't name", async () => {
+        reset();
+        const { world, close } = await joined(["syncedJoinedTest"]);
+        await world.run(spawnLabelled);
+        // Made in a function, so the build gives it no id.
+        const made = () => System.create({ name: "syncedJoinedTest/madeLabels", synced: true, components: { read: [label, amount] } }, row => {
+            seen.labels.push(`${row[label]}${row[amount]}`);
+        });
+        const madeLabels = made();
+        await expect(world.run(madeLabels)).rejects.toThrow(`System "syncedJoinedTest/madeLabels" runs on thread "syncedJoinedTest", which a joined thread fills, and has no id, so that thread can't name it`);
+        // Another of that name, numbered.
+        const added = made();
+        world.add(added);
+        await turns();
+        const report = await world.run(nothing);
+        expect(report.failures.map(failure => [failure.kind, failure.name])).toEqual([["system", "syncedJoinedTest/madeLabels#2"]]);
+        world.remove(added);
+        await turns();
+        expect(seen.labels).toEqual([]);
+        await close();
+    });
+
     it("run on the joined thread filling their objects when the world runs them, then here once it's gone", async () => {
         reset();
         const { world, remote } = await joined(["syncedJoinedTest"]);

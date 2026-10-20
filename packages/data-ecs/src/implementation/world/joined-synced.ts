@@ -1,6 +1,6 @@
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Lookup } from '../../interface/system/access.js';
-import { idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem } from '../../interface/registry/index.js';
+import { idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
 import { readCell } from './cells.js';
 import { readAhead } from './execute.js';
 import { refreshUses, type WorldIndex } from './indexes.js';
@@ -157,6 +157,15 @@ const startCounting = (state: State): void => {
  * the tick it last ran at.
  */
 export const createJoinedSyncedRunner = (state: State, leaf: Leaf, target: SyncedTarget, since = 0): Runner => {
+    // One placed there by the objects it names, rather than the thread's own, is named there by its id and its keys'.
+    if (!state.synced.proxies.has(leaf)) {
+        if (idOfItem(leaf) === undefined) {
+            const thread = threadOf(leaf.declaration, "System", leaf.name) ?? target.label;
+            throw new Error(`System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level systems one.`);
+        }
+        const unnamed = unnamedKey(leaf);
+        if (unnamed !== null) throw new Error(unnamed);
+    }
     const base = createRunner(state, leaf, since);
     const { declaration } = leaf;
     const { components, resources } = declaration;

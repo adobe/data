@@ -191,8 +191,10 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 - **Counts:** pool tasks carry their rows; joined threads read counts. While a joined thread holds claims, archetypes
   whose count changed are appended to a dirty list, by pair and by batch where the sync point changes them, and their
   counts flushed with the rest; a new record carries its count.
-- **Lookups:** WASM lookups keep their per-lookup directories (`directories.ts`), a match flag and each read column's
-  address per archetype, so a lookup searches nothing. JS kernels' lookups on workers read archetype records.
+- **Lookups:** WASM lookups keep their per-lookup directories (`directories.ts`), a match flag, each read column's
+  address and, with `changed`, each watched tick column's address per archetype, so a lookup searches nothing. JS
+  kernels' lookups on workers read archetype records. A kernel whose lookups by entity watch takes its `lastRun` last
+  in its lookup parameters, in both.
 
 ### Task rings
 
@@ -392,8 +394,11 @@ consecutive tiers all on that thread are one task, which stops after a tier with
 - **Rows:** the thread views each archetype from its record, struct columns and ticks in shared memory and its own
   objects in the mirror's columns, made again when the record's version or the mirror's columns move; rows are the
   world's accessor rows over those views (`rows.ts`), and change filters read the shared ticks. Resources are the
-  resource archetype's row; lookups locate entities in the shared entity table. A GPU kernel's whole-column stamp
-  reaches the thread as row ticks, which the world lifts to it before the task.
+  resource archetype's row; lookups locate entities in the shared entity table, and a lookup's `changed` reads the
+  shared ticks against the system's `lastRun`. A GPU kernel's whole-column stamp reaches the thread as row ticks, which
+  the world lifts to it before the task: for the components the system filters on in its matched archetypes, and for
+  those its lookups watch in every archetype. A registration that starts ticks flushes the layout directory, with or
+  without a pool, so the thread sees them before its next task.
 - **Commands and spawns** write into the thread's command ring, a segment per system, as a pool worker's do, with the
   merge tag of its tick and position. A value given the thread's own object is staged in its mirror under a slot whose
   tag the segment carries; a key the world didn't give the thread a number for is named by the thread's own number,

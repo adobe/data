@@ -5,8 +5,8 @@ import { readCell } from "./cells.js";
 import { createCommands } from "./commands.js";
 import { asEntity, indexOf, locate as locateHere } from "./entities.js";
 import { recordCount, structureWord, tableOffsetWord } from "./layout-directory.js";
-import { cellOf, createMirror, locate, nameComponent, rebuild, replay, stage, waitStructure, type Mirror } from "./mirror.js";
-import { createMoveLog, markDelivered, ownTag, slotValue, type MoveLog } from "./move-log.js";
+import { applying, cellOf, createMirror, nameComponent, rebuild, replay, stage, waitStructure, type Mirror } from "./mirror.js";
+import { createMoveLog, ownTag, slotValue, type MoveLog } from "./move-log.js";
 import { claimThreads } from "./remote.js";
 import { createState, defaultOf, idOf, startTicking, type State } from "./state.js";
 import { applySync, prepareSync, synchronize } from "./synchronize.js";
@@ -285,32 +285,25 @@ describe("the move log", () => {
         follow(mirror);
         expect(mirror.staged).toEqual([]);
     });
-    it("lets an observer of the thread's objects read locations only while no sync point applies, once observers were delivered through it", async () => {
-        const { state, mirror, log } = threaded(4096);
+    it("shows the thread a sync point applying through the structure epoch, waiting without blocking until it's applied", async () => {
+        const { state, mirror } = threaded(4096);
         const { commands, target } = worldCommands(state);
         const entity = commands.spawn([uid, label])({ [uid]: 1 });
         state.queued.push({ buffer: target.buffer, guarded: true });
         synchronize(state);
-        expect(locate(mirror, entity)).toBe("behind");
-        markDelivered(log);
-        const first = locate(mirror, entity);
-        expect(first).toEqual({ archetype: state.entities.archetype[indexOf(entity)], row: 0 });
+        expect(applying(mirror)).toBe(false);
         commands.add(entity, amount, 3);
         state.queued.push({ buffer: target.buffer, guarded: true });
         expect(prepareSync(state)).toBe(true);
         expect(new Int32Array(state.memory.memory.buffer)[structureWord] & 1).toBe(1);
-        expect(locate(mirror, entity)).toBe("applying");
+        expect(applying(mirror)).toBe(true);
         let waited = false;
         const waiting = waitStructure(mirror).then(() => { waited = true; });
         await new Promise(resolve => setTimeout(resolve, 5));
         expect(waited).toBe(false);
         applySync(state);
         await waiting;
-        expect(locate(mirror, entity)).toBe("behind");
-        markDelivered(log);
-        const moved = locate(mirror, entity);
-        expect(moved).toEqual({ archetype: state.entities.archetype[indexOf(entity)], row: 0 });
-        expect(moved).not.toEqual(first);
+        expect(applying(mirror)).toBe(false);
     });
     it("keeps the counts of archetypes holding the thread's objects in the layout directory", () => {
         const { state } = threaded(4096);

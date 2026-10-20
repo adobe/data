@@ -9,7 +9,7 @@ declare const channel: MessageChannel;
 declare const worker: Worker;
 declare const port: Parameters<World["share"]>[0];
 
-// Joining gives a world: runs and observers work as on the world's thread.
+// Joining gives a world: runs work as on the world's thread.
 const joined: World = join(channel.port2, { threads: ["main"] });
 join(worker);
 join(self, {});

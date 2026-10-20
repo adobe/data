@@ -1,21 +1,18 @@
 import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
-import type { Observers } from './observers.js';
 import type { Report } from './report.js';
 
 /**
- * A world. Observing is the way to read it: an observer's first value may come during the subscribing call or later,
- * then one after each run or tick that changed it; nothing promises a notification before a run resolves.
- * Every member's type is named from the package root, such as `Observers` for `observe`, so declarations a consumer
- * emits for its results name no internal module.
+ * A world. Systems read and change it; synced systems read it after each run's and tick's sync point. Every member's
+ * type is named from the package root, so declarations a consumer emits for its results name no internal module.
  */
 export type World = {
     /**
      * The one way to change state. Runs are sequential in call order; physically, any that don't conflict overlap. Each
      * runs a system or composite, ending in a sync point, and resolves to what went wrong, if anything: systems,
-     * finalizers, GPU work and observers that failed, systems skipped after a failed tier, and commands that did
-     * nothing. Rejects only when the run can't happen or finish: registration fails, the world is disposed, its GPU
-     * device is lost, or its sync point can't apply a command's value. Synced systems, the run's and those added, run
+     * finalizers and GPU work that failed, systems skipped after a failed tier, and commands that did nothing. Rejects
+     * only when the run can't happen or finish: registration fails, the world is disposed, its GPU device is lost, or
+     * its sync point can't apply a command's value. Synced systems, the run's and those added, run
      * after its sync point, before it resolves, their throws `"system"` failures in its report; a run of synced systems
      * alone runs them once after an empty sync point, and doesn't wake the loop.
      */
@@ -40,7 +37,6 @@ export type World = {
      * only synced systems.
      */
     remove(system: System<void>): void;
-    readonly observe: Observers;
     /**
      * Lets another thread join this world through `port`, one end of a channel to it, of the browser or node: a
      * `MessagePort`, a `Worker`, or a worker's own scope, `self` or node's `parentPort`. That thread joins through the

@@ -1,6 +1,6 @@
 import { Resource } from '../resource/resource.js';
 import { Component } from '../component/component.js';
-import { Archetype, System, type World } from "@adobe/data-ecs";
+import { Archetype, System } from "@adobe/data-ecs";
 
 const position = Symbol("archetypeTypeTest/position");
 const velocity = Symbol("archetypeTypeTest/velocity");
@@ -34,5 +34,4 @@ Archetype.create([position, scale]);
 Archetype.create(["position"]);
 // Archetypes go wherever component lists do.
 export const move = System.create({ name: "archetypeTypeTest/move", components: { write: particle } }, row => { row[position] += row[velocity]; });
-declare const world: World;
-export const selected = world.observe.select({ required: particle, where: { [velocity]: { ">": 0 } } });
+export const read = System.create({ name: "archetypeTypeTest/read", synced: true, components: { read: particle } }, row => { void row[velocity]; });

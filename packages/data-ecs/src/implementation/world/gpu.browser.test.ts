@@ -265,7 +265,7 @@ describe("the gpuDevice resource", () => {
         nextDevice = await device();
         await world.run(setDevice);
         await world.run(move);
-        // On the GPU, observers read back its write before giving values.
+        // On the GPU, reads read back its write first.
         expect((await positions(world))[0]).not.toEqual(moved);
         await world.dispose();
     });
@@ -342,14 +342,14 @@ describe("the gpuDevice resource", () => {
 
 describe("GPU kernels", () => {
     // Each comparison runs the same GPU kernels in a world without a GPU, where they run on the CPU.
-    it("write values that observers see, as the CPU kernel's do", async () => {
+    it("write values reads see, as the CPU kernel's do", async () => {
         const gpuWorld = createWorld({ [gpuDevice]: await device() });
         const cpuWorld = createWorld({ [workers]: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawn);
             for (let i = 0; i < 3; i++) await world.run(move);
         }
-        // Observers read back what the GPU wrote before giving values.
+        // Reads read back what the GPU wrote first.
         expect((await positions(gpuWorld))[0]).not.toEqual([0, 0, -0]);
         expect(await positions(gpuWorld)).toEqual(await positions(cpuWorld));
         await gpuWorld.dispose();

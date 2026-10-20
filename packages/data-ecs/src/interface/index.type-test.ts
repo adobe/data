@@ -1,4 +1,4 @@
-import { Component, Entity, Finalizer, Observe, Resource, Rule, System, gpuDevice, workers, type Gpu, type World } from "@adobe/data-ecs";
+import { Component, Finalizer, Resource, Rule, System, gpuDevice, workers, type Gpu } from "@adobe/data-ecs";
 import type * as Ecs from "@adobe/data-ecs";
 import type { Create } from "./world/create.js";
 
@@ -30,19 +30,11 @@ Rule.create({ name: "indexTypeTest/slots", components: { has: [position] }, deri
 declare const create: Create;
 declare const wgsl: typeof Gpu.wgsl;
 export const world = create({ [workers]: 4, [gpuDevice]: null });
-export const observeEntity = (entity: Entity) => world.observe.entity(entity, { required: [position], optional: [slot] });
-export const device = world.observe.resource(gpuDevice);
-export const pool = world.observe.resource(workers);
-export const observe = world.observe;
-export const query: World.Query<[typeof position]> = { required: [position], where: { [position]: { ">": 0 } } };
-export const selected = world.observe.select(query);
-export const counted = world.observe.count({ required: [position] });
+export const read = System.create({ name: "indexTypeTest/read", synced: true, components: { read: [position, slot] }, resources: { read: [gpuDevice, workers] } }, () => {});
+export const readOne = System.create({ synced: true, lookup: { at: { read: [position], has: [slot] } } }, () => {});
 export const report = world.run(all);
 export const shader = wgsl(draw);
-
-// `Observe` is the type of an observer and the namespace of its helpers.
-export const first: Promise<number> = Observe.toPromise(world.observe.resource(scale));
-export const observed: Observe<number> = world.observe.resource(scale);
+export const added = world.add(read);
 
 // Only types a consumer declares with are named; the rest are inferred where wanted.
 // @ts-expect-error a thread's name is keyof Threads
@@ -55,3 +47,9 @@ export const noRule: Rule = Rule.create({ components: { has: [position] }, deriv
 export const noArchetype: Ecs.Archetype = [position];
 // @ts-expect-error a trait's key is keyof Traits<never, never>
 export type NoTraitKey = Ecs.Trait.Key;
+// @ts-expect-error synced systems read a world: no Observe
+export type NoObserve = Ecs.Observe<number>;
+// @ts-expect-error nor its helpers
+export type NoToPromise = typeof Ecs.Observe.toPromise;
+// @ts-expect-error nor what world.observe held
+export type NoObservers = Ecs.Observers;

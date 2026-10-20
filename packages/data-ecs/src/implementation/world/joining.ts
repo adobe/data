@@ -11,23 +11,6 @@ import { lineWords } from './protocol.js';
 /** Marks this channel's messages, so a port that carries others too, such as a worker's scope, can share it. */
 export const protocolName = "@adobe/data-ecs/join@1";
 
-/**
- * What a joined thread observes, naming keys by its own numbers: a resource; an entity's listed components; an entity's
- * whole value, of the struct components it had registered when it subscribed; or a query.
- */
-export type Subscription =
-    | { readonly kind: "resource"; readonly key: number }
-    | { readonly kind: "entity"; readonly entity: number; readonly required: readonly number[]; readonly optional: readonly number[] }
-    | { readonly kind: "whole"; readonly entity: number; readonly known: readonly number[] }
-    | {
-        readonly kind: "select" | "count";
-        readonly required: readonly number[];
-        readonly not: readonly number[];
-        readonly where: readonly (readonly [number, unknown])[];
-        readonly order: readonly (readonly [number, boolean])[];
-        readonly page: { readonly offset: number; readonly limit: number } | null;
-    };
-
 /** An index without an id, by its declaration, its keys by a joined thread's numbers: the world makes one like it. */
 export type SyncedIndex = {
     readonly name: string;
@@ -93,8 +76,6 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
      * world starts that run once this arrives.
      */
     | { readonly kind: "received"; readonly from: number; readonly sequence: number }
-    | { readonly kind: "observe"; readonly observer: number; readonly subscription: Subscription }
-    | { readonly kind: "unobserve"; readonly observer: number }
     /** Where the world can't wait without blocking: runs were posted. */
     | { readonly kind: "wake" }
     | { readonly kind: "leave" }
@@ -175,9 +156,7 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
     /** The report of run `sequence`, posted only when it isn't clean. */
     | { readonly kind: "report"; readonly sequence: number; readonly report: Report }
     | { readonly kind: "rejected"; readonly sequence: number; readonly message: string }
-    /** The byte offset of an observer's mailbox (`mailbox.ts`). */
-    | { readonly kind: "mailbox"; readonly observer: number; readonly offset: number }
-    /** Where the joined thread can't wait without blocking: runs completed or observers have values. */
+    /** Where the joined thread can't wait without blocking: runs completed, or a task or synced post waits for it. */
     | { readonly kind: "wake" }
     | { readonly kind: "disposed" }
 );
@@ -248,9 +227,9 @@ export const threadChannel = <Send, Receive>(port: Parameters<World["share"]>[0]
 
 /**
  * A joined thread's control words, each on a line of its own: the signal it waits on, which the world bumps when runs
- * complete or observers have values, beside whether a wake is unread, which the thread clears before it reads what's
- * new, so the world notifies only a thread that has read every earlier wake; the last run it posted; and the last run
- * the world completed. Then its run slots.
+ * complete or a task or synced post waits for it, beside whether a wake is unread, which the thread clears before it
+ * reads what's new, so the world notifies only a thread that has read every earlier wake; the last run it posted; and
+ * the last run the world completed. Then its run slots.
  */
 export const signalWord = 0;
 export const unreadWord = 1;

@@ -1,11 +1,11 @@
-import { generationOf, indexOf } from './entities.js';
+import { indexOf } from './entities.js';
 import {
-    archetypeField, capacityField, cursorField, entitiesWord, generationField, recordCount, recordEntities, recordStorages, recordWords,
-    remoteFlag, rowField, storageAdded, storageChanged, storageColumn, storageComponent, storageFlags, storageWords, structureWaitersWord,
+    cursorField, entitiesWord, recordCount, recordEntities, recordStorages, recordWords,
+    remoteFlag, storageAdded, storageChanged, storageColumn, storageComponent, storageFlags, storageWords, structureWaitersWord,
     structureWord, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
 } from './layout-directory.js';
 import {
-    appendEntry, archetypeShift, entryWords, kindMask, logCapacityWord, logDeliveredWord, logHeaderBytes, logLimitWord, logOffsetWord,
+    appendEntry, archetypeShift, entryWords, kindMask, logCapacityWord, logHeaderBytes, logLimitWord, logOffsetWord,
     logPublishedWord, logSyncWord, logVersionWord, logBoundWord, logBoundedWord, moveEntry, nullTag, ownTag, rangeEntry, setEntry, slotTags, startTag, swapEntry, syncEntry,
 } from './move-log.js';
 import { coveringBuffer, currentBuffer, pageBytes, pagesWord } from './memory.js';
@@ -440,19 +440,6 @@ export const waitStructure = async (mirror: Mirror): Promise<void> => {
     }
 };
 
-/** Waits without blocking until observers were delivered through another sync than `through`. */
-export const waitDelivered = async (mirror: Mirror): Promise<void> => {
-    const { header } = mirror;
-    const delivered = Atomics.load(header, logDeliveredWord);
-    if ((delivered >>> 0) === mirror.through) return;
-    if (typeof Atomics.waitAsync !== "function") {
-        await new Promise(resolve => setTimeout(resolve, 0));
-        return;
-    }
-    const waited = Atomics.waitAsync(header, logDeliveredWord, delivered);
-    if (waited.async) await waited.value;
-};
-
 /** Scratch for rebuilds, by entity index: where each entity was among the old rows. */
 type Previous = { entity: Float64Array; archetype: Int32Array; row: Int32Array };
 const previous: Previous = { entity: new Float64Array(0), archetype: new Int32Array(0), row: new Int32Array(0) };
@@ -602,50 +589,6 @@ const stagedOf = (mirror: Mirror, slot: number): Staged | undefined => {
     const entry = staged[at];
     return entry !== undefined && entry.slot === slot && entry.live ? entry : undefined;
 };
-
-/** Where an entity is, or null when it isn't alive: read while no sync point applies. */
-export type Location = { readonly archetype: number; readonly row: number };
-
-/**
- * Brings the mirror up to the last published sync and finds an entity's archetype and row, under the structure
- * epoch: read while it's even, checked again after. Returns "applying" while a sync point applies, "held" while a
- * component has no key yet, and "behind" while observers weren't delivered through that sync yet, since their values
- * are older than the objects there.
- */
-export const locate = (mirror: Mirror, entity: number): Location | null | "applying" | "held" | "behind" => {
-    for (; ;) {
-        refresh(mirror);
-        const { signed, words, buffer, header } = mirror;
-        const epoch = Atomics.load(signed, structureWord);
-        if ((epoch & 1) === 1) return "applying";
-        const replayed = replay(mirror);
-        if (replayed === "held") return "held";
-        if (replayed === "lapped" && !rebuild(mirror)) {
-            if (applying(mirror)) return "applying";
-            return "held";
-        }
-        if ((Atomics.load(header, logDeliveredWord) >>> 0) !== mirror.through) return "behind";
-        const index = indexOf(entity);
-        const capacity = words[entitiesWord + capacityField];
-        let location: Location | null = null;
-        if (index < capacity) {
-            const archetype = Atomics.load(new Int32Array(buffer, words[entitiesWord + archetypeField], capacity), index);
-            const row = Atomics.load(new Uint32Array(buffer, words[entitiesWord + rowField], capacity), index);
-            const generation = Atomics.load(new Uint32Array(buffer, words[entitiesWord + generationField], capacity), index);
-            if (archetype >= 0 && generation === generationOf(entity)) location = { archetype, row };
-        }
-        if (Atomics.add(signed, structureWord, 0) === epoch) return location;
-    }
-};
-
-/** This thread's object of `component` at a location, and whether its archetype holds one. */
-export const objectAt = (mirror: Mirror, location: Location, component: number): { readonly held: boolean; readonly value: unknown } => {
-    const column = mirror.archetypes[location.archetype]?.byComponent[component];
-    return column === undefined ? { held: false, value: undefined } : { held: true, value: column.values[location.row] };
-};
-
-/** The components of this thread's objects an archetype holds, by the world's numbers. */
-export const componentsAt = (mirror: Mirror, archetype: number): readonly number[] => mirror.archetypes[archetype]?.columns.map(column => column.component) ?? [];
 
 /** For tests: an entity's value in one of this thread's columns by its row, as of the last replay, and its ticks, the world's. */
 export const cellOf = (mirror: Mirror, archetype: number, row: number, component: number): { readonly value: unknown; readonly added: number; readonly changed: number } | null => {

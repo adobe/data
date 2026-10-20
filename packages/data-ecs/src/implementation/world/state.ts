@@ -54,7 +54,7 @@ export type State = {
     tick: number;
     /** By component id: the tick of the last sync point that wrote a reference into it. */
     readonly referencesWritten: number[];
-    /** The entities sync points spawned, despawned, moved or wrote references of, for `up` systems and query observers. */
+    /** The entities sync points spawned, despawned, moved or wrote references of, for `up` systems and indexes. */
     readonly journal: Journal;
     /** Command buffers for the next sync point, in merge order. */
     readonly queued: Queued[];
@@ -63,15 +63,15 @@ export type State = {
     drained: number;
     resourceEntity: number;
     /**
-     * Components some registered system filters on with `changed`, or an entity or query observer watches; only their
-     * kernel stamps are kept. By component id, how many do: each system while registered, each observer's watch for the
+     * Components some registered system filters on with `changed`, or a finalizer's index follows; only their kernel
+     * stamps are kept. By component id, how many do: each system while registered, each finalizer index's watch for the
      * world's life (`observe`).
      */
     readonly observed: Set<number>;
     readonly observedCounts: number[];
     /** Workers' kernel indexes, by kernel module url, so they're bounded by code. */
     readonly kernelIndexes: Map<string, number>;
-    /** Components some registered system filters on with `added` or `changed`, or an entity or query observer watches; only they keep ticks. */
+    /** Components some registered system filters on with `added` or `changed`, or a finalizer's index follows; only they keep ticks. */
     readonly ticked: Set<number>;
     /** Main-thread spawns since the last sync point, by component set. */
     readonly batches: SpawnBatch[];
@@ -267,7 +267,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
     };
 };
 
-/** Counts one more system or observer watching a component's changes, so kernels keep its stamps. */
+/** Counts one more system or index watching a component's changes, so kernels keep its stamps. */
 export const observe = (state: State, id: number): void => {
     state.observedCounts[id] = (state.observedCounts[id] ?? 0) + 1;
     state.observed.add(id);

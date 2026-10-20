@@ -50,12 +50,8 @@ export const sortedName = (index: Index<{ readonly sorted: true }>): string => i
 // How a world is created is the implementation's; the interface gives its type.
 declare const create: () => World;
 export const world = create();
-export const observeEntity = (entity: Parameters<World["observe"]["entity"]>[0]) => world.observe.entity(entity, { required: [position] });
-export const device = world.observe.resource(gpuDevice);
-export const observe = world.observe;
-export const query: World.Query<[typeof position]> = { required: [position], where: { [position]: { ">": 0 } } };
-export const selected = world.observe.select(query);
-export const counted = world.observe.count({ required: [position] });
+export const read = System.create({ synced: true, components: { read: [position] }, resources: { read: [gpuDevice] }, lookup: { at: { read: [position] } } }, () => {});
+export const added = world.add(read);
 `;
 
 /** Every declaration file reachable from `file` by relative imports, relative to `directory`. */

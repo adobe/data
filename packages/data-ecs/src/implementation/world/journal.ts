@@ -1,7 +1,8 @@
 /**
  * Entity indexes whose archetype or references sync points changed: spawned, despawned, moved to another archetype,
- * or written a reference. Kept only while some reader, an `up` system or query observers, needs it. Positions count every index ever
- * appended, so each reader keeps its own; a position before `first` lost entries, which a reader then rebuilds from.
+ * or written a reference. Kept only while some reader, an `up` system or an index, needs it. Positions count every
+ * index ever appended, so each reader keeps its own; a position before `first` lost entries, which a reader then
+ * rebuilds from.
  */
 export type Journal = {
     indexes: Int32Array;

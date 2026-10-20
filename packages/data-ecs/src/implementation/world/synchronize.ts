@@ -570,7 +570,7 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     for (let k = 0; k < state.logs.length; k++) publishLog(state.logs[k]);
     endStructure(state.directory);
     state.syncing = null;
-    // Threads whose finalizers have new stops run them now, whether or not a task or observer would replay them, as
+    // Threads whose finalizers have new stops run them now, whether or not a task or synced post would replay them, as
     // do threads with staged values to release.
     for (let k = 0; k < state.channels.length; k++) {
         const channel = state.channels[k];

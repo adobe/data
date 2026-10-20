@@ -2,6 +2,7 @@ import { samePath, type Path } from '../../interface/registry/layout.js';
 import { labelOf } from '../../interface/registry/index.js';
 import type { KernelDescription } from './kernel.js';
 import { partWords } from './index-keys.js';
+import { sortedStride } from './index-sorted.js';
 import { recordKey } from './index-hash.js';
 import type { WorldIndex } from './indexes.js';
 import type { IndexReaderSetup, IndexSource, RowLeaf } from './index-readers.js';
@@ -80,7 +81,7 @@ export const kernelIndexesOf = (state: State, description: KernelDescription, lo
             return { read, leaf: { component, view: found.view, unitStride: found.unitStride, unitOffset: found.unitOffset, boolean: found.scalar === "boolean" }, offset: found.offset, stride: layout.stride };
         });
         const watched = ("changed" in declared ? declared.changed ?? [] : []).map(key => idOf(state, key));
-        const stride = sorted ? words + 3 : recordKey + words;
+        const stride = sorted ? sortedStride(words) : recordKey + words;
         return {
             lookup,
             index,

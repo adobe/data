@@ -2,7 +2,7 @@ import type { Layout } from '../../interface/registry/layout.js';
 import { recordKey, type HashView } from './index-hash.js';
 import { keyPartsOf } from './index-keys.js';
 import { lookupFunction, type IndexView, type LookupArchetype, type Since } from './index-lookups.js';
-import type { SortedView } from './index-sorted.js';
+import { sortedStride, type SortedView } from './index-sorted.js';
 import type { RowHost } from './rows.js';
 import type { Key } from './state.js';
 
@@ -45,7 +45,7 @@ export const createThreadIndex = (rows: RowHost, archetypeAt: (id: number) => Lo
     const sortedWatched = new Map<number, { tree: Float64Array }>();
     const hash: HashView | null = setup.sorted ? null : { words, stride: recordKey + words, slots: none32, records: none32, ticks: none64, cleared: 0, entries: noneI32, watched: hashWatched };
     const sorted: SortedView | null = !setup.sorted ? null : {
-        words, stride: words + 3, parts, objects: false, entries: none32, lengths: noneI32, order: noneI32, blocks: 0, counts: noneI32, tree: none64, leaves: 1,
+        words, stride: sortedStride(words), parts, objects: false, entries: none32, lengths: noneI32, order: noneI32, blocks: 0, counts: noneI32, tree: none64, leaves: 1,
         fences: none32, size: 0, cleared: 0, watched: sortedWatched,
     };
     const index: IndexView = { parts, words, unique: setup.unique, hash, sorted };

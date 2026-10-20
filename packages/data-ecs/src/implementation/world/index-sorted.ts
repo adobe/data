@@ -58,13 +58,19 @@ export type SortedView = Pick<SortedTable, "words" | "stride" | "parts" | "objec
 
 const minimumBlocks = 8;
 
+/**
+ * Words of an entry: the key's, then entity index, archetype and row, padded to an even count, so shifting a block's
+ * entries by one moves 8-byte words, which a copy within shared memory moves several times faster than 4-byte ones.
+ */
+export const sortedStride = (words: number): number => (words + 4) & ~1;
+
 export const createSortedTable = (memory: Memory, words: number, parts: readonly KeyPart[]): SortedTable => ({
     memory,
     words,
-    stride: words + 3,
+    stride: sortedStride(words),
     parts,
     objects: parts.some(part => part.kind === "object"),
-    entries: allocateArray(memory, Uint32Array, minimumBlocks * blockEntries * (words + 3)),
+    entries: allocateArray(memory, Uint32Array, minimumBlocks * blockEntries * sortedStride(words)),
     lengths: allocateArray(memory, Int32Array, minimumBlocks).fill(0),
     ticks: allocateArray(memory, Float64Array, minimumBlocks).fill(0),
     order: allocateArray(memory, Int32Array, minimumBlocks),
@@ -478,7 +484,7 @@ export const removeSorted = (table: SortedTable, entity: number, tick: number): 
     const { entries, stride } = table;
     const base = blockBase(table, block);
     const length = table.lengths[block];
-    for (let k = (offset + 1) * stride, end = length * stride; k < end; k++) entries[base + k - stride] = entries[base + k];
+    entries.copyWithin(base + offset * stride, base + (offset + 1) * stride, base + length * stride);
     table.lengths[block] = length - 1;
     table.blockOf[entity] = -1;
     table.size--;
@@ -543,7 +549,7 @@ export const insertSorted = (table: SortedTable, key: Uint32Array, at: number, v
         }
     }
     const { entries } = table;
-    for (let w = length * stride - 1; w >= first * stride; w--) entries[base + w + stride] = entries[base + w];
+    entries.copyWithin(base + (first + 1) * stride, base + first * stride, base + length * stride);
     const to = base + first * stride;
     for (let w = 0; w < words; w++) entries[to + w] = probe[w];
     entries[to + words] = entity;

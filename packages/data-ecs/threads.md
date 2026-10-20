@@ -413,7 +413,8 @@ consecutive tiers all on that thread are one task, which stops after a tier with
 - **Lookups through indexes:** for each, the world keeps a record in the memory, posted with the system's setup, and
   writes into it before each task where the index's arrays are, its counts and ticks, and the system's `lastRun`; the
   thread points views of the same structures at them before the system runs, so its lookups are the world's own code,
-  call sites with their own lists included. The record is freed with the system's other holdings.
+  call sites with their own lists included. An index without a key is a sorted table there as on the world's thread,
+  its entries' stride the table's. The record is freed with the system's other holdings.
 - **Removal:** each system placed on a thread has a removed word there, a line of its own in the memory, kept with its
   index there and posted with its setup. `world.remove` sets it before it returns, and the thread checks it, one
   atomic load, before it runs each system of a task, a tail's included, so a task posted before the removal, in flight

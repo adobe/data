@@ -55,6 +55,14 @@ const find = System.create({ input: { type: "object", properties: { id: { type: 
     found = lookup.byId(input.id)?.entity ?? null;
 });
 
+// An index without a key holds every entity with its components, in entity order: a count kept without a query.
+const players = Index.create({ key: [], components: { has: [player] } });
+let playerCount = 0;
+const countPlayers = System.create({ lookup: { players: { index: players } } }, ({ lookup }) => {
+    const all = lookup.players();
+    if (all.changed) playerCount = all.length;
+});
+
 const places: readonly (readonly [number, number])[] = [[0, 0], [0, 0], [1, 0]];
 const spawn = System.create(({ commands }) => {
     for (const place of places) commands.spawn([cell, crowded])({ [cell]: place, [crowded]: 0 });
@@ -79,4 +87,6 @@ it("finds rows by key, by range and in order", async () => {
     expect(found).not.toBeNull();
     await world.run(find, { id: 1 });
     expect(found).toBeNull();
+    await world.run(countPlayers);
+    expect(playerCount).toBe(3);
 });

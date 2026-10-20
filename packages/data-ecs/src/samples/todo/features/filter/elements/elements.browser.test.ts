@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { part, record } from "../../../shared/elements/elements.test-helper.js";
+import { mutationsOf, part, record } from "../../../shared/elements/elements.test-helper.js";
 import { defineTodoFilters } from "./todo-filters.js";
 
 defineTodoFilters();
@@ -17,6 +17,14 @@ describe("todo-filters", () => {
         expect(pressed(filters)).toEqual(["All"]);
         filters.filter = "completed";
         expect(pressed(filters)).toEqual(["Completed"]);
+    });
+
+    it("writes only the buttons whose state changes", () => {
+        const filters = document.createElement("todo-filters");
+        document.body.append(filters);
+        expect(mutationsOf(filters, () => {
+            filters.filter = "active";
+        }).map(record => record.target instanceof HTMLElement ? record.target.dataset.filter : null)).toEqual(["all", "active"]);
     });
 
     it("dispatches todo-filter with a clicked button's filter, keeping the filter it was given", () => {

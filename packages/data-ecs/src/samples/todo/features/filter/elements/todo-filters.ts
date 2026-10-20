@@ -34,7 +34,10 @@ const listen = (host: HTMLElement, root: ShadowRoot): void => {
 };
 
 const show = (root: ShadowRoot, chosen: Filter): void => {
-    for (const button of root.querySelectorAll("button")) button.setAttribute("aria-pressed", String(button.dataset.filter === chosen));
+    for (const button of root.querySelectorAll("button")) {
+        const pressed = String(button.dataset.filter === chosen);
+        if (button.getAttribute("aria-pressed") !== pressed) button.setAttribute("aria-pressed", pressed);
+    }
 };
 
 export class TodoFilters extends HTMLElement {

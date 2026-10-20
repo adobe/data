@@ -126,8 +126,8 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   it's issued, an add's when its system's commands are queued on the world's thread, or when it's issued on a joined
   one, where it drops and its system fails, so the issuing paths check nothing while no joined thread fills objects.
   A `transfer` value reaches its own thread through a run's input instead (see Transfers).
-- **`up` and `order` run only on `world`:** a system declaring either can't be placed on a joined thread, which refuses
-  the claim, or fails the system's registration once the thread is joined. So does a lookup through an index with an
+- **Synced systems, `up` and `order` run only on `world`:** a system that's synced or declares either can't be placed
+  on a joined thread, which refuses the claim, or fails the system's registration once the thread is joined. So does a lookup through an index with an
   object key part, which the world keeps on its own thread; one keyed by structs is read where the system runs.
 
 ## Mechanisms
@@ -147,6 +147,9 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 - **Failures of ticks** are in the `report` resource. A thread that dies doesn't reject a run or a tick: its systems
   are in `skipped`, each with a `"thread"` failure, and later tiers still run. A tier that waited for a joined thread
   is in the report's `warnings`.
+- **Synced systems** run on `world` after each run's and tick's sync point, then observers are delivered. They never
+  make the loop tick, and a run of them alone doesn't wake it. While a tick's tails run on, its synced systems run at
+  once with its values, unless one reads `report`, when the tick waits for its tails first so it sees the tick's.
 - **Observers** notify after each run or tick that changed what they observe; nothing promises a notification before
   `run` resolves. A quiet loop delivers nothing.
 
@@ -304,7 +307,7 @@ thread as its only writer, drained by the world's thread at the sync point. Comm
   Web Locks, and with claims the ids of the systems and finalizers it imported; it posts nothing else until the lock is
   held. The world refuses a thread claiming `world`, one thread twice, one another joined thread claims, or one a
   registered system or a finalizer of the program runs on that the thread can't run: one without an id, naming a key
-  without one, declaring `up`, or one it didn't import, checked again between runs as its claims are made; it's refused
+  without one, synced or declaring `up`, or one it didn't import, checked again between runs as its claims are made; it's refused
   with its status `"gone"` and its runs rejecting. Else the world places the thread's control words and slots in the
   memory, and writes `"joined"` and the claims. With claims, between runs, the claimed threads' object components and
   object resources become the thread's (see Object columns on other threads), each announced by message with its id; it

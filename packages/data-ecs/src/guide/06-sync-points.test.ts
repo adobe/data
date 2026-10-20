@@ -31,6 +31,12 @@ const count = System.create({ components: { has: [health] }, resources: { write:
 });
 const frame = System.create([spawn, count]);
 
+const healths: number[] = [];
+// A synced system runs after the sync point of every run and tick it's added to, reading what it left; it writes nothing.
+const watch = System.create({ synced: true, components: { read: [health] } }, row => {
+    healths.push(row[health]);
+});
+
 it("applies commands at the sync point that ends each run", async () => {
     await using world = createWorld();
     await world.run(frame);
@@ -39,4 +45,11 @@ it("applies commands at the sync point that ends each run", async () => {
     expect((await Observe.toPromise(world.observe.entity(hero, { required: [health] })))?.[health]).toBe(5);
     await world.run(count);
     expect(await Observe.toPromise(world.observe.resource(seen))).toBe(1);
+});
+
+it("runs synced systems after each sync point", async () => {
+    await using world = createWorld();
+    world.add(watch);
+    await world.run(spawn);
+    expect(healths).toEqual([5]);
 });

@@ -231,6 +231,15 @@ const frame = System.create([spawn, count]);
 
 [`06-sync-points.test.ts`](06-sync-points.test.ts#L20-L42)
 
+```ts
+// A synced system runs after the sync point of every run and tick it's added to, reading what it left; it writes nothing.
+const watch = System.create({ synced: true, components: { read: [health] } }, row => {
+    healths.push(row[health]);
+});
+```
+
+[`06-sync-points.test.ts`](06-sync-points.test.ts#L35-L38)
+
 ### 7. Change filters and conditions
 
 ```ts

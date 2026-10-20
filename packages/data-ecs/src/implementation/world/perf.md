@@ -88,6 +88,14 @@ Command rings for the pool (threads.md, phase 3), against `efedcd21`: worker ker
 
 The adobe/data ECS runs move 1M in 0.09 ms, single threaded with WASM SIMD, and creates 100K in 5.8 ms by inserting directly, with no command buffer or sync point.
 
+Synced systems (P1 of the observers plan), alternating against `af4c72f4`: every node benchmark within noise but `run 50 idle` 110 → 73 ns a system, from three changes to a runner's start that every run takes; `run idle` 416 → 375–416 ns, `loop tick idle` 1.84 → 1.81 µs, `read run` 10.9 → 10.5 µs. New: `run synced` 208 ns against 375–416 for `run idle`, `read run synced` 7.9–9.3 µs against 10.5–11.8 for `read run`, `synced idle 100` 81–85 ns a synced system a tick, about 19 of it the tick's own cost shared over a hundred. Each step, measured on its own:
+
+- **A run's chunks get their length set only when it differs:** writing an array's length is a runtime call even when it's unchanged: `synced idle 100` 122 → 94 ns, `run 50 idle` 112 → 88 ns.
+- **Conditions are checked only by a runner that has some:** `synced idle 100` 94 → 86 ns, `run 50 idle` 90 → 80 ns.
+- **A run starts on the runner's first buffer and chunk directly,** with nothing staged yet to stage: `synced idle 100` 86 → 78–83 ns, `run 50 idle` 80 → 73 ns.
+- **Each list of synced systems keeps its runners,** read again only once runners change, with whether any looks up through an index, rather than finding each runner by its system twice a pass: `synced idle 100` 144 → 122 ns.
+- **A run of synced systems alone skips its sync point** while nothing is queued and there's no GPU, joined thread or tail: `run synced` 375 → 208 ns, `read run synced` 8.8 → 7.7 µs.
+
 ## Where the gains came from
 
 Step figures marked (vitest) are from the node vitest lane: read them as relative.

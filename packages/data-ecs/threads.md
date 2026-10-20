@@ -501,7 +501,8 @@ fails to register, its run rejecting and an added one's failure in a later repor
   thread that saw the last post's posts word claims nothing until the post is whole; then it wakes the thread once for
   the pass, unless the thread hasn't read the last wake.
 - **Running:** the thread replays its objects through the newest sync first, then claims the post as a tail claims its
-  rows, by adding to its progress word, so the claim and the world's cancel are one order; once claimed, a post stays
+  rows, by adding to its progress word, so the claim and the world's cancel are one order; a claim finding it cancelled
+  marks the posts word read before it handled, which is that post's, and a claim of it the word read after; once claimed, a post stays
   as it is until its done word reaches its end. It runs the system with the tail's code, from where its rows are or the
   copy a writer took, its lookups and index lookups reading the shared memory, and stores what it did, then its done
   word. A thread whose objects the world rebuilt past the post's sync gives the claim back, and one owed to a run asks

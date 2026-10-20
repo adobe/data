@@ -349,8 +349,9 @@ const noSynced: readonly JoinedSynced[] = [];
 
 /**
  * After a sync point: posts the synced systems on joined threads among those of the run, `own`, which are owed to run
- * `run` (0 for one of the world's), those added, `added`, that may run, and those still owed to a run. Refreshes the
- * indexes they look up through and reads back what the GPU wrote that they read first; a promise only when that waits.
+ * `run` (0 for one of the world's), those added, `added`, that may run, and those still owed to a run. Reads back
+ * what the GPU wrote that they read, or their indexes hold by, then refreshes those indexes, first; a promise only when
+ * that waits.
  */
 export const postSynced = (state: State, own: readonly JoinedSynced[], added: readonly JoinedSynced[], run: number, pool: Pool | null): Promise<void> | null => {
     const { pending } = state.synced;
@@ -369,6 +370,18 @@ export const postSynced = (state: State, own: readonly JoinedSynced[], added: re
     }
     if (posting === null) return null;
     const chosen = posting;
+    const post = (): void => {
+        const tick = ++state.tick;
+        for (const synced of chosen) if (!synced.live && !synced.stopped && !synced.target.ended) write(state, synced, tick);
+    };
+    const { gpu } = state;
+    // What the GPU wrote is read back first, so the indexes refresh from the values it wrote.
+    if (gpu !== null && gpu.anyAhead()) return readAhead(state, gpu, chosen.map(synced => synced.runner)).then(() => refreshThenPost(state, chosen, pool, post) ?? undefined);
+    return refreshThenPost(state, chosen, pool, post);
+};
+
+/** Refreshes the indexes the chosen posts look up through, then posts them: a promise only when refreshing waits. */
+const refreshThenPost = (state: State, chosen: readonly JoinedSynced[], pool: Pool | null, post: () => void): Promise<void> | null => {
     let waiting: Promise<unknown>[] | null = null;
     for (const synced of chosen) {
         const uses = synced.runner.indexes;
@@ -376,12 +389,6 @@ export const postSynced = (state: State, own: readonly JoinedSynced[], added: re
         const building = refreshUses(state, uses, pool);
         if (building !== null) (waiting ??= []).push(building);
     }
-    const { gpu } = state;
-    if (gpu !== null && gpu.anyAhead()) (waiting ??= []).push(readAhead(state, gpu, chosen.map(synced => synced.runner)));
-    const post = (): void => {
-        const tick = ++state.tick;
-        for (const synced of chosen) if (!synced.live && !synced.stopped && !synced.target.ended) write(state, synced, tick);
-    };
     if (waiting === null) {
         post();
         return null;

@@ -1,12 +1,13 @@
 /// <reference types="node" />
 import type { Observe } from "../../interface/observe/observe.js";
 import { always } from "../../interface/resources/always.js";
+import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import type { LoopPlatform } from "./loop.js";
 import type { FromSyncedWorker, ToSyncedWorker } from "./synced-joined-worker.fixture.js";
-import { counter, gateWords, holdWord, reachedWord, releasedWord, seed, setStall, ticked } from "./synced-joined.test-helper.js";
+import { counter, gateWords, holdWord, phase, reachedWord, releasedWord, seed, setStall, spawnHeated, ticked, warm } from "./synced-joined.test-helper.js";
 import { tailWriters } from "./tails.js";
 
 /**
@@ -208,4 +209,31 @@ export const continuous = async (system: "rows" | "lookups") => {
         partway,
         behind,
     };
+};
+
+/**
+ * In chromium, with a GPU device: 100 rows a GPU kernel warms by 100 a run, and the worker's synced system counting
+ * those at least 150 hot through a sorted index on what it writes, each count run by the worker before a warming run
+ * whose sync point finds its post unclaimed, the worker holding: posted again after it, it's counted by the values the
+ * kernel wrote. What each count gave.
+ */
+export const gpuLookups = async (device: GPUDevice): Promise<readonly number[]> => {
+    const world = createWorld({ [workers]: 0, [gpuDevice]: device });
+    const worker = await joined(world);
+    const words = new Int32Array(new SharedArrayBuffer(gateWords * 4));
+    await world.run(spawnHeated);
+    const counts: number[] = [];
+    for (let k = 1; k <= 2; k++) {
+        Atomics.store(words, holdWord, 0);
+        const counted = worker.ask({ kind: "count hot", gate: words });
+        await until(world.observe.resource(phase), value => value >= k);
+        await world.run(warm);
+        Atomics.store(words, holdWord, 1);
+        Atomics.notify(words, holdWord);
+        const reply = await counted;
+        counts.push(reply.kind === "counted" ? reply.hot : -1);
+    }
+    await world.dispose();
+    await worker.terminate();
+    return counts;
 };

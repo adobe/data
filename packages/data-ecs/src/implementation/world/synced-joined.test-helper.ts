@@ -1,4 +1,5 @@
 import { Component } from "../../interface/component/component.js";
+import { Index } from "../../interface/indexes/index-type.js";
 import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import type { Entity } from "../../interface/entity/entity.js";
@@ -10,19 +11,29 @@ export const stamp = Symbol("syncedJoinedWorkerTest/stamp");
 export const spot = Symbol("syncedJoinedWorkerTest/spot");
 export const counter = Symbol("syncedJoinedWorkerTest/counter");
 export const stall = Symbol("syncedJoinedWorkerTest/stall");
+export const heat = Symbol("syncedJoinedWorkerTest/heat");
+export const rate = Symbol("syncedJoinedWorkerTest/rate");
+export const phase = Symbol("syncedJoinedWorkerTest/phase");
 declare module "@adobe/data-ecs" {
     export interface Components {
         [stamp]: { type: number };
         [spot]: { type: readonly [number, number, number] };
+        [heat]: { type: number };
+        [rate]: { type: number };
     }
     export interface Resources {
         [counter]: { type: number };
         [stall]: { type: number };
+        [phase]: { type: number };
     }
 }
 Component.register(stamp, { type: { type: "integer" } });
 Component.register(spot, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
+Component.register(heat, { type: { type: "number", precision: 1 } });
+Component.register(rate, { type: { type: "number", precision: 1 } });
 Resource.register(counter, { type: { type: "integer", default: 0 } });
+/** Moves on once a joined thread asked the world to run its synced system, so the world's thread knows it did. */
+Resource.register(phase, { type: { type: "integer", default: 0 } });
 /**
  * Milliseconds the synced systems spin partway through each run, so the world's next writer is likely ready before they
  * finish; negative, they wait there on the gate instead, until the world's thread releases them once a writer copied.
@@ -111,4 +122,23 @@ export const lookRows = System.create({ name: "syncedJoinedWorkerTest/lookRows",
         run.rows++;
         if (k === looked.length >> 1) spin(resources[stall]);
     }
+});
+
+/** 100 rows heated 0 to 99, which a GPU kernel warms by 100 each run. */
+export const spawnHeated = System.create({ name: "syncedJoinedWorkerTest/spawnHeated" }, ({ commands }) => {
+    for (let i = 0; i < 100; i++) commands.spawn([heat, rate])({ [heat]: i, [rate]: 1 });
+});
+export const warm = System.create({ name: "syncedJoinedWorkerTest/warm", kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
+    row[heat] = row[heat] + row[rate] * 100;
+});
+export const nextPhase = System.create({ name: "syncedJoinedWorkerTest/nextPhase", resources: { write: [phase] } }, ({ resources }) => {
+    resources[phase] += 1;
+});
+
+/** What `countHot` counted, run by run, on the joined thread. */
+export const hot: number[] = [];
+export const byHeat = Index.create({ name: "syncedJoinedWorkerTest/byHeat", key: [heat], sorted: true });
+/** Counts the rows at least 150 hot, through the sorted index on what the GPU kernel writes. */
+export const countHot = System.create({ name: "syncedJoinedWorkerTest/countHot", synced: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
+    hot.push(lookup.hot({ ">=": 150 }).length);
 });

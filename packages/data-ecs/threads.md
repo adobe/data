@@ -491,9 +491,9 @@ names objects of are ones that thread claims (`joined-synced.ts` on the world's 
 - **Posting:** after each run's and tick's sync point, in the synced pass, the world posts one whose conditions hold
   and that has no change filters, or one whose filter may pass: a resource it filters on changed since its `lastRun`,
   or a chunk of an archetype it matches was stamped, or its column stamped by a GPU kernel, which reaches the thread as
-  row ticks. One a run named, from either thread, is posted after each sync point until it ran. Posting refreshes the
-  indexes it looks up through and reads back what the GPU wrote that it reads, then writes its block, its posts word
-  last, and wakes the thread once for the pass, unless the thread hasn't read the last wake.
+  row ticks. One a run named, from either thread, is posted after each sync point until it ran. Posting reads back what
+  the GPU wrote that it reads, or the indexes it looks up through hold by, then refreshes those indexes, then writes its
+  block, its posts word last, and wakes the thread once for the pass, unless the thread hasn't read the last wake.
 - **Running:** the thread replays its objects through the newest sync first, then claims the post as a tail claims its
   rows, by adding to its progress word, so the claim and the world's cancel are one order; once claimed, a post stays
   as it is until its done word reaches its end. It runs the system with the tail's code, from where its rows are or the
@@ -960,7 +960,11 @@ there the same way (`joined-synced.ts`, `thread-synced.ts`, `thread-directory.ts
   removal freeing what both threads held, refusals of other systems, placement by objects with world runs, and a thread
   that's gone; in node and chromium against a joined worker, 1,000 rows read and looked up while the world ticks back
   to back writing them, every run of one tick's values (red without copying: 4,398 rows of another tick's; red without
-  the lookups' waits: 42,000; red with the sync point not waiting: 69).
+  the lookups' waits: 42,000; red with the sync point not waiting: 69); then, with the world's frames gated, a run a
+  writer is ready for partway reading the rest from its copy, and a worker holding its event loop over three ticks
+  running once, for the newest, so neither order depends on the machine's timing; in chromium, a joined worker's
+  lookups through a sorted index on what a GPU kernel wrote, posted again after a warming run's sync point (red with
+  posting refreshing before reading back: a count behind).
 - New: `joined synced resource`, `joined synced 10K`.
 
 ## Not built

@@ -65,4 +65,9 @@ describe("synced systems over GPU kernels' writes", () => {
         expect(hot).toBe(100);
         await world.dispose();
     });
+
+    it("look up on a joined thread through indexes kept by what a GPU kernel wrote in the run, read back before they're refreshed", async () => {
+        const fixture = await import("./synced-joined.fixture.js");
+        expect(await fixture.gpuLookups(await device())).toEqual([50, 100]);
+    });
 });

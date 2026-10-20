@@ -67,6 +67,7 @@ export const differences = {
     "system failures": "A notify that throws on a later value is a `\"system\"` failure named by the factory system's label, rather than an `\"observer\"` failure named by what it observes.",
     "whole entity": "An entity observer lists the components it reads: there's no form without them.",
     "disposed": "A disposed world runs nothing, so a first value the factories don't hold never comes.",
+    "objects of a joined thread": "On the world's thread, an observer reading objects a joined thread fills makes a system without an id placed there, which fails to register: an error in the report of a run, or out of band for a run of the factories' own, rather than a throw when subscribed. An entity's value never comes; a selection's scan that failed so may first give no entities.",
     "objects throw at subscribe": "On a joined thread, an observer reading objects it can't throws when subscribed, as the factories make nothing before, rather than when made.",
 } as const;
 

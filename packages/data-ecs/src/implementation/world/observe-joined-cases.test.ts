@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Resource } from "../../interface/resource/resource.js";
@@ -84,6 +84,27 @@ const until = <T>(observe: (notify: (value: T) => void) => () => void, accept: (
     });
     if (done) stop();
 });
+
+/** Errors thrown out of band while `run` runs, as uncaught errors would be, caught instead. */
+const catching = async (run: () => Promise<void>): Promise<unknown[]> => {
+    const caught: unknown[] = [];
+    const original = globalThis.queueMicrotask;
+    vi.spyOn(globalThis, "queueMicrotask").mockImplementation(callback => original(() => {
+        try {
+            callback();
+        }
+        catch (error) {
+            caught.push(error);
+        }
+    }));
+    try {
+        await run();
+    }
+    finally {
+        vi.restoreAllMocks();
+    }
+    return caught;
+};
 
 /** Once the thread shared last is joined, its claims made. */
 const joinedStatus = (world: CreatedWorld) => until(world.threads, threads => threads.at(-1)?.status === "joined");
@@ -180,6 +201,37 @@ const cases = (adapter: Adapter) => describe(`a joined thread's observers (${ada
         await world.run(dropCaptions);
         expect(await until(listed, value => value === null)).toBeNull();
         expect(await until(adapter.entity(remote, entity, { required: [place], optional: [caption] }), value => value !== null)).toEqual({ [place]: 1 });
+        await remote.dispose();
+        await world.dispose();
+    });
+
+    it("throw on the world's thread for one that reads objects a joined thread fills", async () => {
+        const { world, remote } = joined(["observeJoinedTest"]);
+        await joinedStatus(world);
+        const entity = await spawnOne(world, 3);
+        const values: unknown[] = [];
+        const observe = (): void => {
+            adapter.entity(world, entity, { required: [caption] })(value => values.push(value));
+            adapter.select(world, { required: [place, caption], where: { [caption]: "none" } })(() => {});
+        };
+        if (!byDesign(adapter, "objects of a joined thread")) {
+            expect(observe).toThrow(/"observeJoinedTest\/caption"/);
+            await remote.dispose();
+            await world.dispose();
+            return;
+        }
+        const reported: string[] = [];
+        const caught = await catching(async () => {
+            observe();
+            for (let k = 4; k < 6; k++) for (const failure of (await world.run(spawnPlaced, { x: k })).failures) reported.push(failure.message);
+            await new Promise(resolve => setTimeout(resolve, 10));
+        });
+        // The entity observer's system, added, fails in a run's report; the selection's scan, run, rejects, rethrown.
+        expect([...reported, ...caught.map(String)]).toEqual([
+            expect.stringMatching(/^System "Observe\.entity\(observeJoinedTest\/caption\).*runs on thread "observeJoinedTest", which a joined thread fills, and has no id/),
+            expect.stringMatching(/System "Observe\.select\(observeJoinedTest\/place, observeJoinedTest\/caption\).*runs on thread "observeJoinedTest", which a joined thread fills, and has no id/),
+        ]);
+        expect(values).toEqual([]);
         await remote.dispose();
         await world.dispose();
     });

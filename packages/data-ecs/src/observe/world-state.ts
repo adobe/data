@@ -65,6 +65,8 @@ export type WorldState = {
     readonly deliveries: { readonly batch: number; readonly tasks: readonly (() => void)[] }[];
     readonly idle: Shape[];
     readonly deliver: System;
+    /** What a rejected run of the factories' own does. */
+    readonly rejected: (error: unknown) => void;
 };
 
 const states = new WeakMap<World, WorldState>();
@@ -82,19 +84,30 @@ const ignore = (): void => {
     // A disposed world runs nothing more: its observers' first values never come.
 };
 
-/** A run of the factories' own, whose report nothing returns: its failures are rethrown out of band. */
-const runOwn = (world: World, system: System): void => {
-    world.run(system).then(rethrowFailures, ignore);
+/** Runs nothing: a run of it resolves while its world lives. */
+const alive = System.create({ name: "Observe/alive", synced: true }, () => {});
+
+/**
+ * What a rejected run of the factories' own does: nothing for a disposed world, whose first values never come, and for
+ * a live one, such as one whose system failed to register, rethrows the rejection out of band.
+ */
+const rejectedOf = (world: World) => (error: unknown): void => {
+    world.run(alive).then(() => rethrowLater(error), ignore);
+};
+
+/** A run of the factories' own, whose report nothing returns: its failures, and its rejection, are rethrown out of band. */
+const runOwn = (state: WorldState, system: System): void => {
+    state.world.run(system).then(rethrowFailures, state.rejected);
 };
 
 const noTasks: readonly (() => void)[] = [];
 
 /** A run of a joined thread's shape for first values: once it resolved, a post for it ran there, so `read` gives them. */
-const runJoined = (world: World, read: Read, batch: number): void => {
-    world.run(read.system).then(report => {
+const runJoined = (state: WorldState, read: Read, batch: number): void => {
+    state.world.run(read.system).then(report => {
         rethrowFailures(report);
         read.delivered(batch);
-    }, ignore);
+    }, state.rejected);
 };
 
 /** Runs what subscribers waiting for the open flush need, in call order after every run called before them. */
@@ -103,20 +116,20 @@ const flush = (state: WorldState): void => {
     const batch = state.open++;
     const { reads, world } = state;
     if (state.joined) {
-        for (let i = 0; i < reads.length; i++) runJoined(world, reads[i], batch);
+        for (let i = 0; i < reads.length; i++) runJoined(state, reads[i], batch);
         reads.length = 0;
         return;
     }
     for (let i = 0; i < reads.length; i++) {
         reads[i].flushed(batch);
-        runOwn(world, reads[i].system);
+        runOwn(state, reads[i].system);
     }
     reads.length = 0;
     if (!state.delivering) return;
     state.delivering = false;
     state.deliveries.push({ batch, tasks: state.tasks.length === 0 ? noTasks : state.tasks });
     if (state.tasks.length > 0) state.tasks = [];
-    runOwn(world, state.deliver);
+    runOwn(state, state.deliver);
 };
 
 /**
@@ -183,6 +196,7 @@ export const stateOf = (world: World): WorldState => {
         tasks: [],
         deliveries: [],
         idle: [],
+        rejected: rejectedOf(world),
         deliver: System.create({ name: "Observe/deliver", synced: true }, () => {
             const delivery = created.deliveries.shift();
             if (delivery === undefined) return;

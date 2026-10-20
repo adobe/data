@@ -156,6 +156,26 @@ declare module "@adobe/data-ecs" {
 Component.register(rank, { type: { type: "number" } });
 Component.register(second, { type: { type: "number" } });
 
+const coarse = Symbol("observeCasesTest/coarse");
+declare module "@adobe/data-ecs" {
+    interface Components {
+        [coarse]: { type: number };
+    }
+}
+// Kept at 32 bits, so a 64-bit bound may fall between two values it keeps.
+Component.register(coarse, { type: { type: "number", precision: 1 } });
+let coarseValues: readonly number[] = [];
+const spawnCoarse = System.create({ name: "observeCasesTest/spawnCoarse" }, ({ commands }) => {
+    for (const each of coarseValues) commands.spawn([coarse])({ [coarse]: each });
+});
+const shiftCoarse = System.create({ name: "observeCasesTest/shiftCoarse", components: { write: [coarse] } }, row => { row[coarse] = row[coarse] + 0.1; });
+
+type Condition = number | { readonly "<"?: number; readonly ">"?: number; readonly "<="?: number; readonly ">="?: number; readonly "=="?: number; readonly "!="?: number };
+
+/** Whether a value passes a condition, as `where` tests it. */
+const passesCondition = (value: number, condition: Condition): boolean => typeof condition === "number" ? value === condition : Object.entries(condition).every(([operator, operand]) =>
+    operator === "<" ? value < operand : operator === ">" ? value > operand : operator === "<=" ? value <= operand : operator === ">=" ? value >= operand : operator === "==" ? value === operand : value !== operand);
+
 /** What `rankAll` spawns: each entity's rank, second key, and whether it's marked, which puts it in another archetype. */
 let ranks: readonly (readonly [number, number, boolean])[] = [];
 /** The entities `rankAll` spawned, in order. */
@@ -709,6 +729,32 @@ const cases = (adapter: Adapter): void => {
                 const filtered = await toPromise(select(world, { required: [rank], where: { [rank]: { "<": 4 } }, order: one }));
                 expect(filtered).toEqual(full.filter(entity => current[ranked.indexOf(entity)] < 4));
                 expect(await toPromise(select(world, { required: [rank], where: { [rank]: { "<": 4 } }, order: one, page: { offset: 5, limit: 20 } }))).toEqual(filtered.slice(5, 25));
+            }
+        });
+
+        it("count and select by where at the bounds of a range, at a component's precision, as each value tests", async () => {
+            await using world = createWorld();
+            coarseValues = [0, 0.1, 0.1, 0.2, 0.30000001, 1, 1, 2, 3, -1, 0.1000000001];
+            await world.run(spawnCoarse);
+            const conditions: readonly Condition[] = [0.1, 1, { "<": 0.1 }, { "<=": 0.1 }, { ">": 0.1 }, { ">=": 0.2, "<": 1 }, { ">": 0.1, "<=": 0.1 }, { "<": 1.0000000001 },
+                { ">": 0.99999999999 }, { "!=": 1 }, { ">": 0, "!=": 1 }, { "==": 0.1 }, { ">=": 5 }, { "<": -2 }];
+            const counts = conditions.map(() => -1);
+            const selections = conditions.map((): readonly Entity[] => []);
+            conditions.forEach((condition, k) => {
+                count(world, { required: [coarse], where: { [coarse]: condition } })(value => { counts[k] = value; });
+                select(world, { required: [coarse], where: { [coarse]: condition } })(value => { selections[k] = value; });
+            });
+            await settle(world);
+            for (let round = 0; round < 3; round++) {
+                // What each condition passes of every value, read one by one.
+                const all = await toPromise(select(world, { required: [coarse] }));
+                const values = await Promise.all(all.map(async each => (await toPromise(entity(world, each, { required: [coarse] })))?.[coarse] ?? Number.NaN));
+                conditions.forEach((condition, k) => {
+                    const passing = all.filter((_, i) => passesCondition(values[i], condition));
+                    expect([k, counts[k]]).toEqual([k, passing.length]);
+                    expect([k, new Set(selections[k])]).toEqual([k, new Set(passing)]);
+                });
+                await world.run(shiftCoarse);
             }
         });
 

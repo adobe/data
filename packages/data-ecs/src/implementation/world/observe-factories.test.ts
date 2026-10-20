@@ -59,7 +59,7 @@ const runnersOf = async (world: CreatedWorld): Promise<number> => (await world.t
 describe("observer factories", () => {
     it("share one synced system among every observer of one shape, whatever their entities, where values and pages", async () => {
         await using world = await seeded(100);
-        const stops = [Observe.entity(world, spawned[0], { required: [amount] })(() => {}), Observe.select(world, { required: [amount], where: { [amount]: 0 } })(() => {})];
+        const stops = [Observe.entity(world, spawned[0], { required: [amount] })(() => {}), Observe.select(world, { required: [amount], where: { [amount]: 0 }, page: { offset: 0, limit: 5 } })(() => {})];
         await settle(world);
         const before = await runnersOf(world);
         for (let i = 1; i < 100; i++) stops.push(Observe.entity(world, spawned[i], { required: [amount] })(() => {}));
@@ -111,6 +111,16 @@ describe("observer factories", () => {
         expect(values).toEqual([]);
         expect(await Observe.toPromise(Observe.resource(world, level))).toBe(4);
         expect(await runnersOf(world)).toBe(held - 1);
+        // An entity observer's system, added again, reads through its new lookups.
+        const entities: unknown[] = [];
+        const stop = Observe.entity(world, spawned[0], { required: [amount] })(value => entities.push(value?.[amount]));
+        await settle(world);
+        await world.run(grow);
+        await world.run(System.create({ name: "observeFactoriesTest/growOthers", components: { write: [amount] } }, row => {
+            if (row.entity !== spawned[0]) row[amount] += 1;
+        }));
+        expect(entities).toEqual([4, 5]);
+        stop();
     });
 
     it("track a query only once a subscriber outlives its first value", async () => {

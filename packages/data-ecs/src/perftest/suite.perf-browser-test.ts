@@ -14,6 +14,7 @@ import { finalizedBenchmarks } from "./finalized.js";
 import { tailBenchmarks } from "./tails.js";
 import { transferBenchmarks } from "./transfers.js";
 import { indexBenchmarks } from "./indexes.js";
+import { observedGpuBenchmarks } from "./observed-gpu.js";
 
 /** Every worker's copy bandwidth together, through browser workers running the calibration script. */
 const browserThreadsBandwidth = async (): Promise<Curve> => {
@@ -94,6 +95,7 @@ const benchmarks = (device: GPUDevice): readonly Benchmark[] => [
     ...finalizedBenchmarks,
     ...tailBenchmarks,
     ...transferBenchmarks,
+    ...observedGpuBenchmarks(device, run => gpuFastest(device, run)),
     ...[[100_000, 10, "100K chains of 10"], [1_000, 1_000, "1K chains of 1,000"]].map(([roots, depth, chains]): Benchmark => ({
         name: `up depth ${depth} gpu`,
         operation: upOperation(String(chains)),

@@ -33,29 +33,45 @@ const membersOf = (required: readonly Component.Key[]) => {
     return index;
 };
 
-/** A by-entity lookup's row: the components it reads, and whether one changed since its system last ran. */
+/** A by-entity lookup's row: whether a component it watches changed since its system last ran. */
+type PresenceRow = { readonly changed: boolean };
+
+/** A by-entity lookup's row of the components it reads, and whether one changed since its system last ran. */
 type LookupRow = { readonly changed: boolean } & { readonly [K in Component.Key]: unknown };
+
+/** What a pass finds an entity by: whether it has the required components and they changed, their values, and an optional one's. */
+type Finders = {
+    readonly presence: (entity: Entity) => PresenceRow | null;
+    readonly values: (entity: Entity) => { readonly [K in Component.Key]?: unknown } | null;
+    readonly optional: (index: number, entity: Entity) => LookupRow | null;
+};
 
 const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: string, required: readonly Component.Key[], optional: readonly Component.Key[]): EntityShape => {
     const name = `Observe.entity(${labelOf(required)}${optional.length === 0 ? "" : `; ${labelOf(optional)}`})`;
     const rows: (LookupRow | null)[] = optional.map(() => null);
-    /** Reads an entry's entity, giving its value if it changed and first values to subscribers waiting up to `through`. */
-    const evaluate = (entry: EntityEntry, found: LookupRow | null, find: (index: number, entity: Entity) => LookupRow | null, through: number, failed: unknown): unknown => {
+    /**
+     * Reads an entry's entity, giving its value if it changed and first values to subscribers waiting up to `through`:
+     * its required values only once they changed, a new object each time.
+     */
+    const evaluate = (entry: EntityEntry, finders: Finders, through: number, failed: unknown): unknown => {
+        const found = finders.presence(entry.entity);
         let changed: boolean;
         if (found === null) changed = !entry.valid || entry.value !== null;
         else {
             changed = !entry.valid || entry.value === null || found.changed;
             for (let i = 0; i < optional.length; i++) {
-                const row = rows[i] = find(i, entry.entity);
+                const row = rows[i] = finders.optional(i, entry.entity);
                 const present = row !== null;
                 if (present !== entry.present[i] || (present && row.changed)) changed = true;
             }
         }
         if (changed) {
             if (found === null) entry.value = null;
+            else if (optional.length === 0) entry.value = finders.values(entry.entity);
             else {
                 const value: { [key: symbol]: unknown } = {};
-                for (let i = 0; i < required.length; i++) value[required[i]] = found[required[i]];
+                const values = required.length === 0 ? null : finders.values(entry.entity);
+                for (let i = 0; i < required.length; i++) value[required[i]] = values?.[required[i]];
                 for (let i = 0; i < optional.length; i++) {
                     const row = rows[i];
                     entry.present[i] = row !== null;
@@ -89,7 +105,7 @@ const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: s
         return idle;
     };
     /** Evaluates every entry, or with nothing changed, those whose subscribers wait for a first value. */
-    const pass = (changed: boolean, find: (entity: Entity) => LookupRow | null, findOptional: (index: number, entity: Entity) => LookupRow | null): void => {
+    const pass = (changed: boolean, finders: Finders): void => {
         if (!shape.swept) shape.swept = !sweep();
         if (!changed && !shape.waiting) return;
         const through = state.delivered;
@@ -98,19 +114,30 @@ const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: s
         let waiting = false;
         for (let i = 0, count = entries.length; i < count; i++) {
             const entry = entries[i];
-            if (changed || (entry.waiting > 0 && !entry.valid)) failed = evaluate(entry, find(entry.entity), findOptional, through, failed);
+            if (changed || (entry.waiting > 0 && !entry.valid)) failed = evaluate(entry, finders, through, failed);
             else if (entry.waiting > 0) failed = give(entry, through, false, state.pass, -1, failed);
             if (entry.waiting > 0) waiting = true;
         }
         shape.waiting = waiting;
         throwFailed(failed);
     };
+    /** The finders of the runner whose lookups they are: another, once its system is added again. */
+    let finders: Finders | null = null;
+    let source: object | null = null;
     const system = optional.length === 0
-        ? System.create({ name, synced: true, lookup: { required: { read: required, changed: required }, members: { index: membersOf(required), changed: required } } }, ({ lookup }) => {
-            pass(lookup.members().changed, lookup.required, noOptional);
+        ? System.create({ name, synced: true, lookup: { presence: { has: required, changed: required }, values: { read: required }, members: { index: membersOf(required), changed: required } } }, ({ lookup }) => {
+            if (source !== lookup || finders === null) {
+                source = lookup;
+                finders = { presence: lookup.presence, values: lookup.values, optional: noOptional };
+            }
+            pass(lookup.members().changed, finders);
         })
         : System.create({ name, synced: true, lookup: optionalLookups(required, optional) }, ({ lookup }) => {
-            pass(true, lookup.required, (index, entity) => lookup[index](entity));
+            if (source !== lookup || finders === null) {
+                source = lookup;
+                finders = { presence: lookup.presence, values: lookup.values, optional: (index, entity) => lookup[index](entity) };
+            }
+            pass(true, finders);
         });
     const shape: EntityShape = {
         live: 0,
@@ -134,9 +161,18 @@ const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: s
 
 const noOptional = (): null => null;
 
-/** Lookups of an entity's required components, and one of each optional one, by its position. */
-const optionalLookups = (required: readonly Component.Key[], optional: readonly Component.Key[]): { readonly required: { readonly read: readonly Component.Key[]; readonly changed: readonly Component.Key[] }; readonly [index: number]: { readonly read: readonly Component.Key[]; readonly changed: readonly Component.Key[] } } => {
-    const lookups: { required: { readonly read: readonly Component.Key[]; readonly changed: readonly Component.Key[] }; [index: number]: { readonly read: readonly Component.Key[]; readonly changed: readonly Component.Key[] } } = { required: { read: required, changed: required } };
+type Watched = { readonly read: readonly Component.Key[]; readonly changed: readonly Component.Key[] };
+
+/** Lookups of an entity's required components, whether and what, and one of each optional one, by its position. */
+const optionalLookups = (required: readonly Component.Key[], optional: readonly Component.Key[]): {
+    readonly presence: { readonly has: readonly Component.Key[]; readonly changed: readonly Component.Key[] };
+    readonly values: { readonly read: readonly Component.Key[] };
+    readonly [index: number]: Watched;
+} => {
+    const lookups: { presence: { readonly has: readonly Component.Key[]; readonly changed: readonly Component.Key[] }; values: { readonly read: readonly Component.Key[] }; [index: number]: Watched } = {
+        presence: { has: required, changed: required },
+        values: { read: required },
+    };
     for (let i = 0; i < optional.length; i++) lookups[i] = { read: [optional[i]], changed: [optional[i]] };
     return lookups;
 };

@@ -171,6 +171,44 @@ const reindex = (table: SortedTable): void => {
     for (const watch of table.watched.values()) buildTree(table, watch.tree, watch.ticks);
 };
 
+/**
+ * `reindex` for blocks at positions from `k` on, where a block was added or dropped, those before unchanged; `end` is
+ * past the last position either before or after. O(blocks after `k`), so a block split or dropped near the end of the
+ * order, as entities spawned and despawned at the end of entity order are, costs little.
+ */
+const reindexFrom = (table: SortedTable, k: number, end: number): void => {
+    const { blocks, order, lengths } = table;
+    let leaves = minimumBlocks;
+    while (leaves < blocks) leaves *= 2;
+    if (table.counts.length < blocks + 1 || leaves !== table.leaves) {
+        reindex(table);
+        return;
+    }
+    const { counts, positions, tree } = table;
+    for (let p = k; p < blocks; p++) {
+        positions[order[p]] = p;
+        fence(table, p);
+    }
+    // Each Fenwick node from `k` on: its block's length and its children's sums, those before `k` unchanged.
+    for (let node = k + 1; node <= blocks; node++) {
+        let sum = lengths[order[node - 1]];
+        const low = node - (node & -node);
+        for (let child = node - 1; child > low; child -= child & -child) sum += counts[child];
+        counts[node] = sum;
+    }
+    refreshTree(table, tree, table.ticks, k, end);
+    for (const watch of table.watched.values()) refreshTree(table, watch.tree, watch.ticks, k, end);
+};
+
+/** A segment tree's leaves from position `k` to before `end` again, and their ancestors. */
+const refreshTree = (table: SortedTable, tree: Float64Array, ticks: Float64Array, k: number, end: number): void => {
+    const { leaves, blocks, order } = table;
+    for (let p = k; p < end; p++) tree[leaves + p] = p < blocks ? ticks[order[p]] : 0;
+    for (let low = (leaves + k) >> 1, high = (leaves + end - 1) >> 1; low >= 1; low >>= 1, high >>= 1) {
+        for (let node = low; node <= high; node++) tree[node] = Math.max(tree[2 * node], tree[2 * node + 1]);
+    }
+};
+
 /** A segment tree of the maximum of `ticks` by block, over positions in `order`. */
 const buildTree = (table: SortedTable, tree: Float64Array, ticks: Float64Array): void => {
     const { leaves, blocks, order } = table;
@@ -227,11 +265,13 @@ const stamp = (table: SortedTable, k: number, tick: number): void => {
     for (let node = table.leaves + k; node >= 1; node >>= 1) if (tree[node] < tick) tree[node] = tick;
 };
 
-/** Stamps a watched component's tick of the block at position `k`. */
-export const stampWatched = (table: SortedTable, component: number, block: number, tick: number): void => {
+/** Stamps a watched component's tick of the block at position `k`, and its tree. */
+export const stampWatched = (table: SortedTable, component: number, k: number, tick: number): void => {
     const watch = table.watched.get(component);
-    if (watch === undefined) return;
-    watch.ticks[block] = tick;
+    if (watch === undefined || k >= table.blocks) return;
+    watch.ticks[table.order[k]] = tick;
+    const { tree } = watch;
+    for (let node = table.leaves + k; node >= 1; node >>= 1) if (tree[node] < tick) tree[node] = tick;
 };
 
 /** The largest of a tree's ticks over positions `from` to `to`, inclusive. */
@@ -387,12 +427,32 @@ export const positionOf = (table: SortedTable, found: { readonly k: number; read
 
 // Changing entries.
 
-/** Where entity index `entity` is in its block, by scanning it, or -1. */
+/**
+ * Where entity index `entity` is in its block, or -1: by binary search in an index without a key, whose entries are in
+ * entity order, else by scanning it.
+ */
 const offsetIn = (table: SortedTable, block: number, entity: number): number => {
     const { entries, stride, words } = table;
     const base = blockBase(table, block) + words;
-    for (let k = 0, length = table.lengths[block]; k < length; k++) if (entries[base + k * stride] === entity) return k;
+    const length = table.lengths[block];
+    if (words === 0) {
+        const at = entityPosition(entries, base, stride, length, entity);
+        return at < length && entries[base + at * stride] === entity ? at : -1;
+    }
+    for (let k = 0; k < length; k++) if (entries[base + k * stride] === entity) return k;
     return -1;
+};
+
+/** The first of `length` entries from `base`, `stride` words apart and in entity order, whose entity index isn't below `entity`. */
+const entityPosition = (entries: Uint32Array, base: number, stride: number, length: number, entity: number): number => {
+    let first = 0;
+    let last = length;
+    while (first < last) {
+        const middle = (first + last) >>> 1;
+        if (entries[base + middle * stride] < entity) first = middle + 1;
+        else last = middle;
+    }
+    return first;
 };
 
 /** The words of the entry at `base`'s key equal `key`'s from `at`. */
@@ -433,7 +493,7 @@ export const removeSorted = (table: SortedTable, entity: number, tick: number): 
     table.order.copyWithin(k, k + 1, table.blocks);
     table.blocks--;
     table.freed.push(block);
-    reindex(table);
+    reindexFrom(table, k, table.blocks + 1);
     if (k > 0) stamp(table, k - 1, tick);
     if (k < table.blocks) stamp(table, k, tick);
     if (table.blocks === 0) table.cleared = tick;
@@ -456,9 +516,10 @@ export const insertSorted = (table: SortedTable, key: Uint32Array, at: number, v
     let low = 0;
     let high = table.blocks;
     const fenceWords = words + 1;
+    const { fences } = table;
     while (low < high) {
         const middle = (low + high) >>> 1;
-        if (compareEntry(table, table.fences, middle * fenceWords, probe, values, entity) > 0) high = middle;
+        if (words === 0 ? fences[middle] > entity : compareEntry(table, fences, middle * fenceWords, probe, values, entity) > 0) high = middle;
         else low = middle + 1;
     }
     let k = Math.min(low, table.blocks - 1);
@@ -472,11 +533,14 @@ export const insertSorted = (table: SortedTable, key: Uint32Array, at: number, v
     const base = blockBase(table, block);
     const length = table.lengths[block];
     let first = 0;
-    let last = length;
-    while (first < last) {
-        const middle = (first + last) >>> 1;
-        if (compareEntry(table, table.entries, base + middle * stride, probe, values, entity) > 0) last = middle;
-        else first = middle + 1;
+    if (words === 0) first = entityPosition(table.entries, base, stride, length, entity);
+    else {
+        let last = length;
+        while (first < last) {
+            const middle = (first + last) >>> 1;
+            if (compareEntry(table, table.entries, base + middle * stride, probe, values, entity) > 0) last = middle;
+            else first = middle + 1;
+        }
     }
     const { entries } = table;
     for (let w = length * stride - 1; w >= first * stride; w--) entries[base + w + stride] = entries[base + w];
@@ -511,7 +575,7 @@ const split = (table: SortedTable, k: number, tick: number): void => {
     table.order.copyWithin(k + 2, k + 1, table.blocks);
     table.order[k + 1] = next;
     table.blocks++;
-    reindex(table);
+    reindexFrom(table, k, table.blocks);
 };
 
 /** Updates where entity index `entity` is: its archetype and row, at its entry. */

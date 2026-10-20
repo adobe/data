@@ -380,6 +380,8 @@ type SortedList = { readonly [listState]: Sorted };
 
 /** Whether a tree's ticks over the blocks around positions `low` to `high` are newer than `since`. */
 const newer = (sorted: SortedView, tree: Float64Array, low: number, high: number, since: number): boolean => {
+    // The whole index: the tree's root.
+    if (low <= 0 && high >= sorted.size) return tree[1] > since;
     const last = sorted.size - 1;
     return treeMaximum(sorted, tree, blockAt(sorted, Math.min(last, Math.max(low - 1, 0))), blockAt(sorted, Math.min(last, high))) > since;
 };
@@ -566,6 +568,19 @@ const createSortedSite = (lookup: IndexLookup, sorted: SortedView, shape: Shape)
         }
         return listed();
     };
+    // Without a key, or with none of it given: every row.
+    if (shape.length === 0) {
+        return {
+            find: (): unknown => {
+                cursor.length = 0;
+                cursor.first = 0;
+                range.low = 0;
+                range.high = sorted.size;
+                range.second = range.end = 0;
+                return listed();
+            },
+        };
+    }
     return {
         find: (a0?: unknown, a1?: unknown, a2?: unknown, a3?: unknown, a4?: unknown, a5?: unknown, a6?: unknown, a7?: unknown,
             a8?: unknown, a9?: unknown, a10?: unknown, a11?: unknown, a12?: unknown, a13?: unknown, a14?: unknown, a15?: unknown): unknown => {

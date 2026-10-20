@@ -11,5 +11,7 @@ export const indexWorkersCases = (load: () => Promise<typeof Fixture>) => descri
         expect(one.rows).toEqual(alone.rows);
         expect(three.rows).toEqual(alone.rows);
         expect(three.tasks).toBeGreaterThan(0);
+        // Targets' tallies through the index without a key: its length in millions, then a stride of its weights.
+        expect(three.rows.filter(row => /^\[\d+,-?\d+,\d{7,}\]$/.test(row)).length).toBeGreaterThan(900);
     });
 });

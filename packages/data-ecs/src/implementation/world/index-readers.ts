@@ -176,6 +176,8 @@ export const createIndexReader = (setup: IndexReaderSetup, source: IndexSource, 
         return k;
     };
     const treeNewer = (tree: Float64Array, base: number, low: number, high: number): boolean => {
+        // The whole index: the tree's root.
+        if (low <= 0 && high >= source.size) return tree[base + 1] > source.since;
         const last = source.size - 1;
         const from = blockAt(Math.min(last, Math.max(low - 1, 0)));
         const to = blockAt(Math.min(last, high));

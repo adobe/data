@@ -252,3 +252,9 @@ export const compareStrings = (a: string, b: string): number => {
 /** Two values of an object part in order: strings by code point, anything else as equal. */
 export const compareObjects = (a: unknown, b: unknown): number =>
     typeof a === "string" && typeof b === "string" ? compareStrings(a, b) : 0;
+
+/**
+ * Whether a world keeps an index as a sorted table: a sorted one, and one without a key, whose entities a sorted table
+ * keeps in entity order, an entity entering or leaving moving at most a block's entries.
+ */
+export const keptSorted = (declaration: { readonly key: readonly unknown[]; readonly sorted?: boolean }): boolean => declaration.sorted === true || declaration.key.length === 0;

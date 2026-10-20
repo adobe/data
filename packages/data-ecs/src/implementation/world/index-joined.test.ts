@@ -50,6 +50,7 @@ const grid = Index.create({ name: "indexJoinedTest/grid", key: [cell], component
 const serials = Index.create({ name: "indexJoinedTest/serials", key: [serial], unique: true, components: { has: [weight] } });
 const lanes = Index.create({ name: "indexJoinedTest/lanes", key: [lane, rank], sorted: true });
 const names = Index.create({ name: "indexJoinedTest/names", key: [name] });
+const weighted = Index.create({ name: "indexJoinedTest/weighted", key: [], components: { has: [weight] } });
 
 /** On the joined thread, in the tier before the lookups, so a task of consecutive tiers there would see the index before it: moves some cells. */
 const shift = System.create({ name: "indexJoinedTest/shift", components: { read: [serial], write: [cell, label] } }, row => {
@@ -63,7 +64,7 @@ const shift = System.create({ name: "indexJoinedTest/shift", components: { read:
 const describeCells = System.create({
     name: "indexJoinedTest/describeCells",
     components: { read: [cell, target], write: [label] },
-    lookup: { near: { index: grid, read: [weight], changed: [weight] }, bySerial: { index: serials, read: [weight] } },
+    lookup: { near: { index: grid, read: [weight], changed: [weight] }, bySerial: { index: serials, read: [weight] }, all: { index: weighted, read: [weight] } },
     after: [shift],
 }, (row, { lookup }) => {
     const [x, y] = row[cell];
@@ -77,7 +78,10 @@ const describeCells = System.create({
         }
     }
     const followed = lookup.bySerial(row[target]);
-    row[label] = `${found}:${sum}:${lookup.near([x, y]).changed}:${followed === null ? "none" : followed[weight]}`;
+    const all = lookup.all();
+    let every = 0;
+    for (let i = row[target] % 11; i < all.length; i += 11) every += all.at(i)[weight] * (i + 1);
+    row[label] = `${found}:${sum}:${lookup.near([x, y]).changed}:${followed === null ? "none" : followed[weight]}:${all.length}:${every}:${all.changed}`;
 });
 
 /** On the joined thread: the rows of the row's lane within 5 of its rank, in key order. */

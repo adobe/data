@@ -17,9 +17,9 @@ import type { Pool } from './pool.js';
 import { idOf, observe, startTicking, type State } from './state.js';
 import {
     blockBase, blockEntries, coverSortedEntities, createSortedTable, entryOf, insertSorted, loadSortedTable, refreshWatchedTree, relocateSorted,
-    releaseSortedTable, removeSorted, sameStoredKey, unwatchSortedComponent, watchSortedComponent, type SortedTable,
+    releaseSortedTable, removeSorted, sameStoredKey, stampWatched, unwatchSortedComponent, watchSortedComponent, type SortedTable,
 } from './index-sorted.js';
-import { compareObjects } from './index-keys.js';
+import { compareObjects, keptSorted } from './index-keys.js';
 
 /**
  * What a world keeps of an index while some registered system or finalizer of it uses one: its structure, which
@@ -101,6 +101,7 @@ export const acquireIndex = (state: State, definition: IndexDefinition): WorldIn
     const { key, components, unique } = definition.declaration;
     const keys = key.map(part => idOf(state, part));
     const { parts, words } = keyPartsOf(keys.map(id => state.layouts[id]));
+    const sorted = keptSorted(definition.declaration);
     const index: WorldIndex = {
         definition,
         label: labelOfItem(definition),
@@ -118,8 +119,8 @@ export const acquireIndex = (state: State, definition: IndexDefinition): WorldIn
         refreshed: 0,
         watchers: new Map(),
         scanned: new Map(),
-        hash: definition.declaration.sorted === true ? null : createHashTable(state.memory, words),
-        sorted: definition.declaration.sorted === true ? createSortedTable(state.memory, words, parts) : null,
+        hash: sorted ? null : createHashTable(state.memory, words),
+        sorted: sorted ? createSortedTable(state.memory, words, parts) : null,
         key: new Uint32Array(Math.max(1, words)),
         stamps: new Int32Array(0),
         pass: 0,
@@ -128,7 +129,7 @@ export const acquireIndex = (state: State, definition: IndexDefinition): WorldIn
         pendingRows: new Int32Array(64),
         operations: new Int32Array(64),
         inserted: new Int32Array(64),
-        built: { entries: new Int32Array(0), keys: new Uint32Array(0), hashes: new Uint32Array(0), buckets: new Int32Array(0), order: new Int32Array(0), spare: new Int32Array(0), histogram: new Int32Array(definition.declaration.sorted === true ? 65536 : 0) },
+        built: { entries: new Int32Array(0), keys: new Uint32Array(0), hashes: new Uint32Array(0), buckets: new Int32Array(0), order: new Int32Array(0), spare: new Int32Array(0), histogram: new Int32Array(sorted && words > 0 ? 65536 : 0) },
         pooled: null,
         merging: { starts: new Int32Array(0), order: new Int32Array(0), removed: new Int32Array(0), added: new Int32Array(0), segment: new Int32Array(0) },
     };
@@ -1078,6 +1079,10 @@ const sortedOrder = (index: WorldIndex, count: number, keys: Uint32Array): Int32
 const scanWatched = (state: State, index: WorldIndex, component: number, tick: number): void => {
     const since = index.scanned.get(component) ?? tick;
     if (!writtenSince(state, component, since)) return;
+    if (index.keys.length === 0 && index.sorted !== null) {
+        scanWatchedWhole(index, index.sorted, component, since, tick);
+        return;
+    }
     const ticks = index.hash?.watched.get(component)?? index.sorted?.watched.get(component)?.ticks;
     if (ticks === undefined) return;
     const holders = index.hash?.bucketOf ?? index.sorted?.blockOf;
@@ -1093,6 +1098,24 @@ const scanWatched = (state: State, index: WorldIndex, component: number, tick: n
     }
     if (index.sorted !== null) refreshWatchedTree(index.sorted, component);
     index.scanned.set(component, tick);
+};
+
+/**
+ * `scanWatched` for an index without a key, whose lookups all give every row: a row whose watched component changed
+ * stamps one block, found by the ticks of chunks.
+ */
+const scanWatchedWhole = (index: WorldIndex, sorted: SortedTable, component: number, since: number, tick: number): void => {
+    index.scanned.set(component, tick);
+    for (const archetype of index.members) {
+        const storage = archetype.storageById[component];
+        if (storage === undefined || !storage.ticked) continue;
+        let changed = storage.columnChanged > since;
+        const { chunkChanged } = storage;
+        for (let chunk = 0, count = Math.ceil(archetype.count / 2 ** chunkShift); !changed && chunk < count; chunk++) changed = chunkChanged[chunk] > since;
+        if (!changed) continue;
+        stampWatched(sorted, component, 0, tick);
+        return;
+    }
 };
 
 /** An index a runner looks up through, with the components its lookups there watch. */

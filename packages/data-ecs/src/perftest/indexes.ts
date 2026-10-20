@@ -258,6 +258,49 @@ const readPage = System.create({ name: "indexes/readPage", lookup: { byAmount: {
 });
 const nudgeThenPage = System.create({ name: "indexes/nudgeThenPage", systems: [nudgeAmount, readPage] });
 
+/** Entities of the keyless benchmarks, and the 1% of them `keyless refresh 1M 1%` moves in and out. */
+const tagged = Symbol("indexes/tagged");
+declare module "@adobe/data-ecs" {
+    export interface Components {
+        [tagged]: { type: true };
+    }
+}
+Component.register(tagged, { type: { const: true } });
+const untagged = Index.create({ name: "indexes/untagged", key: [], components: { has: [amount], not: [tagged] } });
+const seedAmounts = System.create({ name: "indexes/seedAmounts" }, ({ commands }) => {
+    for (let i = 0; i < million; i++) {
+        if (i % 100 === 0) commands.spawn([amount, marked])({ [amount]: i, [marked]: true });
+        else commands.spawn([amount])({ [amount]: i });
+    }
+});
+/** Tags every marked entity, which leaves the index, and untags them the next run, which enter it again. */
+let tagging = true;
+const toggleMarked = System.create({ name: "indexes/toggleMarked", components: { has: [marked] } }, (row, { commands }) => {
+    if (tagging) commands.add(row.entity, tagged);
+    else commands.remove(row.entity, tagged);
+});
+const lookUntagged = System.create({ name: "indexes/lookUntagged", lookup: { untagged: { index: untagged } } }, ({ lookup }) => { found += lookup.untagged().length; });
+/** Despawns the entities it spawned the run before and spawns as many again. */
+let spawnedLast: Entity[] = [];
+const spawnAndDespawn = System.create({ name: "indexes/spawnAndDespawn" }, ({ commands }) => {
+    for (const entity of spawnedLast) commands.despawn(entity);
+    const spawned: Entity[] = [];
+    for (let i = 0; i < million / 100; i++) spawned.push(commands.spawn([amount])({ [amount]: i }));
+    spawnedLast = spawned;
+});
+/** Writes every entity's amount, which the index holds by but doesn't watch. */
+const writeAmounts = System.create({ name: "indexes/writeAmounts", kernel: "cpu", components: { write: [amount] } }, row => { row[amount] = row[amount] + 1; });
+/** Reads the index's length and whether it changed, as a count kept by a system would. */
+const lengthReads = 100_000;
+const readLengths = System.create({ name: "indexes/readLengths", lookup: { untagged: { index: untagged } } }, ({ lookup }) => {
+    let sum = 0;
+    for (let i = 0; i < lengthReads; i++) {
+        const rows = lookup.untagged();
+        sum += rows.changed ? 1 : rows.length;
+    }
+    found = sum;
+});
+
 export const indexBenchmarks: readonly Benchmark[] = [
     {
         name: "index idle",
@@ -273,6 +316,91 @@ export const indexBenchmarks: readonly Benchmark[] = [
             const lookup = Object.fromEntries(indexes.map((index, k) => [`i${k}`, { index }]));
             const user = System.create({ lookup }, () => {});
             const best = await fastest(() => world.run(user));
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "keyless index idle",
+        operation: "A run of a system looking up through 1,000 indexes without a key when nothing they hold changed: what keeping a membership costs each frame while its entities rest.",
+        per: "indexes",
+        n: idleIndexes,
+        typical: [1, 100],
+        best: { bytes: 8, basis: "Each index reads its journal position, 8 bytes." },
+        run: async () => {
+            const world = inline();
+            const indexes = Array.from({ length: idleIndexes }, () => Index.create({ key: [], components: { has: [idleKey] } }));
+            await world.run(System.create(({ commands }) => { for (let i = 0; i < 1000; i++) commands.spawn([idleKey])({ [idleKey]: i }); }));
+            const lookup = Object.fromEntries(indexes.map((index, k) => [`i${k}`, { index }]));
+            const user = System.create({ lookup }, () => {});
+            const best = await fastest(() => world.run(user));
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "keyless refresh 1M 1%",
+        operation: "Refreshing an index without a key of 1M entities after 1% of them, spread through entity order, left it or entered it again at a sync point: a membership kept current as some entities gain or lose a tag each frame.",
+        per: "entities entering or leaving",
+        n: million / 100,
+        typical: [100, 100_000],
+        best: { bytes: 24, basis: "Each entity reads its 4-byte journal entry and its 8-byte location, and moves a 12-byte entry in or out." },
+        run: async () => {
+            const world = inline();
+            await world.run(seedAmounts);
+            await world.run(lookUntagged);
+            const best = await after(async () => { tagging = !tagging; await world.run(toggleMarked); }, () => world.run(lookUntagged));
+            check(found > 0, "keyless refresh 1M 1%: nothing found");
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "keyless spawn 1M 1%",
+        operation: "Refreshing an index without a key of 1M entities after a sync point despawned the 1% spawned the frame before and spawned as many again: a membership of entities that come and go in bursts, as particles do.",
+        per: "entities spawned or despawned",
+        n: million / 50,
+        typical: [100, 100_000],
+        best: { bytes: 24, basis: "Each entity reads its 4-byte journal entry and its 8-byte location, and moves a 12-byte entry in or out." },
+        run: async () => {
+            const world = inline();
+            await world.run(seedAmounts);
+            await world.run(lookUntagged);
+            const best = await after(() => world.run(spawnAndDespawn), () => world.run(lookUntagged));
+            check(found > 0, "keyless spawn 1M 1%: nothing found");
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "keyless write 1M",
+        operation: "Refreshing an index without a key of 1M entities after a kernel wrote a component every one of them has, which the index holds by but no lookup watches: a membership costs nothing for the values its entities write each frame.",
+        per: "rows written",
+        n: million,
+        typical: [10_000, 1_000_000],
+        best: { bytes: 0.001, basis: "Nothing it holds changed: the index reads its journal position and nothing per row." },
+        run: async () => {
+            const world = inline();
+            await world.run(seedAmounts);
+            await world.run(lookUntagged);
+            const best = await after(() => world.run(writeAmounts), () => world.run(lookUntagged));
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "keyless length",
+        operation: "100K lookups through an index without a key of 1M entities, each reading its length and whether it changed, in a main-thread system: a count a system keeps.",
+        per: "lookups",
+        n: lengthReads,
+        typical: [1, 1_000],
+        best: { bytes: 16, basis: "Each lookup reads its length and its range's newest tick, 8 bytes each." },
+        run: async () => {
+            const world = inline();
+            await world.run(seedAmounts);
+            await world.run(readLengths);
+            const best = await fastest(() => world.run(readLengths), 2000, 3);
+            check(found > 0, "keyless length: nothing found");
             await world.dispose();
             return best;
         },

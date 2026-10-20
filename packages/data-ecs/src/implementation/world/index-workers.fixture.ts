@@ -19,6 +19,7 @@ const rank = Symbol("indexWorkersTest/rank");
 const seen = Symbol("indexWorkersTest/seen");
 const serial = Symbol("indexWorkersTest/serial");
 const target = Symbol("indexWorkersTest/target");
+const tally = Symbol("indexWorkersTest/tally");
 
 declare module "@adobe/data-ecs" {
     interface Components {
@@ -32,6 +33,7 @@ declare module "@adobe/data-ecs" {
         [seen]: { type: Entity };
         [serial]: { type: number };
         [target]: { type: number };
+        [tally]: { type: number };
     }
 }
 Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
@@ -44,10 +46,12 @@ Component.register(rank, { type: { type: "number" } });
 Component.register(seen, { type: Entity.schema });
 Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
 Component.register(target, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
+Component.register(tally, { type: { type: "number" } });
 
 const grid = Index.create({ name: "indexWorkersTest/grid", key: [cell], components: { has: [weight] } });
 const lanes = Index.create({ name: "indexWorkersTest/lanes", key: [lane, rank], sorted: true });
 const serials = Index.create({ name: "indexWorkersTest/serials", key: [serial], unique: true, components: { has: [weight] } });
+const weighted = Index.create({ name: "indexWorkersTest/weighted", key: [], components: { has: [weight] } });
 
 /** Each row's neighbors in the 3 by 3 cells around its own: how many, and their weights' sum. */
 const neighbors = System.create({
@@ -106,7 +110,20 @@ const follow = System.create({
     row[total] = found === null ? -1 : found[weight];
 });
 
-const tick = System.create({ name: "indexWorkersTest/tick", systems: [neighbors, watch, window, follow] });
+/** Through an index without a key: how many entities it holds, a stride of their weights, and whether it changed. */
+const census = System.create({
+    name: "indexWorkersTest/census", kernel: "cpu",
+    components: { read: [target], write: [tally] },
+    lookup: { weighted: { index: weighted, read: [weight], changed: [weight] } },
+    after: [follow],
+}, (row, { lookup }) => {
+    const all = lookup.weighted();
+    let sum = 0;
+    for (let i = row[target] % 97; i < all.length; i += 97) sum += all.at(i)[weight];
+    row[tally] = all.length * 1000000 + sum * 2 + (all.changed ? 1 : 0);
+});
+
+const tick = System.create({ name: "indexWorkersTest/tick", systems: [neighbors, watch, window, follow, census] });
 
 const seed = System.create({ name: "indexWorkersTest/seed" }, ({ commands }) => {
     for (let k = 0; k < 3000; k++) {
@@ -115,7 +132,7 @@ const seed = System.create({ name: "indexWorkersTest/seed" }, ({ commands }) => 
     for (let k = 0; k < 2000; k++) {
         commands.spawn([lane, rank, count, seen])({ [lane]: k % 5, [rank]: (k * 37) % 1009, [count]: 0, [seen]: Entity.none });
     }
-    for (let k = 0; k < 1000; k++) commands.spawn([target, total])({ [target]: (k * 13) % 3500, [total]: 0 });
+    for (let k = 0; k < 1000; k++) commands.spawn([target, total, tally])({ [target]: (k * 13) % 3500, [total]: 0, [tally]: 0 });
 });
 
 /** Moves some cells, changes some weights and ranks, despawns some serials and spawns more: a different input each time. */
@@ -162,8 +179,8 @@ export const simulate = async (threads: number, wasm: boolean): Promise<{ readon
             return [values[lane], values[rank], values[count], first === null ? null : [first[lane], first[rank]]];
         }));
         const targets = await Promise.all((await select(ecs, { required: [target] })).map(async entity => {
-            const values = await readEntity(ecs, entity, [target, total]);
-            return values === null ? null : [values[target], values[total]];
+            const values = await readEntity(ecs, entity, [target, total, tally]);
+            return values === null ? null : [values[target], values[total], values[tally]];
         }));
         const rows = [...cells, ...ranked, ...targets].map(row => JSON.stringify(row));
         return { rows: rows.sort(), tasks };

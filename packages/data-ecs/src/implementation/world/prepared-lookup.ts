@@ -59,6 +59,12 @@ export const prepareLookup = (shape: Shape) => {
         typeof lookup === "function" ? Reflect.apply(lookup, undefined, argumentsOf(shape, values)) : undefined;
     // The commonest counts take exactly their arguments, so a call passes nothing more.
     switch (count) {
+        case 0: return {
+            find: (lookup: unknown): unknown => {
+                const current = lookup === last ? site : siteOf(lookup);
+                return current === null ? asWritten(lookup, []) : current.find();
+            },
+        };
         case 1: return {
             find: (lookup: unknown, a0: unknown): unknown => {
                 const current = lookup === last ? site : siteOf(lookup);

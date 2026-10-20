@@ -32,6 +32,7 @@ import type { Since } from './index-lookups.js';
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
 import { createThreadFinalizers } from './thread-finalizers.js';
 import { createThreadIndex, type ThreadIndex } from './thread-indexes.js';
+import { keptSorted } from './index-keys.js';
 import { chunkShift } from './kernel.js';
 import {
     doneWord, endWord, headExecuted, headRan, progressWord, snapshotFlagsWord, snapshotLayout, snapshotOffsetWord, snapshotResourceArchetypeWord,
@@ -829,7 +830,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
                         if (layout === undefined) throw new Error(`"${labelOf(key)}" has no registered schema; import the module that registers it.`);
                         return layout;
                     }),
-                    sorted: index.declaration.sorted === true,
+                    sorted: keptSorted(index.declaration),
                     unique: index.declaration.unique === true,
                     reads,
                     readIds: reads.map(numberOf),

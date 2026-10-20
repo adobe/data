@@ -44,3 +44,7 @@ decisions about data-ecs here rather than in a personal memory, so every machine
   and queries, and keep the entity factory correct and reasonably efficient.
 - **One-off systems created at runtime aren't a large source of expected runtime;** regressions confined to them are
   acceptable.
+
+## Follow-ups
+
+- **Open decisions and findings are tracked in `followups.md`.** Add new ones there, and remove an item once it's decided or done.

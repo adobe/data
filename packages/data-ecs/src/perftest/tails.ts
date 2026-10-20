@@ -2,7 +2,7 @@
 import { Component } from "../interface/component/component.js";
 import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
-import { eachTick, nowOf } from "./synced.js";
+import { eachTick, ticksAfter } from "./synced.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
@@ -186,14 +186,6 @@ const prompt = async (stretches = 5): Promise<number> => {
     return best;
 };
 
-/** Once a tick after the one whose `now` is `after` ran. */
-const tickAfter = (world: World, after: number): Promise<void> => new Promise(resolve => {
-    const stop = eachTick(world, () => {
-        queueMicrotask(() => stop());
-        resolve();
-    }, after);
-});
-
 /**
  * The fastest of `rounds` runs writing what a late tail of 10,000 rows reads, each right after a tick posted it behind a
  * busy system on its thread, so the run copies the tail's reads first.
@@ -208,7 +200,7 @@ const late = async (rounds = 30): Promise<number> => {
         world.add(lateTick);
         for (let round = 0; round < rounds; round++) {
             // Each run makes the next beat tick, which posts the tail behind `busy`.
-            const ticked = tickAfter(world, await nowOf(world));
+            const ticked = ticksAfter(world, 1);
             await world.run(nothing);
             await ticked;
             const start = performance.now();

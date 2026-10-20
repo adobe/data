@@ -5,9 +5,10 @@ import type { Benchmark, Best } from "./benchmark.js";
 import { forest, propagate } from "./hierarchy.js";
 import { fastest as particlesFastest, move, spawn } from "./particles.js";
 import { chain, emit, fastest, follow, hits, observe, poke, seeded } from "./suite.js";
-import { Observe } from "../observe/index.js";
 import * as structural from "./structural.js";
 import { bumpEach, fillEach, spawnEach } from "./growth.js";
+// Last, so the modules the benchmarks share load in the order they did before it.
+import { Observe } from "../observe/index.js";
 
 /** Benchmarks run on the world's thread alone and on the pool, in chromium and, for some, in node. */
 

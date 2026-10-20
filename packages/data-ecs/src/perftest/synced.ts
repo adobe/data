@@ -8,30 +8,44 @@ import type { World } from "../interface/world/world.js";
 // to the world, so the runs timed after it run what they ran before.
 
 /**
- * Calls `notify` after each pass whose clock is a tick's other than the last it saw, starting from the clock of `after`
- * (a tick's `now`, as `nowOf` reads it), from a synced system it adds to `world`, until the function it returns removes
- * it: how benchmarks count ticks. A tick's `now` tells it from the last, as its count doesn't from the clock before the
- * first.
+ * Calls `notify` after each tick, and once after the first pass it runs in, from a synced system it adds to `world`
+ * filtering on the clock, until the function it returns removes it: how benchmarks count ticks back to back, where that
+ * first call only starts the stretch that warms up.
  */
-export const eachTick = (world: World, notify: () => void, after = Number.NaN): (() => void) => {
-    let last = after;
-    const counter = System.create({ name: "perftest/eachTick", synced: true, resources: { read: [clock] } }, ({ resources }) => {
-        const { now } = resources[clock];
-        if (now === last) return;
-        last = now;
-        notify();
-    });
+export const eachTick = (world: World, notify: () => void): (() => void) => {
+    const counter = System.create({ name: "perftest/eachTick", synced: true, resources: { changed: [clock] } }, () => { notify(); });
     world.add(counter);
     return () => world.remove(counter);
 };
 
-let read = Number.NaN;
-const readNow = System.create({ name: "perftest/readNow", synced: true, resources: { read: [clock] } }, ({ resources }) => { read = resources[clock].now; });
+/** The clock as a synced run last read it. */
+const read = { tick: 0, now: 0 };
+const readClock = System.create({ name: "perftest/readClock", synced: true, resources: { read: [clock] } }, ({ resources }) => {
+    read.tick = resources[clock].tick;
+    read.now = resources[clock].now;
+});
 
-/** The clock's `now`, read by a synced run, which doesn't wake the loop. */
-export const nowOf = async (world: World): Promise<number> => {
-    await world.run(readNow);
-    return read;
+/**
+ * Resolves once `count` ticks ran after the clock a synced run reads now, which doesn't wake the loop. A tick is told
+ * from the clock before it by its count and its `now` together: the first tick's count is 0, as before it, and
+ * back-to-back ticks can share a `now` at a coarse timer.
+ */
+export const ticksAfter = async (world: World, count: number): Promise<void> => {
+    await world.run(readClock);
+    let { tick, now } = read;
+    let seen = 0;
+    await new Promise<void>(resolve => {
+        const counter = System.create({ name: "perftest/ticksAfter", synced: true, resources: { read: [clock] } }, ({ resources }) => {
+            const current = resources[clock];
+            if (current.tick === tick && current.now === now) return;
+            tick = current.tick;
+            now = current.now;
+            if (++seen < count) return;
+            queueMicrotask(() => world.remove(counter));
+            resolve();
+        });
+        world.add(counter);
+    });
 };
 
 /** The entities with every component of `has` and none of `not`, in storage order, read by a synced run. */

@@ -3,13 +3,12 @@ import { Component } from "../interface/component/component.js";
 import { Index } from "../interface/indexes/index-type.js";
 import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
+import { eachTick } from "./synced.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
 import { backToBack, createWorld } from "../implementation/index.js";
-import { Observe } from "../observe/index.js";
 import type { Benchmark } from "./benchmark.js";
-import { eachTick } from "./synced.js";
 
 // Benchmarks of a thread joined to a world: its runs, and its observers' mailboxes. The joined thread is `joined.ts`.
 
@@ -101,6 +100,13 @@ type Joined = { readonly ask: (message: ToJoined) => Promise<FromJoined>; readon
 
 const joinedFile = "./joined.js";
 
+/** The observed resource, read by a synced run. */
+const counterOf = async (world: World): Promise<number> => {
+    let value = 0;
+    await world.run(System.create({ synced: true, resources: { read: [counter] } }, ({ resources }) => { value = resources[counter]; }));
+    return value;
+};
+
 /** Starts `joined.ts` on a worker, joining `world` through a channel it's given. */
 const startJoined = async (world: World): Promise<Joined> => {
     if (typeof globalThis.Worker === "function") {
@@ -168,7 +174,7 @@ const mailboxBest = async (kind: Observed, system: System<void>, stretches = 5):
             });
             world.add(system);
         });
-        const counted = reads ? await Observe.toPromise(Observe.resource(world, counter)) : 0;
+        const counted = reads ? await counterOf(world) : 0;
         const stopped = await joined.ask({ kind: "stop" });
         if (stopped.kind !== "stopped" || stopped.notified === 0) throw new Error(`mailbox ${kind}: the joined thread saw nothing.`);
         // Timed only while the joined thread keeps up: one that stopped being woken costs the world nothing.
@@ -233,7 +239,7 @@ const cadenceMiddle = async (kind: Observed, system: System<void>): Promise<numb
         await joined.ask({ kind });
         world.add(system);
         await done;
-        const counted = await Observe.toPromise(Observe.resource(world, counter));
+        const counted = await counterOf(world);
         const stopped = await joined.ask({ kind: "stop" });
         if (stopped.kind !== "stopped" || stopped.last < counted - 2) throw new Error(`${kind} at a cadence: the joined thread saw ${stopped.kind === "stopped" ? stopped.last : "nothing"} of ${counted}.`);
     }

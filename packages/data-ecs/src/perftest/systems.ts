@@ -1,6 +1,6 @@
 import { Component } from "../interface/component/component.js";
 import { always } from "../interface/resources/always.js";
-import { eachTick, nowOf } from "./synced.js";
+import { eachTick, ticksAfter } from "./synced.js";
 import { System } from "../interface/system/system.js";
 import { backToBack, createWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
@@ -52,9 +52,9 @@ const churning = async (churn: (() => System) | null, after: boolean, stretches 
         world.add(idle);
         // Once a system with the filter came and went, ticks are kept for what it filters on, and the loop's state is added.
         world.add(again);
-        await ticks(world, 2);
+        await ticksAfter(world, 2);
         world.remove(again);
-        await ticks(world, 2);
+        await ticksAfter(world, 2);
         await world.run(idle);
         const before = await world.tables();
         let added: System | null = null;
@@ -97,19 +97,6 @@ const churning = async (churn: (() => System) | null, after: boolean, stretches 
         driver.close();
     }
     return best;
-};
-
-/** Once `count` more ticks ran. */
-const ticks = async (world: ReturnType<typeof createWorld>, count: number): Promise<void> => {
-    const from = await nowOf(world);
-    let seen = 0;
-    await new Promise<void>(resolve => {
-        const stop = eachTick(world, () => {
-            if (++seen < count) return;
-            queueMicrotask(() => stop());
-            resolve();
-        }, from);
-    });
 };
 
 const tickBest = { bytes: 64, basis: "A tick reads at least one cache line of its systems' state." };

@@ -36,8 +36,9 @@ decisions about data-ecs here rather than in a personal memory, so every machine
 
 ## Direction
 
-- **Reading and observing go through systems.** `world.observe` is being replaced by observer factories in
-  `@adobe/data-ecs/observe`, built on synced systems with only the public API; the built-in observers are then removed.
+- **Reading and observing go through systems.** Consumers write plain synced systems, as the DOM work will; the
+  `Observe<T>` pattern isn't offered to them. `world.observe` is being removed. Observer factories built on synced
+  systems with only the public API stay internal (`src/observe`), for tests, debugging and benchmarks, never exported.
 - **Observing single entities is mainly for debugging.** Production reads, such as DOM bindings, are ordinary row
   systems over every matching row, which always beat one system per entity. Spend optimization effort on row systems
   and queries, and keep the entity factory correct and reasonably efficient.

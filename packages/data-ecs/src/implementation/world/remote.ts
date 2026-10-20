@@ -75,7 +75,7 @@ export const releaseThreads = (state: State, log: MoveLog): void => {
         for (const batch of state.batches) for (const column of batch.columns) if (column.id === id) column.remote = null;
     }
     state.claimed = state.logs.length > 0;
-    state.counting = state.claimed || state.synced.count > 0;
+    state.counting = state.claimed || state.observer.count > 0;
     if (state.directory !== null) state.directory.guarded = state.claimed;
     // Finalizers on the threads it gave back activate again.
     state.unplacedSeen.clear();

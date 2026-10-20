@@ -3,14 +3,14 @@ import { Component } from "../interface/component/component.js";
 import { Index } from "../interface/indexes/index-type.js";
 import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
-import { eachTick } from "./synced.js";
+import { eachTick } from "./observer.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
 import { backToBack, createWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
 
-// Benchmarks of a thread joined to a world: its runs, and what it reads after each sync point, through synced systems
+// Benchmarks of a thread joined to a world: its runs, and what it reads after each sync point, through observer systems
 // it adds and the observer factories. The joined thread is `joined.ts`.
 
 export const counter = Symbol("remote/counter");
@@ -46,13 +46,13 @@ const reverse = System.create({ name: "remote/reverse", kernel: "cpu", component
 /** Reverses the entities' order every tick. */
 export const reorder = System.create([flip, reverse]);
 
-/** What a joined thread's synced systems saw: the last value, and how many runs gave one. */
-export const syncedSeen = { last: 0, notified: 0 };
+/** What a joined thread's observer systems saw: the last value, and how many runs gave one. */
+export const observerSeen = { last: 0, notified: 0 };
 
 /** On a joined thread, after each sync point that changed it: the observed resource. */
-export const syncedCounter = System.create({ name: "remote/syncedCounter", synced: true, resources: { read: [counter], changed: [counter] } }, ({ resources }) => {
-    syncedSeen.last = resources[counter];
-    syncedSeen.notified++;
+export const observerCounter = System.create({ name: "remote/observerCounter", observer: true, resources: { read: [counter], changed: [counter] } }, ({ resources }) => {
+    observerSeen.last = resources[counter];
+    observerSeen.notified++;
 });
 
 /** Every entity with a rank, in entity order. */
@@ -62,7 +62,7 @@ const sortedKeys = { keys: new Float64Array(0), entities: new Float64Array(0), p
  * On a joined thread, after each sync point: the entities in `order`, sorted from a scan of the index of every ranked
  * entity into reused arrays.
  */
-export const syncedSelect = System.create({ name: "remote/syncedSelect", synced: true, lookup: { all: { index: ranked, read: [order] } } }, ({ lookup }) => {
+export const observerSelect = System.create({ name: "remote/observerSelect", observer: true, lookup: { all: { index: ranked, read: [order] } } }, ({ lookup }) => {
     const list = lookup.all();
     const count = list.length;
     if (sortedKeys.keys.length < count) {
@@ -80,18 +80,18 @@ export const syncedSelect = System.create({ name: "remote/syncedSelect", synced:
     const positions = sortedKeys.positions.subarray(0, count);
     for (let k = 0; k < count; k++) positions[k] = k;
     positions.sort((a, b) => keys[a] - keys[b] || entities[a] - entities[b]);
-    syncedSeen.last = count;
-    syncedSeen.notified++;
+    observerSeen.last = count;
+    observerSeen.notified++;
 });
 
 /** Runs in each timed stretch of `remote run`, and ticks in each of the joined benchmarks'. */
 export const remoteRuns = 1_000;
 export const joinedTicks = 1_000;
-/** Entities `joined synced 10K` selects. */
+/** Entities `joined observer 10K` selects. */
 export const selected = 10_000;
 
-/** What a joined thread reads in a joined benchmark: through a synced system, or the observer factories. */
-type Observed = "synced resource" | "synced select" | "factory resource" | "factory select";
+/** What a joined thread reads in a joined benchmark: through an observer system, or the observer factories. */
+type Observed = "observer resource" | "observer select" | "factory resource" | "factory select";
 
 /** What the joined thread is asked to do, and what it answers. */
 export type ToJoined = { readonly kind: "runs"; readonly stretches: number } | { readonly kind: Observed } | { readonly kind: "stop" };
@@ -101,10 +101,10 @@ type Joined = { readonly ask: (message: ToJoined) => Promise<FromJoined>; readon
 
 const joinedFile = "./joined.js";
 
-/** The observed resource, read by a synced run. */
+/** The observed resource, read by an observer run. */
 const counterOf = async (world: World): Promise<number> => {
     let value = 0;
-    await world.run(System.create({ synced: true, resources: { read: [counter] } }, ({ resources }) => { value = resources[counter]; }));
+    await world.run(System.create({ observer: true, resources: { read: [counter] } }, ({ resources }) => { value = resources[counter]; }));
     return value;
 };
 
@@ -265,26 +265,26 @@ export const remoteBenchmarks: readonly Benchmark[] = [
         run: () => remoteRun(),
     },
     {
-        name: "joined synced resource",
-        operation: "Ticks that change one resource a synced system a joined thread added reads after each sync point, posted to it and waking it once.",
+        name: "joined observer resource",
+        operation: "Ticks that change one resource an observer system a joined thread added reads after each sync point, posted to it and waking it once.",
         per: "ticks",
         n: joinedTicks,
         typical: [1, 1],
         best: { bytes: 64, basis: "A tick reads at least one cache line of its system's state." },
-        run: () => joinedBest("synced resource", count),
+        run: () => joinedBest("observer resource", count),
     },
     {
-        name: "joined synced 10K",
-        operation: "Ticks that reverse the order of 10K entities a synced system a joined thread added reads through an index and sorts after each sync point.",
+        name: "joined observer 10K",
+        operation: "Ticks that reverse the order of 10K entities an observer system a joined thread added reads through an index and sorts after each sync point.",
         per: "ticks",
         n: joinedTicks,
         typical: [1, 1],
         best: { bytes: selected * 24, basis: "Each tick writes 10K 8-byte values, reads them to sort, and sorts 10K 8-byte entities." },
-        run: () => joinedBest("synced select", reorder, 3),
+        run: () => joinedBest("observer select", reorder, 3),
     },
     {
         name: "joined resource factory",
-        operation: "Ticks that change one resource a joined thread observes through `Observe.resource`, a synced system it added, posted to it and waking it once.",
+        operation: "Ticks that change one resource a joined thread observes through `Observe.resource`, an observer system it added, posted to it and waking it once.",
         per: "ticks",
         n: joinedTicks,
         typical: [1, 1],

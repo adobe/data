@@ -38,9 +38,9 @@ const grow = System.create({ name: "observeFactoriesTest/grow", components: { wr
 const raise = System.create({ name: "observeFactoriesTest/raise", resources: { write: [level] } }, ({ resources }) => { resources[level] += 1; });
 const nothing = System.create({ name: "observeFactoriesTest/nothing" }, () => {});
 
-/** Counts passes: the synced passes after each run's sync point. */
+/** Counts passes: the observer passes after each run's sync point. */
 const passes = { count: 0 };
-const counter = System.create({ name: "observeFactoriesTest/counter", synced: true }, () => { passes.count++; });
+const counter = System.create({ name: "observeFactoriesTest/counter", observer: true }, () => { passes.count++; });
 
 /**
  * A world of `count` entities, each amount its index and one more, at level 1: the runs below registered, so runners
@@ -59,7 +59,7 @@ const seeded = async (count: number): Promise<CreatedWorld> => {
 const runnersOf = async (world: CreatedWorld): Promise<number> => (await world.tables()).runners;
 
 describe("observer factories", () => {
-    it("share one synced system among every observer of one shape, whatever their entities, where values and pages", async () => {
+    it("share one observer system among every observer of one shape, whatever their entities, where values and pages", async () => {
         await using world = await seeded(100);
         const stops = [Observe.entity(world, spawned[0], { required: [amount] })(() => {}), Observe.select(world, { required: [amount], where: { [amount]: 0 }, page: { offset: 0, limit: 5 } })(() => {})];
         await settle(world);
@@ -184,9 +184,9 @@ describe("observer factories", () => {
         expect(notified).toBe(3);
     });
 
-    it("rethrow only their own systems' failures from their runs, not those of synced systems the world added", async () => {
+    it("rethrow only their own systems' failures from their runs, not those of observer systems the world added", async () => {
         await using world = await seeded(3);
-        const failing = System.create({ name: "observeFactoriesTest/failing", synced: true }, () => { throw new Error("added failed"); });
+        const failing = System.create({ name: "observeFactoriesTest/failing", observer: true }, () => { throw new Error("added failed"); });
         world.add(failing);
         const caught: unknown[] = [];
         const original = globalThis.queueMicrotask;
@@ -229,8 +229,8 @@ const seededJoined = async (count: number): Promise<{ readonly world: CreatedWor
     };
 };
 
-/** How many synced systems are placed on a joined thread. */
-const placedOn = (remote: World): number => tablesOf.get(remote)?.().synced ?? -1;
+/** How many observer systems are placed on a joined thread. */
+const placedOn = (remote: World): number => tablesOf.get(remote)?.().observer ?? -1;
 
 /** A few turns of the event loop, which a joined thread's posts need. */
 const turns = async (count = 20): Promise<void> => {
@@ -238,7 +238,7 @@ const turns = async (count = 20): Promise<void> => {
 };
 
 describe("observer factories on a joined thread", () => {
-    it("share one synced system there among every observer of one shape, and notify each of every later change", async () => {
+    it("share one observer system there among every observer of one shape, and notify each of every later change", async () => {
         const { world, remote, close } = await seededJoined(20);
         const amounts: number[] = [];
         const stops = [

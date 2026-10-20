@@ -3,31 +3,31 @@ import type { Leaf } from '../../interface/system/leaf.js';
 import type { Failure } from '../../interface/world/report.js';
 import { definitionOf, isLeaf, itemOfId, labelOfItem } from '../../interface/registry/index.js';
 import { failureOf } from './failures.js';
-import { cancelled, notRun, opening, outcomeWord, postedWord, removedWord, runsWord, syncedBlockWords, syncWord, tickSlot } from './joined-synced.js';
-import { protocolName, type SyncedSetup, type ToWorld } from './joining.js';
+import { cancelled, notRun, opening, outcomeWord, postedWord, removedWord, runsWord, observerBlockWords, syncWord, tickSlot } from './joined-observer.js';
+import { protocolName, type ObserverSetup, type ToWorld } from './joining.js';
 import type { Mirror } from './mirror.js';
 import type { WorkerError } from './protocol.js';
 import { doneWord, endWord, progressWord, tailChunk } from './tail-blocks.js';
 import type { ThreadDirectory } from './thread-directory.js';
 import { createThreadRunner, type RunnerHost, type ThreadRunner } from './thread-systems.js';
 
-// A joined thread's synced systems (threads.md, "Synced systems on joined threads"): the world posts each into its
+// A joined thread's observer systems (threads.md, "Observer systems on joined threads"): the world posts each into its
 // block after a sync point; this thread claims a post, as a tail claims its rows, reading the shared memory as of that
 // sync point, or the copy a later writer took, and runs the system once.
 
-/** What the thread gives its synced systems. */
-export type ThreadSyncedHost = {
+/** What the thread gives its observer systems. */
+export type ThreadObserverHost = {
     readonly directory: ThreadDirectory;
     readonly mirror: Mirror | null;
     readonly post: (message: ToWorld) => void;
     /** Brings the mirror up to the newest published sync; false while it can't yet. */
     readonly current: () => boolean;
-    /** This thread's own synced system by its number, while it lives. */
+    /** This thread's own observer system by its number, while it lives. */
     readonly localOf: (number: number) => Local | undefined;
 };
 
 /**
- * A synced system of this thread's own, by its number for it: its value, its runner once the world placed it, and
+ * An observer system of this thread's own, by its number for it: its value, its runner once the world placed it, and
  * what its runs gave, by the newest run each post was for.
  */
 export type Local = {
@@ -43,11 +43,11 @@ export type Local = {
     stopped: number;
 };
 
-/** A block the world posts a synced system into: its views, and the last post of it this thread handled. */
+/** A block the world posts an observer system into: its views, and the last post of it this thread handled. */
 type Block = { readonly control: Int32Array; readonly ticks: Float64Array; handled: number };
 
 /**
- * A synced system the world placed here: its blocks' views, two for one reading only struct resources, whose posts
+ * An observer system the world placed here: its blocks' views, two for one reading only struct resources, whose posts
  * hold copies of what they read, and its runner or local system.
  */
 type Placed = {
@@ -66,12 +66,12 @@ type Placed = {
 const errorOf = (error: unknown): WorkerError =>
     error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : { name: "Error", message: String(error) };
 
-const refuse = (): never => { throw new Error("A synced system issues no commands."); };
-/** A synced system's context has no commands, so these are never called. */
+const refuse = (): never => { throw new Error("An observer system issues no commands."); };
+/** An observer system's context has no commands, so these are never called. */
 const noCommands: Commands = { spawn: refuse, despawn: refuse, add: refuse, remove: refuse };
 const noStamps: number[] = [];
 
-export const createThreadSynced = (host: ThreadSyncedHost) => {
+export const createThreadObserver = (host: ThreadObserverHost) => {
     const { directory, mirror } = host;
     const runnerHost: RunnerHost = {
         rows: directory.rows, archetypeAt: directory.archetypeAt, countOf: directory.countOf, tableCount: directory.tableCount,
@@ -80,14 +80,14 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
     };
     const placed: (Placed | undefined)[] = [];
 
-    /** Records synced systems the world places here; one by an id this thread never imported doesn't run. */
-    const setup = (systems: readonly SyncedSetup[]): void => {
+    /** Records observer systems the world places here; one by an id this thread never imported doesn't run. */
+    const setup = (systems: readonly ObserverSetup[]): void => {
         directory.name(systems);
         const buffer = directory.refresh();
         for (const { index, local, id, block, spare, indexes } of systems) {
             const records = new Map(indexes);
             const blocks = (spare === null ? [block] : [block, spare]).map((at): Block => ({
-                control: new Int32Array(buffer, at, syncedBlockWords), ticks: new Float64Array(buffer, at + tickSlot * 8, 2), handled: 0,
+                control: new Int32Array(buffer, at, observerBlockWords), ticks: new Float64Array(buffer, at + tickSlot * 8, 2), handled: 0,
             }));
             const contained = spare !== null;
             if (local !== null) {
@@ -105,7 +105,7 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
         }
     };
 
-    /** The world removed synced systems here: dropped, and the world told. */
+    /** The world removed observer systems here: dropped, and the world told. */
     const unplace = (indexes: readonly number[]): void => {
         for (const index of indexes) {
             const entry = placed[index];
@@ -118,7 +118,7 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
             }
             placed[index] = undefined;
         }
-        host.post({ protocol: protocolName, kind: "synced dropped", indexes });
+        host.post({ protocol: protocolName, kind: "observer dropped", indexes });
     };
 
     /** Stops this thread's own system at once, as it's removed here: no row of it runs from now on. */
@@ -139,7 +139,7 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
     /** Gives back a claim it can't run yet, owed to a run: run nothing, and the world posts it again between runs. */
     const giveBack = (control: Int32Array): void => {
         finishUnrun(control);
-        if (Atomics.load(control, runsWord) > 0) host.post({ protocol: protocolName, kind: "synced again" });
+        if (Atomics.load(control, runsWord) > 0) host.post({ protocol: protocolName, kind: "observer again" });
     };
 
     /**
@@ -174,7 +174,8 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
         // One the world is writing is claimed once it's open. Claimed now, the post stays as it is until it's done, so
         // the posted word read after the claim is its own.
         if (claimed >= opening) return false;
-        // Cancelled, it's the post seen: one written after it, whose posted word may already have moved, is claimed next.
+        // Cancelled, it's the post seen: one written after it, whose posted word may already have moved, is claimed
+        // next.
         if (claimed >= cancelled) {
             block.handled = seen;
             return false;
@@ -219,7 +220,7 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
                 if (result !== true) errors = result;
             }
         }
-        if (errors !== null && errors.length > 0) host.post({ protocol: protocolName, kind: "synced failed", errors });
+        if (errors !== null && errors.length > 0) host.post({ protocol: protocolName, kind: "observer failed", errors });
         return ran;
     };
 
@@ -228,14 +229,14 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
         unplace,
         stop,
         process,
-        /** Whether any synced system is placed here. */
+        /** Whether any observer system is placed here. */
         active: (): boolean => placed.some(entry => entry !== undefined),
-        /** For tests of what a thread holds: how many synced systems are placed here. */
+        /** For tests of what a thread holds: how many observer systems are placed here. */
         placedCount: (): number => placed.filter(entry => entry !== undefined).length,
     };
 };
 
-/** The failure of a run of a local synced system, once a post for it ran: undefined until then. */
+/** The failure of a run of a local observer system, once a post for it ran: undefined until then. */
 export const resultOf = (local: Local, sequence: number): { readonly failure: Failure | null } | undefined => {
     if (local.ran < sequence) return undefined;
     const found = local.results.find(result => result.through >= sequence);

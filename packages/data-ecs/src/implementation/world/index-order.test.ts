@@ -76,7 +76,7 @@ const expected = async (world: CreatedWorld, only?: (weighed: number) => boolean
 };
 
 const markerValues: number[] = [];
-const readMarkers = System.create({ name: "indexOrderTest/readMarkers", synced: true, components: { read: [marker] } }, row => { markerValues.push(row[marker]); });
+const readMarkers = System.create({ name: "indexOrderTest/readMarkers", observer: true, components: { read: [marker] } }, row => { markerValues.push(row[marker]); });
 
 /** Markers' values in the order they were spawned: their archetype's rows', in storage order. */
 const markers = async (world: CreatedWorld): Promise<number[]> => {

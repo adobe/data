@@ -3,11 +3,11 @@ import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { join } from "./create.js";
 import { scopeChannel } from "./port.js";
-import { gate, tallies, watchTally } from "./synced-contained.test-helper.js";
+import { gate, tallies, watchTally } from "./observer-contained.test-helper.js";
 
 /**
- * A thread joining a world through the port it's sent, which adds the watcher with the gate it's sent, and tells what it
- * saw. It says it added the watcher once a run of its own resolved: sent after the add through the same port, so the
+ * A thread joining a world through the port it's sent, which adds the watcher with the gate it's sent, and tells what
+ * it saw. It says it added the watcher once a run of its own resolved: sent after the add through the same port, so the
  * world placed the watcher by that run's sync point, which posts the watcher's first run.
  */
 
@@ -23,7 +23,7 @@ export type FromContainedWorker =
 
 const channel = scopeChannel<FromContainedWorker, ToContainedWorker>();
 let remote: World | null = null;
-const placed = System.create({ name: "syncedContainedTest/placed", synced: true }, () => {});
+const placed = System.create({ name: "observerContainedTest/placed", observer: true }, () => {});
 
 channel.onMessage(message => {
     if ("protocol" in message) return;

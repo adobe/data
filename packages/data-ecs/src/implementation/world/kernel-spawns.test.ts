@@ -70,7 +70,7 @@ const countAdded = System.create({ name: "kernelSpawnsTest/countAdded", componen
 
 /** Each made entity's value, in storage order. */
 const madeValues: number[] = [];
-const readMade = System.create({ name: "kernelSpawnsTest/readMade", synced: true, components: { read: [value], has: [made] } }, row => { madeValues.push(row[value]); });
+const readMade = System.create({ name: "kernelSpawnsTest/readMade", observer: true, components: { read: [value], has: [made] } }, row => { madeValues.push(row[value]); });
 const valuesOf = async (world: ReturnType<typeof createWorld>): Promise<number[]> => {
     madeValues.length = 0;
     await world.run(readMade);

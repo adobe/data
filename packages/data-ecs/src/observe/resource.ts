@@ -4,8 +4,8 @@ import { createEntry, give, giveFirst, none, noDelivery, ownName, passed, schedu
 
 /**
  * A resource's observers, sharing one value: `notifier`, added, gives the value after each pass whose sync point
- * stamped it; `reader`, run for cold first values, gives them the value as of its run's sync point, which a stamp before
- * it then doesn't give them again in the same pass.
+ * stamped it; `reader`, run for cold first values, gives them the value as of its run's sync point, which a stamp
+ * before it then doesn't give them again in the same pass.
  */
 type ResourceShape = Shape & {
     readonly entry: Entry<unknown>;
@@ -27,19 +27,19 @@ const shapes = new WeakMap<WorldState, Map<Resource.Key, ResourceShape>>();
 
 const createShape = (state: WorldState, byKey: Map<Resource.Key, ResourceShape>, key: Resource.Key): ResourceShape => {
     const entry = createEntry<unknown>(undefined);
-    // A tick's report takes the failures of its synced systems after they ran, unstamped, so it's never held.
+    // A tick's report takes the failures of its observer systems after they ran, unstamped, so it's never held.
     const held = key !== report;
     const label = ownName(`Observe.resource(${key.description ?? "?"})`);
     // On a joined thread, first values come once a run of this system resolved, never in its pass: none to skip.
     const { joined } = state;
-    const notifier = System.create({ name: label, synced: true, resources: { read: [key], changed: [key] } }, ({ resources }) => {
+    const notifier = System.create({ name: label, observer: true, resources: { read: [key], changed: [key] } }, ({ resources }) => {
         passed(state);
         entry.value = resources[key];
         entry.valid = held;
         if (entry.stopped > 0) sweepSubscribers(entry);
         throwFailed(give(entry, 0, true, state.pass, joined ? -1 : state.pass, none));
     });
-    const reader = System.create({ name: label, synced: true, resources: { read: [key] } }, ({ resources }) => {
+    const reader = System.create({ name: label, observer: true, resources: { read: [key] } }, ({ resources }) => {
         const through = shape.called.shift() ?? 0;
         entry.value = resources[key];
         entry.valid = held;

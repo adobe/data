@@ -61,9 +61,9 @@ const start = async (): Promise<void> => {
     await ready;
     const frame = System.create({ name: "gpuParticles/frame", systems: [...moving, draw] });
     await world.run(spawn, { count, width: canvas.width, height: canvas.height });
-    /** For automated checks: a few drawn particles' positions, which a synced system reads back from the GPU. */
+    /** For automated checks: a few drawn particles' positions, which an observer system reads back from the GPU. */
     const probed: (readonly number[])[] = [];
-    const probe = System.create({ name: "gpuParticles/probe", synced: true, components: { read: [position], has: [visible, enabled] } }, row => {
+    const probe = System.create({ name: "gpuParticles/probe", observer: true, components: { read: [position], has: [visible, enabled] } }, row => {
         if (probed.length < 3) probed.push(row[position]);
     });
     Reflect.set(globalThis, "sampleProbe", async () => {

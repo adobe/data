@@ -23,7 +23,7 @@ const hit = System.create({
 });
 
 const healths: number[] = [];
-const read = System.create({ synced: true, components: { read: [health] } }, row => {
+const read = System.create({ observer: true, components: { read: [health] } }, row => {
     healths.push(row[health]);
 });
 

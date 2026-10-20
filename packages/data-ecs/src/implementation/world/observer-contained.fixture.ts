@@ -1,21 +1,22 @@
 /// <reference types="node" />
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";
-import type { FromContainedWorker, ToContainedWorker } from "./synced-contained-worker.fixture.js";
-import { bump, gateWords, nothing, reachedWord, releasedWord, setHolding } from "./synced-contained.test-helper.js";
+import type { FromContainedWorker, ToContainedWorker } from "./observer-contained-worker.fixture.js";
+import { bump, gateWords, nothing, reachedWord, releasedWord, setHolding } from "./observer-contained.test-helper.js";
 
 /**
- * A joined worker's synced system reading only resources, held partway through a run while the world runs on: what
- * the world's runs do meanwhile, and what the worker's runs saw once released. Run built in node, from source in chromium.
+ * A joined worker's observer system reading only resources, held partway through a run while the world runs on: what
+ * the world's runs do meanwhile, and what the worker's runs saw once released. Run built in node, from source in
+ * chromium.
  */
 
 type Worker = { readonly ask: (message: ToContainedWorker, transfer?: readonly unknown[]) => Promise<FromContainedWorker>; readonly terminate: () => Promise<void> };
 
-const workerFile = "./synced-contained-worker.fixture.js";
+const workerFile = "./observer-contained-worker.fixture.js";
 
 const start = (): Worker => {
     if (typeof globalThis.Worker === "function") {
-        const worker = new globalThis.Worker(new URL("./synced-contained-worker.fixture.js", import.meta.url), { type: "module" });
+        const worker = new globalThis.Worker(new URL("./observer-contained-worker.fixture.js", import.meta.url), { type: "module" });
         return {
             ask: (message, transfer = []) => new Promise(resolve => {
                 worker.onmessage = (event: MessageEvent<FromContainedWorker>) => { if (!("protocol" in event.data)) resolve(event.data); };

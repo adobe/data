@@ -6,27 +6,27 @@ import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import type { LoopPlatform } from "./loop.js";
-import type { FromSyncedWorker, ToSyncedWorker } from "./synced-joined-worker.fixture.js";
-import { counter, gateWords, holdWord, phase, reachedWord, releasedWord, seed, setStall, spawnHeated, ticked, warm } from "./synced-joined.test-helper.js";
+import type { FromObserverWorker, ToObserverWorker } from "./observer-joined-worker.fixture.js";
+import { counter, gateWords, holdWord, phase, reachedWord, releasedWord, seed, setStall, spawnHeated, ticked, warm } from "./observer-joined.test-helper.js";
 import { tailWriters } from "./tails.js";
 
 /**
- * Scenarios of synced systems a joined worker adds, run built in node and from source in chromium: a system over
+ * Scenarios of observer systems a joined worker adds, run built in node and from source in chromium: a system over
  * every row, and one looking every row up by entity, while the world ticks on writing them, prompt and stalling
  * partway so the world's next writer is likely ready before they finish; then, for the system over every row, each
  * order forced, whatever the machine's timing: a writer ready while a run is partway, and a thread that fell behind.
  */
 
-type Worker = { readonly ask: (message: ToSyncedWorker, transfer?: readonly unknown[]) => Promise<FromSyncedWorker>; readonly terminate: () => Promise<void> };
+type Worker = { readonly ask: (message: ToObserverWorker, transfer?: readonly unknown[]) => Promise<FromObserverWorker>; readonly terminate: () => Promise<void> };
 
-const workerFile = "./synced-joined-worker.fixture.js";
+const workerFile = "./observer-joined-worker.fixture.js";
 
 const start = (): Worker => {
     if (typeof globalThis.Worker === "function") {
-        const worker = new globalThis.Worker(new URL("./synced-joined-worker.fixture.js", import.meta.url), { type: "module" });
+        const worker = new globalThis.Worker(new URL("./observer-joined-worker.fixture.js", import.meta.url), { type: "module" });
         return {
             ask: (message, transfer = []) => new Promise(resolve => {
-                worker.onmessage = (event: MessageEvent<FromSyncedWorker>) => { if (!("protocol" in event.data)) resolve(event.data); };
+                worker.onmessage = (event: MessageEvent<FromObserverWorker>) => { if (!("protocol" in event.data)) resolve(event.data); };
                 worker.postMessage(message, { transfer: transfer.filter(port => port instanceof MessagePort) });
             }),
             terminate: async () => worker.terminate(),
@@ -36,7 +36,7 @@ const start = (): Worker => {
     const worker = new threads.Worker(new URL(workerFile, import.meta.url));
     return {
         ask: (message, transfer = []) => new Promise(resolve => {
-            const reply = (data: FromSyncedWorker): void => {
+            const reply = (data: FromObserverWorker): void => {
                 if ("protocol" in data) return;
                 worker.off("message", reply);
                 resolve(data);
@@ -117,10 +117,10 @@ const ticks = async (world: World, more: number): Promise<void> => {
     await until(Observe.resource(world, counter), value => value >= now + more);
 };
 
-/** What the worker's synced system saw so far. */
-const seenBy = async (worker: Worker): Promise<Extract<FromSyncedWorker, { readonly kind: "seen" }>> => {
+/** What the worker's observer system saw so far. */
+const seenBy = async (worker: Worker): Promise<Extract<FromObserverWorker, { readonly kind: "seen" }>> => {
     const reply = await worker.ask({ kind: "seen" });
-    if (reply.kind !== "seen") throw new Error("synced-joined: the worker didn't say what it saw.");
+    if (reply.kind !== "seen") throw new Error("observer-joined: the worker didn't say what it saw.");
     return reply;
 };
 
@@ -171,7 +171,7 @@ const fellBehind = async (world: World, worker: Worker, frames: ReturnType<typeo
 };
 
 /**
- * 1,000 rows while the world ticks back to back writing them, the worker's synced system over them prompt, then
+ * 1,000 rows while the world ticks back to back writing them, the worker's observer system over them prompt, then
  * stalling partway, then prompt again; then, for the system over every row, gated, a writer ready while a run is
  * partway, and the thread falling behind: what each run saw, how many ran from a copy, and how many ran.
  */
@@ -212,7 +212,7 @@ export const continuous = async (system: "rows" | "lookups") => {
 };
 
 /**
- * In chromium, with a GPU device: 100 rows a GPU kernel warms by 100 a run, and the worker's synced system counting
+ * In chromium, with a GPU device: 100 rows a GPU kernel warms by 100 a run, and the worker's observer system counting
  * those at least 150 hot through a sorted index on what it writes, each count run by the worker before a warming run
  * whose sync point finds its post unclaimed, the worker holding: posted again after it, it's counted by the values the
  * kernel wrote. What each count gave.

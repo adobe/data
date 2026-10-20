@@ -21,7 +21,7 @@ import type { Row } from './rows.js';
 import type { MoveLog } from './move-log.js';
 import type { TaskChannel } from './remote-systems.js';
 import type { Tail } from './tails.js';
-import { createSyncedState, type SyncedState } from './joined-synced.js';
+import { createObserverState, type ObserverState } from './joined-observer.js';
 import { claimComponent } from './remote.js';
 import type { IndexDefinition } from '../../interface/registry/index.js';
 import type { WorldIndex } from './indexes.js';
@@ -148,10 +148,10 @@ export type State = {
     readonly claims: Map<string, MoveLog>;
     readonly logs: MoveLog[];
     claimed: boolean;
-    /** Whether a joined thread reads the layout directory's counts: one holds claims, or has synced systems placed. */
+    /** Whether a joined thread reads the layout directory's counts: one holds claims, or has observer systems placed. */
     counting: boolean;
-    /** Synced systems on joined threads (`joined-synced.ts`). */
-    readonly synced: SyncedState;
+    /** Observer systems on joined threads (`joined-observer.ts`). */
+    readonly observer: ObserverState;
     /** While a joined thread may read them: archetypes whose count changed since the layout directory's last flush. */
     readonly counted: Archetype[];
     /** By logical thread a joined thread claims, its task channel, which systems placed there run through; and every channel. */
@@ -247,7 +247,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         logs: [],
         claimed: false,
         counting: false,
-        synced: createSyncedState(),
+        observer: createObserverState(),
         counted: [],
         threadTasks: new Map(),
         channels: [],
@@ -300,7 +300,8 @@ export const idOf = (state: State, key: Key): number => {
     const declaration = declarationOf(key);
     if (declaration === undefined) throw new Error(`"${labelOf(key)}" has no registered schema; import the module that registers it.`);
     const { structure } = state;
-    // A host gets its id first, so stratifying with the new edge can name it; a cycle throws before anything is recorded.
+    // A host gets its id first, so stratifying with the new edge can name it; a cycle throws before anything is
+    // recorded.
     const within = declaration.within;
     let host = -1;
     if (typeof within === "symbol") {

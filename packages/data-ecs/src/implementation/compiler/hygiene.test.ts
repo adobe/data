@@ -41,7 +41,7 @@ const spawn = System.create(({ commands }) => {
 });
 
 const read: number[][] = [];
-const readAll = System.create({ synced: true, components: { read: [p, c, l, s, e, v0, v1] } }, row => {
+const readAll = System.create({ observer: true, components: { read: [p, c, l, s, e, v0, v1] } }, row => {
     read.push([row[p], row[c], row[l], row[s], row[e], row[v0], row[v1]]);
 });
 

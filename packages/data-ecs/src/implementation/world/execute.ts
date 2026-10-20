@@ -8,7 +8,7 @@ import { applySync, prepareSync, syncPending } from './synchronize.js';
 import { activate } from './activate.js';
 import { markRun } from './move-log.js';
 import { postTails, settleAll, settleKeys, settleRunners, tailsOf, type TailOutcome } from './tails.js';
-import { settlePosts, settleSyncedKeys, settleSyncedRunners } from './joined-synced.js';
+import { settlePosts, settleObserverKeys, settleObserverRunners } from './joined-observer.js';
 import { locate } from './entities.js';
 import { clearBuffer, createBuffer } from './buffer.js';
 import { drainSegment, type Segment } from './command-ring.js';
@@ -104,8 +104,8 @@ type Prepared = {
     readonly tiers: number[];
     readonly tasks: Map<TaskChannel, Promise<boolean>>;
     /**
-     * The run's warnings, the first `warningCount`, and the last report made of warnings alone, reused while a run's are
-     * the same. Counted rather than truncated: setting an array's length costs a run more than all of this.
+     * The run's warnings, the first `warningCount`, and the last report made of warnings alone, reused while a run's
+     * are the same. Counted rather than truncated: setting an array's length costs a run more than all of this.
      */
     readonly warnings: Report["warnings"][number][];
     warningCount: number;
@@ -136,7 +136,7 @@ const tailingOf = (context: ExecuteContext, schedule: Schedule): Tailing | null 
         if (kept.length > 0) rest.push(kept);
     });
     if (leaves.length === 0) return null;
-    return { schedule: { tiers: rest, reductions: schedule.reductions, synced: schedule.synced }, runners: leaves.map(context.runnerOf), leaves, tiers };
+    return { schedule: { tiers: rest, reductions: schedule.reductions, observer: schedule.observer }, runners: leaves.map(context.runnerOf), leaves, tiers };
 };
 
 type Outcome = { failures: Failure[] | null; skipped: string[] | null };
@@ -173,8 +173,8 @@ const refresh = (context: ExecuteContext, schedule: Schedule, prepared: Prepared
 };
 
 /**
- * Drains a worker's segment into a buffer of its own, queued in its place: commands, spawn blocks staged to commit in its
- * place, and the reservations it left unused. Fails if it doesn't start with its task's merge tag.
+ * Drains a worker's segment into a buffer of its own, queued in its place: commands, spawn blocks staged to commit in
+ * its place, and the reservations it left unused. Fails if it doesn't start with its task's merge tag.
  */
 const drain = (state: State, { bytes, tag }: Segment): Error | undefined => {
     const buffer = state.drains[state.drained] ??= createBuffer();
@@ -258,10 +258,11 @@ const settled = (state: State, folds: ReadonlyMap<unknown, Fold> | null, outcome
 };
 
 /**
- * Adds the systems of `runners` on `channel`'s thread to the task being gathered, with tier `tier` within it. One removed
- * since its tier was read, by a body that ran meanwhile, is left out, giving back nothing, as one its thread skipped:
- * the thread drops it once the tasks posted before its removal are done, so a later task can't name it. The caller
- * posts the task with no await between, and `channel` has none in flight, so nothing else reads the result reset.
+ * Adds the systems of `runners` on `channel`'s thread to the task being gathered, with tier `tier` within it. One
+ * removed since its tier was read, by a body that ran meanwhile, is left out, giving back nothing, as one its thread
+ * skipped: the thread drops it once the tasks posted before its removal are done, so a later task can't name it. The
+ * caller posts the task with no await between, and `channel` has none in flight, so nothing else reads the result
+ * reset.
  */
 const gather = (prepared: Prepared, runners: readonly Runner[], channel: TaskChannel, tier: number): void => {
     for (let i = 0; i < runners.length; i++) {
@@ -309,8 +310,8 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
             const waiting = settleRunners(state, prepared.runners[v]);
             if (waiting !== null) await waiting;
         }
-        if (state.synced.posts.length !== 0) {
-            const waiting = settleSyncedRunners(state, prepared.runners[v]);
+        if (state.observer.posts.length !== 0) {
+            const waiting = settleObserverRunners(state, prepared.runners[v]);
             if (waiting !== null) await waiting;
         }
         if (gpu !== null) await readAhead(state, gpu, prepared.runners[v]);
@@ -369,8 +370,8 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
                 const waiting = settleRunners(state, runners);
                 if (waiting !== null) await waiting;
             }
-            if (state.synced.posts.length !== 0) {
-                const waiting = settleSyncedRunners(state, runners);
+            if (state.observer.posts.length !== 0) {
+                const waiting = settleObserverRunners(state, runners);
                 if (waiting !== null) await waiting;
             }
             const uses = prepared.uses[t];
@@ -453,23 +454,24 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
                     const waiting = syncPending(state) ? settleAll(state) : null;
                     if (waiting !== null) await waiting;
                 }
-                // Each sync point waits for synced systems on joined threads in progress, and cancels the rest.
-                if (state.synced.posts.length !== 0) {
+                // Each sync point waits for observer systems on joined threads in progress, and cancels the rest.
+                if (state.observer.posts.length !== 0) {
                     const waiting = settlePosts(state);
                     if (waiting !== null) await waiting;
                 }
                 if (prepareSync(state)) {
                     try {
                         if (gpu !== null) {
-                            // The sync point moves and writes existing rows of these archetypes on the CPU, and finalizers read
-                            // them, so it needs the GPU's writes there first.
+                            // The sync point moves and writes existing rows of these archetypes on the CPU, and
+                            // finalizers read them, so it needs the GPU's writes there first.
                             const disturbed = disturbedBy(state);
                             gpu.disturb(disturbed.archetypes);
                             if (gpu.anyAhead()) await gpu.readback(disturbed.storages);
                         }
                     }
                     finally {
-                        // Applied even when the readback fails, which only a lost device makes it do: the CPU state stays whole.
+                        // Applied even when the readback fails, which only a lost device makes it do: the CPU state
+                        // stays whole.
                         dropped = state.plan.dropped;
                         for (const { finalizer, error, kind } of applySync(state)) (outcome.failures ??= []).push(failureOf(kind ?? "finalizer", labelOfItem(finalizer), error));
                     }
@@ -569,8 +571,8 @@ export const readAhead = async (state: State, gpu: GpuEngine, runners: readonly 
         const waiting = settleKeys(state, [...storages].map(storage => storage.component), []);
         if (waiting !== null) await waiting;
     }
-    if (state.synced.posts.length !== 0) {
-        const waiting = settleSyncedKeys(state, [...storages].map(storage => storage.component), []);
+    if (state.observer.posts.length !== 0) {
+        const waiting = settleObserverKeys(state, [...storages].map(storage => storage.component), []);
         if (waiting !== null) await waiting;
     }
     await gpu.readback([...storages]);

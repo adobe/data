@@ -2,7 +2,7 @@
 import { Component } from "../interface/component/component.js";
 import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
-import { eachTick, ticksAfter } from "./synced.js";
+import { eachTick, ticksAfter } from "./observer.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
@@ -187,8 +187,8 @@ const prompt = async (stretches = 5): Promise<number> => {
 };
 
 /**
- * The fastest of `rounds` runs writing what a late tail of 10,000 rows reads, each right after a tick posted it behind a
- * busy system on its thread, so the run copies the tail's reads first.
+ * The fastest of `rounds` runs writing what a late tail of 10,000 rows reads, each right after a tick posted it behind
+ * a busy system on its thread, so the run copies the tail's reads first.
  */
 const late = async (rounds = 30): Promise<number> => {
     const driver = backToBack();

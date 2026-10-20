@@ -570,8 +570,8 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     for (let k = 0; k < state.logs.length; k++) publishLog(state.logs[k]);
     endStructure(state.directory);
     state.syncing = null;
-    // Threads whose finalizers have new stops run them now, whether or not a task or synced post would replay them, as
-    // do threads with staged values to release.
+    // Threads whose finalizers have new stops run them now, whether or not a task or observer post would replay them,
+    // as do threads with staged values to release.
     for (let k = 0; k < state.channels.length; k++) {
         const channel = state.channels[k];
         if (!channel.stops.unwoken && !channel.dropped) continue;
@@ -623,7 +623,8 @@ export const prepareSync = (state: State, isolated = false): boolean => {
         const deriving = derives(structure);
         const close = (archetype: Archetype): Archetype => closureOf(structure, state.derived, archetype, components => archetypeOf(state, components), state.archetypes);
         const born = new Map<number, number>();
-        // Before the plan, so commands against staged entities find them, and before any growth, which copies `count` rows.
+        // Before the plan, so commands against staged entities find them, and before any growth, which copies `count`
+        // rows.
         if (!isolated) plan.spawned += commitBatches(state, tick, born, deriving ? close : null);
         plan.spawned += commitStaged(state, queued, tick, born, deriving ? close : null);
         const written: Written = [];
@@ -699,9 +700,10 @@ export const applySync = (state: State): readonly Thrown[] => {
             else for (let entry = plan.count - 1; entry >= 0; entry--) leave(state, entry);
         }
         if (index !== null) applyIndexChanges(state, index);
-        // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its index.
-        // Every spawn consumes one reservation and the rest were unreserved, so only a shortfall needs the scan, which
-        // skips what's released already. Finalizers' reservations came after, so they're left for the next sync point.
+        // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its
+        // index. Every spawn consumes one reservation and the rest were unreserved, so only a shortfall needs the scan,
+        // which skips what's released already. Finalizers' reservations came after, so they're left for the next sync
+        // point.
         if (plan.spawned + unreserved < reservations.reused.length + tableLength - reservations.firstNew) {
             const released = new Set(state.entities.released);
             const leaked = (index: number): boolean => (index >= plan.slots.length || plan.slots[index] < 0) && state.entities.archetype[index] < 0 && !released.has(index);

@@ -34,13 +34,13 @@ export const defeat = System.create({ components: { has: [enemy] } }, (row, { co
     commands.remove(row.entity, enemy);
 });
 
-// A synced system reads them back, once per entity with its components.
+// An observer system reads them back, once per entity with its components.
 const foes: Vec3[] = [];
-const readFoes = System.create({ synced: true, components: { read: [position], has: [enemy] } }, row => {
+const readFoes = System.create({ observer: true, components: { read: [position], has: [enemy] } }, row => {
     foes.push(row[position]);
 });
 let particles = 0;
-const countParticles = System.create({ synced: true, components: { has: Particle } }, () => {
+const countParticles = System.create({ observer: true, components: { has: Particle } }, () => {
     particles += 1;
 });
 

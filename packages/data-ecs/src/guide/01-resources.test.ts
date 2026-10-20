@@ -23,9 +23,9 @@ Resource.register(names, { type: { type: "map", keys: { type: "string" }, values
 // A value that isn't data has no schema and is stored as it is. A type that allows null starts there.
 Resource.register(audio, {});
 
-// Systems read a world: a synced one only reads, after the world's changes apply.
+// Systems read a world: an observer only reads, after the world's changes apply.
 let values: readonly unknown[] = [];
-const read = System.create({ synced: true, resources: { read: [gravity, names, audio] } }, ({ resources }) => {
+const read = System.create({ observer: true, resources: { read: [gravity, names, audio] } }, ({ resources }) => {
     values = [resources[gravity], resources[names], resources[audio]];
 });
 

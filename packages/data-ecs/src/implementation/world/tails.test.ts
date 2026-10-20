@@ -66,12 +66,12 @@ describe("tails", () => {
         await world.dispose();
         driver.close();
     });
-    it("leave synced systems each tick's values at once, and one reading the report its tick's, its tails' failures in it", async () => {
+    it("leave observer systems each tick's values at once, and one reading the report its tick's, its tails' failures in it", async () => {
         const driver = backToBack();
         const { world, remote } = await joined({ loop: driver }, { [always]: true });
         await world.run(seed, { count: 10 });
         const counters: number[] = [];
-        const values = System.create({ synced: true, resources: { read: [counter] } }, ({ resources }) => { counters.push(resources[counter]); });
+        const values = System.create({ observer: true, resources: { read: [counter] } }, ({ resources }) => { counters.push(resources[counter]); });
         world.add(ticked);
         world.add(values);
         await until(Observe.resource(world, counter), value => value >= 5);
@@ -80,7 +80,7 @@ describe("tails", () => {
         const first = counters.findIndex(value => value > 0);
         expect(counters.slice(first, first + 4)).toEqual([0, 1, 2, 3].map(k => counters[first] + k));
         const reports: (readonly [number, readonly string[]])[] = [];
-        const reading = System.create({ synced: true, resources: { read: [counter, report] } }, ({ resources }) => {
+        const reading = System.create({ observer: true, resources: { read: [counter, report] } }, ({ resources }) => {
             reports.push([resources[counter], resources[report].failures.map(failure => failure.message)]);
         });
         world.add(reading);

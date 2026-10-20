@@ -12,7 +12,7 @@ import { lineWords } from './protocol.js';
 export const protocolName = "@adobe/data-ecs/join@1";
 
 /** An index without an id, by its declaration, its keys by a joined thread's numbers: the world makes one like it. */
-export type SyncedIndex = {
+export type ObserverIndex = {
     readonly name: string;
     readonly key: readonly number[];
     readonly has: readonly number[];
@@ -21,31 +21,31 @@ export type SyncedIndex = {
     readonly unique: boolean;
 };
 
-/** A lookup of a synced system a joined thread declares: its keys by that thread's numbers, its index by id or declaration. */
-export type SyncedLookup = {
+/** A lookup of an observer system a joined thread declares: its keys by that thread's numbers, its index by id or declaration. */
+export type ObserverLookup = {
     readonly name: string;
     readonly read: readonly number[];
     readonly has: readonly number[];
     readonly not: readonly number[];
     /** Null where it doesn't declare `changed`. */
     readonly changed: readonly number[] | null;
-    readonly index: string | SyncedIndex | null;
+    readonly index: string | ObserverIndex | null;
 };
 
-/** What a synced system a joined thread declares reads, by that thread's numbers for its keys. */
-export type SyncedDeclaration = {
+/** What an observer system a joined thread declares reads, by that thread's numbers for its keys. */
+export type ObserverDeclaration = {
     readonly components: { readonly read: readonly number[]; readonly has: readonly number[]; readonly not: readonly number[]; readonly added: readonly number[]; readonly changed: readonly number[] } | null;
     readonly resources: { readonly read: readonly number[]; readonly changed: readonly number[]; readonly is: readonly number[]; readonly not: readonly number[] } | null;
-    readonly lookup: readonly SyncedLookup[];
+    readonly lookup: readonly ObserverLookup[];
 };
 
-/** A synced system the world places on a joined thread: its index there, the thread's own by its number or one by its id, and its block. */
-export type SyncedSetup = {
+/** An observer system the world places on a joined thread: its index there, the thread's own by its number or one by its id, and its block. */
+export type ObserverSetup = {
     readonly index: number;
     readonly local: number | null;
     readonly id: string | null;
     readonly keys: readonly (readonly [number, string])[];
-    /** The byte offset of its block (`joined-synced.ts`). */
+    /** The byte offset of its block (`joined-observer.ts`). */
     readonly block: number;
     /**
      * For one reading only struct resources, the byte offset of a second block: its posts, in either, hold copies of
@@ -95,18 +95,18 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
     /** It dropped what it held for the systems unplaced at these indexes, which the world may place again. */
     | { readonly kind: "unplaced"; readonly indexes: readonly number[] }
     /**
-     * A synced system of its own, by its number for it, which no other of its messages uses, with its label and what
+     * An observer system of its own, by its number for it, which no other of its messages uses, with its label and what
      * it reads; added to ticks with `added`.
      */
-    | { readonly kind: "synced"; readonly number: number; readonly name: string; readonly declaration: SyncedDeclaration; readonly added: boolean }
-    /** Its synced system `number` is added to ticks, removed from them, or no longer needed, its value collected. */
-    | { readonly kind: "synced add" | "synced remove" | "synced drop"; readonly number: number }
-    /** What synced systems placed on it threw, by their indexes there, for the world's next report. */
-    | { readonly kind: "synced failed"; readonly errors: readonly (readonly [number, WorkerError])[] }
-    /** It dropped the synced systems at these indexes, which the world unsynced. */
-    | { readonly kind: "synced dropped"; readonly indexes: readonly number[] }
+    | { readonly kind: "observer"; readonly number: number; readonly name: string; readonly declaration: ObserverDeclaration; readonly added: boolean }
+    /** Its observer system `number` is added to ticks, removed from them, or no longer needed, its value collected. */
+    | { readonly kind: "observer add" | "observer remove" | "observer drop"; readonly number: number }
+    /** What observer systems placed on it threw, by their indexes there, for the world's next report. */
+    | { readonly kind: "observer failed"; readonly errors: readonly (readonly [number, WorkerError])[] }
+    /** It dropped the observer systems at these indexes, which the world unplaced. */
+    | { readonly kind: "observer dropped"; readonly indexes: readonly number[] }
     /** A post it claimed and couldn't run yet, owed to a run: the world posts it again between runs. */
-    | { readonly kind: "synced again" }
+    | { readonly kind: "observer again" }
 );
 
 /** From the world's thread to a joined one. */
@@ -130,10 +130,10 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
      * for them once it finished task `sequence`, the last posted before, and says so.
      */
     | { readonly kind: "unplace"; readonly indexes: readonly number[]; readonly sequence: number }
-    /** Synced systems the world places on the thread, which run there after sync points. */
-    | { readonly kind: "synced"; readonly systems: readonly SyncedSetup[] }
-    /** Synced systems the world removed, by their indexes there, whose removed words are set: the thread drops them and says so. */
-    | { readonly kind: "unsynced"; readonly indexes: readonly number[] }
+    /** Observer systems the world places on the thread, which run there after sync points. */
+    | { readonly kind: "observer"; readonly systems: readonly ObserverSetup[] }
+    /** Observer systems the world removed, by their indexes there, whose removed words are set: the thread drops them and says so. */
+    | { readonly kind: "unplace observers"; readonly indexes: readonly number[] }
     /** Finalizers the world places on the thread, as systems are: each one's index there, its id, and the world's numbers for its keys. */
     | { readonly kind: "finalizers"; readonly finalizers: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
     /**
@@ -156,7 +156,7 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
     /** The report of run `sequence`, posted only when it isn't clean. */
     | { readonly kind: "report"; readonly sequence: number; readonly report: Report }
     | { readonly kind: "rejected"; readonly sequence: number; readonly message: string }
-    /** Where the joined thread can't wait without blocking: runs completed, or a task or synced post waits for it. */
+    /** Where the joined thread can't wait without blocking: runs completed, or a task or observer post waits for it. */
     | { readonly kind: "wake" }
     | { readonly kind: "disposed" }
 );
@@ -227,7 +227,7 @@ export const threadChannel = <Send, Receive>(port: Parameters<World["share"]>[0]
 
 /**
  * A joined thread's control words, each on a line of its own: the signal it waits on, which the world bumps when runs
- * complete or a task or synced post waits for it, beside whether a wake is unread, which the thread clears before it
+ * complete or a task or observer post waits for it, beside whether a wake is unread, which the thread clears before it
  * reads what's new, so the world notifies only a thread that has read every earlier wake; the last run it posted; and
  * the last run the world completed. Then its run slots.
  */

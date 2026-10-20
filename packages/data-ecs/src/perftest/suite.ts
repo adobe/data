@@ -6,7 +6,8 @@ import type { Schema } from "../interface/schema/schema.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
 
-// One fixture per optimization area: structural changes, change filters, lookups, commands, dispatch and main-thread paths.
+// One fixture per optimization area: structural changes, change filters, lookups, commands, dispatch and main-thread
+// paths.
 
 type Vec3 = readonly [number, number, number];
 const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
@@ -209,8 +210,8 @@ export const reduce = System.create({ name: "suite/reduce", kernel: "cpu", compo
 
 /** A system no entity matches: what a run costs with nothing to do. */
 export const idle = System.create({ name: "suite/idle", components: { has: [unused] } }, () => {});
-/** A synced system no entity matches: a run of it alone has no tiers. */
-export const idleSynced = System.create({ name: "suite/idleSynced", synced: true, components: { has: [unused] } }, () => {});
+/** An observer system no entity matches: a run of it alone has no tiers. */
+export const idleObserver = System.create({ name: "suite/idleObserver", observer: true, components: { has: [unused] } }, () => {});
 
 /** Fifty systems no entity matches, in one tier. */
 export const idles = System.create({

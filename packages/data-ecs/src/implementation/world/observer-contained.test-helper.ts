@@ -1,11 +1,11 @@
 import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 
-// Keys and systems both threads of the synced-contained fixtures import: a counter the world bumps, and a synced
+// Keys and systems both threads of the observer-contained fixtures import: a counter the world bumps, and an observer
 // system reading only resources that a joined thread adds, which can hold its run until the world's thread releases it.
 
-export const tally = Symbol("syncedContainedTest/tally");
-export const holding = Symbol("syncedContainedTest/holding");
+export const tally = Symbol("observerContainedTest/tally");
+export const holding = Symbol("observerContainedTest/holding");
 declare module "@adobe/data-ecs" {
     export interface Resources {
         [tally]: { type: number };
@@ -26,14 +26,14 @@ export const gate: { words: Int32Array | null } = { words: null };
 /** What the watcher's runs saw, in order. */
 export const tallies: number[] = [];
 
-export const bump = System.create({ name: "syncedContainedTest/bump", resources: { write: [tally] } }, ({ resources }) => { resources[tally] += 1; });
-export const nothing = System.create({ name: "syncedContainedTest/nothing" }, () => {});
-export const setHolding = System.create({ name: "syncedContainedTest/setHolding", input: { type: "object", properties: { holding: { type: "number" } } }, resources: { write: [holding] } }, ({ input, resources }) => {
+export const bump = System.create({ name: "observerContainedTest/bump", resources: { write: [tally] } }, ({ resources }) => { resources[tally] += 1; });
+export const nothing = System.create({ name: "observerContainedTest/nothing" }, () => {});
+export const setHolding = System.create({ name: "observerContainedTest/setHolding", input: { type: "object", properties: { holding: { type: "number" } } }, resources: { write: [holding] } }, ({ input, resources }) => {
     resources[holding] = input.holding;
 });
 
 /** After each sync point that changed the tally: notes it, and, while `holding` says so, waits there to be released. */
-export const watchTally = System.create({ name: "syncedContainedTest/watchTally", synced: true, resources: { read: [tally, holding], changed: [tally] } }, ({ resources }) => {
+export const watchTally = System.create({ name: "observerContainedTest/watchTally", observer: true, resources: { read: [tally, holding], changed: [tally] } }, ({ resources }) => {
     const value = resources[tally];
     tallies.push(value);
     const { words } = gate;

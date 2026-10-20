@@ -16,7 +16,7 @@ import { createBlock, endBlock, locate, reserveFrom, type Block } from './entiti
 import { inputFor } from './input.js';
 import { protocolName, type ToWorld } from './joining.js';
 import { ownTag } from './move-log.js';
-import { ranExecuted, ranSkipped } from './joined-synced.js';
+import { ranExecuted, ranSkipped } from './joined-observer.js';
 import { applying, rebuild, replay, stage, waitStructure, type Mirror } from './mirror.js';
 import type { WorkerError } from './protocol.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
@@ -1029,7 +1029,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         let claimed = first ?? Atomics.add(control, progressWord, tailChunk);
         const end = Atomics.load(control, endWord);
         try {
-            // A synced system on this thread looks up through indexes as the world wrote them into its records.
+            // An observer system on this thread looks up through indexes as the world wrote them into its records.
             if (threadIndexes.length !== 0) {
                 const buffer = host.refresh();
                 for (let k = 0; k < threadIndexes.length; k++) threadIndexes[k].refresh(buffer);

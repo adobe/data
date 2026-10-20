@@ -1,15 +1,15 @@
 /// <reference types="node" />
 import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
-import { eachTick } from "./synced.js";
+import { eachTick } from "./observer.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import { backToBack, createWorld, type CreatedWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
 
-// Benchmarks of systems on a joined thread, which claims "handoffBenchmark": tiers handing off between the world's thread
-// and the joined one, and consecutive tiers on the joined one, which run as one task. Their systems reach their commands, so
-// they block their tiers rather than run as tails. The joined thread is `joined.ts`.
+// Benchmarks of systems on a joined thread, which claims "handoffBenchmark": tiers handing off between the world's
+// thread and the joined one, and consecutive tiers on the joined one, which run as one task. Their systems reach their
+// commands, so they block their tiers rather than run as tails. The joined thread is `joined.ts`.
 
 export const token = Symbol("handoff/token");
 declare module "@adobe/data-ecs" {

@@ -25,16 +25,16 @@ declare module '@adobe/data-ecs' {
 Component.register(point, { type: { type: "object", properties: { x: { type: "number" } } } });
 Component.register(persistent, { type: { const: true } });
 Component.register(shared, { type: { const: true } });
-// Reading goes through synced systems: a world has no observers, and no synchronous reads.
-// @ts-expect-error no observe: synced systems read a world
+// Reading goes through observer systems: a world has no observers, and no synchronous reads.
+// @ts-expect-error no observe: observer systems read a world
 void world.observe;
 // @ts-expect-error no synchronous reads
 void world.query;
 // @ts-expect-error no synchronous reads
 void world.read;
-// @ts-expect-error GPU writes are read back for synced systems, without synchronize
+// @ts-expect-error GPU writes are read back for observer systems, without synchronize
 void world.synchronize;
-// @ts-expect-error no World.Query: synced systems declare what they read
+// @ts-expect-error no World.Query: observer systems declare what they read
 export type NoQuery = World.Query<[typeof persistent]>;
 
 const ran: Promise<World.Report> = world.run(main);
@@ -94,7 +94,7 @@ export type Failed = World.Failure;
 // @ts-expect-error no World.Warning
 export type Warned = World.Warning;
 
-// A synced system is added to every run and tick, or run once after an empty sync point.
-const addedSynced: void = world.add(watchTime);
-const ranSynced: Promise<World.Report> = world.run(watchTime);
-void [addedSynced, ranSynced];
+// An observer system is added to every run and tick, or run once after an empty sync point.
+const addedObserver: void = world.add(watchTime);
+const ranObserver: Promise<World.Report> = world.run(watchTime);
+void [addedObserver, ranObserver];

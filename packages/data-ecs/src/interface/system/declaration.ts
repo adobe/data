@@ -17,10 +17,9 @@ export type Declaration = {
     /**
      * Compiled to a kernel, which the build rejects if the body leaves the kernel subset. Values in `components` and
      * `lookup` must be structs and resources read-only. Without it, the system runs as written, on its thread.
-     * - `"cpu"`: runs on the kernel pool.
-     * - `"gpu"`: also has no lookups, change filters, commands or loops, and only 4-byte scalar values, its `up` included. It runs as a
-     *   compute shader in a world with a GPU, and as a `"cpu"` kernel in one without. Every matched row counts as
-     *   changed in what it writes.
+     * - `"cpu"`: runs on the kernel pool. - `"gpu"`: also has no lookups, change filters, commands or loops, and only
+     *   4-byte scalar values, its `up` included. It runs as a   compute shader in a world with a GPU, and as a `"cpu"`
+     *   kernel in one without. Every matched row counts as   changed in what it writes.
      */
     readonly kernel?: "cpu" | "gpu";
     /** The entities it runs over, and what it reads and writes of theirs. Omitted for a system that runs once per run. */
@@ -52,6 +51,9 @@ export type Declaration = {
     readonly after?: readonly System<unknown>[];
     /** Runs inside the span of the systems listed: after what they follow and before what follows them. */
     readonly during?: readonly System<unknown>[];
-    /** Runs after the sync point of each run and tick it's added to, reading what that sync point left; writes nothing. */
-    readonly synced?: true;
+    /**
+     * Runs after the last sync point of each run and tick (a tick is a run of the added composite), reading the settled
+     * state; changes nothing; never ordered; doesn't keep the loop ticking.
+     */
+    readonly observer?: true;
 };

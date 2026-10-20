@@ -10,9 +10,9 @@ Referenced from `design.md`.
   lives in shared memory: columns, ticks, the entity table and resource cells of struct type, all in the arena
   (`memory.ts`), readable and writable from any thread the schedule gives them to. A struct has no thread.
 - **Object:** every other value: strings, variable-length arrays, plain objects, sets and maps, and values that aren't
-  data, registered without a schema (DOM nodes, GPU objects, functions). Each object component and object resource lives on
-  one logical thread, and only the thread filling it reads or writes it. Objects are never copied between threads; one
-  declared `transfer: true` may be moved, never copied.
+  data, registered without a schema (DOM nodes, GPU objects, functions). Each object component and object resource lives
+  on one logical thread, and only the thread filling it reads or writes it. Objects are never copied between threads;
+  one declared `transfer: true` may be moved, never copied.
 - **Logical thread:** a name in the augmentable `Threads` interface. `world` and `main` are built in. A joined thread
   fills the logical threads it claims; the world's thread fills every one no joined thread claims.
 - **Remote:** an object component, resource, system or finalizer whose logical thread a joined thread fills. Only
@@ -33,9 +33,9 @@ Referenced from `design.md`.
   `thread: "main"` where the DOM library is loaded, and registration checks it on values it can see.
 - **Keys are symbols,** so components, resources and traits never collide, but a symbol is a different value on each
   thread. Threads agree on keys through the ids the plugin gives top-level `Symbol(...)` declarations, by which the
-  registry already takes the symbols of one id as one key; a key without one can't cross, so a joined thread's
-  synced system naming one fails to register. Ids name packages, not directories, so threads bundled apart agree on them,
-  and the plugin adds itself to `worker.plugins`, so worker bundles' keys get them too.
+  registry already takes the symbols of one id as one key; a key without one can't cross, so a joined thread's observer
+  system naming one fails to register. Ids name packages, not directories, so threads bundled apart agree on them, and
+  the plugin adds itself to `worker.plugins`, so worker bundles' keys get them too.
 - **Systems, rules and finalizers are their values,** and names are optional labels, so a value is different on each
   thread too. Threads agree on them through the ids the plugin gives top-level `System.create`, `System.render`,
   `Rule.create`, `Finalizer.create` and `Finalizer.changes` bindings, composites included, by which the registry
@@ -87,7 +87,7 @@ const joined = join(port, { threads: ["main"] });
 ```
 
 `join`, the implementation's, returns the same `World` type; the interface names neither it nor its port or options,
-which it infers from `share`. Its `run` works as on the world's thread, its `add` and `remove` take only synced
+which it infers from `share`. Its `run` works as on the world's thread, its `add` and `remove` take only observer
 systems, which run there, `share` throws there, and its `dispose` disconnects this thread; disposing on the world's thread disposes the world, and joined threads' runs
 reject from then on. `share` returns nothing: a joined thread's progress (`"joining"`, `"joined"` once the threads it
 claims are its own, `"gone"` once they're released) and its claims are the implementation's own storage, which
@@ -125,11 +125,11 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   one, where it drops and its system fails, so the issuing paths check nothing while no joined thread fills objects.
   A `transfer` value reaches its own thread through a run's input instead (see Transfers).
 - **`up` and `order` run only on `world`:** a system that declares either can't be placed on a joined thread, which
-  refuses the claim, or fails the system's registration once the thread is joined. So does a lookup through an index with
-  an object key part, which the world keeps on its own thread; one keyed by structs is read where the system runs.
-- **Synced systems** are placed as other systems are, and run on their thread after the world's sync points (see Synced
-  systems on joined threads); a joined thread's own, which its `add` or `run` takes, run there whatever they read, and
-  read only structs and the objects of the threads it fills.
+  refuses the claim, or fails the system's registration once the thread is joined. So does a lookup through an index
+  with an object key part, which the world keeps on its own thread; one keyed by structs is read where the system runs.
+- **Observer systems** are placed as other systems are, and run on their thread after the world's sync points (see
+  Observer systems on joined threads); a joined thread's own, which its `add` or `run` takes, run there whatever they
+  read, and read only structs and the objects of the threads it fills.
 
 ## Mechanisms
 
@@ -141,16 +141,16 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   arrived since the last tick. A quiet loop schedules nothing, and a fixed loop builds no debt while quiet. The
   clock's own writes never wake it.
 - **The loop host** (`frame`, `timer`, `now`) can be given in `WorldOptions`, for tests and benchmarks. A back-to-back
-  driver, `backToBack()`, gives a `frame` that calls back through a `MessageChannel` post: a task, so worker messages and `waitAsync`
-  settle between ticks, which a microtask would starve, and unclamped, as `setTimeout(0)` isn't.
+  driver, `backToBack()`, gives a `frame` that calls back through a `MessageChannel` post: a task, so worker messages
+  and `waitAsync` settle between ticks, which a microtask would starve, and unclamped, as `setTimeout(0)` isn't.
 - **`run(system, input)`** is a transaction: runs are sequential in call order, each its own sync point, and each one
   makes the next beat tick.
 - **Failures of ticks** are in the `report` resource. A thread that dies doesn't reject a run or a tick: its systems
   are in `skipped`, each with a `"thread"` failure, and later tiers still run. A tier that waited for a joined thread
   is in the report's `warnings`.
-- **Synced systems** run on `world` after each run's and tick's sync point; those on joined threads are posted to them
+- **Observer systems** run on `world` after each run's and tick's sync point; those on joined threads are posted to them
   in the same pass. They never make the loop tick, and a run of them alone doesn't
-  wake it. While a tick's tails run on, its synced systems run at
+  wake it. While a tick's tails run on, its observer systems run at
   once with its values, unless one reads `report`, when the tick waits for its tails first so it sees the tick's.
 
 ### Shared layout directory
@@ -249,8 +249,9 @@ worker's `error`, `messageerror` or `exit`, or, for a lent worker, what its owne
 - **Platforms:** a world's pool comes from a platform, `{ count, start }`: `count` is what the `workers` resource's
   `null` resolves to, its hardware threads, `navigator.hardwareConcurrency` or `os.availableParallelism()`, minus the
   world's thread, and `start` starts one worker, or returns null when it has no more, so a pool takes as many as it
-  gets. The platform's own is browser workers where `Worker` exists, nested ones on a worker, else `worker_threads`, else
-  none. `WorldOptions`' `pool` gives another, or null for none: `lentWorkers(lent)` for workers another thread lent.
+  gets. The platform's own is browser workers where `Worker` exists, nested ones on a worker, else `worker_threads`,
+  else none. `WorldOptions`' `pool` gives another, or null for none: `lentWorkers(lent)` for workers another thread
+  lent.
 - **Lending:** the owning thread starts each worker, posts it the `MessagePort` it talks on as its first message, and
   keeps a second channel to the thread it's lent to, on which it reports the worker's death and ends it when asked; a
   lent worker is started once, so a pool resized past what was lent gets fewer workers. `terminate` asks the owner and
@@ -319,19 +320,19 @@ thread as its only writer, drained by the world's thread at the sync point. Comm
   thread is gone, between runs, its objects coming back as each row's tag names them, `null` or the start, since a value
   the thread staged or wrote was its own, and its systems and finalizers placed on the world's thread again, each system
   keeping its `lastRun`.
-- **A thread's end** is a `leave` from its `dispose`, its `MessagePort`'s `close`, a node worker's `exit`, or the world's
-  request for its Web Lock being granted, which happens however the thread ends, so a browser worker ended from outside
-  its port is heard of too, with nothing polled. Its status becomes `"gone"`; a thread that left
-  has its control words freed, one that died keeps them, since it may still be writing.
-- **Control words,** each on a line of its own: the signal the thread waits on, which the world bumps when runs complete,
-  a task is posted or a synced post waits for it, beside an unread word the thread clears before it reads what's new, so the
-  world notifies only a thread that has read every earlier wake; the last run the thread posted; and the last one the
-  world completed. A thread whose unread word is set again once it read reads again rather than wait, since that wake's
-  notify may have found no waiter, and the next wake won't notify while the word is set. A wake sets the unread word
-  before it bumps the signal, so a thread that read the signal past a wake finds the word set, or cleared it after, and
-  never waits with the word set for a wake it read; bumped first, the world paused between the two could leave it set
-  so, and no later wake notified the waiting thread. A party that can't wait without blocking is woken by a posted
-  message instead.
+- **A thread's end** is a `leave` from its `dispose`, its `MessagePort`'s `close`, a node worker's `exit`, or the
+  world's request for its Web Lock being granted, which happens however the thread ends, so a browser worker ended from
+  outside its port is heard of too, with nothing polled. Its status becomes `"gone"`; a thread that left has its control
+  words freed, one that died keeps them, since it may still be writing.
+- **Control words,** each on a line of its own: the signal the thread waits on, which the world bumps when runs
+  complete, a task is posted or an observer post waits for it, beside an unread word the thread clears before it reads
+  what's new, so the world notifies only a thread that has read every earlier wake; the last run the thread posted; and
+  the last one the world completed. A thread whose unread word is set again once it read reads again rather than wait,
+  since that wake's notify may have found no waiter, and the next wake won't notify while the word is set. A wake sets
+  the unread word before it bumps the signal, so a thread that read the signal past a wake finds the word set, or
+  cleared it after, and never waits with the word set for a wake it read; bumped first, the world paused between the two
+  could leave it set so, and no later wake notified the waiting thread. A party that can't wait without blocking is
+  woken by a posted message instead.
 
 ### Runs from joined threads
 
@@ -370,7 +371,7 @@ moves or fills a row appends: `commitBatches` and `commitStaged`, `writeValues` 
 publishes "through position P, sync N" in the log's header after each sync point's entries, before the structure epoch
 turns even.
 
-**Replay.** A thread replays lazily, only syncs published: before a task whose payload names sync S, or a synced
+**Replay.** A thread replays lazily, only syncs published: before a task whose payload names sync S, or an observer
 post, it processes each pending sync in order: its finalizers first, against values still at their pre-apply
 rows, then its log. It copies the entries out, then checks the writer hasn't lapped it: the writer stores a limit 64
 entries ahead of where it writes before writing past it, and the copy holds if the limit is within the ring's size of
@@ -409,8 +410,8 @@ consecutive tiers all on that thread are one task, which stops after a tier with
   reserve entities in blocks from the shared cursor. The world drains each segment in its system's place.
 - **Completion:** per system, whether it took its tick, ran its rows and failed, its segment's extent, and its folds,
   which the world combines in system order, as it combines its own; then the done word. A message follows only with a
-  failure's error, a segment that spilled past the ring, or the thread's numbers for keys named for the first time. Input
-  comes by message, before the task.
+  failure's error, a segment that spilled past the ring, or the thread's numbers for keys named for the first time.
+  Input comes by message, before the task.
 - **A thread that's gone** settles its task in flight: its systems are skipped, each with a `"thread"` failure, and
   later tiers still run.
 - **Lookups through indexes:** for each, the world keeps a record in the memory, posted with the system's setup, and
@@ -445,7 +446,7 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   linked in sync order, the first from the log header's stops word, each block's next offset stored once that block is
   whole, so a thread reads only whole blocks of published syncs. A block is freed once the thread acknowledged a later
   one, since the thread reads the next offset from the newest block it ran. The world wakes the thread after each sync
-  point that published stops for it, so a thread with no task or synced post still finalizes.
+  point that published stops for it, so a thread with no task or observer post still finalizes.
 - **Running them** (`thread-finalizers.ts`): the thread runs a sync's stop list as it replays that sync, at its sync
   entry, before the sync's entries apply, or at replay's end for a sync with no entries for it; its finalizers read the
   linear structs from the block, constants as they are, and its objects by each stop's tag: the start or `null` as
@@ -456,7 +457,7 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   imported fails each of its groups. What its finalizers throw is posted, and a later run's report lists it as a
   `"finalizer"` failure.
 - **The guarantee:** each such finalizer runs exactly once per stop, on its thread, before that thread's next task or
-  synced post after the sync point and before the entity's index is reused, seeing its declared struct reads
+  observer post after the sync point and before the entity's index is reused, seeing its declared struct reads
   and its thread's objects as of before apply.
 - **Held indexes:** the index of an entity despawned with such stops is held, counted by index for each thread that
   hasn't acknowledged it, apart from `released`, so the leak scan never sees it and the free list never has it; the
@@ -471,10 +472,10 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   structure epoch; (b) the world waits for remote finalizers inside the sync point, exact timing for about a 10 µs
   round trip per sync point with such stops.
 
-### Synced systems on joined threads
+### Observer systems on joined threads
 
-A synced system runs on a joined thread when that thread's `add` or `run` took it, as its own, or when the threads it
-names objects of are ones that thread claims (`joined-synced.ts` on the world's thread, `thread-synced.ts` there).
+An observer system runs on a joined thread when that thread's `add` or `run` took it, as its own, or when the threads it
+names objects of are ones that thread claims (`joined-observer.ts` on the world's thread, `thread-observer.ts` there).
 One placed by its objects is named there by its id and its keys' ids, as systems placed there are: without them, it
 fails to register, its run rejecting and an added one's failure in a later report.
 
@@ -489,9 +490,9 @@ fails to register, its run rejecting and an added one's failure in a later repor
   its removed word, the run it's owed to, the sync of the thread's log it's as of, and the tick it takes and the
   `lastRun` it filters by. The thread is posted its index there, its block, the world's numbers for its keys and the
   records of its index lookups, written before each post as for systems on joined threads.
-- **Posting:** after each run's and tick's sync point, in the synced pass, the world posts one whose conditions hold and
-  that has no change filters, or one whose filter may pass: a resource it filters on changed since its `lastRun`, or a
-  chunk of an archetype it matches was stamped, or its column stamped by a GPU kernel, which reaches the thread as row
+- **Posting:** after each run's and tick's sync point, in the observer pass, the world posts one whose conditions hold
+  and that has no change filters, or one whose filter may pass: a resource it filters on changed since its `lastRun`, or
+  a chunk of an archetype it matches was stamped, or its column stamped by a GPU kernel, which reaches the thread as row
   ticks. One a run named, from either thread, is posted after each sync point until it ran. Posting reads back what the
   GPU wrote that it reads, or the indexes it looks up through hold by, then refreshes those indexes, then writes its
   block, holding its progress word at an opening value while it does, its posts word last and then opening it, so a
@@ -544,12 +545,12 @@ One shared word, the layout directory header's fourth, kept while a joined threa
 each sync point that applies anything, before `materialize`, until its directory writes and logs' publishing at the
 end, a window that includes commits of staged spawns and any GPU readback, and around flushes between sync points.
 It turns odd by an atomic add, so later writes can't be seen before it, and even by a store, since only the world writes
-it. Threads that read entity locations outside a task, synced posts and rebuilds, read while it's
+it. Threads that read entity locations outside a task, observer posts and rebuilds, read while it's
 even and check it again after, retrying on a change; the closing check is an atomic add of 0, so every read before it
 completes first. A reader that finds it odd counts itself in the header's waiters word and waits on the epoch, which
 the world notifies when it turns even only while a reader waits, rather than spinning. The guarded words (`archetype`,
 `row`, `generation`) are read with `Atomics.load`. Values are never guarded by it: scheduled reads are ordered by
-tiers, and synced posts read as of one sync point.
+tiers, and observer posts read as of one sync point.
 
 ### Tails
 
@@ -578,11 +579,11 @@ its tails before it resolves, with their failures in its report.
   back to back `tail overlap` takes 2.53 ms a tick against 4.70 for `tail overlap waiting`, in node. Where the
   world's work comes before its writer, or the two fit a beat, waiting costs the same (perf.md, "Tried and not kept").
 - **The tail's own objects** are read where they are: while a tail is in flight, the thread's replay stops at the sync
-  it names, which the world stores in the log header as it posts it, so the next sync point's moves wait in the log until the tail finishes. Rows read from the copy take their
-  objects from the mirror at the copy's rows, or, once its log lapped and it rebuilt past that sync, by entity. Objects
-  it writes from the copy go back to the mirror after its body; the world marks their tags the thread's own when it
-  copies, and stamps them changed at the tail's tick, as the task's completion names them by entity, before the
-  thread's next task.
+  it names, which the world stores in the log header as it posts it, so the next sync point's moves wait in the log
+  until the tail finishes. Rows read from the copy take their objects from the mirror at the copy's rows, or, once its
+  log lapped and it rebuilt past that sync, by entity. Objects it writes from the copy go back to the mirror after its
+  body; the world marks their tags the thread's own when it copies, and stamps them changed at the tail's tick, as the
+  task's completion names them by entity, before the thread's next task.
 - **What waits for a tail to finish:** the next task on its thread, and what moves rows a tail may still read outside
   a sync point: registration, resources added between runs, a GPU device change, and joined threads joining or leaving.
 - **Report.** A tick ends in two steps: its tiers and sync point, which release the world's queue so N+1 can start, and
@@ -636,7 +637,7 @@ Memory isn't shared, so the world runs inline, and `share` and `join` throw.
 | A late tail and the world's work after its writer, together over a beat | the two overlap: `tail overlap` 2.53 ms a tick of a 2.5 ms tail and 2 ms of work, against 4.70 for `tail overlap waiting`, in node |
 | Commands and staged spawns from a worker kernel or joined thread | ring writes; the private spill and its message only past the ring's size |
 | `run` from a joined thread | one slot and notify; resolves through a word |
-| A synced system on a joined thread, per sync point | a check of its filters, a post into its block and at most one notify per thread; one reading only struct resources posts copies of them and is never waited for: `joined synced resource` 4.3–5.0 µs a tick, in node; otherwise the next writer copies what it hasn't read, the next sync point waits only for a post in progress: `joined synced 10K` 0.41–0.51 ms |
+| An observer system on a joined thread, per sync point | a check of its filters, a post into its block and at most one notify per thread; one reading only struct resources posts copies of them and is never waited for: `joined observer resource` 4.3–5.0 µs a tick, in node; otherwise the next writer copies what it hasn't read, the next sync point waits only for a post in progress: `joined observer 10K` 0.41–0.51 ms |
 | Structural change touching archetypes with remote objects | one log entry per row moved, replayed once on that thread, `log replay` 21 ns a move in node |
 | A thread rebuilding after its log dropped entries | a pass over its archetypes' rows, `log rebuild 100K` 3.2 ns a row in node |
 | Despawning entities with remote finalizers | stop-list copy of declared reads, a column at a time; the world's thread doesn't wait: `despawn objects 10K` 83 ns a despawn in node |
@@ -654,10 +655,11 @@ Memory isn't shared, so the world runs inline, and `share` and `join` throw.
 - **Joined threads:** per thread, its control words and 64 run slots, 16 KiB; per pair of joined threads one of which
   fills objects, a `MessageChannel`; per index a system was placed at there, a 64-byte line for its removed word, kept
   for the index's next system.
-- **Synced systems on joined threads:** per system, a block of four lines, a record per index lookup, and, once a writer
-  copied what it reads, a snapshot as a tail's; for one reading only struct resources, two blocks, and two snapshots of
-  its resources when they're over 80 bytes.
-- **Tail buffers:** only once a fallback snapshot was taken: passing rows times their declared struct reads, kept for the next.
+- **Observer systems on joined threads:** per system, a block of four lines, a record per index lookup, and, once a
+  writer copied what it reads, a snapshot as a tail's; for one reading only struct resources, two blocks, and two
+  snapshots of its resources when they're over 80 bytes.
+- **Tail buffers:** only once a fallback snapshot was taken: passing rows times their declared struct reads, kept for
+  the next.
 - **Stop lists:** per sync point with stops, a 16-byte header, and per finalizer 16 bytes and per stop 16 bytes, 4 per
   object read and its linear reads' bytes, each column on 8 bytes, kept until a later block is acknowledged; and on the
   world's thread, 4 bytes per entity index up to the highest held.
@@ -701,7 +703,7 @@ entity-table layout from it, and `publish.ts` posts only new components. WASM lo
   capacity, then one spawn into each timed as one sync point, followed by a kernel over them in the workers variant so
   workers take up the layout; repeated for a fixed number of doublings, keeping the fastest.
 - New, in node and chromium: `loop tick idle`: ticks with nothing changed, driven back to back by the `MessageChannel`
-  loop host with `always` set, counted by a synced system filtering on the clock; N = 10,000 ticks.
+  loop host with `always` set, counted by an observer system filtering on the clock; N = 10,000 ticks.
 
 ### Built: phase 2, thread ports and node workers
 
@@ -758,8 +760,9 @@ thread is still filled by `world`; a claim is recorded and checked against claim
   and `join` throw; `share` and `join` are public.
 - Tests: in node and chromium, a worker joining a world here and this thread joining a world on a worker, through
   `MessagePort`s and through a worker and its own scope, with the keys and systems of one id imported on both threads;
-  runs with struct and object input landing in call order; a joined thread that dies is `"gone"`; runs of a system without an id or never imported reject; a thread claimed twice
-  is refused. On one thread through a `MessageChannel`: slots overflowing in order, an input that can't be posted, runs rejecting after the world's dispose; world-only
+  runs with struct and object input landing in call order; a joined thread that dies is `"gone"`; runs of a system
+  without an id or never imported reject; a thread claimed twice is refused. On one thread through a `MessageChannel`:
+  slots overflowing in order, an input that can't be posted, runs rejecting after the world's dispose; world-only
   components rejected in systems and commands; `share` and `join` throwing without cross-origin isolation; the epoch and
   the resource record.
 - Must not regress: `run idle`, `run 50 idle`, `sync point one spawn`, `loop tick idle`.
@@ -926,17 +929,17 @@ threads looking up through indexes of struct keys, and hash indexes built again 
 - New: `index rebuild 1M workers` 6.7 ms against 27 on the world's thread alone, `grid neighbors 100K workers` 179 ns a
   row.
 
-### Built: synced systems on joined threads
+### Built: observer systems on joined threads
 
-A joined thread's `add` and `remove` take synced systems, its `run` one of its own, which run there after the world's
-sync points, posted into blocks of their own, and synced systems placed on the joined thread filling their objects run
-there the same way (`joined-synced.ts`, `thread-synced.ts`, `thread-directory.ts`).
+A joined thread's `add` and `remove` take observer systems, its `run` one of its own, which run there after the world's
+sync points, posted into blocks of their own, and observer systems placed on the joined thread filling their objects run
+there the same way (`joined-observer.ts`, `thread-observer.ts`, `thread-directory.ts`).
 
 - Interface: the documentation of `World.add` and `World.remove`; no types.
-- Contract: on a joined thread `add` and `remove` take only synced systems, whose keys need ids, and `run` runs one of
+- Contract: on a joined thread `add` and `remove` take only observer systems, whose keys need ids, and `run` runs one of
   its own there; each runs after the world's sync points, once for the newest when the thread fell behind, reading
   structs and the objects of the threads it fills as of one sync point; its failures are in a later run's report, a
-  run's in that run's; a synced system naming objects of a thread a joined thread claims is placed there, no longer
+  run's in that run's; an observer system naming objects of a thread a joined thread claims is placed there, no longer
   refused.
 - Tests: on one thread through a `MessageChannel`, resources and rows with change filters, composites, lookups by entity
   with `changed`, keyless and keyed index lookups, runs with their failures, added ones' failures in a later report,
@@ -948,9 +951,9 @@ there the same way (`joined-synced.ts`, `thread-synced.ts`, `thread-directory.ts
   running once, for the newest, so neither order depends on the machine's timing; in chromium, a joined worker's
   lookups through a sorted index on what a GPU kernel wrote, posted again after a warming run's sync point (red with
   posting refreshing before reading back: a count behind).
-- New: `joined synced resource`, `joined synced 10K`.
+- New: `joined observer resource`, `joined observer 10K`.
 - Then: one reading only struct resources posts copies of them, into two blocks, so neither writers, sync points nor
-  posts wait for it (`synced-contained.test.ts`, and in node and chromium a worker holding a run while the world runs
+  posts wait for it (`observer-contained.test.ts`, and in node and chromium a worker holding a run while the world runs
   on, red waiting for it, and red running again for the value it held without taking a running post's outcome ahead;
   the worker runs a system of its own after its add, through the same port, so the world placed the watcher by that
   run's sync point and no order depends on the machine's timing).
@@ -958,8 +961,10 @@ there the same way (`joined-synced.ts`, `thread-synced.ts`, `thread-directory.ts
 ## Not built
 
 - **Several loops per world,** such as fixed-step physics beside rendering.
-- **Overlapping ticks by access sets:** starting tick N+1's tiers that don't conflict with tick N's, beyond tails. Ticks with independent halves would justify it.
-- **Per-component write epochs** for read-only readers outside the schedule of large struct data; they shrink the conflict window without closing it.
+- **Overlapping ticks by access sets:** starting tick N+1's tiers that don't conflict with tick N's, beyond tails. Ticks
+  with independent halves would justify it.
+- **Per-component write epochs** for read-only readers outside the schedule of large struct data; they shrink the
+  conflict window without closing it.
 - **Ordered systems off the world's thread:** commands from a worker's claimed pieces come back as one segment, so a
   piece order across workers needs a segment per piece; and indexes with object parts on the joined thread that holds
   their objects.
@@ -968,14 +973,19 @@ there the same way (`joined-synced.ts`, `thread-synced.ts`, `thread-directory.ts
 
 - **A GPU thread:** the device lives with the world, so GPU tiers and readbacks never cross threads.
 - **Copying objects between threads,** or snapshots of them: objects stay on their thread.
-- **A seqlock over whole runs for readers on joined threads:** back-to-back ticks starve readers, and every reader thread would evaluate queries again.
-- **Double-buffered columns:** twice the memory and a copy of every written column per tick, or front and back swaps per tier.
+- **A seqlock over whole runs for readers on joined threads:** back-to-back ticks starve readers, and every reader
+  thread would evaluate queries again.
+- **Double-buffered columns:** twice the memory and a copy of every written column per tick, or front and back swaps per
+  tier.
 - **Snapshots on every tail:** a prompt main would copy every tick for nothing.
-- **Writers waiting for tails instead of snapshots, or choosing between the two by a tail's progress:** measured
-  against snapshots, no better anywhere, and 1.2 to 1.5× slower a tick at a cadence where they overlap, 1.9× back to back (perf.md, "Tried and not kept").
+- **Writers waiting for tails instead of snapshots, or choosing between the two by a tail's progress:** measured against
+  snapshots, no better anywhere, and 1.2 to 1.5× slower a tick at a cadence where they overlap, 1.9× back to back
+  (perf.md, "Tried and not kept").
 - **Objects by entity index,** dense or as a sparse set: memory by index space, or a load per row.
-- **A shared heap for asset payloads:** `WebAssembly.Memory` never shrinks, `TextDecoder` rejects shared views, and an `ImageBitmap` isn't bytes.
-- **Several world threads, or moving one:** merges stop being deterministic, and plan and finalizer state would have to migrate.
+- **A shared heap for asset payloads:** `WebAssembly.Memory` never shrinks, `TextDecoder` rejects shared views, and an
+  `ImageBitmap` isn't bytes.
+- **Several world threads, or moving one:** merges stop being deterministic, and plan and finalizer state would have to
+  migrate.
 - **Inferring threads from values:** it fails late, and a worker can't test for DOM types.
 - **Remoting through a JS Proxy.**
 - **Liveness polling of joined threads:** a quiet world does no work, so death is what the platform reports, a joined

@@ -2,7 +2,7 @@ import type { Cadence } from '../../interface/resources/cadence.js';
 import type { Composite, Definition } from '../../interface/registry/index.js';
 import { labelOfItem } from '../../interface/registry/index.js';
 import { requireDefinition } from '../../interface/registry/program.js';
-import { isLeaf, isSynced, scheduleOf } from '../../interface/registry/schedule.js';
+import { isLeaf, isObserver, scheduleOf } from '../../interface/registry/schedule.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 
 /** What the loop reads of the world's resources before each beat. */
@@ -26,13 +26,13 @@ export type LoopPlatform = Pick<LoopHost, "frame" | "timer" | "now">;
 
 export type Loop = {
     /**
-     * Adds a system to every tick from the next one on, or a synced system to the synced systems. Throws for a conflict
-     * with one already added, or input.
+     * Adds a system to every tick from the next one on, or an observer system to the observer systems. Throws for a
+     * conflict with one already added, or input.
      */
     readonly add: (system: Definition) => void;
     /**
      * Removes a value `add` was given from every tick from the next one on, returning the composite of the added
-     * systems before and after, null while none is added: the same one for a synced system added alone, which leaves
+     * systems before and after, null while none is added: the same one for an observer system added alone, which leaves
      * it as it is. Null without a change, for a value not added. Throws, removing nothing, when the systems left
      * conflict with no order between them.
      */
@@ -40,10 +40,10 @@ export type Loop = {
     /** The composite ticks run now: the added systems', or null while none is added that runs in a tier. */
     readonly current: () => Composite | null;
     /**
-     * The synced systems to run after every run's and tick's sync point: those added alone and those within added
+     * The observer systems to run after every run's and tick's sync point: those added alone and those within added
      * composites, each once. A new array once they change, so a pass in progress keeps the one it started with.
      */
-    readonly synced: () => readonly Leaf[];
+    readonly observer: () => readonly Leaf[];
     /** A run arrived: the next beat runs a tick. */
     readonly arrived: () => void;
     /** Stops ticking; a tick in progress finishes. */
@@ -73,8 +73,8 @@ export const platformTimer = (callback: () => void, milliseconds: number): (() =
 
 /**
  * For tests and benchmarks: frames that call back as soon as the event loop takes its next task, through a
- * `MessageChannel` post. A task, so worker messages and `Atomics.waitAsync` settle between ticks, which microtasks would
- * starve; unclamped, as `setTimeout(0)` isn't. `close` releases the channel, which keeps node running while open.
+ * `MessageChannel` post. A task, so worker messages and `Atomics.waitAsync` settle between ticks, which microtasks
+ * would starve; unclamped, as `setTimeout(0)` isn't. `close` releases the channel, which keeps node running while open.
  */
 export const backToBack = (): Partial<LoopPlatform> & { readonly close: () => void } => {
     const channel = new MessageChannel();
@@ -115,25 +115,25 @@ const noLeaves: readonly Leaf[] = [];
 /**
  * The world's loop: on beats of its cadence, while some system is added that runs in a tier, it runs a tick where
  * `always` is set, `wake` is due or a run arrived since the last tick. A quiet loop schedules nothing until a run
- * arrives or a wake time comes. Synced systems don't make it tick.
+ * arrives or a wake time comes. Observer systems don't make it tick.
  */
 export const createLoop = (host: LoopHost): Loop => {
-    /** The values added but synced systems added alone, which are in `alone`. */
+    /** The values added but observer systems added alone, which are in `alone`. */
     const systems: Definition[] = [];
     let composite: Composite | null = null;
     /** `composite` while it has a tier, so ticks run. */
     let ticking: Composite | null = null;
     const alone: Leaf[] = [];
-    let synced: readonly Leaf[] = noLeaves;
-    const refreshSynced = (): void => {
-        const within = composite === null ? noLeaves : scheduleOf(composite).synced;
-        synced = within.length === 0 ? [...alone] : [...new Set([...alone, ...within])];
+    let observer: readonly Leaf[] = noLeaves;
+    const refreshObserver = (): void => {
+        const within = composite === null ? noLeaves : scheduleOf(composite).observer;
+        observer = within.length === 0 ? [...alone] : [...new Set([...alone, ...within])];
     };
     /** Sets the composite of the added systems, and whether it ticks. */
     const compose = (next: Composite | null): void => {
         composite = next;
         ticking = next !== null && scheduleOf(next).tiers.length > 0 ? next : null;
-        refreshSynced();
+        refreshObserver();
     };
     let runArrived = false;
     let stopped = false;
@@ -239,10 +239,10 @@ export const createLoop = (host: LoopHost): Loop => {
         add: system => {
             if (stopped) throw new Error("The world is disposed.");
             checkNoInput(system);
-            if (isSynced(system)) {
+            if (isObserver(system)) {
                 if (alone.includes(system)) return;
                 alone.push(system);
-                refreshSynced();
+                refreshObserver();
                 return;
             }
             if (systems.includes(system)) return;
@@ -255,11 +255,11 @@ export const createLoop = (host: LoopHost): Loop => {
             schedule();
         },
         remove: system => {
-            if (isSynced(system)) {
+            if (isObserver(system)) {
                 const at = alone.indexOf(system);
                 if (at < 0) return null;
                 alone.splice(at, 1);
-                refreshSynced();
+                refreshObserver();
                 return { previous: composite, next: composite };
             }
             const at = systems.indexOf(system);
@@ -274,7 +274,7 @@ export const createLoop = (host: LoopHost): Loop => {
             return { previous, next };
         },
         current: () => ticking,
-        synced: () => synced,
+        observer: () => observer,
         arrived: () => {
             if (ticking === null) return;
             runArrived = true;

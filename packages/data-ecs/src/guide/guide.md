@@ -74,9 +74,9 @@ Resource.register(names, { type: { type: "map", keys: { type: "string" }, values
 // A value that isn't data has no schema and is stored as it is. A type that allows null starts there.
 Resource.register(audio, {});
 
-// Systems read a world: a synced one only reads, after the world's changes apply.
+// Systems read a world: an observer only reads, after the world's changes apply.
 let values: readonly unknown[] = [];
-const read = System.create({ synced: true, resources: { read: [gravity, names, audio] } }, ({ resources }) => {
+const read = System.create({ observer: true, resources: { read: [gravity, names, audio] } }, ({ resources }) => {
     values = [resources[gravity], resources[names], resources[audio]];
 });
 
@@ -122,13 +122,13 @@ export const defeat = System.create({ components: { has: [enemy] } }, (row, { co
     commands.remove(row.entity, enemy);
 });
 
-// A synced system reads them back, once per entity with its components.
+// An observer system reads them back, once per entity with its components.
 const foes: Vec3[] = [];
-const readFoes = System.create({ synced: true, components: { read: [position], has: [enemy] } }, row => {
+const readFoes = System.create({ observer: true, components: { read: [position], has: [enemy] } }, row => {
     foes.push(row[position]);
 });
 let particles = 0;
-const countParticles = System.create({ synced: true, components: { has: Particle } }, () => {
+const countParticles = System.create({ observer: true, components: { has: Particle } }, () => {
     particles += 1;
 });
 
@@ -160,11 +160,11 @@ const count = System.create({ resources: { write: [frames] } }, ({ resources }) 
     resources[frames] += 1;
 });
 
-// A synced system reads what the runs before it left, and changes nothing: run one to read the world, or add one to
+// An observer system reads what the runs before it left, and changes nothing: run one to read the world, or add one to
 // react to it.
 const moved: Vec3[] = [];
 let counted = 0;
-const read = System.create({ synced: true, components: { read: [position], not: [frozen] }, resources: { read: [frames] } }, (row, { resources }) => {
+const read = System.create({ observer: true, components: { read: [position], not: [frozen] }, resources: { read: [frames] } }, (row, { resources }) => {
     moved.push(row[position]);
     counted = resources[frames];
 });
@@ -185,9 +185,9 @@ const advance = System.create({ resources: { read: [clock], write: [elapsed] } }
     resources[elapsed] += resources[clock].delta;
 });
 
-// Added, a synced system reacts to changes: with elapsed in changed, it runs after each tick that changed it.
+// Added, an observer system reacts to changes: with elapsed in changed, it runs after each tick that changed it.
 let reached: (value: number) => void = () => {};
-const watch = System.create({ synced: true, resources: { read: [elapsed], changed: [elapsed] } }, ({ resources }) => {
+const watch = System.create({ observer: true, resources: { read: [elapsed], changed: [elapsed] } }, ({ resources }) => {
     if (resources[elapsed] >= 30) reached(resources[elapsed]);
 });
 
@@ -260,8 +260,8 @@ const frame = System.create([spawn, count]);
 [`06-sync-points.test.ts`](06-sync-points.test.ts#L20-L52)
 
 ```ts
-// A synced system runs after the sync point of every run and tick it's added to, reading what it left; it writes nothing.
-const watch = System.create({ synced: true, components: { read: [health] } }, row => {
+// An observer runs after the sync point of every run and tick it's added to, reading what it left; it writes nothing.
+const watch = System.create({ observer: true, components: { read: [health] } }, row => {
     healths.push(row[health]);
 });
 ```
@@ -434,14 +434,14 @@ const count = System.create({ components: { read: [cell], write: [crowded] }, lo
 const byScore = Index.create({ key: [score], sorted: true, components: { has: [player] } });
 
 const winners: string[] = [];
-const leaders = System.create({ synced: true, lookup: { scores: { index: byScore, read: [player] } } }, ({ lookup }) => {
+const leaders = System.create({ observer: true, lookup: { scores: { index: byScore, read: [player] } } }, ({ lookup }) => {
     winners.length = 0;
     const high = lookup.scores({ ">=": 90 });
     for (let i = 0; i < high.length; i++) winners.push(high.at(i)[player]);
 });
 
 const board: string[] = [];
-const list = System.create({ synced: true, components: { read: [player] }, order: byScore }, row => {
+const list = System.create({ observer: true, components: { read: [player] }, order: byScore }, row => {
     board.push(row[player]);
 });
 ```
@@ -460,11 +460,11 @@ const find = System.create({ input: { type: "object", properties: { id: { type: 
 [`13-indexes.test.ts`](13-indexes.test.ts#L51-L56)
 
 ```ts
-// An index without a key holds every entity with its components, in entity order. Added, this synced system keeps a
+// An index without a key holds every entity with its components, in entity order. Added, this observer system keeps a
 // count as players come and go.
 const players = Index.create({ key: [], components: { has: [player] } });
 let playerCount = 0;
-const countPlayers = System.create({ synced: true, lookup: { players: { index: players } } }, ({ lookup }) => {
+const countPlayers = System.create({ observer: true, lookup: { players: { index: players } } }, ({ lookup }) => {
     const all = lookup.players();
     if (all.changed) playerCount = all.length;
 });
@@ -497,4 +497,4 @@ How systems and keys stay the same across reloads. To be written.
 
 ### 19. Threads
 
-Sharing a world with another thread, which joins it to run systems and add synced ones. To be written.
+Sharing a world with another thread, which joins it to run systems and add observers. To be written.

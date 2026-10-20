@@ -146,7 +146,7 @@ const inOrder = System.create({ name: "indexJoinedTest/inOrder", components: { r
 
 /** The entities `readLabels` reads, and their labels. */
 const reading: { entities: readonly Entity[]; labels: readonly string[] } = { entities: [], labels: [] };
-const readLabels = System.create({ name: "indexJoinedTest/readLabels", synced: true, lookup: { labeled: { read: [label] } } }, ({ lookup }) => {
+const readLabels = System.create({ name: "indexJoinedTest/readLabels", observer: true, lookup: { labeled: { read: [label] } } }, ({ lookup }) => {
     reading.labels = reading.entities.map(entity => lookup.labeled(entity)?.[label] ?? "missing");
 });
 
@@ -223,7 +223,8 @@ describe("systems on a joined thread looking up through indexes", () => {
             });
         };
         world.add(keepTicking);
-        // Ticks of what an index is keyed by and watches stay once started, as any component's do, and task blocks keep their size.
+        // Ticks of what an index is keyed by and watches stay once started, as any component's do, and task blocks keep
+        // their size.
         for (let round = 0; round < 2; round++) {
             world.add(counting);
             await ticks(2);

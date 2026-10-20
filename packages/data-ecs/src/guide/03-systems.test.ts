@@ -47,11 +47,11 @@ const count = System.create({ resources: { write: [frames] } }, ({ resources }) 
     resources[frames] += 1;
 });
 
-// A synced system reads what the runs before it left, and changes nothing: run one to read the world, or add one to
+// An observer system reads what the runs before it left, and changes nothing: run one to read the world, or add one to
 // react to it.
 const moved: Vec3[] = [];
 let counted = 0;
-const read = System.create({ synced: true, components: { read: [position], not: [frozen] }, resources: { read: [frames] } }, (row, { resources }) => {
+const read = System.create({ observer: true, components: { read: [position], not: [frozen] }, resources: { read: [frames] } }, (row, { resources }) => {
     moved.push(row[position]);
     counted = resources[frames];
 });

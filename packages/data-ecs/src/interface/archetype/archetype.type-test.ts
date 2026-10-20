@@ -34,4 +34,4 @@ Archetype.create([position, scale]);
 Archetype.create(["position"]);
 // Archetypes go wherever component lists do.
 export const move = System.create({ name: "archetypeTypeTest/move", components: { write: particle } }, row => { row[position] += row[velocity]; });
-export const read = System.create({ name: "archetypeTypeTest/read", synced: true, components: { read: particle } }, row => { void row[velocity]; });
+export const read = System.create({ name: "archetypeTypeTest/read", observer: true, components: { read: particle } }, row => { void row[velocity]; });

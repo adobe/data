@@ -46,7 +46,7 @@ const bump = System.create({ components: { write: [score], has: [boss] } }, row 
 });
 
 const shownValues: number[] = [];
-const readShown = System.create({ synced: true, components: { read: [shown] } }, row => {
+const readShown = System.create({ observer: true, components: { read: [shown] } }, row => {
     shownValues.push(row[shown]);
 });
 
@@ -72,7 +72,7 @@ const pause = System.create({ resources: { write: [paused] } }, ({ resources }) 
 const open = System.create({ resources: { write: [map] } }, ({ resources }) => { resources[map] = { width: 4 }; });
 
 let stepped = 0;
-const readSteps = System.create({ synced: true, resources: { read: [steps] } }, ({ resources }) => {
+const readSteps = System.create({ observer: true, resources: { read: [steps] } }, ({ resources }) => {
     stepped = resources[steps];
 });
 

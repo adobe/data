@@ -70,7 +70,7 @@ export const main = System.create({ name: "particles/main", systems: [spawn, gra
 const positions: Vec3[] = [];
 const read = System.create({
     name: "particles/read",
-    synced: true,
+    observer: true,
     components: { read: [position] },
 }, row => {
     positions.push(row[position]);

@@ -76,10 +76,10 @@ type GpuKernel = {
 };
 
 /**
- * A synced system only reads, after a sync point: it writes and reduces into nothing, takes no input, isn't a kernel,
- * has no `up`, and is ordered with nothing.
+ * An observer system only reads, after a sync point: it writes and reduces into nothing, takes no input, isn't a
+ * kernel, has no `up`, and is ordered with nothing.
  */
-type Synced = {
+type Observer = {
     readonly kernel?: never;
     readonly components?: { readonly write?: never };
     readonly resources?: { readonly write?: never };
@@ -101,7 +101,7 @@ type Validate<D extends Declaration> =
     // `up` and `order` order rows, so a system without them has neither, and one has at most one of them.
     & (Property<D, "components"> extends undefined ? { readonly up?: { readonly [key: string]: never }; readonly order?: { readonly "error: a system without components runs once, in no order": true } } : {})
     & (D extends { readonly up: object } ? { readonly order?: { readonly "error: up and order both decide the order of its rows": true } } : {})
-    & (D extends { readonly synced: true } ? Synced : {})
+    & (D extends { readonly observer: true } ? Observer : {})
     & { readonly shader?: never };
 
 /** The body of a system that declares nothing, which runs once per run with its commands. */
@@ -126,10 +126,11 @@ type Checked<C> = C extends Alone ? unknown : C extends CompositeDeclaration ? {
  * Each run passes a composite's members one input, with every field of theirs. Throws if a system names a key that
  * isn't registered as its kind, lists a key in both `read` and `write`, writes a reference, a lookup reads a component
  * it writes or goes through an index keyed by one, or reads through an index what not every entity it holds has, its
- * rows are ordered by an index it isn't sorted or keyed by what it writes, its object components and resources live on different threads, or its reductions, conditions, `up`, `order` or
- * placement can't hold, or it's synced and writes, reduces, takes input, is a kernel, has `up` or is ordered; or if a
- * composite's member isn't a system a constructor returned, or two members declare an input field with different
- * schemas. A composite's synced members run after its sync point, ordered with nothing.
+ * rows are ordered by an index it isn't sorted or keyed by what it writes, its object components and resources live on
+ * different threads, or its reductions, conditions, `up`, `order` or placement can't hold, or it's an observer and
+ * writes, reduces, takes input, is a kernel, has `up` or is ordered; or if a composite's member isn't a system a
+ * constructor returned, or two members declare an input field with different schemas. A composite's observer members
+ * run after its sync point, ordered with nothing.
  *
  * One argument, a body or a composite, is one overload, so a mistake in it is reported where it is rather than as no
  * overload matching.
@@ -137,7 +138,8 @@ type Checked<C> = C extends Alone ? unknown : C extends CompositeDeclaration ? {
 export function create<const D extends Declaration>(declaration: D & Validate<D> & OneThread<ThreadsOf<D>>, body: Body<D>): System<InputOf<D>>;
 export function create<const C extends Alone | Composition>(only: C & Checked<C>): C extends Alone ? System : System<CompositeInputOf<MembersOf<C>>>;
 export function create(first: Declaration | Leaf["body"] | readonly System<unknown>[] | CompositeDeclaration, second?: Leaf["body"]): System<unknown> {
-    // The plugin gives its id to the call's first argument: the declaration, the members, or the body made into a system alone.
+    // The plugin gives its id to the call's first argument: the declaration, the members, or the body made into a
+    // system alone.
     const id = takeIdOfDeclaration(first);
     if (isList(first)) return compose({ systems: first }, id);
     if (typeof first !== "function" && second === undefined && "systems" in first) return compose(first, id);

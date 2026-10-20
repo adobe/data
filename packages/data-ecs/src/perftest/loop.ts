@@ -2,23 +2,23 @@ import { always } from "../interface/resources/always.js";
 import { System } from "../interface/system/system.js";
 import { backToBack, createWorld } from "../implementation/index.js";
 import { idle, unused } from "./suite.js";
-import { eachTick } from "./synced.js";
+import { eachTick } from "./observer.js";
 
 /** Ticks in each timed stretch of `loopTickIdle`. */
 export const loopTicks = 10_000;
 
-/** Synced systems in `synced idle 100`. */
-export const syncedIdles = 100;
+/** Observer systems in `observer idle 100`. */
+export const observerIdles = 100;
 
-/** Synced systems no entity matches, each run after every tick. */
-const idleSynced = Array.from({ length: syncedIdles }, (_, i) => System.create({ name: `loop/idleSynced${i}`, synced: true, components: { has: [unused] } }, () => {}));
+/** Observer systems no entity matches, each run after every tick. */
+const idleObserver = Array.from({ length: observerIdles }, (_, i) => System.create({ name: `loop/idleObserver${i}`, observer: true, components: { has: [unused] } }, () => {}));
 
 /**
  * The fastest of `stretches` stretches of `loopTicks` ticks with nothing changed, after one to warm up: a world with
- * `always` set, one system no entity matches and `synced` synced systems none matches, driven back to back, counted
- * by a synced system reading its clock.
+ * `always` set, one system no entity matches and `observer` observer systems none matches, driven back to back, counted
+ * by an observer system reading its clock.
  */
-export const loopTickIdle = async (stretches = 5, synced = 0): Promise<number> => {
+export const loopTickIdle = async (stretches = 5, observer = 0): Promise<number> => {
     const driver = backToBack();
     const world = createWorld({ [always]: true }, { loop: driver });
     let best = Infinity;
@@ -37,7 +37,7 @@ export const loopTickIdle = async (stretches = 5, synced = 0): Promise<number> =
                 unobserve();
                 resolve();
             });
-            for (let k = 0; k < synced; k++) world.add(idleSynced[k]);
+            for (let k = 0; k < observer; k++) world.add(idleObserver[k]);
             world.add(idle);
         });
     }

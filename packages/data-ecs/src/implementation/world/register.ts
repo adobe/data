@@ -1,7 +1,7 @@
 import type { Leaf } from '../../interface/system/leaf.js';
 import { idOfItem, idOfKey, labelOf, requireDefinition, threadOf, type Definition } from '../../interface/registry/index.js';
 import { createRemoteRunner, unplaceable } from './remote-systems.js';
-import { createJoinedSyncedRunner, type SyncedTarget } from './joined-synced.js';
+import { createJoinedObserverRunner, type ObserverTarget } from './joined-observer.js';
 import { createRunner, releaseHoldings, removedRunner, stopHoldings, type Holdings, type Runner } from './runner.js';
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, observe, unobserve, type Key, type State } from './state.js';
@@ -41,7 +41,7 @@ export type Registrar = {
     /** Places each registered system again, as claims were made or released: on its joined thread, or here. */
     readonly place: () => void;
     /**
-     * Registers a forgotten synced leaf again at once, with the runner it had, run again as a new runner would be:
+     * Registers a forgotten observer leaf again at once, with the runner it had, run again as a new runner would be:
      * registering it before found every key and resource it names, so nothing is left to do asynchronously. False when
      * it can't, as for one never registered, or whose runner a run in progress may still read as removed.
      */
@@ -109,20 +109,20 @@ const allKeysOf = (leaf: Leaf): readonly Key[] => {
 };
 
 /**
- * The joined thread a synced leaf runs on: the one that added it, or the one filling its thread; undefined for one
+ * The joined thread an observer leaf runs on: the one that added it, or the one filling its thread; undefined for one
  * that runs here.
  */
-const syncedTargetOf = (state: State, leaf: Leaf): SyncedTarget | undefined => {
-    const { proxies, targets } = state.synced;
+const observerTargetOf = (state: State, leaf: Leaf): ObserverTarget | undefined => {
+    const { proxies, targets } = state.observer;
     const target = proxies.get(leaf)?.target ?? (targets.size === 0 ? undefined : targets.get(threadOf(leaf.declaration, "System", leaf.name) ?? "world"));
     return target === undefined || target.ended ? undefined : target;
 };
 
 /** A runner for a leaf where it runs now: on the joined thread filling its thread, or that added it, or here. */
 const placedRunner = (state: State, leaf: Leaf, since = 0): Runner => {
-    if (leaf.declaration.synced === true) {
-        const target = syncedTargetOf(state, leaf);
-        return target === undefined ? createRunner(state, leaf, since) : createJoinedSyncedRunner(state, leaf, target, since);
+    if (leaf.declaration.observer === true) {
+        const target = observerTargetOf(state, leaf);
+        return target === undefined ? createRunner(state, leaf, since) : createJoinedObserverRunner(state, leaf, target, since);
     }
     const thread = threadOf(leaf.declaration, "System", leaf.name);
     const channel = thread === null ? undefined : state.threadTasks.get(thread);
@@ -143,9 +143,9 @@ type Registered = { entry: Entry | null; registered: boolean };
 
 /**
  * What the registrar keeps of a system it registered, by the system: its record in the registry, its schedule, and the
- * count of forgettings it was last found whole at. Kept across forgetting, so registering it again records nothing more.
- * For a forgotten leaf whose runner registering it again runs again (`Runner.restart`), `parked` is its entry then, the
- * runner kept as its leaf's, stopped: adding a synced system again costs no new runner.
+ * count of forgettings it was last found whole at. Kept across forgetting, so registering it again records nothing
+ * more. For a forgotten leaf whose runner registering it again runs again (`Runner.restart`), `parked` is its entry
+ * then, the runner kept as its leaf's, stopped: adding an observer system again costs no new runner.
  */
 type Kept = { readonly held: Registered; schedule: Schedule | null; checked: number; parked: Entry | null };
 
@@ -171,8 +171,8 @@ export const createRegistrar = (state: State): Registrar => {
         for (const id of entry.observed) unobserve(state, id);
     };
     /**
-     * Called once a registered system is collected, with its record: a leaf's entry, or null for a composite, and whether
-     * it's still registered, as a rolled-back one isn't, so no unregister token is kept per registration.
+     * Called once a registered system is collected, with its record: a leaf's entry, or null for a composite, and
+     * whether it's still registered, as a rolled-back one isn't, so no unregister token is kept per registration.
      */
     const collected = new FinalizationRegistry<Registered>(record => {
         if (!record.registered) return;
@@ -247,7 +247,7 @@ export const createRegistrar = (state: State): Registrar => {
                 observe(state, id);
             }
         }
-        // Lists of synced systems read before it registered, holding it as removed, read their runners again.
+        // Lists of observer systems read before it registered, holding it as removed, read their runners again.
         if (added.some(({ runner }) => runner !== null)) state.runnersVersion++;
         // New `changed` filters observe more components, so kernels that muted their stamps must load again.
         if (observing) eachRunner((_, runner) => { if (runner.kernel?.stale() === true && !kernels.includes(runner)) kernels.push(runner); });
@@ -279,7 +279,7 @@ export const createRegistrar = (state: State): Registrar => {
         if (record === undefined || entry === null) return null;
         record.parked = null;
         const runner = runners.get(leaf);
-        if (runner === undefined || runner.restart === null || !entry.released || syncedTargetOf(state, leaf) !== undefined) return null;
+        if (runner === undefined || runner.restart === null || !entry.released || observerTargetOf(state, leaf) !== undefined) return null;
         runner.restart(0);
         return runner;
     };
@@ -381,8 +381,8 @@ export const createRegistrar = (state: State): Registrar => {
 
     const place = (): void => {
         eachRunner((leaf, old, entry) => {
-            if (leaf.declaration.synced === true) {
-                if (syncedTargetOf(state, leaf) === old.joined?.target) return;
+            if (leaf.declaration.observer === true) {
+                if (observerTargetOf(state, leaf) === old.joined?.target) return;
                 replace(leaf, entry, old, placedRunner(state, leaf, old.lastRun()));
                 return;
             }

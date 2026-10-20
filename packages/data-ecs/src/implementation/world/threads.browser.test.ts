@@ -19,7 +19,7 @@ import { removalCases } from "./removal.cases.js";
 import { indexWorkersCases } from "./index-workers.cases.js";
 import { indexBuildCases } from "./index-build.cases.js";
 import { entityLookupWorkersCases } from "./entity-lookup-workers.cases.js";
-import { syncedJoinedCases } from "./synced-joined.cases.js";
+import { observerJoinedCases } from "./observer-joined.cases.js";
 
 // Real workers in chromium: the cases over the fixtures' sources, as node runs them built.
 workersCases(() => import("./workers.fixture.js"));
@@ -43,4 +43,4 @@ removalCases(() => import("./removal.fixture.js"));
 indexWorkersCases(() => import("./index-workers.fixture.js"));
 indexBuildCases(() => import("./index-build.fixture.js"));
 entityLookupWorkersCases(() => import("./entity-lookup-workers.fixture.js"));
-syncedJoinedCases(() => import("./synced-joined.fixture.js"));
+observerJoinedCases(() => import("./observer-joined.fixture.js"));

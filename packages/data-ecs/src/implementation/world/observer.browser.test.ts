@@ -6,8 +6,8 @@ import { createWorld } from "./create.js";
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";
 
-const heat = Symbol("syncedGpuTest/heat");
-const rate = Symbol("syncedGpuTest/rate");
+const heat = Symbol("observerGpuTest/heat");
+const rate = Symbol("observerGpuTest/rate");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -19,19 +19,19 @@ declare module "@adobe/data-ecs" {
 Component.register(heat, { type: { type: "number", precision: 1 } });
 Component.register(rate, { type: { type: "number", precision: 1 } });
 
-const spawn = System.create({ name: "syncedGpuTest/spawn" }, ({ commands }) => {
+const spawn = System.create({ name: "observerGpuTest/spawn" }, ({ commands }) => {
     for (let i = 0; i < 100; i++) commands.spawn([heat, rate])({ [heat]: i, [rate]: 1 });
 });
-const warm = System.create({ name: "syncedGpuTest/warm", kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
+const warm = System.create({ name: "observerGpuTest/warm", kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
     row[heat] = row[heat] + row[rate] * 100;
 });
 
 let total = 0;
-const sum = System.create({ name: "syncedGpuTest/sum", synced: true, components: { read: [heat] } }, row => { total += row[heat]; });
+const sum = System.create({ name: "observerGpuTest/sum", observer: true, components: { read: [heat] } }, row => { total += row[heat]; });
 
-const byHeat = Index.create({ name: "syncedGpuTest/byHeat", key: [heat], sorted: true });
+const byHeat = Index.create({ name: "observerGpuTest/byHeat", key: [heat], sorted: true });
 let hot = 0;
-const countHot = System.create({ name: "syncedGpuTest/countHot", synced: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
+const countHot = System.create({ name: "observerGpuTest/countHot", observer: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
     hot = lookup.hot({ ">=": 150 }).length;
 });
 
@@ -41,7 +41,7 @@ const device = async (): Promise<GPUDevice> => {
     return adapter.requestDevice();
 };
 
-describe("synced systems over GPU kernels' writes", () => {
+describe("observer systems over GPU kernels' writes", () => {
     it("read what a GPU kernel wrote in the run, read back for them", async () => {
         const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         await world.run(spawn);
@@ -67,7 +67,7 @@ describe("synced systems over GPU kernels' writes", () => {
     });
 
     it("look up on a joined thread through indexes kept by what a GPU kernel wrote in the run, read back before they're refreshed", async () => {
-        const fixture = await import("./synced-joined.fixture.js");
+        const fixture = await import("./observer-joined.fixture.js");
         expect(await fixture.gpuLookups(await device())).toEqual([50, 100]);
     });
 });

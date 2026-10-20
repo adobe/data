@@ -37,14 +37,14 @@ const count = System.create({ components: { read: [cell], write: [crowded] }, lo
 const byScore = Index.create({ key: [score], sorted: true, components: { has: [player] } });
 
 const winners: string[] = [];
-const leaders = System.create({ synced: true, lookup: { scores: { index: byScore, read: [player] } } }, ({ lookup }) => {
+const leaders = System.create({ observer: true, lookup: { scores: { index: byScore, read: [player] } } }, ({ lookup }) => {
     winners.length = 0;
     const high = lookup.scores({ ">=": 90 });
     for (let i = 0; i < high.length; i++) winners.push(high.at(i)[player]);
 });
 
 const board: string[] = [];
-const list = System.create({ synced: true, components: { read: [player] }, order: byScore }, row => {
+const list = System.create({ observer: true, components: { read: [player] }, order: byScore }, row => {
     board.push(row[player]);
 });
 
@@ -55,17 +55,17 @@ const find = System.create({ input: { type: "object", properties: { id: { type: 
     found = lookup.byId(input.id)?.entity ?? null;
 });
 
-// An index without a key holds every entity with its components, in entity order. Added, this synced system keeps a
+// An index without a key holds every entity with its components, in entity order. Added, this observer system keeps a
 // count as players come and go.
 const players = Index.create({ key: [], components: { has: [player] } });
 let playerCount = 0;
-const countPlayers = System.create({ synced: true, lookup: { players: { index: players } } }, ({ lookup }) => {
+const countPlayers = System.create({ observer: true, lookup: { players: { index: players } } }, ({ lookup }) => {
     const all = lookup.players();
     if (all.changed) playerCount = all.length;
 });
 
 const crowds: number[] = [];
-const readCrowds = System.create({ synced: true, components: { read: [crowded] } }, row => {
+const readCrowds = System.create({ observer: true, components: { read: [crowded] } }, row => {
     crowds.push(row[crowded]);
 });
 

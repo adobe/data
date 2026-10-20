@@ -5,7 +5,7 @@ import { declarationOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOf
 import { layoutOf, type Views } from '../../interface/registry/layout.js';
 import {
     clean, completedWord, fitsInline, inputByMessage, inputLayoutOf, inputMoved, noInput, pending, platformLocks, postedWord, protocolName, runSlots, signalWord, unposted, unreadWord,
-    slotInput, slotNumber, slotPayload, slotSequence, slotStatus, slotViews, slotWords, slotsWord, threadChannel, type SyncedDeclaration, type SyncedIndex, type SyncedLookup, type ThreadChannel, type ToJoined, type ToPeer, type ToWorld,
+    slotInput, slotNumber, slotPayload, slotSequence, slotStatus, slotViews, slotWords, slotsWord, threadChannel, type ObserverDeclaration, type ObserverIndex, type ObserverLookup, type ThreadChannel, type ToJoined, type ToPeer, type ToWorld,
 } from './joining.js';
 import { currentBuffer, sharedMemoryAvailable } from './memory.js';
 import { logRunWord } from './move-log.js';
@@ -14,34 +14,34 @@ import { defaultOf } from './state.js';
 import { createThreadSystems, type SystemSetup } from './thread-systems.js';
 import { taskBlockWords } from './thread-tasks.js';
 import { createThreadDirectory } from './thread-directory.js';
-import { createThreadSynced, resultOf, type Local } from './thread-synced.js';
+import { createThreadObserver, resultOf, type Local } from './thread-observer.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Failure } from '../../interface/world/report.js';
-import { isSynced, scheduleOf } from '../../interface/registry/schedule.js';
+import { isObserver, scheduleOf } from '../../interface/registry/schedule.js';
 import { releaseInput, transferablesOf } from './transfers.js';
 
 /** Shared by every clean report: read-only, so none needs its own. */
 const none: readonly never[] = [];
 const cleanReport: Report = { failures: none, skipped: none, dropped: 0, warnings: none };
 
-/** What a run of a synced system of this thread's own gave when no post ran it, its system removed first. */
+/** What a run of an observer system of this thread's own gave when no post ran it, its system removed first. */
 const noResult = { failure: null };
 
-/** A report with a synced system's failure, or as it is. */
+/** A report with an observer system's failure, or as it is. */
 const withFailure = (report: Report, result: { readonly failure: Failure | null } | null): Report =>
     result === null || result.failure === null ? report : { ...report, failures: [...report.failures, result.failure] };
 
-/** The reports of runs of several synced systems, as one. */
+/** The reports of runs of several observer systems, as one. */
 const mergeReports = (reports: readonly Report[]): Report => reports.reduce((all, report) => ({
     failures: [...all.failures, ...report.failures], skipped: [...all.skipped, ...report.skipped], dropped: all.dropped + report.dropped, warnings: [...all.warnings, ...report.warnings],
 }), cleanReport);
 
-/** A synced system's leaves: itself, or a composite's members when they're all synced; null for any other system. */
-const syncedLeavesOf = (definition: Definition): readonly Leaf[] | null => {
-    if (isSynced(definition)) return [definition];
+/** An observer system's leaves: itself, or a composite's members when they're all observer; null for any other system. */
+const observerLeavesOf = (definition: Definition): readonly Leaf[] | null => {
+    if (isObserver(definition)) return [definition];
     if (definition.kind !== "composite") return null;
     const schedule = scheduleOf(definition);
-    return schedule.tiers.length === 0 && schedule.synced.length > 0 ? schedule.synced : null;
+    return schedule.tiers.length === 0 && schedule.observer.length > 0 ? schedule.observer : null;
 };
 
 /** A run not yet settled: how to settle it, and its report or rejection once posted. */
@@ -126,18 +126,18 @@ const placementOf = (definition: Definition): string | null => {
 export const peersOf = new WeakMap<World, () => number>();
 
 /** For tests of what a thread holds: how many of the systems the world placed on a joined thread it keeps. */
-export const tablesOf = new WeakMap<World, () => { readonly systems: number; readonly synced: number }>();
+export const tablesOf = new WeakMap<World, () => { readonly systems: number; readonly observer: number }>();
 
 /**
  * Joins, through `port`, the world another thread shared through the other end, once this thread has imported the
  * modules of the systems it runs and the keys they name, claiming `threads`, the logical threads it fills, the world's
  * own aside; none by default. Runs work as on the world's thread, by the ids the build gives top-level systems and
- * keys: a run of a system without one, or one the world never imported, rejects. `add` and `remove` take synced
+ * keys: a run of a system without one, or one the world never imported, rejects. `add` and `remove` take observer
  * systems, which run here after the world's sync points, once for the newest when this thread fell behind. `dispose`
  * disconnects this thread. Throws where memory can't be shared, as without cross-origin isolation.
  *
  * Runs go through this thread's slots in shared memory and complete through its completed word, waiting on its signal
- * word without blocking while any run, placed system or synced system is active.
+ * word without blocking while any run, placed system or observer system is active.
  */
 export const joinWorld = (port: Parameters<World["share"]>[0], options: { readonly threads?: readonly Exclude<Thread, "world">[] } = {}): World => {
     if (!sharedMemoryAvailable()) throw new Error("Without cross-origin isolation memory can't be shared, so no thread can join.");
@@ -206,8 +206,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
     const named = new Map<number, symbol | null>();
     /** The systems the world places on this thread, once it joined with claims; setups that came before. */
     let systems: ReturnType<typeof createThreadSystems> | null = null;
-    /** Synced systems placed on this thread, once it joined. */
-    let synced: ReturnType<typeof createThreadSynced> | null = null;
+    /** Observer systems placed on this thread, once it joined. */
+    let observer: ReturnType<typeof createThreadObserver> | null = null;
     const setups: SystemSetup[] = [];
     const finalizerSetups: SystemSetup[] = [];
 
@@ -259,7 +259,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 }
             }
             catch (error) {
-                // An input that can't be posted, as one holding a function: the world completes the run without running it.
+                // An input that can't be posted, as one holding a function: the world completes the run without running
+                // it.
                 const run = runs.get(sequence);
                 if (run !== undefined) run.error = error;
                 control[base + slotNumber] = unposted;
@@ -285,7 +286,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             const run = runs.get(next);
             const status = control[slotsWord + ((next - 1) % runSlots) * slotWords + slotStatus];
             if (run !== undefined && status !== clean && run.message === null) return;
-            // A run of this thread's own synced system settles once a post for it ran here, unless it was removed since.
+            // A run of this thread's own observer system settles once a post for it ran here, unless it was removed
+            // since.
             const result = run === undefined || run.local === null ? null : resultOf(run.local, next) ?? (run.local.stopped >= next ? noResult : undefined);
             if (result === undefined) return;
             settled = next;
@@ -316,31 +318,31 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         // A task first: the world waits for it. Then finalizers of stops no task replayed.
         tasked = systems?.process() ?? false;
         systems?.finalize();
-        if (synced !== null && synced.process() > 0) syncedRan = true;
+        if (observer !== null && observer.process() > 0) observerRan = true;
         completed = Atomics.load(control, completedWord);
         settle();
         writeWaiting();
     };
 
     let listening = false;
-    const active = (): boolean => control !== null && failure === null && (runs.size > 0 || systems !== null || synced?.active() === true);
+    const active = (): boolean => control !== null && failure === null && (runs.size > 0 || systems !== null || observer?.active() === true);
     let turn: (() => Promise<void>) | null = null;
     /** The runs the world had finished when this thread last returned to its event loop, and when it did. */
     let turnedRun = 0;
     let turnedAt = 0;
     const runNow = (): number => mirror === null ? turnedRun : Atomics.load(mirror.header, logRunWord);
-    /** Whether synced systems ran since this thread last returned to its event loop: each post follows a sync point. */
-    let syncedRan = false;
+    /** Whether observer systems ran since this thread last returned to its event loop: each post follows a sync point. */
+    let observerRan = false;
     const turned = (): void => {
         turnedRun = runNow();
         turnedAt = performance.now();
-        syncedRan = false;
+        observerRan = false;
     };
     /**
      * Whether to return to the event loop before going on: once a run's or tick's tiers finished since it last did,
      * which is after the tick's last task here, or after `busyMilliseconds`.
      */
-    const due = (): boolean => syncedRan || runNow() !== turnedRun || performance.now() - turnedAt > busyMilliseconds;
+    const due = (): boolean => observerRan || runNow() !== turnedRun || performance.now() - turnedAt > busyMilliseconds;
     const nextTurn = async (): Promise<void> => {
         turn ??= createTurn();
         await turn();
@@ -418,7 +420,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 }
                 const directory = createThreadDirectory(memory, mirror);
                 const replayed = mirror;
-                synced = createThreadSynced({
+                observer = createThreadObserver({
                     directory, mirror, post: sent => channel.post(sent), localOf: number => localsByNumber.get(number)?.deref(),
                     current: () => {
                         if (replayed === null) return true;
@@ -455,9 +457,9 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 // Its key here, if this thread has one, for a component of a thread it claims.
                 const key = message.id === null ? undefined : keyOfId(message.id);
                 name(message.component, key !== undefined && ownObject(key, claims) ? key : null);
-                // A task waiting for this component's key runs now, and posts of synced systems.
+                // A task waiting for this component's key runs now, and posts of observer systems.
                 systems?.process();
-                synced?.process();
+                observer?.process();
                 return;
             }
             case "systems": {
@@ -474,19 +476,19 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             case "finalizers": {
                 if (systems === null) finalizerSetups.push(...message.finalizers);
                 else systems.setupFinalizers(message.finalizers);
-                // What waited for them goes on: stops, a task, synced systems.
+                // What waited for them goes on: stops, a task, observer systems.
                 systems?.finalize();
                 systems?.process();
-                synced?.process();
+                observer?.process();
                 return;
             }
-            case "synced": {
-                synced?.setup(message.systems);
+            case "observer": {
+                observer?.setup(message.systems);
                 process();
                 void listen();
                 return;
             }
-            case "unsynced": return synced?.unplace(message.indexes);
+            case "unplace observers": return observer?.unplace(message.indexes);
             case "task input": return systems?.input(message.sequence, message.held === undefined ? message.input : take(message.held[0], message.held[1]));
             case "release": return releaseInput(take(message.from, message.sequence));
             case "peer": {
@@ -531,39 +533,39 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         }));
     }
 
-    /** This thread's own synced systems, by value and by its number for them, while they live; those added, by the value added. */
+    /** This thread's own observer systems, by value and by its number for them, while they live; those added, by the value added. */
     const localsByLeaf = new WeakMap<Leaf, Local>();
     const localsByNumber = new Map<number, WeakRef<Local>>();
     const added = new Map<Definition, readonly Local[]>();
     const addedCounts = new Map<Local, number>();
-    /** Tells the world a synced system of this thread's own is collected, so it forgets it. */
+    /** Tells the world an observer system of this thread's own is collected, so it forgets it. */
     const collected = new FinalizationRegistry<number>(number => {
         localsByNumber.delete(number);
-        if (failure === null) post({ protocol: protocolName, kind: "synced drop", number });
+        if (failure === null) post({ protocol: protocolName, kind: "observer drop", number });
     });
 
-    /** What a synced system reads, for the world, by this thread's numbers; throws for what can't cross. */
-    const describe = (leaf: Leaf): SyncedDeclaration => {
+    /** What an observer system reads, for the world, by this thread's numbers; throws for what can't cross. */
+    const describe = (leaf: Leaf): ObserverDeclaration => {
         const label = labelOfItem(leaf);
         const readable = (keys: readonly unknown[] | undefined): number[] => (keys ?? []).map(key => {
             const symbol = symbolOf(key);
             if (layoutOf(declarationOf(symbol)?.type).kind === "object" && !ownObject(symbol, claims)) {
-                throw new Error(`Synced system "${label}" reads "${labelOf(symbol)}", an object, which lives on another thread than this joined one.`);
+                throw new Error(`Observer system "${label}" reads "${labelOf(symbol)}", an object, which lives on another thread than this joined one.`);
             }
             return keyNumber(symbol);
         });
         const present = (keys: readonly unknown[] | undefined): number[] => (keys ?? []).map(keyNumber);
         const { components, resources, lookup } = leaf.declaration;
-        const lookups: SyncedLookup[] = [];
+        const lookups: ObserverLookup[] = [];
         for (const name of Object.keys(lookup ?? {})) {
             const declared = lookup?.[name];
             if (declared === undefined) continue;
             const index = indexOfLookup(declared);
             const read = readable(declared.read);
-            let indexed: string | SyncedIndex | null = null;
+            let indexed: string | ObserverIndex | null = null;
             if (index !== undefined) {
                 const object = index.declaration.key.find(key => layoutOf(declarationOf(key)?.type).kind === "object");
-                if (object !== undefined) throw new Error(`Synced system "${label}" looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object)}" is an object, so it runs only on the world's thread.`);
+                if (object !== undefined) throw new Error(`Observer system "${label}" looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object)}" is an object, so it runs only on the world's thread.`);
                 const { key, components: held, sorted, unique } = index.declaration;
                 // One without an id, made in a function, is named by its declaration, and the world makes one like it.
                 indexed = idOfItem(index) ?? {
@@ -582,23 +584,23 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         };
     };
 
-    /** A synced system of this thread's own, declared to the world the first time; throws for one that can't cross. */
+    /** An observer system of this thread's own, declared to the world the first time; throws for one that can't cross. */
     const localOf = (leaf: Leaf): Local => {
         const known = localsByLeaf.get(leaf);
         if (known !== undefined) return known;
         const declaration = describe(leaf);
         // A number of this thread's, never posted as a name: the declaration names it.
         const number = numbers.size;
-        numbers.set(`#synced:${number}`, number);
+        numbers.set(`#observer:${number}`, number);
         const local: Local = { number, leaf, runner: null, ran: 0, results: [], placed: false, stopped: 0 };
         localsByLeaf.set(leaf, local);
         localsByNumber.set(number, new WeakRef(local));
         collected.register(leaf, number);
-        post({ protocol: protocolName, kind: "synced", number, name: labelOfItem(leaf), declaration, added: false });
+        post({ protocol: protocolName, kind: "observer", number, name: labelOfItem(leaf), declaration, added: false });
         return local;
     };
 
-    /** Posts a run of a system this thread numbers `number`; `local` for one of its own synced systems. */
+    /** Posts a run of a system this thread numbers `number`; `local` for one of its own observer systems. */
     const runNumbered = (number: number, definition: Definition, input: unknown, local: Local | null): Promise<Report> => {
         if (failure !== null) return Promise.reject(failure);
         const ran = new Promise<Report>((resolve, reject) => {
@@ -619,8 +621,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             let id: string | undefined;
             try {
                 definition = requireDefinition(system);
-                // This thread's own synced systems run here, after the sync point of an empty run of the world's.
-                const leaves = syncedLeavesOf(definition);
+                // This thread's own observer systems run here, after the sync point of an empty run of the world's.
+                const leaves = observerLeavesOf(definition);
                 if (leaves !== null) {
                     if (failure !== null) return Promise.reject(failure);
                     const locals = leaves.map(localOf);
@@ -638,20 +640,20 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         },
         add: system => {
             const definition = requireDefinition(system);
-            const leaves = syncedLeavesOf(definition);
-            if (leaves === null) throw new Error("A joined thread adds only synced systems; others are added to ticks on the world's thread.");
+            const leaves = observerLeavesOf(definition);
+            if (leaves === null) throw new Error("A joined thread adds only observer systems; others are added to ticks on the world's thread.");
             if (added.has(definition) || failure !== null) return;
             const locals = leaves.map(localOf);
             added.set(definition, locals);
             for (const local of locals) {
                 const count = addedCounts.get(local) ?? 0;
                 addedCounts.set(local, count + 1);
-                if (count === 0) post({ protocol: protocolName, kind: "synced add", number: local.number });
+                if (count === 0) post({ protocol: protocolName, kind: "observer add", number: local.number });
             }
         },
         remove: system => {
             const definition = requireDefinition(system);
-            if (syncedLeavesOf(definition) === null) throw new Error("A joined thread removes only synced systems; others are removed from ticks on the world's thread.");
+            if (observerLeavesOf(definition) === null) throw new Error("A joined thread removes only observer systems; others are removed from ticks on the world's thread.");
             const locals = added.get(definition);
             if (locals === undefined) return;
             added.delete(definition);
@@ -664,8 +666,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 addedCounts.delete(local);
                 // No row of it runs from here on; the world unplaces it.
                 local.stopped = sequence;
-                synced?.stop(local);
-                post({ protocol: protocolName, kind: "synced remove", number: local.number });
+                observer?.stop(local);
+                post({ protocol: protocolName, kind: "observer remove", number: local.number });
             }
         },
         share: () => {
@@ -685,6 +687,6 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         [Symbol.asyncDispose]: () => world.dispose(),
     };
     peersOf.set(world, () => peers.size);
-    tablesOf.set(world, () => ({ systems: systems?.systems() ?? 0, synced: synced?.placedCount() ?? 0 }));
+    tablesOf.set(world, () => ({ systems: systems?.systems() ?? 0, observer: observer?.placedCount() ?? 0 }));
     return world;
 };

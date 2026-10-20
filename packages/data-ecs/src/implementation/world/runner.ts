@@ -25,7 +25,7 @@ import { inputFor } from './input.js';
 import { createUp, type Run } from './up.js';
 import { labelOf, labelOfItem } from '../../interface/registry/index.js';
 import type { RemoteSystem } from './remote-systems.js';
-import type { JoinedSynced } from './joined-synced.js';
+import type { JoinedObserver } from './joined-observer.js';
 import { releaseDirectory, type Directory } from './directories.js';
 import type { GpuEngine } from './gpu.js';
 import { acquireLookups, type IndexLookups, type IndexUse } from './indexes.js';
@@ -56,8 +56,8 @@ const noPartials = new Float64Array(0);
 const noIndexParameters: readonly number[] = [];
 
 /**
- * Runs one leaf system. Each run takes a new tick, which becomes the system's `lastRun`.
- * `start` does main-thread work immediately and posts kernel chunks to workers; the chunks' commands merge in returned order.
+ * Runs one leaf system. Each run takes a new tick, which becomes the system's `lastRun`. `start` does main-thread work
+ * immediately and posts kernel chunks to workers; the chunks' commands merge in returned order.
  */
 export type Runner = {
     readonly kernel: BoundKernel | null;
@@ -91,13 +91,13 @@ export type Runner = {
     readonly holdings: Holdings;
     /** For a system placed on a joined thread, which runs it there (`remote-systems.ts`); null for one that runs here. */
     readonly remote: RemoteSystem | null;
-    /** For a synced system on a joined thread, which runs it there after sync points (`joined-synced.ts`); else null. */
-    readonly joined: JoinedSynced | null;
+    /** For an observer system on a joined thread, which runs it there after sync points (`joined-observer.ts`); else null. */
+    readonly joined: JoinedObserver | null;
     /** The tick it last ran at, which a runner placing it elsewhere starts from. */
     readonly lastRun: () => number;
     /**
      * For a runner the registrar may keep once its system is removed, to run it again when it's registered again: one
-     * here, of a synced system, holding nothing beyond its JS values. Makes it as a new runner from tick `since`.
+     * here, of an observer system, holding nothing beyond its JS values. Makes it as a new runner from tick `since`.
      */
     readonly restart: ((since: number) => void) | null;
 };
@@ -299,11 +299,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const commands = createCommands(state, holder);
     const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], kernel?.setup.starts ?? [], spawners);
     // A kernel's reductions fold in its partials, so only a body that runs as written gets reducer functions. Render
-    // bodies, GPU kernels and synced systems issue no commands.
+    // bodies, GPU kernels and observer systems issue no commands.
     const ownInput = inputFor(leaf);
     const context = createContext(state, declaration, {
         targets: kernel === null ? targets : [],
-        commands: leaf.kind === "render" || declaration.kernel === "gpu" || declaration.synced === true ? undefined : commands,
+        commands: leaf.kind === "render" || declaration.kernel === "gpu" || declaration.observer === true ? undefined : commands,
         input: declaration.input !== undefined,
         indexes: indexLookups.byName,
         since: lookupSince,
@@ -661,10 +661,12 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const fast = isFast(bound);
         const participants = Math.min(pool.size, Math.ceil(count / minimumFor(workers)));
         const aligned = (rows: number): number => Math.ceil(rows / chunkAlignment) * chunkAlignment;
-        // WASM chunks go through shared memory. The main thread doesn't take one: measured, it finishes later than an idle worker.
+        // WASM chunks go through shared memory. The main thread doesn't take one: measured, it finishes later than an
+        // idle worker.
         if (fast) {
             // A split over every worker maps home ranges the same way each run, so each worker gets back the rows it
-            // last ran and finds them in its cache; smaller splits rotate, so small archetypes don't queue on one worker.
+            // last ran and finds them in its cache; smaller splits rotate, so small archetypes don't queue on one
+            // worker.
             const full = participants === pool.size;
             const first = full ? 0 : workers.next;
             if (!full) workers.next = (first + participants) % pool.size;
@@ -736,9 +738,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     let uploadedOrder: object | null = null;
 
     /**
-     * An `up` kernel on the GPU: a dispatch per group, in order, in one pass, which keeps each depth's writes visible to
-     * the next. Each record has the group's row count, its archetype's columns, its rows' and parents' rows' addresses,
-     * whether it has a parent, the parent archetype's columns, and the scalars.
+     * An `up` kernel on the GPU: a dispatch per group, in order, in one pass, which keeps each depth's writes visible
+     * to the next. Each record has the group's row count, its archetype's columns, its rows' and parents' rows'
+     * addresses, whether it has a parent, the parent archetype's columns, and the scalars.
      */
     const runUpOnGpu = (values: readonly unknown[], args: unknown, tick: number): void => {
         const gpu = state.gpu;
@@ -874,8 +876,8 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         // The last run's spawns were committed, or dropped with its sync point.
         if (spawns) for (let b = 0; b < spawnBatches.length; b++) spawnBatches[b].count = unstaged[b] = 0;
         const chunks = runChunks;
-        // Truncated to one rather than emptied: emptying an array drops its backing store, which the push would allocate
-        // again. Setting the length costs a run more than the check, so it's set only when it differs.
+        // Truncated to one rather than emptied: emptying an array drops its backing store, which the push would
+        // allocate again. Setting the length costs a run more than the check, so it's set only when it differs.
         if (chunks.length !== 1) chunks.length = 1;
         // The first buffer, as `nextChunk` gives it, with nothing staged yet to stage.
         used = 1;
@@ -998,7 +1000,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         remote: null,
         joined: null,
         lastRun: () => lastRun,
-        restart: declaration.synced !== true || !holdsNothing(holdings) ? null : since => {
+        restart: declaration.observer !== true || !holdsNothing(holdings) ? null : since => {
             lastRun = since;
             holdings.removed = false;
             holdings.released = false;

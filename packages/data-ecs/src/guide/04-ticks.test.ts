@@ -17,14 +17,14 @@ const advance = System.create({ resources: { read: [clock], write: [elapsed] } }
     resources[elapsed] += resources[clock].delta;
 });
 
-// Added, a synced system reacts to changes: with elapsed in changed, it runs after each tick that changed it.
+// Added, an observer system reacts to changes: with elapsed in changed, it runs after each tick that changed it.
 let reached: (value: number) => void = () => {};
-const watch = System.create({ synced: true, resources: { read: [elapsed], changed: [elapsed] } }, ({ resources }) => {
+const watch = System.create({ observer: true, resources: { read: [elapsed], changed: [elapsed] } }, ({ resources }) => {
     if (resources[elapsed] >= 30) reached(resources[elapsed]);
 });
 
 let read = { elapsed: 0, delta: 0 };
-const readTime = System.create({ synced: true, resources: { read: [elapsed, clock] } }, ({ resources }) => {
+const readTime = System.create({ observer: true, resources: { read: [elapsed, clock] } }, ({ resources }) => {
     read = { elapsed: resources[elapsed], delta: resources[clock].delta };
 });
 

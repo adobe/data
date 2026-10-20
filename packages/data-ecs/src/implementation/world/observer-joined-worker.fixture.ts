@@ -3,33 +3,33 @@ import type { Entity } from "../../interface/entity/entity.js";
 import type { World } from "../../interface/world/world.js";
 import { join } from "./create.js";
 import { scopeChannel } from "./port.js";
-import { countHot, gate, hold, hot, lookRows, looked, nextPhase, seen, stamp, watchRows, type Seen } from "./synced-joined.test-helper.js";
+import { countHot, gate, hold, hot, lookRows, looked, nextPhase, seen, stamp, watchRows, type Seen } from "./observer-joined.test-helper.js";
 import { tailSnapshots } from "./thread-systems.js";
 import { Observe } from "../../observe/index.js";
 
 /**
- * A thread joining a world through the port it's sent, claiming nothing, which adds one of its own synced systems
+ * A thread joining a world through the port it's sent, claiming nothing, which adds one of its own observer systems
  * when asked, with the gate its runs wait on; holds its event loop when asked, until the gate releases it; and tells
- * what they saw, and how often they read from a copy, when asked. Asked to count what's hot, it runs its own synced
+ * what they saw, and how often they read from a copy, when asked. Asked to count what's hot, it runs its own observer
  * system counting it, asks the world to move its phase on after, and holds its event loop until the gate releases it,
  * so the post for its run waits unclaimed meanwhile; then it tells what that run counted.
  */
 
 type Port = MessagePort | NodeMessagePort;
-export type ToSyncedWorker =
+export type ToObserverWorker =
     | { readonly kind: "join"; readonly port: Port }
     | { readonly kind: "add"; readonly system: "rows" | "lookups"; readonly gate: Int32Array }
     | { readonly kind: "hold" }
     | { readonly kind: "count hot"; readonly gate: Int32Array }
     | { readonly kind: "seen" };
-export type FromSyncedWorker =
+export type FromObserverWorker =
     | { readonly kind: "joined" }
     | { readonly kind: "added" }
     | { readonly kind: "holding" }
     | { readonly kind: "counted"; readonly hot: number }
     | { readonly kind: "seen"; readonly seen: readonly Seen[]; readonly switched: number; readonly late: number; readonly timers: number };
 
-const channel = scopeChannel<FromSyncedWorker, ToSyncedWorker>();
+const channel = scopeChannel<FromObserverWorker, ToObserverWorker>();
 let remote: World | null = null;
 /** Timers that ran here since the system was added: this thread returns to its event loop while the world ticks. */
 let timers = 0;

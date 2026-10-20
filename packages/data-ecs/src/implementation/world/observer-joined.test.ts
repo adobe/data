@@ -6,23 +6,23 @@ import { createWorld, join, type CreatedWorld } from "./create.js";
 import { tablesOf } from "./join.js";
 import { Observe } from "../../observe/index.js";
 
-// Synced systems on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
+// Observer systems on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
 
-const level = Symbol("syncedJoinedTest/level");
-const amount = Symbol("syncedJoinedTest/amount");
-const cell = Symbol("syncedJoinedTest/cell");
-const tagged = Symbol("syncedJoinedTest/tagged");
-const label = Symbol("syncedJoinedTest/label");
-const name = Symbol("syncedJoinedTest/name");
+const level = Symbol("observerJoinedTest/level");
+const amount = Symbol("observerJoinedTest/amount");
+const cell = Symbol("observerJoinedTest/cell");
+const tagged = Symbol("observerJoinedTest/tagged");
+const label = Symbol("observerJoinedTest/label");
+const name = Symbol("observerJoinedTest/name");
 declare module "@adobe/data-ecs" {
     interface Threads {
-        syncedJoinedTest: true;
+        observerJoinedTest: true;
     }
     interface Components {
         [amount]: { type: number };
         [cell]: { type: number };
         [tagged]: { type: true };
-        [label]: { type: string; thread: "syncedJoinedTest" };
+        [label]: { type: string; thread: "observerJoinedTest" };
         [name]: { type: string };
     }
     interface Resources {
@@ -32,23 +32,23 @@ declare module "@adobe/data-ecs" {
 Component.register(amount, { type: { type: "number" } });
 Component.register(cell, { type: { type: "number" } });
 Component.register(tagged, { type: { const: true } });
-Component.register(label, { type: { type: "string", default: "" }, thread: "syncedJoinedTest" });
+Component.register(label, { type: { type: "string", default: "" }, thread: "observerJoinedTest" });
 Component.register(name, { type: { type: "string", default: "" } });
 Resource.register(level, { type: { type: "number", default: 0 } });
 
-const byCell = Index.create({ name: "syncedJoinedTest/byCell", key: [cell], components: { has: [amount] } });
-const allTagged = Index.create({ name: "syncedJoinedTest/allTagged", key: [], components: { has: [tagged] } });
+const byCell = Index.create({ name: "observerJoinedTest/byCell", key: [cell], components: { has: [amount] } });
+const allTagged = Index.create({ name: "observerJoinedTest/allTagged", key: [], components: { has: [tagged] } });
 
-const raise = System.create({ name: "syncedJoinedTest/raise", resources: { write: [level] } }, ({ resources }) => { resources[level] += 1; });
-const nothing = System.create({ name: "syncedJoinedTest/nothing" }, () => {});
-const spawn = System.create({ name: "syncedJoinedTest/spawn", input: { type: "object", properties: { at: { type: "number" } } } }, ({ input, commands }) => {
+const raise = System.create({ name: "observerJoinedTest/raise", resources: { write: [level] } }, ({ resources }) => { resources[level] += 1; });
+const nothing = System.create({ name: "observerJoinedTest/nothing" }, () => {});
+const spawn = System.create({ name: "observerJoinedTest/spawn", input: { type: "object", properties: { at: { type: "number" } } } }, ({ input, commands }) => {
     commands.spawn([amount, cell, tagged])({ [amount]: input.at, [cell]: input.at });
 });
-const spawnLabelled = System.create({ name: "syncedJoinedTest/spawnLabelled" }, ({ commands }) => { commands.spawn([amount, label])({ [amount]: 4, [label]: "" }); });
-const grow = System.create({ name: "syncedJoinedTest/grow", components: { write: [amount] } }, row => { row[amount] += 1; });
-const move = System.create({ name: "syncedJoinedTest/move", components: { write: [cell] } }, row => { row[cell] += 10; });
+const spawnLabelled = System.create({ name: "observerJoinedTest/spawnLabelled" }, ({ commands }) => { commands.spawn([amount, label])({ [amount]: 4, [label]: "" }); });
+const grow = System.create({ name: "observerJoinedTest/grow", components: { write: [amount] } }, row => { row[amount] += 1; });
+const move = System.create({ name: "observerJoinedTest/move", components: { write: [cell] } }, row => { row[cell] += 10; });
 
-/** What the joined thread's synced bodies saw, reset by each test. */
+/** What the joined thread's observer bodies saw, reset by each test. */
 const seen: { levels: number[]; amounts: number[][]; looked: (number | boolean)[][]; tagged: number[]; labels: string[]; calls: number } = { levels: [], amounts: [], looked: [], tagged: [], labels: [], calls: 0 };
 const reset = (): void => {
     seen.levels.length = seen.amounts.length = seen.looked.length = seen.tagged.length = seen.labels.length = 0;
@@ -58,32 +58,32 @@ const reset = (): void => {
 /** The entities the tests look up, by the joined thread's systems. */
 const watched: Entity[] = [];
 
-const watchLevel = System.create({ name: "syncedJoinedTest/watchLevel", synced: true, resources: { read: [level], changed: [level] } }, ({ resources }) => {
+const watchLevel = System.create({ name: "observerJoinedTest/watchLevel", observer: true, resources: { read: [level], changed: [level] } }, ({ resources }) => {
     seen.calls++;
     seen.levels.push(resources[level]);
 });
-const watchAmounts = System.create({ name: "syncedJoinedTest/watchAmounts", synced: true, components: { read: [amount], changed: [amount] } }, row => {
+const watchAmounts = System.create({ name: "observerJoinedTest/watchAmounts", observer: true, components: { read: [amount], changed: [amount] } }, row => {
     (seen.amounts[seen.amounts.length - 1] ??= []).push(row[amount]);
 });
-const startAmounts = System.create({ name: "syncedJoinedTest/startAmounts", synced: true }, () => { seen.amounts.push([]); });
+const startAmounts = System.create({ name: "observerJoinedTest/startAmounts", observer: true }, () => { seen.amounts.push([]); });
 const amountsPass = System.create([startAmounts, watchAmounts]);
-const lookChanged = System.create({ name: "syncedJoinedTest/lookChanged", synced: true, lookup: { found: { read: [amount], changed: [amount] } } }, ({ lookup }) => {
+const lookChanged = System.create({ name: "observerJoinedTest/lookChanged", observer: true, lookup: { found: { read: [amount], changed: [amount] } } }, ({ lookup }) => {
     seen.looked.push(watched.flatMap(entity => {
         const row = lookup.found(entity);
         return row === null ? [] : [row[amount], row.changed];
     }));
 });
-const countTagged = System.create({ name: "syncedJoinedTest/countTagged", synced: true, lookup: { all: { index: allTagged } } }, ({ lookup }) => {
+const countTagged = System.create({ name: "observerJoinedTest/countTagged", observer: true, lookup: { all: { index: allTagged } } }, ({ lookup }) => {
     seen.tagged.push(lookup.all().length);
 });
-const inCell = System.create({ name: "syncedJoinedTest/inCell", synced: true, lookup: { found: { index: byCell, read: [amount] } } }, ({ lookup }) => {
+const inCell = System.create({ name: "observerJoinedTest/inCell", observer: true, lookup: { found: { index: byCell, read: [amount] } } }, ({ lookup }) => {
     const found = lookup.found(11);
     seen.tagged.push(found.length === 0 ? 0 : found.length * 100 + (found.at(0)?.[amount] ?? -1));
 });
-const failing = System.create({ name: "syncedJoinedTest/failing", synced: true, resources: { read: [level] } }, ({ resources }) => {
-    if (resources[level] > 1) throw new Error("synced joined failure");
+const failing = System.create({ name: "observerJoinedTest/failing", observer: true, resources: { read: [level] } }, ({ resources }) => {
+    if (resources[level] > 1) throw new Error("observer joined failure");
 });
-const readLabels = System.create({ name: "syncedJoinedTest/readLabels", synced: true, components: { read: [label, amount] } }, row => {
+const readLabels = System.create({ name: "observerJoinedTest/readLabels", observer: true, components: { read: [label, amount] } }, row => {
     seen.labels.push(`${row[label]}${row[amount]}`);
 });
 
@@ -96,7 +96,7 @@ const turns = async (count = 20): Promise<void> => {
     for (let turn = 0; turn < count; turn++) await new Promise(resolve => setTimeout(resolve, 0));
 };
 
-const joined = async (threads: readonly "syncedJoinedTest"[] = []): Promise<{ readonly world: CreatedWorld; readonly remote: World; readonly close: () => Promise<void> }> => {
+const joined = async (threads: readonly "observerJoinedTest"[] = []): Promise<{ readonly world: CreatedWorld; readonly remote: World; readonly close: () => Promise<void> }> => {
     const world = createWorld({ [workers]: 0 });
     const channel = new MessageChannel();
     world.share(channel.port1);
@@ -118,7 +118,7 @@ const joined = async (threads: readonly "syncedJoinedTest"[] = []): Promise<{ re
     };
 };
 
-describe("synced systems on a joined thread", () => {
+describe("observer systems on a joined thread", () => {
     it("run there after each sync point, reading resources as of it, only when a filter may pass", async () => {
         reset();
         const { world, remote, close } = await joined();
@@ -147,7 +147,7 @@ describe("synced systems on a joined thread", () => {
         await close();
     });
 
-    it("read rows with change filters, and composites of synced systems", async () => {
+    it("read rows with change filters, and composites of observer systems", async () => {
         reset();
         const { world, remote, close } = await joined();
         remote.add(amountsPass);
@@ -208,11 +208,11 @@ describe("synced systems on a joined thread", () => {
         await world.run(spawn, { at: 11 });
         // Made in a function, so the build gives them no id.
         const made = (): readonly [Index<{ readonly key: readonly []; readonly components: { readonly has: readonly [typeof tagged, typeof cell] } }>, Index<{ readonly key: readonly [typeof cell]; readonly sorted: true; readonly components: { readonly has: readonly [typeof amount] } }>] => [
-            Index.create({ name: "syncedJoinedTest/madeTagged", key: [], components: { has: [tagged, cell] } }),
-            Index.create({ name: "syncedJoinedTest/madeByCell", key: [cell], sorted: true, components: { has: [amount] } }),
+            Index.create({ name: "observerJoinedTest/madeTagged", key: [], components: { has: [tagged, cell] } }),
+            Index.create({ name: "observerJoinedTest/madeByCell", key: [cell], sorted: true, components: { has: [amount] } }),
         ];
         const [madeTagged, madeByCell] = made();
-        const sizes = System.create({ name: "syncedJoinedTest/sizes", synced: true, lookup: { all: { index: madeTagged, changed: [cell] }, cells: { index: madeByCell, read: [amount] } } }, ({ lookup }) => {
+        const sizes = System.create({ name: "observerJoinedTest/sizes", observer: true, lookup: { all: { index: madeTagged, changed: [cell] }, cells: { index: madeByCell, read: [amount] } } }, ({ lookup }) => {
             const all = lookup.all();
             seen.looked.push([all.changed]);
             const high = lookup.cells({ ">=": 5 });
@@ -235,7 +235,7 @@ describe("synced systems on a joined thread", () => {
         expect(seen.levels).toEqual([1]);
         await world.run(raise);
         const report = await remote.run(failing);
-        expect(report.failures.map(failure => [failure.kind, failure.message])).toEqual([["system", "synced joined failure"]]);
+        expect(report.failures.map(failure => [failure.kind, failure.message])).toEqual([["system", "observer joined failure"]]);
         await close();
     });
 
@@ -248,7 +248,7 @@ describe("synced systems on a joined thread", () => {
         await world.run(raise);
         await turns();
         const report = await world.run(nothing);
-        expect(report.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["system", "syncedJoinedTest/failing", "synced joined failure"]]);
+        expect(report.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["system", "observerJoinedTest/failing", "observer joined failure"]]);
         await close();
     });
 
@@ -269,7 +269,7 @@ describe("synced systems on a joined thread", () => {
             await turns();
             await world.run(nothing);
             const tables = await world.tables();
-            return [tables.arena, tables.runners, tablesOf.get(remote)?.().synced ?? -1];
+            return [tables.arena, tables.runners, tablesOf.get(remote)?.().observer ?? -1];
         };
         const first = await cycle();
         expect(first[2]).toBe(0);
@@ -277,16 +277,16 @@ describe("synced systems on a joined thread", () => {
         await close();
     });
 
-    it("refuse only systems that aren't synced", async () => {
+    it("refuse only systems that aren't observer", async () => {
         const { remote, close } = await joined();
-        expect(() => remote.add(raise)).toThrow("A joined thread adds only synced systems");
-        expect(() => remote.remove(raise)).toThrow("A joined thread removes only synced systems");
+        expect(() => remote.add(raise)).toThrow("A joined thread adds only observer systems");
+        expect(() => remote.remove(raise)).toThrow("A joined thread removes only observer systems");
         await close();
     });
 
     it("are placed on the joined thread filling their objects, reading them there", async () => {
         reset();
-        const { world, close } = await joined(["syncedJoinedTest"]);
+        const { world, close } = await joined(["observerJoinedTest"]);
         await world.run(spawnLabelled);
         world.add(readLabels);
         await turns();
@@ -299,20 +299,20 @@ describe("synced systems on a joined thread", () => {
 
     it("fail to register when placed on the joined thread filling their objects without an id, which it can't name", async () => {
         reset();
-        const { world, close } = await joined(["syncedJoinedTest"]);
+        const { world, close } = await joined(["observerJoinedTest"]);
         await world.run(spawnLabelled);
         // Made in a function, so the build gives it no id.
-        const made = () => System.create({ name: "syncedJoinedTest/madeLabels", synced: true, components: { read: [label, amount] } }, row => {
+        const made = () => System.create({ name: "observerJoinedTest/madeLabels", observer: true, components: { read: [label, amount] } }, row => {
             seen.labels.push(`${row[label]}${row[amount]}`);
         });
         const madeLabels = made();
-        await expect(world.run(madeLabels)).rejects.toThrow(`System "syncedJoinedTest/madeLabels" runs on thread "syncedJoinedTest", which a joined thread fills, and has no id, so that thread can't name it`);
+        await expect(world.run(madeLabels)).rejects.toThrow(`System "observerJoinedTest/madeLabels" runs on thread "observerJoinedTest", which a joined thread fills, and has no id, so that thread can't name it`);
         // Another of that name, numbered.
         const added = made();
         world.add(added);
         await turns();
         const report = await world.run(nothing);
-        expect(report.failures.map(failure => [failure.kind, failure.name])).toEqual([["system", "syncedJoinedTest/madeLabels#2"]]);
+        expect(report.failures.map(failure => [failure.kind, failure.name])).toEqual([["system", "observerJoinedTest/madeLabels#2"]]);
         world.remove(added);
         await turns();
         expect(seen.labels).toEqual([]);
@@ -321,7 +321,7 @@ describe("synced systems on a joined thread", () => {
 
     it("run on the joined thread filling their objects when the world runs them, then here once it's gone", async () => {
         reset();
-        const { world, remote } = await joined(["syncedJoinedTest"]);
+        const { world, remote } = await joined(["observerJoinedTest"]);
         await world.run(spawnLabelled);
         expect(await world.run(readLabels)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         await settled(() => seen.labels.length === 1);

@@ -64,9 +64,10 @@ const checkConditions = (leaf: Leaf): void => {
 };
 
 /**
- * Throws for what a leaf's kind and placement rule out: `up` without components or through a key that isn't a
- * reference component, `order` by anything but a sorted index, without components, with `up` or on the GPU, a kernel's lookup of a value outside linear memory, a GPU kernel's change filters, lookups and
- * reductions, and a render system's reductions.
+ * Throws for what a leaf's kind and placement rule out: `up` without components or through a key that isn't a reference
+ * component, `order` by anything but a sorted index, without components, with `up` or on the GPU, a kernel's lookup of
+ * a value outside linear memory, a GPU kernel's change filters, lookups and reductions, and a render system's
+ * reductions.
  */
 const checkPlacement = (leaf: Leaf): void => {
     const { name } = leaf;
@@ -112,15 +113,15 @@ const checkPlacement = (leaf: Leaf): void => {
 };
 
 /**
- * Throws for what a synced system can't declare: it only reads, after a sync point, so it writes and reduces into
+ * Throws for what an observer system can't declare: it only reads, after a sync point, so it writes and reduces into
  * nothing, takes no input, isn't a kernel or a render system, has no `up`, and is ordered with nothing.
  */
-const checkSynced = (leaf: Leaf): void => {
+const checkObserver = (leaf: Leaf): void => {
     const { name, declaration } = leaf;
-    const { synced } = declaration;
-    if (synced === undefined) return;
-    const fail = (message: string): never => { throw new Error(`System "${name}" is synced, so it ${message}.`); };
-    if (synced !== true) throw new Error(`System "${name}": synced is true or left out.`);
+    const { observer } = declaration;
+    if (observer === undefined) return;
+    const fail = (message: string): never => { throw new Error(`System "${name}" is an observer, so it ${message}.`); };
+    if (observer !== true) throw new Error(`System "${name}": observer is true or left out.`);
     if (leaf.kind === "render") fail("records no GPU work");
     if (declaration.kernel !== undefined) fail("isn't a kernel");
     if ((declaration.components?.write?.length ?? 0) + (declaration.resources?.write?.length ?? 0) > 0) fail("writes nothing");
@@ -133,8 +134,8 @@ const checkSynced = (leaf: Leaf): void => {
 /**
  * Throws for a leaf that names a component or resource that isn't registered as one, lists a key in both `read` and
  * `write`, writes a reference, has a lookup reading a component it writes, takes input that isn't an object schema,
- * uses object components and resources of different threads, declares what a synced system can't, or whose reductions,
- * conditions, `up` or placement can't hold.
+ * uses object components and resources of different threads, declares what an observer system can't, or whose
+ * reductions, conditions, `up` or placement can't hold.
  */
 export const checkLeaf = (leaf: Leaf): void => {
     const { name, declaration } = leaf;
@@ -172,7 +173,7 @@ export const checkLeaf = (leaf: Leaf): void => {
     for (const key of components?.write ?? []) {
         if (declarationOf(key)?.reference !== undefined) throw new Error(`System "${name}" writes "${labelOf(key)}", a reference, which changes only through commands.`);
     }
-    checkSynced(leaf);
+    checkObserver(leaf);
     checkReductions(leaf);
     checkConditions(leaf);
     checkPlacement(leaf);

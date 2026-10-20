@@ -1,7 +1,7 @@
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 
-const settled = System.create({ name: "observeTest/settled", synced: true }, () => {});
+const settled = System.create({ name: "observeTest/settled", observer: true }, () => {});
 
 /**
  * Resolves once every observer factory subscribed before it had its first value: after the factories' flush, which the

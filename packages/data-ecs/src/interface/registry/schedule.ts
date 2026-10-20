@@ -31,15 +31,15 @@ const checkInputs = (leaves: readonly Leaf[]): void => {
 
 /**
  * Leaves in run order, grouped into tiers. Leaves in one tier have no ordering path between them. `reductions` are the
- * resources its leaves reduce into, each with how many of them contribute. `synced` are its synced leaves, in no tier:
- * they run after its sync point, ordered with nothing.
+ * resources its leaves reduce into, each with how many of them contribute. `observer` are its observer leaves, in no
+ * tier: they run after its sync point, ordered with nothing.
  */
-export type Schedule = { readonly tiers: readonly (readonly Leaf[])[]; readonly reductions: ReadonlyMap<Key, number>; readonly synced: readonly Leaf[] };
+export type Schedule = { readonly tiers: readonly (readonly Leaf[])[]; readonly reductions: ReadonlyMap<Key, number>; readonly observer: readonly Leaf[] };
 
 export const isLeaf = (system: Definition): system is Leaf => system.kind !== "composite";
 
-/** Whether a system is a synced leaf, which runs after a sync point rather than in a tier. */
-export const isSynced = (system: Definition): system is Leaf => system.kind !== "composite" && system.declaration.synced === true;
+/** Whether a system is an observer leaf, which runs after a sync point rather than in a tier. */
+export const isObserver = (system: Definition): system is Leaf => system.kind !== "composite" && system.declaration.observer === true;
 
 /** Each system is an interval, from its start node to its end node. */
 const start = (unit: number): number => 2 * unit;
@@ -68,11 +68,11 @@ const graphOf = (root: Definition): Graph => {
     };
     visit(root);
     const successors = units.flatMap(() => [new Set<number>(), new Set<number>()]);
-    // A synced system is ordered with nothing, so constraints naming one are ignored.
+    // An observer system is ordered with nothing, so constraints naming one are ignored.
     const resolve = (systems: readonly object[] | undefined): readonly number[] =>
         (systems ?? []).flatMap(system => {
             const unit = indexOf.get(firstItemOf(system));
-            return unit === undefined || isSynced(units[unit]) ? [] : [unit];
+            return unit === undefined || isObserver(units[unit]) ? [] : [unit];
         });
     units.forEach((system, unit) => {
         successors[start(unit)].add(end(unit));
@@ -133,7 +133,7 @@ const ordered = (reach: readonly Uint32Array[], a: number, b: number): boolean =
 const depthsOf = ({ units, successors }: Graph, order: readonly number[]): number[] => {
     const depth = successors.map(() => 0);
     for (const node of order) {
-        const step = node % 2 === 0 && isLeaf(units[node >>> 1]) && !isSynced(units[node >>> 1]) ? 1 : 0;
+        const step = node % 2 === 0 && isLeaf(units[node >>> 1]) && !isObserver(units[node >>> 1]) ? 1 : 0;
         for (const next of successors[node]) depth[next] = Math.max(depth[next], depth[node] + (next === node + 1 ? step : 0));
     }
     return depth;
@@ -149,7 +149,8 @@ export const reducedBy = (leaf: Leaf): readonly Key[] => {
 
 /**
  * Reads include change filters, since they observe writers' ticks, and the key parts of indexes looked up through or
- * ordered by, which the index is found and kept by. Presence-only lists don't conflict. Keys are each one's first symbol.
+ * ordered by, which the index is found and kept by. Presence-only lists don't conflict. Keys are each one's first
+ * symbol.
  */
 export const accessOf = (leaf: Leaf): Access => {
     const { components, lookup, resources, up } = leaf.declaration;
@@ -178,13 +179,13 @@ export const scheduleOf = (system: Definition): Schedule => {
 };
 
 /**
- * Orders a system's leaves into tiers. Throws on a cycle, on two conflicting leaves with no ordering path between them, or
- * on inputs that don't merge.
+ * Orders a system's leaves into tiers. Throws on a cycle, on two conflicting leaves with no ordering path between them,
+ * or on inputs that don't merge.
  */
 const createSchedule = (system: Definition): Schedule => {
     const graph = graphOf(system);
-    const synced = graph.units.filter(isSynced);
-    const leaves = graph.units.flatMap((unit, index) => isLeaf(unit) && !isSynced(unit) ? [{ leaf: unit, unit: index }] : []);
+    const observer = graph.units.filter(isObserver);
+    const leaves = graph.units.flatMap((unit, index) => isLeaf(unit) && !isObserver(unit) ? [{ leaf: unit, unit: index }] : []);
     checkInputs(leaves.map(({ leaf }) => leaf));
     const accesses = leaves.map(({ leaf }) => accessOf(leaf));
     // Leaves that read a resource run after every leaf that reduces into it, so they read the finished fold.
@@ -210,5 +211,5 @@ const createSchedule = (system: Definition): Schedule => {
     const depth = depthsOf(graph, order);
     const tiers: Leaf[][] = [];
     for (const { leaf, unit } of leaves) (tiers[depth[start(unit)]] ??= []).push(leaf);
-    return { tiers: tiers.filter(tier => tier !== undefined), reductions, synced };
+    return { tiers: tiers.filter(tier => tier !== undefined), reductions, observer };
 };

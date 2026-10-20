@@ -1,7 +1,7 @@
 import { System, type World } from '../index.js';
 
-// What the factories keep for each world: the values observers share, their subscribers, and the synced systems that
-// read the world for them. Every shape of observer is one synced system, never one per subscriber or entity.
+// What the factories keep for each world: the values observers share, their subscribers, and the observer systems that
+// read the world for them. Every shape of observer is one observer system, never one per subscriber or entity.
 
 /**
  * A subscriber: its notify, null once stopped; the flush its first value waits for, 0 once it had it; and the pass
@@ -46,7 +46,7 @@ export type Read = { readonly system: System; readonly flushed: (batch: number) 
 export type WorldState = {
     readonly world: World;
     /**
-     * Whether `world` is a joined thread's: its synced systems run there in posts, in no order with one another, so
+     * Whether `world` is a joined thread's: its observer systems run there in posts, in no order with one another, so
      * a shape's first values come once a run of its own system resolved, rather than from a delivering run.
      */
     readonly joined: boolean;
@@ -78,8 +78,8 @@ export const rethrowLater = (error: unknown): void => {
 };
 
 /**
- * The names of the systems the factories make. A run of theirs runs every synced system the world added too; only these
- * systems' failures are the factories' to rethrow.
+ * The names of the systems the factories make. A run of theirs runs every observer system the world added too; only
+ * these systems' failures are the factories' to rethrow.
  */
 const ownNames = new Set<string>();
 
@@ -98,7 +98,7 @@ const ignore = (): void => {
 };
 
 /** Runs nothing: a run of it resolves while its world lives. */
-const alive = System.create({ name: ownName("Observe/alive"), synced: true }, () => {});
+const alive = System.create({ name: ownName("Observe/alive"), observer: true }, () => {});
 
 /**
  * What a rejected run of the factories' own does: nothing for a disposed world, whose first values never come, and for
@@ -164,10 +164,10 @@ const sweepShapes = (state: WorldState): void => {
     idle.length = kept;
 };
 
-/** A system no world adds, which only a joined thread's `remove` refuses, since it isn't synced. */
+/** A system no world adds, which only a joined thread's `remove` refuses, since it isn't an observer. */
 const probe = System.create({ name: "Observe/probe" }, () => {});
 
-/** Whether `world` is a joined thread's: its `remove` takes only synced systems, where the world's ignores one never added. */
+/** Whether `world` is a joined thread's: its `remove` takes only observer systems, where the world's ignores one never added. */
 const isJoined = (world: World): boolean => {
     try {
         world.remove(probe);
@@ -211,7 +211,7 @@ export const stateOf = (world: World): WorldState => {
         deliveries: [],
         idle: [],
         rejected: rejectedOf(world),
-        deliver: System.create({ name: ownName("Observe/deliver"), synced: true }, () => {
+        deliver: System.create({ name: ownName("Observe/deliver"), observer: true }, () => {
             const delivery = created.deliveries.shift();
             if (delivery === undefined) return;
             created.delivered = delivery.batch;
@@ -222,7 +222,7 @@ export const stateOf = (world: World): WorldState => {
     states.set(world, created);
     if (joined) return created;
     // Added before any shape's system, so in each pass it counts the pass before they run.
-    world.add(System.create({ name: ownName("Observe/maintain"), synced: true }, () => {
+    world.add(System.create({ name: ownName("Observe/maintain"), observer: true }, () => {
         created.pass++;
         if (created.idle.length > 0) sweepShapes(created);
     }));
@@ -329,8 +329,8 @@ export const none: unique symbol = Symbol("Observe/none");
 /**
  * Gives an entry's value to its subscribers: a first value to each waiting for a flush up to `through`, whose throw
  * stops it and is rethrown out of band; and with `changed`, the value to the others but those that had their first in
- * pass `fresh`, -1 for none. Subscribers added meanwhile wait for a later pass. Returns the first error a later value's notify
- * threw, or `failed` when it's already one.
+ * pass `fresh`, -1 for none. Subscribers added meanwhile wait for a later pass. Returns the first error a later value's
+ * notify threw, or `failed` when it's already one.
  */
 export const give = <T>(entry: Entry<T>, through: number, changed: boolean, pass: number, fresh: number, failed: unknown): unknown => {
     let error = failed;

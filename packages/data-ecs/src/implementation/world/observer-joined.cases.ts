@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type * as Fixture from "./synced-joined.fixture.js";
+import type * as Fixture from "./observer-joined.fixture.js";
 
-/** Synced systems a joined worker adds: the cases, over the fixture built for node or from source in chromium. */
-export const syncedJoinedCases = (load: () => Promise<typeof Fixture>) => describe("synced systems a joined worker adds", () => {
+/** Observer systems a joined worker adds: the cases, over the fixture built for node or from source in chromium. */
+export const observerJoinedCases = (load: () => Promise<typeof Fixture>) => describe("observer systems a joined worker adds", () => {
     it("read every row as of one sync point while the world ticks on writing them, from a copy once a writer is ready first", async () => {
         const fixture = await load();
         const seen = await fixture.continuous("rows");

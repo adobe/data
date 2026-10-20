@@ -126,7 +126,7 @@ export const observedBenchmarks: readonly Benchmark[] = [
     },
     {
         name: "read observe factory cold",
-        operation: "Reading a resource through an observer factory's first value while the factories hold nothing of it, their synced system for it removed after idle passes: a run of synced systems for one read.",
+        operation: "Reading a resource through an observer factory's first value while the factories hold nothing of it, their observer system for it removed after idle passes: a run of observer systems for one read.",
         per: "reads",
         n: 1,
         typical: [1, 100],
@@ -261,7 +261,7 @@ export const observedBenchmarks: readonly Benchmark[] = [
     },
     {
         name: "select factory",
-        operation: "The first value of an observer factory's `select` with `where` over 1M entities, which the factories hold nothing of: one scan, a run of a synced system over the rows that match.",
+        operation: "The first value of an observer factory's `select` with `where` over 1M entities, which the factories hold nothing of: one scan, a run of an observer system over the rows that match.",
         per: "rows",
         n: 1_000_000,
         typical: [100, 100_000],

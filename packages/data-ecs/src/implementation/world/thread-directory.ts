@@ -45,7 +45,7 @@ export type Viewed = { buffer: ArrayBufferLike; words: Uint32Array; views: Views
 
 /**
  * A joined thread's directory reader over `memory`, its objects in `mirror` where it fills some: one per thread,
- * shared by the systems the world places there and the synced systems it adds.
+ * shared by the systems the world places there and the observer systems it adds.
  */
 export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror | null) => {
     const viewed: Viewed = { buffer: new ArrayBuffer(0), words: new Uint32Array(0), views: emptyViews };

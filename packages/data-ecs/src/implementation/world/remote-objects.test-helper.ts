@@ -61,18 +61,18 @@ export const churn = System.create({ name: "remoteObjectsTest/churn", components
 /** What a joined thread saw of the watched entity's objects: values, those whose objects disagreed with its structs, and captions seen. */
 export type Watched = { readonly values: number; readonly inconsistent: number; readonly captions: readonly (string | null)[] };
 
-/** What watches: the observer factories on the joined thread's world, or a synced system it added. */
-export type Observers = "factory" | "synced";
+/** What watches: the observer factories on the joined thread's world, or an observer system it added. */
+export type Observers = "factory" | "observer";
 
-/** The entity `syncedWatch` watches, and what it's told of each value. */
-const synced: { entity: Entity | null; seen: ((odd: boolean, held: boolean, text: string | null | undefined) => void) | null } = { entity: null, seen: null };
+/** The entity `observerWatch` watches, and what it's told of each value. */
+const observer: { entity: Entity | null; seen: ((odd: boolean, held: boolean, text: string | null | undefined) => void) | null } = { entity: null, seen: null };
 
 /** After each sync point, on the joined thread: the watched entity's phase and caption, and whether it's flagged. */
-export const syncedWatch = System.create({ name: "remoteObjectsTest/syncedWatch", synced: true, lookup: { values: { read: [phase, caption] }, flagged: { has: [flag] } } }, ({ lookup }) => {
-    if (synced.entity === null) return;
-    const row = lookup.values(synced.entity);
+export const observerWatch = System.create({ name: "remoteObjectsTest/observerWatch", observer: true, lookup: { values: { read: [phase, caption] }, flagged: { has: [flag] } } }, ({ lookup }) => {
+    if (observer.entity === null) return;
+    const row = lookup.values(observer.entity);
     if (row === null) return;
-    synced.seen?.(row[phase] % 2 === 1, lookup.flagged(synced.entity) !== null, row[caption]);
+    observer.seen?.(row[phase] % 2 === 1, lookup.flagged(observer.entity) !== null, row[caption]);
 });
 
 /** Watches `entity` until `count` values came, checking each value's objects agree with its structs. */
@@ -89,11 +89,11 @@ export const watch = (remote: World, entity: Entity, count: number, observers: O
         queueMicrotask(() => { for (const stop of stops) stop(); });
         resolve({ values, inconsistent, captions: [...captions].sort() });
     };
-    if (observers === "synced") {
-        synced.entity = entity;
-        synced.seen = (odd, held, text) => { if (values < count) seen(odd, held, text); };
-        remote.add(syncedWatch);
-        stops.push(() => remote.remove(syncedWatch));
+    if (observers === "observer") {
+        observer.entity = entity;
+        observer.seen = (odd, held, text) => { if (values < count) seen(odd, held, text); };
+        remote.add(observerWatch);
+        stops.push(() => remote.remove(observerWatch));
         return;
     }
     stops.push(Observe.entity(remote, entity, { required: [phase, caption], optional: [flag] })(value => {

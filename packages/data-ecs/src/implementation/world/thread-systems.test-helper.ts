@@ -184,7 +184,7 @@ const reading: { entities: readonly Entity[]; objects: readonly { readonly [name
 /** Each entity's objects of the thread, as data, a note by its text: none for an entity that's dead or has no uid. */
 const readObjects = System.create({
     name: "threadSystemsTest/readObjects",
-    synced: true,
+    observer: true,
     lookup: { ids: { has: [uid] }, captions: { read: [caption] }, notes: { read: [note] } },
 }, ({ lookup }) => {
     reading.objects = reading.entities.map(entity => {
@@ -198,7 +198,7 @@ const readObjects = System.create({
     });
 });
 
-/** Objects read where they live by a synced run on `threads`, as of the world's last sync point: a joined thread's, or an inline world's own. */
+/** Objects read where they live by an observer run on `threads`, as of the world's last sync point: a joined thread's, or an inline world's own. */
 export const objectsThere = (threads: World): Objects => async entities => {
     reading.entities = entities;
     await threads.run(readObjects);

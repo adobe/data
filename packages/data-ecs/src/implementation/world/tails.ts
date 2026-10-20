@@ -65,7 +65,7 @@ export const tailsOf = (schedule: Schedule, runnerOf: (leaf: Leaf) => Runner): r
     }));
 
 /**
- * What a writer copies of a reader that runs after a sync point, as a tail or a synced system on a joined thread
+ * What a writer copies of a reader that runs after a sync point, as a tail or an observer system on a joined thread
  * does: the archetypes it matches, its reads and filters, its block and its snapshot, and how to tell its thread is
  * gone or idle.
  */

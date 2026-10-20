@@ -83,7 +83,7 @@ const lookups = async (system: System): Promise<{ readonly best: number; readonl
 /** Every entity a seeded world holds. */
 const entitiesOf = async (world: World): Promise<readonly Entity[]> => {
     const found: Entity[] = [];
-    await world.run(System.create({ synced: true, components: { has: [value] } }, row => { found.push(row.entity); }));
+    await world.run(System.create({ observer: true, components: { has: [value] } }, row => { found.push(row.entity); }));
     return found;
 };
 
@@ -120,8 +120,8 @@ export const readBenchmarks: readonly Benchmark[] = [
         },
     },
     {
-        name: "read run synced",
-        operation: "Reading a resource through a run of a new synced system that copies it out, which has no tiers and an empty sync point: as `read run`, through a synced system.",
+        name: "read run observer",
+        operation: "Reading a resource through a run of a new observer system that copies it out, which has no tiers and an empty sync point: as `read run`, through an observer system.",
         per: "reads",
         n: 1,
         typical: [1, 100],
@@ -129,8 +129,8 @@ export const readBenchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(10_000);
             copied = 0;
-            const best = await fastest(() => world.run(System.create({ synced: true, resources: { read: [level] } }, ({ resources }) => { copied = resources[level]; })), 300);
-            check(copied === 3, "read run synced: wrong value");
+            const best = await fastest(() => world.run(System.create({ observer: true, resources: { read: [level] } }, ({ resources }) => { copied = resources[level]; })), 300);
+            check(copied === 3, "read run observer: wrong value");
             await world.dispose();
             return best;
         },

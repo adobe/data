@@ -5,15 +5,15 @@ import { readAhead, type ExecuteContext } from './execute.js';
 import { failureOf } from './failures.js';
 import { refreshUses } from './indexes.js';
 import type { Runner } from './runner.js';
-import { joinedOf, type JoinedSynced } from './joined-synced.js';
+import { joinedOf, type JoinedObserver } from './joined-observer.js';
 
 /**
- * Runs synced systems after a sync point, on this thread: those of the run, `own`, then those added, `added`, each once.
- * What the GPU wrote that they read, or their indexes hold by, is read back, then those indexes are refreshed; then each
- * runs, unless it was removed since, even by a body earlier in the pass. Returns `failures` with theirs, as `"system"`
- * failures, and the index conflicts refreshing found: a promise only when refreshing or reading back waited.
+ * Runs observer systems after a sync point, on this thread: those of the run, `own`, then those added, `added`, each
+ * once. What the GPU wrote that they read, or their indexes hold by, is read back, then those indexes are refreshed;
+ * then each runs, unless it was removed since, even by a body earlier in the pass. Returns `failures` with theirs, as
+ * `"system"` failures, and the index conflicts refreshing found: a promise only when refreshing or reading back waited.
  */
-export const runSynced = (context: ExecuteContext, own: readonly Leaf[], added: readonly Leaf[], failures: Failure[] | null): Failure[] | null | Promise<Failure[] | null> => {
+export const runObserver = (context: ExecuteContext, own: readonly Leaf[], added: readonly Leaf[], failures: Failure[] | null): Failure[] | null | Promise<Failure[] | null> => {
     const ownPass = passOf(context, own, false);
     const addedPass = passOf(context, added, true);
     // Those on joined threads are posted there, which reads back and refreshes what they read itself.
@@ -28,10 +28,10 @@ export const runSynced = (context: ExecuteContext, own: readonly Leaf[], added: 
  * index, and whether any runs on this thread rather than a joined one. A runner removed since it was read reads as
  * removed, so a pass in progress skips it.
  */
-type Pass = { leaves: readonly Leaf[]; readonly runners: Runner[]; indexed: boolean; here: boolean; version: number; joined: readonly JoinedSynced[] | null };
+type Pass = { leaves: readonly Leaf[]; readonly runners: Runner[]; indexed: boolean; here: boolean; version: number; joined: readonly JoinedObserver[] | null };
 
 /**
- * A context's passes: by list for runs' own synced systems, whose lists last as their schedules do; and one for those
+ * A context's passes: by list for runs' own observer systems, whose lists last as their schedules do; and one for those
  * added, whose list is new whenever one is added or removed.
  */
 type Passes = { readonly own: WeakMap<readonly Leaf[], Pass>; readonly added: Pass };
@@ -112,17 +112,17 @@ const runAll = (context: ExecuteContext, own: readonly Leaf[], added: readonly L
 };
 
 /**
- * The synced systems of a list placed on joined threads, which run there once posted (`joined-synced.ts`): a run's own,
- * or with `added`, those added.
+ * The observer systems of a list placed on joined threads, which run there once posted (`joined-observer.ts`): a run's
+ * own, or with `added`, those added.
  */
-export const joinedIn = (context: ExecuteContext, leaves: readonly Leaf[], added: boolean): readonly JoinedSynced[] => {
+export const joinedIn = (context: ExecuteContext, leaves: readonly Leaf[], added: boolean): readonly JoinedObserver[] => {
     const pass = passOf(context, leaves, added);
     if (pass.joined === null) pass.joined = joinedOf(pass.runners);
     return pass.joined;
 };
 
 /**
- * Runs one synced system, adding its failure to `failures`. Its context has no commands, so its chunks hold none. One
+ * Runs one observer system, adding its failure to `failures`. Its context has no commands, so its chunks hold none. One
  * on a joined thread runs there.
  */
 const runOne = (leaf: Leaf, runner: Runner, failures: Failure[] | null): Failure[] | null => {
@@ -130,7 +130,7 @@ const runOne = (leaf: Leaf, runner: Runner, failures: Failure[] | null): Failure
     const chunks = runner.start(undefined, null, -1);
     for (let c = 0; c < chunks.length; c++) {
         const chunk = chunks[c];
-        // A synced system runs here, as no kernel, so its chunks are settled.
+        // An observer system runs here, as no kernel, so its chunks are settled.
         if (chunk instanceof Promise || chunk.error === undefined) continue;
         (failures ??= []).push(failureOf("system", labelOfItem(leaf), chunk.error));
         break;

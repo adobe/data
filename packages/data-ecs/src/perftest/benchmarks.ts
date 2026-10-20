@@ -5,10 +5,10 @@ import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVis
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
 import { forest, local as hierarchyLocal, nudge, parent as hierarchyParent, propagate, propagateChanged, reparent, sprout, turnover, under } from "./hierarchy.js";
 import * as structural from "./structural.js";
-import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, idleSynced, index, indexSum, observe, poke, pokeCluster, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
+import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, idleObserver, index, indexSum, observe, poke, pokeCluster, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
 
 import type { Benchmark } from "./benchmark.js";
-import { loopTickIdle, loopTicks, syncedIdles } from "./loop.js";
+import { loopTickIdle, loopTicks, observerIdles } from "./loop.js";
 import { main, placed, pooled } from "./placed.js";
 import { wake } from "./wake.js";
 import { remoteBenchmarks } from "./remote.js";
@@ -25,7 +25,7 @@ import { workers } from "../interface/resources/workers.js";
 // Last, so the bundle orders the modules the benchmarks share as it did before these imports.
 import { System } from "../interface/system/system.js";
 import { Observe } from "../observe/index.js";
-import { entitiesWith } from "./synced.js";
+import { entitiesWith } from "./observer.js";
 
 /** A world whose kernels run on this thread, which the benchmarks without a placement measure; `workers` ones use the pool. */
 const inline = (): World => createWorld({ [workers]: 0 });
@@ -131,31 +131,31 @@ export const benchmarks: readonly Benchmark[] = [
         },
     },
     {
-        name: "run synced",
-        operation: "Running one synced system no entity matches, in a world of 10K entities: a run with no tiers, its sync point empty, against `run idle`.",
+        name: "run observer",
+        operation: "Running one observer system no entity matches, in a world of 10K entities: a run with no tiers, its sync point empty, against `run idle`.",
         per: "runs",
         n: 1,
         typical: [1, 1],
         best: runBest,
         run: async () => {
             const world = await seeded(() => inline(), 10_000);
-            const best = await fastest(() => world.run(idleSynced));
+            const best = await fastest(() => world.run(idleObserver));
             await world.dispose();
             return best;
         },
     },
     {
-        name: "synced idle 100",
-        operation: "Ticks as in `loop tick idle`, with a hundred synced systems no entity matches added, each run after every tick: the cost per synced system per pass, a hundredth of the tick's own cost included.",
-        per: "synced systems",
-        n: loopTicks * syncedIdles,
+        name: "observer idle 100",
+        operation: "Ticks as in `loop tick idle`, with a hundred observer systems no entity matches added, each run after every tick: the cost per observer system per pass, a hundredth of the tick's own cost included.",
+        per: "observer systems",
+        n: loopTicks * observerIdles,
         typical: [1, 100],
         best: runBest,
-        run: () => loopTickIdle(5, syncedIdles),
+        run: () => loopTickIdle(5, observerIdles),
     },
     {
         name: "loop tick idle",
-        operation: "A world's loop ticking with nothing changed, driven back to back with `always` set, counted by a synced system reading its clock: the fixed cost of every tick.",
+        operation: "A world's loop ticking with nothing changed, driven back to back with `always` set, counted by an observer system reading its clock: the fixed cost of every tick.",
         per: "ticks",
         n: loopTicks,
         typical: [1, 1],
@@ -478,7 +478,7 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             const { world, roots } = await filteredForest();
             const found: { child: Entity | null } = { child: null };
-            await world.run(System.create({ synced: true, components: { read: [hierarchyParent] } }, row => {
+            await world.run(System.create({ observer: true, components: { read: [hierarchyParent] } }, row => {
                 if (found.child === null && row[hierarchyParent] === roots[0]) found.child = row.entity;
             }));
             const { child } = found;

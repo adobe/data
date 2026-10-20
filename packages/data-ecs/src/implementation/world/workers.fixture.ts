@@ -173,10 +173,10 @@ const emitted = { seen: 0 };
 const countEmitted = System.create({ name: "workersTest/countEmitted", components: { added: [position], has: [spawned] } }, () => { emitted.seen++; });
 
 const gathered: Entity[] = [];
-const gatherPositioned = System.create({ name: "workersTest/gatherPositioned", synced: true, components: { has: [position] } }, row => { gathered.push(row.entity); });
-const gatherSpawned = System.create({ name: "workersTest/gatherSpawned", synced: true, components: { has: [spawned] } }, row => { gathered.push(row.entity); });
+const gatherPositioned = System.create({ name: "workersTest/gatherPositioned", observer: true, components: { has: [position] } }, row => { gathered.push(row.entity); });
+const gatherSpawned = System.create({ name: "workersTest/gatherSpawned", observer: true, components: { has: [spawned] } }, row => { gathered.push(row.entity); });
 
-/** The entities a synced row system passes, in storage order. */
+/** The entities an observer row system passes, in storage order. */
 const storageOrder = async (world: World, gather: System<void>): Promise<Entity[]> => {
     gathered.length = 0;
     await world.run(gather);

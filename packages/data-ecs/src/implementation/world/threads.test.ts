@@ -41,12 +41,13 @@ import type * as IndexBuild from "./index-build.fixture.js";
 import { indexBuildCases } from "./index-build.cases.js";
 import type * as EntityLookupWorkers from "./entity-lookup-workers.fixture.js";
 import { entityLookupWorkersCases } from "./entity-lookup-workers.cases.js";
-import type * as SyncedJoined from "./synced-joined.fixture.js";
-import { syncedJoinedCases } from "./synced-joined.cases.js";
-import type * as SyncedContained from "./synced-contained.fixture.js";
-import { syncedContainedCases } from "./synced-contained.cases.js";
+import type * as ObserverJoined from "./observer-joined.fixture.js";
+import { observerJoinedCases } from "./observer-joined.cases.js";
+import type * as ObserverContained from "./observer-contained.fixture.js";
+import { observerContainedCases } from "./observer-contained.cases.js";
 
-// Real worker threads in node: the cases over fixtures `vitest.fixtures.ts` built, each typed as its source, which it's built from.
+// Real worker threads in node: the cases over fixtures `vitest.fixtures.ts` built, each typed as its source, which it's
+// built from.
 workersCases((): Promise<typeof Workers> => builtFixture("workers"));
 layoutDirectoryCases((): Promise<typeof LayoutDirectory> => builtFixture("layout-directory"));
 poolCases((): Promise<typeof Pool> => builtFixture("pool"));
@@ -68,5 +69,5 @@ removalCases((): Promise<typeof Removal> => builtFixture("removal"));
 indexWorkersCases((): Promise<typeof IndexWorkers> => builtFixture("index-workers"));
 indexBuildCases((): Promise<typeof IndexBuild> => builtFixture("index-build"));
 entityLookupWorkersCases((): Promise<typeof EntityLookupWorkers> => builtFixture("entity-lookup-workers"));
-syncedJoinedCases((): Promise<typeof SyncedJoined> => builtFixture("synced-joined"));
-syncedContainedCases((): Promise<typeof SyncedContained> => builtFixture("synced-contained"));
+observerJoinedCases((): Promise<typeof ObserverJoined> => builtFixture("observer-joined"));
+observerContainedCases((): Promise<typeof ObserverContained> => builtFixture("observer-contained"));

@@ -85,7 +85,8 @@ export const follow = System.create({
     void targets(row[target])?.changed;
 });
 
-// A lookup by entity with `changed`: its row also says whether what `changed` names may have changed since the system last ran.
+// A lookup by entity with `changed`: its row also says whether what `changed` names may have changed since the system
+// last ran.
 System.create({
     name: "test/followChanged",
     components: { read: [target], write: [velocity] },
@@ -373,41 +374,41 @@ export const unnamedAll = System.create([unnamed, bodyOnly]);
 check<Equal<typeof unnamedAll, System>>();
 System.render({ shader: { accessors: { place: position } } }, gpu => { void gpu.encoder; });
 
-// Synced systems read what a sync point left, after it: rows, resources, lookups and change filters, and no commands.
+// Observer systems read what a sync point left, after it: rows, resources, lookups and change filters, and no commands.
 export const watchPositions = System.create({
     name: "test/watchPositions",
-    synced: true,
+    observer: true,
     components: { read: [position], changed: [position] },
     resources: { read: [time] },
     lookup: { targets: { read: [velocity] } },
 }, (row, context) => {
     const read: number = row[position] + context.resources[time];
     void [read, context.lookup.targets(row.entity)];
-    // @ts-expect-error a synced system reads only
+    // @ts-expect-error an observer system reads only
     row[position] = 0;
-    // @ts-expect-error a synced system issues no commands
+    // @ts-expect-error an observer system issues no commands
     void context.commands;
 });
 check<Equal<typeof watchPositions, System>>();
-export const watchTime = System.create({ synced: true, resources: { read: [time], changed: [time] } }, ({ resources }) => { void resources[time]; });
-// A composite may hold synced members, which run after its sync point.
+export const watchTime = System.create({ observer: true, resources: { read: [time], changed: [time] } }, ({ resources }) => { void resources[time]; });
+// A composite may hold observer members, which run after its sync point.
 export const withWatch = System.create([integrate, watchTime]);
 check<Equal<typeof withWatch, System>>();
-// @ts-expect-error synced is true or left out
-System.create({ synced: false, resources: { read: [time] } }, () => {});
-// @ts-expect-error a synced system writes no components
-System.create({ synced: true, components: { write: [position] } }, () => {});
-// @ts-expect-error a synced system writes no resources
-System.create({ synced: true, resources: { write: [score] } }, () => {});
-// @ts-expect-error a synced system reduces into nothing
-System.create({ synced: true, components: { read: [velocity] }, reduce: { [total]: "+" } }, () => {});
-// @ts-expect-error a synced system takes no input
-System.create({ synced: true, input: { type: "object", properties: { count: { type: "integer" } } } }, () => {});
-// @ts-expect-error a synced system isn't a kernel
-System.create({ synced: true, kernel: "cpu", components: { read: [position] } }, () => {});
-// @ts-expect-error a synced system is ordered with nothing
-System.create({ synced: true, resources: { read: [time] }, after: [integrate] }, () => {});
-// @ts-expect-error a synced system is ordered with nothing
-System.create({ synced: true, resources: { read: [time] }, before: [integrate] }, () => {});
-// @ts-expect-error a synced system is ordered with nothing
-System.create({ synced: true, resources: { read: [time] }, during: [integrate] }, () => {});
+// @ts-expect-error observer is true or left out
+System.create({ observer: false, resources: { read: [time] } }, () => {});
+// @ts-expect-error an observer system writes no components
+System.create({ observer: true, components: { write: [position] } }, () => {});
+// @ts-expect-error an observer system writes no resources
+System.create({ observer: true, resources: { write: [score] } }, () => {});
+// @ts-expect-error an observer system reduces into nothing
+System.create({ observer: true, components: { read: [velocity] }, reduce: { [total]: "+" } }, () => {});
+// @ts-expect-error an observer system takes no input
+System.create({ observer: true, input: { type: "object", properties: { count: { type: "integer" } } } }, () => {});
+// @ts-expect-error an observer system isn't a kernel
+System.create({ observer: true, kernel: "cpu", components: { read: [position] } }, () => {});
+// @ts-expect-error an observer system is ordered with nothing
+System.create({ observer: true, resources: { read: [time] }, after: [integrate] }, () => {});
+// @ts-expect-error an observer system is ordered with nothing
+System.create({ observer: true, resources: { read: [time] }, before: [integrate] }, () => {});
+// @ts-expect-error an observer system is ordered with nothing
+System.create({ observer: true, resources: { read: [time] }, during: [integrate] }, () => {});

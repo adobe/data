@@ -280,7 +280,8 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
             }
             return n;
         }
-        // Descending: from the last row, each run of equal keys gathered, then given in entity order, its first position first.
+        // Descending: from the last row, each run of equal keys gathered, then given in entity order, its first
+        // position first.
         let held = 0;
         for (let i = length - 1; i >= -1 && n < limit; i--) {
             const row = i < 0 ? null : rows.at(i);
@@ -401,15 +402,16 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
     };
 
     const tracker = ordered !== null
-        ? System.create({ name, synced: true, lookup: { list: { index: ordered, read: reads, changed: reads } } }, ({ lookup }) => {
+        ? System.create({ name, observer: true, lookup: { list: { index: ordered, read: reads, changed: reads } } }, ({ lookup }) => {
             track(lookup.list(), null, fromSorted);
         })
         : byRange !== null
-            ? System.create({ name, synced: true, lookup: { list: { index: byRange, read: reads, changed: reads } } }, ({ lookup }) => {
-                // A range is of a `where` condition on the index's key, which the query's type checked against its values.
+            ? System.create({ name, observer: true, lookup: { list: { index: byRange, read: reads, changed: reads } } }, ({ lookup }) => {
+                // A range is of a `where` condition on the index's key, which the query's type checked against its
+                // values.
                 track(null, entry => ownRange(entry, range => lookup.list(range as Parameters<typeof lookup.list>[0]), () => lookup.list()), fromSorted);
             })
-            : System.create({ name, synced: true, lookup: { list: { index: keylessOf(has, not), read: reads, changed: reads } } }, ({ lookup }) => {
+            : System.create({ name, observer: true, lookup: { list: { index: keylessOf(has, not), read: reads, changed: reads } } }, ({ lookup }) => {
                 track(lookup.list(), null, fromKeyless);
             });
 
@@ -463,7 +465,7 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
         for (const entry of scan.entries) entry.gather.start();
         accept = acceptOf(scan.entries);
     };
-    const scanner = System.create({ name, synced: true, components: { read: reads, has: required.filter(key => !reads.includes(key)), not } }, row => {
+    const scanner = System.create({ name, observer: true, components: { read: reads, has: required.filter(key => !reads.includes(key)), not } }, row => {
         if (accept === null) start();
         if (direct === 0) {
             accept?.(row);

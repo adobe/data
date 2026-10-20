@@ -30,8 +30,8 @@ Rule.create({ name: "indexTypeTest/slots", components: { has: [position] }, deri
 declare const create: Create;
 declare const wgsl: typeof Gpu.wgsl;
 export const world = create({ [workers]: 4, [gpuDevice]: null });
-export const read = System.create({ name: "indexTypeTest/read", synced: true, components: { read: [position, slot] }, resources: { read: [gpuDevice, workers] } }, () => {});
-export const readOne = System.create({ synced: true, lookup: { at: { read: [position], has: [slot] } } }, () => {});
+export const read = System.create({ name: "indexTypeTest/read", observer: true, components: { read: [position, slot] }, resources: { read: [gpuDevice, workers] } }, () => {});
+export const readOne = System.create({ observer: true, lookup: { at: { read: [position], has: [slot] } } }, () => {});
 export const report = world.run(all);
 export const shader = wgsl(draw);
 export const added = world.add(read);
@@ -47,7 +47,7 @@ export const noRule: Rule = Rule.create({ components: { has: [position] }, deriv
 export const noArchetype: Ecs.Archetype = [position];
 // @ts-expect-error a trait's key is keyof Traits<never, never>
 export type NoTraitKey = Ecs.Trait.Key;
-// @ts-expect-error synced systems read a world: no Observe
+// @ts-expect-error observer systems read a world: no Observe
 export type NoObserve = Ecs.Observe<number>;
 // @ts-expect-error nor its helpers
 export type NoToPromise = typeof Ecs.Observe.toPromise;

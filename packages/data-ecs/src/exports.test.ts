@@ -50,7 +50,7 @@ export const sortedName = (index: Index<{ readonly sorted: true }>): string => i
 // How a world is created is the implementation's; the interface gives its type.
 declare const create: () => World;
 export const world = create();
-export const read = System.create({ synced: true, components: { read: [position] }, resources: { read: [gpuDevice] }, lookup: { at: { read: [position] } } }, () => {});
+export const read = System.create({ observer: true, components: { read: [position] }, resources: { read: [gpuDevice] }, lookup: { at: { read: [position] } } }, () => {});
 export const added = world.add(read);
 `;
 

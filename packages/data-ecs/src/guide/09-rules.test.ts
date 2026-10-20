@@ -42,7 +42,7 @@ const hide = System.create({ components: { has: [sprite] } }, (row, { commands }
 });
 
 const layers: number[] = [];
-const read = System.create({ synced: true, components: { read: [layer], has: [drawn] } }, row => {
+const read = System.create({ observer: true, components: { read: [layer], has: [drawn] } }, row => {
     layers.push(row[layer]);
 });
 

@@ -6,9 +6,9 @@ import { failureOf } from './failures.js';
 import {
     clean, completedWord, controlBytes, inputByMessage, inputLayoutOf, inputMoved, platformLocks, postedWord, protocolName, rejected, reported, runSlots,
     signalWord, unreadWord, slotInput, slotNumber, slotPayload, slotStatus, slotViews, slotWords, slotsWord, threadChannel, unposted,
-    type SyncedDeclaration, type SyncedIndex, type ThreadChannel, type ToJoined, type ToWorld,
+    type ObserverDeclaration, type ObserverIndex, type ThreadChannel, type ToJoined, type ToWorld,
 } from './joining.js';
-import { createSyncedTarget, droppedSynced, endTarget, joinedRun, type SyncedTarget } from './joined-synced.js';
+import { createObserverTarget, droppedObserver, endTarget, joinedRun, type ObserverTarget } from './joined-observer.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import { Index } from '../../interface/indexes/index-type.js';
 import { System } from '../../interface/system/system.js';
@@ -28,16 +28,16 @@ export type SharingHost = {
     /** A failure for the next run's report. */
     readonly defer: (failure: Failure) => void;
     /**
-     * Why a joined thread that imported the systems of ids `imported` can't claim `threads`: a system it can't run there,
-     * or a finalizer on one; null when none.
+     * Why a joined thread that imported the systems of ids `imported` can't claim `threads`: a system it can't run
+     * there, or a finalizer on one; null when none.
      */
     readonly crossing: (threads: readonly string[], imported: ReadonlySet<string>) => string | null;
     /** Places systems again, once claims were made or released. */
     readonly placed: () => void;
     /** Runs a task between runs, in the world's queue. */
     readonly between: (task: () => void) => void;
-    /** A joined thread's own synced systems, as the world declares them: added to ticks, removed, or forgotten. */
-    readonly synced: {
+    /** A joined thread's own observer systems, as the world declares them: added to ticks, removed, or forgotten. */
+    readonly observer: {
         readonly add: (system: Definition) => void;
         readonly remove: (system: Definition) => void;
         readonly drop: (system: Definition) => void;
@@ -85,9 +85,9 @@ type Joined = {
     imported: ReadonlySet<string>;
     /** Its task channel, once systems placed on the threads it claims run there. */
     tasks: TaskChannel | null;
-    /** Its end for synced systems, once it joined. */
-    synced: SyncedTarget | null;
-    /** Its own synced systems, as the world declares them, by its numbers for them. */
+    /** Its end for observer systems, once it joined. */
+    observer: ObserverTarget | null;
+    /** Its own observer systems, as the world declares them, by its numbers for them. */
     readonly proxies: Map<number, Leaf>;
 };
 
@@ -98,10 +98,11 @@ const isClean = (report: Report): boolean => report.failures.length === 0 && rep
 const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 /**
- * The world's side of joined threads: `share` records a thread joining, then its handshake records its claims, which
- * a thread claimed twice can't join; `progress` shows each one's, in the order they were shared. Runs come through its slots in shared memory, in
- * sequence, naming systems by its numbers, and complete through its completed word, with a report posted only when
- * it isn't clean; its synced systems are posted to it after each sync point, with one notify per thread a turn.
+ * The world's side of joined threads: `share` records a thread joining, then its handshake records its claims, which a
+ * thread claimed twice can't join; `progress` shows each one's, in the order they were shared. Runs come through its
+ * slots in shared memory, in sequence, naming systems by its numbers, and complete through its completed word, with a
+ * report posted only when it isn't clean; its observer systems are posted to it after each sync point, with one notify
+ * per thread a turn.
  */
 export const createSharing = (host: SharingHost) => {
     const { state } = host;
@@ -137,8 +138,8 @@ export const createSharing = (host: SharingHost) => {
     const wake = (thread: Joined): void => {
         const { control } = thread;
         if (control === null) return;
-        // Marked unread before the signal moves: a thread that read the signal past this wake then sees the word set, or
-        // cleared it after, so it's never left set for a wake the thread read, which would keep later wakes from
+        // Marked unread before the signal moves: a thread that read the signal past this wake then sees the word set,
+        // or cleared it after, so it's never left set for a wake the thread read, which would keep later wakes from
         // notifying a thread waiting for them. A thread that hasn't read the last wake yet reads this one with it.
         const read = Atomics.exchange(control, unreadWord, 1) === 0;
         Atomics.add(control, signalWord, 1);
@@ -227,7 +228,7 @@ export const createSharing = (host: SharingHost) => {
                 }
             }
             const definition = typeof named.value === "object" && named.value !== null ? named.value : null;
-            // A run of the thread's own synced system names it, so its post runs it there for this run.
+            // A run of the thread's own observer system names it, so its post runs it there for this run.
             const own = definition !== null && definition.kind !== "composite" && thread.proxies.get(number) === definition;
             if (definition === null) {
                 reject(thread, sequence, `System "${named.id}" isn't one this world imported, so it can't run here.`);
@@ -300,7 +301,8 @@ export const createSharing = (host: SharingHost) => {
 
     /**
      * Its claims checked against those already made, and against systems and finalizers on them; its control words
-     * placed, and its status `"joined"`; or refused. With claims, its objects become its own between runs, then it's told.
+     * placed, and its status `"joined"`; or refused. With claims, its objects become its own between runs, then it's
+     * told.
      */
     const refuse = (thread: Joined, message: string): void => {
         post(thread, { protocol: protocolName, kind: "refused", message });
@@ -325,7 +327,7 @@ export const createSharing = (host: SharingHost) => {
         controlBlocks.set(thread, offset);
         thread.views = slotViews(memory.memory.buffer, start);
         thread.status = "joined";
-        thread.synced = createSyncedTarget(thread.number, threads.length === 0 ? `#${thread.number}` : threads.join(`" and "`), message => post(thread, message), () => wakeSoon(thread));
+        thread.observer = createObserverTarget(thread.number, threads.length === 0 ? `#${thread.number}` : threads.join(`" and "`), message => post(thread, message), () => wakeSoon(thread));
         const joined = (): void => post(thread, {
             protocol: protocolName, kind: "joined", memory: memory.memory, control: start, waits: hasWaitAsync(), log: thread.log?.block ?? null,
             tasks: thread.tasks?.block ?? null, thread: thread.number,
@@ -349,10 +351,10 @@ export const createSharing = (host: SharingHost) => {
             });
             thread.tasks = tasks;
             for (const name of threads) state.threadTasks.set(name, tasks);
-            const { synced } = thread;
-            if (synced !== null) {
-                synced.log = log;
-                for (const name of threads) state.synced.targets.set(name, synced);
+            const { observer } = thread;
+            if (observer !== null) {
+                observer.log = log;
+                for (const name of threads) state.observer.targets.set(name, observer);
             }
             state.channels.push(tasks);
             joined();
@@ -391,12 +393,12 @@ export const createSharing = (host: SharingHost) => {
         for (const name of thread.claims) if (claimed.get(name) === thread) claimed.delete(name);
         // A task in flight settles now, its systems skipped with a "thread" failure; they're placed here between runs.
         tasks?.end();
-        // Its synced systems' posts settle, its own forgotten, those on the threads it claimed placed here again.
-        const { synced } = thread;
-        if (synced !== null) {
-            for (const [name, target] of [...state.synced.targets]) if (target === synced) state.synced.targets.delete(name);
-            endTarget(state, synced, left);
-            for (const proxy of thread.proxies.values()) host.synced.drop(proxy);
+        // Its observer systems' posts settle, its own forgotten, those on the threads it claimed placed here again.
+        const { observer } = thread;
+        if (observer !== null) {
+            for (const [name, target] of [...state.observer.targets]) if (target === observer) state.observer.targets.delete(name);
+            endTarget(state, observer, left);
+            for (const proxy of thread.proxies.values()) host.observer.drop(proxy);
             thread.proxies.clear();
         }
         if (log !== null) host.between(() => {
@@ -448,27 +450,27 @@ export const createSharing = (host: SharingHost) => {
                 from.moved.set(message.sequence, thread);
                 return drain(from);
             }
-            case "synced": return declare(thread, message.number, message.name, message.declaration, message.added);
-            case "synced add":
-            case "synced remove":
-            case "synced drop": {
+            case "observer": return declare(thread, message.number, message.name, message.declaration, message.added);
+            case "observer add":
+            case "observer remove":
+            case "observer drop": {
                 const proxy = thread.proxies.get(message.number);
                 if (proxy === undefined) return;
-                if (message.kind === "synced add") return host.synced.add(proxy);
-                if (message.kind === "synced remove") return host.synced.remove(proxy);
+                if (message.kind === "observer add") return host.observer.add(proxy);
+                if (message.kind === "observer remove") return host.observer.remove(proxy);
                 thread.proxies.delete(message.number);
                 thread.names.delete(message.number);
-                return host.synced.drop(proxy);
+                return host.observer.drop(proxy);
             }
-            case "synced failed": {
+            case "observer failed": {
                 for (const [index, error] of message.errors) {
-                    const placed = thread.synced?.placed[index];
+                    const placed = thread.observer?.placed[index];
                     if (placed !== undefined) host.defer(failureOf("system", placed.label, Object.assign(new Error(error.message), { name: error.name, stack: error.stack })));
                 }
                 return;
             }
-            case "synced dropped": return thread.synced === null ? undefined : droppedSynced(state, thread.synced, message.indexes);
-            case "synced again": return state.synced.again?.();
+            case "observer dropped": return thread.observer === null ? undefined : droppedObserver(state, thread.observer, message.indexes);
+            case "observer again": return state.observer.again?.();
             case "wake": return drain(thread);
             case "leave": {
                 gone(thread, true);
@@ -482,7 +484,7 @@ export const createSharing = (host: SharingHost) => {
         const thread: Joined = {
             channel: threadChannel<ToJoined, ToWorld>(port), status: "joining", claims: [], control: null, views: [], waits: true,
             names: new Map(), next: 1, completed: 0, finished: new Set(), inputs: new Map(), moved: new Map(), peers: new Set(), woken: false,
-            abort: new AbortController(), log: null, number: ++numbered, imported: new Set(), tasks: null, synced: null, proxies: new Map(),
+            abort: new AbortController(), log: null, number: ++numbered, imported: new Set(), tasks: null, observer: null, proxies: new Map(),
         };
         threads.add(thread);
         byNumber.set(thread.number, thread);
@@ -492,14 +494,14 @@ export const createSharing = (host: SharingHost) => {
     };
 
     /**
-     * A joined thread's own synced system, declared by its number for it: the world's value standing for it, which
+     * A joined thread's own observer system, declared by its number for it: the world's value standing for it, which
      * runs on that thread, with the keys and indexes it names by id; a run of that number runs it. One the world can't
      * declare, naming a key or index it never imported, is a failure in the next run's report.
      */
-    /** Indexes made for joined threads' synced systems from declarations without ids, by what they declare, kept while the world lives. */
+    /** Indexes made for joined threads' observer systems from declarations without ids, by what they declare, kept while the world lives. */
     const madeIndexes = new Map<string, ReturnType<typeof indexDefinitionOf>>();
     /** An index like one a joined thread declared without an id: one per declaration, for every thread. */
-    const madeIndex = (thread: Joined, declared: SyncedIndex): ReturnType<typeof indexDefinitionOf> => {
+    const madeIndex = (thread: Joined, declared: ObserverIndex): ReturnType<typeof indexDefinitionOf> => {
         const keys = (numbers: readonly number[]): Key[] => numbers.map(each => keyOf(thread, each));
         const key = keys(declared.key);
         const has = keys(declared.has);
@@ -515,8 +517,8 @@ export const createSharing = (host: SharingHost) => {
         return index;
     };
 
-    const declare = (thread: Joined, number: number, name: string, declared: SyncedDeclaration, added: boolean): void => {
-        const target = thread.synced;
+    const declare = (thread: Joined, number: number, name: string, declared: ObserverDeclaration, added: boolean): void => {
+        const target = thread.observer;
         if (target === null) return;
         let proxy: Leaf;
         try {
@@ -534,13 +536,13 @@ export const createSharing = (host: SharingHost) => {
                     continue;
                 }
                 const index = typeof each.index === "string" ? indexDefinitionOf(itemOfId(each.index)) : madeIndex(thread, each.index);
-                if (index === undefined) throw new Error(`A joined thread's synced system looks up through index "${String(each.index)}", which this world never imported.`);
+                if (index === undefined) throw new Error(`A joined thread's observer system looks up through index "${String(each.index)}", which this world never imported.`);
                 lookup[each.name] = { index, ...listed([["read", each.read], ["changed", each.changed]]) };
             }
             const { components, resources } = declared;
             // Unnamed, so other systems' labels stay as they are; its own is the thread's.
             const declaration = {
-                synced: true,
+                observer: true,
                 ...components === null ? {} : { components: listed([["read", components.read], ["has", components.has], ["not", components.not], ["added", components.added], ["changed", components.changed]]) },
                 ...resources === null ? {} : { resources: listed([["read", resources.read], ["changed", resources.changed], ["is", resources.is], ["not", resources.not]]) },
                 ...declared.lookup.length === 0 ? {} : { lookup },
@@ -553,14 +555,14 @@ export const createSharing = (host: SharingHost) => {
         catch (error) {
             host.defer(failureOf("system", name, error));
             // Its runs reject.
-            thread.names.set(number, { id: `#synced:${number}`, value: null });
+            thread.names.set(number, { id: `#observer:${number}`, value: null });
             drain(thread);
             return;
         }
-        state.synced.proxies.set(proxy, { target, local: number, label: name });
+        state.observer.proxies.set(proxy, { target, local: number, label: name });
         thread.proxies.set(number, proxy);
-        thread.names.set(number, { id: `#synced:${number}`, value: proxy });
-        if (added) host.synced.add(proxy);
+        thread.names.set(number, { id: `#observer:${number}`, value: proxy });
+        if (added) host.observer.add(proxy);
         drain(thread);
     };
 

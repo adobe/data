@@ -1,6 +1,6 @@
 import { Component } from "../interface/component/component.js";
 import { always } from "../interface/resources/always.js";
-import { eachTick, ticksAfter } from "./synced.js";
+import { eachTick, ticksAfter } from "./observer.js";
 import { System } from "../interface/system/system.js";
 import { backToBack, createWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
@@ -40,8 +40,9 @@ const check = (condition: boolean, message: string): void => {
 
 /**
  * The fastest of `stretches` stretches of `churnTicks` ticks, after one to warm up, of a world with `idle` added and,
- * with `churn`, a system made for each tick added to the next and removed from the one after, by a synced system reading
- * its clock; then, with `after`, ticks with nothing added or removed. What the world holds is the same before and after.
+ * with `churn`, a system made for each tick added to the next and removed from the one after, by an observer system
+ * reading its clock; then, with `after`, ticks with nothing added or removed. What the world holds is the same before
+ * and after.
  */
 const churning = async (churn: (() => System) | null, after: boolean, stretches = 5): Promise<number> => {
     const driver = backToBack();
@@ -50,7 +51,8 @@ const churning = async (churn: (() => System) | null, after: boolean, stretches 
     try {
         await world.run(seed);
         world.add(idle);
-        // Once a system with the filter came and went, ticks are kept for what it filters on, and the loop's state is added.
+        // Once a system with the filter came and went, ticks are kept for what it filters on, and the loop's state is
+        // added.
         world.add(again);
         await ticksAfter(world, 2);
         world.remove(again);

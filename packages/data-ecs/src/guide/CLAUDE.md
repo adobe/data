@@ -31,4 +31,4 @@ code it shows: every excerpt comes from a file here that runs as a test, so the 
 - Keys are short: `Symbol("position")`, never a path like `"guide/components/position"`. A resource's description says
   nothing about components.
 - Archetypes are types, so their names are PascalCase: `const Particle = Archetype.create([position, velocity])`.
-- Use the public API only, as a consumer imports it, not internal modules. Read a world through synced systems.
+- Use the public API only, as a consumer imports it, not internal modules. Read a world through observer systems.

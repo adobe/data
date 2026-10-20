@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { Resource, System, workers } from "../../index.js";
 import { createWorld, join } from "./create.js";
 
-// Synced systems reading only resources on a joined thread, whose posts hold copies of what they read, with the world
+// Observer systems reading only resources on a joined thread, whose posts hold copies of what they read, with the world
 // and the thread on this one, joined through a MessageChannel.
 
-const wide = Symbol("syncedContainedTest/wide");
-const paused = Symbol("syncedContainedTest/paused");
-const steps = Symbol("syncedContainedTest/steps");
+const wide = Symbol("observerContainedTest/wide");
+const paused = Symbol("observerContainedTest/paused");
+const steps = Symbol("observerContainedTest/steps");
 declare module "@adobe/data-ecs" {
     interface Resources {
         [wide]: { type: readonly [number, number, number, number, number, number, number, number, number, number, number, number] };
@@ -20,21 +20,21 @@ Resource.register(wide, { type: { type: "array", items: { type: "number" }, minI
 Resource.register(paused, { type: { type: "boolean", default: false } });
 Resource.register(steps, { type: { type: "number", default: 0 } });
 
-const widen = System.create({ name: "syncedContainedTest/widen", resources: { write: [wide] } }, ({ resources }) => {
+const widen = System.create({ name: "observerContainedTest/widen", resources: { write: [wide] } }, ({ resources }) => {
     const first = resources[wide][0] + 1;
     const base = first * 100;
     resources[wide] = [base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7, base + 8, base + 9, base + 10, base + 11];
 });
-const step = System.create({ name: "syncedContainedTest/step", resources: { write: [steps] } }, ({ resources }) => { resources[steps] += 1; });
-const pause = System.create({ name: "syncedContainedTest/pause", input: { type: "object", properties: { paused: { type: "boolean" } } }, resources: { write: [paused] } }, ({ input, resources }) => {
+const step = System.create({ name: "observerContainedTest/step", resources: { write: [steps] } }, ({ resources }) => { resources[steps] += 1; });
+const pause = System.create({ name: "observerContainedTest/pause", input: { type: "object", properties: { paused: { type: "boolean" } } }, resources: { write: [paused] } }, ({ input, resources }) => {
     resources[paused] = input.paused;
 });
 
 const seen: { wide: number[][]; steps: number[] } = { wide: [], steps: [] };
-const watchWide = System.create({ name: "syncedContainedTest/watchWide", synced: true, resources: { read: [wide], changed: [wide] } }, ({ resources }) => {
+const watchWide = System.create({ name: "observerContainedTest/watchWide", observer: true, resources: { read: [wide], changed: [wide] } }, ({ resources }) => {
     seen.wide.push([...resources[wide]]);
 });
-const watchSteps = System.create({ name: "syncedContainedTest/watchSteps", synced: true, resources: { read: [steps], not: [paused], changed: [steps] } }, ({ resources }) => {
+const watchSteps = System.create({ name: "observerContainedTest/watchSteps", observer: true, resources: { read: [steps], not: [paused], changed: [steps] } }, ({ resources }) => {
     seen.steps.push(resources[steps]);
 });
 
@@ -56,11 +56,11 @@ const joined = async () => {
         if (status === "joined") break;
         await new Promise(resolve => setTimeout(resolve, 0));
     }
-    await remote.run(System.create({ name: "syncedContainedTest/nothing", synced: true }, () => {}));
+    await remote.run(System.create({ name: "observerContainedTest/nothing", observer: true }, () => {}));
     return { world, remote, close: async () => { await remote.dispose(); await world.dispose(); } };
 };
 
-describe("synced systems reading only resources on a joined thread", () => {
+describe("observer systems reading only resources on a joined thread", () => {
     it("read resources larger than their block holds from a snapshot of their own", async () => {
         seen.wide.length = 0;
         const { world, remote, close } = await joined();

@@ -6,7 +6,7 @@ import { createEntry, give, giveFirst, keysId, labelOf, none, noDelivery, ownNam
 type EntityEntry = Entry<object | null> & { readonly entity: Entity; readonly present: boolean[] };
 
 /**
- * The entities observed with one list of required and optional components, read by one synced system that looks each
+ * The entities observed with one list of required and optional components, read by one observer system that looks each
  * up by entity; with no optional components, it skips them while an index of what has the required ones reports no
  * change. `swept` is false while an entry may have no subscribers.
  */
@@ -128,14 +128,14 @@ const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: s
     let finders: Finders | null = null;
     let source: object | null = null;
     const system = optional.length === 0
-        ? System.create({ name, synced: true, lookup: { presence: { has: required, changed: required }, values: { read: required }, members: { index: membersOf(required), changed: required } } }, ({ lookup }) => {
+        ? System.create({ name, observer: true, lookup: { presence: { has: required, changed: required }, values: { read: required }, members: { index: membersOf(required), changed: required } } }, ({ lookup }) => {
             if (source !== lookup || finders === null) {
                 source = lookup;
                 finders = { presence: lookup.presence, values: lookup.values, optional: noOptional };
             }
             pass(lookup.members().changed, finders);
         })
-        : System.create({ name, synced: true, lookup: optionalLookups(required, optional) }, ({ lookup }) => {
+        : System.create({ name, observer: true, lookup: optionalLookups(required, optional) }, ({ lookup }) => {
             if (source !== lookup || finders === null) {
                 source = lookup;
                 finders = { presence: lookup.presence, values: lookup.values, optional: (index, entity) => lookup[index](entity) };

@@ -41,9 +41,9 @@ const destroy = System.create({ components: { has: [ship] } }, (row, { commands 
 });
 
 const counts = { outlined: 0, targeting: 0, all: 0 };
-const countOutlined = System.create({ synced: true, components: { has: [outline] } }, () => { counts.outlined += 1; });
-const countTargeting = System.create({ synced: true, components: { has: [target] } }, () => { counts.targeting += 1; });
-const countAll = System.create({ synced: true, components: {} }, () => { counts.all += 1; });
+const countOutlined = System.create({ observer: true, components: { has: [outline] } }, () => { counts.outlined += 1; });
+const countTargeting = System.create({ observer: true, components: { has: [target] } }, () => { counts.targeting += 1; });
+const countAll = System.create({ observer: true, components: {} }, () => { counts.all += 1; });
 
 it("removes components with their host, and follows references", async () => {
     await using world = createWorld();

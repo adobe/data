@@ -23,7 +23,8 @@ Component.register(world, { type: { type: "number" } });
 Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(name, { type: { type: "string" } });
 
-// `up` reads what `read` lists of the entity `through` names, or null for a row without one; it may read what the system writes.
+// `up` reads what `read` lists of the entity `through` names, or null for a row without one; it may read what the
+// system writes.
 System.create({
     name: "upTypeTest/propagate",
     kernel: "cpu",
@@ -74,6 +75,6 @@ System.create({
     up: { through: parent, read: [world] },
 }, () => {});
 
-// A synced system reads what a sync point left, in no order.
-// @ts-expect-error a synced system has no up
-System.create({ synced: true, components: { read: [local] }, up: { through: parent, read: [local] } }, () => {});
+// An observer system reads what a sync point left, in no order.
+// @ts-expect-error an observer system has no up
+System.create({ observer: true, components: { read: [local] }, up: { through: parent, read: [local] } }, () => {});

@@ -50,8 +50,9 @@ export type WorldState = {
      * a shape's first values come once a run of its own system resolved, rather than from a delivering run.
      */
     readonly joined: boolean;
-    /** On a joined thread, whether this turn of its event loop counted a pass. */
+    /** On a joined thread, whether this turn of its event loop counted a pass, and what ends it once its posts ran. */
     counted: boolean;
+    readonly endTurn: () => void;
     pass: number;
     open: number;
     delivered: number;
@@ -173,10 +174,7 @@ export const passed = (state: WorldState): void => {
     if (!state.joined || state.counted) return;
     state.counted = true;
     state.pass++;
-    queueMicrotask(() => {
-        state.counted = false;
-        if (state.idle.length > 0) sweepShapes(state);
-    });
+    queueMicrotask(state.endTurn);
 };
 
 export const stateOf = (world: World): WorldState => {
@@ -187,6 +185,10 @@ export const stateOf = (world: World): WorldState => {
         world,
         joined,
         counted: false,
+        endTurn: () => {
+            created.counted = false;
+            if (created.idle.length > 0) sweepShapes(created);
+        },
         pass: 0,
         open: 1,
         delivered: 0,

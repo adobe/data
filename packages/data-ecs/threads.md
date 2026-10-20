@@ -477,9 +477,13 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
 
 A synced system runs on a joined thread when that thread's `add` or `run` took it, as its own, or when the threads it
 names objects of are ones that thread claims (`joined-synced.ts` on the world's thread, `thread-synced.ts` there).
+One placed by its objects is named there by its id and its keys' ids, as systems placed there are: without them, it
+fails to register, its run rejecting and an added one's failure in a later report.
 
 - **Its own:** the thread declares it to the world once, by its own number for it, with what it reads by its numbers
-  for its keys and the ids of the indexes it looks up through; it needs no id, since its value runs only there. The
+  for its keys and the ids of the indexes it looks up through, or, for an index without an id (one made in a
+  function), its declaration by those numbers, which the world makes an index like, one per declaration for every
+  thread, kept while the world lives; it needs no id, since its value runs only there. The
   world stands a system of its own for it, which it registers, adds and removes as the thread says, and runs as its
   runs: so its keys and indexes are the world's, its ticks start, and its runner, which never runs, finds what it
   matches. Once its value is collected there, the thread says so and the world forgets it; and once the thread is gone,
@@ -493,7 +497,9 @@ names objects of are ones that thread claims (`joined-synced.ts` on the world's 
   or a chunk of an archetype it matches was stamped, or its column stamped by a GPU kernel, which reaches the thread as
   row ticks. One a run named, from either thread, is posted after each sync point until it ran. Posting reads back what
   the GPU wrote that it reads, or the indexes it looks up through hold by, then refreshes those indexes, then writes its
-  block, its posts word last, and wakes the thread once for the pass, unless the thread hasn't read the last wake.
+  block, holding its progress word at an opening value while it does, its posts word last and then opening it, so a
+  thread that saw the last post's posts word claims nothing until the post is whole; then it wakes the thread once for
+  the pass, unless the thread hasn't read the last wake.
 - **Running:** the thread replays its objects through the newest sync first, then claims the post as a tail claims its
   rows, by adding to its progress word, so the claim and the world's cancel are one order; once claimed, a post stays
   as it is until its done word reaches its end. It runs the system with the tail's code, from where its rows are or the

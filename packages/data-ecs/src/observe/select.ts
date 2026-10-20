@@ -195,7 +195,9 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
     const name = `Observe.${counting ? "count" : "select"}(${labelOf(required)})`;
     const direction = terms.length > 0 && terms.every(term => term.ascending === terms[0].ascending) ? terms[0].ascending : null;
     const sortedKey = terms.map(term => term.key);
-    const ordered = !counting && direction !== null ? sortedOf(sortedKey, has.filter(key => !sortedKey.includes(key)), not) : null;
+    // On a joined thread, a selection without a page sorts there, through an index without a key, rather than having
+    // the world's thread keep a sorted one: its whole result is read each pass either way.
+    const ordered = !counting && direction !== null && (paged || !state.joined) ? sortedOf(sortedKey, has.filter(key => !sortedKey.includes(key)), not) : null;
     let ranged = -1;
     let byRange: ReturnType<typeof rangedOf> = null;
     if (ordered === null && (counting || !paged || terms.length > 0)) {

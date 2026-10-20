@@ -90,8 +90,11 @@ export const mailboxTicks = 1_000;
 /** Entities `mailbox select 10K` selects. */
 export const selected = 10_000;
 
+/** What a joined thread observes or runs in a mailbox benchmark: through its own observers, a synced system, or the observer factories. */
+type Observed = "resource" | "select" | "synced resource" | "synced select" | "factory resource" | "factory select";
+
 /** What the joined thread is asked to do, and what it answers. */
-export type ToJoined = { readonly kind: "runs"; readonly stretches: number } | { readonly kind: "resource" | "select" | "synced resource" | "synced select" } | { readonly kind: "stop" };
+export type ToJoined = { readonly kind: "runs"; readonly stretches: number } | { readonly kind: Observed } | { readonly kind: "stop" };
 export type FromJoined = { readonly kind: "ran"; readonly milliseconds: number } | { readonly kind: "observing" } | { readonly kind: "stopped"; readonly last: number; readonly notified: number };
 
 type Joined = { readonly ask: (message: ToJoined) => Promise<FromJoined>; readonly terminate: () => Promise<void> };
@@ -141,10 +144,11 @@ const remoteRun = async (stretches = 5): Promise<number> => {
  * The fastest of `stretches` stretches of `mailboxTicks` ticks on the world's thread, driven back to back, of `system`
  * while a joined thread observes through a mailbox what it changes, after one to warm up.
  */
-const mailboxBest = async (kind: "resource" | "select" | "synced resource" | "synced select", system: System<void>, stretches = 5): Promise<number> => {
+const mailboxBest = async (kind: Observed, system: System<void>, stretches = 5): Promise<number> => {
     const driver = backToBack();
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
-    if (kind === "select" || kind === "synced select") await world.run(seedRanks, { count: selected });
+    const reads = kind.endsWith("resource");
+    if (!reads) await world.run(seedRanks, { count: selected });
     const joined = await startJoined(world);
     let best = Infinity;
     try {
@@ -164,16 +168,73 @@ const mailboxBest = async (kind: "resource" | "select" | "synced resource" | "sy
             });
             world.add(system);
         });
-        const counted = kind === "resource" || kind === "synced resource" ? await Observe.toPromise(world.observe.resource(counter)) : 0;
+        const counted = reads ? await Observe.toPromise(world.observe.resource(counter)) : 0;
         const stopped = await joined.ask({ kind: "stop" });
         if (stopped.kind !== "stopped" || stopped.notified === 0) throw new Error(`mailbox ${kind}: the joined thread saw nothing.`);
         // Timed only while the joined thread keeps up: one that stopped being woken costs the world nothing.
-        if ((kind === "resource" || kind === "synced resource") && stopped.last < counted - mailboxTicks) throw new Error(`mailbox ${kind}: the joined thread saw ${stopped.last} of ${counted}.`);
+        if (reads && stopped.last < counted - mailboxTicks) throw new Error(`mailbox ${kind}: the joined thread saw ${stopped.last} of ${counted}.`);
     }
     finally {
         await joined.terminate();
         await world.dispose();
         driver.close();
+    }
+    return best;
+};
+
+/** Ticks in each timed stretch of the cadence benchmarks, and the milliseconds between their frames. */
+export const cadenceTicks = 100;
+const cadenceMilliseconds = 2;
+
+/** Frames `milliseconds` apart, as a display's are, each noting when it began. */
+const spaced = (milliseconds: number) => {
+    let began = 0;
+    return {
+        began: (): number => began,
+        frame: (callback: (time: number) => void): (() => void) => {
+            const timer = setTimeout(() => {
+                began = performance.now();
+                callback(began);
+            }, milliseconds);
+            return () => clearTimeout(timer);
+        },
+    };
+};
+
+/**
+ * The least the world's thread spends on `cadenceTicks` ticks of `system`, from each frame's start until the tick's
+ * observers are notified, over `stretches` stretches after one to warm up, with frames far enough apart that a joined
+ * thread observing what it changes keeps up: the cost of `kind` at a display's cadence rather than back to back.
+ */
+const cadenceBest = async (kind: Observed, system: System<void>, stretches = 8): Promise<number> => {
+    const driver = spaced(cadenceMilliseconds);
+    const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
+    const joined = await startJoined(world);
+    let best = Infinity;
+    try {
+        await joined.ask({ kind });
+        await new Promise<void>(resolve => {
+            let ticks = 0;
+            let stretch = 0;
+            let spent = 0;
+            const unobserve = world.observe.resource(clock)(() => {
+                spent += performance.now() - driver.began();
+                if (++ticks % cadenceTicks !== 0) return;
+                if (stretch > 0) best = Math.min(best, spent);
+                spent = 0;
+                if (stretch++ < stretches) return;
+                unobserve();
+                resolve();
+            });
+            world.add(system);
+        });
+        const counted = await Observe.toPromise(world.observe.resource(counter));
+        const stopped = await joined.ask({ kind: "stop" });
+        if (stopped.kind !== "stopped" || stopped.last < counted - 2) throw new Error(`${kind} at a cadence: the joined thread saw ${stopped.kind === "stopped" ? stopped.last : "nothing"} of ${counted}.`);
+    }
+    finally {
+        await joined.terminate();
+        await world.dispose();
     }
     return best;
 };
@@ -223,5 +284,41 @@ export const remoteBenchmarks: readonly Benchmark[] = [
         typical: [1, 1],
         best: { bytes: selected * 24, basis: "Each tick writes 10K 8-byte values, reads them to sort, and sorts 10K 8-byte entities." },
         run: () => mailboxBest("synced select", reorder, 3),
+    },
+    {
+        name: "joined resource factory",
+        operation: "Ticks that change one resource a joined thread observes through the observer factories, a synced system it added, posted to it and waking it once: `mailbox resource` through `Observe.resource`.",
+        per: "ticks",
+        n: mailboxTicks,
+        typical: [1, 1],
+        best: { bytes: 64, basis: "A tick reads at least one cache line of its system's state." },
+        run: () => mailboxBest("factory resource", count),
+    },
+    {
+        name: "joined select 10K factory",
+        operation: "Ticks that reverse the order of 10K entities a joined thread selects in order through the observer factories, through a sorted index the world keeps for it: `mailbox select 10K` through `Observe.select`.",
+        per: "ticks",
+        n: mailboxTicks,
+        typical: [1, 1],
+        best: { bytes: selected * 24, basis: "Each tick writes 10K 8-byte values, reorders them in the index, and reads 10K 8-byte entities." },
+        run: () => mailboxBest("factory select", reorder, 3),
+    },
+    {
+        name: "mailbox resource cadence",
+        operation: "`mailbox resource` at a display's cadence, frames 2 ms apart, the joined thread keeping up: what the world's thread spends on a tick, from its frame until its observers are notified.",
+        per: "ticks",
+        n: cadenceTicks,
+        typical: [1, 1],
+        best: { bytes: 64, basis: "A tick reads at least one cache line of its system's state." },
+        run: () => cadenceBest("resource", count),
+    },
+    {
+        name: "joined resource factory cadence",
+        operation: "`joined resource factory` at a display's cadence, frames 2 ms apart, the joined thread keeping up: what the world's thread spends on a tick, from its frame until its observers are notified.",
+        per: "ticks",
+        n: cadenceTicks,
+        typical: [1, 1],
+        best: { bytes: 64, basis: "A tick reads at least one cache line of its system's state." },
+        run: () => cadenceBest("factory resource", count),
     },
 ];

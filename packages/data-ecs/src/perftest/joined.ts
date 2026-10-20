@@ -9,6 +9,7 @@ import { release } from "./finalized.js";
 import { tailSystems } from "./tails.js";
 import { take, transferBatch, transferBytes, transferCount, transferSide, transferSystems } from "./transfers.js";
 import { peersOf } from "../implementation/world/join.js";
+import { Observe as Factories } from "../observe/index.js";
 import { programFinalizers, requireDefinition } from "../interface/registry/index.js";
 
 /**
@@ -87,6 +88,12 @@ channel.onMessage(async message => {
         first = false;
         channel.post({ kind: "observing" });
     };
+    if (message.kind === "factory resource" || message.kind === "factory select") {
+        stop = message.kind === "factory resource"
+            ? Factories.resource(remote, counter)(observing)
+            : Factories.select(remote, { required: [order], order: { [order]: true } })(observing);
+        return;
+    }
     stop = message.kind === "resource"
         ? remote.observe.resource(counter)(observing)
         : remote.observe.select({ required: [order], order: { [order]: true } })(observing);

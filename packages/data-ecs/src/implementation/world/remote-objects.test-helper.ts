@@ -1,9 +1,8 @@
 import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
-import type { Observe } from "../../interface/observe/observe.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
-import { Observe as Factories } from "../../observe/index.js";
+import { Observe } from "../../observe/index.js";
 
 // Keys and systems both threads of the remote objects fixtures import: objects of thread "remoteObjects", which a
 // joined worker fills, and what it sees of them while the world applies sync points back to back.
@@ -62,8 +61,8 @@ export const churn = System.create({ name: "remoteObjectsTest/churn", components
 /** What a joined thread saw of the watched entity's objects: values, those whose objects disagreed with its structs, and captions seen. */
 export type Watched = { readonly values: number; readonly inconsistent: number; readonly captions: readonly (string | null)[] };
 
-/** Which observers watch: the joined thread's own, the factories on its world, or a synced system it added. */
-export type Observers = "built-in" | "factory" | "synced";
+/** What watches: the observer factories on the joined thread's world, or a synced system it added. */
+export type Observers = "factory" | "synced";
 
 /** The entity `syncedWatch` watches, and what it's told of each value. */
 const synced: { entity: Entity | null; seen: ((odd: boolean, held: boolean, text: string | null | undefined) => void) | null } = { entity: null, seen: null };
@@ -76,11 +75,8 @@ export const syncedWatch = System.create({ name: "remoteObjectsTest/syncedWatch"
     synced.seen?.(row[phase] % 2 === 1, lookup.flagged(synced.entity) !== null, row[caption]);
 });
 
-/**
- * Watches `entity` until `count` values came, listed and whole, or listed alone through the factories, which have no
- * whole form, checking each value's objects agree with its structs.
- */
-export const watch = (remote: World, entity: Entity, count: number, observers: Observers = "built-in"): Promise<Watched> => new Promise(resolve => {
+/** Watches `entity` until `count` values came, checking each value's objects agree with its structs. */
+export const watch = (remote: World, entity: Entity, count: number, observers: Observers): Promise<Watched> => new Promise(resolve => {
     let values = 0;
     let inconsistent = 0;
     const captions = new Set<string | null>();
@@ -100,14 +96,7 @@ export const watch = (remote: World, entity: Entity, count: number, observers: O
         stops.push(() => remote.remove(syncedWatch));
         return;
     }
-    const listed: Observe<{ readonly [phase]: number; readonly [caption]: string | null; readonly [flag]?: true } | null> = observers === "factory"
-        ? Factories.entity(remote, entity, { required: [phase, caption], optional: [flag] })
-        : remote.observe.entity(entity, { required: [phase, caption], optional: [flag] });
-    stops.push(listed(value => {
+    stops.push(Observe.entity(remote, entity, { required: [phase, caption], optional: [flag] })(value => {
         if (value !== null && values < count) seen(value[phase] % 2 === 1, value[flag] === true, value[caption]);
-    }));
-    if (observers === "factory") return;
-    stops.push(remote.observe.entity(entity)(value => {
-        if (value !== null && values < count) seen(Number(value[phase]) % 2 === 1, value[flag] === true, value[caption]);
     }));
 });

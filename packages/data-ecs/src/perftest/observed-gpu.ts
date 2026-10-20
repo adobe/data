@@ -3,13 +3,11 @@ import type { Entity } from "../interface/entity/entity.js";
 import { gpuDevice } from "../interface/resources/gpu-device.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
-import type { World } from "../interface/world/world.js";
 import { createWorld } from "../implementation/world/create.js";
 import { Observe } from "../observe/index.js";
 import type { Benchmark } from "./benchmark.js";
 
-// An entity observer of values a GPU kernel writes, through the world's own observers and the factories: each run
-// reads back what the observer reads.
+// An entity observer factory of values a GPU kernel writes: each run reads back what the observer reads.
 
 const heat = Symbol("observedGpu/heat");
 const rate = Symbol("observedGpu/rate");
@@ -32,16 +30,10 @@ const warm = System.create({ name: "observedGpu/warm", kernel: "gpu", components
     row[heat] = row[heat] + row[rate];
 });
 
-type EntityObserver = (world: World, entity: Entity) => Observe<unknown>;
-const observers: readonly (readonly [string, EntityObserver])[] = [
-    ["", (world, entity) => world.observe.entity(entity, { required: [heat] })],
-    [" factory", (world, entity) => Observe.entity(world, entity, { required: [heat] })],
-];
-
-/** Each, timed per run by `timed`, which waits for the GPU. */
-export const observedGpuBenchmarks = (device: GPUDevice, timed: (run: () => Promise<unknown>) => Promise<number>): readonly Benchmark[] => observers.map(([suffix, observe]): Benchmark => ({
-    name: `observe gpu entity${suffix}`,
-    operation: `A GPU kernel writing a value of 100K entities, one entity of which is observed${suffix === "" ? "" : " through the observer factories"}: each run reads that storage back for it.`,
+/** Timed per run by `timed`, which waits for the GPU. */
+export const observedGpuBenchmarks = (device: GPUDevice, timed: (run: () => Promise<unknown>) => Promise<number>): readonly Benchmark[] => [{
+    name: "observe gpu entity factory",
+    operation: "A GPU kernel writing a value of 100K entities, one entity of which is observed through the observer factories: each run reads that storage back for it.",
     per: "runs",
     n: 1,
     typical: [1, 1],
@@ -51,11 +43,11 @@ export const observedGpuBenchmarks = (device: GPUDevice, timed: (run: () => Prom
         try {
             await world.run(spawn);
             let notified = 0;
-            const stop = observe(world, spawned[0])(() => { notified++; });
+            const stop = Observe.entity(world, spawned[0], { required: [heat] })(() => { notified++; });
             await world.run(warm);
             const before = notified;
             const best = await timed(() => world.run(warm));
-            if (notified <= before) throw new Error(`observe gpu entity${suffix}: not notified`);
+            if (notified <= before) throw new Error("observe gpu entity factory: not notified");
             stop();
             return best;
         }
@@ -63,4 +55,4 @@ export const observedGpuBenchmarks = (device: GPUDevice, timed: (run: () => Prom
             await world.dispose();
         }
     },
-}));
+}];

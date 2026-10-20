@@ -8,10 +8,10 @@ import { Observe } from "../../observe/index.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { tablesOf } from "./join.js";
-import { settle } from "./observe-adapters.test-helper.js";
+import { settle } from "./observe.test-helper.js";
 
-// What the internal factories of `src/observe` do beyond what the world's own observers did: systems shared by shape,
-// first values batched or given at once, warm reads, and what they hold released once idle.
+// How the internal factories of `src/observe` run: systems shared by shape, first values batched or given at once, warm
+// reads, and what they hold released once idle.
 
 const amount = Symbol("observeFactoriesTest/amount");
 const other = Symbol("observeFactoriesTest/other");

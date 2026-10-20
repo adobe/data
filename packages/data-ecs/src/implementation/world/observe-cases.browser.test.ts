@@ -5,9 +5,12 @@ import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";
-import { adapters, settle, type Adapter } from "./observe-adapters.test-helper.js";
+import { Observe } from "../../observe/index.js";
+import { settle } from "./observe.test-helper.js";
 
-// The cases of `observers.browser.test.ts`, run for the world's own observers and the factories alike.
+// The observer factories of `src/observe` over values GPU kernels wrote.
+
+const { entity, select, count, toPromise } = Observe;
 
 const heat = Symbol("observeCasesGpuTest/heat");
 const rate = Symbol("observeCasesGpuTest/rate");
@@ -39,7 +42,7 @@ const device = async (): Promise<GPUDevice> => {
     return adapter.requestDevice();
 };
 
-const cases = ({ entity, select, count, toPromise }: Adapter): void => {
+describe("observers of GPU kernels' writes", () => {
     it("give an entity's values the GPU wrote, read back after each run, and a first value once read back", async () => {
         const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         await world.run(spawn);
@@ -91,6 +94,4 @@ const cases = ({ entity, select, count, toPromise }: Adapter): void => {
         expect(counts).toEqual([100]);
         await world.dispose();
     });
-};
-
-for (const adapter of adapters) describe(`${adapter.name} observers of GPU kernels' writes`, () => cases(adapter));
+});

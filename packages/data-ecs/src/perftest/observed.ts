@@ -9,8 +9,7 @@ import { Observe } from "../observe/index.js";
 import type { Benchmark } from "./benchmark.js";
 import { fastest } from "./suite.js";
 
-// Benchmarks of the internal observer factories of `src/observe`, beside the world's own observers' (`reads.ts`),
-// and of both where only one side had one.
+// Benchmarks of the internal observer factories of `src/observe`.
 
 const level = Symbol("observed/level");
 const value = Symbol("observed/value");
@@ -88,30 +87,6 @@ const fastestPrepared = async (prepare: () => Promise<unknown>, run: () => Promi
 };
 
 type SelectQuery = Parameters<typeof Observe.select<readonly [typeof value, typeof rank]>>[1];
-type CountQuery = Parameters<typeof Observe.count<readonly [typeof value]>>[1];
-
-/** Observers through the world's own, or the factories, for benchmarks of both. */
-type Observers = {
-    readonly suffix: string;
-    readonly about: string;
-    readonly entity: (world: World, entity: Entity, key: typeof value | typeof rank) => Observe<unknown>;
-    readonly select: (world: World, query: SelectQuery) => Observe<readonly Entity[]>;
-    readonly count: (world: World, query: CountQuery) => Observe<number>;
-};
-const builtIn: Observers = {
-    suffix: "",
-    about: "",
-    entity: (world, entity, key) => world.observe.entity(entity, { required: [key] }),
-    select: (world, query) => world.observe.select(query),
-    count: (world, query) => world.observe.count(query),
-};
-const factory: Observers = {
-    suffix: " factory",
-    about: ", through the observer factories",
-    entity: (world, entity, key) => Observe.entity(world, entity, { required: [key] }),
-    select: Observe.select,
-    count: Observe.count,
-};
 
 const observedEntities = 1_000;
 const movingEntities = 100_000;
@@ -121,10 +96,10 @@ const countedEntities = 1_000_000;
 let copied = 0;
 
 /** A world with an entity observer of each of its entities, which had its first value. */
-const observedWorld = async (observers: Observers): Promise<{ readonly world: World; readonly stop: () => void; readonly notified: () => number }> => {
+const observedWorld = async (): Promise<{ readonly world: World; readonly stop: () => void; readonly notified: () => number }> => {
     const world = await seeded(observedEntities);
     let notified = 0;
-    const stops = (await entitiesOf(world)).map(entity => observers.entity(world, entity, value)(() => { notified++; }));
+    const stops = (await entitiesOf(world)).map(entity => Observe.entity(world, entity, { required: [value] })(() => { notified++; }));
     await settled(world);
     notified = 0;
     return { world, stop: () => { for (const stop of stops) stop(); }, notified: () => notified };
@@ -175,7 +150,7 @@ export const observedBenchmarks: readonly Benchmark[] = [
         typical: [10, 1_000],
         best: { bytes: 16, basis: "Each observer reads its entity's 8-byte location and its component's 8-byte changed tick." },
         run: async () => {
-            const { world, stop, notified } = await observedWorld(factory);
+            const { world, stop, notified } = await observedWorld();
             const best = await fastest(() => world.run(idle));
             check(notified() === 0, "observe 1K entities factory: notified");
             stop();
@@ -191,7 +166,7 @@ export const observedBenchmarks: readonly Benchmark[] = [
         typical: [10, 1_000],
         best: { bytes: 16, basis: "Each observer reads its entity's 8-byte location and its component's 8-byte changed tick." },
         run: async () => {
-            const { world, stop, notified } = await observedWorld(factory);
+            const { world, stop, notified } = await observedWorld();
             const best = await fastest(() => world.run(nudge));
             check(notified() > 0, "observe 1K entities one changed factory: not notified");
             stop();
@@ -199,9 +174,9 @@ export const observedBenchmarks: readonly Benchmark[] = [
             return best;
         },
     },
-    ...[builtIn, factory].map((observers): Benchmark => ({
-        name: `observe one entity among 100K moving${observers.suffix}`,
-        operation: `A kernel writing the rank of 100K entities, one of them observed${observers.about}: a debugging view of one entity in a moving world, beyond the kernel's own time.`,
+    {
+        name: "observe one entity among 100K moving factory",
+        operation: "A kernel writing the rank of 100K entities, one of them observed, through the observer factories: a debugging view of one entity in a moving world, beyond the kernel's own time.",
         per: "runs",
         n: 1,
         typical: [1, 1],
@@ -210,19 +185,19 @@ export const observedBenchmarks: readonly Benchmark[] = [
             const world = await seeded(movingEntities);
             const [first] = await entitiesOf(world);
             let notified = 0;
-            const stop = observers.entity(world, first, rank)(() => { notified++; });
+            const stop = Observe.entity(world, first, { required: [rank] })(() => { notified++; });
             await world.run(advance);
             const before = notified;
             const best = await fastest(() => world.run(advance));
-            check(notified > before, `observe one entity among 100K moving${observers.suffix}: not notified`);
+            check(notified > before, "observe one entity among 100K moving factory: not notified");
             stop();
             await world.dispose();
             return best;
         },
-    })),
-    ...[builtIn, factory].map((observers): Benchmark => ({
-        name: `observe subscribe churn 1K${observers.suffix}`,
-        operation: `Subscribing an entity observer to each of 1K entities, a run, and stopping them all${observers.about}: views opened and closed each frame.`,
+    },
+    {
+        name: "observe subscribe churn 1K factory",
+        operation: "Subscribing an entity observer to each of 1K entities, a run, and stopping them all, through the observer factories: views opened and closed each frame.",
         per: "observers",
         n: observedEntities,
         typical: [10, 1_000],
@@ -233,15 +208,15 @@ export const observedBenchmarks: readonly Benchmark[] = [
             let notified = 0;
             const notify = (): void => { notified++; };
             const best = await fastest(async () => {
-                const stops = entities.map(entity => observers.entity(world, entity, value)(notify));
+                const stops = entities.map(entity => Observe.entity(world, entity, { required: [value] })(notify));
                 await world.run(idle);
                 for (const stop of stops) stop();
             });
-            check(notified > 0, `observe subscribe churn 1K${observers.suffix}: no first values`);
+            check(notified > 0, "observe subscribe churn 1K factory: no first values");
             await world.dispose();
             return best;
         },
-    })),
+    },
     {
         name: "select page 100K factory",
         operation: "A run that changes one entity's order component under an observer factory's `select` with `where`, `order` and a 20-row `page` over 100K entities: a sorted, filtered list of a UI, kept current through a sorted index.",
@@ -261,29 +236,29 @@ export const observedBenchmarks: readonly Benchmark[] = [
             return best;
         },
     },
-    ...[builtIn, factory].map((observers): Benchmark => ({
-        name: `select page 100K churn${observers.suffix}`,
-        operation: `The first value of a 20-row page of a \`select\` with \`where\` and \`order\` over 100K entities, at another offset each time, while another observer of that query keeps it current${observers.about}: a UI paging.`,
+    {
+        name: "select page 100K churn factory",
+        operation: "The first value of a 20-row page of a `select` with `where` and `order` over 100K entities, at another offset each time, while another observer of that query keeps it current, through the observer factories: a UI paging.",
         per: "reads",
         n: 1,
         typical: [1, 100],
         best: { bytes: 320, basis: "A page reads 20 entries of 16 bytes: an entity, its rank and its value." },
         run: async () => {
             const world = await seeded(selectedRows);
-            const stop = observers.select(world, pageQuery(0))(() => {});
+            const stop = Observe.select(world, pageQuery(0))(() => {});
             await settled(world);
             let offset = 0;
             let page: readonly Entity[] = [];
             const best = await fastest(async () => {
                 offset = (offset + 20) % 2_000;
-                page = await Observe.toPromise(observers.select(world, pageQuery(offset)));
+                page = await Observe.toPromise(Observe.select(world, pageQuery(offset)));
             });
-            check(page.length === 20, `select page 100K churn${observers.suffix}: wrong page`);
+            check(page.length === 20, "select page 100K churn factory: wrong page");
             stop();
             await world.dispose();
             return best;
         },
-    })),
+    },
     {
         name: "select factory",
         operation: "The first value of an observer factory's `select` with `where` over 1M entities, which the factories hold nothing of: one scan, a run of a synced system over the rows that match.",
@@ -301,9 +276,9 @@ export const observedBenchmarks: readonly Benchmark[] = [
             return best;
         },
     },
-    ...[builtIn, factory].map((observers): Benchmark => ({
-        name: `count 1M changed${observers.suffix}`,
-        operation: `A run that changes one entity's value under a \`count\` with \`where\` over 1M entities${observers.about}: a filtered total of a UI, counted again after a change.`,
+    {
+        name: "count 1M changed factory",
+        operation: "A run that changes one entity's value under a `count` with `where` over 1M entities, through the observer factories: a filtered total of a UI, counted again after a change.",
         per: "rows",
         n: countedEntities,
         typical: [1_000, 1_000_000],
@@ -311,13 +286,13 @@ export const observedBenchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(countedEntities);
             let counted = 0;
-            const stop = observers.count(world, { required: [value], where: { [value]: { "<": countedEntities / 2 } } })(next => { counted = next; });
+            const stop = Observe.count(world, { required: [value], where: { [value]: { "<": countedEntities / 2 } } })(next => { counted = next; });
             await settled(world);
             const best = await fastest(() => world.run(nudge));
-            check(counted > 0, `count 1M changed${observers.suffix}: nothing counted`);
+            check(counted > 0, "count 1M changed factory: nothing counted");
             stop();
             await world.dispose();
             return best;
         },
-    })),
+    },
 ];

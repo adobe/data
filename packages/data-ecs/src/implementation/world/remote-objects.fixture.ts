@@ -42,7 +42,7 @@ const start = (): Worker => {
  * A worker watching an entity's objects here, through `observers`, while the world ticks back to back, moving and
  * changing them each tick.
  */
-export const watchedWhileApplying = async (count: number, observers: Observers = "built-in"): Promise<Watched | null> => {
+export const watchedWhileApplying = async (count: number, observers: Observers): Promise<Watched | null> => {
     const driver = backToBack();
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
     await world.run(seed);

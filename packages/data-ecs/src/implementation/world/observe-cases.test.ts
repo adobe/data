@@ -5,11 +5,11 @@ import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "../index.js";
-import { adapters, byDesign, settle, type Adapter } from "./observe-adapters.test-helper.js";
+import { Observe } from "../../observe/index.js";
+import { settle } from "./observe.test-helper.js";
 
-// The cases of `observers.test.ts`, run for the world's own observers and for the factories alike. Each subscribes,
-// settles, then expects, so it holds whenever a first value comes; one that expects otherwise for the factories says
-// why through `byDesign`.
+// The observer factories of `src/observe`. Each case subscribes, settles, then expects, so it holds whenever a first
+// value comes.
 
 const level = Symbol("observeCasesTest/level");
 const other = Symbol("observeCasesTest/other");
@@ -199,581 +199,568 @@ const random = (seed: number) => () => {
 
 const byIndex = (a: Entity, b: Entity): number => (a % 2 ** 32) - (b % 2 ** 32);
 
-const cases = (adapter: Adapter): void => {
-    const { resource, entity, select, count, toPromise } = adapter;
+const { resource, entity, select, count, toPromise } = Observe;
 
-    describe("observing resources", () => {
-        it("gives the current value, then the value after each run that changed it", async () => {
-            await using world = createWorld();
-            const seen: number[] = [];
-            resource(world, level)(value => seen.push(value));
-            await settle(world);
-            expect(seen).toEqual([0]);
-            await world.run(raise, { by: 1 });
-            expect(seen).toEqual([0, 2]);
-            await world.run(touchOther);
-            expect(seen).toEqual([0, 2]);
-            await world.run(raise, { by: 3 });
-            expect(seen).toEqual([0, 2, 8]);
-            // A write of the same value stamps it.
-            await world.run(keep);
-            expect(seen).toEqual([0, 2, 8, 8]);
-        });
-
-        it("notifies a reduced resource only when its fold differs", async () => {
-            await using world = createWorld();
-            const seen: number[] = [];
-            resource(world, total)(value => seen.push(value));
-            await world.run(spawn);
-            await world.run(sum);
-            await world.run(sum);
-            expect(seen).toEqual([0, 2]);
-        });
-
-        it("stops an observer that another stops while a run notifies", async () => {
-            await using world = createWorld();
-            const seen: string[] = [];
-            let stopSecond = (): void => {};
-            resource(world, level)(value => {
-                seen.push(`first ${value}`);
-                if (value > 0) stopSecond();
-            });
-            stopSecond = resource(world, level)(value => seen.push(`second ${value}`));
-            await settle(world);
-            await world.run(raise, { by: 1 });
-            await world.run(raise, { by: 1 });
-            stopSecond();
-            expect(seen).toEqual(["first 0", "second 0", "first 2", "first 4"]);
-        });
-
-        it("gives an observer added while a run notifies only the value then", async () => {
-            await using world = createWorld();
-            const seen: string[] = [];
-            resource(world, level)(value => {
-                if (value === 2) resource(world, level)(later => seen.push(`added ${later}`));
-            });
-            await settle(world);
-            await world.run(raise, { by: 1 });
-            await settle(world);
-            expect(seen).toEqual(["added 2"]);
-        });
-
-        it("throws to the subscriber when a first value given while subscribing throws", async () => {
-            await using world = createWorld();
-            // The factories give a first value while subscribing once they hold the resource's.
-            const stop = resource(world, level)(() => {});
-            await settle(world);
-            expect(() => resource(world, level)(() => { throw new Error("first failed"); })).toThrow("first failed");
-            const seen: number[] = [];
-            resource(world, level)(value => seen.push(value));
-            await world.run(raise, { by: 1 });
-            expect(seen).toEqual([0, 2]);
-            stop();
-        });
-
-        it("reports an observer that throws while a run notifies, and notifies the others", async () => {
-            await using world = createWorld();
-            const seen: number[] = [];
-            resource(world, level)(value => {
-                if (value > 0) throw new Error("observer failed");
-            });
-            resource(world, level)(value => seen.push(value));
-            await settle(world);
-            const { failures } = await world.run(raise, { by: 1 });
-            expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([byDesign(adapter, "system failures")
-                ? { kind: "system", name: expect.stringMatching(/^Observe\.resource\(observeCasesTest\/level\)/), message: "observer failed" }
-                : { kind: "observer", name: "observeCasesTest/level", message: "observer failed" }]);
-            expect(seen).toEqual([0, 2]);
-        });
-
-        it("give a world disposed after subscribing its first value while subscribing, or none", async () => {
-            const world = createWorld();
-            const seen: number[] = [];
-            resource(world, level)(value => seen.push(value));
-            await world.dispose();
-            await new Promise(resolve => setTimeout(resolve, 0));
-            expect(seen).toEqual(byDesign(adapter, "disposed") ? [] : [0]);
-        });
-
-        it("on a first value that throws when the factories don't hold it, stops that observer and throws it out of band", async () => {
-            await using world = createWorld();
-            let calls = 0;
-            const failing = (): void => {
-                calls++;
-                throw new Error("first failed");
-            };
-            if (byDesign(adapter, "cold first throw")) {
-                const caught = await catching(async () => {
-                    resource(world, level)(failing);
-                    await settle(world);
-                });
-                expect(caught.map(error => error instanceof Error ? error.message : error)).toEqual(["first failed"]);
-            }
-            // The world's own observers give it while subscribing, which throws to the subscriber.
-            else expect(() => resource(world, level)(failing)).toThrow("first failed");
-            expect((await world.run(raise, { by: 1 })).failures).toEqual([]);
-            expect(calls).toBe(1);
-        });
+describe("observing resources", () => {
+    it("gives the current value, then the value after each run that changed it", async () => {
+        await using world = createWorld();
+        const seen: number[] = [];
+        resource(world, level)(value => seen.push(value));
+        await settle(world);
+        expect(seen).toEqual([0]);
+        await world.run(raise, { by: 1 });
+        expect(seen).toEqual([0, 2]);
+        await world.run(touchOther);
+        expect(seen).toEqual([0, 2]);
+        await world.run(raise, { by: 3 });
+        expect(seen).toEqual([0, 2, 8]);
+        // A write of the same value stamps it.
+        await world.run(keep);
+        expect(seen).toEqual([0, 2, 8, 8]);
     });
 
-    describe("observing entities", () => {
-        it("gives the listed components, then the value after each run that wrote a listed component, once", async () => {
-            await using world = createWorld();
-            await world.run(create);
-            const seen: unknown[] = [];
-            entity(world, target, { required: [weight], optional: [tag] })(value => seen.push(value));
-            await settle(world);
-            expect(seen).toEqual([{ [weight]: 1 }]);
-            await world.run(weigh);
-            expect(seen).toEqual([{ [weight]: 1 }, { [weight]: 3 }]);
-            await world.run(warm);
-            expect(seen).toEqual([{ [weight]: 1 }, { [weight]: 3 }]);
-        });
+    it("notifies a reduced resource only when its fold differs", async () => {
+        await using world = createWorld();
+        const seen: number[] = [];
+        resource(world, total)(value => seen.push(value));
+        await world.run(spawn);
+        await world.run(sum);
+        await world.run(sum);
+        expect(seen).toEqual([0, 2]);
+    });
 
-        it("notifies when the entity gains or loses an optional component", async () => {
-            await using world = createWorld();
-            await world.run(create);
-            const seen: unknown[] = [];
-            entity(world, target, { optional: [flag] })(value => seen.push(value));
-            await settle(world);
-            await world.run(addFlag);
-            await world.run(warm);
-            expect(seen).toEqual([{}, { [flag]: true }]);
+    it("stops an observer that another stops while a run notifies", async () => {
+        await using world = createWorld();
+        const seen: string[] = [];
+        let stopSecond = (): void => {};
+        resource(world, level)(value => {
+            seen.push(`first ${value}`);
+            if (value > 0) stopSecond();
         });
+        stopSecond = resource(world, level)(value => seen.push(`second ${value}`));
+        await settle(world);
+        await world.run(raise, { by: 1 });
+        await world.run(raise, { by: 1 });
+        stopSecond();
+        expect(seen).toEqual(["first 0", "second 0", "first 2", "first 4"]);
+    });
 
-        it("gives null when the entity loses a required component, and nothing while it stays null", async () => {
-            await using world = createWorld();
-            await world.run(create);
-            const seen: unknown[] = [];
-            entity(world, target, { required: [weight], optional: [heat, tag] })(value => seen.push(value));
-            await settle(world);
-            await world.run(addTag);
-            await world.run(removeWeight);
-            await world.run(warm);
-            await world.run(removeTag);
-            expect(seen).toEqual([{ [weight]: 1, [heat]: 0 }, { [weight]: 1, [heat]: 0, [tag]: true }, null]);
+    it("gives an observer added while a run notifies only the value then", async () => {
+        await using world = createWorld();
+        const seen: string[] = [];
+        resource(world, level)(value => {
+            if (value === 2) resource(world, level)(later => seen.push(`added ${later}`));
         });
+        await settle(world);
+        await world.run(raise, { by: 1 });
+        await settle(world);
+        expect(seen).toEqual(["added 2"]);
+    });
 
-        it("gives null once the entity is despawned, and nothing for another entity that reuses its index", async () => {
-            await using world = createWorld();
-            await world.run(create);
-            const despawned = target;
-            const seen: unknown[] = [];
-            entity(world, despawned, { required: [heat] })(value => seen.push(value));
-            await settle(world);
-            await world.run(despawn);
-            await world.run(create);
-            expect(Number(target) % 2 ** 32).toBe(Number(despawned) % 2 ** 32);
-            expect(target).not.toBe(despawned);
-            await world.run(warm);
-            expect(seen).toEqual([{ [heat]: 0 }, null]);
-            const reused: unknown[] = [];
-            entity(world, target, { required: [heat] })(value => reused.push(value));
-            await settle(world);
-            await world.run(warm);
-            expect(reused).toEqual([{ [heat]: 1 }, { [heat]: 2 }]);
-            expect(seen).toEqual([{ [heat]: 0 }, null]);
+    it("throws to the subscriber when a first value given while subscribing throws", async () => {
+        await using world = createWorld();
+        // The factories give a first value while subscribing once they hold the resource's.
+        const stop = resource(world, level)(() => {});
+        await settle(world);
+        expect(() => resource(world, level)(() => { throw new Error("first failed"); })).toThrow("first failed");
+        const seen: number[] = [];
+        resource(world, level)(value => seen.push(value));
+        await world.run(raise, { by: 1 });
+        expect(seen).toEqual([0, 2]);
+        stop();
+    });
+
+    it("reports an observer that throws while a run notifies, and notifies the others", async () => {
+        await using world = createWorld();
+        const seen: number[] = [];
+        resource(world, level)(value => {
+            if (value > 0) throw new Error("observer failed");
         });
+        resource(world, level)(value => seen.push(value));
+        await settle(world);
+        const { failures } = await world.run(raise, { by: 1 });
+        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([
+            { kind: "system", name: expect.stringMatching(/^Observe\.resource\(observeCasesTest\/level\)/), message: "observer failed" },
+        ]);
+        expect(seen).toEqual([0, 2]);
+    });
 
-        it("listing every component, notifies after writes to any of them and adds and removes", async () => {
-            await using world = createWorld();
-            await world.run(create);
-            const seen: unknown[] = [];
-            if (byDesign(adapter, "whole entity")) entity(world, target, { optional: [weight, heat, tag] })(value => seen.push(value));
-            else world.observe.entity(target)(value => seen.push(value));
+    it("give a world disposed after subscribing no first value", async () => {
+        const world = createWorld();
+        const seen: number[] = [];
+        resource(world, level)(value => seen.push(value));
+        await world.dispose();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(seen).toEqual([]);
+    });
+
+    it("on a first value that throws when the factories don't hold it, stops that observer and throws it out of band", async () => {
+        await using world = createWorld();
+        let calls = 0;
+        const failing = (): void => {
+            calls++;
+            throw new Error("first failed");
+        };
+        const caught = await catching(async () => {
+            resource(world, level)(failing);
             await settle(world);
-            await world.run(warm);
-            await world.run(addTag);
-            await world.run(weigh);
-            await world.run(removeWeight);
-            await world.run(despawn);
-            await world.run(warm);
-            expect(seen).toEqual([
-                { [weight]: 1, [heat]: 0 },
-                { [weight]: 1, [heat]: 1 },
-                { [weight]: 1, [heat]: 1, [tag]: true },
-                { [weight]: 3, [heat]: 1, [tag]: true },
-                { [heat]: 1, [tag]: true },
-                null,
-            ]);
         });
+        expect(caught.map(error => error instanceof Error ? error.message : error)).toEqual(["first failed"]);
+        expect((await world.run(raise, { by: 1 })).failures).toEqual([]);
+        expect(calls).toBe(1);
+    });
+});
 
-        it("notifies after a kernel writes an observed component whose stamps it had dropped", async () => {
-            await using world = createWorld({ [workers]: 0 });
-            await world.run(create);
-            await world.run(double);
-            const seen: unknown[] = [];
-            entity(world, target, { required: [heat] })(value => seen.push(value));
-            await settle(world);
-            await world.run(double);
-            await world.run(weigh);
-            await world.run(double);
-            expect(seen).toEqual([{ [heat]: 1 }, { [heat]: 3 }, { [heat]: 7 }]);
+describe("observing entities", () => {
+    it("gives the listed components, then the value after each run that wrote a listed component, once", async () => {
+        await using world = createWorld();
+        await world.run(create);
+        const seen: unknown[] = [];
+        entity(world, target, { required: [weight], optional: [tag] })(value => seen.push(value));
+        await settle(world);
+        expect(seen).toEqual([{ [weight]: 1 }]);
+        await world.run(weigh);
+        expect(seen).toEqual([{ [weight]: 1 }, { [weight]: 3 }]);
+        await world.run(warm);
+        expect(seen).toEqual([{ [weight]: 1 }, { [weight]: 3 }]);
+    });
+
+    it("notifies when the entity gains or loses an optional component", async () => {
+        await using world = createWorld();
+        await world.run(create);
+        const seen: unknown[] = [];
+        entity(world, target, { optional: [flag] })(value => seen.push(value));
+        await settle(world);
+        await world.run(addFlag);
+        await world.run(warm);
+        expect(seen).toEqual([{}, { [flag]: true }]);
+    });
+
+    it("gives null when the entity loses a required component, and nothing while it stays null", async () => {
+        await using world = createWorld();
+        await world.run(create);
+        const seen: unknown[] = [];
+        entity(world, target, { required: [weight], optional: [heat, tag] })(value => seen.push(value));
+        await settle(world);
+        await world.run(addTag);
+        await world.run(removeWeight);
+        await world.run(warm);
+        await world.run(removeTag);
+        expect(seen).toEqual([{ [weight]: 1, [heat]: 0 }, { [weight]: 1, [heat]: 0, [tag]: true }, null]);
+    });
+
+    it("gives null once the entity is despawned, and nothing for another entity that reuses its index", async () => {
+        await using world = createWorld();
+        await world.run(create);
+        const despawned = target;
+        const seen: unknown[] = [];
+        entity(world, despawned, { required: [heat] })(value => seen.push(value));
+        await settle(world);
+        await world.run(despawn);
+        await world.run(create);
+        expect(Number(target) % 2 ** 32).toBe(Number(despawned) % 2 ** 32);
+        expect(target).not.toBe(despawned);
+        await world.run(warm);
+        expect(seen).toEqual([{ [heat]: 0 }, null]);
+        const reused: unknown[] = [];
+        entity(world, target, { required: [heat] })(value => reused.push(value));
+        await settle(world);
+        await world.run(warm);
+        expect(reused).toEqual([{ [heat]: 1 }, { [heat]: 2 }]);
+        expect(seen).toEqual([{ [heat]: 0 }, null]);
+    });
+
+    it("listing every component, notifies after writes to any of them and adds and removes", async () => {
+        await using world = createWorld();
+        await world.run(create);
+        const seen: unknown[] = [];
+        entity(world, target, { optional: [weight, heat, tag] })(value => seen.push(value));
+        await settle(world);
+        await world.run(warm);
+        await world.run(addTag);
+        await world.run(weigh);
+        await world.run(removeWeight);
+        await world.run(despawn);
+        await world.run(warm);
+        expect(seen).toEqual([
+            { [weight]: 1, [heat]: 0 },
+            { [weight]: 1, [heat]: 1 },
+            { [weight]: 1, [heat]: 1, [tag]: true },
+            { [weight]: 3, [heat]: 1, [tag]: true },
+            { [heat]: 1, [tag]: true },
+            null,
+        ]);
+    });
+
+    it("notifies after a kernel writes an observed component whose stamps it had dropped", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(create);
+        await world.run(double);
+        const seen: unknown[] = [];
+        entity(world, target, { required: [heat] })(value => seen.push(value));
+        await settle(world);
+        await world.run(double);
+        await world.run(weigh);
+        await world.run(double);
+        expect(seen).toEqual([{ [heat]: 1 }, { [heat]: 3 }, { [heat]: 7 }]);
+    });
+
+    it("shares an entity's entry between observers, stopping one that another stops while a run notifies", async () => {
+        await using world = createWorld();
+        await world.run(create);
+        const seen: string[] = [];
+        let stopSecond = (): void => {};
+        entity(world, target, { required: [weight] })(value => {
+            seen.push(`first ${value?.[weight]}`);
+            if (value !== null && value[weight] > 1) stopSecond();
         });
+        stopSecond = entity(world, target, { required: [weight] })(value => seen.push(`second ${value?.[weight]}`));
+        await settle(world);
+        expect((await world.run(weigh)).failures).toEqual([]);
+        expect((await world.run(weigh)).failures).toEqual([]);
+        stopSecond();
+        expect(seen).toEqual(["first 1", "second 1", "first 3", "first 5"]);
+    });
 
-        it("shares an entity's entry between observers, stopping one that another stops while a run notifies", async () => {
-            await using world = createWorld();
-            await world.run(create);
-            const seen: string[] = [];
-            let stopSecond = (): void => {};
-            entity(world, target, { required: [weight] })(value => {
-                seen.push(`first ${value?.[weight]}`);
-                if (value !== null && value[weight] > 1) stopSecond();
-            });
-            stopSecond = entity(world, target, { required: [weight] })(value => seen.push(`second ${value?.[weight]}`));
-            await settle(world);
-            expect((await world.run(weigh)).failures).toEqual([]);
-            expect((await world.run(weigh)).failures).toEqual([]);
-            stopSecond();
-            expect(seen).toEqual(["first 1", "second 1", "first 3", "first 5"]);
+    it("gives an observer added while a run notifies only the value then", async () => {
+        await using world = createWorld();
+        await world.run(create);
+        const seen: unknown[] = [];
+        entity(world, target, { required: [weight] })(value => {
+            if (value?.[weight] === 3) entity(world, target, { required: [weight] })(later => seen.push(later));
         });
+        await settle(world);
+        await world.run(weigh);
+        await settle(world);
+        expect(seen).toEqual([{ [weight]: 3 }]);
+    });
 
-        it("gives an observer added while a run notifies only the value then", async () => {
-            await using world = createWorld();
-            await world.run(create);
-            const seen: unknown[] = [];
-            entity(world, target, { required: [weight] })(value => {
-                if (value?.[weight] === 3) entity(world, target, { required: [weight] })(later => seen.push(later));
-            });
-            await settle(world);
-            await world.run(weigh);
-            await settle(world);
-            expect(seen).toEqual([{ [weight]: 3 }]);
+    it("reports an observer that throws while a run notifies, and notifies the others", async () => {
+        await using world = createWorld();
+        await world.run(create);
+        const seen: unknown[] = [];
+        entity(world, target, { required: [weight] })(value => {
+            if (value !== null && value[weight] > 1) throw new Error("observer failed");
         });
+        entity(world, target, { required: [weight] })(value => seen.push(value));
+        await settle(world);
+        const { failures } = await world.run(weigh);
+        expect(failures.map(({ kind, message }) => ({ kind, message }))).toEqual([{ kind: "system", message: "observer failed" }]);
+        expect(seen).toEqual([{ [weight]: 1 }, { [weight]: 3 }]);
+    });
 
-        it("reports an observer that throws while a run notifies, and notifies the others", async () => {
-            await using world = createWorld();
-            await world.run(create);
-            const seen: unknown[] = [];
-            entity(world, target, { required: [weight] })(value => {
-                if (value !== null && value[weight] > 1) throw new Error("observer failed");
-            });
+    it("gives an observer subscribed during a run the state after the run", async () => {
+        await using world = createWorld();
+        await world.run(create);
+        const seen: unknown[] = [];
+        const subscribe = System.create({ name: "observeCasesTest/subscribeEntity" }, () => {
             entity(world, target, { required: [weight] })(value => seen.push(value));
-            await settle(world);
-            const { failures } = await world.run(weigh);
-            expect(failures.map(({ kind, message }) => ({ kind, message }))).toEqual([{ kind: byDesign(adapter, "system failures") ? "system" : "observer", message: "observer failed" }]);
-            expect(seen).toEqual([{ [weight]: 1 }, { [weight]: 3 }]);
         });
+        const later = System.create({ name: "observeCasesTest/laterWeigh", components: { write: [weight] }, after: [subscribe] }, row => { row[weight] += 2; });
+        await world.run(System.create({ name: "observeCasesTest/subscribeThenWeigh", systems: [subscribe, later] }));
+        await settle(world);
+        await world.run(warm);
+        expect(seen).toEqual([{ [weight]: 3 }]);
+    });
+});
 
-        it("gives an observer subscribed during a run the state then, or after the run", async () => {
-            await using world = createWorld();
-            await world.run(create);
-            const seen: unknown[] = [];
-            const subscribe = System.create({ name: "observeCasesTest/subscribeEntity" }, () => {
-                entity(world, target, { required: [weight] })(value => seen.push(value));
-            });
-            const later = System.create({ name: "observeCasesTest/laterWeigh", components: { write: [weight] }, after: [subscribe] }, row => { row[weight] += 2; });
-            await world.run(System.create({ name: "observeCasesTest/subscribeThenWeigh", systems: [subscribe, later] }));
-            await settle(world);
-            await world.run(warm);
-            expect(seen).toEqual(byDesign(adapter, "cold first value") ? [{ [weight]: 3 }] : [{ [weight]: 1 }, { [weight]: 3 }]);
-        });
+describe("observing queries", () => {
+    it("gives the selection, then after each run that changed which entities match", async () => {
+        await using world = createWorld();
+        await world.run(players);
+        const seen: (readonly Entity[])[] = [];
+        select(world, { required: [score], not: [benched] })(entities => seen.push(entities));
+        await settle(world);
+        expect(seen).toEqual([[roster[0], roster[1]]]);
+        await world.run(join);
+        expect(seen).toEqual([[roster[0], roster[1]], [roster[0], roster[1], roster[3]]]);
+        await world.run(bench);
+        expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[0], roster[1]]), new Set([roster[0], roster[1], roster[3]]), new Set([roster[1], roster[3]])]);
     });
 
-    describe("observing queries", () => {
-        it("gives the selection, then after each run that changed which entities match", async () => {
-            await using world = createWorld();
-            await world.run(players);
-            const seen: (readonly Entity[])[] = [];
-            select(world, { required: [score], not: [benched] })(entities => seen.push(entities));
-            await settle(world);
-            expect(seen).toEqual([[roster[0], roster[1]]]);
-            await world.run(join);
-            expect(seen).toEqual([[roster[0], roster[1]], [roster[0], roster[1], roster[3]]]);
-            await world.run(bench);
-            expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[0], roster[1]]), new Set([roster[0], roster[1], roster[3]]), new Set([roster[1], roster[3]])]);
-        });
-
-        it("notifies nothing when matching entities are written, or move archetype, but the same ones match", async () => {
-            await using world = createWorld();
-            await world.run(players);
-            let notified = 0;
-            select(world, { required: [score], not: [benched] })(() => notified++);
-            await settle(world);
-            await world.run(score10);
-            await world.run(mark);
-            await world.run(players);
-            expect(notified).toBe(2);
-        });
-
-        it("notifies when as many match as before but other entities", async () => {
-            await using world = createWorld();
-            await world.run(players);
-            const seen: (readonly Entity[])[] = [];
-            select(world, { required: [score], not: [benched] })(entities => seen.push(entities));
-            await settle(world);
-            await world.run(swap);
-            expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[0], roster[1]]), new Set([roster[1], roster[2]])]);
-        });
-
-        it("notifies after a despawn of a matching entity", async () => {
-            await using world = createWorld();
-            await world.run(players);
-            const seen: number[] = [];
-            count(world, { required: [score] })(value => seen.push(value));
-            await settle(world);
-            await world.run(leave);
-            await world.run(score10);
-            expect(seen).toEqual([3, 2]);
-        });
-
-        it("recomputes when the journal dropped entries", async () => {
-            await using world = createWorld();
-            await world.run(players);
-            await world.run(crowdUp);
-            const seen: (readonly Entity[])[] = [];
-            select(world, { required: [score], not: [benched] })(entities => seen.push(entities));
-            await settle(world);
-            await world.run(swapAndCrowd);
-            expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[0], roster[1]]), new Set([roster[1], roster[2]])]);
-        });
-
-        it("filters by where and notifies when a write changes which entities pass, not when it keeps them", async () => {
-            await using world = createWorld();
-            await world.run(players);
-            const seen: (readonly Entity[])[] = [];
-            select(world, { required: [score], where: { [score]: { ">": 1 } } })(entities => seen.push(entities));
-            await settle(world);
-            await world.run(nudge);
-            await world.run(invert);
-            await world.run(invert);
-            expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[1], roster[2]]), new Set(), new Set([roster[1], roster[2]])]);
-        });
-
-        it("notifies after a kernel writes a where component whose stamps it had dropped", async () => {
-            await using world = createWorld({ [workers]: 0 });
-            await world.run(players);
-            await world.run(invertKernel);
-            const seen: number[] = [];
-            count(world, { required: [score], where: { [score]: { ">": 0 } } })(value => seen.push(value));
-            await settle(world);
-            await world.run(invertKernel);
-            await world.run(nudge);
-            await world.run(invertKernel);
-            expect(seen).toEqual([0, 3, 0]);
-        });
-
-        it("sorts by order and notifies when a write changes the order", async () => {
-            await using world = createWorld();
-            await world.run(players);
-            const seen: (readonly Entity[])[] = [];
-            select(world, { required: [score], order: { [score]: false } })(entities => seen.push(entities));
-            await settle(world);
-            await world.run(score10);
-            await world.run(invert);
-            expect(seen).toEqual([[roster[2], roster[1], roster[0]], [roster[0], roster[1], roster[2]]]);
-        });
-
-        it("without required, matches every entity but the resource entity", async () => {
-            await using world = createWorld({ [level]: 1 });
-            await world.run(raise, { by: 1 });
-            await world.run(players);
-            const seen: number[] = [];
-            count(world, {})(value => seen.push(value));
-            const selected: (readonly Entity[])[] = [];
-            select(world, { not: [benched] })(entities => selected.push(entities));
-            await settle(world);
-            expect(seen).toEqual([3]);
-            expect(selected).toEqual([[roster[0], roster[1]]]);
-        });
-
-        it("counts, notifying only when the number changes", async () => {
-            await using world = createWorld();
-            await world.run(players);
-            const seen: number[] = [];
-            count(world, { required: [score], not: [benched] })(value => seen.push(value));
-            await settle(world);
-            await world.run(swap);
-            await world.run(join);
-            expect(seen).toEqual([2, 3]);
-        });
-
-        it("gives an observer subscribed during a run the state then, or after the run", async () => {
-            await using world = createWorld();
-            await world.run(players);
-            const seen: number[] = [];
-            const subscribe = System.create({ name: "observeCasesTest/subscribe" }, () => {
-                count(world, { required: [score], where: { [score]: { "<": 0 } } })(value => seen.push(value));
-            });
-            const later = System.create({ name: "observeCasesTest/later", components: { write: [score] }, after: [subscribe] }, row => { row[score] = -row[score]; });
-            await world.run(System.create({ name: "observeCasesTest/subscribeThenWrite", systems: [subscribe, later] }));
-            await settle(world);
-            expect(seen).toEqual(byDesign(adapter, "cold first value") ? [3] : [0, 3]);
-        });
-
-        it("reports one that throws during a run, and stops one stopped", async () => {
-            await using world = createWorld();
-            await world.run(players);
-            count(world, { required: [score, benched] })(value => {
-                if (value > 1) throw new Error("observer failed");
-            });
-            const seen: number[] = [];
-            const stop = count(world, { required: [score, benched] })(value => seen.push(value));
-            await settle(world);
-            const { failures } = await world.run(bench);
-            expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([byDesign(adapter, "system failures")
-                ? { kind: "system", name: expect.stringMatching(/^Observe\.count\(observeCasesTest\/score, observeCasesTest\/benched\)/), message: "observer failed" }
-                : { kind: "observer", name: "observeCasesTest/score, observeCasesTest/benched", message: "observer failed" }]);
-            stop();
-            await world.run(join);
-            await world.run(leave);
-            expect(seen).toEqual([1, 2]);
-        });
-
-        it("in entity order, or storage order, without order", async () => {
-            await using world = createWorld();
-            ranks = [5, 3, 9, 0, 7, 1].map((value, index) => [value, 0, index % 2 === 0]);
-            await world.run(rankAll);
-            const all = await toPromise(select(world, { required: [rank] }));
-            if (byDesign(adapter, "entity order")) expect(all).toEqual([...ranked].sort(byIndex));
-            // The marked entities' archetype came first.
-            else expect(all).toEqual([...ranked.filter((_, index) => index % 2 === 0), ...ranked.filter((_, index) => index % 2 === 1)]);
-        });
-
-        it("breaks ties under order in entity order, or storage order", async () => {
-            await using world = createWorld();
-            ranks = [1, 1, 0, 0, 1, 1].map((value, index) => [value, 0, index % 2 === 0]);
-            await world.run(rankAll);
-            // The marked entities' archetype came first.
-            const storage = [...ranked.filter((_, index) => index % 2 === 0), ...ranked.filter((_, index) => index % 2 === 1)];
-            const listed = byDesign(adapter, "entity order") ? ranked : storage;
-            const zeros = listed.filter(entity => ranks[ranked.indexOf(entity)][0] === 0);
-            const ones = listed.filter(entity => ranks[ranked.indexOf(entity)][0] === 1);
-            for (const ascending of [true, false]) {
-                const sorted = await toPromise(select(world, { required: [rank], order: { [rank]: ascending } }));
-                expect(sorted).toEqual(ascending ? [...zeros, ...ones] : [...ones, ...zeros]);
-                const paged = await toPromise(select(world, { required: [rank], order: { [rank]: ascending }, page: { offset: 1, limit: 3 } }));
-                expect(paged).toEqual(sorted.slice(1, 4));
-            }
-        });
+    it("notifies nothing when matching entities are written, or move archetype, but the same ones match", async () => {
+        await using world = createWorld();
+        await world.run(players);
+        let notified = 0;
+        select(world, { required: [score], not: [benched] })(() => notified++);
+        await settle(world);
+        await world.run(score10);
+        await world.run(mark);
+        await world.run(players);
+        expect(notified).toBe(2);
     });
 
-    describe("observing a page of a query", () => {
-        it("gives the slice at offset of the ordered result, at most limit long", async () => {
-            await using world = createWorld();
-            ranks = [5, 3, 9, 0, 7, 1, 8, 2, 6, 4].map(value => [value, 0, false]);
-            await world.run(rankAll);
-            const byRank = [3, 5, 7, 1, 9, 0, 8, 4, 6, 2].map(index => ranked[index]);
-            const page = (offset: number, limit: number): Promise<readonly Entity[]> => toPromise(select(world, { required: [rank], order: { [rank]: true }, page: { offset, limit } }));
-            expect(await page(0, 3)).toEqual(byRank.slice(0, 3));
-            expect(await page(3, 3)).toEqual(byRank.slice(3, 6));
-            expect(await page(9, 3)).toEqual(byRank.slice(9));
-            expect(await page(12, 3)).toEqual([]);
-            expect(await page(2, 0)).toEqual([]);
-        });
+    it("notifies when as many match as before but other entities", async () => {
+        await using world = createWorld();
+        await world.run(players);
+        const seen: (readonly Entity[])[] = [];
+        select(world, { required: [score], not: [benched] })(entities => seen.push(entities));
+        await settle(world);
+        await world.run(swap);
+        expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[0], roster[1]]), new Set([roster[1], roster[2]])]);
+    });
 
-        it("without order, gives the slice of its order without a page, with where applied first", async () => {
-            await using world = createWorld();
-            ranks = [5, 3, 9, 0, 7, 1, 8, 2, 6, 4].map((value, index) => [value, 0, index % 3 === 0]);
-            await world.run(rankAll);
-            let all = await toPromise(select(world, { required: [rank], where: { [rank]: { ">": 1 } } }));
-            let paged = await toPromise(select(world, { required: [rank], where: { [rank]: { ">": 1 } }, page: { offset: 2, limit: 4 } }));
-            expect(all).toHaveLength(8);
-            expect(paged).toEqual(all.slice(2, 6));
-            all = await toPromise(select(world, { required: [rank] }));
-            paged = await toPromise(select(world, { required: [rank], page: { offset: 7, limit: 2 } }));
-            expect(paged).toEqual(all.slice(7, 9));
-        });
+    it("notifies after a despawn of a matching entity", async () => {
+        await using world = createWorld();
+        await world.run(players);
+        const seen: number[] = [];
+        count(world, { required: [score] })(value => seen.push(value));
+        await settle(world);
+        await world.run(leave);
+        await world.run(score10);
+        expect(seen).toEqual([3, 2]);
+    });
 
-        it("notifies when a change shifts the page, not for one outside it", async () => {
-            await using world = createWorld();
-            ranks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(value => [value, 0, false]);
-            await world.run(rankAll);
-            const seen: (readonly Entity[])[] = [];
-            select(world, { required: [rank], order: { [rank]: true }, page: { offset: 1, limit: 3 } })(entities => seen.push(entities));
-            await settle(world);
-            reranks = [[8, 7.5], [9, 20]];
-            await world.run(rerank);
-            reranks = [[0, 2.5]];
-            await world.run(rerank);
-            reranks = [[7, 1.5]];
-            await world.run(rerank);
-            reranks = [[5, -1]];
-            await world.run(rerank);
-            expect(seen).toEqual([
-                [ranked[1], ranked[2], ranked[3]],
-                [ranked[2], ranked[0], ranked[3]],
-                [ranked[7], ranked[2], ranked[0]],
-                [ranked[1], ranked[7], ranked[2]],
-            ]);
-        });
+    it("recomputes when the journal dropped entries", async () => {
+        await using world = createWorld();
+        await world.run(players);
+        await world.run(crowdUp);
+        const seen: (readonly Entity[])[] = [];
+        select(world, { required: [score], not: [benched] })(entities => seen.push(entities));
+        await settle(world);
+        await world.run(swapAndCrowd);
+        expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[0], roster[1]]), new Set([roster[1], roster[2]])]);
+    });
 
-        it("selects the same entities as sorting everything and slicing, ties included", async () => {
-            await using world = createWorld();
-            const next = random(7);
-            ranks = Array.from({ length: 300 }, () => [Math.floor(next() * 6), Math.floor(next() * 3), next() < 0.4]);
-            await world.run(rankAll);
-            const order = { [rank]: true, [second]: false };
-            let full: readonly Entity[] = [];
-            select(world, { required: [rank, second], order })(entities => { full = entities; });
-            const pages = [[0, 10], [0, 1], [7, 25], [123, 60], [290, 40], [0, 300], [0, 1000], [350, 5], [40, 0]];
-            const latest = pages.map((): readonly Entity[] => []);
-            pages.forEach(([offset, limit], index) => {
-                select(world, { required: [rank, second], order, page: { offset, limit } })(entities => { latest[index] = entities; });
-            });
-            await settle(world);
-            const check = (): void => pages.forEach(([offset, limit], index) => expect(latest[index]).toEqual(full.slice(offset, offset + limit)));
+    it("filters by where and notifies when a write changes which entities pass, not when it keeps them", async () => {
+        await using world = createWorld();
+        await world.run(players);
+        const seen: (readonly Entity[])[] = [];
+        select(world, { required: [score], where: { [score]: { ">": 1 } } })(entities => seen.push(entities));
+        await settle(world);
+        await world.run(nudge);
+        await world.run(invert);
+        await world.run(invert);
+        expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[1], roster[2]]), new Set(), new Set([roster[1], roster[2]])]);
+    });
+
+    it("notifies after a kernel writes a where component whose stamps it had dropped", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(players);
+        await world.run(invertKernel);
+        const seen: number[] = [];
+        count(world, { required: [score], where: { [score]: { ">": 0 } } })(value => seen.push(value));
+        await settle(world);
+        await world.run(invertKernel);
+        await world.run(nudge);
+        await world.run(invertKernel);
+        expect(seen).toEqual([0, 3, 0]);
+    });
+
+    it("sorts by order and notifies when a write changes the order", async () => {
+        await using world = createWorld();
+        await world.run(players);
+        const seen: (readonly Entity[])[] = [];
+        select(world, { required: [score], order: { [score]: false } })(entities => seen.push(entities));
+        await settle(world);
+        await world.run(score10);
+        await world.run(invert);
+        expect(seen).toEqual([[roster[2], roster[1], roster[0]], [roster[0], roster[1], roster[2]]]);
+    });
+
+    it("without required, matches every entity but the resource entity", async () => {
+        await using world = createWorld({ [level]: 1 });
+        await world.run(raise, { by: 1 });
+        await world.run(players);
+        const seen: number[] = [];
+        count(world, {})(value => seen.push(value));
+        const selected: (readonly Entity[])[] = [];
+        select(world, { not: [benched] })(entities => selected.push(entities));
+        await settle(world);
+        expect(seen).toEqual([3]);
+        expect(selected).toEqual([[roster[0], roster[1]]]);
+    });
+
+    it("counts, notifying only when the number changes", async () => {
+        await using world = createWorld();
+        await world.run(players);
+        const seen: number[] = [];
+        count(world, { required: [score], not: [benched] })(value => seen.push(value));
+        await settle(world);
+        await world.run(swap);
+        await world.run(join);
+        expect(seen).toEqual([2, 3]);
+    });
+
+    it("gives an observer subscribed during a run the state after the run", async () => {
+        await using world = createWorld();
+        await world.run(players);
+        const seen: number[] = [];
+        const subscribe = System.create({ name: "observeCasesTest/subscribe" }, () => {
+            count(world, { required: [score], where: { [score]: { "<": 0 } } })(value => seen.push(value));
+        });
+        const later = System.create({ name: "observeCasesTest/later", components: { write: [score] }, after: [subscribe] }, row => { row[score] = -row[score]; });
+        await world.run(System.create({ name: "observeCasesTest/subscribeThenWrite", systems: [subscribe, later] }));
+        await settle(world);
+        expect(seen).toEqual([3]);
+    });
+
+    it("reports one that throws during a run, and stops one stopped", async () => {
+        await using world = createWorld();
+        await world.run(players);
+        count(world, { required: [score, benched] })(value => {
+            if (value > 1) throw new Error("observer failed");
+        });
+        const seen: number[] = [];
+        const stop = count(world, { required: [score, benched] })(value => seen.push(value));
+        await settle(world);
+        const { failures } = await world.run(bench);
+        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([
+            { kind: "system", name: expect.stringMatching(/^Observe\.count\(observeCasesTest\/score, observeCasesTest\/benched\)/), message: "observer failed" },
+        ]);
+        stop();
+        await world.run(join);
+        await world.run(leave);
+        expect(seen).toEqual([1, 2]);
+    });
+
+    it("in entity order without order", async () => {
+        await using world = createWorld();
+        ranks = [5, 3, 9, 0, 7, 1].map((value, index) => [value, 0, index % 2 === 0]);
+        await world.run(rankAll);
+        const all = await toPromise(select(world, { required: [rank] }));
+        expect(all).toEqual([...ranked].sort(byIndex));
+    });
+
+    it("breaks ties under order in entity order", async () => {
+        await using world = createWorld();
+        ranks = [1, 1, 0, 0, 1, 1].map((value, index) => [value, 0, index % 2 === 0]);
+        await world.run(rankAll);
+        // The marked entities' archetype comes first in storage, but not in what's given.
+        const zeros = ranked.filter(entity => ranks[ranked.indexOf(entity)][0] === 0);
+        const ones = ranked.filter(entity => ranks[ranked.indexOf(entity)][0] === 1);
+        for (const ascending of [true, false]) {
+            const sorted = await toPromise(select(world, { required: [rank], order: { [rank]: ascending } }));
+            expect(sorted).toEqual(ascending ? [...zeros, ...ones] : [...ones, ...zeros]);
+            const paged = await toPromise(select(world, { required: [rank], order: { [rank]: ascending }, page: { offset: 1, limit: 3 } }));
+            expect(paged).toEqual(sorted.slice(1, 4));
+        }
+    });
+});
+
+describe("observing a page of a query", () => {
+    it("gives the slice at offset of the ordered result, at most limit long", async () => {
+        await using world = createWorld();
+        ranks = [5, 3, 9, 0, 7, 1, 8, 2, 6, 4].map(value => [value, 0, false]);
+        await world.run(rankAll);
+        const byRank = [3, 5, 7, 1, 9, 0, 8, 4, 6, 2].map(index => ranked[index]);
+        const page = (offset: number, limit: number): Promise<readonly Entity[]> => toPromise(select(world, { required: [rank], order: { [rank]: true }, page: { offset, limit } }));
+        expect(await page(0, 3)).toEqual(byRank.slice(0, 3));
+        expect(await page(3, 3)).toEqual(byRank.slice(3, 6));
+        expect(await page(9, 3)).toEqual(byRank.slice(9));
+        expect(await page(12, 3)).toEqual([]);
+        expect(await page(2, 0)).toEqual([]);
+    });
+
+    it("without order, gives the slice of its order without a page, with where applied first", async () => {
+        await using world = createWorld();
+        ranks = [5, 3, 9, 0, 7, 1, 8, 2, 6, 4].map((value, index) => [value, 0, index % 3 === 0]);
+        await world.run(rankAll);
+        let all = await toPromise(select(world, { required: [rank], where: { [rank]: { ">": 1 } } }));
+        let paged = await toPromise(select(world, { required: [rank], where: { [rank]: { ">": 1 } }, page: { offset: 2, limit: 4 } }));
+        expect(all).toHaveLength(8);
+        expect(paged).toEqual(all.slice(2, 6));
+        all = await toPromise(select(world, { required: [rank] }));
+        paged = await toPromise(select(world, { required: [rank], page: { offset: 7, limit: 2 } }));
+        expect(paged).toEqual(all.slice(7, 9));
+    });
+
+    it("notifies when a change shifts the page, not for one outside it", async () => {
+        await using world = createWorld();
+        ranks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(value => [value, 0, false]);
+        await world.run(rankAll);
+        const seen: (readonly Entity[])[] = [];
+        select(world, { required: [rank], order: { [rank]: true }, page: { offset: 1, limit: 3 } })(entities => seen.push(entities));
+        await settle(world);
+        reranks = [[8, 7.5], [9, 20]];
+        await world.run(rerank);
+        reranks = [[0, 2.5]];
+        await world.run(rerank);
+        reranks = [[7, 1.5]];
+        await world.run(rerank);
+        reranks = [[5, -1]];
+        await world.run(rerank);
+        expect(seen).toEqual([
+            [ranked[1], ranked[2], ranked[3]],
+            [ranked[2], ranked[0], ranked[3]],
+            [ranked[7], ranked[2], ranked[0]],
+            [ranked[1], ranked[7], ranked[2]],
+        ]);
+    });
+
+    it("selects the same entities as sorting everything and slicing, ties included", async () => {
+        await using world = createWorld();
+        const next = random(7);
+        ranks = Array.from({ length: 300 }, () => [Math.floor(next() * 6), Math.floor(next() * 3), next() < 0.4]);
+        await world.run(rankAll);
+        const order = { [rank]: true, [second]: false };
+        let full: readonly Entity[] = [];
+        select(world, { required: [rank, second], order })(entities => { full = entities; });
+        const pages = [[0, 10], [0, 1], [7, 25], [123, 60], [290, 40], [0, 300], [0, 1000], [350, 5], [40, 0]];
+        const latest = pages.map((): readonly Entity[] => []);
+        pages.forEach(([offset, limit], index) => {
+            select(world, { required: [rank, second], order, page: { offset, limit } })(entities => { latest[index] = entities; });
+        });
+        await settle(world);
+        const check = (): void => pages.forEach(([offset, limit], index) => expect(latest[index]).toEqual(full.slice(offset, offset + limit)));
+        check();
+        /** Each entity's rank now, by its position in `ranked`. */
+        const current = ranks.map(([value]) => value);
+        for (let round = 0; round < 5; round++) {
+            reranks = Array.from({ length: 40 }, () => [Math.floor(next() * ranked.length), Math.floor(next() * 6)]);
+            for (const [index, value] of reranks) current[index] = value;
+            await world.run(rerank);
             check();
-            /** Each entity's rank now, by its position in `ranked`. */
-            const current = ranks.map(([value]) => value);
-            for (let round = 0; round < 5; round++) {
-                reranks = Array.from({ length: 40 }, () => [Math.floor(next() * ranked.length), Math.floor(next() * 6)]);
-                for (const [index, value] of reranks) current[index] = value;
-                await world.run(rerank);
-                check();
-            }
-            for (const ascending of [false, true]) {
-                const one = { [rank]: ascending };
-                full = await toPromise(select(world, { required: [rank], order: one }));
-                expect(await toPromise(select(world, { required: [rank], order: one, page: { offset: 13, limit: 77 } }))).toEqual(full.slice(13, 90));
-                const filtered = await toPromise(select(world, { required: [rank], where: { [rank]: { "<": 4 } }, order: one }));
-                expect(filtered).toEqual(full.filter(entity => current[ranked.indexOf(entity)] < 4));
-                expect(await toPromise(select(world, { required: [rank], where: { [rank]: { "<": 4 } }, order: one, page: { offset: 5, limit: 20 } }))).toEqual(filtered.slice(5, 25));
-            }
-        });
-
-        it("count and select by where at the bounds of a range, at a component's precision, as each value tests", async () => {
-            await using world = createWorld();
-            coarseValues = [0, 0.1, 0.1, 0.2, 0.30000001, 1, 1, 2, 3, -1, 0.1000000001];
-            await world.run(spawnCoarse);
-            const conditions: readonly Condition[] = [0.1, 1, { "<": 0.1 }, { "<=": 0.1 }, { ">": 0.1 }, { ">=": 0.2, "<": 1 }, { ">": 0.1, "<=": 0.1 }, { "<": 1.0000000001 },
-                { ">": 0.99999999999 }, { "!=": 1 }, { ">": 0, "!=": 1 }, { "==": 0.1 }, { ">=": 5 }, { "<": -2 }];
-            const counts = conditions.map(() => -1);
-            const selections = conditions.map((): readonly Entity[] => []);
-            conditions.forEach((condition, k) => {
-                count(world, { required: [coarse], where: { [coarse]: condition } })(value => { counts[k] = value; });
-                select(world, { required: [coarse], where: { [coarse]: condition } })(value => { selections[k] = value; });
-            });
-            await settle(world);
-            for (let round = 0; round < 3; round++) {
-                // What each condition passes of every value, read one by one.
-                const all = await toPromise(select(world, { required: [coarse] }));
-                const values = await Promise.all(all.map(async each => (await toPromise(entity(world, each, { required: [coarse] })))?.[coarse] ?? Number.NaN));
-                conditions.forEach((condition, k) => {
-                    const passing = all.filter((_, i) => passesCondition(values[i], condition));
-                    expect([k, counts[k]]).toEqual([k, passing.length]);
-                    expect([k, new Set(selections[k])]).toEqual([k, new Set(passing)]);
-                });
-                await world.run(shiftCoarse);
-            }
-        });
-
-        it("leaves count the total", async () => {
-            await using world = createWorld();
-            ranks = [0, 1, 2, 3, 4].map(value => [value, 0, false]);
-            await world.run(rankAll);
-            // Not a literal, so its page passes the type: count ignores it.
-            const paged = { required: [rank], page: { offset: 1, limit: 2 } } as const;
-            expect(await toPromise(count(world, paged))).toBe(5);
-        });
-
-        it("throws when subscribing with an offset or limit that isn't a non-negative integer", async () => {
-            await using world = createWorld();
-            for (const page of [{ offset: -1, limit: 1 }, { offset: 1.5, limit: 1 }, { offset: 0, limit: -1 }, { offset: 0, limit: Number.NaN }]) {
-                expect(() => select(world, { required: [rank], page })(() => {})).toThrow("page");
-            }
-        });
+        }
+        for (const ascending of [false, true]) {
+            const one = { [rank]: ascending };
+            full = await toPromise(select(world, { required: [rank], order: one }));
+            expect(await toPromise(select(world, { required: [rank], order: one, page: { offset: 13, limit: 77 } }))).toEqual(full.slice(13, 90));
+            const filtered = await toPromise(select(world, { required: [rank], where: { [rank]: { "<": 4 } }, order: one }));
+            expect(filtered).toEqual(full.filter(entity => current[ranked.indexOf(entity)] < 4));
+            expect(await toPromise(select(world, { required: [rank], where: { [rank]: { "<": 4 } }, order: one, page: { offset: 5, limit: 20 } }))).toEqual(filtered.slice(5, 25));
+        }
     });
-};
 
-for (const adapter of adapters) describe(`${adapter.name} observers`, () => cases(adapter));
+    it("count and select by where at the bounds of a range, at a component's precision, as each value tests", async () => {
+        await using world = createWorld();
+        coarseValues = [0, 0.1, 0.1, 0.2, 0.30000001, 1, 1, 2, 3, -1, 0.1000000001];
+        await world.run(spawnCoarse);
+        const conditions: readonly Condition[] = [0.1, 1, { "<": 0.1 }, { "<=": 0.1 }, { ">": 0.1 }, { ">=": 0.2, "<": 1 }, { ">": 0.1, "<=": 0.1 }, { "<": 1.0000000001 },
+            { ">": 0.99999999999 }, { "!=": 1 }, { ">": 0, "!=": 1 }, { "==": 0.1 }, { ">=": 5 }, { "<": -2 }];
+        const counts = conditions.map(() => -1);
+        const selections = conditions.map((): readonly Entity[] => []);
+        conditions.forEach((condition, k) => {
+            count(world, { required: [coarse], where: { [coarse]: condition } })(value => { counts[k] = value; });
+            select(world, { required: [coarse], where: { [coarse]: condition } })(value => { selections[k] = value; });
+        });
+        await settle(world);
+        for (let round = 0; round < 3; round++) {
+            // What each condition passes of every value, read one by one.
+            const all = await toPromise(select(world, { required: [coarse] }));
+            const values = await Promise.all(all.map(async each => (await toPromise(entity(world, each, { required: [coarse] })))?.[coarse] ?? Number.NaN));
+            conditions.forEach((condition, k) => {
+                const passing = all.filter((_, i) => passesCondition(values[i], condition));
+                expect([k, counts[k]]).toEqual([k, passing.length]);
+                expect([k, new Set(selections[k])]).toEqual([k, new Set(passing)]);
+            });
+            await world.run(shiftCoarse);
+        }
+    });
+
+    it("leaves count the total", async () => {
+        await using world = createWorld();
+        ranks = [0, 1, 2, 3, 4].map(value => [value, 0, false]);
+        await world.run(rankAll);
+        // Not a literal, so its page passes the type: count ignores it.
+        const paged = { required: [rank], page: { offset: 1, limit: 2 } } as const;
+        expect(await toPromise(count(world, paged))).toBe(5);
+    });
+
+    it("throws when subscribing with an offset or limit that isn't a non-negative integer", async () => {
+        await using world = createWorld();
+        for (const page of [{ offset: -1, limit: 1 }, { offset: 1.5, limit: 1 }, { offset: 0, limit: -1 }, { offset: 0, limit: Number.NaN }]) {
+            expect(() => select(world, { required: [rank], page })(() => {})).toThrow("page");
+        }
+    });
+});

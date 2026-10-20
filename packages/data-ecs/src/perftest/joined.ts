@@ -9,11 +9,11 @@ import { release } from "./finalized.js";
 import { tailSystems } from "./tails.js";
 import { take, transferBatch, transferBytes, transferCount, transferSide, transferSystems } from "./transfers.js";
 import { peersOf } from "../implementation/world/join.js";
-import { Observe as Factories } from "../observe/index.js";
+import { Observe } from "../observe/index.js";
 import { programFinalizers, requireDefinition } from "../interface/registry/index.js";
 
 /**
- * A thread joined to a benchmark's world: it times runs, or observes through a mailbox until asked to stop, or claims
+ * A thread joined to a benchmark's world: it times runs, or reads after each sync point until asked to stop, or claims
  * the thread the handoff benchmarks' systems run on, the one the despawn objects benchmark's finalizer runs on, or the
  * one the tail benchmarks' tails run on.
  */
@@ -88,13 +88,7 @@ channel.onMessage(async message => {
         first = false;
         channel.post({ kind: "observing" });
     };
-    if (message.kind === "factory resource" || message.kind === "factory select") {
-        stop = message.kind === "factory resource"
-            ? Factories.resource(remote, counter)(observing)
-            : Factories.select(remote, { required: [order], order: { [order]: true } })(observing);
-        return;
-    }
-    stop = message.kind === "resource"
-        ? remote.observe.resource(counter)(observing)
-        : remote.observe.select({ required: [order], order: { [order]: true } })(observing);
+    stop = message.kind === "factory resource"
+        ? Observe.resource(remote, counter)(observing)
+        : Observe.select(remote, { required: [order], order: { [order]: true } })(observing);
 });

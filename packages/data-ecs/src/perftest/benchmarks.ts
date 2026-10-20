@@ -1,13 +1,11 @@
 import type { Component } from "../interface/component/component.js";
 import type { Entity } from "../interface/entity/entity.js";
-// The built-ins' own benchmark, `select`, reads through them until they're removed.
-import { toPromise } from "../interface/observe/to-promise.js";
 import { World } from "../interface/world/world.js";
 import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVisible } from "./flat.js";
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
 import { forest, local as hierarchyLocal, nudge, parent as hierarchyParent, propagate, propagateChanged, reparent, sprout, turnover, under } from "./hierarchy.js";
 import * as structural from "./structural.js";
-import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, idleSynced, index, indexSum, observe, poke, pokeCluster, position, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
+import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, idleSynced, index, indexSum, observe, poke, pokeCluster, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
 
 import type { Benchmark } from "./benchmark.js";
 import { loopTickIdle, loopTicks, syncedIdles } from "./loop.js";
@@ -539,23 +537,6 @@ export const benchmarks: readonly Benchmark[] = [
             const world = await seeded(() => inline(), 1_000);
             const best = await fastest(() => world.run(smalls));
             check(totalOf() > 0, "main thread: nothing read");
-            await world.dispose();
-            return best;
-        },
-    },
-    {
-        name: "select",
-        operation: "The first value of `observe.select` with `where`, given while subscribing: a query from UI or tools.",
-        per: "rows",
-        n: 1_000_000,
-        typical: [100, 100_000],
-        best: { bytes: 8, basis: "Each row reads its 4-byte index; each selected half writes its 8-byte entity." },
-        run: async () => {
-            const world = await seeded(() => inline(), 1_000_000);
-            const best = await fastest(async () => {
-                const selected = await toPromise(world.observe.select({ required: [position, index], where: { [index]: { "<": 500_000 } } }));
-                check(selected.length === 500_000, "select: wrong count");
-            });
             await world.dispose();
             return best;
         },

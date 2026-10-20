@@ -42,6 +42,10 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./observe": {
+      "import": "./dist/observe/index.js",
+      "types": "./dist/observe/index.d.ts"
+    },
     "./compiler": {
       "import": "./dist/implementation/compiler/index.js",
       "types": "./dist/implementation/compiler/index.d.ts"

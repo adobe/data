@@ -62,6 +62,9 @@ const removeLevel = System.create({ name: "syncedTest/removeLevel", synced: true
 
 /** Adds `watchLevel` to the world the test runs, during a run. */
 const addWatch = System.create({ name: "syncedTest/addWatch" }, () => { current?.add(watchLevel); });
+const addLevel = System.create({ name: "syncedTest/addLevel", synced: true }, () => {
+    current?.add(watchLevel);
+});
 
 const inline = (): ReturnType<typeof createWorld> => createWorld({ [workers]: 0 });
 
@@ -218,6 +221,19 @@ describe("synced systems", () => {
         world.remove(pair);
         await world.run(raise);
         expect(seen.levels).toEqual([1, 2, 3]);
+    });
+
+    it("run from the first pass after they register, when added while a run that passes before it is queued", async () => {
+        reset();
+        await using world = inline();
+        current = world;
+        // Added during the first run's pass, so the second, queued already, passes before it registers.
+        const adding = world.run(addLevel);
+        const queued = world.run(raise);
+        await Promise.all([adding, queued]);
+        await world.run(raise);
+        current = null;
+        expect(seen.levels).toEqual([2]);
     });
 
     it("skip one an earlier body removed in the same pass", async () => {

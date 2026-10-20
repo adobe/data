@@ -23,11 +23,16 @@
     "src/**/*"
   ],
   "exclude": [
-    "src/interface"
+    "src/interface",
+    "src/observe",
+    "src/index.ts"
   ],
   "references": [
     {
       "path": "./src/interface"
+    },
+    {
+      "path": "./src/observe"
     }
   ]
 }

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Entity, workers, type World } from "../../../../index.js";
+import { Entity, System, workers, type World } from "../../../../index.js";
 import { createWorld } from "../../../../implementation/index.js";
 import { settled, watchTicks } from "../../shared/ticks.test-helper.js";
-import { dom, list, todoOf } from "./dom.js";
+import { dom, list, row, todoOf } from "./dom.js";
 import { defineTodoList, type TodoList } from "./elements/todo-list.js";
 import { defineTodoRow, type TodoRow } from "./elements/todo-row.js";
 import { addTodo, deleteTodo, editTodo, moveTodo, toggleTodo } from "./model.js";
+import { todosOf } from "./todos.test-helper.js";
 
 defineTodoRow();
 defineTodoList();
@@ -25,6 +26,18 @@ const createDriven = async (): Promise<{ readonly world: World; readonly element
 };
 
 const rowsOf = (element: TodoList): TodoRow[] => [...element.querySelectorAll("todo-row")];
+
+let rows = 0;
+const countRows = System.create({ name: "test/countRows", observer: true, components: { has: [row] } }, () => {
+    rows += 1;
+});
+
+/** How many todos have a row, placed or not. */
+const rowCount = async (world: World): Promise<number> => {
+    rows = 0;
+    await world.run(countRows);
+    return rows;
+};
 
 /** The element a mutation of `node` belongs to: the host of the shadow root it's in, or itself. */
 const hostOf = (node: Node): Node => {
@@ -120,6 +133,54 @@ describe("the todos feature's DOM systems", () => {
         await settled(world.run(moveTodo, { entity: todoAt(element, 2), before: todoAt(element, 0) }));
         expect(shown(element)).toEqual(["- c", "- a", "- b"]);
         expect(document.activeElement).toBe(moved);
+    });
+
+    it("keep a moved row focused where the browser has no moveBefore", async () => {
+        const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, "moveBefore");
+        Reflect.deleteProperty(Element.prototype, "moveBefore");
+        try {
+            const { world, element } = await createDriven();
+            await using _ = world;
+            for (const text of ["a", "b"]) await world.run(addTodo, { label: text });
+            await settled(world.run(addTodo, { label: "c" }));
+            const moved = rowsOf(element)[2];
+            moved?.focus();
+            await settled(world.run(moveTodo, { entity: todoAt(element, 2), before: todoAt(element, 0) }));
+            expect(shown(element)).toEqual(["- c", "- a", "- b"]);
+            expect(document.activeElement).toBe(moved);
+        }
+        finally {
+            if (descriptor !== undefined) Object.defineProperty(Element.prototype, "moveBefore", descriptor);
+        }
+    });
+
+    it("make no rows while the page has no list", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await watchTicks(world);
+        for (const system of dom) world.add(system);
+        await settled(world.run(addTodo, { label: "a" }));
+        expect(await rowCount(world)).toBe(0);
+    });
+
+    it("give no row to a todo deleted before the tick that would make it", async () => {
+        const { world, element } = await createDriven();
+        await using _ = world;
+        await world.run(addTodo, { label: "a" });
+        const [added] = await todosOf(world);
+        await settled(world.run(deleteTodo, { entity: added?.entity ?? Entity.none }));
+        expect(element.children).toHaveLength(0);
+        expect(await rowCount(world)).toBe(0);
+    });
+
+    it("show what several runs before one tick changed", async () => {
+        const { world, element } = await createDriven();
+        await using _ = world;
+        await world.run(addTodo, { label: "a" });
+        const [added] = await todosOf(world);
+        const entity = added?.entity ?? Entity.none;
+        await world.run(toggleTodo, { entity });
+        await settled(world.run(editTodo, { entity, label: "A" }));
+        expect(shown(element)).toEqual(["x A"]);
     });
 
     it("place the rows of todos added together in list order", async () => {

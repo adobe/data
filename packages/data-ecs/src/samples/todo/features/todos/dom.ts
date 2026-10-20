@@ -26,8 +26,15 @@ export const todoOf = new WeakMap<Element, Entity>();
 /** Todos with rows, in list order. */
 const placed = Index.create({ name: "todos/placed", key: [order], sorted: true, components: { has: [todo, row] } });
 
-/** Gives each new todo a row. It isn't placed until the row is the todo's, so a todo gone first never shows one. */
-export const createRows = System.create({ name: "todos/createRows", components: { has: [todo], not: [row] } }, (item, { commands }) => {
+/**
+ * Gives each new todo a row, while the page has a list for it. It isn't placed until the row is the todo's, so a todo
+ * gone first never shows one.
+ */
+export const createRows = System.create({
+    name: "todos/createRows",
+    components: { has: [todo], not: [row] },
+    resources: { is: [list] },
+}, (item, { commands }) => {
     const element = document.createElement("todo-row");
     todoOf.set(element, item.entity);
     commands.add(item.entity, row, element);
@@ -44,12 +51,20 @@ export const bindRows = System.create({
     element.done = item[done];
 });
 
-declare global {
-    interface ParentNode {
-        /** Moves a child without disconnecting it, so it keeps its focus and state; absent where unsupported. */
-        moveBefore?(node: Node, child: Node | null): void;
+/**
+ * Puts `element` before `before` in `parent`. One already there moves with `moveBefore`, without leaving it, where the
+ * browser has it; otherwise it leaves and comes back, and gets back the focus it had.
+ */
+const place = (parent: Element, element: HTMLElement, before: Element | null): void => {
+    const moveBefore: unknown = Reflect.get(parent, "moveBefore");
+    if (element.parentNode === parent && typeof moveBefore === "function") {
+        Reflect.apply(moveBefore, parent, [element, before]);
+        return;
     }
-}
+    const focused = element.matches(":focus");
+    parent.insertBefore(element, before);
+    if (focused) element.focus({ preventScroll: true });
+};
 
 /**
  * Places each new or moved row after the row before it in list order. Rows pass in list order, so the one before is
@@ -68,9 +83,7 @@ export const placeRows = System.create({
     const parent = resources[list];
     const earlier = lookup.placed({ "<": item[order] });
     const before = earlier.length === 0 ? parent.firstElementChild : earlier.at(earlier.length - 1)[row].nextElementSibling;
-    if (before === element) return;
-    if (element.parentNode === parent && parent.moveBefore !== undefined) parent.moveBefore(element, before);
-    else parent.insertBefore(element, before);
+    if (before !== element) place(parent, element, before);
 });
 
 Finalizer.create({ name: "todos/removeRows", components: { read: [row] } }, item => {

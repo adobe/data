@@ -665,7 +665,7 @@ Memory isn't shared, so the world runs inline, and `share` and `join` throw.
 | A late tail and the world's work after its writer, together over a beat | the two overlap: `tail overlap` 2.53 ms a tick of a 2.5 ms tail and 2 ms of work, against 4.70 for `tail overlap waiting`, in node |
 | Commands and staged spawns from a worker kernel or joined thread | ring writes; the private spill and its message only past the ring's size |
 | `run` from a joined thread | one slot and notify; resolves through a word |
-| A synced system on a joined thread, per sync point | a check of its filters, a post into its block and at most one notify per thread; the next writer copies what it hasn't read, the next sync point waits only for a post in progress: `joined synced resource` 6.4–6.8 µs a tick against 5.0–5.4 for `mailbox resource`, `joined synced 10K` 0.30 ms against 0.75, in node |
+| A synced system on a joined thread, per sync point | a check of its filters, a post into its block and at most one notify per thread; one reading only struct resources posts copies of them and is never waited for: `joined synced resource` 4.3–5.0 µs a tick against 4.8–5.8 for `mailbox resource`, in node; otherwise the next writer copies what it hasn't read, the next sync point waits only for a post in progress: `joined synced 10K` 0.41–0.51 ms against 0.78–0.85 for `mailbox select 10K` |
 | Struct observers on a joined thread, per tick | candidate check on the world's thread, a mailbox write of changed results, at most one notify |
 | Structural change touching archetypes with remote objects | one log entry per row moved, replayed once on that thread, `log replay` 21 ns a move in node |
 | A thread rebuilding after its log dropped entries | a pass over its archetypes' rows, `log rebuild 100K` 3.2 ns a row in node |
@@ -990,6 +990,10 @@ there the same way (`joined-synced.ts`, `thread-synced.ts`, `thread-directory.ts
   lookups through a sorted index on what a GPU kernel wrote, posted again after a warming run's sync point (red with
   posting refreshing before reading back: a count behind).
 - New: `joined synced resource`, `joined synced 10K`.
+- Then: one reading only struct resources posts copies of them, into two blocks, so neither writers, sync points nor
+  posts wait for it (`synced-contained.test.ts`, and `synced-contained.browser.test.ts` with a worker holding a run
+  while the world runs on, red waiting for it, and red running again for the value it held without taking a running
+  post's outcome ahead).
 
 ## Not built
 

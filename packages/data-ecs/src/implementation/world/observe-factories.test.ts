@@ -5,10 +5,12 @@ import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { Observe } from "../../observe/index.js";
-import { createWorld, type CreatedWorld } from "./create.js";
+import type { World } from "../../interface/world/world.js";
+import { createWorld, join, type CreatedWorld } from "./create.js";
+import { tablesOf } from "./join.js";
 import { settle } from "./observe-adapters.test-helper.js";
 
-// What the factories of `@adobe/data-ecs/observe` do beyond what the world's own observers did: systems shared by shape,
+// What the internal factories of `src/observe` do beyond what the world's own observers did: systems shared by shape,
 // first values batched or given at once, warm reads, and what they hold released once idle.
 
 const amount = Symbol("observeFactoriesTest/amount");
@@ -180,5 +182,84 @@ describe("observer factories", () => {
         await world.run(writeOther);
         await world.run(nothing);
         expect(notified).toBe(3);
+    });
+});
+
+/** A world of `count` entities as `seeded` makes them, and a thread joined to it through a channel. */
+const seededJoined = async (count: number): Promise<{ readonly world: CreatedWorld; readonly remote: World; readonly close: () => Promise<void> }> => {
+    const world = await seeded(count);
+    const channel = new MessageChannel();
+    world.share(channel.port1);
+    const remote = join(channel.port2, { threads: [] });
+    await remote.run(nothing);
+    return {
+        world, remote,
+        close: async () => {
+            await remote.dispose();
+            await world.dispose();
+        },
+    };
+};
+
+/** How many synced systems are placed on a joined thread. */
+const placedOn = (remote: World): number => tablesOf.get(remote)?.().synced ?? -1;
+
+/** A few turns of the event loop, which a joined thread's posts need. */
+const turns = async (count = 20): Promise<void> => {
+    for (let turn = 0; turn < count; turn++) await new Promise(resolve => setTimeout(resolve, 0));
+};
+
+describe("observer factories on a joined thread", () => {
+    it("share one synced system there among every observer of one shape, and notify each of every later change", async () => {
+        const { world, remote, close } = await seededJoined(20);
+        const amounts: number[] = [];
+        const stops = [
+            Observe.entity(remote, spawned[0], { required: [amount] })(value => amounts.push(value?.[amount] ?? -1)),
+            Observe.select(remote, { required: [amount], where: { [amount]: { ">": 10 } }, order: { [amount]: false }, page: { offset: 0, limit: 3 } })(() => {}),
+            Observe.resource(remote, level)(() => {}),
+        ];
+        await Observe.toPromise(Observe.count(remote, { required: [amount] }));
+        const placed = placedOn(remote);
+        for (let i = 1; i < 20; i++) stops.push(Observe.entity(remote, spawned[i], { required: [amount] })(() => {}));
+        for (let i = 1; i < 5; i++) stops.push(Observe.select(remote, { required: [amount], where: { [amount]: { ">": i } }, order: { [amount]: false }, page: { offset: i, limit: 3 } })(() => {}));
+        const levels: number[] = [];
+        stops.push(Observe.resource(remote, level)(value => levels.push(value)));
+        expect(await Observe.toPromise(Observe.select(remote, { required: [amount], where: { [amount]: { ">": 1 } }, order: { [amount]: false }, page: { offset: 1, limit: 3 } }))).toEqual([spawned[18], spawned[17], spawned[16]]);
+        expect(placedOn(remote)).toBe(placed);
+        // Held, so given while subscribing.
+        expect(levels).toEqual([1]);
+        await world.run(raise);
+        await world.run(grow);
+        await turns();
+        expect([amounts, levels]).toEqual([[1, 2], [1, 2]]);
+        for (const stop of stops) stop();
+        await close();
+    });
+
+    it("give cold first values from a run after the thread's runs called before subscribing", async () => {
+        const { remote, close } = await seededJoined(3);
+        void remote.run(seed, { count: 5 });
+        const count = Observe.toPromise(Observe.count(remote, { required: [amount] }));
+        void remote.run(raise);
+        const resource = Observe.toPromise(Observe.resource(remote, level));
+        expect(await Promise.all([count, resource])).toEqual([8, 2]);
+        await close();
+    });
+
+    it("release what they place there once found idle in three turns that ran them", async () => {
+        const { world, remote, close } = await seededJoined(3);
+        const before = placedOn(remote);
+        const stop = Observe.entity(remote, spawned[0], { required: [amount] })(() => {});
+        expect(await Observe.toPromise(Observe.resource(remote, level))).toBe(1);
+        expect(placedOn(remote)).toBe(before + 2);
+        stop();
+        for (let k = 0; k < 4; k++) {
+            await world.run(raise);
+            await turns(5);
+        }
+        expect(placedOn(remote)).toBe(before);
+        // Used again, added again.
+        expect(await Observe.toPromise(Observe.resource(remote, level))).toBe(5);
+        await close();
     });
 });

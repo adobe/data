@@ -3,7 +3,7 @@ import { compare, predicateOf } from './compare.js';
 import type { Observe } from './observe.js';
 import { createAll, createCount, createHeap, createSorted, inEntityOrder, indexOf, type Gather, type Page, type Term, type Values } from './plans.js';
 import {
-    createEntry, deliverAlso, give, keysId, labelOf, none, numberOf, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed,
+    createEntry, deliverAlso, give, giveFirst, keysId, labelOf, none, noDelivery, numberOf, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed,
     type Entry, type Read, type Shape, type WorldState,
 } from './world-state.js';
 
@@ -51,6 +51,12 @@ type QueryShape = Shape & {
     readonly entries: QueryEntry[];
     readonly byId: Map<string, QueryEntry>;
     readonly read: Read;
+    /**
+     * On a joined thread, where a scan's rows can't be told from a later post's: the tracker, added on first use,
+     * and a run of it for first values, which once resolved gives those its pass read.
+     */
+    readonly tracker: System;
+    readonly joinedRead: Read;
     readonly scans: Scan[];
     /** The position in `where` of the key the tracker's index is sorted by, or -1. */
     readonly ranged: number;
@@ -363,6 +369,7 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
      * gives waiting subscribers theirs.
      */
     const track = (rows: Rows | null, own: ((entry: QueryEntry) => number) | null, from: (entry: QueryEntry, rows: Rows) => number): void => {
+        passed(state);
         if (!shape.swept) shape.swept = !sweep();
         const changed = rows === null || rows.changed;
         if (!changed && !shape.waiting) return;
@@ -537,6 +544,16 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
                 shape.scans.push({ batch, started: false, entries: waiting });
                 deliverAlso(state, finish);
             },
+            delivered: noDelivery,
+        },
+        tracker,
+        joinedRead: {
+            system: tracker,
+            flushed: noDelivery,
+            delivered: batch => {
+                const { entries } = shape;
+                for (let i = 0; i < entries.length; i++) giveFirst(state, entries[i], batch);
+            },
         },
         remove: () => {
             // Idle for a pass, its entries have no subscribers.
@@ -550,6 +567,7 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
     byShape.set(id, shape);
     return shape;
 };
+
 
 // Entities are numbers the world gave out, held as they were in typed scratch.
 const entityOf = (value: number): Entity => value as Entity;
@@ -595,6 +613,11 @@ const observeQuery = <T>(world: World, query: AnyQuery, counting: boolean): Obse
         let byShape = shapes.get(state);
         if (byShape === undefined) shapes.set(state, byShape = new Map());
         const shape = byShape.get(shapeId) ?? createShape(state, byShape, shapeId, counting, impossible, page !== null, required, not, where, terms);
+        if (state.joined && !shape.tracking) {
+            // Throws for components a joined thread can't read, adding nothing.
+            world.add(shape.tracker);
+            shape.tracking = true;
+        }
         let entry = shape.byId.get(entryId);
         if (entry === undefined) {
             entry = createQueryEntry(shape, entryId, counting, terms, conditions, page);
@@ -606,7 +629,8 @@ const observeQuery = <T>(world: World, query: AnyQuery, counting: boolean): Obse
         const typed = observed as Entry<T>;
         const stop = subscribe(state, shape, typed, notify, () => {
             shape.waiting = true;
-            if (shape.tracking) scheduleDelivery(state);
+            if (state.joined) scheduleRead(state, shape.joinedRead);
+            else if (shape.tracking) scheduleDelivery(state);
             else scheduleRead(state, shape.read);
         });
         return () => {

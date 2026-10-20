@@ -1,6 +1,6 @@
 import { System, report, type Resource, type World } from '../index.js';
 import type { Observe } from './observe.js';
-import { createEntry, give, none, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
+import { createEntry, give, giveFirst, none, noDelivery, passed, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
 
 /**
  * A resource's observers, sharing one value: `notifier`, added, gives the value after each pass whose sync point
@@ -10,6 +10,11 @@ import { createEntry, give, none, scheduleRead, stateOf, subscribe, sweepSubscri
 type ResourceShape = Shape & {
     readonly entry: Entry<unknown>;
     readonly read: Read;
+    /**
+     * On a joined thread, a run of the notifier: its first run once added passes its filter, as the world starts it
+     * from tick 0, so once it resolved the entry holds the value.
+     */
+    readonly joinedRead: Read;
     readonly notifier: System;
     /** Whether the notifier is added: it's removed once the shape has been idle for a pass, and added again on use. */
     attached: boolean;
@@ -25,11 +30,14 @@ const createShape = (state: WorldState, byKey: Map<Resource.Key, ResourceShape>,
     // A tick's report takes the failures of its synced systems after they ran, unstamped, so it's never held.
     const held = key !== report;
     const label = `Observe.resource(${key.description ?? "?"})`;
+    // On a joined thread, first values come once a run of this system resolved, never in its pass: none to skip.
+    const { joined } = state;
     const notifier = System.create({ name: label, synced: true, resources: { read: [key], changed: [key] } }, ({ resources }) => {
+        passed(state);
         entry.value = resources[key];
         entry.valid = held;
         if (entry.stopped > 0) sweepSubscribers(entry);
-        throwFailed(give(entry, 0, true, state.pass, state.pass, none));
+        throwFailed(give(entry, 0, true, state.pass, joined ? -1 : state.pass, none));
     });
     const reader = System.create({ name: label, synced: true, resources: { read: [key] } }, ({ resources }) => {
         const through = shape.called.shift() ?? 0;
@@ -43,7 +51,8 @@ const createShape = (state: WorldState, byKey: Map<Resource.Key, ResourceShape>,
         idle: 0,
         entry,
         called: [],
-        read: { system: reader, flushed: batch => { shape.called.push(batch); } },
+        read: { system: reader, flushed: batch => { shape.called.push(batch); }, delivered: noDelivery },
+        joinedRead: { system: notifier, flushed: noDelivery, delivered: batch => { giveFirst(state, entry, batch); } },
         notifier,
         attached: false,
         remove: () => {
@@ -56,16 +65,18 @@ const createShape = (state: WorldState, byKey: Map<Resource.Key, ResourceShape>,
     return shape;
 };
 
+
 export const observeResource = <T>(world: World, key: Resource.Key): Observe<T> => notify => {
     const state = stateOf(world);
     let byKey = shapes.get(state);
     if (byKey === undefined) shapes.set(state, byKey = new Map());
     const shape = byKey.get(key) ?? createShape(state, byKey, key);
     if (!shape.attached) {
-        shape.attached = true;
+        // Throws on a joined thread for a resource it can't read, adding nothing.
         world.add(shape.notifier);
+        shape.attached = true;
     }
     // A resource key's values have its type, which `members.ts` gives `T` by the key's declaration.
     const entry = shape.entry as Entry<T>;
-    return subscribe(state, shape, entry, notify, () => scheduleRead(state, shape.read));
+    return subscribe(state, shape, entry, notify, () => scheduleRead(state, state.joined ? shape.joinedRead : shape.read));
 };

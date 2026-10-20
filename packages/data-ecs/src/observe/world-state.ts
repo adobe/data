@@ -32,8 +32,11 @@ export const createEntry = <T>(value: T): Entry<T> => ({ value, valid: false, su
  */
 export type Shape = { live: number; idle: number; readonly remove: () => void };
 
-/** A system a flush runs before it delivers, and what it's told of the flush, by number, when it does. */
-export type Read = { readonly system: System; readonly flushed: (batch: number) => void };
+/**
+ * A system a flush runs before it delivers, and what it's told of the flush, by number, when it does; on a joined
+ * thread, `delivered` once the run resolved, a post for it having run there.
+ */
+export type Read = { readonly system: System; readonly flushed: (batch: number) => void; readonly delivered: (batch: number) => void };
 
 /**
  * A world's factories' state: the pass the maintenance system counted last; flushes, `open` the one new cold first
@@ -42,6 +45,13 @@ export type Read = { readonly system: System; readonly flushed: (batch: number) 
  */
 export type WorldState = {
     readonly world: World;
+    /**
+     * Whether `world` is a joined thread's: its synced systems run there in posts, in no order with one another, so
+     * a shape's first values come once a run of its own system resolved, rather than from a delivering run.
+     */
+    readonly joined: boolean;
+    /** On a joined thread, whether this turn of its event loop counted a pass. */
+    counted: boolean;
     pass: number;
     open: number;
     delivered: number;
@@ -79,11 +89,24 @@ const runOwn = (world: World, system: System): void => {
 
 const noTasks: readonly (() => void)[] = [];
 
+/** A run of a joined thread's shape for first values: once it resolved, a post for it ran there, so `read` gives them. */
+const runJoined = (world: World, read: Read, batch: number): void => {
+    world.run(read.system).then(report => {
+        rethrowFailures(report);
+        read.delivered(batch);
+    }, ignore);
+};
+
 /** Runs what subscribers waiting for the open flush need, in call order after every run called before them. */
 const flush = (state: WorldState): void => {
     state.scheduled = false;
     const batch = state.open++;
     const { reads, world } = state;
+    if (state.joined) {
+        for (let i = 0; i < reads.length; i++) runJoined(world, reads[i], batch);
+        reads.length = 0;
+        return;
+    }
     for (let i = 0; i < reads.length; i++) {
         reads[i].flushed(batch);
         runOwn(world, reads[i].system);
@@ -115,11 +138,42 @@ const sweepShapes = (state: WorldState): void => {
     idle.length = kept;
 };
 
+/** A system no world adds, which only a joined thread's `remove` refuses, since it isn't synced. */
+const probe = System.create({ name: "Observe/probe" }, () => {});
+
+/** Whether `world` is a joined thread's: its `remove` takes only synced systems, where the world's ignores one never added. */
+const isJoined = (world: World): boolean => {
+    try {
+        world.remove(probe);
+        return false;
+    }
+    catch {
+        return true;
+    }
+};
+
+/**
+ * On a joined thread, counts a pass once per turn of its event loop that ran a shape's system, and sweeps idle shapes
+ * after the turn's posts ran, for no system orders passes there.
+ */
+export const passed = (state: WorldState): void => {
+    if (!state.joined || state.counted) return;
+    state.counted = true;
+    state.pass++;
+    queueMicrotask(() => {
+        state.counted = false;
+        if (state.idle.length > 0) sweepShapes(state);
+    });
+};
+
 export const stateOf = (world: World): WorldState => {
     let state = states.get(world);
     if (state !== undefined) return state;
+    const joined = isJoined(world);
     const created: WorldState = {
         world,
+        joined,
+        counted: false,
         pass: 0,
         open: 1,
         delivered: 0,
@@ -137,12 +191,13 @@ export const stateOf = (world: World): WorldState => {
         }),
     };
     state = created;
+    states.set(world, created);
+    if (joined) return created;
     // Added before any shape's system, so in each pass it counts the pass before they run.
     world.add(System.create({ name: "Observe/maintain", synced: true }, () => {
         created.pass++;
         if (created.idle.length > 0) sweepShapes(created);
     }));
-    states.set(world, created);
     return created;
 };
 
@@ -158,7 +213,12 @@ export const scheduleDelivery = (state: WorldState): void => {
     schedule(state);
 };
 
-/** Makes the next flush run a read, once, before it delivers. */
+/** A read's step that does nothing. */
+export const noDelivery = (): void => {
+    // A read on one kind of thread has nothing to do at the step the other's flush takes.
+};
+
+/** Makes the next flush run a read, once, before it delivers; on a joined thread, once, giving first values once it resolved. */
 export const scheduleRead = (state: WorldState, read: Read): void => {
     if (!state.reads.includes(read)) state.reads.push(read);
     schedule(state);
@@ -279,6 +339,12 @@ export const give = <T>(entry: Entry<T>, through: number, changed: boolean, pass
         }
     }
     return error;
+};
+
+/** On a joined thread, gives an entry's first values to subscribers waiting for a flush up to `through`, once it holds one. */
+export const giveFirst = <T>(state: WorldState, entry: Entry<T>, through: number): void => {
+    if (entry.waiting === 0 || !entry.valid) return;
+    give(entry, through, false, state.pass, -1, none);
 };
 
 /** Throws what a notify threw, so its system's run reports it. */

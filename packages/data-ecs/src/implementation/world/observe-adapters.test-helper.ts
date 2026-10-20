@@ -11,7 +11,7 @@ import type { World } from "../../interface/world/world.js";
 import { Observe } from "../../observe/index.js";
 
 // Observers through either implementation, so one suite of cases checks both: the world's own (`world.observe`)
-// and the factories of `@adobe/data-ecs/observe`, built on synced systems.
+// and the internal factories of `src/observe`, built on synced systems.
 
 type Observer<T> = (notify: (value: T) => void) => () => void;
 
@@ -67,6 +67,7 @@ export const differences = {
     "system failures": "A notify that throws on a later value is a `\"system\"` failure named by the factory system's label, rather than an `\"observer\"` failure named by what it observes.",
     "whole entity": "An entity observer lists the components it reads: there's no form without them.",
     "disposed": "A disposed world runs nothing, so a first value the factories don't hold never comes.",
+    "objects throw at subscribe": "On a joined thread, an observer reading objects it can't throws when subscribed, as the factories make nothing before, rather than when made.",
 } as const;
 
 /** Whether an adapter's expectations differ by design in what `difference` names: the factory's, in `differences`. */

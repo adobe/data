@@ -1,6 +1,6 @@
 import { Index, System, type Component, type Entity, type World } from '../index.js';
 import type { Observe } from './observe.js';
-import { createEntry, give, keysId, labelOf, none, scheduleDelivery, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Shape, type WorldState } from './world-state.js';
+import { createEntry, give, giveFirst, keysId, labelOf, none, noDelivery, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
 
 /** An observed entity's value, shared by its observers, and by optional component whether it had it last. */
 type EntityEntry = Entry<object | null> & { readonly entity: Entity; readonly present: boolean[] };
@@ -12,6 +12,8 @@ type EntityEntry = Entry<object | null> & { readonly entity: Entity; readonly pr
  */
 type EntityShape = Shape & {
     readonly system: System;
+    /** On a joined thread, a run of its system, once resolved giving first values its pass read. */
+    readonly read: Read;
     /** Whether its system is added: it's removed once the shape has been idle for a pass, and added again on use. */
     attached: boolean;
     readonly entries: EntityEntry[];
@@ -106,6 +108,7 @@ const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: s
     };
     /** Evaluates every entry, or with nothing changed, those whose subscribers wait for a first value. */
     const pass = (changed: boolean, finders: Finders): void => {
+        passed(state);
         if (!shape.swept) shape.swept = !sweep();
         if (!changed && !shape.waiting) return;
         const through = state.delivered;
@@ -143,6 +146,14 @@ const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: s
         live: 0,
         idle: 0,
         system,
+        read: {
+            system,
+            flushed: noDelivery,
+            delivered: batch => {
+                const { entries } = shape;
+                for (let i = 0; i < entries.length; i++) giveFirst(state, entries[i], batch);
+            },
+        },
         attached: false,
         entries: [],
         byEntity: new Map(),
@@ -187,8 +198,9 @@ export const observeEntity = <T>(world: World, entity: Entity, components: { rea
         if (byShape === undefined) shapes.set(state, byShape = new Map());
         const shape = byShape.get(id) ?? createShape(state, byShape, id, required, optional);
         if (!shape.attached) {
-            shape.attached = true;
+            // Throws on a joined thread for components it can't read, adding nothing.
             world.add(shape.system);
+            shape.attached = true;
         }
         let entry = shape.byEntity.get(entity);
         if (entry === undefined) {
@@ -201,7 +213,8 @@ export const observeEntity = <T>(world: World, entity: Entity, components: { rea
         const typed = observed as Entry<T | null>;
         const stop = subscribe(state, shape, typed, notify, () => {
             shape.waiting = true;
-            scheduleDelivery(state);
+            if (state.joined) scheduleRead(state, shape.read);
+            else scheduleDelivery(state);
         });
         return () => {
             if (observed.live > 0) shape.swept = false;

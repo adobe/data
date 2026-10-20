@@ -991,9 +991,10 @@ there the same way (`joined-synced.ts`, `thread-synced.ts`, `thread-directory.ts
   posting refreshing before reading back: a count behind).
 - New: `joined synced resource`, `joined synced 10K`.
 - Then: one reading only struct resources posts copies of them, into two blocks, so neither writers, sync points nor
-  posts wait for it (`synced-contained.test.ts`, and `synced-contained.browser.test.ts` with a worker holding a run
-  while the world runs on, red waiting for it, and red running again for the value it held without taking a running
-  post's outcome ahead).
+  posts wait for it (`synced-contained.test.ts`, and in node and chromium a worker holding a run while the world runs
+  on, red waiting for it, and red running again for the value it held without taking a running post's outcome ahead;
+  the worker runs a system of its own after its add, through the same port, so the world placed the watcher by that
+  run's sync point and no order depends on the machine's timing).
 
 ## Not built
 

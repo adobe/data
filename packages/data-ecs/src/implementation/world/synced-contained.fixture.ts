@@ -56,17 +56,18 @@ const joined = async (world: CreatedWorld): Promise<Worker> => {
     return worker;
 };
 
-/** Whether `work` settles within a second: false for one waiting on the held worker. */
-const settles = async (work: Promise<unknown>): Promise<boolean> => {
-    let done = false;
-    void work.then(() => { done = true; });
-    for (let waited = 0; waited < 1000 && !done; waited += 10) await later(10);
-    return done;
+/**
+ * Whether `work` settled while the worker still held its run, which only this thread releases: true once it settles,
+ * and never for one waiting on the held worker, which times the test out.
+ */
+const settles = async (words: Int32Array, value: number, work: Promise<unknown>): Promise<boolean> => {
+    await work;
+    return Atomics.load(words, releasedWord) < value;
 };
 
 /** Resolves once the held run reached `value`. */
 const reached = async (words: Int32Array, value: number): Promise<void> => {
-    for (let turn = 0; turn < 5000 && Atomics.load(words, reachedWord) < value; turn++) await later(1);
+    while (Atomics.load(words, reachedWord) < value) await later(1);
 };
 
 const release = (words: Int32Array, value: number): void => {
@@ -74,12 +75,15 @@ const release = (words: Int32Array, value: number): void => {
     Atomics.notify(words, releasedWord);
 };
 
-/** What the worker saw once it's seen `count` values, or after a while. */
+/**
+ * What the worker saw once it's seen `count` values: a post no later sync point replaces runs however late the thread
+ * claims it, so this waits as long as that takes.
+ */
 const seenOnce = async (worker: Worker, count: number): Promise<readonly number[]> => {
-    for (let turn = 0; ; turn++) {
+    for (;;) {
         const reply = await worker.ask({ kind: "seen" });
         const tallies = reply.kind === "seen" ? reply.tallies : [];
-        if (tallies.length >= count || turn >= 200) {
+        if (tallies.length >= count) {
             // A few more turns, for a run that shouldn't come to show it didn't.
             await later(50);
             const again = await worker.ask({ kind: "seen" });
@@ -98,19 +102,19 @@ export const heldWhileTheWorldRuns = async () => {
     const world = createWorld({ [workers]: 0 });
     const worker = await joined(world);
     const words = new Int32Array(new SharedArrayBuffer(gateWords * 4));
+    // Its first run, which passes its filter, before any is held: posted at the sync point of the worker's run, and run
+    // before the world's next, which would replace it unclaimed.
     await worker.ask({ kind: "add", gate: words });
-    // Its first run, which passes its filter, before any is held.
-    await world.run(nothing);
     await seenOnce(worker, 1);
     await world.run(setHolding, { holding: -1 });
     await world.run(bump);
     await reached(words, 1);
-    const quiet = await settles(Promise.all([world.run(nothing), world.run(setHolding, { holding: -1 })]));
+    const quiet = await settles(words, 1, Promise.all([world.run(nothing), world.run(setHolding, { holding: -1 })]));
     release(words, 1);
     const first = await seenOnce(worker, 2);
     await world.run(bump);
     await reached(words, 2);
-    const bumped = await settles(Promise.all([world.run(bump), world.run(bump)]));
+    const bumped = await settles(words, 2, Promise.all([world.run(bump), world.run(bump)]));
     // Through the newest: the run it holds, and the one after, which holds once it reached it.
     release(words, 4);
     const second = await seenOnce(worker, 4);

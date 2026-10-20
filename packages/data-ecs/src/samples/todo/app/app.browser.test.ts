@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { System } from "../../../index.js";
+import { todo } from "../features/todos/data.js";
+import { row } from "../features/todos/dom.js";
 import { part } from "../shared/elements/elements.test-helper.js";
 import { nextTick, watchTicks } from "../shared/ticks.test-helper.js";
 import { createApp, defineElements, type App } from "./app.js";
@@ -155,5 +158,39 @@ describe("the todo app", () => {
         part(found("todo-entry"), "input", HTMLInputElement).value = "c";
         part(found("todo-entry"), "input", HTMLInputElement).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
         expect(rows()).toHaveLength(0);
+    });
+});
+
+// It runs in the tick that gives the todo its row, alongside createRows.
+const failing = System.create({ name: "test/failing", components: { has: [todo] } }, () => {
+    throw new Error("a tick's system failed");
+});
+const failingObserver = System.create({ name: "test/failingObserver", observer: true, components: { has: [row], changed: [row] } }, () => {
+    throw new Error("a tick's observer failed");
+});
+const pass = System.create({ name: "test/pass", observer: true }, () => {});
+
+describe("the todo app's failures", () => {
+    /** The messages of the failures logged as a tick's. */
+    const tickFailures = (): string[] => errors.flatMap(values => Array.isArray(values) && values[0] === "A tick failed" && Array.isArray(values[1])
+        ? values[1].flatMap((failure: unknown) => typeof failure === "object" && failure !== null && "message" in failure ? [String(failure.message)] : [])
+        : []);
+
+    it("are logged when a tick's system fails, once each", async () => {
+        app.world.add(failing);
+        await type("a");
+        app.world.remove(failing);
+        await app.world.run(pass);
+        expect(tickFailures()).toEqual(["a tick's system failed"]);
+        errors.length = 0;
+    });
+
+    it("are logged when a tick's observer fails, by the next pass", async () => {
+        app.world.add(failingObserver);
+        await type("a");
+        app.world.remove(failingObserver);
+        await app.world.run(pass);
+        expect(tickFailures()).toEqual(["a tick's observer failed"]);
+        errors.length = 0;
     });
 });

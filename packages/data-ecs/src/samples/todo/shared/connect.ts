@@ -12,8 +12,16 @@ export const on = <K extends keyof HTMLElementEventMap>(root: HTMLElement, type:
     return () => root.removeEventListener(type, listener);
 };
 
-/** Logs what a run's report says failed: a run an event started has no caller to hand its failures to. */
+/**
+ * Logs what a run's report says failed, or why the run was rejected: a run an event started has no caller to hand
+ * either to. Never rejects.
+ */
 export const reported = async (run: Promise<World.Report>): Promise<void> => {
-    const report = await run;
-    if (report.failures.length > 0) console.error("A run failed", report.failures);
+    try {
+        const report = await run;
+        if (report.failures.length > 0) console.error("A run failed", report.failures);
+    }
+    catch (error) {
+        console.error("A run was rejected", error);
+    }
 };

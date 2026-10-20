@@ -1,7 +1,7 @@
 import { Index, System, type Component, type Entity, type World } from '../index.js';
 import { compare, predicateOf } from './compare.js';
 import type { Observe } from './observe.js';
-import { createAll, createCount, createHeap, createSorted, type Gather, type Page, type Term, type Values } from './plans.js';
+import { createAll, createCount, createHeap, createSorted, inEntityOrder, indexOf, type Gather, type Page, type Term, type Values } from './plans.js';
 import {
     createEntry, deliverAlso, give, keysId, labelOf, none, numberOf, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed,
     type Entry, type Read, type Shape, type WorldState,
@@ -422,6 +422,18 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
         const [entry] = entries;
         return row => { if (passes(entry, row)) gather.add(row.entity, row); };
     };
+    /**
+     * A scan of one entry with at most one test, every entity or a count, the scanner's body gathers itself, its test
+     * inline, without a call per row through `accept` and a gather: 1 for entities, 2 for a count, else 0. Entities go
+     * into `found`, `foundOrdered` while they come in entity order, `foundLargest` the largest index so far.
+     */
+    let direct = 0;
+    let directTest: ((value: unknown) => boolean) | null = null;
+    const directKey: Component.Key | undefined = where[0];
+    let found = new Float64Array(64);
+    let foundCount = 0;
+    let foundLargest = 0;
+    let foundOrdered = true;
     const start = (): void => {
         const scan = shape.scans[0];
         if (scan === undefined) {
@@ -429,12 +441,40 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
             return;
         }
         scan.started = true;
+        const [first] = scan.entries;
+        if (scan.entries.length === 1 && !impossible && first.tests.length <= 1 && (counting || (terms.length === 0 && first.page === null))) {
+            direct = counting ? 2 : 1;
+            directTest = first.tests.length === 0 ? null : first.tests[0];
+            foundCount = 0;
+            foundLargest = 0;
+            foundOrdered = true;
+            accept = ignore;
+            return;
+        }
         for (const entry of scan.entries) entry.gather.start();
         accept = acceptOf(scan.entries);
     };
     const scanner = System.create({ name, synced: true, components: { read: reads, has: required.filter(key => !reads.includes(key)), not } }, row => {
         if (accept === null) start();
-        accept?.(row);
+        if (direct === 0) {
+            accept?.(row);
+            return;
+        }
+        if (directTest !== null && directKey !== undefined && !directTest(row[directKey])) return;
+        if (direct === 2) {
+            foundCount++;
+            return;
+        }
+        const entity = row.entity;
+        const index = indexOf(entity);
+        if (index < foundLargest) foundOrdered = false;
+        else foundLargest = index;
+        if (foundCount === found.length) {
+            const grown = new Float64Array(2 * found.length);
+            grown.set(found);
+            found = grown;
+        }
+        found[foundCount++] = entity;
     });
     /** Drops entries without subscribers, which nothing keeps current while the shape isn't tracked. */
     const dropUnused = (): void => {
@@ -452,15 +492,21 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
         const scan = shape.scans.shift();
         if (scan === undefined) return;
         accept = null;
+        const gathered = direct;
+        direct = 0;
         let failed: unknown = none;
         let kept = false;
         for (const entry of scan.entries) {
-            if (!scan.started) entry.gather.start();
-            // The value itself is gathered into, rather than copied from scratch.
-            const value: Entity[] = [];
-            const count = entry.gather.finish(value);
-            value.length = count;
-            entry.value = counting ? count : value;
+            if (gathered === 1) entry.value = inEntityOrder(found, foundCount, foundLargest, foundOrdered);
+            else if (gathered === 2) entry.value = foundCount;
+            else {
+                if (!scan.started) entry.gather.start();
+                // The value itself is gathered into, made at its length, rather than copied from scratch or grown.
+                const value = new Array<Entity>(counting ? 0 : entry.gather.size());
+                const count = entry.gather.finish(value);
+                value.length = count;
+                entry.value = counting ? count : value;
+            }
             entry.valid = true;
             failed = give(entry, scan.batch, false, state.pass, -1, failed);
             if (entry.live > 0) kept = true;

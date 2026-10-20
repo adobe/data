@@ -18,6 +18,8 @@ export type Gather = {
     readonly start: () => void;
     readonly add: (entity: number, values: Values) => void;
     readonly finish: (out: Entity[]) => number;
+    /** How many entities `finish` would write now, so a result can be made at its length. */
+    readonly size: () => number;
 };
 
 /** An entity a world gave out, held as a number in typed scratch. */
@@ -33,6 +35,7 @@ export const createCount = (): Gather => {
         start: () => { count = 0; },
         add: () => { count++; },
         finish: () => count,
+        size: () => count,
     };
 };
 
@@ -60,6 +63,17 @@ const toEntityOrder = (from: Float64Array, count: number, largest: number, out: 
         out[i] = asEntity(bucket[indexes[i]]);
         bucket[indexes[i]] = 0;
     }
+};
+
+/**
+ * A new array of `count` entities of `from` in entity order: as they are when `ordered`, else sorted, `largest` the
+ * largest index among them.
+ */
+export const inEntityOrder = (from: Float64Array, count: number, largest: number, ordered: boolean): Entity[] => {
+    const out = new Array<Entity>(count);
+    if (ordered) for (let i = 0; i < count; i++) out[i] = asEntity(from[i]);
+    else toEntityOrder(from, count, largest, out);
+    return out;
 };
 
 /** Every entity, in entity order once gathered. */
@@ -93,6 +107,7 @@ export const createAll = (): Gather => {
             toEntityOrder(entities, count, largest, out);
             return count;
         },
+        size: () => count,
     };
 };
 
@@ -228,6 +243,7 @@ export const createHeap = (terms: readonly Term[], page: Page): Gather => {
             for (let t = 0; t < terms.length; t++) slots.values[t].fill(undefined);
             return n;
         },
+        size: () => Math.max(0, size - page.offset),
     };
 };
 
@@ -251,5 +267,6 @@ export const createSorted = (terms: readonly Term[]): Gather => {
             for (let t = 0; t < terms.length; t++) slots.values[t].fill(undefined, 0, size);
             return size;
         },
+        size: () => size,
     };
 };

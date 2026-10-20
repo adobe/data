@@ -137,7 +137,9 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
     /** Runs a new post of one placed here, if it has one and the world hasn't cancelled it; returns whether it did. */
     const runPost = (entry: Placed, errors: [number, WorkerError][]): boolean => {
         const { control } = entry;
-        if (Atomics.load(control, postedWord) === entry.handled) return false;
+        // The post seen: one a claim finds cancelled is this one, as a later one is written only once it's cancelled.
+        const seen = Atomics.load(control, postedWord);
+        if (seen === entry.handled) return false;
         const own = entry.local?.deref();
         const runner = entry.runner ?? own?.runner ?? null;
         if (entry.stopped || runner === null || Atomics.load(control, removedWord) !== 0) {
@@ -145,18 +147,27 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
             const claimed = Atomics.add(control, progressWord, tailChunk);
             // One the world is writing is claimed once it's open.
             if (claimed >= opening) return false;
+            if (claimed >= cancelled) {
+                entry.handled = seen;
+                return false;
+            }
+            // Claimed, the post in the block stays until it's done, so its posted word is this one's.
             entry.handled = Atomics.load(control, postedWord);
-            if (claimed < cancelled) finishUnrun(control);
+            finishUnrun(control);
             return false;
         }
         // This thread's objects are read as of the post's sync: replayed through the newest first.
         if (mirror !== null && !host.current()) return false;
         const claimed = Atomics.add(control, progressWord, tailChunk);
-        // One the world is writing, which the thread saw the last posted word of, is claimed once it's open, its posted
-        // word moved: claimed now, the post stays as it is until it's done, and that word is the post's.
+        // One the world is writing is claimed once it's open. Claimed now, the post stays as it is until it's done, so
+        // the posted word read after the claim is its own.
         if (claimed >= opening) return false;
+        // Cancelled, it's the post seen: one written after it, whose posted word may already have moved, is claimed next.
+        if (claimed >= cancelled) {
+            entry.handled = seen;
+            return false;
+        }
         entry.handled = Atomics.load(control, postedWord);
-        if (claimed >= cancelled) return false;
         const sync = Atomics.load(control, syncWord) >>> 0;
         if (mirror !== null && mirror.through !== sync && (!host.current() || mirror.through !== sync)) {
             giveBack(control);

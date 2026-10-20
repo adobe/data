@@ -46,12 +46,24 @@ const mutationsOf = async (change: () => Promise<unknown>): Promise<number> => {
     return count;
 };
 
-type Result = { readonly operation: string; readonly n: number; readonly ms: number; readonly mutations: number };
+/** Null where not measured. */
+type Result = { readonly operation: string; readonly n: number; readonly ms: number; readonly mutations: number | null; readonly tick: number | null };
 const results: Result[] = [];
 
 const median = (values: readonly number[]): number => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? NaN;
 
-/** Runs `operation` `repeats` times, timed and each followed by a tick, then once more counting its mutations. */
+/** When the last animation frame's callback began, which a tick runs in. */
+let frameStart = 0;
+const platformFrame = globalThis.requestAnimationFrame.bind(globalThis);
+globalThis.requestAnimationFrame = callback => platformFrame(time => {
+    frameStart = performance.now();
+    callback(time);
+});
+
+/**
+ * Runs `operation` `repeats` times, each timed and followed by the tick a run brings, timed from its frame's start to
+ * the end of its observer systems; then once more, counting its mutations.
+ */
 const measure = async (operation: string, n: number, repeats: number, run: (repeat: number) => Promise<World.Report>, settle: () => void = () => {}): Promise<void> => {
     const once = async (repeat: number): Promise<number> => {
         const start = performance.now();
@@ -62,12 +74,14 @@ const measure = async (operation: string, n: number, repeats: number, run: (repe
         return ms;
     };
     const times: number[] = [];
+    const ticks: number[] = [];
     for (let repeat = 0; repeat < repeats; repeat++) {
         times.push(await once(repeat));
         await nextTick();
+        ticks.push(performance.now() - frameStart);
     }
     const mutations = await mutationsOf(() => once(repeats));
-    results.push({ operation, n, ms: median(times), mutations });
+    results.push({ operation, n, ms: median(times), mutations, tick: median(ticks) });
 };
 
 const nothing = System.create({ name: "perf/nothing" }, () => {});
@@ -90,21 +104,32 @@ const halfDone = System.create({ name: "perf/halfDone", components: { write: [do
 
 const alternateFilter = (world: World) => (repeat: number) => world.run(setFilter, { filter: repeat % 2 === 0 ? "active" : "all" });
 
-const benchmarkApp = async (n: number): Promise<void> => {
+/** A new app on the page holding `n` generated todos, with no rows yet: the tick that would make them hasn't come. */
+const generated = async (n: number): Promise<{ readonly app: ReturnType<typeof createApp>; readonly ms: number }> => {
     document.body.innerHTML = markup;
     const app = createApp(document.body);
     await watchTicks(app.world);
-    const { world } = app;
-    // A new todo's row is created by a tick after the run that adds the todo: here by a run of the system that does.
     const start = performance.now();
-    await world.run(addGenerated, { count: n });
-    const generated = performance.now();
+    await app.world.run(addGenerated, { count: n });
+    const ms = performance.now() - start;
+    if (found("todo-list").children.length > 0) throw new Error("A tick made the rows before they were timed.");
+    return { app, ms };
+};
+
+const benchmarkApp = async (n: number): Promise<void> => {
+    // Rows are created and placed by a run of the system the tick after a run would run, counted on another app.
+    const counted = await generated(n);
+    const createMutations = await mutationsOf(() => counted.app.world.run(createRows));
+    await counted.app.dispose();
+    const { app, ms: generateMs } = await generated(n);
+    const { world } = app;
+    const start = performance.now();
     await world.run(createRows);
     const created = performance.now();
     forceLayout();
-    results.push({ operation: "generate N todos", n, ms: generated - start, mutations: 0 });
-    results.push({ operation: "create and place N rows", n, ms: created - generated, mutations: 3 * n });
-    results.push({ operation: "lay N rows out", n, ms: performance.now() - created, mutations: 0 });
+    results.push({ operation: "generate N todos", n, ms: generateMs, mutations: null, tick: null });
+    results.push({ operation: "create and place N rows", n, ms: created - start, mutations: createMutations, tick: null });
+    results.push({ operation: "lay N rows out", n, ms: performance.now() - created, mutations: null, tick: null });
     await nextTick();
     await measure("add one, with its row", n, 11, async repeat => {
         await world.run(addTodo, { label: `added ${repeat}` });
@@ -171,5 +196,6 @@ it("measures the todo app's DOM path", async () => {
         await benchmarkApp(n);
         await benchmarkListFilter(n);
     }
-    console.log(["| Operation | N | ms | DOM mutations |", "|---|---:|---:|---:|", ...results.map(result => `| ${result.operation} | ${result.n} | ${result.ms.toFixed(3)} | ${result.mutations} |`)].join("\n"));
+    const cell = (value: number | null, digits = 0): string => value === null ? "—" : value.toFixed(digits);
+    console.log(["| Operation | N | Run ms | Tick after it, ms | DOM mutations |", "|---|---:|---:|---:|---:|", ...results.map(result => `| ${result.operation} | ${result.n} | ${result.ms.toFixed(3)} | ${cell(result.tick, 3)} | ${cell(result.mutations)} |`)].join("\n"));
 });

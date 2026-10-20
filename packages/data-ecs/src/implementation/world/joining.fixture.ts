@@ -5,6 +5,7 @@ import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join } from "./create.js";
 import type { FromJoiningWorker, ToJoiningWorker } from "./joining-worker.fixture.js";
+import { Observe as Factories } from "../../observe/index.js";
 import { add, drive, names, total, until } from "./joining.test-helper.js";
 
 /**
@@ -124,13 +125,16 @@ export const claimedTwice = async () => {
     return { first: one.kind === "joined" ? one.ran : null, second: two.kind === "joined" ? two.ran : null, status: gone?.status ?? null };
 };
 
-/** A world on a worker shared through its own scope, this thread joined through the worker: runs, an observer, leaving. */
-export const scopes = async () => {
+/**
+ * A world on a worker shared through its own scope, this thread joined through the worker: runs, an observer, the
+ * joined thread's own or the factories', leaving.
+ */
+export const scopes = async (observers: "built-in" | "factory" = "built-in") => {
     const worker = start();
     await worker.ask({ kind: "host scope" });
     const remote = join(worker.port);
     for (const amount of [4, 5, 6]) await remote.run(add, { amount });
-    const observed = await until(remote.observe.resource(total), value => value === 456);
+    const observed = await until(observers === "factory" ? Factories.resource(remote, total) : remote.observe.resource(total), value => value === 456);
     await remote.dispose();
     const state = await worker.ask({ kind: "state" });
     await worker.terminate();

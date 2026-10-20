@@ -68,34 +68,30 @@ const positionsOf = (created: Created, declaration: ObjectExpression): { readonl
 /**
  * A spawn site's function: the components, then one parameter per value, so values pass without an object to a
  * spawner generated for the site's key order and the list's shape (`PreparedSpawn` in `world/prepared-spawn.ts`).
+ * The keys are read in module scope, as the prepared spawn's argument, so no binding the function declares can capture
+ * one (`hygiene.test.ts`).
  */
 const spawnFunction = (name: string, prepare: string, keys: readonly string[]): string => {
     const values = keys.map((_, k) => `v${k}`).join(", ");
     return [
-        `const ${name} = (() => {`,
-        `const p = ${prepare}(() => [${keys.join(", ")}]);`,
-        `return (c, l${keys.length > 0 ? `, ${values}` : ""}) => {`,
+        `const ${name} = (p => (c, l${keys.length > 0 ? `, ${values}` : ""}) => {`,
         "const s = p.begin(c, l);",
         `return s === null ? p.fallback(c, l, [${values}]) : s(${values});`,
-        "};",
-        "})();",
+        `})(${prepare}(() => [${keys.join(", ")}]));`,
     ].join("\n");
 };
 
 /**
  * An add site's function: the entity, the components, then one parameter per value, each appended straight to the
- * commands' buffer (`PreparedAdd` in `world/prepared-spawn.ts`).
+ * commands' buffer (`PreparedAdd` in `world/prepared-spawn.ts`). Its keys are read in module scope, as a spawn site's are.
  */
 const addFunction = (name: string, prepare: string, keys: readonly string[]): string => {
     const values = keys.map((_, k) => `v${k}`);
     return [
-        `const ${name} = (() => {`,
-        `const p = ${prepare}(() => [${keys.join(", ")}]);`,
-        `return (c, e, l${values.map(value => `, ${value}`).join("")}) => {`,
+        `const ${name} = (p => (c, e, l${values.map(value => `, ${value}`).join("")}) => {`,
         `if (p.begin(c, e, l)) { ${values.map((value, k) => `p.value(${k}, ${value}); `).join("")}p.end(); }`,
         `else p.fallback(c, e, l, [${values.join(", ")}]);`,
-        "};",
-        "})();",
+        `})(${prepare}(() => [${keys.join(", ")}]));`,
     ].join("\n");
 };
 

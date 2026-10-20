@@ -47,6 +47,11 @@ export const syncedBlockWords = tailBlockWords + lineWords;
 const syncedBlockBytes = syncedBlockWords * 4;
 /** What the progress word holds once the world cancelled a post no claim reached: claims add to it and stay past it. */
 export const cancelled = 0x60000000;
+/**
+ * What the progress word holds while the world writes a post: a thread that saw the last post's posted word and claims
+ * now claims nothing, and claims again once the post is open, after its posted word moved.
+ */
+export const opening = 0x70000000;
 
 /** A joined thread's end for synced systems: how its setups reach it, how it's woken, and where they're placed. */
 export type SyncedTarget = {
@@ -330,7 +335,9 @@ const write = (state: State, synced: JoinedSynced, tick: number): void => {
             for (let k = 0; k < count; k++) words[record / 8 + k] = parameters[k];
         }
     }
-    for (const word of [progressWord, doneWord, waitingWord, snapshotOffsetWord, snapshotRowsWord, snapshotStartWord, snapshotFlagsWord, outcomeWord]) Atomics.store(control, word, 0);
+    // Closed first, so no claim reaches it before every word of it is written.
+    Atomics.store(control, progressWord, opening);
+    for (const word of [doneWord, waitingWord, snapshotOffsetWord, snapshotRowsWord, snapshotStartWord, snapshotFlagsWord, outcomeWord]) Atomics.store(control, word, 0);
     Atomics.store(control, endWord, synced.end);
     Atomics.store(control, runsWord, Math.max(synced.pending, 0));
     Atomics.store(control, syncWord, synced.target.log === null ? 0 : Atomics.load(synced.target.log.header, logSyncWord));
@@ -340,8 +347,9 @@ const write = (state: State, synced: JoinedSynced, tick: number): void => {
     synced.copied = false;
     synced.live = true;
     state.synced.posts.push(synced);
-    // Last: a thread that sees it sees the rest.
+    // A thread that sees it sees the rest; then it opens, so a claim of it finds its posted word moved.
     Atomics.add(control, postedWord, 1);
+    Atomics.store(control, progressWord, 0);
     synced.target.wake();
 };
 

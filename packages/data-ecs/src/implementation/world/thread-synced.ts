@@ -3,7 +3,7 @@ import type { Leaf } from '../../interface/system/leaf.js';
 import type { Failure } from '../../interface/world/report.js';
 import { definitionOf, isLeaf, itemOfId, labelOfItem } from '../../interface/registry/index.js';
 import { failureOf } from './failures.js';
-import { cancelled, notRun, outcomeWord, postedWord, removedWord, runsWord, syncedBlockWords, syncWord, tickSlot } from './joined-synced.js';
+import { cancelled, notRun, opening, outcomeWord, postedWord, removedWord, runsWord, syncedBlockWords, syncWord, tickSlot } from './joined-synced.js';
 import { protocolName, type SyncedSetup, type ToWorld } from './joining.js';
 import type { Mirror } from './mirror.js';
 import type { WorkerError } from './protocol.js';
@@ -143,6 +143,8 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
         if (entry.stopped || runner === null || Atomics.load(control, removedWord) !== 0) {
             // Run as nothing, so the world, which may wait for it, settles it.
             const claimed = Atomics.add(control, progressWord, tailChunk);
+            // One the world is writing is claimed once it's open.
+            if (claimed >= opening) return false;
             entry.handled = Atomics.load(control, postedWord);
             if (claimed < cancelled) finishUnrun(control);
             return false;
@@ -150,7 +152,9 @@ export const createThreadSynced = (host: ThreadSyncedHost) => {
         // This thread's objects are read as of the post's sync: replayed through the newest first.
         if (mirror !== null && !host.current()) return false;
         const claimed = Atomics.add(control, progressWord, tailChunk);
-        // Claimed, the post stays as it is until it's done.
+        // One the world is writing, which the thread saw the last posted word of, is claimed once it's open, its posted
+        // word moved: claimed now, the post stays as it is until it's done, and that word is the post's.
+        if (claimed >= opening) return false;
         entry.handled = Atomics.load(control, postedWord);
         if (claimed >= cancelled) return false;
         const sync = Atomics.load(control, syncWord) >>> 0;

@@ -8,4 +8,14 @@ export const remoteObjectsCases = (load: () => Promise<typeof Fixture>) => descr
         const watched = await fixture.watchedWhileApplying(400);
         expect(watched).toEqual({ values: 400, inconsistent: 0, captions: ["none", null] });
     }, 30000);
+    it("give the observer factories on a joined worker its objects as of the struct values they're read with", async () => {
+        const fixture = await load();
+        const watched = await fixture.watchedWhileApplying(400, "factory");
+        expect(watched).toEqual({ values: 400, inconsistent: 0, captions: ["none", null] });
+    }, 30000);
+    it("give a joined worker's synced systems its objects as of the struct values they look up with", async () => {
+        const fixture = await load();
+        const watched = await fixture.watchedWhileApplying(400, "synced");
+        expect(watched).toEqual({ values: 400, inconsistent: 0, captions: ["none", null] });
+    }, 30000);
 });

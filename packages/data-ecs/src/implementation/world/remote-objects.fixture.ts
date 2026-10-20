@@ -5,7 +5,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { createWorld } from "./create.js";
 import { backToBack } from "./loop.js";
 import type { FromRemoteObjectsWorker, ToRemoteObjectsWorker } from "./remote-objects-worker.fixture.js";
-import { churn, seed, serial, type Watched } from "./remote-objects.test-helper.js";
+import { churn, seed, serial, type Observers, type Watched } from "./remote-objects.test-helper.js";
 
 /**
  * Scenarios of objects a joined worker fills, run built in node and from source in chromium: the worker watches an
@@ -38,8 +38,11 @@ const start = (): Worker => {
     };
 };
 
-/** A worker watching an entity's objects here while the world ticks back to back, moving and changing them each tick. */
-export const watchedWhileApplying = async (count: number): Promise<Watched | null> => {
+/**
+ * A worker watching an entity's objects here, through `observers`, while the world ticks back to back, moving and
+ * changing them each tick.
+ */
+export const watchedWhileApplying = async (count: number, observers: Observers = "built-in"): Promise<Watched | null> => {
     const driver = backToBack();
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
     await world.run(seed);
@@ -48,7 +51,7 @@ export const watchedWhileApplying = async (count: number): Promise<Watched | nul
     const { port1, port2 } = new MessageChannel();
     world.share(port1);
     world.add(churn);
-    const reply = await worker.ask({ kind: "watch", port: port2, entity, count }, [port2]);
+    const reply = await worker.ask({ kind: "watch", port: port2, entity, count, observers }, [port2]);
     await worker.terminate();
     await world.dispose();
     driver.close();

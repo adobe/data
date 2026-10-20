@@ -1,5 +1,5 @@
 import type { Leaf } from '../../interface/system/leaf.js';
-import { lookupComponentsOf } from './lookup-keys.js';
+import { entityWatchesOf, lookupComponentsOf } from './lookup-keys.js';
 import type { Leaf as FinalizerLeaf } from '../../interface/finalizer/created.js';
 import type { Report } from '../../interface/world/report.js';
 import { declarationOf, idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
@@ -51,6 +51,10 @@ export type RemoteSystem = {
     readonly foldCount: number;
     /** Components it filters on with `changed`, whose GPU column stamps reach the thread as row ticks. */
     readonly changed: readonly number[];
+    /** Components its lookups by entity watch, whose GPU column stamps reach the thread as row ticks in every archetype. */
+    readonly watched: readonly number[];
+    /** The world's archetypes, which an entity it looks up may be in. */
+    readonly archetypes: readonly Archetype[];
     /** Components it writes, as the tick of each task it's in marks them written. */
     readonly writes: readonly number[];
     readonly declaresInput: boolean;
@@ -558,6 +562,8 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         warning: { kind: "blocking", name: label, message: `System "${label}" runs on thread "${thread}", which a joined thread fills, so its tier waits for that thread.` },
         targets, folds, foldCount: folds.reduce((sum, leaves) => sum + leaves.length, 0),
         changed: (query?.changed ?? []).map(key => idOf(state, key)),
+        watched: entityWatchesOf(declaration.lookup).map(key => idOf(state, key)),
+        archetypes: state.archetypes,
         writes,
         declaresInput: declaration.input !== undefined,
         lastRun: since,
@@ -592,14 +598,19 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
  */
 export const liftColumnStamps = (runner: Runner): void => {
     const remote = runner.remote;
-    if (remote === null || remote.changed.length === 0) return;
-    for (const archetype of runner.matched()) {
-        for (const id of remote.changed) {
-            const storage = archetype.storageById[id];
-            if (storage === undefined || !storage.ticked || storage.columnChanged <= remote.lastRun) continue;
-            const stamp = storage.columnChanged;
-            for (let row = 0; row < archetype.count; row++) if (storage.changed[row] < stamp) storage.changed[row] = stamp;
-            for (let chunk = 0; chunk <= (archetype.count - 1) >> chunkShift; chunk++) if (storage.chunkChanged[chunk] < stamp) storage.chunkChanged[chunk] = stamp;
-        }
+    if (remote === null) return;
+    if (remote.changed.length > 0) for (const archetype of runner.matched()) liftColumns(archetype, remote.changed, remote.lastRun);
+    // An entity a lookup finds may be in any archetype.
+    if (remote.watched.length > 0) for (const archetype of remote.archetypes) liftColumns(archetype, remote.watched, remote.lastRun);
+};
+
+/** Gives the rows of an archetype's columns of `ids` stamped whole after `since` the column's stamp. */
+const liftColumns = (archetype: Archetype, ids: readonly number[], since: number): void => {
+    for (const id of ids) {
+        const storage = archetype.storageById[id];
+        if (storage === undefined || !storage.ticked || storage.columnChanged <= since) continue;
+        const stamp = storage.columnChanged;
+        for (let row = 0; row < archetype.count; row++) if (storage.changed[row] < stamp) storage.changed[row] = stamp;
+        for (let chunk = 0; chunk <= (archetype.count - 1) >> chunkShift; chunk++) if (storage.chunkChanged[chunk] < stamp) storage.chunkChanged[chunk] = stamp;
     }
 };

@@ -81,7 +81,33 @@ export const follow = System.create({
     }
     // @ts-expect-error a lookup returns null for a missing entity
     void targets(row[target])[position];
+    // @ts-expect-error a lookup without changed has no changed
+    void targets(row[target])?.changed;
 });
+
+// A lookup by entity with `changed`: its row also says whether what `changed` names may have changed since the system last ran.
+System.create({
+    name: "test/followChanged",
+    components: { read: [target], write: [velocity] },
+    lookup: { targets: { read: [position], changed: [position] }, players: { has: [player], changed: [player] } },
+}, (row, { lookup: { targets, players } }) => {
+    const other = targets(row[target]);
+    if (other !== null) {
+        check<Equal<typeof other.changed, boolean>>();
+        check<Equal<typeof other[typeof position], number>>();
+        // @ts-expect-error changed is read-only
+        other.changed = false;
+    }
+    const found = players(row[target]);
+    if (found !== null) check<Equal<typeof found, { readonly changed: boolean }>>();
+});
+
+System.create({
+    name: "test/followChanged",
+    components: { read: [target], write: [velocity] },
+    // @ts-expect-error a lookup by entity's changed names what it reads or has
+    lookup: { targets: { read: [position], changed: [velocity] } },
+}, () => {});
 
 // Input: typed from its schema.
 export const move = System.create({

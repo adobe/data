@@ -26,7 +26,7 @@ type Lookups<D> = Property<D, "lookup">;
 
 /**
  * An index lookup reads and watches only what every entity its index holds has, and its system doesn't write what it
- * finds rows by or reads through it.
+ * finds rows by or reads through it. A lookup by entity watches only what it reads or has.
  */
 type IndexLookups<D> = {
     readonly lookup?: {
@@ -36,7 +36,7 @@ type IndexLookups<D> = {
                 readonly read?: readonly Exclude<HeldBy<I>, Written<D, "components">>[];
                 readonly changed?: readonly HeldBy<I>[];
             }
-            : unknown
+            : { readonly changed?: readonly (Listed<Lookups<D>[N], "read"> | Listed<Lookups<D>[N], "has">)[] }
     };
 };
 

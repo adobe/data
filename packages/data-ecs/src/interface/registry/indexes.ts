@@ -25,7 +25,7 @@ export const indexDefinitionOf = (value: unknown): Created | undefined => typeof
 type Key = symbol;
 
 /** A lookup as a declaration holds it: by entity, or through an index. */
-type AnyLookup = { readonly index?: unknown; readonly read?: readonly Key[]; readonly changed?: readonly Key[] };
+type AnyLookup = { readonly index?: unknown; readonly read?: readonly Key[]; readonly has?: readonly Key[]; readonly changed?: readonly Key[] };
 
 /** The index a lookup goes through, or undefined for a lookup by entity. */
 export const indexOfLookup = (lookup: AnyLookup): Created | undefined => lookup.index === undefined ? undefined : indexDefinitionOf(lookup.index);
@@ -34,11 +34,17 @@ export const indexOfLookup = (lookup: AnyLookup): Created | undefined => lookup.
 export const lookupKeysOf = (lookup: AnyLookup): readonly Key[] => indexOfLookup(lookup)?.declaration.key ?? [];
 
 /**
- * Throws for an index lookup whose `index` isn't a value `Index.create` returned, or whose `read` or `changed` names a
- * component that not every entity the index holds has.
+ * Throws for a lookup by entity whose `changed` names a component it neither reads nor has, and for an index lookup
+ * whose `index` isn't a value `Index.create` returned, or whose `read` or `changed` names a component that not every
+ * entity the index holds has.
  */
-export const checkIndexLookup = (what: "System" | "Finalizer", name: string, lookupName: string, lookup: AnyLookup): void => {
-    if (lookup.index === undefined) return;
+export const checkLookup = (what: "System" | "Finalizer", name: string, lookupName: string, lookup: AnyLookup): void => {
+    if (lookup.index === undefined) {
+        for (const key of lookup.changed ?? []) {
+            if (!(lookup.read ?? []).includes(key) && !(lookup.has ?? []).includes(key)) throw new Error(`${what} "${name}": lookup "${lookupName}" watches "${labelOf(key)}", which it neither reads nor has; name it in its read or has.`);
+        }
+        return;
+    }
     const index = indexDefinitionOf(lookup.index);
     if (index === undefined) throw new Error(`${what} "${name}": lookup "${lookupName}" goes through a value Index.create didn't return.`);
     const held = new Set<Key>([...index.declaration.key, ...index.declaration.components?.has ?? []].map(firstKeyOf));

@@ -56,6 +56,15 @@ type IndexLookup<D, L> =
             ? (...key: Prefix<KeyValues<KeyOf<D>>>) => Rows<IndexRow<L>>
             : (...key: KeyValues<KeyOf<D>>) => Rows<IndexRow<L>>;
 
+/**
+ * The row a lookup by entity gives: the lookup's `read` values, read-only, and with `changed` declared, whether a
+ * component it names may have changed in the entity since its system last ran: conservative, as `changed` filters are,
+ * and true on a system's first run and in finalizers. With `changed`, valid until the lookup is called again.
+ */
+type EntityRow<L> = {
+    readonly [K in (Listed<L, "read"> & Component.Key) | (L extends { readonly changed: readonly Component.Key[] } ? "changed" : never)]: K extends Component.Key ? Component.Value<K> : boolean
+};
+
 export type LookupFunction<L> = L extends { readonly index: Index<infer D> }
     ? IndexLookup<D, L>
-    : (entity: Entity) => { readonly [K in Listed<L, "read"> & Component.Key]: Component.Value<K> } | null;
+    : (entity: Entity) => EntityRow<L> | null;

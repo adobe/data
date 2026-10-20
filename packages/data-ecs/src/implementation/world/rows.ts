@@ -302,10 +302,54 @@ const readAt = (archetype: Archetype, row: number, id: number): unknown => {
     return storage === undefined ? undefined : readCell(storage, row);
 };
 
-/** A lookup returning `read` values keyed by component, for main-thread systems. */
-export const createObjectLookup = (state: State, lookup: Lookup) => {
+/** What a lookup by entity reading nothing gives every entity it finds. */
+export const emptyRow: object = {};
+
+/** A lookup by entity's row with `changed`: its `read` values by component, and `changed`. */
+export type ChangedRow = { [key: Key]: unknown; changed: boolean };
+
+/** A row for a lookup's `read` and `changed`, every field present from the start, so its writes keep one hidden class. */
+export const changedRowOf = (keys: readonly Key[]): ChangedRow => {
+    const row: ChangedRow = { changed: false };
+    for (let i = 0; i < keys.length; i++) row[keys[i]] = undefined;
+    return row;
+};
+
+/**
+ * Whether a component of `ids` may have changed in an archetype's row after `since`: its row's or its column's tick is
+ * newer, or it keeps no ticks, so it's unknown.
+ */
+const changedAt = (archetype: Archetype, row: number, ids: readonly number[], since: number): boolean => {
+    if (since < 0) return true;
+    const { storageById } = archetype;
+    for (let i = 0; i < ids.length; i++) {
+        const storage = storageById[ids[i]];
+        if (storage === undefined || !storage.ticked || storage.changed[row] > since || storage.columnChanged > since) return true;
+    }
+    return false;
+};
+
+/**
+ * A lookup returning `read` values keyed by component, for main-thread systems: a new object each call, the shared
+ * empty one for a lookup reading nothing, and with `changed` one row reused, its `changed` as of `since`.
+ */
+export const createObjectLookup = (state: State, lookup: Lookup, since: Since) => {
     const matcher = createMatcher(state, lookup);
     const keys = lookup.read ?? [];
+    const watched = "index" in lookup ? undefined : lookup.changed;
+    if (watched !== undefined) {
+        const ids = watched.map(key => idOf(state, key));
+        const found = changedRowOf(keys);
+        return (entity: Entity): object | null => {
+            const row = matcher.find(entity);
+            const { archetype } = matcher;
+            if (row < 0 || archetype === null) return null;
+            for (let i = 0; i < keys.length; i++) found[keys[i]] = readAt(archetype, row, matcher.read[i]);
+            found.changed = changedAt(archetype, row, ids, since.value);
+            return found;
+        };
+    }
+    if (keys.length === 0) return (entity: Entity): object | null => matcher.find(entity) < 0 ? null : emptyRow;
     return (entity: Entity): object | null => {
         const row = matcher.find(entity);
         const { archetype } = matcher;
@@ -365,7 +409,7 @@ export const createContext = (state: State, declaration: Pick<Declaration, "look
         for (const name of names) {
             const declared = lookup?.[name] ?? {};
             const index = indexes?.get(name);
-            const found = index === undefined || !("index" in declared) ? createObjectLookup(state, declared) : createIndexLookup(state, index, declared, since);
+            const found = index === undefined || !("index" in declared) ? createObjectLookup(state, declared, since) : createIndexLookup(state, index, declared, since);
             Object.defineProperty(lookups, name, { value: found, enumerable: true });
         }
         Object.defineProperty(value, "lookup", { value: lookups, enumerable: true });

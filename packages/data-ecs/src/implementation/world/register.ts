@@ -5,7 +5,7 @@ import { createRunner, releaseHoldings, removedRunner, stopHoldings, type Holdin
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, observe, unobserve, type Key, type State } from './state.js';
 import { labelOfItem, orderKeysOf } from '../../interface/registry/index.js';
-import { indexWatchesOf, lookupComponentsOf, orderComponentsOf } from './lookup-keys.js';
+import { entityWatchesOf, indexWatchesOf, lookupComponentsOf, orderComponentsOf } from './lookup-keys.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
 /** `ticked`: components the new systems filter on, which must keep ticks before they run. */
@@ -73,20 +73,24 @@ const upObserved = (leaf: Leaf): readonly Key[] => {
     return up === undefined || !filtered ? [] : [up.through, ...up.read ?? []];
 };
 
-/** The components whose changes indexes a leaf looks up through or orders by follow: their key parts, and what its lookups watch. */
-const indexObserved = (leaf: Leaf): readonly Key[] => {
+/**
+ * The components whose changes a leaf's lookups report: the key parts of indexes it looks up through or orders by,
+ * and what its lookups watch.
+ */
+const lookupObserved = (leaf: Leaf): readonly Key[] => {
     const ordered = orderKeysOf(leaf.declaration);
     const looked = indexWatchesOf(leaf.declaration.lookup);
-    return ordered.length === 0 ? looked : [...looked, ...ordered];
+    const watched = entityWatchesOf(leaf.declaration.lookup);
+    return ordered.length + watched.length === 0 ? looked : [...looked, ...watched, ...ordered];
 };
 
-/** The components a leaf needs ticks on: those it filters on, and those `upObserved` and `indexObserved` give. */
+/** The components a leaf needs ticks on: those it filters on, and those `upObserved` and `lookupObserved` give. */
 const tickedBy = (leaf: Leaf): readonly Key[] =>
-    [...leaf.declaration.components?.added ?? [], ...leaf.declaration.components?.changed ?? [], ...upObserved(leaf), ...indexObserved(leaf)];
+    [...leaf.declaration.components?.added ?? [], ...leaf.declaration.components?.changed ?? [], ...upObserved(leaf), ...lookupObserved(leaf)];
 
 /** The components whose `changed` stamps a leaf reads, so kernels writing them must keep their stamps. */
 const observedBy = (leaf: Leaf): readonly Key[] => {
-    const indexed = indexObserved(leaf);
+    const indexed = lookupObserved(leaf);
     const observed = [...leaf.declaration.components?.changed ?? [], ...upObserved(leaf)];
     return indexed.length === 0 ? observed : [...new Set([...observed, ...indexed])];
 };

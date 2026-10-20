@@ -110,6 +110,7 @@ describe("System.create", () => {
         const rejected: readonly (readonly [object, string])[] = [
             [{ components: { read: [position], has: [unregistered] } }, `uses component "typesSystemTest/unregistered", which isn't a registered component`],
             [{ components: { read: [position] }, lookup: { others: { read: [position], not: [unregistered] } } }, `uses component "typesSystemTest/unregistered", which isn't a registered component`],
+            [{ components: { read: [position] }, lookup: { others: { read: [position], changed: [height] } } }, `lookup "others" watches "typesSystemTest/height", which it neither reads nor has`],
             [{ components: { write: [parent] } }, `writes "typesSystemTest/parent", a reference, which changes only through commands`],
             [{ components: { has: [position] }, reduce: { [total]: "max" } }, `reduces "typesSystemTest/total" with "max", but it's declared reduce: "+"`],
             [{ components: { has: [position] }, reduce: { [time]: "+" } }, `reduces "typesSystemTest/time", which has no reduce trait`],

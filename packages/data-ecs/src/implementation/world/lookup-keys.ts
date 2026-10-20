@@ -28,6 +28,17 @@ export const indexWatchesOf = (lookup: { readonly [name: string]: Lookup } | und
     return keys;
 };
 
+/** The components a declaration's lookups by entity watch: their `changed`, which keep ticks and kernels' stamps while it lives. */
+export const entityWatchesOf = (lookup: { readonly [name: string]: Lookup } | undefined): readonly Component.Key[] => {
+    if (lookup === undefined) return none;
+    const keys: Component.Key[] = [];
+    for (const name in lookup) {
+        const declared = lookup[name];
+        if (indexOfLookup(declared) === undefined) keys.push(...declared.changed ?? []);
+    }
+    return keys;
+};
+
 /** Every component the index a declaration orders its rows by names: its key parts, `has` and `not`. */
 export const orderComponentsOf = (declaration: { readonly order?: unknown }): readonly Component.Key[] => {
     const index = indexDefinitionOf(declaration.order);

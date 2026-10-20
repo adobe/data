@@ -23,12 +23,15 @@ export type ComponentAccess = {
 };
 
 /**
- * Read-only access to other entities: by entity, matching `read`, `has` and `not`, or through an index by key. An index
- * lookup's `read` names components every entity the index holds has, its key parts or its `has`, and its `changed` the
- * ones whose changes its lists' `changed` reports, as a system's `changed` filter does; its system can't write a key
- * part or what it reads.
+ * Read-only access to other entities: by entity, matching `read`, `has` and `not`, or through an index by key. A lookup
+ * by entity's `changed` names components it reads or has, whose changes its row's `changed` reports. An index lookup's
+ * `read` names components every entity the index holds has, its key parts or its `has`, and its `changed` the ones
+ * whose changes its lists' `changed` reports. Both report as a system's `changed` filter does; its system can't write a
+ * key part or what it reads.
  */
-export type Lookup = Pick<ComponentAccess, "read" | "has" | "not"> | { readonly index: Index; readonly read?: readonly Component.Key[]; readonly changed?: readonly Component.Key[] };
+export type Lookup =
+    | Pick<ComponentAccess, "read" | "has" | "not"> & { readonly changed?: readonly Component.Key[] }
+    | { readonly index: Index; readonly read?: readonly Component.Key[]; readonly changed?: readonly Component.Key[] };
 
 /**
  * The parent each row's values flow down from: the entity its `through` reference names, read before the row. Rows

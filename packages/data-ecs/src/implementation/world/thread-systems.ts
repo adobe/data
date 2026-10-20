@@ -27,7 +27,8 @@ import { applying, rebuild, replay, stage, waitStructure, type Mirror, type Mirr
 import type { WorkerError } from './protocol.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { combine, contributed, identityOf, reductionTargetsOf, type ReductionTarget } from './reductions.js';
-import { rowBinderOf, type Row, type RowArchetype, type RowHost, type RowStorage } from './rows.js';
+import { changedRowOf, emptyRow, rowBinderOf, type Row, type RowArchetype, type RowHost, type RowStorage } from './rows.js';
+import type { Since } from './index-lookups.js';
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
 import { createThreadFinalizers } from './thread-finalizers.js';
 import { createThreadIndex, type ThreadIndex } from './thread-indexes.js';
@@ -808,6 +809,8 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
         Object.defineProperty(value, "resources", { value: values, enumerable: true });
     }
     const names = Object.keys(declaration.lookup ?? {});
+    /** Its `lastRun` while it runs, which its lookups by entity compare with. */
+    const lookupSince: Since = { value: 0 };
     /** Its lookups through indexes, whose views each run points at the index's arrays. */
     const threadIndexes: ThreadIndex[] = [];
     if (names.length > 0) {
@@ -817,7 +820,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
             const index = indexOfLookup(declared);
             const record = records.get(name);
             let found: unknown;
-            if (index === undefined || record === undefined) found = lookupOf(host, declared);
+            if (index === undefined || record === undefined) found = entityLookupOf(host, declared, lookupSince);
             else {
                 const reads = declared.read ?? [];
                 const threadIndex = createThreadIndex(host.rows, host.archetypeAt, {
@@ -939,6 +942,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
     const run = (lastRun: number, input: unknown): Outcome => {
         outcome.executed = outcome.ran = false;
         outcome.error = undefined;
+        lookupSince.value = lastRun;
         try {
             // A system whose conditions don't hold is skipped, successfully, and keeps its `lastRun`.
             if (!holds()) return outcome;
@@ -1167,6 +1171,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
     const runTail = (lastRun: number, input: unknown, control: Int32Array, sync: number, at: number, stamps: number[]): Outcome => {
         outcome.executed = outcome.ran = false;
         outcome.error = undefined;
+        lookupSince.value = lastRun;
         const end = Atomics.load(control, endWord);
         try {
             let claimed = Atomics.add(control, progressWord, tailChunk);
@@ -1261,4 +1266,65 @@ const lookupOf = (host: RunnerHost, lookup: Lookup) => {
         }
         return values;
     };
+};
+
+/** A lookup reading nothing, from this thread's views: the shared empty row for every entity it finds. */
+const emptyLookupOf = (host: RunnerHost, lookup: Lookup) => {
+    const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
+    const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
+    return (entity: Entity): object | null => {
+        const table = host.refreshEntities();
+        const index = locate(table, entity);
+        if (index < 0) return null;
+        const archetype = host.archetypeAt(table.archetype[index]);
+        if (archetype === undefined || archetype.resource) return null;
+        const { components } = archetype;
+        for (const id of has) if (!components.includes(id)) return null;
+        for (const id of not) if (components.includes(id)) return null;
+        return emptyRow;
+    };
+};
+
+/**
+ * A lookup with `changed`, from this thread's views: one row reused, its `read` values keyed by component, and whether
+ * a component `watched` names may have changed in it after `since`. A GPU kernel's column stamps reach this thread as
+ * row ticks; a component keeping no ticks counts as changed.
+ */
+const changedLookupOf = (host: RunnerHost, lookup: Lookup, watched: readonly Key[], since: Since) => {
+    const read = (lookup.read ?? []).map(host.numberOf);
+    const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
+    const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
+    const ids = watched.map(host.numberOf);
+    const keys = lookup.read ?? [];
+    const found = changedRowOf(keys);
+    return (entity: Entity): object | null => {
+        const table = host.refreshEntities();
+        const index = locate(table, entity);
+        if (index < 0) return null;
+        const archetype = host.archetypeAt(table.archetype[index]);
+        if (archetype === undefined || archetype.resource) return null;
+        const { components, storageById } = archetype;
+        for (const id of read) if (!components.includes(id)) return null;
+        for (const id of has) if (!components.includes(id)) return null;
+        for (const id of not) if (components.includes(id)) return null;
+        const row = table.row[index];
+        for (let i = 0; i < keys.length; i++) {
+            const storage = storageById[read[i]];
+            found[keys[i]] = storage === undefined ? undefined : readCell(storage, row);
+        }
+        let changed = since.value < 0;
+        for (let i = 0; i < ids.length && !changed; i++) {
+            const storage = storageById[ids[i]];
+            changed = storage === undefined || !storage.ticked || storage.changed[row] > since.value;
+        }
+        found.changed = changed;
+        return found;
+    };
+};
+
+/** The lookup by entity a declaration chooses, once: with `changed`, reading nothing, or reading values. */
+const entityLookupOf = (host: RunnerHost, lookup: Lookup, since: Since) => {
+    const watched = "index" in lookup ? undefined : lookup.changed;
+    if (watched !== undefined) return changedLookupOf(host, lookup, watched, since);
+    return (lookup.read ?? []).length === 0 ? emptyLookupOf(host, lookup) : lookupOf(host, lookup);
 };

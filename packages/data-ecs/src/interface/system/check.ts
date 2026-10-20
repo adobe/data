@@ -5,7 +5,7 @@ import { reducedBy, scheduleOf } from '../registry/schedule.js';
 import { conditional } from '../registry/schemas.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
-import { checkIndexLookup, indexDefinitionOf, lookupKeysOf, orderKeysOf } from '../registry/indexes.js';
+import { checkLookup, indexDefinitionOf, lookupKeysOf, orderKeysOf } from '../registry/indexes.js';
 import { labelOfItem } from '../registry/items.js';
 import type { Schema } from '../schema/schema.js';
 import type { Composite } from './composite.js';
@@ -144,7 +144,7 @@ export const checkLeaf = (leaf: Leaf): void => {
     checkWorldWritten(`System "${name}"`, resources?.write);
     const writes = new Set<Key>(components?.write);
     for (const lookupName in lookup) {
-        checkIndexLookup("System", name, lookupName, lookup[lookupName]);
+        checkLookup("System", name, lookupName, lookup[lookupName]);
         for (const key of lookup[lookupName].read ?? []) {
             if (writes.has(key)) throw new Error(`System "${name}": lookup "${lookupName}" reads "${labelOf(key)}", which the system writes.`);
         }

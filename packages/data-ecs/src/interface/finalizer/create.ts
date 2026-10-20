@@ -4,7 +4,7 @@ import { firstItemOf, labelOfItem, nameOf } from '../registry/items.js';
 import { addFinalizer, programFinalizers } from '../registry/program.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
-import { checkIndexLookup } from '../registry/indexes.js';
+import { checkLookup } from '../registry/indexes.js';
 import type { Resource } from '../resource/resource.js';
 import type { Listed, Property } from '../system/property.js';
 import type { ThreadOfComponent } from '../component/value.js';
@@ -89,7 +89,7 @@ export const create = <const D extends Declaration>(
     requireRegistered("Finalizer", name, "component", declaration.components.has);
     requireRegistered("Finalizer", name, "component", declaration.components.not);
     for (const lookupName in declaration.lookup) {
-        checkIndexLookup("Finalizer", name, lookupName, declaration.lookup[lookupName]);
+        checkLookup("Finalizer", name, lookupName, declaration.lookup[lookupName]);
         const lookup = declaration.lookup[lookupName];
         requireRegistered("Finalizer", name, "component", "has" in lookup ? lookup.has : undefined);
         requireRegistered("Finalizer", name, "component", "not" in lookup ? lookup.not : undefined);
@@ -114,7 +114,7 @@ export const changes = <const D extends ChangesDeclaration>(
     requireRegistered("Finalizer", name, "resource", declaration.resources?.write);
     for (const lookupName in declaration.lookup) {
         const lookup = declaration.lookup[lookupName];
-        checkIndexLookup("Finalizer", name, lookupName, lookup);
+        checkLookup("Finalizer", name, lookupName, lookup);
         for (const keys of [lookup.read, "has" in lookup ? lookup.has : undefined, "not" in lookup ? lookup.not : undefined]) requireRegistered("Finalizer", name, "component", keys);
     }
     for (const key of declaration.watch ?? []) {

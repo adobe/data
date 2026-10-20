@@ -27,6 +27,7 @@ import { createPool, type Pool } from './pool.js';
 import type { Runner } from './runner.js';
 import { platformWorkers, type WorkerPlatform, type WorkerPort } from './worker-platform.js';
 import { createPublisher } from './publish.js';
+import { flushBetween } from './layout-directory.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
@@ -212,6 +213,15 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         workersBehind = false;
     };
 
+    /**
+     * Between runs, once tick arrays started: joined threads and workers see them before the next run's tasks. Joined
+     * threads read the layout directory with or without a pool.
+     */
+    const publishLayouts = (): void => {
+        flushBetween(state.directory, state.bumped, state.archetypes, state.entities, state.resourceEntity, state.counted);
+        context.publish();
+    };
+
     /** Adds resources, then loads kernels on the main thread and in every worker. Undoes the registration if loading fails. */
     const complete = async (registration: Registration): Promise<void> => {
         const { resources, ticked, kernels } = registration;
@@ -220,8 +230,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             ensureResources(state, resources);
             // Kept after a rollback: ticks nothing reads cost only memory.
             startTicking(state, ticked);
-            // Workers see the new tick arrays before the next run's tasks.
-            context.publish();
+            publishLayouts();
             await load(kernels);
             await loadOnWorkers();
         }
@@ -233,8 +242,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     /** Once entity observers start kernels' stamps for more components: kernels that dropped them load again. */
     const reloadObserved = async (): Promise<void> => {
-        // Workers see the new tick arrays before the next run's tasks.
-        context.publish();
+        publishLayouts();
         await load(registrar.kernels().filter(runner => runner.kernel?.stale() === true));
         await loadOnWorkers();
     };

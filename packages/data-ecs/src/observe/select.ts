@@ -404,20 +404,37 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
                 track(lookup.list(), null, fromKeyless);
             });
 
-    /** The scan in progress: its first row starts it. */
-    let scanning: Scan | null = null;
-    const start = (): Scan | null => {
+    /** What takes each row of the scan in progress, which its first row starts, until it's finished. */
+    let accept: ((row: { readonly entity: Entity } & Values) => void) | null = null;
+    const ignore = (): void => {};
+    /** One entry's acceptance, its test inline when it has one; several entries' in turn. */
+    const acceptOf = (entries: readonly QueryEntry[]): (row: { readonly entity: Entity } & Values) => void => {
+        if (entries.length !== 1 || impossible) return row => {
+            for (let i = 0; i < entries.length; i++) if (passes(entries[i], row)) entries[i].gather.add(row.entity, row);
+        };
+        const [{ gather, tests }] = entries;
+        if (tests.length === 0) return row => { gather.add(row.entity, row); };
+        if (tests.length === 1) {
+            const [test] = tests;
+            const [key] = where;
+            return row => { if (test(row[key])) gather.add(row.entity, row); };
+        }
+        const [entry] = entries;
+        return row => { if (passes(entry, row)) gather.add(row.entity, row); };
+    };
+    const start = (): void => {
         const scan = shape.scans[0];
-        if (scan === undefined) return null;
+        if (scan === undefined) {
+            accept = ignore;
+            return;
+        }
         scan.started = true;
         for (const entry of scan.entries) entry.gather.start();
-        return scan;
+        accept = acceptOf(scan.entries);
     };
     const scanner = System.create({ name, synced: true, components: { read: reads, has: required.filter(key => !reads.includes(key)), not } }, row => {
-        if (scanning === null || scanning !== shape.scans[0] || !scanning.started) scanning = start();
-        if (scanning === null) return;
-        const { entries } = scanning;
-        for (let i = 0; i < entries.length; i++) if (passes(entries[i], row)) entries[i].gather.add(row.entity, row);
+        if (accept === null) start();
+        accept?.(row);
     });
     /** Drops entries without subscribers, which nothing keeps current while the shape isn't tracked. */
     const dropUnused = (): void => {
@@ -434,13 +451,16 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
     const finish = (): void => {
         const scan = shape.scans.shift();
         if (scan === undefined) return;
-        scanning = null;
+        accept = null;
         let failed: unknown = none;
         let kept = false;
         for (const entry of scan.entries) {
             if (!scan.started) entry.gather.start();
-            const count = entry.gather.finish(out);
-            entry.value = counting ? count : out.slice(0, count);
+            // The value itself is gathered into, rather than copied from scratch.
+            const value: Entity[] = [];
+            const count = entry.gather.finish(value);
+            value.length = count;
+            entry.value = counting ? count : value;
             entry.valid = true;
             failed = give(entry, scan.batch, false, state.pass, -1, failed);
             if (entry.live > 0) kept = true;

@@ -25,7 +25,7 @@ export type Gather = {
 export const asEntity = (value: number): Entity => value as Entity;
 
 /** An entity's index: its low 32 bits, which order live entities, as an index without a key keeps them. */
-export const indexOf = (entity: number): number => entity % 4294967296;
+export const indexOf = (entity: number): number => entity >>> 0;
 
 export const createCount = (): Gather => {
     let count = 0;

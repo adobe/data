@@ -24,17 +24,20 @@ export type World = {
      * Adds a system to every tick, from the next one on, ordered with those already added by its constraints, as a
      * composite's members are. A tick runs on a beat of the `cadence` resource where `always` is set, `wake` is due or
      * a run arrived since the last tick, and only while some system is added. Throws for a system with no ordering path
-     * to one already added that conflicts with it, and on a joined thread; failures appear in the `report` resource.
+     * to one already added that conflicts with it; failures appear in the `report` resource.
      * A synced system runs after every run's and tick's sync point instead. It never conflicts and doesn't count as an
      * added system for ticking. In a tick it sees the tick's report, which then holds its failures without notifying
-     * again.
+     * again. On a joined thread `add` takes only synced systems, whose keys need ids: each runs on that thread after the
+     * world's sync points, once for the newest when the thread fell behind, reading structs and the objects of the
+     * threads it fills as of one sync point; its failures are in a later run's report.
      */
     add(system: System<void>): void;
     /**
      * Takes a value passed to `add`. Once it returns, that system's body is never called again, and its memory is
      * released. A system added both alone and within an added composite stays until both are removed; constraints
      * naming a removed system are ignored. Removing a value that isn't added does nothing. Throws, removing nothing, when
-     * the systems left would conflict with no ordering path between them, as `add` does, and on a joined thread.
+     * the systems left would conflict with no ordering path between them, as `add` does. On a joined thread it takes
+     * only synced systems.
      */
     remove(system: System<void>): void;
     readonly observe: Observers;

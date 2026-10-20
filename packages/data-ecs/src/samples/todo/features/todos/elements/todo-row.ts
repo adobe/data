@@ -1,6 +1,6 @@
 /**
- * `<todo-row>`: one todo. Properties `label` and `done` drive it, and `done` is reflected as an attribute for styling.
- * It dispatches `todo-toggle`, `todo-delete` and `todo-edit`, and never changes its properties itself: whoever owns
+ * `<todo-row>`: one todo. Properties `label` and `done` drive it, and `done` is reflected as an attribute for styling;
+ * `hidden` hides it, as it does any element. It dispatches `todo-toggle`, `todo-delete` and `todo-edit`, and never changes its properties itself: whoever owns
  * the todo writes them back. Editing is its own state, as focus is.
  */
 
@@ -9,6 +9,8 @@ template.innerHTML = `
 <style>
     :host { display: flex; align-items: center; gap: 12px; box-sizing: border-box; min-height: 44px; padding: 0 12px;
         border-bottom: 1px solid var(--todo-line, #e5e7eb); background: var(--todo-surface, #fff); }
+    /* The display above would otherwise show a hidden row. */
+    :host([hidden]) { display: none; }
     :host(:hover) { background: var(--todo-hover, #f9fafb); }
     :host([done]) .label { text-decoration: line-through; color: var(--todo-muted, #9ca3af); }
     .toggle { flex-shrink: 0; width: 18px; height: 18px; margin: 0; accent-color: var(--todo-accent, #2563eb); }

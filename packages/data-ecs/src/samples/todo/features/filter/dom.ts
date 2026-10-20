@@ -1,5 +1,6 @@
 import { Resource, System } from "../../../../index.js";
-import { list } from "../todos/dom.js";
+import { done } from "../todos/data.js";
+import { row } from "../todos/dom.js";
 import { filter } from "./data.js";
 import { TodoFilters } from "./elements/todo-filters.js";
 
@@ -14,13 +15,19 @@ declare module "@adobe/data-ecs" {
 
 Resource.register(filters, { thread: "main" });
 
-/** The list hides what the filter leaves out by itself, so a new filter is one write, whatever the list holds. */
-export const bindList = System.create({
-    name: "filter/bindList",
+/**
+ * Hides each row the filter leaves out, as its todo or the filter changes. A row whose visibility stays the same isn't
+ * written, and only rows hidden or shown again restyle: a new filter costs a pass over the rows and the style of those
+ * that change, where one attribute of the list that style sheets select rows by restyles every row.
+ */
+export const filterRows = System.create({
+    name: "filter/filterRows",
     observer: true,
-    resources: { read: [filter], changed: [filter], is: [list] },
-}, ({ resources }) => {
-    resources[list].filter = resources[filter];
+    components: { read: [done, row], changed: [done, row] },
+    resources: { read: [filter], changed: [filter] },
+}, (item, { resources }) => {
+    const hidden = resources[filter] === "completed" ? !item[done] : resources[filter] === "active" && item[done];
+    if (item[row].hidden !== hidden) item[row].hidden = hidden;
 });
 
 export const bindFilters = System.create({
@@ -31,4 +38,4 @@ export const bindFilters = System.create({
     resources[filters].filter = resources[filter];
 });
 
-export const dom = [bindList, bindFilters];
+export const dom = [filterRows, bindFilters];

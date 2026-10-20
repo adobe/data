@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { workers } from "../../../../index.js";
+import { workers, type Entity } from "../../../../index.js";
 import { createWorld } from "../../../../implementation/index.js";
 import { settled, watchTicks } from "../../shared/ticks.test-helper.js";
 import * as todos from "../todos/dom.js";
@@ -18,31 +18,47 @@ afterEach(() => {
     document.body.replaceChildren();
 });
 
-it("shows the filter on the buttons and filters the list's rows, with one write to each per change", async () => {
+it("shows the filter on its buttons, and hides the rows it leaves out, writing only those that change", async () => {
     const list = document.createElement("todo-list");
     const buttons = document.createElement("todo-filters");
     document.body.append(buttons, list);
     await using world = createWorld({ [workers]: 0, [todos.list]: list, [filters]: buttons });
     await watchTicks(world);
     for (const system of [...todos.dom, ...dom]) world.add(system);
-    await world.run(addTodo, { label: "a" });
-    await settled(world.run(addTodo, { label: "b" }));
-    const [first, second] = list.querySelectorAll("todo-row");
-    const entity = first === undefined ? undefined : todos.todoOf.get(first);
-    if (entity === undefined || second === undefined) throw new Error("No rows.");
-    await settled(world.run(toggleTodo, { entity }));
-    const shown = (): boolean[] => [first?.checkVisibility() ?? false, second.checkVisibility()];
-    expect(shown()).toEqual([true, true]);
+    for (const text of ["a", "b"]) await world.run(addTodo, { label: text });
+    await settled(world.run(addTodo, { label: "c" }));
+    const rows = [...list.querySelectorAll("todo-row")];
+    const entityAt = (index: number): Entity => {
+        const element = rows[index];
+        const entity = element === undefined ? undefined : todos.todoOf.get(element);
+        if (entity === undefined) throw new Error(`No row ${index}.`);
+        return entity;
+    };
+    await settled(world.run(toggleTodo, { entity: entityAt(1) }));
+    const shown = (): string => rows.map(element => element.checkVisibility() ? element.label : "_").join("");
+    expect(shown()).toBe("abc");
 
     const records: MutationRecord[] = [];
     const observer = new MutationObserver(delivered => records.push(...delivered));
-    observer.observe(list, { attributes: true, childList: true, subtree: true });
+    observer.observe(list, { attributes: true, attributeFilter: ["hidden"], subtree: true });
+    const hiddenWrites = (): number => {
+        records.push(...observer.takeRecords());
+        return records.splice(0).length;
+    };
     await settled(world.run(setFilter, { filter: "active" }));
     expect(buttons.filter).toBe("active");
-    expect(shown()).toEqual([false, true]);
+    expect(shown()).toBe("a_c");
+    expect(hiddenWrites()).toBe(1);
     await settled(world.run(setFilter, { filter: "completed" }));
-    expect(shown()).toEqual([true, false]);
-    records.push(...observer.takeRecords());
+    expect(shown()).toBe("_b_");
+    expect(hiddenWrites()).toBe(3);
+    // A todo that changes hides or shows as the filter has it.
+    await settled(world.run(toggleTodo, { entity: entityAt(0) }));
+    expect(shown()).toBe("ab_");
+    expect(hiddenWrites()).toBe(1);
+    await settled(world.run(addTodo, { label: "d" }));
+    expect([...list.querySelectorAll("todo-row")].map(element => element.checkVisibility())).toEqual([true, true, false, false]);
+    await settled(world.run(setFilter, { filter: "all" }));
+    expect(shown()).toBe("abc");
     observer.disconnect();
-    expect(records.map(record => `${record.type} ${record.attributeName}`)).toEqual(["attributes filter", "attributes filter"]);
 });

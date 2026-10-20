@@ -1,18 +1,13 @@
 /**
- * `<todo-list>`: holds rows as its children, in the order they're placed. Its `filter` property, reflected as an
- * attribute, hides children by their `done` attribute: `"active"` hides done ones, `"completed"` the others. Dragging a
- * child onto another, or Alt+ArrowUp and Alt+ArrowDown on a focused child, dispatches `todo-move` with the child and
- * the one it should go before, null for the end; the list never moves children itself.
+ * `<todo-list>`: holds rows as its children, in the order they're placed. Dragging a child onto another, or
+ * Alt+ArrowUp and Alt+ArrowDown on a focused child, dispatches `todo-move` with the child and the one it should go
+ * before, null for the end, skipping hidden children; the list never moves children itself.
  */
-
-export type Filter = "all" | "active" | "completed";
 
 const template = document.createElement("template");
 template.innerHTML = `
 <style>
     :host { display: block; overflow-y: auto; }
-    :host([filter="active"]) ::slotted([done]),
-    :host([filter="completed"]) ::slotted(:not([done])) { display: none; }
     .empty { margin: 0; padding: 32px 12px; text-align: center; color: var(--todo-muted, #9ca3af); }
 </style>
 <slot><p class="empty">Nothing to do.</p></slot>`;
@@ -80,22 +75,10 @@ const listen = (list: HTMLElement): void => {
 };
 
 export class TodoList extends HTMLElement {
-    #filter: Filter = "all";
-
     constructor() {
         super();
         this.attachShadow({ mode: "open" }).append(template.content.cloneNode(true));
         listen(this);
-    }
-
-    get filter(): Filter {
-        return this.#filter;
-    }
-
-    set filter(value: Filter) {
-        if (value === this.#filter) return;
-        this.#filter = value;
-        this.setAttribute("filter", value);
     }
 }
 

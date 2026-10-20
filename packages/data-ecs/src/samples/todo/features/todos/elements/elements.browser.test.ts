@@ -33,6 +33,13 @@ describe("todo-row", () => {
         expect(part(row, ".label", HTMLElement).textContent).toBe("Buy oat milk");
     });
 
+    it("isn't shown while hidden", () => {
+        const row = createRow("Buy milk");
+        expect(row.checkVisibility()).toBe(true);
+        row.hidden = true;
+        expect(row.checkVisibility()).toBe(false);
+    });
+
     it("drops writes of the value it has", () => {
         const row = createRow("Buy milk", true);
         expect(mutationsOf(row, () => {
@@ -92,58 +99,57 @@ describe("todo-row", () => {
     });
 });
 
+
 describe("todo-list", () => {
-    const createList = (...labels: string[]): { readonly list: HTMLElementTagNameMap["todo-list"]; readonly rows: HTMLElementTagNameMap["todo-row"][] } => {
+    type Row = HTMLElementTagNameMap["todo-row"];
+
+    /** A list of four rows, a to d, on the page. */
+    const createList = (): { readonly list: HTMLElementTagNameMap["todo-list"]; readonly rows: readonly [Row, Row, Row, Row] } => {
         const list = document.createElement("todo-list");
         document.body.append(list);
-        const rows = labels.map((label, i) => {
-            const row = document.createElement("todo-row");
-            row.label = label;
-            row.done = i % 2 === 1;
-            list.append(row);
-            return row;
-        });
-        return { list, rows };
+        const row = (label: string): Row => {
+            const created = document.createElement("todo-row");
+            created.label = label;
+            list.append(created);
+            return created;
+        };
+        return { list, rows: [row("a"), row("b"), row("c"), row("d")] };
     };
 
-    const shown = (rows: readonly HTMLElement[]): boolean[] => rows.map(row => row.checkVisibility());
+    const press = (row: Row, key: "ArrowUp" | "ArrowDown", altKey = true): void => {
+        row.dispatchEvent(new KeyboardEvent("keydown", { key, altKey, bubbles: true }));
+    };
 
-    it("hides children by its filter, reflected as an attribute", () => {
-        const { list, rows } = createList("a", "b", "c");
-        expect(shown(rows)).toEqual([true, true, true]);
-        list.filter = "active";
-        expect(list.getAttribute("filter")).toBe("active");
-        expect(shown(rows)).toEqual([true, false, true]);
-        list.filter = "completed";
-        expect(shown(rows)).toEqual([false, true, false]);
-        rows[0]!.done = true;
-        expect(shown(rows)).toEqual([true, true, false]);
-        list.filter = "all";
-        expect(shown(rows)).toEqual([true, true, true]);
-    });
-
-    it("dispatches todo-move for Alt+ArrowUp and Alt+ArrowDown, skipping hidden children, and never moves them itself", () => {
-        const { list, rows } = createList("a", "b", "c", "d");
+    it("dispatches todo-move for Alt+ArrowUp and Alt+ArrowDown, and never moves children itself", () => {
+        const { list, rows } = createList();
         const [a, b, c, d] = rows;
         const seen = record(document.body, "todo-move");
-        c!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true }));
-        a!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true }));
-        b!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true }));
-        // At either end, there's nowhere to go.
-        a!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true }));
-        d!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true }));
-        c!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+        press(c, "ArrowUp");
+        press(a, "ArrowDown");
+        press(b, "ArrowDown");
+        // At either end there's nowhere to go, and without Alt the keys do nothing.
+        press(a, "ArrowUp");
+        press(d, "ArrowDown");
+        press(c, "ArrowUp", false);
         expect(seen.map(event => event.detail)).toEqual([{ item: c, before: b }, { item: a, before: c }, { item: b, before: d }]);
-        list.filter = "active";
-        c!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true }));
-        a!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true }));
-        expect(seen.slice(3).map(event => event.detail)).toEqual([{ item: a, before: null }]);
         expect([...list.children]).toEqual(rows);
     });
 
+    it("skips hidden children when moving by keyboard", () => {
+        const { rows } = createList();
+        const [a, b, c, d] = rows;
+        b.hidden = true;
+        d.hidden = true;
+        const seen = record(document.body, "todo-move");
+        press(c, "ArrowDown");
+        press(a, "ArrowDown");
+        press(c, "ArrowUp");
+        expect(seen.map(event => event.detail)).toEqual([{ item: a, before: null }, { item: c, before: a }]);
+    });
+
     it("dispatches todo-move for a drop: before the child dropped on, or after it in its lower half", () => {
-        const { list, rows } = createList("a", "b", "c");
-        const [a, , c] = rows;
+        const { list, rows } = createList();
+        const [a, b, c] = rows;
         const seen = record(document.body, "todo-move");
         const drop = (item: HTMLElement, onto: HTMLElement, lower: boolean): void => {
             const dataTransfer = new DataTransfer();
@@ -153,12 +159,13 @@ describe("todo-list", () => {
             onto.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, composed: true, dataTransfer, clientY }));
             onto.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, composed: true, dataTransfer, clientY }));
         };
-        drop(c!, a!, false);
-        drop(a!, c!, true);
-        expect(seen.map(event => event.detail)).toEqual([{ item: c, before: a }, { item: a, before: null }]);
+        drop(c, a, false);
+        drop(a, b, true);
+        expect(seen.map(event => event.detail)).toEqual([{ item: c, before: a }, { item: a, before: c }]);
         expect([...list.children]).toEqual(rows);
     });
 });
+
 
 describe("todo-entry", () => {
     it("dispatches todo-add on Enter and clears itself, ignoring blank text; Escape clears", () => {

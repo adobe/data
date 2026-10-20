@@ -24,7 +24,8 @@ import { samePath, type TypedArray } from '../../interface/registry/layout.js';
 import { inputFor } from './input.js';
 import { createUp, type Run } from './up.js';
 import { labelOf, labelOfItem } from '../../interface/registry/index.js';
-import type { RemoteSystem, TaskChannel } from './remote-systems.js';
+import type { RemoteSystem } from './remote-systems.js';
+import type { JoinedSynced } from './joined-synced.js';
 import { releaseDirectory, type Directory } from './directories.js';
 import type { GpuEngine } from './gpu.js';
 import { acquireLookups, type IndexLookups, type IndexUse } from './indexes.js';
@@ -90,6 +91,8 @@ export type Runner = {
     readonly holdings: Holdings;
     /** For a system placed on a joined thread, which runs it there (`remote-systems.ts`); null for one that runs here. */
     readonly remote: RemoteSystem | null;
+    /** For a synced system on a joined thread, which runs it there after sync points (`joined-synced.ts`); else null. */
+    readonly joined: JoinedSynced | null;
     /** The tick it last ran at, which a runner placing it elsewhere starts from. */
     readonly lastRun: () => number;
 };
@@ -115,8 +118,8 @@ export type Holdings = {
     gpu: GpuEngine | null;
     readonly prefix: string;
     readonly afterSync: WeakRef<() => void> | null;
-    /** For a system placed on a joined thread: its channel and its index there, which it stops being once removed. */
-    remote: { readonly channel: TaskChannel; readonly index: number } | null;
+    /** For a system placed on a joined thread: what stops it running there once it's removed. */
+    remote: { readonly unplace: () => void } | null;
 };
 
 /** Holdings of a runner that holds nothing beyond its JS values. */
@@ -130,7 +133,7 @@ export const stopHoldings = (holdings: Holdings): void => {
     holdings.removed = true;
     const { remote } = holdings;
     holdings.remote = null;
-    remote?.channel.unplace(remote.index);
+    remote?.unplace();
 };
 
 /** Releases what a runner holds, once: no run may use it again. */
@@ -977,6 +980,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         afterSync: partialCount > 0 ? sizeSlots : null,
         holdings,
         remote: null,
+        joined: null,
         lastRun: () => lastRun,
     };
 };
@@ -1001,5 +1005,6 @@ export const removedRunner: Runner = {
     afterSync: null,
     holdings: { ...holdingNothing(), removed: true, released: true },
     remote: null,
+    joined: null,
     lastRun: () => 0,
 };

@@ -5,6 +5,7 @@ import { readAhead, type ExecuteContext } from './execute.js';
 import { failureOf } from './failures.js';
 import { refreshUses } from './indexes.js';
 import type { Runner } from './runner.js';
+import { joinedOf, type JoinedSynced } from './joined-synced.js';
 
 /**
  * Runs synced systems after a sync point, on this thread: those of the run, `own`, then those added, `added`, each once.
@@ -24,22 +25,23 @@ export const runSynced = (context: ExecuteContext, own: readonly Leaf[], added: 
  * A list's runners, read again once one was replaced or removed, and whether any looks up through an index. A runner
  * removed since it was read reads as removed, so a pass in progress skips it.
  */
-type Pass = { readonly runners: Runner[]; indexed: boolean; version: number };
+type Pass = { readonly runners: Runner[]; indexed: boolean; version: number; joined: readonly JoinedSynced[] | null };
 
 const passes = new WeakMap<ExecuteContext, WeakMap<readonly Leaf[], Pass>>();
-const emptyPass: Pass = { runners: [], indexed: false, version: -1 };
+const emptyPass: Pass = { runners: [], indexed: false, version: -1, joined: [] };
 
 const passOf = (context: ExecuteContext, leaves: readonly Leaf[]): Pass => {
     if (leaves.length === 0) return emptyPass;
     let byList = passes.get(context);
     if (byList === undefined) passes.set(context, byList = new WeakMap());
     let pass = byList.get(leaves);
-    if (pass === undefined) byList.set(leaves, pass = { runners: [], indexed: false, version: -1 });
+    if (pass === undefined) byList.set(leaves, pass = { runners: [], indexed: false, version: -1, joined: null });
     const { runnersVersion } = context.state;
     if (pass.version !== runnersVersion) {
         const { runners } = pass;
         runners.length = leaves.length;
         pass.indexed = false;
+        pass.joined = null;
         for (let k = 0; k < leaves.length; k++) if ((runners[k] = context.runnerOf(leaves[k])).indexes.length > 0) pass.indexed = true;
         pass.version = runnersVersion;
     }
@@ -88,9 +90,19 @@ const runAll = (context: ExecuteContext, own: readonly Leaf[], added: readonly L
     return failed;
 };
 
-/** Runs one synced system, adding its failure to `failures`. Its context has no commands, so its chunks hold none. */
+/** The synced systems of a list placed on joined threads, which run there once posted (`joined-synced.ts`). */
+export const joinedIn = (context: ExecuteContext, leaves: readonly Leaf[]): readonly JoinedSynced[] => {
+    const pass = passOf(context, leaves);
+    if (pass.joined === null) pass.joined = joinedOf(pass.runners);
+    return pass.joined;
+};
+
+/**
+ * Runs one synced system, adding its failure to `failures`. Its context has no commands, so its chunks hold none. One
+ * on a joined thread runs there.
+ */
 const runOne = (leaf: Leaf, runner: Runner, failures: Failure[] | null): Failure[] | null => {
-    if (runner.holdings.removed) return failures;
+    if (runner.holdings.removed || runner.joined !== null) return failures;
     const chunks = runner.start(undefined, null, -1);
     for (let c = 0; c < chunks.length; c++) {
         const chunk = chunks[c];

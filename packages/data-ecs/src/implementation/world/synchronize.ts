@@ -332,7 +332,7 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
             plan.row[entry] = fromRow;
             if (fromRow >= 0) leaving++;
             if (fromId >= 0) state.touched?.add(archetypes[fromId]);
-            if (fromId >= 0 && state.claimed) countChanged(state.counted, archetypes[fromId]);
+            if (fromId >= 0 && state.counting) countChanged(state.counted, archetypes[fromId]);
             // Held while a joined thread's finalizers haven't acknowledged its stop.
             if (holds !== null && index < holds.length && holds[index] > 0) kill(entities, index);
             else release(entities, index);

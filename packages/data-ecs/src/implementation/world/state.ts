@@ -21,6 +21,7 @@ import type { Row } from './rows.js';
 import type { MoveLog } from './move-log.js';
 import type { TaskChannel } from './remote-systems.js';
 import type { Tail } from './tails.js';
+import { createSyncedState, type SyncedState } from './joined-synced.js';
 import { claimComponent } from './remote.js';
 import type { IndexDefinition } from '../../interface/registry/index.js';
 import type { WorldIndex } from './indexes.js';
@@ -147,6 +148,10 @@ export type State = {
     readonly claims: Map<string, MoveLog>;
     readonly logs: MoveLog[];
     claimed: boolean;
+    /** Whether a joined thread reads the layout directory's counts: one holds claims, or has synced systems placed. */
+    counting: boolean;
+    /** Synced systems on joined threads (`joined-synced.ts`). */
+    readonly synced: SyncedState;
     /** While a joined thread may read them: archetypes whose count changed since the layout directory's last flush. */
     readonly counted: Archetype[];
     /** By logical thread a joined thread claims, its task channel, which systems placed there run through; and every channel. */
@@ -241,6 +246,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         claims: new Map(),
         logs: [],
         claimed: false,
+        counting: false,
+        synced: createSyncedState(),
         counted: [],
         threadTasks: new Map(),
         channels: [],

@@ -60,6 +60,9 @@ const removeLevel = System.create({ name: "syncedTest/removeLevel", synced: true
     current?.remove(watchLevel);
 });
 
+/** Adds `watchLevel` to the world the test runs, during a run. */
+const addWatch = System.create({ name: "syncedTest/addWatch" }, () => { current?.add(watchLevel); });
+
 const inline = (): ReturnType<typeof createWorld> => createWorld({ [workers]: 0 });
 
 /** A loop platform that counts the beats a world asks for, running none. */
@@ -229,8 +232,18 @@ describe("synced systems", () => {
         expect([seen.removals, seen.levels]).toEqual([[1, 1], []]);
     });
 
-    it("can't be placed on a joined thread", () => {
+    it("run after the next run once added during a run, whose own pass couldn't run it yet", async () => {
+        reset();
+        await using world = inline();
+        current = world;
+        await world.run(addWatch);
+        current = null;
+        await world.run(raise);
+        expect(seen.levels).toEqual([1]);
+    });
+
+    it("can be placed on a joined thread", () => {
         const leaf = requireDefinition(watchLevel);
-        expect(isSynced(leaf) ? unplaceable(leaf, "main") : null).toBe(`System "syncedTest/watchLevel" runs on thread "main", which a joined thread fills, and is synced, which runs only on the world's thread.`);
+        expect(isSynced(leaf) ? unplaceable(leaf, "main") : "not synced").toBe(null);
     });
 });

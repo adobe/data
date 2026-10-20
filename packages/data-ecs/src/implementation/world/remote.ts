@@ -47,6 +47,7 @@ export const claimThreads = (state: State, log: MoveLog, threads: readonly strin
     for (const thread of threads) state.claims.set(thread, log);
     state.logs.push(log);
     state.claimed = true;
+    state.counting = true;
     for (let id = 0; id < state.keys.length; id++) {
         const thread = threadOfComponent(state, id);
         if (thread !== null && state.claims.get(thread) === log) give(state, id, log);
@@ -74,6 +75,7 @@ export const releaseThreads = (state: State, log: MoveLog): void => {
         for (const batch of state.batches) for (const column of batch.columns) if (column.id === id) column.remote = null;
     }
     state.claimed = state.logs.length > 0;
+    state.counting = state.claimed || state.synced.count > 0;
     if (state.directory !== null) state.directory.guarded = state.claimed;
     // Finalizers on the threads it gave back activate again.
     state.unplacedSeen.clear();

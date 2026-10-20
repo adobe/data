@@ -2,7 +2,7 @@ import type { Entity } from '../../interface/entity/entity.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Lookup } from '../../interface/system/access.js';
-import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, itemOfId, keyOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration } from '../../interface/registry/index.js';
+import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, itemOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration } from '../../interface/registry/index.js';
 import { layoutOf, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { stampChanged, writeOf } from './archetype.js';
 import { emptyViews } from './arrays.js';
@@ -12,26 +12,21 @@ import {
     startSegment, type Encoder, type Extent, type Slots,
 } from './command-ring.js';
 import { addCommand, despawnCommand, removeCommand } from './buffer.js';
-import { createBlock, endBlock, locate, reserveFrom, tableLength, type Block } from './entities.js';
+import { createBlock, endBlock, locate, reserveFrom, type Block } from './entities.js';
 import { inputFor } from './input.js';
 import { protocolName, type ToWorld } from './joining.js';
-import {
-    archetypeField, capacityField, cursorField, entitiesVersionField, entitiesWord, freeCapacityField, freeField, generationField, linearFlag,
-    recordCapacity, recordCount, recordEntities, recordFlags, recordStorages, recordVersion, recordWords, remoteFlag, resourceEntityWord, resourceFlag,
-    rowField, storageAdded, storageChanged, storageChunkAdded, storageChunkChanged, storageChunks, storageColumn, storageComponent, storageFlags,
-    storageWords, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
-} from './layout-directory.js';
-import { coveringBuffer, pageBytes, pagesWord } from './memory.js';
 import { ownTag } from './move-log.js';
-import { applying, rebuild, replay, stage, waitStructure, type Mirror, type Mirrored } from './mirror.js';
+import { ranExecuted, ranSkipped } from './joined-synced.js';
+import { applying, rebuild, replay, stage, waitStructure, type Mirror } from './mirror.js';
 import type { WorkerError } from './protocol.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { combine, contributed, identityOf, reductionTargetsOf, type ReductionTarget } from './reductions.js';
-import { changedRowOf, emptyRow, rowBinderOf, type Row, type RowArchetype, type RowHost, type RowStorage } from './rows.js';
+import { changedRowOf, emptyRow, rowBinderOf, type RowHost } from './rows.js';
 import type { Since } from './index-lookups.js';
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
 import { createThreadFinalizers } from './thread-finalizers.js';
 import { createThreadIndex, type ThreadIndex } from './thread-indexes.js';
+import type { EntityViews, ThreadArchetype, ThreadDirectory, ThreadStorage } from './thread-directory.js';
 import { keptSorted } from './index-keys.js';
 import { chunkShift } from './kernel.js';
 import {
@@ -60,25 +55,12 @@ export const tailSnapshots = { late: 0, switched: 0 };
 /** A system the world places on this thread: its index here, id, keys' numbers, removed word, and by lookup name its index records. */
 export type SystemSetup = { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[]; readonly removed?: number; readonly indexes?: readonly (readonly [string, number])[] };
 
-/** A joined thread's view of a storage of the world's, in shared memory, or of this thread's objects, in its mirror. */
-type ThreadStorage = RowStorage & { readonly component: number };
-
-/** A joined thread's view of one of the world's archetypes, by its record, as of its version and the mirror's columns. */
-type ThreadArchetype = RowArchetype & {
-    readonly record: number;
-    readonly version: number;
-    readonly mirrored: Mirrored | null | undefined;
-    readonly components: readonly number[];
-    readonly resource: boolean;
-    readonly storageById: readonly (ThreadStorage | undefined)[];
-};
-
-type EntityViews = { cursor: Int32Array; free: Int32Array; generation: Uint32Array; archetype: Int32Array; row: Uint32Array; length: number };
-
 /** What the joined thread gives its systems. */
 export type ThreadSystemsHost = {
     readonly memory: WebAssembly.Memory;
     readonly mirror: Mirror;
+    /** This thread's view of the layout directory, over the same mirror. */
+    readonly directory: ThreadDirectory;
     /** The task block's words (`thread-tasks.ts`). */
     readonly control: Int32Array;
     /** The logical threads this thread fills. */
@@ -97,7 +79,6 @@ const errorOf = (error: unknown): WorkerError =>
 
 const noTicks = new Float64Array(0);
 const noTags = new Uint32Array(0);
-const noValues: unknown[] = [];
 const noBatches: readonly SpawnBatch[] = [];
 
 /** A command's key: what it is to the world, and how this thread writes its values. */
@@ -122,18 +103,9 @@ type Running = { error: unknown };
  * command ring, its flags and folds into the completion, then storing the task done and waking the world.
  */
 export const createThreadSystems = (host: ThreadSystemsHost) => {
-    const { memory, mirror, control } = host;
-    let buffer: ArrayBufferLike = new ArrayBuffer(0);
-    let words = new Uint32Array(0);
-    let memoryViews: Views = emptyViews;
-    let pages = -1;
-    /** By the world's number: what its key is here, and its layout, for the keys this thread's systems name. */
-    const keys: (Key | undefined)[] = [];
-    const layouts: Layout[] = [];
-    const numbers = new Map<Key, number>();
-    const archetypes: (ThreadArchetype | undefined)[] = [];
-    let entities: EntityViews | null = null;
-    let entitiesVersion = -1;
+    const { mirror, control, directory } = host;
+    const { viewed, rows: rowHost, numbers, refreshEntities, archetypeAt, countOf, resourceRow, tableCount } = directory;
+    const refreshMemory = (): void => { directory.refresh(); };
     const runners: (ThreadRunner | null | undefined)[] = [];
     const inputs = new Map<number, unknown>();
     /** The task waiting for what it needs: its systems' setups, its input, or this thread's objects; -1 for none. */
@@ -141,113 +113,6 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
     const writer = createRingWriter();
     let block: Block | null = null;
     const unused: number[] = [];
-    const rowHost: RowHost & { tick: number } = { layouts, rows: new Map<string, Row>(), tick: 0 };
-
-    /** Views of the memory again, once it grew; every archetype's views with them. */
-    const refreshMemory = (): void => {
-        if (words.length === 0) words = new Uint32Array(memory.buffer);
-        const current = Atomics.load(words, pagesWord);
-        if (current === pages) return;
-        const latest = coveringBuffer(memory, current * pageBytes);
-        if (latest.byteLength < current * pageBytes) throw new Error(`This thread's memory is ${latest.byteLength} bytes, short of the ${current * pageBytes} the world stored.`);
-        buffer = latest;
-        words = new Uint32Array(latest);
-        memoryViews = viewsOf(latest, 0, latest.byteLength);
-        pages = current;
-        archetypes.length = 0;
-        entitiesVersion = -1;
-    };
-
-    const refreshEntities = (): EntityViews => {
-        const record = entitiesWord;
-        const version = Atomics.load(words, record + entitiesVersionField);
-        if (entities === null || version !== entitiesVersion) {
-            const capacity = words[record + capacityField];
-            const views: EntityViews = {
-                cursor: new Int32Array(buffer, words[record + cursorField], 4),
-                free: new Int32Array(buffer, words[record + freeField], words[record + freeCapacityField]),
-                archetype: new Int32Array(buffer, words[record + archetypeField], capacity),
-                row: new Uint32Array(buffer, words[record + rowField], capacity),
-                generation: new Uint32Array(buffer, words[record + generationField], capacity),
-                length: 0,
-            };
-            if (entities === null) entities = views;
-            // Spawners hold the table, so it's updated in place.
-            else Object.assign(entities, views);
-            entitiesVersion = version;
-        }
-        entities.length = entities.cursor[tableLength];
-        return entities;
-    };
-
-    /** A storage's view, by its record's words; this thread's objects by their mirror column. */
-    const storageOf = (base: number, capacity: number, mirrored: Mirrored | null | undefined): ThreadStorage | undefined => {
-        const component = words[base + storageComponent];
-        const layout = layouts[component];
-        if (layout === undefined) return undefined;
-        const flags = words[base + storageFlags];
-        const ticked = (flags & tickedFlag) !== 0;
-        const own = (flags & remoteFlag) !== 0 && flags >>> threadShift === mirror.thread;
-        const chunks = words[base + storageChunks];
-        const added = ticked ? new Float64Array(buffer, words[base + storageAdded], capacity) : noTicks;
-        const changed = ticked ? new Float64Array(buffer, words[base + storageChanged], capacity) : noTicks;
-        return {
-            component,
-            layout,
-            ...writeOf(layout),
-            views: layout.kind === "linear" && (flags & linearFlag) !== 0 ? viewsOf(buffer, words[base + storageColumn], capacity * layout.stride) : emptyViews,
-            // Rows only this thread's systems write: a mirror's column, or one of its own while the mirror has none.
-            values: own ? mirrored?.byComponent[component]?.values ?? [] : noValues,
-            tags: own ? new Uint32Array(buffer, words[base + storageColumn], capacity) : noTags,
-            ticked,
-            added,
-            // A constant's `changed` ticks are its `added` ticks.
-            changed: layout.kind === "constant" ? added : changed,
-            chunkAdded: ticked ? new Float64Array(buffer, words[base + storageChunkAdded], chunks) : noTicks,
-            chunkChanged: ticked ? new Float64Array(buffer, words[layout.kind === "constant" ? base + storageChunkAdded : base + storageChunkChanged], chunks) : noTicks,
-        };
-    };
-
-    const viewArchetype = (id: number, record: number, version: number, mirrored: Mirrored | null | undefined): ThreadArchetype => {
-        const capacity = words[record + recordCapacity];
-        const storageById: (ThreadStorage | undefined)[] = [];
-        const components: number[] = [];
-        for (let s = 0; s < words[record + recordStorages]; s++) {
-            const base = record + recordWords + s * storageWords;
-            components.push(words[base + storageComponent]);
-            const storage = storageOf(base, capacity, mirrored);
-            if (storage !== undefined) storageById[storage.component] = storage;
-        }
-        return {
-            id, record, version, mirrored, components, storageById,
-            resource: (words[record + recordFlags] & resourceFlag) !== 0,
-            entities: new Float64Array(buffer, words[record + recordEntities], capacity),
-        };
-    };
-
-    /** An archetype's view: one load of its record's version, and new views only once it, or the mirror, moved on. */
-    const archetypeAt = (id: number): ThreadArchetype | undefined => {
-        const cached = archetypes[id];
-        const mirrored = mirror.archetypes[id];
-        if (cached !== undefined && cached.mirrored === mirrored && Atomics.load(words, cached.record + recordVersion) === cached.version) return cached;
-        const offset = cached?.record ?? (id < Atomics.load(words, tableLengthWord) ? words[(words[tableOffsetWord] >> 2) + id] >> 2 : 0);
-        if (offset === 0) return undefined;
-        return archetypes[id] = viewArchetype(id, offset, Atomics.load(words, offset + recordVersion), mirrored);
-    };
-
-    const countOf = (archetype: ThreadArchetype): number => words[archetype.record + recordCount];
-
-    /** The resource entity's archetype and row, or null before resources exist. */
-    const resourceRow = (): { readonly archetype: ThreadArchetype; readonly row: number } | null => {
-        const word = Atomics.load(words, resourceEntityWord);
-        if (word === 0) return null;
-        const table = refreshEntities();
-        const index = word - 1;
-        const archetype = archetypeAt(table.archetype[index]);
-        return archetype === undefined ? null : { archetype, row: table.row[index] };
-    };
-
-    const tableCount = (): number => Atomics.load(words, tableLengthWord);
 
     /** Whether a component's values are objects of a thread this one fills. */
     const ownObject = (key: Key): boolean => {
@@ -405,7 +270,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         if (block !== null) endBlock(block, unused);
         const cursor = Atomics.load(control, ringCursorWord);
         if (writer.count === 0 && usedBatches.length === 0 && unused.length === 0) return { start: cursor, end: cursor, spill: null, transfer: null };
-        const extent = endSegment(writer, memoryViews, Atomics.load(control, ringBaseWord) >>> 0, Atomics.load(control, ringCapacityWord), cursor,
+        const extent = endSegment(writer, viewed.views, Atomics.load(control, ringBaseWord) >>> 0, Atomics.load(control, ringCapacityWord), cursor,
             usedBatches.length === 0 ? noBatches : usedBatches, unused, slots);
         usedBatches.length = 0;
         Atomics.store(control, ringCursorWord, extent.end);
@@ -415,32 +280,13 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
 
     const runnerHost: RunnerHost = {
         rows: rowHost, archetypeAt, countOf, tableCount, resourceRow, refreshEntities, commands, mirror,
-        refresh: () => {
-            refreshMemory();
-            return buffer;
-        },
-        numberOf: key => {
-            const number = numbers.get(firstKeyOf(key));
-            if (number === undefined) throw new Error(`"${labelOf(key)}" has no number from the world here.`);
-            return number;
-        },
-        layoutOf: key => layouts[numbers.get(firstKeyOf(key)) ?? -1],
+        refresh: directory.refresh,
+        numberOf: directory.numberOf,
+        layoutOf: directory.layoutOf,
     };
 
     /** Takes the world's numbers for the keys of systems or finalizers it places here. */
-    const name = (setups: readonly SystemSetup[]): void => {
-        for (const { keys: named } of setups) {
-            for (const [number, id] of named) {
-                const key = keyOfId(id);
-                if (key === undefined || keys[number] !== undefined) continue;
-                keys[number] = key;
-                numbers.set(firstKeyOf(key), number);
-                layouts[number] = layoutOf(declarationOf(key)?.type);
-                // Views hold storages only of components with layouts here, so they're made again.
-                archetypes.length = 0;
-            }
-        }
-    };
+    const name = directory.name;
 
     /** By index: the byte offset of the word the world sets once it removed the system there, which no task runs from then on. */
     const removedWords: (number | undefined)[] = [];
@@ -489,10 +335,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
 
     const finalizers = createThreadFinalizers({
         mirror,
-        refresh: () => {
-            refreshMemory();
-            return buffer;
-        },
+        refresh: directory.refresh,
         rows: rowHost,
         numberOf: runnerHost.numberOf,
         layoutOf: runnerHost.layoutOf,
@@ -531,6 +374,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
     const viewTask = (): void => {
         const payloadOffset = Atomics.load(control, payloadOffsetWord) >>> 0;
         const completionOffset = Atomics.load(control, completionOffsetWord) >>> 0;
+        const { buffer } = viewed;
         if (payload.buffer !== buffer || payload.byteOffset !== payloadOffset || payload.length !== Atomics.load(control, payloadCapacityWord) / 8) {
             payload = new Float64Array(buffer, payloadOffset, Atomics.load(control, payloadCapacityWord) / 8);
         }
@@ -575,7 +419,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
     const tailControls = new Map<number, Int32Array>();
     const tailControl = (offset: number): Int32Array => {
         let control = tailControls.get(offset);
-        if (control === undefined || control.buffer !== buffer) tailControls.set(offset, control = new Int32Array(buffer, offset, tailBlockWords));
+        if (control === undefined || control.buffer !== viewed.buffer) tailControls.set(offset, control = new Int32Array(viewed.buffer, offset, tailBlockWords));
         return control;
     };
 
@@ -622,7 +466,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
             const index = payload[base + systemIndex];
             // Removed since the task was posted: it runs no more, and gives back nothing.
             const removed = removedWords[index];
-            if (removed !== undefined && Atomics.load(words, removed >>> 2) !== 0) continue;
+            if (removed !== undefined && Atomics.load(viewed.words, removed >>> 2) !== 0) continue;
             const runner = runners[index];
             const tick = payload[base + systemTick];
             rowHost.tick = sync = tick;
@@ -713,7 +557,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
 };
 
 /** What a joined thread's runner needs of its systems' host. */
-type RunnerHost = {
+export type RunnerHost = {
     readonly rows: RowHost & { tick: number };
     readonly archetypeAt: (id: number) => ThreadArchetype | undefined;
     readonly countOf: (archetype: ThreadArchetype) => number;
@@ -723,15 +567,16 @@ type RunnerHost = {
     readonly commands: Commands;
     readonly numberOf: (key: Key) => number;
     readonly layoutOf: (key: Key) => Layout | undefined;
-    readonly mirror: Mirror;
+    /** This thread's objects, null where it fills none. */
+    readonly mirror: Mirror | null;
     /** Views of the memory again, once it grew: its buffer. */
     readonly refresh: () => ArrayBufferLike;
 };
 
 /** One run's outcome: whether it took its tick, ran its rows, and its error. */
-type Outcome = { executed: boolean; ran: boolean; error: unknown };
+export type Outcome = { executed: boolean; ran: boolean; error: unknown };
 
-type ThreadRunner = {
+export type ThreadRunner = {
     /** Runs it once, at the tick its host's rows stamp with. */
     readonly run: (lastRun: number, input: unknown) => Outcome;
     /**
@@ -739,7 +584,9 @@ type ThreadRunner = {
      * are, and from the snapshot once the world took one. Objects it wrote from the snapshot are pushed to `stamps`
      * as `position`, entity and component, for the world to stamp; -1 names the resource entity.
      */
-    readonly runTail: (lastRun: number, input: unknown, control: Int32Array, sync: number, position: number, stamps: number[]) => Outcome;
+    readonly runTail: (lastRun: number, input: unknown, control: Int32Array, sync: number, position: number, stamps: number[], first?: number, outcomeAt?: number) => Outcome;
+    /** Stops it at once, from its next row on: its system was removed on this thread. */
+    readonly halt: () => void;
     /** Writes its folds' leaves from `at`. */
     readonly writeFolds: (completion: Float64Array, at: number) => void;
 };
@@ -750,7 +597,7 @@ const noRecords: ReadonlyMap<string, number> = new Map();
 type ThreadCell = { storage: ThreadStorage | undefined; row: number };
 
 /** Runs one system here, as the world's runner runs a main-thread system (`runner.ts`). */
-const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<string, number> = noRecords): ThreadRunner => {
+export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<string, number> = noRecords): ThreadRunner => {
     const { declaration } = leaf;
     // Method parameters are bivariant, so the runtime can see any leaf's body with erased parameter types.
     const system: { body(subject: unknown, context?: unknown): void } = leaf;
@@ -940,6 +787,8 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
     };
 
     const outcome: Outcome = { executed: false, ran: false, error: undefined };
+    /** Set once its system is removed on this thread: no row runs from then on. */
+    let halted = false;
     const run = (lastRun: number, input: unknown): Outcome => {
         outcome.executed = outcome.ran = false;
         outcome.error = undefined;
@@ -1012,14 +861,14 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
         const subject = row.value;
         const filters = filtersOf(archetype);
         if (since < 0 || filters.length === 0) {
-            for (let index = start; index < end; index++) {
+            for (let index = start; index < end && !halted; index++) {
                 row.index = index;
                 system.body(subject, tailValue);
             }
             return;
         }
         forEachPassingRange(filters, since, start, end, (first, last) => {
-            for (let index = first; index < last; index++) {
+            for (let index = first; index < last && !halted; index++) {
                 row.index = index;
                 system.body(subject, tailValue);
             }
@@ -1043,7 +892,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
     /** Where each entity's row is in the mirror, for a mirror rebuilt past the tail's sync. */
     const locations = (component: number): Map<number, { readonly values: unknown[]; readonly row: number }> => {
         const found = new Map<number, { readonly values: unknown[]; readonly row: number }>();
-        for (const mirrored of host.mirror.archetypes) {
+        for (const mirrored of host.mirror?.archetypes ?? []) {
             const column = mirrored?.byComponent[component];
             if (mirrored === null || mirrored === undefined || column === undefined) continue;
             for (let row = 0; row < mirrored.count; row++) found.set(mirrored.entities[row], { values: column.values, row });
@@ -1066,7 +915,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
         else tailSnapshots.switched++;
         const { mirror } = host;
         const tick = host.rows.tick;
-        const bounded = mirror.through === (sync >>> 0);
+        const bounded = mirror === null || mirror.through === (sync >>> 0);
         const resourceArchetype = Atomics.load(control, snapshotResourceArchetypeWord);
         const resourceRow = Atomics.load(control, snapshotResourceRowWord);
         // Resources: structs from the snapshot, this thread's objects from its mirror's resource row.
@@ -1083,7 +932,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
                 return;
             }
             if (layout.kind === "object") {
-                const value = mirror.archetypes[resourceArchetype]?.byComponent[component]?.values[resourceRow];
+                const value = mirror?.archetypes[resourceArchetype]?.byComponent[component]?.values[resourceRow];
                 const storage = localStorage(component, layout, emptyViews, [value], 1);
                 cells[k].storage = storage;
                 cells[k].row = 0;
@@ -1119,7 +968,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
             const values = new Array<unknown>(rows);
             const byEntity = bounded ? null : locations(number);
             for (let i = 0; i < rows; i++) {
-                if (byEntity === null) values[i] = mirror.archetypes[archetypeIds[i]]?.byComponent[number]?.values[rowsOf[i]];
+                if (byEntity === null) values[i] = mirror?.archetypes[archetypeIds[i]]?.byComponent[number]?.values[rowsOf[i]];
                 else {
                     const location = byEntity.get(entities[i]);
                     values[i] = location?.values[location.row];
@@ -1134,7 +983,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
         const row = bindRow({ id: -1, entities, storageById, record: -1, version: -1, mirrored: null, components: [], resource: false });
         const subject = row.value;
         try {
-            for (let index = first; index < rows; index++) {
+            for (let index = first; index < rows && !halted; index++) {
                 row.index = index;
                 system.body(subject, tailValue);
             }
@@ -1146,7 +995,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
                 for (let i = first; i < rows; i++) {
                     if (storage.changed[i] !== tick) continue;
                     if (byEntity === null) {
-                        const column = mirror.archetypes[archetypeIds[i]]?.byComponent[number];
+                        const column = mirror?.archetypes[archetypeIds[i]]?.byComponent[number];
                         if (column !== undefined) column.values[rowsOf[i]] = storage.values[i];
                     }
                     else {
@@ -1163,19 +1012,28 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
     const writeBackResources = (resources: readonly { readonly component: number; readonly storage: ThreadStorage }[], archetype: number, row: number, tick: number, at: number, stamps: number[]): void => {
         for (const { component, storage } of resources) {
             if (storage.changed[0] !== tick) continue;
-            const column = host.mirror.archetypes[archetype]?.byComponent[component];
+            const column = host.mirror?.archetypes[archetype]?.byComponent[component];
             if (column !== undefined) column.values[row] = storage.values[0];
             stamps.push(at, -1, component);
         }
     };
 
-    const runTail = (lastRun: number, input: unknown, control: Int32Array, sync: number, at: number, stamps: number[]): Outcome => {
+    /**
+     * `first` is its first claim when the caller made it; with `outcomeAt`, the word of `control` whether it ran, and
+     * took its tick, is stored at before its done word.
+     */
+    const runTail = (lastRun: number, input: unknown, control: Int32Array, sync: number, at: number, stamps: number[], first?: number, outcomeAt?: number): Outcome => {
         outcome.executed = outcome.ran = false;
         outcome.error = undefined;
         lookupSince.value = lastRun;
+        let claimed = first ?? Atomics.add(control, progressWord, tailChunk);
         const end = Atomics.load(control, endWord);
         try {
-            let claimed = Atomics.add(control, progressWord, tailChunk);
+            // A synced system on this thread looks up through indexes as the world wrote them into its records.
+            if (threadIndexes.length !== 0) {
+                const buffer = host.refresh();
+                for (let k = 0; k < threadIndexes.length; k++) threadIndexes[k].refresh(buffer);
+            }
             if (claimed >= snapshotted) {
                 runSnapshot(control, 0, true, sync, input, at, stamps);
                 return outcome;
@@ -1221,6 +1079,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
             return outcome;
         }
         finally {
+            if (outcomeAt !== undefined) Atomics.store(control, outcomeAt, outcome.executed ? ranExecuted : ranSkipped);
             finish(control, end);
         }
     };
@@ -1230,7 +1089,7 @@ const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<s
         for (const accumulators of reduced) for (let i = 0; i < accumulators.length; i++) completion[offset++] = accumulators[i];
     };
 
-    return { run, runTail, writeFolds };
+    return { run, runTail, writeFolds, halt: () => { halted = true; } };
 };
 
 /** A storage over a snapshot's column, or of values only this thread holds, with ticks of its own for `ticked` rows. */

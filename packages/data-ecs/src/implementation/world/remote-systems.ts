@@ -469,7 +469,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
 };
 
 /** Every key a leaf names in its declaration, so the thread finds the world's numbers for them. */
-const keysOf = (leaf: Leaf): readonly symbol[] => {
+export const keysOf = (leaf: Leaf): readonly symbol[] => {
     const { components, lookup, resources, reduce } = leaf.declaration;
     const keys = new Set<Key>([
         ...components?.read ?? [], ...components?.write ?? [], ...components?.has ?? [], ...components?.not ?? [], ...components?.added ?? [], ...components?.changed ?? [],
@@ -488,11 +488,10 @@ export const finalizerKeysOf = (finalizer: FinalizerLeaf): readonly symbol[] => 
 };
 
 /**
- * Why a leaf can't run on a joined thread, or null when it can: synced systems, `up`, `order`, and lookups through
- * indexes with an object key part, which live on the world's thread, run only there.
+ * Why a leaf can't run on a joined thread, or null when it can: `up`, `order`, and lookups through indexes with an
+ * object key part, which live on the world's thread, run only there.
  */
 export const unplaceable = (leaf: Leaf, thread: string): string | null => {
-    if (leaf.declaration.synced === true) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and is synced, which runs only on the world's thread.`;
     if (leaf.declaration.up !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and declares up, which runs only on the world's thread.`;
     if (leaf.declaration.order !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and orders its rows by an index, which runs only on the world's thread.`;
     for (const lookup of Object.values(leaf.declaration.lookup ?? {})) {
@@ -586,8 +585,9 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         targets,
         finish: failed => failed || (remote.result.flags & ranFlag) === 0 || targets.length === 0 ? null : folds,
         afterSync: null,
-        holdings: { ...holdingNothing({ channel, index }), indexes: lookups.holding },
+        holdings: { ...holdingNothing({ unplace: () => channel.unplace(index) }), indexes: lookups.holding },
         remote,
+        joined: null,
         lastRun: () => remote.lastRun,
     };
 };
@@ -605,7 +605,7 @@ export const liftColumnStamps = (runner: Runner): void => {
 };
 
 /** Gives the rows of an archetype's columns of `ids` stamped whole after `since` the column's stamp. */
-const liftColumns = (archetype: Archetype, ids: readonly number[], since: number): void => {
+export const liftColumns = (archetype: Archetype, ids: readonly number[], since: number): void => {
     for (const id of ids) {
         const storage = archetype.storageById[id];
         if (storage === undefined || !storage.ticked || storage.columnChanged <= since) continue;

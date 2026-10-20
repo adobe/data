@@ -1,6 +1,7 @@
 import type { Leaf } from '../../interface/system/leaf.js';
 import { idOfItem, idOfKey, labelOf, requireDefinition, threadOf, type Definition } from '../../interface/registry/index.js';
 import { createRemoteRunner, unplaceable } from './remote-systems.js';
+import { createJoinedSyncedRunner, type SyncedTarget } from './joined-synced.js';
 import { createRunner, releaseHoldings, removedRunner, stopHoldings, type Holdings, type Runner } from './runner.js';
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, observe, unobserve, type Key, type State } from './state.js';
@@ -101,8 +102,21 @@ const allKeysOf = (leaf: Leaf): readonly Key[] => {
     return [...components, ...resources];
 };
 
-/** A runner for a leaf where it runs now: on the joined thread filling its thread, or here. */
+/**
+ * The joined thread a synced leaf runs on: the one that added it, or the one filling its thread; undefined for one
+ * that runs here.
+ */
+const syncedTargetOf = (state: State, leaf: Leaf): SyncedTarget | undefined => {
+    const target = state.synced.proxies.get(leaf)?.target ?? state.synced.targets.get(threadOf(leaf.declaration, "System", leaf.name) ?? "world");
+    return target === undefined || target.ended ? undefined : target;
+};
+
+/** A runner for a leaf where it runs now: on the joined thread filling its thread, or that added it, or here. */
 const placedRunner = (state: State, leaf: Leaf, since = 0): Runner => {
+    if (leaf.declaration.synced === true) {
+        const target = syncedTargetOf(state, leaf);
+        return target === undefined ? createRunner(state, leaf, since) : createJoinedSyncedRunner(state, leaf, target, since);
+    }
     const thread = threadOf(leaf.declaration, "System", leaf.name);
     const channel = thread === null ? undefined : state.threadTasks.get(thread);
     return channel === undefined ? createRunner(state, leaf, since) : createRemoteRunner(state, leaf, channel, since);
@@ -224,6 +238,8 @@ export const createRegistrar = (state: State): Registrar => {
                 observe(state, id);
             }
         }
+        // Lists of synced systems read before it registered, holding it as removed, read their runners again.
+        if (added.some(({ runner }) => runner !== null)) state.runnersVersion++;
         // New `changed` filters observe more components, so kernels that muted their stamps must load again.
         if (observing) eachRunner((_, runner) => { if (runner.kernel?.stale() === true && !kernels.includes(runner)) kernels.push(runner); });
         const rollback = (): void => {
@@ -238,6 +254,7 @@ export const createRegistrar = (state: State): Registrar => {
                 runners.delete(system);
                 release(entry);
             }
+            state.runnersVersion++;
         };
         const ticked = added.flatMap(({ system }) => isLeaf(system) ? tickedBy(system).map(key => idOf(state, key)) : []);
         return { resources: [...resources], ticked, kernels, rollback };
@@ -318,6 +335,11 @@ export const createRegistrar = (state: State): Registrar => {
 
     const place = (): void => {
         eachRunner((leaf, old, entry) => {
+            if (leaf.declaration.synced === true) {
+                if (syncedTargetOf(state, leaf) === old.joined?.target) return;
+                replace(leaf, entry, old, placedRunner(state, leaf, old.lastRun()));
+                return;
+            }
             const thread = threadOf(leaf.declaration, "System", leaf.name);
             const channel = thread === null ? undefined : state.threadTasks.get(thread);
             if (channel === undefined ? old.remote === null : old.remote?.channel === channel) return;

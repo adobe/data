@@ -64,10 +64,13 @@ export const tailsOf = (schedule: Schedule, runnerOf: (leaf: Leaf) => Runner): r
         return true;
     }));
 
-/** A system's run as a tail: what it reads and writes, its block, its snapshot, and its task in flight. */
-export type Tail = {
-    readonly remote: RemoteSystem;
-    readonly runner: Runner;
+/**
+ * What a writer copies of a reader that runs after a sync point, as a tail or a synced system on a joined thread
+ * does: the archetypes it matches, its reads and filters, its block and its snapshot, and how to tell its thread is
+ * gone or idle.
+ */
+export type Copied = {
+    readonly matched: () => readonly Archetype[];
     /** Struct components it reads or filters on, and struct resources it reads, conditions on or filters on. */
     readonly reads: readonly number[];
     readonly resourceReads: readonly number[];
@@ -88,9 +91,19 @@ export type Tail = {
     readonly block: number;
     readonly control: Int32Array;
     snapshot: { offset: number; bytes: number } | null;
-    /** As posted: its work's end, 1 plus its rows, and its `lastRun`; whether a writer must still copy what it reads. */
+    /** As posted: its work's end, 1 plus its rows, and its `lastRun`. */
     end: number;
     lastRun: number;
+    /** Whether its thread is gone, and what resolves once its thread has no task in flight or is gone. */
+    readonly gone: () => boolean;
+    readonly idle: () => Promise<unknown>;
+};
+
+/** A system's run as a tail: what it reads and writes, its block, its snapshot, and its task in flight. */
+export type Tail = Copied & {
+    readonly remote: RemoteSystem;
+    readonly runner: Runner;
+    /** Whether a writer must still copy what it reads. */
     unresolved: boolean;
 };
 
@@ -123,8 +136,9 @@ export const tailOf = (state: State, runner: Runner, leaf: Leaf): Tail => {
     const linearResources = linearOf(state, contextKeys.filter(key => !writes.has(key)).map(key => idOf(state, key)));
     const block = state.memory.allocate(tailBlockBytes);
     const control = new Int32Array(state.memory.memory.buffer, block, tailBlockWords).fill(0);
+    const { channel } = remote;
     const tail: Tail = {
-        remote, runner, reads, resourceReads,
+        remote, runner, reads, resourceReads, matched: runner.matched, gone: channel.gone, idle: () => channel.idle(),
         linear: linear.ids, strides: linear.strides, resources: linearResources.ids, resourceStrides: linearResources.strides,
         writes: ids(components?.write), resourceObjectWrites: ids(resources?.write),
         added: ids(components?.added), changed: ids(components?.changed), resourceChanged: ids(resources?.changed),
@@ -221,20 +235,19 @@ export const tailWriters = { wait: false };
 const spinMilliseconds = 0.02;
 
 /** Waits until the tail read through `target`, or its thread is gone. */
-const waitDone = async (tail: Tail, target: number): Promise<void> => {
+export const waitDone = async (tail: Copied, target: number): Promise<void> => {
     const { control } = tail;
     const deadline = performance.now() + spinMilliseconds;
     while (Atomics.load(control, doneWord) < target && performance.now() < deadline);
     if (Atomics.load(control, doneWord) >= target) return;
     Atomics.store(control, waitingWord, 1);
-    const { channel } = tail.remote;
-    for (let current = Atomics.load(control, doneWord); current < target && !channel.gone(); current = Atomics.load(control, doneWord)) {
+    for (let current = Atomics.load(control, doneWord); current < target && !tail.gone(); current = Atomics.load(control, doneWord)) {
         if (typeof Atomics.waitAsync !== "function") {
-            await Promise.race([new Promise(resolve => setTimeout(resolve, 0)), channel.idle()]);
+            await Promise.race([new Promise(resolve => setTimeout(resolve, 0)), tail.idle()]);
             continue;
         }
         const waited = Atomics.waitAsync(control, doneWord, current);
-        if (waited.async) await Promise.race([waited.value, channel.idle()]);
+        if (waited.async) await Promise.race([waited.value, tail.idle()]);
     }
 };
 
@@ -249,7 +262,7 @@ const holding = (state: State, id: number): boolean => {
 };
 
 /** Its head as the tail evaluates it: whether its conditions hold, and from which tick rows pass, -1 for every row. */
-const headOf = (state: State, tail: Tail): { readonly executed: boolean; readonly ran: boolean; readonly since: number } => {
+const headOf = (state: State, tail: Copied): { readonly executed: boolean; readonly ran: boolean; readonly since: number } => {
     if (!tail.conditionIs.every(id => holding(state, id)) || tail.conditionNot.some(id => holding(state, id))) return { executed: false, ran: false, since: 0 };
     let resourcesChanged = false;
     for (const id of tail.resourceChanged) {
@@ -263,7 +276,7 @@ const headOf = (state: State, tail: Tail): { readonly executed: boolean; readonl
     return { executed: true, ran: true, since };
 };
 
-const filtersOf = (tail: Tail, archetype: Archetype): Filter[] => {
+const filtersOf = (tail: Copied, archetype: Archetype): Filter[] => {
     const filters: Filter[] = [];
     for (const id of tail.added) {
         const storage = archetype.storageById[id];
@@ -281,13 +294,13 @@ const filtersOf = (tail: Tail, archetype: Archetype): Filter[] => {
  * archetype, row and entity with its linear reads, a run of rows at a time, into a snapshot laid out for as many rows
  * as it could hold.
  */
-const writeSnapshot = (state: State, tail: Tail, from: number): void => {
+const writeSnapshot = (state: State, tail: Copied, from: number): void => {
     const { control } = tail;
     const head = headOf(state, tail);
     runs.length = 0;
     let rows = 0;
     if (tail.query && head.ran) {
-        const matched = tail.runner.matched();
+        const matched = tail.matched();
         let base = 1;
         for (let m = 0; m < matched.length; m++) {
             const archetype = matched[m];
@@ -357,7 +370,7 @@ const writeSnapshot = (state: State, tail: Tail, from: number): void => {
  * The objects a tail writes in rows it reads from the snapshot, from position `claimed` on, become its own value in
  * their tags, which the thread holds, so the sync point moves and finalizes them as such.
  */
-const markOwn = (state: State, tail: Tail, claimed: number): void => {
+const markOwn = (state: State, tail: Copied, claimed: number): void => {
     if (tail.writes.length > 0) for (let r = 0; r < runs.length; r += 4) {
         const archetype = state.archetypes[runs[r]];
         const begin = Math.max(runs[r + 1], runs[r + 1] + claimed - runs[r + 3]);
@@ -383,6 +396,14 @@ const markOwn = (state: State, tail: Tail, claimed: number): void => {
  */
 const resolve = (state: State, tail: Tail): Promise<void> | null => {
     settledTail(state, tail);
+    return copyRest(state, tail);
+};
+
+/**
+ * Unless the reader read everything, copies the rest of what it reads from the position it reached, exchanges its
+ * progress for `snapshotted`, and waits for the chunk it claimed. Null when nothing is left to wait for.
+ */
+export const copyRest = (state: State, tail: Copied): Promise<void> | null => {
     const { control, end } = tail;
     if (Atomics.load(control, doneWord) >= end) return null;
     if (tailWriters.wait) return waitDone(tail, end);

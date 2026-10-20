@@ -19,7 +19,8 @@ import { createObservers } from './observers.js';
 import type { Observe } from '../../interface/observe/observe.js';
 import type { Report } from '../../interface/world/report.js';
 import { clean, execute, type ExecuteContext } from './execute.js';
-import { runSynced } from './synced.js';
+import { joinedIn, runSynced } from './synced.js';
+import { joinedRunOf, postSynced, settlePosts, settleSyncedKeys } from './joined-synced.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import { settleKeys, type TailOutcome } from './tails.js';
 import { sharedMemoryAvailable } from './memory.js';
@@ -161,6 +162,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     /** Waits for every joined thread's task in flight, as a tail may be, before what moves rows a tail may still read. */
     const drainTails = async (): Promise<void> => {
         while (state.channels.some(channel => channel.busy())) await Promise.all(state.channels.map(channel => channel.idle()));
+        // Synced systems on joined threads: those in progress finish, the rest are cancelled, owed runs posted again after.
+        if (state.synced.posts.length !== 0) await settlePosts(state, true);
     };
     let disposed = false;
     const ensured = { version: -1 };
@@ -327,7 +330,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
      * Whether a run of no tiers may skip its sync point: nothing is queued for it, and no GPU, joined thread or tail
      * needs what a sync point does for them.
      */
-    const skipsSync = (): boolean => state.gpu === null && state.channels.length === 0 && state.tails.length === 0 && state.queued.length === 0;
+    const skipsSync = (): boolean => state.gpu === null && state.channels.length === 0 && state.tails.length === 0 && state.queued.length === 0 && state.synced.count === 0;
 
     /**
      * Runs a registered system or composite, ending in a sync point, then, with `deliver`, runs synced systems and
@@ -336,7 +339,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
      */
     const perform = async (definition: Definition, value: unknown, deliver: boolean, registered: Schedule | undefined): Promise<Report> => {
         // Resources added between runs move the resource entity, whose structs a tail may still read.
-        if (ensured.version !== programVersion() && state.channels.length > 0) await drainTails();
+        if (ensured.version !== programVersion() && (state.channels.length > 0 || state.synced.posts.length > 0)) await drainTails();
         ensureProgramResources(state, ensured);
         const watching = startWatches(state);
         if (observers.start() || watching) await reloadObserved();
@@ -368,7 +371,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         const reading = observers.readback();
         if (reading !== null) await reading;
         if (!deliver) return report;
-        const passed = passSynced(schedule.synced, loop.synced());
+        const passed = passSynced(schedule.synced, loop.synced(), joinedRunOf(value));
         return delivered(withFailures(report, passed instanceof Promise ? await passed : passed));
     };
 
@@ -376,13 +379,30 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     let syncedFailures: Failure[] | null = null;
     const noLeaves: readonly Leaf[] = [];
 
-    /** Runs synced systems, the run's and those added, after a sync point; returns their failures. */
-    const passSynced = (own: readonly Leaf[], added: readonly Leaf[]): Failure[] | null | Promise<Failure[] | null> => {
+    /**
+     * Runs synced systems, the run's and those added, after a sync point, and posts those on joined threads, the run's
+     * owed to joined run `run` (0 for none); returns the failures of those that ran here.
+     */
+    const passSynced = (own: readonly Leaf[], added: readonly Leaf[], run = 0): Failure[] | null | Promise<Failure[] | null> => {
         const failures = syncedFailures;
         syncedFailures = null;
-        if (own.length === 0 && added.length === 0) return failures;
-        return runSynced(context, own, added, failures);
+        if (own.length === 0 && added.length === 0) return state.synced.pending.size === 0 ? failures : postAfter(failures, own, added, run);
+        const ran = runSynced(context, own, added, failures);
+        if (state.synced.count === 0) return ran;
+        return ran instanceof Promise ? ran.then(done => postAfter(done, own, added, run)) : postAfter(ran, own, added, run);
     };
+
+    /** Posts synced systems on joined threads after those here ran, then gives `failures`. */
+    const postAfter = (failures: Failure[] | null, own: readonly Leaf[], added: readonly Leaf[], run: number): Failure[] | null | Promise<Failure[] | null> => {
+        const posting = postSynced(state, joinedIn(context, own), joinedIn(context, added), run, context.workers?.pool ?? null);
+        return posting === null ? failures : posting.then(() => failures);
+    };
+    // A post owed to a run, cancelled outside a sync point, is posted again between runs.
+    state.synced.again = () => void enqueue(async () => {
+        if (disposed) return;
+        const posting = postSynced(state, [], [], 0, context.workers?.pool ?? null);
+        if (posting !== null) await posting;
+    });
 
     /**
      * Registers a synced system `add` was given, before the next run, unless it was removed meanwhile; its failure is in
@@ -454,6 +474,10 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             }
             if (state.tails.length !== 0) {
                 const waiting = settleKeys(state, [], [clockId]);
+                if (waiting !== null) await waiting;
+            }
+            if (state.synced.posts.length !== 0) {
+                const waiting = settleSyncedKeys(state, [], [clockId]);
                 if (waiting !== null) await waiting;
             }
             writeOwn(clock, clockValue);
@@ -597,6 +621,19 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             await drainTails();
             task();
         }),
+        synced: {
+            add: system => {
+                if (!disposed) world.add(system);
+            },
+            remove: system => world.remove(system),
+            drop: system => {
+                world.remove(system);
+                if (disposed) return;
+                // One never added, kept for its runs, is forgotten too.
+                const release = registrar.forget([system]);
+                void enqueue(async () => release());
+            },
+        },
     });
 
     const world: CreatedWorld = {

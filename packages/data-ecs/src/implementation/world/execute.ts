@@ -8,6 +8,7 @@ import { applySync, prepareSync, syncPending } from './synchronize.js';
 import { activate } from './activate.js';
 import { markRun } from './move-log.js';
 import { postTails, settleAll, settleKeys, settleRunners, tailsOf, type TailOutcome } from './tails.js';
+import { settlePosts, settleSyncedKeys, settleSyncedRunners } from './joined-synced.js';
 import { locate } from './entities.js';
 import { clearBuffer, createBuffer } from './buffer.js';
 import { drainSegment, type Segment } from './command-ring.js';
@@ -308,6 +309,10 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
             const waiting = settleRunners(state, prepared.runners[v]);
             if (waiting !== null) await waiting;
         }
+        if (state.synced.posts.length !== 0) {
+            const waiting = settleSyncedRunners(state, prepared.runners[v]);
+            if (waiting !== null) await waiting;
+        }
         if (gpu !== null) await readAhead(state, gpu, prepared.runners[v]);
     }
     // Gathered once nothing more is awaited, so a system removed while this waited is in no tier of the task.
@@ -362,6 +367,10 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
             const remote = prepared.remotes[t];
             if (state.tails.length !== 0) {
                 const waiting = settleRunners(state, runners);
+                if (waiting !== null) await waiting;
+            }
+            if (state.synced.posts.length !== 0) {
+                const waiting = settleSyncedRunners(state, runners);
                 if (waiting !== null) await waiting;
             }
             const uses = prepared.uses[t];
@@ -442,6 +451,11 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
                 if (state.tails.length !== 0) {
                     activate(state);
                     const waiting = syncPending(state) ? settleAll(state) : null;
+                    if (waiting !== null) await waiting;
+                }
+                // Each sync point waits for synced systems on joined threads in progress, and cancels the rest.
+                if (state.synced.posts.length !== 0) {
+                    const waiting = settlePosts(state);
                     if (waiting !== null) await waiting;
                 }
                 if (prepareSync(state)) {
@@ -548,6 +562,10 @@ export const readAhead = async (state: State, gpu: GpuEngine, runners: readonly 
     if (storages.size === 0) return;
     if (state.tails.length !== 0) {
         const waiting = settleKeys(state, [...storages].map(storage => storage.component), []);
+        if (waiting !== null) await waiting;
+    }
+    if (state.synced.posts.length !== 0) {
+        const waiting = settleSyncedKeys(state, [...storages].map(storage => storage.component), []);
         if (waiting !== null) await waiting;
     }
     await gpu.readback([...storages]);

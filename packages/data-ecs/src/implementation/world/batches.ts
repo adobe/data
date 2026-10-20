@@ -47,7 +47,7 @@ const commitRows = (state: State, batch: SpawnBatch, first: number, n: number, t
     if (n <= smallCopy) for (let i = 0; i < n; i++) target.entities[start + i] = batch.entities[first + i];
     else target.entities.set(batch.entities.subarray(first, first + n), start);
     if (target.logs !== null) for (const log of target.logs) logRange(log, target.id, start, n, batch.entities, first);
-    if (state.claimed) countChanged(state.counted, target);
+    if (state.counting) countChanged(state.counted, target);
     for (const column of batch.columns) {
         const storage = target.storageById[column.id];
         if (storage === undefined) continue;

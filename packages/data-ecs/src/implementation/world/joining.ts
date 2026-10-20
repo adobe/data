@@ -28,6 +28,35 @@ export type Subscription =
         readonly page: { readonly offset: number; readonly limit: number } | null;
     };
 
+/** A lookup of a synced system a joined thread declares: its keys by that thread's numbers, its index by id. */
+export type SyncedLookup = {
+    readonly name: string;
+    readonly read: readonly number[];
+    readonly has: readonly number[];
+    readonly not: readonly number[];
+    /** Null where it doesn't declare `changed`. */
+    readonly changed: readonly number[] | null;
+    readonly index: string | null;
+};
+
+/** What a synced system a joined thread declares reads, by that thread's numbers for its keys. */
+export type SyncedDeclaration = {
+    readonly components: { readonly read: readonly number[]; readonly has: readonly number[]; readonly not: readonly number[]; readonly added: readonly number[]; readonly changed: readonly number[] } | null;
+    readonly resources: { readonly read: readonly number[]; readonly changed: readonly number[]; readonly is: readonly number[]; readonly not: readonly number[] } | null;
+    readonly lookup: readonly SyncedLookup[];
+};
+
+/** A synced system the world places on a joined thread: its index there, the thread's own by its number or one by its id, and its block. */
+export type SyncedSetup = {
+    readonly index: number;
+    readonly local: number | null;
+    readonly id: string | null;
+    readonly keys: readonly (readonly [number, string])[];
+    /** The byte offset of its block (`joined-synced.ts`). */
+    readonly block: number;
+    readonly indexes: readonly (readonly [string, number])[];
+};
+
 /** From a joined thread to the world's: messages are handled in the order they're posted. */
 export type ToWorld = { readonly protocol: typeof protocolName } & (
     /**
@@ -69,6 +98,19 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
     | { readonly kind: "finalized"; readonly errors: readonly (readonly [number, WorkerError])[] }
     /** It dropped what it held for the systems unplaced at these indexes, which the world may place again. */
     | { readonly kind: "unplaced"; readonly indexes: readonly number[] }
+    /**
+     * A synced system of its own, by its number for it, which no other of its messages uses, with its label and what
+     * it reads; added to ticks with `added`.
+     */
+    | { readonly kind: "synced"; readonly number: number; readonly name: string; readonly declaration: SyncedDeclaration; readonly added: boolean }
+    /** Its synced system `number` is added to ticks, removed from them, or no longer needed, its value collected. */
+    | { readonly kind: "synced add" | "synced remove" | "synced drop"; readonly number: number }
+    /** What synced systems placed on it threw, by their indexes there, for the world's next report. */
+    | { readonly kind: "synced failed"; readonly errors: readonly (readonly [number, WorkerError])[] }
+    /** It dropped the synced systems at these indexes, which the world unsynced. */
+    | { readonly kind: "synced dropped"; readonly indexes: readonly number[] }
+    /** A post it claimed and couldn't run yet, owed to a run: the world posts it again between runs. */
+    | { readonly kind: "synced again" }
 );
 
 /** From the world's thread to a joined one. */
@@ -92,6 +134,10 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
      * for them once it finished task `sequence`, the last posted before, and says so.
      */
     | { readonly kind: "unplace"; readonly indexes: readonly number[]; readonly sequence: number }
+    /** Synced systems the world places on the thread, which run there after sync points. */
+    | { readonly kind: "synced"; readonly systems: readonly SyncedSetup[] }
+    /** Synced systems the world removed, by their indexes there, whose removed words are set: the thread drops them and says so. */
+    | { readonly kind: "unsynced"; readonly indexes: readonly number[] }
     /** Finalizers the world places on the thread, as systems are: each one's index there, its id, and the world's numbers for its keys. */
     | { readonly kind: "finalizers"; readonly finalizers: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
     /**

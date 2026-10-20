@@ -3,10 +3,20 @@ import { Observe } from "../../interface/observe/observe.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
 import { workers } from "../../interface/resources/workers.js";
+import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { System } from "../../interface/system/system.js";
 import { backToBack } from "./loop.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
-import { bumpKernel, edit, expected, lateProbe, probe, scenario, scene, threadProbe } from "./entity-lookups.test-helper.js";
+import { bumpKernel, edit, expected, lateProbe, probe, scenario, scene, target, threadProbe, value } from "./entity-lookups.test-helper.js";
+
+/** What a finalizer's lookup gave as probes were despawned. */
+const finalized: (boolean | null)[] = [];
+Finalizer.create({ name: "entityLookupsTest/finalize", components: { read: [target] }, lookup: { found: { read: [value], changed: [value] } } }, (row, { lookup }) => {
+    finalized.push(lookup.found(row[target])?.changed ?? null);
+});
+const despawnProbes = System.create({ name: "entityLookupsTest/despawnProbes", components: { has: [target] } }, (row, { commands }) => {
+    commands.despawn(row.entity);
+});
 
 const keepTicking = System.create({ name: "entityLookupsTest/keepTicking" }, () => {});
 
@@ -48,6 +58,14 @@ describe("lookups by entity with changed", () => {
         expect(seen).toEqual(expected);
         expect((await world.run(threadProbe)).warnings.map(warning => warning.name)).toEqual(["entityLookupsTest/threadProbe"]);
         await remote.dispose();
+        await world.dispose();
+    });
+    it("count every row as changed in finalizers", async () => {
+        const world = createWorld({ [workers]: 0 });
+        await world.run(edit, { action: "spawn" });
+        finalized.length = 0;
+        await world.run(despawnProbes);
+        expect(finalized).toEqual([true]);
         await world.dispose();
     });
     for (const wasm of [false, true]) {

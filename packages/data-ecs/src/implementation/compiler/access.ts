@@ -70,8 +70,12 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
             // The lookup after the declaration's is `up`'s.
             const up = value.lookup === signature.lookups.length ? signature.up : null;
             const lookup = up ?? signature.lookups[value.lookup];
+            // A lookup by entity with `changed` gives it after what it reads.
+            if (up === null && lookup !== undefined && "watches" in lookup && lookup.watches && name === "changed") {
+                return { kind: "dynamic", expression: { kind: "element", object: value.expression, index: number(lookup.read.length), optional } };
+            }
             const index = key.kind === "binding" ? (lookup?.read ?? []).indexOf(key.name) : -1;
-            if (lookup === undefined || key.kind !== "binding" || index < 0) return fail(node, up === null ? "a lookup result is indexed by a component in that lookup's read" : "up is indexed by a component in up.read");
+            if (lookup === undefined || key.kind !== "binding" || index < 0) return fail(node, up === null ? "a lookup result is indexed by a component in that lookup's read, or by changed with changed declared" : "up is indexed by a component in up.read");
             if (up !== null) {
                 // Read straight from the parent's columns, at the parent's row.
                 if (optional) return fail(node, "up is read only where it isn't null: test up === null first");

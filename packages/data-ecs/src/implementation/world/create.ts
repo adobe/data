@@ -28,6 +28,7 @@ import type { Runner } from './runner.js';
 import { platformWorkers, type WorkerPlatform, type WorkerPort } from './worker-platform.js';
 import { createPublisher } from './publish.js';
 import { flushBetween } from './layout-directory.js';
+import { refreshDirectories } from './directories.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
@@ -214,10 +215,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     };
 
     /**
-     * Between runs, once tick arrays started: joined threads and workers see them before the next run's tasks. Joined
-     * threads read the layout directory with or without a pool.
+     * Between runs, once tick arrays started: WASM lookups' directories, joined threads and workers see them before the
+     * next run's tasks. Joined threads read the layout directory with or without a pool.
      */
     const publishLayouts = (): void => {
+        refreshDirectories(state);
         flushBetween(state.directory, state.bumped, state.archetypes, state.entities, state.resourceEntity, state.counted);
         context.publish();
     };

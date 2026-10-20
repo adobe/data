@@ -4,6 +4,7 @@ import type { Kernel, KernelDescription, KernelModule } from './kernel.js';
 import { layoutOf, samePath, type Layout, type TypedArray } from '../../interface/registry/layout.js';
 import type { LookupSetup, Source , KernelSetup } from './protocol.js';
 import { createArrayLookup } from './rows.js';
+import type { Since } from './index-lookups.js';
 import { commandIdOf, idOf, type Key, type State } from './state.js';
 import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
 import { createDirectory, lookupParameters, type Directory } from './directories.js';
@@ -83,7 +84,7 @@ const leafType = (layout: Layout, path: readonly (number | string)[]): Type | nu
  * Binds a kernel to the world's components and layouts. Registering the kernel checked it against its declaration and
  * schemas (`checkKernel`), so a mismatch here is an invariant broken.
  */
-export const bindKernel = (state: State, leaf: Leaf, description: KernelDescription, byName: ReadonlyMap<string, WorldIndex> = new Map()): BoundKernel => {
+export const bindKernel = (state: State, leaf: Leaf, description: KernelDescription, byName: ReadonlyMap<string, WorldIndex> = new Map(), since: Since = { value: 0 }): BoundKernel => {
     const { lookup, components: query } = leaf.declaration;
     const fail = (message: string): never => { throw new Error(`Kernel "${labelOfItem(leaf)}": ${message}`); };
     const booleans: boolean[] = [];
@@ -127,7 +128,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         return archetype === undefined ? undefined : { version: archetype.version, entities: archetype.entities, column: (component, view) => archetype.storageById[component]?.views[view] };
     }) });
     // The runner passes `up`'s lookup after these, since it records each row's parent as it orders the rows.
-    const lookups: readonly unknown[] = declaredLookups.map((declared, k): unknown => readers[k]?.reader ?? createArrayLookup(state, declared));
+    const lookups: readonly unknown[] = declaredLookups.map((declared, k): unknown => readers[k]?.reader ?? createArrayLookup(state, declared, since));
     const indexParameters: number[] = [];
     const refreshIndexes = (since: number): readonly number[] => {
         let at = 0;
@@ -147,11 +148,33 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         booleans,
         strides,
         offsets,
-        lookups: declaredLookups.map(declared => ({ read: ids(declared.read), has: ids("has" in declared ? declared.has : undefined), not: ids("not" in declared ? declared.not : undefined) })),
+        lookups: declaredLookups.map((declared): LookupSetup => ({
+            read: ids(declared.read), has: ids("has" in declared ? declared.has : undefined), not: ids("not" in declared ? declared.not : undefined),
+            changed: "index" in declared || declared.changed === undefined ? null : ids(declared.changed),
+        })),
         indexes: indexes.flatMap(bound => bound === null ? [] : [{ lookup: bound.lookup, reader: bound.reader, watched: bound.watched.length }]),
         keys,
         starts: keys.map(id => state.starts[id]),
         spawns,
+    };
+    /** Every component its lookups by entity watch. */
+    const watched = [...new Set(setup.lookups.flatMap(lookupSetup => lookupSetup.changed ?? []))];
+    /** The one parameter a JS kernel watching without directories takes. */
+    const sinceParameters = [0];
+    /**
+     * The tick its lookups by entity compare with, passed after the lookup parameters: its `lastRun`, or -1 once a
+     * GPU kernel stamped a whole column of one it watches since, so every row counts as changed.
+     */
+    const lookupsSince = (): number => {
+        const { value } = since;
+        if (state.gpu === null) return value;
+        for (const archetype of state.archetypes) {
+            for (let k = 0; k < watched.length; k++) {
+                const storage = archetype.storageById[watched[k]];
+                if (storage !== undefined && storage.ticked && storage.columnChanged > value) return -1;
+            }
+        }
+        return value;
     };
     const cache = new Map<Archetype, { version: number; columns: readonly TypedArray[] }>();
     const columnsOf = (archetype: Archetype): readonly TypedArray[] => {
@@ -201,9 +224,10 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;
     const useWasm = state.wasm && state.memory.shared && description.program !== null;
     // A lookup through an index's directory also holds each archetype's entities, which its rows' `entity` reads.
-    const directories = useWasm ? setup.lookups.map((lookupSetup, k) => createDirectory(state, lookupSetup.read, lookupSetup.has, lookupSetup.not, indexes[k] !== null)) : [];
+    const directories = useWasm ? setup.lookups.map((lookupSetup, k) => createDirectory(state, lookupSetup.read, lookupSetup.has, lookupSetup.not, indexes[k] !== null, lookupSetup.changed ?? [])) : [];
     const wasmLookups: WasmLookup[] = setup.lookups.map((lookupSetup, k) => ({
         reads: lookupSetup.read.length + (indexes[k] === null ? 0 : 1),
+        watched: lookupSetup.changed?.length ?? 0,
         leaf: (read, path) => {
             const component = lookupSetup.read[read];
             const layout = component === undefined ? undefined : state.layouts[component];
@@ -280,7 +304,17 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
                 bound.wasm = null;
             }
         },
-        lookupParameters: () => directories.length === 0 ? noParameters : lookupParameters(state, directories),
+        lookupParameters: watched.length === 0
+            ? () => directories.length === 0 ? noParameters : lookupParameters(state, directories)
+            : () => {
+                if (directories.length === 0) {
+                    sinceParameters[0] = lookupsSince();
+                    return sinceParameters;
+                }
+                const parameters = lookupParameters(state, directories);
+                parameters.push(lookupsSince());
+                return parameters;
+            },
         gpu: () => description.program === null
             ? "it issues commands or uses values that aren't numbers"
             : description.lookups.length > 0 ? "it uses lookups"

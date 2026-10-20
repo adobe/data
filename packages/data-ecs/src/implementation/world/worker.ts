@@ -52,6 +52,8 @@ type LoadedKernel = {
     readonly wasm: WasmRun | null;
     /** By lookup: a function by entity, or for a lookup through an index its reader, pointed at the index by each task. */
     readonly lookups: readonly unknown[];
+    /** What its lookups by entity with `changed` compare with, set by each task; null for a kernel without them. */
+    readonly since: Since | null;
     /** Its lookups through indexes' readers, in lookup order, with the parameters each takes. */
     readonly readers: readonly { readonly reader: IndexReader; readonly watched: number; readonly count: number }[];
     /**
@@ -184,6 +186,41 @@ const requiredArchetype = (id: number): ArchetypeViews => {
     return archetype;
 };
 
+/** A JS kernel's lookups by entity with `changed` compare with this: the system's `lastRun`, as each task's lookup parameters end with it. */
+type Since = { value: number };
+
+/**
+ * A JS kernel's lookup by entity with `changed`: one array reused, `read` values then whether a component it watches
+ * may have changed after `since`; a component keeping no ticks counts as changed.
+ */
+const createChangedLookup = (lookup: LookupSetup, watched: readonly number[], since: Since) => {
+    const values = new Array<unknown>(lookup.read.length + 1);
+    return (entity: Entity): readonly unknown[] | null => {
+        const table = required(entities, "entity table");
+        const index = locate(table, entity);
+        if (index < 0) return null;
+        const archetype = archetypeAt(table.archetype[index]);
+        if (archetype === undefined) return null;
+        for (const id of lookup.read) if (!archetype.storages.has(id)) return null;
+        for (const id of lookup.has) if (!archetype.storages.has(id)) return null;
+        for (const id of lookup.not) if (archetype.storages.has(id)) return null;
+        const row = table.row[index];
+        const { read } = lookup;
+        for (let i = 0; i < read.length; i++) {
+            const layout = layouts[read[i]];
+            const storage = archetype.storages.get(read[i]);
+            values[i] = layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
+        }
+        let changed = since.value < 0;
+        for (let i = 0; i < watched.length && !changed; i++) {
+            const ticks = archetype.storages.get(watched[i])?.changed;
+            changed = ticks === undefined || ticks.length === 0 || ticks[row] > since.value;
+        }
+        values[read.length] = changed;
+        return values;
+    };
+};
+
 const createLookup = (lookup: LookupSetup) => (entity: Entity): readonly unknown[] | null => {
     const table = required(entities, "entity table");
     const index = locate(table, entity);
@@ -306,6 +343,8 @@ const run = (message: RunMessage): void => {
         return;
     }
     const partials = message.partials < 0 ? noPartials : new Float64Array(memoryBuffer, message.partials);
+    // A kernel watching through lookups by entity gets its `lastRun` last among the lookup parameters.
+    if (loaded.since !== null) loaded.since.value = message.lookups[message.lookups.length - 1] ?? 0;
     // Lookups through indexes read the index where the task's parameters say it is now.
     let at = 0;
     for (const { reader, watched, count } of loaded.readers) {
@@ -331,8 +370,10 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
             watched,
             count: indexParameterCount({ kind: reader.kind, words: reader.words, stride: reader.stride, probe: () => null, rowLeaf: () => null, watched }),
         }));
-        const lookups = setup.lookups.map((lookup, k): unknown => readers.find(found => found.lookup === k)?.reader ?? createLookup(lookup));
-        kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets), wasm: loaded[i].wasm, lookups, readers, staging: null, bound: [] });
+        const since: Since | null = setup.lookups.some(lookup => lookup.changed !== null) ? { value: 0 } : null;
+        const lookups = setup.lookups.map((lookup, k): unknown => readers.find(found => found.lookup === k)?.reader
+            ?? (lookup.changed === null || since === null ? createLookup(lookup) : createChangedLookup(lookup, lookup.changed, since)));
+        kernels.set(setup.index, { since, setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets), wasm: loaded[i].wasm, lookups, readers, staging: null, bound: [] });
     });
 };
 

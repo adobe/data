@@ -39,6 +39,8 @@ import type * as IndexWorkers from "./index-workers.fixture.js";
 import { indexWorkersCases } from "./index-workers.cases.js";
 import type * as IndexBuild from "./index-build.fixture.js";
 import { indexBuildCases } from "./index-build.cases.js";
+import type * as EntityLookupWorkers from "./entity-lookup-workers.fixture.js";
+import { entityLookupWorkersCases } from "./entity-lookup-workers.cases.js";
 
 // Real worker threads in node: the cases over fixtures `vitest.fixtures.ts` built, each typed as its source, which it's built from.
 workersCases((): Promise<typeof Workers> => builtFixture("workers"));
@@ -61,3 +63,4 @@ lifetimeCases((): Promise<typeof Lifetime> => builtFixture("lifetime"));
 removalCases((): Promise<typeof Removal> => builtFixture("removal"));
 indexWorkersCases((): Promise<typeof IndexWorkers> => builtFixture("index-workers"));
 indexBuildCases((): Promise<typeof IndexBuild> => builtFixture("index-build"));
+entityLookupWorkersCases((): Promise<typeof EntityLookupWorkers> => builtFixture("entity-lookup-workers"));

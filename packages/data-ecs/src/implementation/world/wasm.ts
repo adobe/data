@@ -28,11 +28,14 @@ export type WasmColumn = {
 export type WasmScalar = { readonly source: "resource"; readonly index: number; readonly path: readonly (number | string)[] } | { readonly source: "args"; readonly path: readonly (number | string)[] };
 
 /**
- * A lookup's directory in shared memory: one record of `1 + reads` i32 words per archetype id, a match flag, then the
- * column address of each component the lookup reads. `leaf` places a scalar leaf of read component `read`.
+ * A lookup's directory in shared memory: one record of `1 + reads + watched` i32 words per archetype id, a match flag,
+ * then the column address of each component the lookup reads, then the `changed` tick column address of each it
+ * watches, 0 for one keeping no ticks. `leaf` places a scalar leaf of read component `read`; read `reads` of a lookup
+ * that watches is its `changed`.
  */
 export type WasmLookup = {
     readonly reads: number;
+    readonly watched?: number;
     readonly leaf: (read: number, path: readonly (number | string)[]) => Omit<WasmColumn, "component"> | null;
 };
 
@@ -231,6 +234,10 @@ export const generateWasm = (
         return index;
     };
 
+    /** Whether read `read` of lookup `lookup` is its `changed`, after what it reads. */
+    const isChanged = (lookup: number, read: number): boolean => (lookups[lookup]?.watched ?? 0) > 0 && read === lookups[lookup]?.reads;
+    /** Whether any lookup watches, which then takes its `lastRun` after the other lookup parameters. */
+    const watching = lookups.some(lookup => (lookup.watched ?? 0) > 0);
     /** Each handle's lookup, from the `find`s into it; a handle used by two lookups isn't supported. */
     const lookupOfHandle = new Map<number, number>();
     const claim = (handle: number, lookup: number): void => {
@@ -277,6 +284,7 @@ export const generateWasm = (
             case "upLeaf": return upColumns[expression.column]?.boolean === true ? "boolean" : "number";
             case "lookupLeaf": {
                 const lookup = lookupOfHandle.get(expression.handle);
+                if (lookup !== undefined && isChanged(lookup, expression.read)) return "boolean";
                 const leaf = lookup === undefined ? null : lookups[lookup]?.leaf(expression.read, expression.path);
                 return leaf?.boolean === true ? "boolean" : "number";
             }
@@ -351,7 +359,7 @@ export const generateWasm = (
      * With lookups: the entity table (archetype, row and generation addresses, then its length), then each lookup's
      * directory address and record count, all as f64 so workers pass them like scalars.
      */
-    const lookupParameters = lookups.length === 0 ? 0 : 4 + 2 * lookups.length;
+    const lookupParameters = lookups.length === 0 ? 0 : 4 + 2 * lookups.length + (watching ? 1 : 0);
     const lookupParameter = (index: number): number => 4 + columns.length + 2 * filters + index;
     /** For `up`: the rows' and their parents' rows' addresses, whether there's a parent, then each parent column's address. */
     const upMode = program.up === true;
@@ -638,7 +646,8 @@ export const generateWasm = (
     let lookupLocals: number[] = [];
     const convertLookupParameters = (): void => {
         lookupLocals = [];
-        for (let index = 0; index < lookupParameters; index++) {
+        // The `lastRun` lookups watching compare with stays an f64 parameter.
+        for (let index = 0; index < lookupParameters - (watching ? 1 : 0); index++) {
             const target = scratch(i32Type);
             code.push(op.localGet, ...unsigned(lookupParameter(index)), ...truncations.i32TruncSatF64U, op.localSet, ...unsigned(target));
             lookupLocals.push(target);
@@ -669,7 +678,7 @@ export const generateWasm = (
         const generation = scratch(f64Type);
         const index = scratch(i32Type);
         const archetype = scratch(i32Type);
-        const words = 1 + lookups[lookup].reads;
+        const words = 1 + lookups[lookup].reads + (lookups[lookup].watched ?? 0);
         code.push(op.i32Const, 0, op.localSet, ...unsigned(found));
         // As JS `locate`: the index is ToUint32 of the entity and the generation is floor(entity / 2^32), compared as
         // numbers, so negative, fractional and NaN entities behave exactly as they do there.
@@ -703,8 +712,42 @@ export const generateWasm = (
         code.push(op.end);
     };
 
+    /**
+     * A found entity's `changed`: whether a watched component's tick at its row is newer than the lookups' `lastRun`,
+     * or one keeps no ticks, as 0 or 1; NaN if nothing was found.
+     */
+    const emitChanged = (handle: number, lookup: number): void => {
+        const { reads, watched = 0 } = lookups[lookup];
+        const since = lookupParameter(lookupParameters - 1);
+        const changed = scratch(i32Type);
+        const address = scratch(i32Type);
+        code.push(op.localGet, ...unsigned(handleLocal(handle, "found")), op.if, f64Type);
+        labels.push("if");
+        code.push(op.i32Const, 0, op.localSet, ...unsigned(changed));
+        for (let w = 0; w < watched; w++) {
+            code.push(op.localGet, ...unsigned(handleLocal(handle, "record")), op.i32Load, 2, ...unsigned(4 * (1 + reads + w)), op.localTee, ...unsigned(address));
+            code.push(op.i32Eqz, op.if, i32Type);
+            labels.push("if");
+            code.push(op.i32Const, 1);
+            code.push(op.else);
+            code.push(op.localGet, ...unsigned(address), op.localGet, ...unsigned(handleLocal(handle, "row")), op.i32Const, 3, op.i32Shl, op.i32Add, op.f64Load, 3, 0);
+            code.push(op.localGet, ...unsigned(since), op.f64Gt);
+            code.push(op.end);
+            labels.pop();
+            code.push(op.localGet, ...unsigned(changed), op.i32Or, op.localSet, ...unsigned(changed));
+        }
+        code.push(op.localGet, ...unsigned(changed), op.f64ConvertI32U);
+        code.push(op.else, op.f64Const, ...float64(NaN), op.end);
+        labels.pop();
+    };
+
     const emitLookupLeaf = (handle: number, read: number, path: readonly (number | string)[]): void => {
         const lookup = lookupOfHandle.get(handle);
+        if (lookup !== undefined && isChanged(lookup, read)) {
+            if (path.length > 0) throw unsupported;
+            emitChanged(handle, lookup);
+            return;
+        }
         const leaf = lookup === undefined ? null : lookups[lookup].leaf(read, path);
         if (leaf === null) throw unsupported;
         const { view, stride, offset, boolean } = leaf;

@@ -360,8 +360,30 @@ export const createObjectLookup = (state: State, lookup: Lookup, since: Since) =
     };
 };
 
-/** A lookup returning `read` values in declared order, for kernels. */
-export const createArrayLookup = (state: State, lookup: Lookup) => {
+/**
+ * A lookup returning `read` values in declared order, for kernels: a new array each call, and with `changed` one array
+ * reused, whether a component it watches may have changed after `since` last.
+ */
+export const createArrayLookup = (state: State, lookup: Lookup, since: Since) => {
+    const watched = "index" in lookup ? undefined : lookup.changed;
+    return watched === undefined ? createPlainArrayLookup(state, lookup) : createChangedArrayLookup(state, lookup, watched.map(key => idOf(state, key)), since);
+};
+
+const createChangedArrayLookup = (state: State, lookup: Lookup, ids: readonly number[], since: Since) => {
+    const matcher = createMatcher(state, lookup);
+    const { read } = matcher;
+    const values = new Array<unknown>(read.length + 1);
+    return (entity: Entity): readonly unknown[] | null => {
+        const row = matcher.find(entity);
+        const { archetype } = matcher;
+        if (row < 0 || archetype === null) return null;
+        for (let i = 0; i < read.length; i++) values[i] = readAt(archetype, row, read[i]);
+        values[read.length] = changedAt(archetype, row, ids, since.value);
+        return values;
+    };
+};
+
+const createPlainArrayLookup = (state: State, lookup: Lookup) => {
     const matcher = createMatcher(state, lookup);
     const { read } = matcher;
     return (entity: Entity): readonly unknown[] | null => {

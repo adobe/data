@@ -176,6 +176,8 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const resourceChanged = resources?.changed ?? [];
     const filtered = addedIds.length + changedIds.length + resourceChanged.length > 0;
     const indexLookups = acquireLookups(state, declaration.lookup, declaration.order);
+    /** Its `lastRun` while it runs, which its lookups' lists and rows compare with. */
+    const lookupSince: Since = { value: since };
     let kernel: BoundKernel | null = null;
     if (declaration.kernel !== undefined) {
         const description = kernelOf(leaf);
@@ -184,7 +186,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             throw new Error(`System "${label}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
         }
         try {
-            kernel = bindKernel(state, leaf, description, indexLookups.byName);
+            kernel = bindKernel(state, leaf, description, indexLookups.byName, lookupSince);
         }
         catch (error) {
             indexLookups.release();
@@ -194,8 +196,6 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     /** A kernel's lookups through indexes' WASM parameters for the current run, as `refreshIndexes` gave them at its start. */
     let indexParameters: readonly number[] = noIndexParameters;
     const indexed = kernel?.indexes.some(found => found !== null) === true;
-    /** Its `lastRun` while it runs, which its index lookups' lists compare with. */
-    const lookupSince: Since = { value: since };
     const placement = leaf.kind === "render" ? "render" : declaration.kernel === "gpu" && state.gpu !== null ? "gpu" : "cpu";
     const failPlacement = (message: string): never => { throw new Error(`System "${label}" ${message}.`); };
     // Creating the system and registering its kernel checked its placement, reductions and accessors.

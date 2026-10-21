@@ -25,10 +25,10 @@ const segmentsOf = (path: string): readonly string[] | null => {
 /** Whether a path is inside one of the sample's `elements` folders. */
 const inElements = (path: string): boolean => segmentsOf(path)?.slice(0, -1).includes("elements") ?? false;
 
-/** The feature a path is in, or null. */
+/** The feature a path is in, or null, as for `features/index.ts`, which exports them all. */
 const featureOf = (path: string): string | null => {
     const segments = segmentsOf(path);
-    return segments !== null && segments[0] === "features" ? segments[1] ?? null : null;
+    return segments !== null && segments[0] === "features" && segments.length > 2 ? segments[1] : null;
 };
 
 /** The specifiers a file imports or re-exports, statically or dynamically, and the modules its declarations augment. */

@@ -37,7 +37,8 @@ done or none, clear those done, filter, and generate 10 or 1,000 todos.
 
 ```
 index.html            the page: the fixed elements and their layout
-app/app.ts            lists the features, defines their elements, creates the world and connects the events
+app/app.ts            defines the features' elements, creates the world and connects the events
+features/index.ts     exports every feature
 app/main.ts           starts the app on the page
 app/log-failures.ts   logFailures
 shared/feature.ts     Feature: what the app needs of a feature
@@ -56,7 +57,7 @@ feature it builds on, never one built on it, and never the app. Within one, `mod
 `data` and its elements; `events` imports `model` and `dom`. Registration happens as modules load, so a feature's
 components, indexes and finalizers exist wherever one of its modules is imported, and `feature.ts` lists only what
 the app must do with it: define its elements, find its fixed elements, add its DOM systems and connect its events.
-Adding a feature is a folder and a line in `app/app.ts`.
+Adding a feature is a folder and a line in `features/index.ts`.
 
 ## Tests
 

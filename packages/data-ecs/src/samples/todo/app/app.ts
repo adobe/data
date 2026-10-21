@@ -1,14 +1,11 @@
 import { workers, type World } from "../../../index.js";
 import { createWorld } from "../../../implementation/index.js";
-import { completion } from "../features/completion/feature.js";
-import { filter } from "../features/filter/feature.js";
-import { generate } from "../features/generate/feature.js";
-import { todos } from "../features/todos/feature.js";
+import * as exported from "../features/index.js";
 import type { Resources } from "../shared/feature.js";
 import { logFailures } from "./log-failures.js";
 
-/** The app's features. Each knows only those it builds on; none knows the app. */
-const features = [todos, filter, completion, generate];
+/** The app's features, every one `features/index.ts` exports. Each knows only those it builds on; none knows the app. */
+const features = Object.values(exported);
 
 /** Defines every element the app's features use. */
 export const defineElements = (): void => {

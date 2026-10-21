@@ -74,11 +74,6 @@ export class TodoSummary extends HTMLElement {
     }
 }
 
-/** Defines `<todo-summary>`, once. */
-export const defineTodoSummary = (): void => {
-    if (customElements.get("todo-summary") === undefined) customElements.define("todo-summary", TodoSummary);
-};
-
 declare global {
     interface HTMLElementTagNameMap {
         "todo-summary": TodoSummary;

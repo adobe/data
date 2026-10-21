@@ -29,24 +29,27 @@ done or none, clear those done, filter, and generate 10 or 1,000 todos.
   - Rows out of view skip their rendering (`content-visibility: auto`).
 - **Events become runs** in each feature's `events.ts`: listeners on the page's root call `world.run(system, input)`
   and leave the promise; a rejected run goes unhandled, which the browser logs. An event from a row names its todo
-  through `todoOf`, a `WeakMap` from row to entity that `createRows` fills.
+  through `todoOf`, a `WeakMap` from row to entity that `createRows` fills. Systems acting on one todo name it as their
+  `target`, so they run on its row alone, writing it in place, and on nothing once it's gone.
 - **Failures** of runs and ticks alike are in their reports, entities the world keeps; the app adds `logFailures`, an
-  observer system with `changed: [Report.errors]` that logs each failure once, an observer pass's at the next pass.
+  observer system with `changed: [Report.errors]` that logs them; each report's errors are written once, and an
+  observer pass's failures are in the next run's report.
 
 ## Structure
 
 ```
 index.html            the page: the fixed elements and their layout
 app/app.ts            defines the features' elements, creates the world and connects the events
-features/index.ts     exports every feature
 app/main.ts           starts the app on the page
 app/log-failures.ts   logFailures
+features/index.ts     exports every feature
 shared/feature.ts     Feature: what the app needs of a feature
-shared/connect.ts     on: listening for events
+shared/connect.ts     on and all: listening for events, and stopping several listeners at once
+shared/elements/      define: defining the elements features list
 features/<feature>/
     data.ts           components, resources, archetypes and indexes: the feature's data
     model.ts          systems with input, one per thing a user does: they change data and know no DOM
-    dom.ts            the components and resources holding elements, and the systems that drive them
+    dom.ts            the components and resources holding elements, and the composite of the systems that drive them
     events.ts         connect: DOM events to runs of the model's systems
     elements/         custom elements, importing only each other
     feature.ts        the feature as the app composes it
@@ -56,7 +59,9 @@ The features are `todos`; `filter`, `completion` and `generate` build on it. A f
 feature it builds on, never one built on it, and never the app. Within one, `model` imports only `data`; `dom` imports
 `data` and its elements; `events` imports `model` and `dom`. Registration happens as modules load, so a feature's
 components, indexes and finalizers exist wherever one of its modules is imported, and `feature.ts` lists only what
-the app must do with it: define its elements, find its fixed elements, add its DOM systems and connect its events.
+the app must do with it: its elements, by tag name, which the app defines; how it finds its fixed elements; its DOM
+systems as one composite, which the app adds; and how it connects its events. Elements are defined by the app rather
+than as their modules load: the package's `sideEffects: false` lets a bundle drop a module imported only for that.
 Adding a feature is a folder and a line in `features/index.ts`.
 
 ## Tests

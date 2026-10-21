@@ -7,15 +7,13 @@ import { todoOf } from "../features/todos/dom.js";
 import { TodoRow } from "../features/todos/elements/todo-row.js";
 import { addTodo, deleteTodo, editTodo, moveTodo, toggleTodo } from "../features/todos/model.js";
 import { nextTick, watchTicks } from "../shared/ticks.test-helper.js";
-import { createApp, defineElements } from "./app.js";
+import { createApp } from "./app.js";
 
 /**
  * Each operation's work follows what it changed, whatever the list holds: both the DOM's mutations and how often the
  * DOM systems reach rows, since elements drop equal writes and systems skip rows already right, which would hide a
  * system that visits every row. `app/todo.perf-browser-test.ts` times them.
  */
-
-defineElements();
 
 const markup = `<todo-toggle-all></todo-toggle-all><todo-list></todo-list><todo-summary></todo-summary><todo-filters></todo-filters>`;
 

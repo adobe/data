@@ -9,15 +9,13 @@ import { done } from "../features/todos/data.js";
 import { createRows, dom, list, todoOf } from "../features/todos/dom.js";
 import { addTodo, editTodo, moveTodo, toggleTodo } from "../features/todos/model.js";
 import { nextTick, watchTicks } from "../shared/ticks.test-helper.js";
-import { createApp, defineElements } from "./app.js";
+import { createApp } from "./app.js";
 
 /**
  * How the app's DOM path scales, with 1K and 10K todos: each operation's run is timed, the observer systems that run
  * after it included, and then run once more with the DOM's mutations counted, those of the tick after it included.
  * Numbers are logged, never asserted: `pnpm test:perf src/samples/todo`.
  */
-
-defineElements();
 
 const markup = `
 <header><todo-toggle-all></todo-toggle-all><todo-entry></todo-entry></header>
@@ -188,7 +186,7 @@ const benchmarkListFilter = async (n: number): Promise<void> => {
     document.body.append(style, element);
     await using world = createWorld({ [workers]: 0, [list]: element });
     await watchTicks(world);
-    for (const system of [...dom, markList]) world.add(system);
+    for (const system of [dom, markList]) world.add(system);
     await world.run(addGenerated, { count: n });
     await world.run(createRows);
     await world.run(halfDone);

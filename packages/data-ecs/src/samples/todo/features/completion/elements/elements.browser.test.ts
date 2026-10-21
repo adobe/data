@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { part, record } from "../../../shared/elements/elements.test-helper.js";
-import { defineTodoSummary } from "./todo-summary.js";
-import { defineTodoToggleAll } from "./todo-toggle-all.js";
+import { TodoSummary } from "./todo-summary.js";
+import { TodoToggleAll } from "./todo-toggle-all.js";
+import { define } from "../../../shared/elements/define.js";
 
-defineTodoSummary();
-defineTodoToggleAll();
+define({ "todo-summary": TodoSummary, "todo-toggle-all": TodoToggleAll });
 
 afterEach(() => {
     document.body.replaceChildren();

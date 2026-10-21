@@ -61,11 +61,6 @@ export class TodoToggleAll extends HTMLElement {
     }
 }
 
-/** Defines `<todo-toggle-all>`, once. */
-export const defineTodoToggleAll = (): void => {
-    if (customElements.get("todo-toggle-all") === undefined) customElements.define("todo-toggle-all", TodoToggleAll);
-};
-
 declare global {
     interface HTMLElementTagNameMap {
         "todo-toggle-all": TodoToggleAll;

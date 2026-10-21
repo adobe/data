@@ -8,7 +8,7 @@ import { bindFilters, filterRows } from "../features/filter/dom.js";
 import { addGenerated } from "../features/generate/model.js";
 import { bindRows, createRows, placeRows, todoOf } from "../features/todos/dom.js";
 import { toggleTodo } from "../features/todos/model.js";
-import { createApp, defineElements, type App } from "./app.js";
+import { createApp, type App } from "./app.js";
 import { logFailures } from "./log-failures.js";
 
 /**
@@ -16,8 +16,6 @@ import { logFailures } from "./log-failures.js";
  * observer systems one by one and in the app at three sizes, then a sampled profile of toggling at 10K. Logged, never
  * asserted: `pnpm test:perf src/samples/todo`.
  */
-
-defineElements();
 
 const nothing = System.create({ name: "profile/nothing" }, () => {});
 const median = (values: readonly number[]): number => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? NaN;

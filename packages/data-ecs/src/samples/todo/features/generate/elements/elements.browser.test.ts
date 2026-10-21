@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { part, record } from "../../../shared/elements/elements.test-helper.js";
-import { defineTodoGenerate } from "./todo-generate.js";
+import { TodoGenerate } from "./todo-generate.js";
+import { define } from "../../../shared/elements/define.js";
 
-defineTodoGenerate();
+define({ "todo-generate": TodoGenerate });
 
 describe("todo-generate", () => {
     it("dispatches todo-generate with each button's count", () => {

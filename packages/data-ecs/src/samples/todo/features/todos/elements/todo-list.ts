@@ -85,11 +85,6 @@ export class TodoList extends HTMLElement {
     }
 }
 
-/** Defines `<todo-list>`, once. */
-export const defineTodoList = (): void => {
-    if (customElements.get("todo-list") === undefined) customElements.define("todo-list", TodoList);
-};
-
 declare global {
     interface HTMLElementTagNameMap {
         "todo-list": TodoList;

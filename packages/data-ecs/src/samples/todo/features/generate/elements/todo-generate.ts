@@ -28,11 +28,6 @@ export class TodoGenerate extends HTMLElement {
     }
 }
 
-/** Defines `<todo-generate>`, once. */
-export const defineTodoGenerate = (): void => {
-    if (customElements.get("todo-generate") === undefined) customElements.define("todo-generate", TodoGenerate);
-};
-
 declare global {
     interface HTMLElementTagNameMap {
         "todo-generate": TodoGenerate;

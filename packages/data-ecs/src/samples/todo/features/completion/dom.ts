@@ -44,4 +44,5 @@ export const bindToggleAll = System.create({
     resources[toggleAllBox].empty = remaining.length + completed.length === 0;
 });
 
-export const dom = [bindSummary, bindToggleAll];
+/** The completion feature's DOM systems, as one composite: added, it runs on every tick. */
+export const dom = System.create([bindSummary, bindToggleAll]);

@@ -3,13 +3,13 @@ import { Entity, System, workers, type World } from "../../../../index.js";
 import { createWorld } from "../../../../implementation/index.js";
 import { settled, watchTicks } from "../../shared/ticks.test-helper.js";
 import { dom, list, row, todoOf } from "./dom.js";
-import { defineTodoList, type TodoList } from "./elements/todo-list.js";
-import { defineTodoRow, type TodoRow } from "./elements/todo-row.js";
+import { TodoList } from "./elements/todo-list.js";
+import { TodoRow } from "./elements/todo-row.js";
 import { addTodo, deleteTodo, editTodo, moveTodo, toggleTodo } from "./model.js";
 import { todosOf } from "./todos.test-helper.js";
+import { define } from "../../shared/elements/define.js";
 
-defineTodoRow();
-defineTodoList();
+define({ "todo-list": TodoList, "todo-row": TodoRow });
 
 afterEach(() => {
     document.body.replaceChildren();
@@ -21,7 +21,7 @@ const createDriven = async (): Promise<{ readonly world: World; readonly element
     document.body.append(element);
     const world = createWorld({ [workers]: 0, [list]: element });
     await watchTicks(world);
-    for (const system of dom) world.add(system);
+    world.add(dom);
     return { world, element };
 };
 
@@ -157,7 +157,7 @@ describe("the todos feature's DOM systems", () => {
     it("make no rows while the page has no list", async () => {
         await using world = createWorld({ [workers]: 0 });
         await watchTicks(world);
-        for (const system of dom) world.add(system);
+        world.add(dom);
         await settled(world.run(addTodo, { label: "a" }));
         expect(await rowCount(world)).toBe(0);
     });

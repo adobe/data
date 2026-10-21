@@ -3,18 +3,16 @@ import { workers } from "../../../../index.js";
 import { createWorld } from "../../../../implementation/index.js";
 import { settled, watchTicks } from "../../shared/ticks.test-helper.js";
 import * as todos from "../todos/dom.js";
-import { defineTodoList } from "../todos/elements/todo-list.js";
-import { defineTodoRow } from "../todos/elements/todo-row.js";
+import { TodoList } from "../todos/elements/todo-list.js";
+import { TodoRow } from "../todos/elements/todo-row.js";
 import { addTodo, deleteTodo, editTodo, toggleTodo } from "../todos/model.js";
 import { dom, summary, toggleAllBox } from "./dom.js";
-import { defineTodoSummary } from "./elements/todo-summary.js";
-import { defineTodoToggleAll } from "./elements/todo-toggle-all.js";
+import { TodoSummary } from "./elements/todo-summary.js";
+import { TodoToggleAll } from "./elements/todo-toggle-all.js";
 import { clearCompleted, toggleAll } from "./model.js";
+import { define } from "../../shared/elements/define.js";
 
-defineTodoRow();
-defineTodoList();
-defineTodoSummary();
-defineTodoToggleAll();
+define({ "todo-list": TodoList, "todo-row": TodoRow, "todo-summary": TodoSummary, "todo-toggle-all": TodoToggleAll });
 
 afterEach(() => {
     document.body.replaceChildren();
@@ -27,7 +25,7 @@ it("shows the counts and whether all are done, and clears the rows of todos done
     document.body.append(box, list, count);
     await using world = createWorld({ [workers]: 0, [todos.list]: list, [summary]: count, [toggleAllBox]: box });
     await watchTicks(world);
-    for (const system of [...todos.dom, ...dom]) world.add(system);
+    for (const system of [todos.dom, dom]) world.add(system);
     const state = (): string => `${count.remaining} left, ${count.completed} done, ${box.empty ? "empty" : box.checked ? "all done" : "some left"}, ${list.children.length} rows`;
     await settled(world.run(clearCompleted));
     expect(state()).toBe("0 left, 0 done, empty, 0 rows");

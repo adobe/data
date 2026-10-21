@@ -4,9 +4,7 @@ import { todo } from "../features/todos/data.js";
 import { row } from "../features/todos/dom.js";
 import { part } from "../shared/elements/elements.test-helper.js";
 import { nextTick, watchTicks } from "../shared/ticks.test-helper.js";
-import { createApp, defineElements, type App } from "./app.js";
-
-defineElements();
+import { createApp, type App } from "./app.js";
 
 /** The page's markup, as index.html has it. */
 const markup = `

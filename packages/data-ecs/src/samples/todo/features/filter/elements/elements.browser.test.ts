@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mutationsOf, part, record } from "../../../shared/elements/elements.test-helper.js";
-import { defineTodoFilters } from "./todo-filters.js";
+import { TodoFilters } from "./todo-filters.js";
+import { define } from "../../../shared/elements/define.js";
 
-defineTodoFilters();
+define({ "todo-filters": TodoFilters });
 
 afterEach(() => {
     document.body.replaceChildren();

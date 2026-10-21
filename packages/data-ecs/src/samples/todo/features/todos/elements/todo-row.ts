@@ -130,11 +130,6 @@ export class TodoRow extends HTMLElement {
     }
 }
 
-/** Defines `<todo-row>`, once. */
-export const defineTodoRow = (): void => {
-    if (customElements.get("todo-row") === undefined) customElements.define("todo-row", TodoRow);
-};
-
 declare global {
     interface HTMLElementTagNameMap {
         "todo-row": TodoRow;

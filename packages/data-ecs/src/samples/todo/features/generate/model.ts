@@ -1,5 +1,5 @@
 import { System } from "../../../../index.js";
-import { Todo, done, label, order, ordered, todo } from "../todos/data.js";
+import { Todo, done, label, order, orderAfter, ordered } from "../todos/data.js";
 
 const tasks = ["Buy milk", "Call the plumber", "Fix the bike", "Read a novel", "Write a letter", "Plan the trip", "Clean the kitchen", "Book a table"];
 
@@ -13,7 +13,7 @@ export const addGenerated = System.create({
     lookup: { ordered: { index: ordered, read: [order] } },
 }, ({ input, lookup, commands }) => {
     const all = lookup.ordered();
-    const first = all.length === 0 ? 0 : all.at(all.length - 1)[order] + 1;
+    const first = orderAfter(all);
     const spawn = commands.spawn(Todo);
-    for (let i = 0; i < input.count; i++) spawn({ [todo]: true, [label]: generatedLabel(all.length + i), [done]: false, [order]: first + i });
+    for (let i = 0; i < input.count; i++) spawn({ [label]: generatedLabel(all.length + i), [done]: false, [order]: first + i });
 });

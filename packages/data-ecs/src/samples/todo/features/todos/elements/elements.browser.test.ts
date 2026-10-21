@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mutationsOf, part, record } from "../../../shared/elements/elements.test-helper.js";
-import { defineTodoEntry } from "./todo-entry.js";
-import { defineTodoList } from "./todo-list.js";
-import { defineTodoRow } from "./todo-row.js";
+import { TodoEntry } from "./todo-entry.js";
+import { TodoList } from "./todo-list.js";
+import { TodoRow } from "./todo-row.js";
+import { define } from "../../../shared/elements/define.js";
 
-defineTodoRow();
-defineTodoList();
-defineTodoEntry();
+define({ "todo-entry": TodoEntry, "todo-list": TodoList, "todo-row": TodoRow });
 
 afterEach(() => {
     document.body.replaceChildren();

@@ -1,5 +1,5 @@
 import { Entity, System } from "../../../../index.js";
-import { Todo, done, label, order, ordered, todo } from "./data.js";
+import { Todo, done, label, order, orderAfter, ordered, todo } from "./data.js";
 
 const text = { type: "string" } as const;
 
@@ -11,38 +11,39 @@ export const addTodo = System.create({
 }, ({ input, lookup, commands }) => {
     const trimmed = input.label.trim();
     if (trimmed === "") return;
-    const all = lookup.ordered();
-    const next = all.length === 0 ? 0 : all.at(all.length - 1)[order] + 1;
-    commands.spawn(Todo)({ [todo]: true, [label]: trimmed, [done]: false, [order]: next });
+    commands.spawn(Todo)({ [label]: trimmed, [done]: false, [order]: orderAfter(lookup.ordered()) });
 });
+
+const one = { entity: Entity.schema } as const;
 
 export const toggleTodo = System.create({
     name: "todos/toggle",
-    input: { type: "object", properties: { entity: Entity.schema } },
-    lookup: { todos: { read: [done], has: [todo] } },
-}, ({ input, lookup, commands }) => {
-    const found = lookup.todos(input.entity);
-    if (found !== null) commands.add(input.entity, done, !found[done]);
+    input: { type: "object", properties: one },
+    target: "entity",
+    components: { write: [done], has: [todo] },
+}, row => {
+    row[done] = !row[done];
 });
 
 /** Gives a todo a new label, trimmed; a blank one deletes it. */
 export const editTodo = System.create({
     name: "todos/edit",
-    input: { type: "object", properties: { entity: Entity.schema, label: text } },
-    lookup: { todos: { has: [todo] } },
-}, ({ input, lookup, commands }) => {
-    if (lookup.todos(input.entity) === null) return;
+    input: { type: "object", properties: { ...one, label: text } },
+    target: "entity",
+    components: { write: [label], has: [todo] },
+}, (row, { input, commands }) => {
     const trimmed = input.label.trim();
-    if (trimmed === "") commands.despawn(input.entity);
-    else commands.add(input.entity, label, trimmed);
+    if (trimmed === "") commands.despawn(row.entity);
+    else row[label] = trimmed;
 });
 
 export const deleteTodo = System.create({
     name: "todos/delete",
-    input: { type: "object", properties: { entity: Entity.schema } },
-    lookup: { todos: { has: [todo] } },
-}, ({ input, lookup, commands }) => {
-    if (lookup.todos(input.entity) !== null) commands.despawn(input.entity);
+    input: { type: "object", properties: one },
+    target: "entity",
+    components: { has: [todo] },
+}, (row, { commands }) => {
+    commands.despawn(row.entity);
 });
 
 /**

@@ -62,11 +62,6 @@ export class TodoFilters extends HTMLElement {
     }
 }
 
-/** Defines `<todo-filters>`, once. */
-export const defineTodoFilters = (): void => {
-    if (customElements.get("todo-filters") === undefined) customElements.define("todo-filters", TodoFilters);
-};
-
 declare global {
     interface HTMLElementTagNameMap {
         "todo-filters": TodoFilters;

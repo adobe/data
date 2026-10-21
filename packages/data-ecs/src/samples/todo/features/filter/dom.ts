@@ -59,4 +59,5 @@ export const bindFilters = System.create({
     resources[filters].filter = resources[filter];
 });
 
-export const dom = [filterRows, bindFilters];
+/** The filter feature's DOM systems, as one composite: added, it runs on every tick. */
+export const dom = System.create([filterRows, bindFilters]);

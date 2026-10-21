@@ -90,5 +90,5 @@ Finalizer.create({ name: "todos/removeRows", components: { read: [row] } }, item
     item[row].remove();
 });
 
-/** The todos feature's DOM systems: added ones run on every tick. */
-export const dom = [createRows, bindRows, placeRows];
+/** The todos feature's DOM systems, as one composite: added, it runs on every tick. */
+export const dom = System.create([createRows, bindRows, placeRows]);

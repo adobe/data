@@ -37,11 +37,6 @@ export class TodoEntry extends HTMLElement {
     }
 }
 
-/** Defines `<todo-entry>`, once. */
-export const defineTodoEntry = (): void => {
-    if (customElements.get("todo-entry") === undefined) customElements.define("todo-entry", TodoEntry);
-};
-
 declare global {
     interface HTMLElementTagNameMap {
         "todo-entry": TodoEntry;

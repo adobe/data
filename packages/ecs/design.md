@@ -21,7 +21,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 
 - **All state lives in the ECS.** Essential state lives in components. Derived state is computed by systems, or by structural rules, into derived components. External async ports write into the ECS through commands.
 - **Change detection is Bevy-style.** Each component of each entity has `added`/`changed` ticks. Each system has a `lastRun`. `Added<T>` / `Changed<T>` compare against `lastRun`, so each system sees each change exactly once, wherever it runs in the schedule.
-- **Structural changes are deferred.** Spawn/despawn/add/remove go to command buffers and are applied at sync points. Value writes are immediate.
+- **Structural changes are deferred.** Spawn/despawn/add/remove go to command buffers and are applied at sync points. Value writes are immediate. Commands apply in the order issued: a run's systems in schedule order, each system's by row in the order its rows run, whichever threads ran them, so of two adds of one component to one entity the later one's value stands.
 
 ## Storage
 

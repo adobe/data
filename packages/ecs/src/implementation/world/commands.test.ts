@@ -203,6 +203,18 @@ describe("literal values in a system's body", () => {
     });
 });
 
+/** Three adds of one component to each row, by systems ordered first to third, the second adding twice. */
+const first = System.create({ name: "commandsTest/firstAdd", kernel: "cpu", components: { has: [position] } }, (row, { commands }) => {
+    commands.add(row.entity, score, 1);
+});
+const second = System.create({ name: "commandsTest/secondAdd", components: { has: [position] }, after: [first] }, (row, { commands }) => {
+    commands.add(row.entity, score, 2);
+    commands.add(row.entity, score, 3);
+});
+const third = System.create({ name: "commandsTest/thirdAdd", kernel: "cpu", components: { has: [position] }, after: [second] }, (row, { commands }) => {
+    commands.add(row.entity, score, 4);
+});
+
 describe("add and remove", () => {
     it("add one component with its value, a tag without one, or a list with its values and defaults", async () => {
         const { world, run } = withCommands();
@@ -216,6 +228,16 @@ describe("add and remove", () => {
         expect(await components(world, entity)).toEqual({ [position]: [0, 0, 0], [score]: 2, [tag]: true, [health]: 100, [label]: null, [other]: true, [slot]: 0 });
         await run(commands => { commands.add(entity, [score, health], { [score]: 3, [health]: 4 }); });
         expect(await readEntity(world, entity, [score, health])).toEqual({ [score]: 3, [health]: 4 });
+        await world.dispose();
+    });
+    it("apply in the order issued: of systems in schedule order, and in each by row, so a later add of a component wins", async () => {
+        const { world, run } = withCommands();
+        let entity = Entity.none;
+        await run(commands => { entity = commands.spawn([position, score])({ [position]: [0, 0, 0], [score]: 0 }); });
+        await world.run(System.create([third, first, second]));
+        expect(await read(world, entity, score)).toBe(4);
+        await world.run(System.create([second, first]));
+        expect(await read(world, entity, score)).toBe(3);
         await world.dispose();
     });
     it("remove one component or a list", async () => {

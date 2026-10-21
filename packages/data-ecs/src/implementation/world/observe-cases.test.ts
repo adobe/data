@@ -7,7 +7,7 @@ import { System } from "../../interface/system/system.js";
 import { createWorld } from "../index.js";
 import { Observe } from "../../observe/index.js";
 import { settle } from "./observe.test-helper.js";
-import { fillReports, runReported } from "./reports.test-helper.js";
+import { fillReports, runReported, runThenNext } from "./reports.test-helper.js";
 import { retainedRuns } from "./reports.js";
 import { Report } from "../../interface/report/report.js";
 
@@ -281,7 +281,7 @@ describe("observing resources", () => {
         });
         resource(world, level)(value => seen.push(value));
         await settle(world);
-        const { failures } = await runReported(world, raise, { by: 1 });
+        const { failures } = await runThenNext(world, raise, { by: 1 });
         expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([
             { kind: "system", name: expect.stringMatching(/^Observe\.resource\(observeCasesTest\/level\)/), message: "observer failed" },
         ]);
@@ -449,7 +449,7 @@ describe("observing entities", () => {
         });
         entity(world, target, { required: [weight] })(value => seen.push(value));
         await settle(world);
-        const { failures } = await runReported(world, weigh);
+        const { failures } = await runThenNext(world, weigh);
         expect(failures.map(({ kind, message }) => ({ kind, message }))).toEqual([{ kind: "system", message: "observer failed" }]);
         expect(seen).toEqual([{ [weight]: 1 }, { [weight]: 3 }]);
     });
@@ -609,7 +609,7 @@ describe("observing queries", () => {
         const seen: number[] = [];
         const stop = count(world, { required: [score, benched] })(value => seen.push(value));
         await settle(world);
-        const { failures } = await runReported(world, bench);
+        const { failures } = await runThenNext(world, bench);
         expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([
             { kind: "system", name: expect.stringMatching(/^Observe\.count\(observeCasesTest\/score, observeCasesTest\/benched\)/), message: "observer failed" },
         ]);

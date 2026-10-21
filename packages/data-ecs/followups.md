@@ -42,9 +42,11 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 - **A joined thread's own observer runs:** what such a run's body throws reaches the world for its next report rather
   than the run's, and a `run` of several of its own observer systems resolves to the last one's number. Recommended:
   accept.
-- **The factories' own failures** are rethrown out of band from their runs' reports, a pass's failures once a later run
-  of theirs sees them, so the last run's wait for the next; on a joined thread they're only in the world's reports.
-  Recommended: accept, since the factories are for tests and debugging.
+- **The factories' own failures** are rethrown out of band from the reports their runs see, a pass's failures once a
+  later run of theirs sees the next report; on a joined thread they're only in the world's reports. Recommended:
+  accept, since the factories are for tests and debugging.
+- **An observer pass's failures are in the next run's report,** not their own run's, so each report's errors are
+  written once; nothing reports them until another run or tick. Decided.
 
 ## Findings from the todo sample (`src/samples/todo/README.md`)
 

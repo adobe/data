@@ -162,6 +162,7 @@ export const checkLeaf = (leaf: Leaf): void => {
             throw new Error(`System "${name}": input is an object schema of named fields.`);
         }
     }
+    checkTarget(leaf);
     threadOf(declaration, "System", name);
     requireRegistered("System", name, "component", components?.has);
     requireRegistered("System", name, "component", components?.not);
@@ -177,6 +178,23 @@ export const checkLeaf = (leaf: Leaf): void => {
     checkReductions(leaf);
     checkConditions(leaf);
     checkPlacement(leaf);
+};
+
+/**
+ * Throws if a system on one entity takes it from what isn't an entity field of its input, has no components, or is a
+ * kernel, has `up` or `order`, or reduces.
+ */
+const checkTarget = (leaf: Leaf): void => {
+    const { name, declaration } = leaf;
+    const { target, input, components, kernel, up, order, reduce } = declaration;
+    if (target === undefined) return;
+    const fail = (message: string): never => { throw new Error(`System "${name}" runs on one entity, so it ${message}.`); };
+    const field: Schema | undefined = input !== undefined && "properties" in input ? Reflect.get(input.properties, target) : undefined;
+    if (field === undefined || !("format" in field) || field.format !== "entity") fail(`takes it from an input field "${target}" holding an entity`);
+    if (components === undefined) fail("needs components");
+    if (kernel !== undefined) fail("isn't a kernel");
+    if (up !== undefined || order !== undefined) fail("has no up or order");
+    if (reduce !== undefined) fail("reduces into nothing");
 };
 
 /** Every leaf under a system, each once. Throws for a member no System constructor returned. */

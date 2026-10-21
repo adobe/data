@@ -38,9 +38,6 @@ export const isClean = (report: RunReport): boolean => report.failures.length ==
 const none: readonly never[] = [];
 const noErrors: Errors = { failures: none, skipped: none, warnings: none };
 
-const sameCounts = (a: Errors, b: Errors): boolean =>
-    a.failures.length === b.failures.length && a.skipped.length === b.skipped.length && a.warnings.length === b.warnings.length;
-
 /** Fields of `Report.run`, in no particular order: what `createRunWriter` writes. */
 const runFields = ["number", "elapsed", "systems", "workers", "joined", "main", "gpu", "dropped"] as const satisfies readonly (keyof RunValues)[];
 
@@ -166,19 +163,23 @@ export const createReports = (state: State, applyAlone: (buffer: CommandBuffer) 
             void putErrors(last, errors, true);
         },
         /**
-         * Writes run `run`'s report into its slot once its sync point is done: `Report.run`, then its errors when it
-         * has more than were put before, or clears those an earlier run left. While tails run on joined threads, a
-         * removal waits for the next sync point, the errors emptied meanwhile.
+         * Writes run `run`'s report into its slot once its sync point is done: `Report.run`, then its errors unless
+         * they were put before it, or clears those an earlier run left. A report's errors are written once: failures
+         * found after go to `defer`, for the next report. While tails run on joined threads, a removal waits for the
+         * next sync point, the errors emptied meanwhile.
          */
-        finish: (slot: Slot, values: RunValues, report: RunReport, tailsRun: boolean): Promise<void> | null => {
+        finish: (slot: Slot, values: RunValues, report: RunReport, tailsRun: boolean, defer: (failures: readonly Failure[]) => void): Promise<void> | null => {
             if (slot.run !== values.number) return null;
             const cell = cellOf(slot, runId);
             if (cell === null) return null;
             writeRun(cell.storage.views, cell.row, values);
             stampChanged(cell.storage, cell.row, ++state.tick);
             if (!isClean(report)) {
-                const errors = { failures: report.failures, skipped: report.skipped, warnings: report.warnings };
-                return slot.own && slot.errors !== null && sameCounts(slot.errors, errors) ? null : putErrors(slot, errors, tailsRun);
+                const given = slot.own ? slot.errors : null;
+                if (given === null) return putErrors(slot, { failures: report.failures, skipped: report.skipped, warnings: report.warnings }, tailsRun);
+                // Its errors are written once: failures found since go to the next report.
+                if (report.failures.length > given.failures.length) defer(report.failures.slice(given.failures.length));
+                return null;
             }
             if (slot.errors === null || slot.own) return null;
             const held = cellOf(slot, errorsId);
@@ -195,13 +196,6 @@ export const createReports = (state: State, applyAlone: (buffer: CommandBuffer) 
                 return null;
             }
             return applyAlone(buffer);
-        },
-        /** Adds failures found once run `run`'s report was written, adding `Report.errors` when it had none. */
-        amend: (slot: Slot, run: number, failures: readonly Failure[], tailsRun: boolean): Promise<void> | null => {
-            if (slot.run !== run || locate(state.entities, slot.entity) < 0) return null;
-            const errors = slot.own ? slot.errors : null;
-            const amended = errors === null ? { failures, skipped: none, warnings: none } : { failures: [...errors.failures, ...failures], skipped: errors.skipped, warnings: errors.warnings };
-            return putErrors(slot, amended, tailsRun);
         },
     };
 };

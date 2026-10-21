@@ -25,7 +25,7 @@ const readerOf = (world: World): Reader => {
     const system = System.create({ name: "test/readReport", observer: true, components: { read: [Report.run] }, lookup: { errorsOf: { read: [Report.errors] } } }, (row, { lookup }) => {
         const read = asked[0];
         const values = row[Report.run];
-        if (read === undefined || values.number !== read.run) return;
+        if (read === undefined || (read.run >= 0 ? values.number !== read.run : values.number <= (read.values?.number ?? -1))) return;
         const errors = lookup.errorsOf(row.entity)?.[Report.errors] ?? null;
         read.values = values;
         read.found = errors === null
@@ -63,6 +63,18 @@ export const runOf = async (world: World, run: number): Promise<Report[typeof Re
     const { values } = await readOf(world, run);
     if (values === null) throw new Error(`Run ${run} has no report.`);
     return values;
+};
+
+/**
+ * Runs a system, then reads the next run's report, which holds what the system's run found after its own was written:
+ * what its observer pass threw.
+ */
+export const runThenNext = async <I>(world: World, system: System<I>, ...input: Input<NoInfer<I>>): Promise<Reported> => {
+    await world.run(system, ...input);
+    // The reader's own run is the newest: its report holds what was deferred to it.
+    const { found } = await readOf(world, -1);
+    if (found === null) throw new Error("The next run has no report.");
+    return found;
 };
 
 /** Runs a system, then reads its run's report. */

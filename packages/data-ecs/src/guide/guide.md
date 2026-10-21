@@ -184,7 +184,7 @@ const fail = System.create({ name: "fail" }, () => {
 
 // A run resolves to its number. Every run and tick has a report, an entity: `Report.run` says what it ran and how long
 // it took, and `Report.errors` is there only when something went wrong. An observer system added to follow errors as
-// they change logs them; observer systems' failures join their report after them.
+// they change logs them; what observer systems throw is in the next run's report.
 const logged: string[] = [];
 const logFailures = System.create({ observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
     for (const failure of row[Report.errors].failures) logged.push(`${failure.name}: ${failure.message}`);
@@ -325,11 +325,21 @@ const hit = System.create({
     row[health] -= input.amount;
 });
 
+// target names an input field holding an entity: the system runs on that entity's row alone, or on none once it's gone.
+const heal = System.create({
+    components: { write: [health] },
+    input: { type: "object", properties: { entity: Entity.schema, amount: { type: "number" } } },
+    target: "entity",
+}, (row, { input }) => {
+    row[health] += input.amount;
+});
+
 // Systems with input are run, not added; a composite's input has every field its members declare.
 await world.run(hit, { amount: 3 });
+await world.run(heal, { entity: player, amount: 1 });
 ```
 
-[`08-input.test.ts`](08-input.test.ts#L17-L37)
+[`08-input.test.ts`](08-input.test.ts#L18-L48)
 
 ### 9. Rules
 

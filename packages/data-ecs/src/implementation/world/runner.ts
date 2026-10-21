@@ -9,7 +9,7 @@ import { maximumScalars, type KernelSetup } from './protocol.js';
 import type { Segment } from './command-ring.js';
 import { createBuffer, createKernelCommands, emptyBuffer, stage, type CommandBuffer } from './buffer.js';
 import { createBatch, positionalSpawner, type SpawnBatch } from './staging.js';
-import { createBlock, endBlock, indexOf, reserveFrom } from './entities.js';
+import { createBlock, endBlock, indexOf, locate, reserveFrom } from './entities.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, parentBinder, rowBinder } from './rows.js';
@@ -391,6 +391,19 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     };
 
     const filtersOf = (archetype: Archetype): readonly Filter[] => filteredOf(archetype).filters;
+
+    const { target } = declaration;
+    /** Runs the body on `entity`'s row, when it's alive and its archetype matches. */
+    const runTarget = (entity: unknown): void => {
+        if (typeof entity !== "number") return;
+        const index = locate(state.entities, entity);
+        if (index < 0) return;
+        const archetype = state.archetypes[state.entities.archetype[index]];
+        if (archetype === undefined || !matches.includes(archetype)) return;
+        const row = bindRow(archetype);
+        row.index = state.entities.row[index];
+        system.body(row.value, context.value);
+    };
 
     const runBody = (archetype: Archetype, since: number): void => {
         const row = bindRow(archetype);
@@ -904,6 +917,10 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             if (since >= 0 && addedIds.length + changedIds.length === 0 && up === null) return chunks;
             ran = true;
             refreshMatches();
+            if (target !== undefined) {
+                runTarget(Reflect.get(Object(args), target));
+                return chunks;
+            }
             const values = kernel === null || kernel.description.resources.length === 0 ? noValues : kernel.description.resources.map(key => {
                 const { storage, row } = resourceCell(state, key);
                 return readCell(storage, row);

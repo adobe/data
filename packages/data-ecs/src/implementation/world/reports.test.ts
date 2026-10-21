@@ -92,21 +92,24 @@ describe("reports", () => {
         world.remove(logger);
     });
 
-    it("add an observer pass's failures to its run's report, which a logger sees at the next pass", async () => {
+    it("write each report's errors once, an observer pass's failures in the next run's report", async () => {
         await using world = inline();
         logged.length = 0;
         world.add(failingObserver);
         world.add(logger);
         const raised = await world.run(raise);
         expect(logged).toEqual([]);
-        const { failures } = await reportOf(world, raised);
+        expect((await reportOf(world, raised)).failures).toEqual([]);
+        // The reader's run, the next, holds them, and the logger saw them in its pass.
+        const { failures } = await reportOf(world, raised + 1);
         expect(failures.map(({ name, message }) => [name, message])).toEqual([["reportsTest/failingObserver", "observer failed"]]);
-        expect(logged).toEqual([[raised, ["observer failed"]]]);
-        // A failed run's report gets its pass's failures after its own.
+        expect(logged).toEqual([[raised + 1, ["observer failed"]]]);
+        // A failed run's report holds its own failures; its pass's are in the next.
         const both = System.create([fail, raise]);
         const failed = await world.run(both);
-        expect((await reportOf(world, failed)).failures.map(({ message }) => message)).toEqual(["run failed", "observer failed"]);
-        expect(logged.slice(1)).toEqual([[failed, ["run failed"]], [failed, ["run failed", "observer failed"]]]);
+        expect((await reportOf(world, failed)).failures.map(({ message }) => message)).toEqual(["run failed"]);
+        expect((await reportOf(world, failed + 1)).failures.map(({ message }) => message)).toEqual(["observer failed"]);
+        expect(logged.slice(1)).toEqual([[failed, ["run failed"]], [failed + 1, ["observer failed"]]]);
     });
 
     it(`keep the last ${retainedRuns} runs' reports, a later run taking the oldest one's entity and dropping its errors`, async () => {

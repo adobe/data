@@ -412,3 +412,15 @@ System.create({ observer: true, resources: { read: [time] }, after: [integrate] 
 System.create({ observer: true, resources: { read: [time] }, before: [integrate] }, () => {});
 // @ts-expect-error an observer system is ordered with nothing
 System.create({ observer: true, resources: { read: [time] }, during: [integrate] }, () => {});
+
+// A system on one entity: its input names the entity, and its body runs on that entity's row.
+const onOne = { type: "object", properties: { entity: Entity.schema, by: { type: "number" } } } as const;
+export const nudge = System.create({ input: onOne, target: "entity", components: { write: [position] } }, (row, { input }) => {
+    row[position] += input.by;
+});
+// @ts-expect-error its target is an entity field of its input
+System.create({ input: onOne, target: "by", components: { write: [position] } }, () => {});
+// @ts-expect-error it runs on a row, so it needs components
+System.create({ input: onOne, target: "entity" }, () => {});
+// @ts-expect-error not a kernel
+System.create({ input: onOne, target: "entity", kernel: "cpu", components: { write: [position] } }, () => {});

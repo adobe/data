@@ -488,12 +488,13 @@ export const finalizerKeysOf = (finalizer: FinalizerLeaf): readonly symbol[] => 
 };
 
 /**
- * Why a leaf can't run on a joined thread, or null when it can: `up`, `order`, and lookups through indexes with an
- * object key part, which live on the world's thread, run only there.
+ * Why a leaf can't run on a joined thread, or null when it can: `up`, `order`, one entity, and lookups through indexes
+ * with an object key part, which live on the world's thread, run only there.
  */
 export const unplaceable = (leaf: Leaf, thread: string): string | null => {
     if (leaf.declaration.up !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and declares up, which runs only on the world's thread.`;
     if (leaf.declaration.order !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and orders its rows by an index, which runs only on the world's thread.`;
+    if (leaf.declaration.target !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and on one entity, which runs only on the world's thread.`;
     for (const lookup of Object.values(leaf.declaration.lookup ?? {})) {
         const index = indexOfLookup(lookup);
         const object = index?.declaration.key.find(key => layoutOf(declarationOf(key)?.type).kind === "object");

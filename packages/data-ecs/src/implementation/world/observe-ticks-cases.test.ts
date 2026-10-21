@@ -148,7 +148,7 @@ describe("ticks", () => {
         expect(last.failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "observeTicksCasesTest/fail", "tick failed"]]);
     });
 
-    it("add what an observer throws on a tick's values to that tick's report, which the next pass sees", async () => {
+    it("put what an observer throws on a tick's values in a later run's report, once", async () => {
         await using world = createWorld({ [workers]: 0 });
         const reports = followReports(world);
         world.add(count);
@@ -158,13 +158,12 @@ describe("ticks", () => {
         });
         await world.run(nothing);
         await until(resource(world, frames), next => next === 1);
-        // A run of observer systems alone, which ticks nothing, so its pass is the next.
-        const next = await world.run(idle);
-        const ticked = await reports.until(report => report.failures.length > 0);
-        expect(ticked.failures.map(({ kind, message }) => [kind, message])).toEqual([["system", "frames observer failed"]]);
-        expect(ticked.run).toBeLessThan(next);
-        // Nothing of the tick's is left for the next run's report.
-        expect((await reportOf(world, next)).failures).toEqual([]);
+        // A run of observer systems alone, which ticks nothing, so its report holds what the tick's pass threw.
+        await world.run(idle);
+        const thrown = await reports.until(report => report.failures.length > 0);
+        expect(thrown.failures.map(({ kind, message }) => [kind, message])).toEqual([["system", "frames observer failed"]]);
+        await world.run(idle);
+        expect(reports.seen.filter(report => report.failures.length > 0)).toHaveLength(1);
         stopFrames();
     });
 

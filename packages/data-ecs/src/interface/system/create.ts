@@ -1,4 +1,5 @@
 import type { Component } from '../component/component.js';
+import type { Entity } from '../entity/entity.js';
 import type { Index } from '../indexes/index-type.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
 import { nameOf } from '../registry/items.js';
@@ -91,6 +92,18 @@ type Observer = {
     readonly during?: never;
 };
 
+/** The fields of input `I` that hold an entity. */
+type EntityFields<I> = { [K in keyof I]-?: [Exclude<I[K], undefined>] extends [Entity] ? K : never }[keyof I] & string;
+
+/** A system on one entity takes it from an entity field of its input, and runs on its row, in no order. */
+type Targeted<D extends Declaration> = {
+    readonly target?: EntityFields<InputOf<D>>;
+    readonly kernel?: never;
+    readonly up?: never;
+    readonly order?: never;
+    readonly reduce?: never;
+};
+
 type Validate<D extends Declaration> =
     Lists<D>
     & IndexLookups<D>
@@ -102,6 +115,8 @@ type Validate<D extends Declaration> =
     & (Property<D, "components"> extends undefined ? { readonly up?: { readonly [key: string]: never }; readonly order?: { readonly "error: a system without components runs once, in no order": true } } : {})
     & (D extends { readonly up: object } ? { readonly order?: { readonly "error: up and order both decide the order of its rows": true } } : {})
     & (D extends { readonly observer: true } ? Observer : {})
+    & (D extends { readonly target: string } ? Targeted<D> : {})
+    & (D extends { readonly target: string } ? Property<D, "components"> extends undefined ? { readonly target?: { readonly "error: a system on one entity runs on its row, so it needs components": true } } : {} : {})
     & { readonly shader?: never };
 
 /** The body of a system that declares nothing, which runs once per run with its commands. */

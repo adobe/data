@@ -122,7 +122,7 @@ describe("observer systems", () => {
         expect([seen.amounts, seen.cells]).toEqual([[1, 2, 1], [1, 1, 1, 2]]);
     });
 
-    it("report what they throw as system failures of the run, and every other still runs", async () => {
+    it("report what they throw as system failures in the next run's report, and every other still runs", async () => {
         reset();
         await using world = inline();
         world.add(failing);
@@ -131,7 +131,9 @@ describe("observer systems", () => {
         const raised = await world.run(raise);
         expect(seen.levels).toEqual([0, 1]);
         expect((await reportOf(world, clean)).failures).toEqual([]);
-        const { failures } = await reportOf(world, raised);
+        expect((await reportOf(world, raised)).failures).toEqual([]);
+        // Read by a run of its own, the next one, whose report holds them.
+        const { failures } = await reportOf(world, raised + 2);
         expect(failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "observerTest/failing", "observer failed"]]);
     });
 
@@ -148,7 +150,7 @@ describe("observer systems", () => {
         expect(asked.frames).toBe(1);
     });
 
-    it("run after each tick, their failures then added to its report, stamped, so the next pass sees them", async () => {
+    it("run after each tick, their failures in the next run's report, which that run's pass sees", async () => {
         reset();
         await using world = inline();
         world.add(raise);
@@ -157,14 +159,13 @@ describe("observer systems", () => {
         world.add(watchLevel);
         const ran = await world.run(nothing);
         while (!seen.levels.includes(1)) await new Promise(resolve => setTimeout(resolve, 1));
-        // The tick's pass ran before its failures went in, and saw no report.
+        // The tick's pass threw after its report was written, which holds none.
         expect(seen.reports).toEqual([]);
-        // The next pass, a run of observer systems alone, which ticks nothing, sees them; it fails too.
+        // The next run, of observer systems alone, which ticks nothing, has them in its report, which its pass sees.
         const counted = await world.run(count);
         expect(counted).toBe(ran + 2);
         expect(seen.reports).toEqual([1]);
-        const tick = await reportOf(world, ran + 1);
-        expect(tick.failures.map(({ kind, name }) => [kind, name])).toEqual([["system", "observerTest/failing"]]);
+        expect((await reportOf(world, ran + 1)).failures).toEqual([]);
         expect((await reportOf(world, counted)).failures.map(({ name }) => name)).toEqual(["observerTest/failing"]);
     });
 

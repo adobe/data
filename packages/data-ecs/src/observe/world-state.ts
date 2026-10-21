@@ -72,8 +72,6 @@ export type WorldState = {
      * The factories' own runs, by number, with how many of each one's report's failures were rethrown; and the
      * failures of the factories' systems in reports of runs not known to be theirs yet, by run.
      */
-    readonly ownRuns: Map<number, number>;
-    readonly stashed: Map<number, readonly Report.Failure[]>;
     /** Run with each of the factories' own systems, as a composite: what reads the reports their runs gave. */
     readonly rethrow: System;
     readonly composites: WeakMap<System, System>;
@@ -98,26 +96,6 @@ export const ownName = (name: string): string => {
     return name;
 };
 
-/** Own runs kept for their reports: a run's report is complete by the pass after it, so only the newest matter. */
-const ownRunsKept = 16;
-
-/** Rethrows the failures of the factories' systems in run `run`'s report, past those rethrown already. */
-const rethrowOwn = (state: WorldState, run: number, failures: readonly Report.Failure[], from: number): void => {
-    for (let k = from; k < failures.length; k++) if (ownNames.has(failures[k].name)) rethrowLater(new Error(`${failures[k].name}: ${failures[k].message}`));
-    state.ownRuns.set(run, failures.length);
-};
-
-/** A run of the factories' own resolved: its report's failures so far are rethrown, and those to come once seen. */
-const ownRun = (state: WorldState, run: number): void => {
-    const { ownRuns, stashed } = state;
-    const failures = stashed.get(run);
-    if (failures === undefined) ownRuns.set(run, 0);
-    else rethrowOwn(state, run, failures, 0);
-    // Runs resolve in order, so what's stashed for earlier ones is never a run of the factories'.
-    for (const stashedRun of stashed.keys()) if (stashedRun <= run) stashed.delete(stashedRun);
-    for (const kept of ownRuns.keys()) if (kept <= run - ownRunsKept) ownRuns.delete(kept);
-};
-
 const ignore = (): void => {
     // A disposed world runs nothing more: its observers' first values never come.
 };
@@ -140,7 +118,7 @@ const rejectedOf = (world: World) => (error: unknown): void => {
 const runOwn = (state: WorldState, system: System): void => {
     let composite = state.composites.get(system);
     if (composite === undefined) state.composites.set(system, composite = System.create([system, state.rethrow]));
-    state.world.run(composite).then(run => ownRun(state, run), state.rejected);
+    state.world.run(composite).then(undefined, state.rejected);
 };
 
 const noTasks: readonly (() => void)[] = [];
@@ -241,16 +219,10 @@ export const stateOf = (world: World): WorldState => {
         deliveries: [],
         idle: [],
         rejected: rejectedOf(world),
-        ownRuns: new Map(),
-        stashed: new Map(),
-        // Run, never added, so no tick waits for its tails to give it a report: a report's failures are complete by
-        // the pass after its run, so the next of the factories' runs sees them.
-        rethrow: System.create({ name: ownName("Observe/rethrow"), observer: true, components: { read: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
-            const run = row[Report.run].number;
-            const failures = row[Report.errors].failures;
-            const rethrown = created.ownRuns.get(run);
-            if (rethrown !== undefined) rethrowOwn(created, run, failures, rethrown);
-            else if (failures.some(failure => ownNames.has(failure.name))) created.stashed.set(run, failures);
+        // Run with the factories' own systems, never added: what one of them throws is in a later report, whose errors
+        // are written once, which the next of the factories' runs sees.
+        rethrow: System.create({ name: ownName("Observe/rethrow"), observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
+            for (const failure of row[Report.errors].failures) if (ownNames.has(failure.name)) rethrowLater(new Error(`${failure.name}: ${failure.message}`));
         }),
         composites: new WeakMap(),
         deliver: System.create({ name: ownName("Observe/deliver"), observer: true }, () => {

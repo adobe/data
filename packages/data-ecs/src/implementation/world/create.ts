@@ -404,13 +404,14 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (disposed) return null;
         const tails = state.tails.length === 0 ? null : settleKeys(state, reportIds, noIds);
         const posts = state.observer.posts.length === 0 ? null : settleObserverKeys(state, reportIds, noIds);
-        if (tails === null && posts === null) return reports.finish(slot, values, report, state.tails.length !== 0);
-        return Promise.all([tails, posts]).then(() => disposed ? undefined : reports.finish(slot, values, report, state.tails.length !== 0) ?? undefined);
+        if (tails === null && posts === null) return reports.finish(slot, values, report, state.tails.length !== 0, defer);
+        return Promise.all([tails, posts]).then(() => disposed ? undefined : reports.finish(slot, values, report, state.tails.length !== 0, defer) ?? undefined);
     };
 
-    /** Adds the failures of a run's observer pass to its report. */
-    const amendReport = (slot: Slot, run: number, failures: readonly Failure[]): Promise<void> | null =>
-        disposed ? null : reports.amend(slot, run, failures, state.tails.length !== 0);
+    /** Puts failures into the next run's or tick's report: those found once a report's errors were written. */
+    const defer = (failures: readonly Failure[]): void => {
+        (observerFailures ??= []).push(...failures);
+    };
 
     /**
      * Runs a registered system or composite, ending in a sync point, and resolves to its number. With `pass`, its
@@ -469,10 +470,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (writing !== null) await writing;
         const passed = passObserver(schedule.observer, loop.observer(), joinedRunOf(value));
         const failures = passed instanceof Promise ? await passed : passed;
-        if (failures !== null) {
-            const amending = amendReport(slot, run, failures);
-            if (amending !== null) await amending;
-        }
+        if (failures !== null) defer(failures);
         return run;
     };
 
@@ -635,10 +633,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (writing !== null) await writing;
         const passed = passObserver(noLeaves, observer);
         const failures = passed instanceof Promise ? await passed : passed;
-        if (failures !== null) {
-            const amending = amendReport(slot, run, failures);
-            if (amending !== null) await amending;
-        }
+        if (failures !== null) defer(failures);
     });
 
     /** Ticks whose reports wait for their tails, in order. */

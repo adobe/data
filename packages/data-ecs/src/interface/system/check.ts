@@ -63,6 +63,12 @@ const checkConditions = (leaf: Leaf): void => {
     }
 };
 
+/** Why kernels can't read a component's values, or null when they can: they read only structs, in linear memory. */
+const unreadByKernels = (key: symbol): string | null => {
+    const { kind } = layoutOf(declarationOf(key)?.type);
+    return kind === "object" ? "which isn't stored in linear memory" : kind === "string" ? "a string, which kernels don't read yet" : null;
+};
+
 /**
  * Throws for what a leaf's kind and placement rule out: `up` without components or through a key that isn't a reference
  * component, `order` by anything but a sorted index, without components, with `up` or on the GPU, a kernel's lookup of
@@ -82,7 +88,8 @@ const checkPlacement = (leaf: Leaf): void => {
         if (kernel === "gpu") fail("can't run on the GPU: GPU kernels have no order yet");
         if (kernel !== undefined) {
             for (const key of orderKeysOf(leaf.declaration)) {
-                if (layoutOf(declarationOf(key)?.type).kind === "object") throw new Error(`Kernel "${name}": its rows are ordered by an index keyed by "${labelOf(key)}", which isn't stored in linear memory.`);
+                const unread = unreadByKernels(key);
+                if (unread !== null) throw new Error(`Kernel "${name}": its rows are ordered by an index keyed by "${labelOf(key)}", ${unread}.`);
             }
         }
     }
@@ -96,10 +103,12 @@ const checkPlacement = (leaf: Leaf): void => {
     if (kernel !== undefined) {
         // Workers read lookups from shared memory, so their values must be linear there too.
         for (const key of lookups.flatMap(found => found.read ?? [])) {
-            if (layoutOf(declarationOf(key)?.type).kind === "object") throw new Error(`Kernel "${name}": a lookup reads "${labelOf(key)}", which isn't stored in linear memory.`);
+            const unread = unreadByKernels(key);
+            if (unread !== null) throw new Error(`Kernel "${name}": a lookup reads "${labelOf(key)}", ${unread}.`);
         }
         for (const key of lookups.flatMap(lookupKeysOf)) {
-            if (layoutOf(declarationOf(key)?.type).kind === "object") throw new Error(`Kernel "${name}": a lookup goes through an index keyed by "${labelOf(key)}", which isn't stored in linear memory.`);
+            const unread = unreadByKernels(key);
+            if (unread !== null) throw new Error(`Kernel "${name}": a lookup goes through an index keyed by "${labelOf(key)}", ${unread}.`);
         }
     }
     const reduces = reducedBy(leaf).length > 0;

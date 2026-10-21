@@ -303,8 +303,8 @@ const stagingOf = (loaded: LoadedKernel): NonNullable<LoadedKernel["staging"]> =
         const key = [...ids].sort((a, b) => a - b).join(",");
         let batch = batches.find(candidate => candidate.ids.join(",") === key);
         if (batch === undefined) batches.push(batch = createBatch(layouts, ids));
-        // An object component's start is the world's to resolve.
-        return positionalSpawner(reserving, reserveFrom, batch, ids, ids.map(id => layouts[id].kind === "object" ? objectStart : starts[keys.indexOf(id)]));
+        // An object's or a string's start is the world's to resolve.
+        return positionalSpawner(reserving, reserveFrom, batch, ids, ids.map(id => layouts[id].kind === "object" || layouts[id].kind === "string" ? objectStart : starts[keys.indexOf(id)]));
     });
     const valueEncoders = keys.map(encoderFor);
     const commands: KernelCommands = {

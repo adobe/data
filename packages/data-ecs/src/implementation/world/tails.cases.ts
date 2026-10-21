@@ -27,6 +27,11 @@ export const tailsCases = (load: () => Promise<typeof Fixture>) => describe("tai
         expect(seen.late).toBeGreaterThan(0);
         expect(seen.counted).toBeGreaterThan(10);
     }, 30000);
+    it("read the strings of their tick when runs after it would free and reuse their records, since those runs wait for them", async () => {
+        const fixture = await load();
+        const seen = await fixture.spanning();
+        expect({ runs: seen.runs, wrong: seen.wrong, fewest: seen.fewest, most: seen.most }).toEqual({ runs: 1, wrong: 0, fewest: 1000, most: 1000 });
+    }, 30000);
     it("are skipped in every run queued when their thread left, and nothing waits for a tail on a thread that's gone", async () => {
         const fixture = await load();
         const skipped = ["tailsTest/lead", "tailsTest/watch"];

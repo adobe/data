@@ -16,6 +16,7 @@ export const flagged = Symbol("remoteFinalizersTest/flagged");
 export const widget = Symbol("remoteFinalizersTest/widget");
 export const label = Symbol("remoteFinalizersTest/label");
 export const tone = Symbol("remoteFinalizersTest/tone");
+export const title = Symbol("remoteFinalizersTest/title");
 declare module "@adobe/data-ecs" {
     export interface Threads {
         remoteFinalizersTest: true;
@@ -26,10 +27,11 @@ declare module "@adobe/data-ecs" {
         [marked]: { type: true };
         [flagged]: { type: true };
         [widget]: { type: Widget | null; thread: "remoteFinalizersTest" };
-        [label]: { type: string | null; thread: "remoteFinalizersTest" };
+        [label]: { type: { readonly text: string } | null; thread: "remoteFinalizersTest" };
+        [title]: { type: string };
     }
     export interface Resources {
-        [tone]: { type: string; thread: "remoteFinalizersTest" };
+        [tone]: { type: { readonly text: string }; thread: "remoteFinalizersTest" };
     }
 }
 /** A value that isn't data, which only its thread holds. */
@@ -39,8 +41,11 @@ Component.register(place, { type: { type: "array", items: { type: "number" }, mi
 Component.register(marked, { type: { const: true } });
 Component.register(flagged, { type: { const: true } });
 Component.register(widget, { thread: "remoteFinalizersTest" });
-Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "remoteFinalizersTest" });
-Resource.register(tone, { type: { type: "string", default: "quiet" }, thread: "remoteFinalizersTest" });
+const text = { type: "object", properties: { text: { type: "string" } } } as const;
+Component.register(label, { type: { anyOf: [text, { type: "null" }], default: { text: "none" } }, thread: "remoteFinalizersTest" });
+Resource.register(tone, { type: { ...text, default: { text: "quiet" } }, thread: "remoteFinalizersTest" });
+/** A string, in shared memory, which the world's thread writes and the finalizer on the thread reads. */
+Component.register(title, { type: { type: "string" } });
 
 /** A stop as the finalizer saw it, on the thread it ran on. */
 export type Released = { readonly serial: number; readonly place: readonly number[]; readonly marked: boolean; readonly widget: string | null; readonly label: string | null; readonly tone: string };
@@ -54,8 +59,25 @@ export const throwing = new Set<number>();
 /** On the finalizers' thread: what each stop held there, its structs before the sync point applied. */
 export const release = Finalizer.create({ name: "remoteFinalizersTest/release", components: { read: [serial, place, marked, widget, label] }, resources: { read: [tone] } }, (row, { resources }) => {
     finalized.push(row.entity);
-    released.push({ serial: row[serial], place: [...row[place]], marked: row[marked], widget: row[widget]?.tag ?? null, label: row[label], tone: resources[tone] });
+    released.push({ serial: row[serial], place: [...row[place]], marked: row[marked], widget: row[widget]?.tag ?? null, label: row[label]?.text ?? null, tone: resources[tone]?.text });
     if (throwing.has(row[serial])) throw new Error(`remoteFinalizersTest: ${row[serial]} throws`);
+});
+
+/** Every titled stop finalized on this thread, in order, with the title it read. */
+export const entitled: { readonly serial: number; readonly title: string }[] = [];
+
+/** On the finalizers' thread: what each titled stop's title was before its sync point applied. */
+export const entitle = Finalizer.create({ name: "remoteFinalizersTest/entitle", components: { read: [serial, title, widget] } }, row => {
+    entitled.push({ serial: row[serial], title: row[title] });
+});
+
+/** Spawns titled rows from the world's thread, with the thread's widget at null. */
+export const spawnTitled = System.create({ name: "remoteFinalizersTest/spawnTitled", input: { type: "object", properties: { from: { type: "integer" }, count: { type: "integer" } } } }, ({ input, commands }) => {
+    for (let k = input.from; k < input.from + input.count; k++) commands.spawn([serial, title, widget])({ [serial]: k, [title]: `t${k}`, [widget]: null });
+});
+/** From the world's thread: every title as another of the same size, so the records of titles let go are reused. */
+export const retitle = System.create({ name: "remoteFinalizersTest/retitle", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [title] } }, (row, { input }) => {
+    row[title] = `r${input.round}`;
 });
 
 /** Spawns from the world's thread: structs, the thread's objects at null and their start. */
@@ -69,11 +91,12 @@ export const attach = System.create({ name: "remoteFinalizersTest/attach", compo
 });
 /** On the thread: labels given by command, staged there, for odd serials. */
 export const relabel = System.create({ name: "remoteFinalizersTest/relabel", components: { read: [serial, label] } }, (row, { commands }) => {
-    if (row[serial] % 2 === 1) commands.add(row.entity, label, `l${row[serial]}${row[label] === "none" ? "" : "+"}`);
+    const relabelled = { text: `l${row[serial]}${row[label]?.text === "none" ? "" : "+"}` };
+    if (row[serial] % 2 === 1) commands.add(row.entity, label, relabelled);
 });
 /** On the thread: its object resource. */
 export const retone = System.create({ name: "remoteFinalizersTest/retone", input: { type: "object", properties: { tone: { type: "string" } } }, resources: { write: [tone] } }, ({ input, resources }) => {
-    resources[tone] = input.tone;
+    resources[tone] = { text: input.tone };
 });
 /** From the world's thread: places move, so a stop's values are those before the sync point applies. */
 export const shift = System.create({ name: "remoteFinalizersTest/shift", components: { write: [place] } }, row => {

@@ -13,8 +13,9 @@ import { createEntities, type Entities, type Reserved } from './entities.js';
 import type { FinalizerRunner, Thrown } from './finalizers.js';
 import { createPlan, type Plan } from './plan.js';
 import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
-import { layoutOf, type Layout } from '../../interface/registry/layout.js';
+import { layoutOf, objectLayout, type Layout } from '../../interface/registry/layout.js';
 import { createMemory, type Memory } from './memory.js';
+import { createStrings, type StringStore } from './strings.js';
 import { createLayoutDirectory, type LayoutDirectory } from './layout-directory.js';
 import { createJournal, type Journal } from './journal.js';
 import type { Row } from './rows.js';
@@ -91,7 +92,10 @@ export type State = {
     readonly archetypeByKey: Map<string, Archetype>;
     readonly ids: Map<Key, number>;
     readonly keys: Key[];
+    /** By component: how its values are stored here, strings as objects where there's no shared memory. */
     readonly layouts: Layout[];
+    /** The records strings' columns name, in shared memory; null without it, where strings are held as objects. */
+    readonly strings: StringStore | null;
     /** Whether each component is derived, so only rules add and remove it. */
     readonly derived: boolean[];
     /** Whether each component is declared `transfer`, so a value whose command drops is released; and whether any is. */
@@ -254,6 +258,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         ids: new Map(),
         keys: [],
         layouts: [],
+        strings: memory.shared ? createStrings(memory) : null,
         derived: [],
         transfers: [],
         transferring: false,
@@ -376,7 +381,9 @@ export const idOf = (state: State, key: Key): number => {
     }
     state.ids.set(key, id);
     state.keys.push(key);
-    const layout = layoutOf(declaration.type);
+    const declared = layoutOf(declaration.type);
+    // Only other threads need strings in shared memory, and there are none without it.
+    const layout: Layout = declared.kind === "string" && state.strings === null ? objectLayout : declared;
     state.layouts.push(layout);
     state.starts.push(layout.kind === "constant" ? layout.value : defaultOf(key));
     state.commandable.push(false);
@@ -428,7 +435,7 @@ export const archetypeOf = (state: State, components: readonly number[]): Archet
     const key = components.join(",");
     const existing = state.archetypeByKey.get(key);
     if (existing !== undefined) return existing;
-    const archetype = createArchetype(state.memory, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)), components.some(id => state.meta.has(id)), state.ticked, state.bumped, state.replaced, state.remote);
+    const archetype = createArchetype(state.memory, state.strings, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)), components.some(id => state.meta.has(id)), state.ticked, state.bumped, state.replaced, state.remote);
     state.archetypes.push(archetype);
     state.archetypeByKey.set(key, archetype);
     return archetype;

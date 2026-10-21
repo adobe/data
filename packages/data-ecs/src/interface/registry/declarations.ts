@@ -3,7 +3,7 @@ import type { Key as TraitKey } from '../trait/key.js';
 import { layoutOf } from './layout.js';
 import { claimKey, declarationOf, failRegistration, firstKeyOf, kindOf, labelOf, requireKey, sameDeclaration } from './names.js';
 import { isReduction } from './reduction.js';
-import { allowsNull, hasBoolean, isEntity, isStruct } from './schemas.js';
+import { allowsNull, hasBoolean, isEntity, isString, isStruct } from './schemas.js';
 import { isTrait } from './traits.js';
 
 /**
@@ -29,11 +29,11 @@ const isInstance = (value: unknown, name: string): boolean => {
 };
 
 /**
- * The thread a registered declaration's value lives on: none for a struct, else its `thread` or `"world"`. Only a
- * value with a struct schema is known to be a struct.
+ * The thread a registered declaration's value lives on: none for a struct or a string, which live in shared memory,
+ * else its `thread` or `"world"`. Only a value with a struct or string schema is known to be one.
  */
 export const threadOfDeclaration = (declaration: AnyDeclaration): string | null => {
-    if (declaration.type !== undefined && isStruct(declaration.type)) return null;
+    if (declaration.type !== undefined && (isStruct(declaration.type) || isString(declaration.type))) return null;
     return typeof declaration.thread === "string" ? declaration.thread : "world";
 };
 
@@ -77,6 +77,7 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
     if (thread !== undefined) {
         if (typeof thread !== "string" || thread === "") fail("thread is a thread's name.");
         if (type !== undefined && isStruct(type)) fail("a struct lives in shared memory, so it has no thread.");
+        if (type !== undefined && isString(type)) fail("a string lives in shared memory, so it has no thread.");
     }
     if (isInstance(declaration.default, "Node") && thread !== "main") fail(`a DOM Node lives on "main".`);
     const { transfer } = declaration;

@@ -3,7 +3,7 @@ import type { Entity } from "../../interface/entity/entity.js";
 import type { World } from "../../interface/world/world.js";
 import { join } from "./create.js";
 import { scopeChannel } from "./port.js";
-import { countHot, gate, hold, hot, lookRows, looked, nextPhase, seen, stamp, watchRows, type Seen } from "./observer-joined.test-helper.js";
+import { countHot, gate, hold, hot, lookRows, looked, mottos, nextPhase, seen, stamp, watchMotto, watchRows, type Seen } from "./observer-joined.test-helper.js";
 import { tailSnapshots } from "./thread-systems.js";
 import { Observe } from "../../observe/index.js";
 
@@ -18,7 +18,7 @@ import { Observe } from "../../observe/index.js";
 type Port = MessagePort | NodeMessagePort;
 export type ToObserverWorker =
     | { readonly kind: "join"; readonly port: Port }
-    | { readonly kind: "add"; readonly system: "rows" | "lookups"; readonly gate: Int32Array }
+    | { readonly kind: "add"; readonly system: "rows" | "lookups" | "motto"; readonly gate: Int32Array }
     | { readonly kind: "hold" }
     | { readonly kind: "count hot"; readonly gate: Int32Array }
     | { readonly kind: "seen" };
@@ -27,7 +27,7 @@ export type FromObserverWorker =
     | { readonly kind: "added" }
     | { readonly kind: "holding" }
     | { readonly kind: "counted"; readonly hot: number }
-    | { readonly kind: "seen"; readonly seen: readonly Seen[]; readonly switched: number; readonly late: number; readonly timers: number };
+    | { readonly kind: "seen"; readonly seen: readonly Seen[]; readonly mottos: readonly { readonly round: number; readonly motto: string }[]; readonly switched: number; readonly late: number; readonly timers: number };
 
 const channel = scopeChannel<FromObserverWorker, ToObserverWorker>();
 let remote: World | null = null;
@@ -59,7 +59,7 @@ channel.onMessage(async message => {
         if (remote === null) return;
         gate.words = message.gate;
         if (message.system === "lookups") looked.push(...await entities(remote, 1000));
-        remote.add(message.system === "rows" ? watchRows : lookRows);
+        remote.add(message.system === "rows" ? watchRows : message.system === "motto" ? watchMotto : lookRows);
         setTimeout(timer, 0);
         channel.post({ kind: "added" });
     }
@@ -76,5 +76,5 @@ channel.onMessage(async message => {
         channel.post({ kind: "holding" });
         hold();
     }
-    else channel.post({ kind: "seen", seen, switched: tailSnapshots.switched, late: tailSnapshots.late, timers });
+    else channel.post({ kind: "seen", seen, mottos, switched: tailSnapshots.switched, late: tailSnapshots.late, timers });
 });

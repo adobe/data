@@ -1,6 +1,7 @@
 import { Component } from '../component/component.js';
 import type { IsNode, IsTransferable } from '../platform/platform.js';
 import { Resource } from '../resource/resource.js';
+import type { ThreadOf } from './of.js';
 import type { Thread } from './thread.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
@@ -38,16 +39,18 @@ const count = Symbol("threadTypeTest/count");
 const port = Symbol("threadTypeTest/port");
 const text = Symbol("threadTypeTest/text");
 const names = Symbol("threadTypeTest/names");
+const mode = Symbol("threadTypeTest/mode");
+const caption = Symbol("threadTypeTest/caption");
 
 declare module '@adobe/data-ecs' {
     export interface Components {
         // Objects: on "world" without `thread`, or on the thread they name.
-        [label]: { type: string };
         [path]: { type: readonly number[]; thread: "threadTypeTest" };
         [handle]: { type: Map<string, number>; thread: "world" };
+        [unknownThread]: { type: readonly number[]; thread: "elsewhere" };
+        // Strings and structs live in shared memory, so they have no thread.
+        [label]: { type: string };
         [placedLabel]: { type: string; thread: "main" };
-        [unknownThread]: { type: string; thread: "elsewhere" };
-        // Structs live in shared memory, so they have no thread.
         [position]: { type: readonly [number, number, number] };
         [placedPosition]: { type: readonly [number, number, number]; thread: "main" };
         [placedTag]: { type: true; thread: "world" };
@@ -68,13 +71,14 @@ declare module '@adobe/data-ecs' {
         [port]: { type: MessagePort | null; transfer: true };
         [text]: { type: string; transfer: true };
         [names]: { type: Map<string, number>; thread: "main" };
+        [mode]: { type: "edit" | "view"; thread: "main" };
+        [caption]: { type: string | null; thread: "main" };
     }
 }
 
 Component.register(label, { type: { type: "string" } });
 Component.register(path, { type: { type: "array", items: { type: "number" } }, thread: "threadTypeTest" });
 Component.register(handle, { thread: "world" });
-Component.register(placedLabel, { type: { type: "string" }, thread: "main" });
 Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 } });
 Component.register(element, { thread: "main" });
 Component.register(maybeElement, { thread: "main" });
@@ -85,7 +89,13 @@ Resource.register(cache, { thread: "main" });
 Resource.register(port, { transfer: true });
 
 // @ts-expect-error a thread is a declared one
-Component.register(unknownThread, { type: { type: "string" }, thread: "elsewhere" });
+Component.register(unknownThread, { type: { type: "array", items: { type: "number" } }, thread: "elsewhere" });
+// @ts-expect-error a string lives in shared memory, so it has no thread
+Component.register(placedLabel, { type: { type: "string" }, thread: "main" });
+// @ts-expect-error a union of string literals is a string too
+Resource.register(mode, { type: { anyOf: [{ const: "edit" }, { const: "view" }], default: "view" }, thread: "main" });
+// @ts-expect-error and so is a string or null
+Resource.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: null }, thread: "main" });
 // @ts-expect-error a struct lives in shared memory, so it has no thread
 Component.register(placedPosition, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 }, thread: "main" });
 // @ts-expect-error a tag is a struct too
@@ -111,6 +121,11 @@ Resource.register(names, { default: "map", thread: "main" });
 Resource.register(names, { default: new Map(), thread: "main" });
 
 check<Equal<Component.Value<typeof path>, readonly number[]>>();
+check<Equal<ThreadOf<{ readonly thread: "main" }, string>, never>>();
+check<Equal<ThreadOf<{ readonly thread: "main" }, "edit" | "view">, never>>();
+check<Equal<ThreadOf<{ readonly thread: "main" }, readonly string[]>, "main">>();
+check<Equal<ThreadOf<{ readonly thread: "main" }, string | null>, never>>();
+check<Equal<ThreadOf<{}, null>, "world">>();
 
 // The checks resolve to no check where the DOM library isn't loaded: a scope without `Node` has no DOM Node type.
 type NoDom = { readonly ArrayBuffer: { readonly prototype: ArrayBuffer } };

@@ -4,14 +4,20 @@ import { allocateArray, allocateViews, emptyViews, freeArray, freeViews, growArr
 import { chunkShift } from './kernel.js';
 import type { Memory } from './memory.js';
 import { nullTag, startTag, type MoveLog } from './move-log.js';
+import type { StringStore } from './strings.js';
 
 /** One component's storage in one archetype. Its views and ticks are replaced when the archetype grows. */
 export type Storage = {
     readonly component: number;
     readonly layout: Layout;
-    /** Views of the interleaved column, for a linear layout: row `r` is `layout.stride` bytes at `r * stride`. */
+    /**
+     * Views of the interleaved column, for a linear layout: row `r` is `layout.stride` bytes at `r * stride`. For a
+     * string, each row's handle of its record while records are kept, else 0, as in rows past the archetype's count.
+     */
     views: Views;
-    /** Values, for an object layout the world's thread fills. */
+    /** For a string, the records its handles name; null otherwise. */
+    readonly strings: StringStore | null;
+    /** Values, for an object layout the world's thread fills, and a string's on the world's thread. */
     readonly values: unknown[];
     /** For an object layout a joined thread fills, its log, and each row's tag (`move-log.ts`) in place of its value. */
     remote: MoveLog | null;
@@ -105,8 +111,10 @@ export type Archetype = {
     readonly resource: boolean;
     /** Holds reports, which only queries that require a component see. */
     readonly meta: boolean;
-    /** Whether a storage holds values as objects, which a removed row must release. */
+    /** Whether a storage holds values as objects or strings, which a removed row must release. */
     readonly objects: boolean;
+    /** Its storages of strings, whose records a removed row lets go. */
+    readonly strings: readonly Storage[];
     /** The logs of the joined threads whose objects it holds, which its moves are appended to; null for none. */
     logs: MoveLog[] | null;
     /** Whether it's listed for the layout directory's next flush of counts. */
@@ -149,11 +157,21 @@ const allocateTicks = (memory: Memory, storage: Storage, capacity: number, tick:
     storage.chunkChanged = storage.layout.kind === "constant" ? storage.chunkAdded : allocateArray(memory, Float64Array, chunksFor(capacity)).fill(tick);
 };
 
-const createStorage = (memory: Memory, component: number, layout: Layout, capacity: number, ticked: boolean): Storage => {
+/** Views of a new column, for a linear layout's or a string's `capacity` rows; a string's handles start at 0. */
+const columnOf = (memory: Memory, layout: Layout, capacity: number): Views => {
+    if (layout.kind === "linear") return allocateViews(memory, capacity * layout.stride + columnSlack);
+    if (layout.kind !== "string") return emptyViews;
+    const views = allocateViews(memory, capacity * layout.stride + columnSlack);
+    views.u32.fill(0);
+    return views;
+};
+
+const createStorage = (memory: Memory, strings: StringStore | null, component: number, layout: Layout, capacity: number, ticked: boolean): Storage => {
     const storage: Storage = {
         component,
         layout,
-        views: layout.kind === "linear" ? allocateViews(memory, capacity * layout.stride + columnSlack) : emptyViews,
+        views: columnOf(memory, layout, capacity),
+        strings: layout.kind === "string" ? strings : null,
         values: [],
         ...writeOf(layout),
         words: layout.kind === "linear" && (layout.stride & 3) === 0 ? layout.stride >> 2 : 0,
@@ -184,8 +202,8 @@ export const startTicks = (memory: Memory, archetype: Archetype, storage: Storag
  * Creates an archetype, listed in `bumped` for the layout directory's next flush; storages of components a joined
  * thread fills, by `remote`, hold their tags.
  */
-export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, meta: boolean, ticked: ReadonlySet<number>, bumped: Archetype[], replaced: { count: number }, remote: readonly (MoveLog | undefined)[]): Archetype => {
-    const storages = components.map(component => createStorage(memory, component, layouts[component], initialCapacity, resource || ticked.has(component)));
+export const createArchetype = (memory: Memory, strings: StringStore | null, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, meta: boolean, ticked: ReadonlySet<number>, bumped: Archetype[], replaced: { count: number }, remote: readonly (MoveLog | undefined)[]): Archetype => {
+    const storages = components.map(component => createStorage(memory, strings, component, layouts[component], initialCapacity, resource || ticked.has(component)));
     const storageById: (Storage | undefined)[] = [];
     for (const storage of storages) storageById[storage.component] = storage;
     const archetype: Archetype = {
@@ -202,7 +220,8 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
         capacity: initialCapacity,
         resource,
         meta,
-        objects: storages.some(storage => storage.layout.kind === "object"),
+        objects: storages.some(storage => storage.layout.kind === "object" || storage.layout.kind === "string"),
+        strings: storages.filter(storage => storage.layout.kind === "string"),
         version: 0,
         replaced,
         bumped,
@@ -220,9 +239,10 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
 
 const growViews = (memory: Memory, storage: Storage, capacity: number, count: number): void => {
     const { layout } = storage;
-    if (layout.kind !== "linear") return;
+    if (layout.kind !== "linear" && layout.kind !== "string") return;
     const grown = allocateViews(memory, capacity * layout.stride + columnSlack);
     grown.u8.set(storage.views.u8.subarray(0, count * layout.stride));
+    if (layout.kind === "string") grown.u32.fill(0, count);
     freeViews(memory, storage.views);
     storage.views = grown;
 };
@@ -289,6 +309,11 @@ export const copyValue = (from: Storage, fromRow: number, to: Storage, toRow: nu
         for (let i = 0; i < words; i++) target[t + i] = source[s + i];
     }
     else if (layout.kind === "linear") copyElement(from.views, fromRow, to.views, toRow, layout.stride);
+    // A string's record goes with its value: its handle moves, and isn't let go.
+    else if (layout.kind === "string") {
+        to.views.u32[toRow] = from.views.u32[fromRow];
+        to.values[toRow] = from.values[fromRow];
+    }
     else if (layout.kind === "object") {
         if (to.remote === null) to.values[toRow] = from.values[fromRow];
         else to.tags[toRow] = from.tags[fromRow];
@@ -318,6 +343,11 @@ export const swapRemove = (archetype: Archetype, row: number): number => {
     for (const storage of archetype.storages) {
         if (moved !== -1) copyCell(storage, last, storage, row);
         if (storage.layout.kind === "object" && storage.remote === null) storage.values[last] = undefined;
+        // A string's record went with the row's entity or was let go; the row past the count holds none.
+        else if (storage.layout.kind === "string") {
+            storage.values[last] = undefined;
+            storage.views.u32[last] = 0;
+        }
     }
     if (moved !== -1) archetype.entities[row] = moved;
     return moved;

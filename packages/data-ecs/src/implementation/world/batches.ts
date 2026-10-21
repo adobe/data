@@ -9,6 +9,7 @@ import { remoteError } from './remote.js';
 import { countChanged } from './layout-directory.js';
 import { logRange, logSet, startTag, tagOf } from './move-log.js';
 import { writeDefault } from './synchronize.js';
+import { writeString } from './strings.js';
 
 /** Batches of at most this many rows commit element by element. */
 const smallCopy = 8;
@@ -70,6 +71,11 @@ const commitRows = (state: State, batch: SpawnBatch, first: number, n: number, t
                     if (tag !== startTag) logSet(log, target.id, start + i, column.id, tag, true);
                 }
             }
+            column.values.fill(undefined, first, first + n);
+        }
+        // Rows past the count hold no record, so nothing is let go.
+        else if (column.layout.kind === "string") {
+            for (let i = 0; i < n; i++) writeString(storage, start + i, column.values[first + i]);
             column.values.fill(undefined, first, first + n);
         }
         if (!storage.ticked) continue;

@@ -26,6 +26,15 @@ export const isStruct = (schema: Schema): boolean => {
     }
 };
 
+const isNull = (schema: Schema): boolean => ("type" in schema && schema.type === "null") || ("const" in schema && schema.const === null);
+
+/** Whether a schema describes a string: any string, a string `const`, or a union of those, with `null` or without. */
+export const isString = (schema: Schema): boolean => {
+    if ("const" in schema) return typeof schema.const === "string";
+    if ("anyOf" in schema) return schema.anyOf.some(isString) && schema.anyOf.every(member => isString(member) || isNull(member));
+    return "type" in schema && schema.type === "string";
+};
+
 const hasBooleanValue = (value: unknown): boolean =>
     typeof value === "boolean" || (typeof value === "object" && value !== null && Object.values(value).some(hasBooleanValue));
 

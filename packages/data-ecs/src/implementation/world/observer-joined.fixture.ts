@@ -7,7 +7,7 @@ import type { World } from "../../interface/world/world.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import type { LoopPlatform } from "./loop.js";
 import type { FromObserverWorker, ToObserverWorker } from "./observer-joined-worker.fixture.js";
-import { counter, gateWords, holdWord, phase, reachedWord, releasedWord, seed, setStall, spawnHeated, ticked, warm } from "./observer-joined.test-helper.js";
+import { counter, gateWords, holdWord, phase, reachedWord, releasedWord, seed, setMotto, setStall, spawnHeated, ticked, warm } from "./observer-joined.test-helper.js";
 import { tailWriters } from "./tails.js";
 import { followReports } from "./reports.test-helper.js";
 
@@ -131,6 +131,10 @@ const seenBy = async (worker: Worker): Promise<Extract<FromObserverWorker, { rea
  * that from the copy. Returns the runs released and the runs that read from a copy meanwhile.
  */
 const writerReadyPartway = async (world: World, worker: Worker, frames: ReturnType<typeof steppedFrames>, words: Int32Array) => {
+    // Counted from once the last tick's run is done, so a late run of the stalled ticks before isn't among them.
+    await frames.asked();
+    const newest = await until(Observe.resource(world, counter), () => true);
+    while (!(await seenBy(worker)).seen.some(run => run.counter === newest && run.rows === 1000)) await later();
     const switched = (await seenBy(worker)).switched;
     let released = Atomics.load(words, releasedWord);
     const releases: number[] = [];
@@ -241,4 +245,33 @@ export const gpuLookups = async (device: GPUDevice): Promise<readonly number[]> 
     await world.dispose();
     await worker.terminate();
     return counts;
+};
+
+/**
+ * The worker's observer system reading only resources, a string among them, waiting on the gate as it runs for round 1
+ * while the world's runs set six more mottos, each of one size, so the record its round's motto was in would be freed
+ * and reused were they to go on past it. What it read for round 1, once released.
+ */
+export const mottoHeld = async (): Promise<readonly { readonly round: number; readonly motto: string }[]> => {
+    const world = createWorld({ [workers]: 0 });
+    const worker = await joined(world);
+    const words = new Int32Array(new SharedArrayBuffer(gateWords * 4));
+    await world.run(setStall, { pause: -1 });
+    await worker.ask({ kind: "add", system: "motto", gate: words });
+    await world.run(setMotto, { round: 1 });
+    while (Atomics.load(words, reachedWord) < 2) await later();
+    const runs = Array.from({ length: 6 }, (_, k) => world.run(setMotto, { round: k + 2 }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    Atomics.store(words, releasedWord, 1000);
+    Atomics.notify(words, releasedWord);
+    await Promise.all(runs);
+    let read: readonly { readonly round: number; readonly motto: string }[] = [];
+    for (let k = 0; k < 200 && !read.some(entry => entry.round === 1); k++) {
+        const reply = await worker.ask({ kind: "seen" });
+        if (reply.kind === "seen") read = reply.mottos;
+        await later();
+    }
+    await world.dispose();
+    await worker.terminate();
+    return read.filter(entry => entry.round === 1);
 };

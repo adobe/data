@@ -1,6 +1,6 @@
 import type { Leaf } from '../../interface/finalizer/created.js';
 import { labelOf } from '../../interface/registry/index.js';
-import { viewsOf, type Layout } from '../../interface/registry/layout.js';
+import { objectLayout, viewsOf, type Layout } from '../../interface/registry/layout.js';
 import { writeOf } from './archetype.js';
 import { emptyViews } from './arrays.js';
 import { readCell } from './cells.js';
@@ -13,6 +13,7 @@ import {
     groupIndexWord, rowsAt, tagsAt, valuesAt,
 } from './stop-lists.js';
 import type { Key } from './state.js';
+import type { StringStore } from './strings.js';
 
 // A joined thread's finalizers (threads.md, "Finalizers on other threads"): as it replays each sync, before that sync's
 // entries apply, it runs them for the sync's stop list, reading the linear structs the world copied there and its own
@@ -35,6 +36,8 @@ export type ThreadFinalizersHost<A extends FinalizedArchetype> = {
     readonly countOf: (archetype: A) => number;
     readonly tableCount: () => number;
     readonly resourceRow: () => { readonly archetype: A; readonly row: number } | null;
+    /** The records strings' columns name: a stop list's copies, for its strings. */
+    readonly strings: StringStore;
     /** Posts what finalizers threw, by their index here, for the world's next report. */
     readonly failed: (errors: readonly (readonly [number, WorkerError])[]) => void;
 };
@@ -65,8 +68,8 @@ type ThreadFinalizer = {
 };
 
 /** A storage a stop list's column holds, for a row over its stops. */
-const columnStorage = (component: number, layout: Layout, views: RowStorage["views"], values: unknown[]): FinalizedStorage => ({
-    component, layout, views, values, ...writeOf(layout), ticked: false, added: noTicks, changed: noTicks, chunkAdded: noTicks, chunkChanged: noTicks, tags: noTags,
+const columnStorage = (component: number, layout: Layout, views: RowStorage["views"], values: unknown[], strings: StringStore | null): FinalizedStorage => ({
+    component, layout, views, strings: layout.kind === "string" ? strings : null, values, ...writeOf(layout), ticked: false, added: noTicks, changed: noTicks, chunkAdded: noTicks, chunkChanged: noTicks, tags: noTags,
 });
 
 /**
@@ -110,7 +113,8 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
                 objects.push(component);
                 starts.push(mirror.starts.get(component) ?? null);
             }
-            else if (layout.kind === "linear") {
+            // A string's stop column holds handles of records the world copied for it.
+            else if (layout.kind === "linear" || layout.kind === "string") {
                 linear.push(component);
                 layouts.push(layout);
             }
@@ -220,16 +224,16 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
                 for (let i = 0; i < count; i++) {
                     values[i] = objectOf(u32[tags + i], starts[k], f64[entityWords + i], u32[archetypeWords + i], u32[rowWords + i], objects[k], old);
                 }
-                storageById[objects[k]] = columnStorage(objects[k], { kind: "object" }, emptyViews, values);
+                storageById[objects[k]] = columnStorage(objects[k], objectLayout, emptyViews, values, null);
             }
             let column = valuesAt(group, count, objects.length);
             for (let k = 0; k < linear.length; k++) {
                 const layout = layouts[k];
-                const stride = layout.kind === "linear" ? layout.stride : 0;
-                storageById[linear[k]] = columnStorage(linear[k], layout, viewsOf(buffer, column, count * stride), []);
+                const stride = layout.kind === "linear" || layout.kind === "string" ? layout.stride : 0;
+                storageById[linear[k]] = columnStorage(linear[k], layout, viewsOf(buffer, column, count * stride), [], host.strings);
                 column += columnBytes(count, stride);
             }
-            for (let k = 0; k < finalizer.constants.length; k++) storageById[finalizer.constants[k]] = columnStorage(finalizer.constants[k], finalizer.constantLayouts[k], emptyViews, []);
+            for (let k = 0; k < finalizer.constants.length; k++) storageById[finalizer.constants[k]] = columnStorage(finalizer.constants[k], finalizer.constantLayouts[k], emptyViews, [], null);
             const row = finalizer.bind({ id: -1, entities: new Float64Array(buffer, entitiesAt(group), count), storageById });
             finalizer.cells();
             for (let i = 0; i < count; i++) {

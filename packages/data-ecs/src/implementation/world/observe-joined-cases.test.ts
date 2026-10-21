@@ -30,7 +30,7 @@ declare module "@adobe/data-ecs" {
         [label]: { type: string };
         [marked]: { type: true };
         [place]: { type: number };
-        [caption]: { type: string | null; thread: "observeJoinedTest" };
+        [caption]: { type: { readonly text: string } | null; thread: "observeJoinedTest" };
         [widget]: { type: { readonly draw: () => string } | null; thread: "observeJoinedTest" };
         [kept]: { type: string };
     }
@@ -43,7 +43,9 @@ Component.register(point, { type: { type: "array", items: { type: "number" }, mi
 Component.register(label, { type: { type: "string" } });
 Component.register(marked, { type: { const: true } });
 Component.register(place, { type: { type: "number" } });
-Component.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "observeJoinedTest" });
+/** The caption's start, which a command here gives it by this value. */
+const none = { text: "none" };
+Component.register(caption, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: none }, thread: "observeJoinedTest" });
 Component.register(widget, { thread: "observeJoinedTest" });
 Component.register(kept, { type: { type: "string" } });
 Resource.register(total, { type: { type: "number", default: 0 } });
@@ -59,7 +61,7 @@ const spawnPlaced = System.create({ name: "observeJoinedTest/spawnPlaced", input
     commands.spawn([place, caption, widget, kept])({ [place]: input.x, [widget]: null, [kept]: `k${input.x}` });
 });
 const nullCaptions = System.create({ name: "observeJoinedTest/nullCaptions", components: { has: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, null); });
-const restartCaptions = System.create({ name: "observeJoinedTest/restartCaptions", components: { has: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, "none"); });
+const restartCaptions = System.create({ name: "observeJoinedTest/restartCaptions", components: { has: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, none); });
 const dropCaptions = System.create({ name: "observeJoinedTest/dropCaptions", components: { has: [caption] } }, (row, { commands }) => { commands.remove(row.entity, caption); });
 
 /** A world shared with a thread joined through a channel claiming `threads`, and the joined world. */
@@ -116,6 +118,14 @@ const spawnOne = async (world: World, x: number): Promise<Entity> => {
 };
 
 describe("observer factories on a joined thread", () => {
+    it("read the strings the world's thread writes, which live in shared memory", async () => {
+        const { world, remote } = joined();
+        await world.run(spawn, { x: 3 });
+        const [entity] = await until(Observe.select(remote, { required: [point], where: { [point]: [3, -3] } }), entities => entities.length === 1);
+        expect(await until(Observe.entity(remote, entity, { required: [label] }), value => value !== null)).toEqual({ [label]: "p3" });
+        await remote.dispose();
+        await world.dispose();
+    });
     it("give values of resources, entities, select and count, then each newer one", async () => {
         const { world, remote } = joined();
         const first: unknown[] = [];
@@ -163,14 +173,13 @@ describe("observer factories on a joined thread", () => {
         await world.dispose();
     });
 
-    it("throw for one that reads objects of the world's thread", async () => {
+    it("throw for one that reads objects of the world's thread, or looks up by its keys of strings", async () => {
         const { world, remote } = joined();
         const ignore = (): void => {};
         // The factories make nothing until subscribed, so they throw when subscribed.
         const made = <T>(make: () => (notify: (value: T) => void) => () => void) => () => make()(ignore);
         expect(made(() => Observe.resource(remote, names))).toThrow('reads "observeJoinedTest/names", an object, which lives on another thread');
-        expect(made(() => Observe.entity(remote, Entity.none, { required: [label] }))).toThrow('reads "observeJoinedTest/label", an object');
-        expect(made(() => Observe.select(remote, { required: [label], where: { [label]: "a" } }))).toThrow(/"observeJoinedTest\/label"[^.]*an object/);
+        expect(made(() => Observe.select(remote, { required: [label], where: { [label]: "a" } }))).toThrow(/"observeJoinedTest\/label"[^.]*a string, which the world's thread keeps keys of/);
         // What threw holds nothing: observers it could make still work.
         expect(await until(Observe.resource(remote, total), value => value === 0)).toBe(0);
         await remote.dispose();
@@ -182,11 +191,11 @@ describe("observer factories on a joined thread", () => {
         await joinedStatus(world);
         const entity = await spawnOne(world, 1);
         const listed = Observe.entity(remote, entity, { required: [place, caption], optional: [widget] });
-        expect(await until(listed, value => value !== null)).toEqual({ [place]: 1, [caption]: "none", [widget]: null });
+        expect(await until(listed, value => value !== null)).toEqual({ [place]: 1, [caption]: none, [widget]: null });
         await world.run(nullCaptions);
         expect(await until(listed, value => value?.[caption] === null)).toEqual({ [place]: 1, [caption]: null, [widget]: null });
         await world.run(restartCaptions);
-        expect(await until(listed, value => value?.[caption] === "none")).toEqual({ [place]: 1, [caption]: "none", [widget]: null });
+        expect(await until(listed, value => value?.[caption]?.text === "none")).toEqual({ [place]: 1, [caption]: none, [widget]: null });
         await world.run(dropCaptions);
         expect(await until(listed, value => value === null)).toBeNull();
         expect(await until(Observe.entity(remote, entity, { required: [place], optional: [caption] }), value => value !== null)).toEqual({ [place]: 1 });
@@ -201,7 +210,7 @@ describe("observer factories on a joined thread", () => {
         const values: unknown[] = [];
         const observe = (): void => {
             Observe.entity(world, entity, { required: [caption] })(value => values.push(value));
-            Observe.select(world, { required: [place, caption], where: { [caption]: "none" } })(() => {});
+            Observe.select(world, { required: [place, caption], where: { [caption]: none } })(() => {});
         };
         const reported: string[] = [];
         const caught = await catching(async () => {

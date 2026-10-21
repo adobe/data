@@ -23,6 +23,7 @@ const lane = Symbol("indexJoinedTest/lane");
 const rank = Symbol("indexJoinedTest/rank");
 const label = Symbol("indexJoinedTest/label");
 const name = Symbol("indexJoinedTest/name");
+const title = Symbol("indexJoinedTest/title");
 
 declare module "@adobe/data-ecs" {
     export interface Threads {
@@ -35,8 +36,9 @@ declare module "@adobe/data-ecs" {
         [target]: { type: number };
         [lane]: { type: number };
         [rank]: { type: number };
-        [label]: { type: string; thread: "indexJoinedTest" };
-        [name]: { type: string; thread: "indexJoinedTest" };
+        [label]: { type: { readonly text: string }; thread: "indexJoinedTest" };
+        [name]: { type: { readonly text: string }; thread: "indexJoinedTest" };
+        [title]: { type: string };
     }
 }
 Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
@@ -45,13 +47,18 @@ Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 10000
 Component.register(target, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
 Component.register(lane, { type: { type: "integer", minimum: 0, maximum: 1000 } });
 Component.register(rank, { type: { type: "number" } });
-Component.register(label, { type: { type: "string", default: "" }, thread: "indexJoinedTest" });
-Component.register(name, { type: { type: "string" }, thread: "indexJoinedTest" });
+const text = { type: "object", properties: { text: { type: "string" } } } as const;
+/** A label's start, which a command here gives it by this value. */
+const blank = { text: "" };
+Component.register(label, { type: { ...text, default: blank }, thread: "indexJoinedTest" });
+Component.register(name, { type: text, thread: "indexJoinedTest" });
+Component.register(title, { type: { type: "string" } });
 
 const grid = Index.create({ name: "indexJoinedTest/grid", key: [cell], components: { has: [weight] } });
 const serials = Index.create({ name: "indexJoinedTest/serials", key: [serial], unique: true, components: { has: [weight] } });
 const lanes = Index.create({ name: "indexJoinedTest/lanes", key: [lane, rank], sorted: true });
 const names = Index.create({ name: "indexJoinedTest/names", key: [name] });
+const titles = Index.create({ name: "indexJoinedTest/titles", key: [title] });
 const weighted = Index.create({ name: "indexJoinedTest/weighted", key: [], components: { has: [weight] } });
 
 /** On the joined thread, in the tier before the lookups, so a task of consecutive tiers there would see the index before it: moves some cells. */
@@ -59,7 +66,7 @@ const shift = System.create({ name: "indexJoinedTest/shift", components: { read:
     if (row[serial] % 17 !== 0) return;
     const [x, y] = row[cell];
     row[cell] = [(x + 1) % 13, y];
-    row[label] = "";
+    row[label] = { text: "" };
 });
 
 /** On the joined thread: each cell's neighbors' count and weights, whether its list changed, and its serial's target's weight. */
@@ -83,7 +90,7 @@ const describeCells = System.create({
     const all = lookup.all();
     let every = 0;
     for (let i = row[target] % 11; i < all.length; i += 11) every += all.at(i)[weight] * (i + 1);
-    row[label] = `${found}:${sum}:${lookup.near([x, y]).changed}:${followed === null ? "none" : followed[weight]}:${all.length}:${every}:${all.changed}`;
+    row[label] = { text: `${found}:${sum}:${lookup.near([x, y]).changed}:${followed === null ? "none" : followed[weight]}:${all.length}:${every}:${all.changed}` };
 });
 
 /** On the joined thread: the rows of the row's lane within 5 of its rank, in key order. */
@@ -97,14 +104,14 @@ const describeRanks = System.create({
     const near = lookup.inLane(row[lane], { ">=": r - 5, "<=": r + 5 });
     const ranks: number[] = [];
     for (let i = 0; i < near.length; i++) ranks.push(near.at(i)[rank]);
-    row[label] = ranks.join(",");
+    row[label] = { text: ranks.join(",") };
 });
 
 const tick = System.create({ name: "indexJoinedTest/tick", systems: [shift, describeCells, describeRanks] });
 
 const seed = System.create({ name: "indexJoinedTest/seed" }, ({ commands }) => {
-    for (let k = 0; k < 200; k++) commands.spawn([cell, weight, serial, target, label])({ [cell]: [k % 13, k % 7], [weight]: k % 5, [serial]: k, [target]: (k * 7) % 230, [label]: "" });
-    for (let k = 0; k < 150; k++) commands.spawn([lane, rank, label])({ [lane]: k % 3, [rank]: (k * 37) % 97, [label]: "" });
+    for (let k = 0; k < 200; k++) commands.spawn([cell, weight, serial, target, label])({ [cell]: [k % 13, k % 7], [weight]: k % 5, [serial]: k, [target]: (k * 7) % 230, [label]: blank });
+    for (let k = 0; k < 150; k++) commands.spawn([lane, rank, label])({ [lane]: k % 3, [rank]: (k * 37) % 97, [label]: blank });
 });
 
 /** Moves cells, changes weights and ranks, despawns some and spawns others. */
@@ -113,7 +120,7 @@ const stir = System.create({ name: "indexJoinedTest/stir", input: { type: "objec
     if ((row[serial] + input.round) % 9 === 0) row[cell] = [(x + 1) % 13, y];
     if ((row[serial] + input.round) % 11 === 0) row[weight] = row[weight] + 1;
     if ((row[serial] + input.round) % 23 === 0) commands.despawn(row.entity);
-    if (row[serial] % 50 === input.round) commands.spawn([cell, weight, serial, target, label])({ [cell]: [input.round, 3], [weight]: 2, [serial]: 1000 + row[serial], [target]: row[serial], [label]: "" });
+    if (row[serial] % 50 === input.round) commands.spawn([cell, weight, serial, target, label])({ [cell]: [input.round, 3], [weight]: 2, [serial]: 1000 + row[serial], [target]: row[serial], [label]: blank });
 });
 const rerank = System.create({ name: "indexJoinedTest/rerank", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [rank] } }, (row, { input }) => {
     if ((row[rank] + input.round) % 5 === 0) row[rank] = (row[rank] * 3 + 1) % 97;
@@ -125,7 +132,7 @@ const byName = System.create({
     components: { read: [name], write: [label] },
     lookup: { named: { index: names } },
 }, (row, { lookup }) => {
-    row[label] = String(lookup.named(row[name]).length);
+    row[label] = { text: String(lookup.named(row[name]).length) };
 });
 
 /** On the joined thread, added and removed: labels each cell by its bucket's length. */
@@ -135,19 +142,27 @@ const counting = System.create({
     lookup: { near: { index: grid, changed: [weight] } },
 }, (row, { lookup }) => {
     const [x, y] = row[cell];
-    row[label] = String(lookup.near([x, y]).length);
+    row[label] = { text: String(lookup.near([x, y]).length) };
 });
 const keepTicking = System.create({ name: "indexJoinedTest/keepTicking" }, () => {});
 
 const ranks = Index.create({ name: "indexJoinedTest/ranks", key: [rank], sorted: true });
+/** Systems of the joined thread writing a string, and looking up by strings, which only the world's thread does. */
+const writeTitle = System.create({ name: "indexJoinedTest/writeTitle", components: { read: [label], write: [title] } }, row => {
+    row[title] = row[label].text;
+});
+const byTitle = System.create({ name: "indexJoinedTest/byTitle", components: { read: [title], write: [label] }, lookup: { titled: { index: titles } } }, (row, { lookup }) => {
+    row[label] = { text: String(lookup.titled(row[title]).length) };
+});
+
 /** A system of the joined thread whose rows are in an index's order, which runs only on the world's thread. */
 const inOrder = System.create({ name: "indexJoinedTest/inOrder", components: { read: [rank], write: [label] }, order: ranks }, row => {
-    row[label] = String(row[rank]);
+    row[label] = { text: String(row[rank]) };
 });
 
 /** Systems on the joined thread and an observer system of its objects, each with an index as a change filter, which run only on the world's thread. */
 const countWhenMoved = System.create({ name: "indexJoinedTest/countWhenMoved", components: { read: [cell], write: [label] }, lookup: { near: { index: grid, changed: true } } }, (row, { lookup }) => {
-    row[label] = String(lookup.near(row[cell]).length);
+    row[label] = { text: String(lookup.near(row[cell]).length) };
 });
 const readWhenMoved = System.create({ name: "indexJoinedTest/readWhenMoved", observer: true, components: { read: [label] }, lookup: { near: { index: grid, changed: true } } }, row => {
     void row[label];
@@ -157,7 +172,7 @@ const ownWhenMoved = System.create({ name: "indexJoinedTest/ownWhenMoved", obser
 /** The entities `readLabels` reads, and their labels. */
 const reading: { entities: readonly Entity[]; labels: readonly string[] } = { entities: [], labels: [] };
 const readLabels = System.create({ name: "indexJoinedTest/readLabels", observer: true, lookup: { labeled: { read: [label] } } }, ({ lookup }) => {
-    reading.labels = reading.entities.map(entity => lookup.labeled(entity)?.[label] ?? "missing");
+    reading.labels = reading.entities.map(entity => lookup.labeled(entity)?.[label].text ?? "missing");
 });
 
 /** Each entity's label, sorted, as the world or the thread that fills its objects reads it, as of the last sync point. */
@@ -258,7 +273,7 @@ describe("systems on a joined thread looking up through indexes", () => {
         await remote.dispose();
         await world.dispose();
     });
-    it("throw for an index with an object key part, which the world keeps on its own thread, for an order, and for an index as a change filter", async () => {
+    it("throw for an index with an object or string key part, which the world keeps on its own thread, for an order, for a string written, and for an index as a change filter", async () => {
         const world = createWorld({ [workers]: 0 });
         const channel = new MessageChannel();
         world.share(channel.port1);
@@ -266,6 +281,8 @@ describe("systems on a joined thread looking up through indexes", () => {
         await joinedStatus(world);
         await expect(world.run(byName)).rejects.toThrow('looks up through index "indexJoinedTest/names", whose key part "indexJoinedTest/name" is an object, so it runs only on the world\'s thread.');
         await expect(world.run(inOrder)).rejects.toThrow("orders its rows by an index, which runs only on the world's thread");
+        await expect(world.run(writeTitle)).rejects.toThrow(`System "indexJoinedTest/writeTitle" runs on thread "indexJoinedTest", which a joined thread fills, and writes "indexJoinedTest/title", a string, which only the world's thread writes.`);
+        await expect(world.run(byTitle)).rejects.toThrow('looks up through index "indexJoinedTest/titles", whose key part "indexJoinedTest/title" is a string, which the world\'s thread keeps keys of, so it runs only on the world\'s thread.');
         const moved = `and when index "indexJoinedTest/grid" changed, a lookup's changed being true, which runs only on the world's thread.`;
         await expect(world.run(countWhenMoved)).rejects.toThrow(`System "indexJoinedTest/countWhenMoved" runs on thread "indexJoinedTest", which a joined thread fills, ${moved}`);
         await expect(world.run(readWhenMoved)).rejects.toThrow(`System "indexJoinedTest/readWhenMoved" runs on thread "indexJoinedTest", which a joined thread fills, ${moved}`);

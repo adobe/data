@@ -20,6 +20,7 @@ import { readBenchmarks } from "./reads.js";
 import { observedBenchmarks } from "./observed.js";
 import { systemBenchmarks } from "./systems.js";
 import { indexBenchmarks } from "./indexes.js";
+import { stringBenchmarks } from "./strings.js";
 import { createWorld } from "../implementation/index.js";
 import { workers } from "../interface/resources/workers.js";
 // Last, so the bundle orders the modules the benchmarks share as it did before these imports.
@@ -684,4 +685,5 @@ export const benchmarks: readonly Benchmark[] = [
     ...observedBenchmarks,
     ...systemBenchmarks,
     ...indexBenchmarks,
+    ...stringBenchmarks,
 ];

@@ -497,6 +497,8 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
             }
         }
         finally {
+            // Strings let go before the last run's sync point have no reader left: this run's waited for every one.
+            state.strings?.settle();
             rewind(state, workers);
             publish();
         }

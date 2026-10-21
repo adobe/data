@@ -13,13 +13,13 @@ declare module "@adobe/data-ecs" {
         removeTest: true;
     }
     export interface Resources {
-        [mark]: { type: string; thread: "removeTest" };
+        [mark]: { type: { readonly text: string }; thread: "removeTest" };
         [pause]: { type: number };
         [secondRuns]: { type: number };
     }
 }
 /** An object resource of the thread, which places the systems reading it there. */
-Resource.register(mark, { type: { type: "string", default: "m" }, thread: "removeTest" });
+Resource.register(mark, { type: { type: "object", properties: { text: { type: "string" } }, default: { text: "m" } }, thread: "removeTest" });
 /** How long, in milliseconds, `first` and `firstTail` spin before they return. */
 Resource.register(pause, { type: { type: "number", default: 0 } });
 /** How many times `second` ran, wherever it ran. */
@@ -42,20 +42,20 @@ const spin = (milliseconds: number): void => {
 /** Blocking, since its body reaches `commands`: a tier on the thread, and with `second`, one task. */
 export const first = System.create({ name: "removeTest/first", resources: { read: [mark, pause] } }, ({ resources, commands }) => {
     void commands;
-    calls.first += resources[mark].length;
+    calls.first += resources[mark].text.length;
     spin(resources[pause]);
     if (removal.armed) removal.world?.remove(second);
 });
 
 export const second = System.create({ name: "removeTest/second", resources: { read: [mark], write: [secondRuns] }, after: [first] }, ({ resources, commands }) => {
     void commands;
-    calls.second += resources[mark].length;
+    calls.second += resources[mark].text.length;
     resources[secondRuns] += 1;
 });
 
 /** Terminal, so a tail, run with `secondTail` as one task after the tick's sync point. */
 export const firstTail = System.create({ name: "removeTest/firstTail", resources: { read: [mark, pause] } }, ({ resources }) => {
-    calls.firstTail += resources[mark].length;
+    calls.firstTail += resources[mark].text.length;
     spin(resources[pause]);
     if (removal.armed) removal.world?.remove(secondTail);
 });
@@ -69,7 +69,7 @@ export const removerTail = System.create({ name: "removeTest/removerTail", resou
 });
 
 export const secondTail = System.create({ name: "removeTest/secondTail", resources: { read: [mark] }, after: [firstTail] }, ({ resources }) => {
-    calls.secondTail += resources[mark].length;
+    calls.secondTail += resources[mark].text.length;
 });
 
 /**

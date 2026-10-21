@@ -23,7 +23,7 @@ declare module "@adobe/data-ecs" {
         [amount]: { type: number };
         [cell]: { type: number };
         [tagged]: { type: true };
-        [label]: { type: string; thread: "observerJoinedTest" };
+        [label]: { type: { readonly text: string }; thread: "observerJoinedTest" };
         [name]: { type: string };
     }
     interface Resources {
@@ -33,7 +33,9 @@ declare module "@adobe/data-ecs" {
 Component.register(amount, { type: { type: "number" } });
 Component.register(cell, { type: { type: "number" } });
 Component.register(tagged, { type: { const: true } });
-Component.register(label, { type: { type: "string", default: "" }, thread: "observerJoinedTest" });
+/** The label's start, which a command here gives it by this value. */
+const blank = { text: "" };
+Component.register(label, { type: { type: "object", properties: { text: { type: "string" } }, default: blank }, thread: "observerJoinedTest" });
 Component.register(name, { type: { type: "string", default: "" } });
 Resource.register(level, { type: { type: "number", default: 0 } });
 
@@ -45,7 +47,7 @@ const nothing = System.create({ name: "observerJoinedTest/nothing" }, () => {});
 const spawn = System.create({ name: "observerJoinedTest/spawn", input: { type: "object", properties: { at: { type: "number" } } } }, ({ input, commands }) => {
     commands.spawn([amount, cell, tagged])({ [amount]: input.at, [cell]: input.at });
 });
-const spawnLabelled = System.create({ name: "observerJoinedTest/spawnLabelled" }, ({ commands }) => { commands.spawn([amount, label])({ [amount]: 4, [label]: "" }); });
+const spawnLabelled = System.create({ name: "observerJoinedTest/spawnLabelled" }, ({ commands }) => { commands.spawn([amount, label])({ [amount]: 4, [label]: blank }); });
 const grow = System.create({ name: "observerJoinedTest/grow", components: { write: [amount] } }, row => { row[amount] += 1; });
 const move = System.create({ name: "observerJoinedTest/move", components: { write: [cell] } }, row => { row[cell] += 10; });
 
@@ -85,7 +87,7 @@ const failing = System.create({ name: "observerJoinedTest/failing", observer: tr
     if (resources[level] > 1) throw new Error("observer joined failure");
 });
 const readLabels = System.create({ name: "observerJoinedTest/readLabels", observer: true, components: { read: [label, amount] } }, row => {
-    seen.labels.push(`${row[label]}${row[amount]}`);
+    seen.labels.push(`${row[label].text}${row[amount]}`);
 });
 
 /** Resolves once `done` holds, between turns of the event loop, which the joined thread's work needs. */
@@ -310,7 +312,7 @@ describe("observer systems on a joined thread", () => {
         await world.run(spawnLabelled);
         // Made in a function, so the build gives it no id.
         const made = () => System.create({ name: "observerJoinedTest/madeLabels", observer: true, components: { read: [label, amount] } }, row => {
-            seen.labels.push(`${row[label]}${row[amount]}`);
+            seen.labels.push(`${row[label].text}${row[amount]}`);
         });
         const madeLabels = made();
         await expect(world.run(madeLabels)).rejects.toThrow(`System "observerJoinedTest/madeLabels" runs on thread "observerJoinedTest", which a joined thread fills, and has no id, so that thread can't name it`);

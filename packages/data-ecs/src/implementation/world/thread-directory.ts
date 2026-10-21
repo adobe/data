@@ -10,6 +10,7 @@ import {
     storageWords, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
 } from './layout-directory.js';
 import { coveringBuffer, pageBytes, pagesWord } from './memory.js';
+import { createStringReader } from './strings.js';
 import type { Mirror, Mirrored } from './mirror.js';
 import type { Row, RowArchetype, RowHost, RowStorage } from './rows.js';
 import type { Key } from './state.js';
@@ -59,9 +60,11 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
     const archetypes: (ThreadArchetype | undefined)[] = [];
     let entities: EntityViews | null = null;
     let entitiesVersion = -1;
-    const rows: RowHost & { tick: number } = { layouts, rows: new Map<string, Row>(), tick: 0 };
+    const rows: RowHost & { tick: number } = { layouts, rows: new Map<string, Row>(), tick: 0, records: true };
     const noMirrored: readonly (Mirrored | null | undefined)[] = [];
     const thread = mirror?.thread ?? -1;
+    /** The records strings' columns name, which this thread reads. */
+    const strings = createStringReader(memory);
 
     /** Views of the memory again, once it grew; every archetype's views with them. Returns its buffer. */
     const refresh = (): ArrayBufferLike => {
@@ -118,7 +121,8 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
             component,
             layout,
             ...writeOf(layout),
-            views: layout.kind === "linear" && (flags & linearFlag) !== 0 ? viewsOf(buffer, words[base + storageColumn], capacity * layout.stride) : emptyViews,
+            views: (layout.kind === "linear" || layout.kind === "string") && (flags & linearFlag) !== 0 ? viewsOf(buffer, words[base + storageColumn], capacity * layout.stride) : emptyViews,
+            strings: layout.kind === "string" ? strings : null,
             // Rows only this thread's systems write: a mirror's column, or one of its own while the mirror has none.
             values: own ? mirrored?.byComponent[component]?.values ?? [] : noValues,
             tags: own ? new Uint32Array(buffer, words[base + storageColumn], capacity) : noTags,
@@ -197,7 +201,7 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
     };
 
     return {
-        viewed, rows, keys, layouts, numbers, mirror,
+        viewed, rows, keys, layouts, numbers, mirror, strings,
         refresh, refreshEntities, archetypeAt, countOf, resourceRow, tableCount, name, numberOf,
         layoutOf: (key: Key): Layout | undefined => layouts[numbers.get(firstKeyOf(key)) ?? -1],
     };

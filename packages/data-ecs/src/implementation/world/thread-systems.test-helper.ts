@@ -31,14 +31,14 @@ declare module "@adobe/data-ecs" {
         [position]: { type: readonly [number, number] };
         [velocity]: { type: number };
         [flagged]: { type: true };
-        [caption]: { type: string | null; thread: "threadSystemsTest" };
+        [caption]: { type: { readonly text: string } | null; thread: "threadSystemsTest" };
         [note]: { type: Note | null; thread: "threadSystemsTest" };
         [kept]: { type: string };
     }
     export interface Resources {
         [total]: { type: number; reduce: "+" };
         [changes]: { type: number };
-        [paint]: { type: string; thread: "threadSystemsTest" };
+        [paint]: { type: { readonly text: string }; thread: "threadSystemsTest" };
         [painted]: { type: number };
         [enabled]: { type: boolean };
         [nextUid]: { type: number };
@@ -50,14 +50,15 @@ Component.register(uid, { type: { type: "integer" } });
 Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
 Component.register(velocity, { type: { type: "number" } });
 Component.register(flagged, { type: { const: true } });
-Component.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "threadSystemsTest" });
+const text = { type: "object", properties: { text: { type: "string" } } } as const;
+Component.register(caption, { type: { anyOf: [text, { type: "null" }], default: { text: "none" } }, thread: "threadSystemsTest" });
 Component.register(note, { thread: "threadSystemsTest" });
 /** An object of the world's thread. */
 Component.register(kept, { type: { type: "string" } });
 Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
 Resource.register(changes, { type: { type: "integer", default: 0 } });
 /** An object resource of the thread, which only systems there read and write. */
-Resource.register(paint, { type: { type: "string", default: "plain" }, thread: "threadSystemsTest" });
+Resource.register(paint, { type: { ...text, default: { text: "plain" } }, thread: "threadSystemsTest" });
 Resource.register(painted, { type: { type: "integer", default: 0 } });
 Resource.register(enabled, { type: { type: "boolean", default: true } });
 Resource.register(nextUid, { type: { type: "integer", default: 1 } });
@@ -80,7 +81,7 @@ export const move = System.create({ name: "threadSystemsTest/move", components: 
 
 /** On the thread: captions written in place, from the structs it reads. */
 export const describe = System.create({ name: "threadSystemsTest/describe", components: { read: [position, velocity], write: [caption] }, after: [move] }, row => {
-    if (row[velocity] !== 0) row[caption] = `at ${row[position][0]}`;
+    if (row[velocity] !== 0) row[caption] = { text: `at ${row[position][0]}` };
 });
 
 /** On the thread: commands giving its objects values it stages, struct values and tags, and despawns. */
@@ -90,7 +91,7 @@ export const relabel = System.create({ name: "threadSystemsTest/relabel", compon
         commands.despawn(row.entity);
         return;
     }
-    if (id % 4 === 1) commands.add(row.entity, note, makeNote(`${row[caption]}!`));
+    if (id % 4 === 1) commands.add(row.entity, note, makeNote(`${row[caption]?.text ?? null}!`));
     if (id % 5 === 2) commands.add(row.entity, [flagged, caption], { [caption]: null });
     if (id % 7 === 3) commands.remove(row.entity, [velocity, note]);
     if (id % 6 === 0) commands.add(row.entity, velocity, 2);
@@ -99,12 +100,12 @@ export const relabel = System.create({ name: "threadSystemsTest/relabel", compon
 /** On the thread, reading its object resource: spawns giving its objects values, with a struct resource's next uid. */
 export const breed = System.create({ name: "threadSystemsTest/breed", resources: { read: [paint], write: [nextUid] }, after: [relabel] }, ({ resources, commands }) => {
     const id = resources[nextUid]++;
-    commands.spawn([uid, position, velocity, caption, note])({ [uid]: id, [position]: [0, id], [velocity]: 1, [caption]: `${resources[paint]} ${id}`, [note]: makeNote(`bred ${id}`) });
+    commands.spawn([uid, position, velocity, caption, note])({ [uid]: id, [position]: [0, id], [velocity]: 1, [caption]: { text: `${resources[paint].text} ${id}` }, [note]: makeNote(`bred ${id}`) });
 });
 
 /** On the thread: a reduction over its objects and structs. */
 export const tally = System.create({ name: "threadSystemsTest/tally", components: { read: [caption, position] }, reduce: { [total]: "+" }, after: [breed] }, (row, { reduce }) => {
-    reduce[total]((row[caption]?.length ?? 0) + row[position][1]);
+    reduce[total]((row[caption]?.text.length ?? 0) + row[position][1]);
 });
 
 /** On the thread: a change filter on its own objects, writing a struct resource. */
@@ -114,14 +115,14 @@ export const watchCaptions = System.create({ name: "threadSystemsTest/watchCapti
 
 /** On the thread, while `enabled` holds: writes its object resource, and a struct resource from it. */
 export const repaint = System.create({ name: "threadSystemsTest/repaint", resources: { write: [paint, painted], is: [enabled] }, after: [watchCaptions] }, ({ resources }) => {
-    resources[paint] = `${resources[paint]}+`;
-    resources[painted] = resources[paint].length;
+    resources[paint] = { text: `${resources[paint].text}+` };
+    resources[painted] = resources[paint].text.length;
 });
 
 /** On the thread: a lookup reading an entity's structs and this thread's objects. */
 export const peek = System.create({ name: "threadSystemsTest/peek", components: { has: [uid, note] }, lookup: { self: { read: [position, caption] } }, after: [repaint] }, (row, { lookup, commands }) => {
     const self = lookup.self(row.entity);
-    if (self !== null && ((self[caption]?.length ?? 0) + self[position][1]) % 2 === 1) commands.add(row.entity, flagged);
+    if (self !== null && ((self[caption]?.text.length ?? 0) + self[position][1]) % 2 === 1) commands.add(row.entity, flagged);
 });
 
 /** On the world's thread, beside `tally`: a world object from the structs. */
@@ -144,7 +145,7 @@ export const tick = System.create({ name: "threadSystemsTest/tick", systems: [mo
 
 /** On the thread, with input, which comes to it by message. */
 export const stamp = System.create({ name: "threadSystemsTest/stamp", input: { type: "object", properties: { text: { type: "string" } } }, components: { read: [uid], write: [caption] } }, (row, { input }) => {
-    if (row[uid] === 1) row[caption] = input.text;
+    if (row[uid] === 1) row[caption] = { text: input.text };
 });
 
 /** Disables `repaint`, from the world's thread. */
@@ -266,11 +267,11 @@ export const unflagCrowd = System.create({ name: "threadSystemsTest/unflagCrowd"
 });
 /** On the thread: writes uid 1000's caption in place. */
 export const write = System.create({ name: "threadSystemsTest/write", components: { read: [uid], write: [caption] } }, row => {
-    if (row[uid] === 1000) row[caption] = "written";
+    if (row[uid] === 1000) row[caption] = { text: "written" };
 });
 /** On the thread: counts captions it holds that the thread wrote, into a struct resource. */
 export const countWritten = System.create({ name: "threadSystemsTest/countWritten", components: { read: [caption] }, resources: { write: [changes] } }, (row, { resources }) => {
-    if (row[caption] === "written") resources[changes] += 1;
+    if (row[caption]?.text === "written") resources[changes] += 1;
 });
 
 /** On the thread: gives an object of the world's thread a value, which can't cross, so its command drops and it fails. */
@@ -279,12 +280,12 @@ export const giveKept = System.create({ name: "threadSystemsTest/giveKept", comp
 });
 /** On the thread: spawns giving an object of the world's thread a value, which throws when it's issued. */
 export const spawnKept = System.create({ name: "threadSystemsTest/spawnKept", resources: { read: [paint] } }, ({ resources, commands }) => {
-    commands.spawn([uid, kept])({ [uid]: resources[paint].length, [kept]: "spawned there" });
+    commands.spawn([uid, kept])({ [uid]: resources[paint].text.length, [kept]: "spawned there" });
 });
 
 /** On the thread: runs until its thread ends, so its task never completes. */
 export const stall = System.create({ name: "threadSystemsTest/stall", resources: { read: [paint] } }, ({ resources }) => {
-    while (resources[paint] !== "never") { /* until the thread ends */ }
+    while (resources[paint].text !== "never") { /* until the thread ends */ }
 });
 /** On the world's thread: counts its runs, ticking with nothing on the thread. */
 export const count = System.create({ name: "threadSystemsTest/count", resources: { write: [changes] } }, ({ resources }) => {
@@ -308,7 +309,7 @@ const setQueued = (task: () => void): void => {
 };
 /** On the thread: counts its runs, so the world's ticks post it a task each. */
 export const countThere = System.create({ name: "threadSystemsTest/countThere", resources: { read: [paint], write: [changes] } }, ({ resources }) => {
-    if (resources[paint] !== "never") resources[changes] += 1;
+    if (resources[paint].text !== "never") resources[changes] += 1;
 });
 
 /** On the thread: counts its runs there in `ranHere`; it reaches its commands, so it blocks its tier, a task a tick. */

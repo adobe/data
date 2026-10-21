@@ -38,7 +38,8 @@ const collection = (schema: Schema): boolean => "type" in schema && (schema.type
  *   key, the one with the lower entity index is kept, and the run that found them reports an `"index"` failure.
  *
  * Throws if a key part isn't a registered component of data, is listed twice or is a set or map, a sorted part has no
- * order, its object parts live on different threads, it's unique without a key, or `has` or `not` names a key that isn't a registered component
+ * order, its object parts live on different threads, or on another than the world's beside a string, which the world
+ * keeps its keys of, it's unique without a key, or `has` or `not` names a key that isn't a registered component
  * or `not` names a key part or a `has` component.
  */
 export const create = <const D extends Declaration>(declaration: D & Validate<D>): Index<D> => {
@@ -59,11 +60,12 @@ export const create = <const D extends Declaration>(declaration: D & Validate<D>
             parts.add(firstKeyOf(part));
             if (collection(type)) fail(`has key part "${labelOf(part)}", a set or map, which a key part can't be yet`);
             if (sorted === true && !ordered(type)) fail(`is sorted by "${labelOf(part)}", whose values have no order: a sorted part is a number, boolean, entity, string or fixed-length tuple of them`);
-            const thread = found === undefined ? null : threadOfDeclaration(found);
+            // The world's thread keeps keys of strings, so they hold the index there with its objects.
+            const thread = found === undefined ? null : threadOfDeclaration(found) ?? (layoutOf(type).kind === "string" ? "world" : null);
             if (thread !== null) threads.add(thread);
         }
     }
-    if (threads.size > 1) fail(`has object key parts on threads ${[...threads].map(thread => `"${thread}"`).join(" and ")}; its object parts live on one thread`);
+    if (threads.size > 1) fail(`has key parts on threads ${[...threads].map(thread => `"${thread}"`).join(" and ")}; its object parts live on one thread, the world's beside a string`);
     const held = new Set<symbol>(parts);
     for (const component of components?.has ?? []) {
         if (kindOf(component) !== "component") fail(`has "${labelOf(component)}", which isn't a registered component`);

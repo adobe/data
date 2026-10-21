@@ -17,10 +17,14 @@ export const counter = Symbol("remote/counter");
 export const sign = Symbol("remote/sign");
 export const rank = Symbol("remote/rank");
 export const order = Symbol("remote/order");
+export const caption = Symbol("remote/caption");
+export const amount = Symbol("remote/amount");
 declare module "@adobe/data-ecs" {
     export interface Components {
         [rank]: { type: number };
         [order]: { type: number };
+        [caption]: { type: string };
+        [amount]: { type: number };
     }
     export interface Resources {
         [counter]: { type: number };
@@ -31,6 +35,8 @@ Resource.register(counter, { type: { type: "number", default: 0 } });
 Resource.register(sign, { type: { type: "number", default: 1 } });
 Component.register(rank, { type: { type: "number" } });
 Component.register(order, { type: { type: "number" } });
+Component.register(caption, { type: { type: "string" } });
+Component.register(amount, { type: { type: "number" } });
 
 /** An empty transaction. */
 export const empty = System.create({ name: "remote/empty" }, () => {});
@@ -84,6 +90,32 @@ export const observerSelect = System.create({ name: "remote/observerSelect", obs
     observerSeen.notified++;
 });
 
+/** Rows with a caption and an amount, a todo's label and a number, which `retext` and `reamount` rewrite 1% of a tick. */
+export const seedCaptions = System.create({ name: "remote/seedCaptions", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+    for (let i = 0; i < input.count; i++) commands.spawn([rank, caption, amount])({ [rank]: i, [caption]: `Buy milk and bread #${i}`, [amount]: i });
+});
+const recaption = System.create({ name: "remote/recaption", components: { read: [rank], write: [caption] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
+    if (row[rank] % 100 === resources[counter] % 100) row[caption] = `Buy milk and bread #${row[rank]}.${resources[counter]}`;
+});
+const reamount = System.create({ name: "remote/reamount", components: { read: [rank], write: [amount] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
+    if (row[rank] % 100 === resources[counter] % 100) row[amount] = row[rank] + resources[counter];
+});
+/** Rewrites 1% of the captions a tick. */
+export const retext = System.create([count, recaption]);
+/** Rewrites 1% of the amounts a tick. */
+export const reamounted = System.create([count, reamount]);
+
+/** On a joined thread, after each sync point: every row's caption, out of its record. */
+export const observerCaptions = System.create({ name: "remote/observerCaptions", observer: true, components: { read: [caption] } }, row => {
+    observerSeen.last += row[caption].length;
+    observerSeen.notified++;
+});
+/** On a joined thread, after each sync point: every row's amount. */
+export const observerAmounts = System.create({ name: "remote/observerAmounts", observer: true, components: { read: [amount] } }, row => {
+    observerSeen.last += row[amount];
+    observerSeen.notified++;
+});
+
 /** Runs in each timed stretch of `remote run`, and ticks in each of the joined benchmarks'. */
 export const remoteRuns = 1_000;
 export const joinedTicks = 1_000;
@@ -91,7 +123,7 @@ export const joinedTicks = 1_000;
 export const selected = 10_000;
 
 /** What a joined thread reads in a joined benchmark: through an observer system, or the observer factories. */
-type Observed = "observer resource" | "observer select" | "factory resource" | "factory select";
+type Observed = "observer resource" | "observer select" | "observer captions" | "observer amounts" | "factory resource" | "factory select";
 
 /** What the joined thread is asked to do, and what it answers. */
 export type ToJoined = { readonly kind: "runs"; readonly stretches: number } | { readonly kind: Observed } | { readonly kind: "stop" };
@@ -155,7 +187,9 @@ const joinedBest = async (kind: Observed, system: System<void>, stretches = 5): 
     const driver = backToBack();
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
     const reads = kind.endsWith("resource");
-    if (!reads) await world.run(seedRanks, { count: selected });
+    const rows = kind === "observer captions" || kind === "observer amounts";
+    if (rows) await world.run(seedCaptions, { count: selected });
+    else if (!reads) await world.run(seedRanks, { count: selected });
     const joined = await startJoined(world);
     let best = Infinity;
     try {
@@ -281,6 +315,24 @@ export const remoteBenchmarks: readonly Benchmark[] = [
         typical: [1, 1],
         best: { bytes: selected * 24, basis: "Each tick writes 10K 8-byte values, reads them to sort, and sorts 10K 8-byte entities." },
         run: () => joinedBest("observer select", reorder, 3),
+    },
+    {
+        name: "joined observer strings 10K",
+        operation: "Ticks that rewrite 1% of 10K captions, a todo's label each, while an observer system a joined thread added reads every caption after each sync point, out of its record: a binding on main reading a world on a worker.",
+        per: "ticks",
+        n: joinedTicks,
+        typical: [1, 1],
+        best: { bytes: 40_000, basis: "A pass reads at least each row's 4-byte handle." },
+        run: () => joinedBest("observer captions", retext, 3),
+    },
+    {
+        name: "joined observer numbers 10K",
+        operation: "The same with 10K numbers in place of the captions, as `joined observer strings 10K` measures against.",
+        per: "ticks",
+        n: joinedTicks,
+        typical: [1, 1],
+        best: { bytes: 80_000, basis: "A pass reads at least each row's 8-byte number." },
+        run: () => joinedBest("observer amounts", reamounted, 3),
     },
     {
         name: "joined resource factory",

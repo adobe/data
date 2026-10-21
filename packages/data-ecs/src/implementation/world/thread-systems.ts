@@ -3,7 +3,8 @@ import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { SystemLookup } from '../../interface/system/access.js';
 import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, itemOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration, watchedBy } from '../../interface/registry/index.js';
-import { layoutOf, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
+import { layoutOf, objectLayout, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
+import type { StringStore } from './strings.js';
 import { stampChanged, writeOf } from './archetype.js';
 import { emptyViews } from './arrays.js';
 import { readCell, writeCell } from './cells.js';
@@ -150,7 +151,8 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         const number = numbers.get(first) ?? localNumbers + host.keyNumber(key);
         const entry: CommandKey = {
             number, layout, encoder: encoderOf(layout), own,
-            elsewhere: layout.kind === "object" && !own ? `"${labelOf(key)}" lives on thread "${thread ?? "world"}", so a command on another thread gives it only its start or null.` : null,
+            elsewhere: layout.kind === "string" ? `"${labelOf(key)}" is a string, which only the world's thread writes, so a command on another thread gives it only its start.`
+                : layout.kind === "object" && !own ? `"${labelOf(key)}" lives on thread "${thread ?? "world"}", so a command on another thread gives it only its start or null.` : null,
             start: layout.kind === "constant" ? layout.value : defaultOf(key),
             transfer: declaration.transfer === true,
         };
@@ -168,7 +170,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
     /** Writes one value of an add: a struct's bytes; an object of this thread staged; another's start or null, else dropped. */
     const putOne = (key: CommandKey, entity: number, value: unknown): boolean => {
         const { layout, number } = key;
-        if (layout.kind !== "object") {
+        if (layout.kind !== "object" && layout.kind !== "string") {
             if (value === undefined) putStart(writer, number);
             else putValue(writer, number, key.encoder, value);
             return true;
@@ -211,8 +213,8 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         }
         const target = batch;
         const reserving = block ??= createBlock(refreshEntities());
-        // An object's start is the world's to resolve.
-        const positional: Positional = positionalSpawner(reserving, reserveFrom, target, ids, listed.map(entry => entry.layout.kind === "object" ? objectStart : entry.start));
+        // An object's or a string's start is the world's to resolve.
+        const positional: Positional = positionalSpawner(reserving, reserveFrom, target, ids, listed.map(entry => entry.layout.kind === "object" || entry.layout.kind === "string" ? objectStart : entry.start));
         const keysOfList = list.filter((key): key is Key => typeof key === "symbol");
         const args: unknown[] = new Array<unknown>(keysOfList.length);
         const spawn = (values: object): Entity => {
@@ -283,6 +285,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         refresh: directory.refresh,
         numberOf: directory.numberOf,
         layoutOf: directory.layoutOf,
+        strings: directory.strings,
     };
 
     /** Takes the world's numbers for the keys of systems or finalizers it places here. */
@@ -340,6 +343,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         numberOf: runnerHost.numberOf,
         layoutOf: runnerHost.layoutOf,
         archetypeAt, countOf, tableCount, resourceRow,
+        strings: directory.strings,
         failed: errors => host.post({ protocol: protocolName, kind: "finalized", errors }),
     });
     mirror.finalize = finalizers.through;
@@ -571,6 +575,8 @@ export type RunnerHost = {
     readonly mirror: Mirror | null;
     /** Views of the memory again, once it grew: its buffer. */
     readonly refresh: () => ArrayBufferLike;
+    /** The records strings' columns name. */
+    readonly strings: StringStore;
 };
 
 /** One run's outcome: whether it took its tick, ran its rows, and its error. */
@@ -831,18 +837,19 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
     // thread's, which it reads from its mirror at the snapshot's rows.
     const readKeys = query?.read ?? [];
     const writeKeys = query?.write ?? [];
-    const linearReads: { readonly number: number; readonly layout: Layout & { readonly kind: "linear" } }[] = [];
+    const linearReads: { readonly number: number; readonly layout: Columned }[] = [];
     const constantReads: { readonly number: number; readonly layout: Layout }[] = [];
     for (const key of readKeys) {
         const layout = host.layoutOf(key);
-        if (layout?.kind === "linear") linearReads.push({ number: numberOf(key), layout });
+        // A string's snapshot column holds handles of records the world copied for it.
+        if (layout?.kind === "linear" || layout?.kind === "string") linearReads.push({ number: numberOf(key), layout });
         else if (layout?.kind === "constant") constantReads.push({ number: numberOf(key), layout });
     }
     const objectKeys = [...new Set([...readKeys, ...writeKeys])].filter(key => host.layoutOf(key)?.kind === "object").map(numberOf);
     const writtenObjects = new Set(writeKeys.map(numberOf));
     const snapshotResources = resourceKeys.flatMap((key, k) => {
         const layout = host.layoutOf(key);
-        return layout?.kind === "linear" && !writes.has(key) ? [{ k, layout }] : [];
+        return (layout?.kind === "linear" || layout?.kind === "string") && !writes.has(key) ? [{ k, layout }] : [];
     });
     const strides = linearReads.map(({ layout }) => layout.stride);
     const resourceStrides = snapshotResources.map(({ layout }) => layout.stride);
@@ -927,19 +934,19 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
             const copied = snapshotResources.findIndex(entry => entry.k === k);
             if (copied >= 0) {
                 const stride = resourceStrides[copied];
-                cells[k].storage = localStorage(component, layout, viewsOf(buffer, offset + placed.resources[copied], stride), [], 0);
+                cells[k].storage = localStorage(component, layout, viewsOf(buffer, offset + placed.resources[copied], stride), [], 0, host.strings);
                 cells[k].row = 0;
                 return;
             }
             if (layout.kind === "object") {
                 const value = mirror?.archetypes[resourceArchetype]?.byComponent[component]?.values[resourceRow];
-                const storage = localStorage(component, layout, emptyViews, [value], 1);
+                const storage = localStorage(component, layout, emptyViews, [value], 1, host.strings);
                 cells[k].storage = storage;
                 cells[k].row = 0;
                 ownResources.push({ k, component, storage });
                 return;
             }
-            cells[k].storage = localStorage(component, layout, emptyViews, [], 0);
+            cells[k].storage = localStorage(component, layout, emptyViews, [], 0, host.strings);
             cells[k].row = 0;
         });
         if (head) {
@@ -960,9 +967,9 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         const entities = new Float64Array(buffer, offset + placed.entities, rows);
         const storageById: ThreadStorage[] = [];
         linearReads.forEach(({ number, layout: linear }, k) => {
-            storageById[number] = localStorage(number, linear, viewsOf(buffer, offset + placed.columns[k], rows * linear.stride), [], 0);
+            storageById[number] = localStorage(number, linear, viewsOf(buffer, offset + placed.columns[k], rows * linear.stride), [], 0, host.strings);
         });
-        for (const { number, layout: constant } of constantReads) storageById[number] = localStorage(number, constant, emptyViews, [], 0);
+        for (const { number, layout: constant } of constantReads) storageById[number] = localStorage(number, constant, emptyViews, [], 0, host.strings);
         const objects: { readonly number: number; readonly storage: ThreadStorage }[] = [];
         for (const number of objectKeys) {
             const values = new Array<unknown>(rows);
@@ -974,7 +981,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
                     values[i] = location?.values[location.row];
                 }
             }
-            const storage = localStorage(number, { kind: "object" }, emptyViews, values, writtenObjects.has(number) ? rows : 0);
+            const storage = localStorage(number, objectLayout, emptyViews, values, writtenObjects.has(number) ? rows : 0, host.strings);
             storageById[number] = storage;
             if (writtenObjects.has(number)) objects.push({ number, storage });
         }
@@ -1092,11 +1099,14 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
     return { run, runTail, writeFolds, halt: () => { halted = true; } };
 };
 
+/** A layout with a column in linear memory: a struct's, or a string's of handles. */
+type Columned = Extract<Layout, { readonly stride: number }>;
+
 /** A storage over a snapshot's column, or of values only this thread holds, with ticks of its own for `ticked` rows. */
-const localStorage = (component: number, layout: Layout, views: Views, values: unknown[], ticked: number): ThreadStorage => {
+const localStorage = (component: number, layout: Layout, views: Views, values: unknown[], ticked: number, strings: StringStore): ThreadStorage => {
     const chunks = ticked === 0 ? 0 : (ticked >> chunkShift) + 1;
     return {
-        component, layout, views, values, ...writeOf(layout), tags: noTags, ticked: ticked > 0,
+        component, layout, views, strings: layout.kind === "string" ? strings : null, values, ...writeOf(layout), tags: noTags, ticked: ticked > 0,
         added: ticked === 0 ? noTicks : new Float64Array(ticked), changed: ticked === 0 ? noTicks : new Float64Array(ticked),
         chunkAdded: chunks === 0 ? noTicks : new Float64Array(chunks), chunkChanged: chunks === 0 ? noTicks : new Float64Array(chunks),
     };

@@ -3,7 +3,7 @@ import type { MessagePort as NodeMessagePort } from "node:worker_threads";
 import { join } from "../implementation/index.js";
 import { scopeChannel } from "../implementation/world/port.js";
 import type { World } from "../interface/world/world.js";
-import { counter, empty, order, remoteRuns, observerCounter, observerSeen, observerSelect, type FromJoined, type ToJoined } from "./remote.js";
+import { counter, empty, order, remoteRuns, observerAmounts, observerCaptions, observerCounter, observerSeen, observerSelect, type FromJoined, type ToJoined } from "./remote.js";
 import { handoffSystems } from "./handoff.js";
 import { release } from "./finalized.js";
 import { tailSystems } from "./tails.js";
@@ -71,9 +71,10 @@ channel.onMessage(async message => {
         channel.post({ kind: "stopped", last: Math.max(last, observerSeen.last), notified: notified + observerSeen.notified });
         return;
     }
-    if (message.kind === "observer resource" || message.kind === "observer select") {
+    if (message.kind === "observer resource" || message.kind === "observer select" || message.kind === "observer captions" || message.kind === "observer amounts") {
         // An observer system of this thread's own, which the world posts here after each sync point.
-        const system = message.kind === "observer resource" ? observerCounter : observerSelect;
+        const system = message.kind === "observer resource" ? observerCounter : message.kind === "observer select" ? observerSelect
+            : message.kind === "observer captions" ? observerCaptions : observerAmounts;
         const world = remote;
         world.add(system);
         stop = () => world.remove(system);

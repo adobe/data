@@ -23,7 +23,7 @@ declare module "@adobe/data-ecs" {
         [parent]: { type: Entity; reference: "owner" };
         [count]: { type: number };
         [label]: { type: string };
-        [placed]: { type: string; thread: "typesComponentTest" };
+        [placed]: { type: readonly string[]; thread: "typesComponentTest" };
         [position]: { type: readonly [number, number] };
         [bitmap]: { type: ImageBitmap; transfer: true };
         [marked]: { type: true; [mark]: true };
@@ -39,7 +39,7 @@ Trait.register(mark);
 Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(count, { type: { type: "number" } });
 Component.register(label, { type: { type: "string" } });
-Component.register(placed, { type: { type: "string" }, thread: "typesComponentTest" });
+Component.register(placed, { type: { type: "array", items: { type: "string" } }, thread: "typesComponentTest" });
 Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
 Component.register(bitmap, { transfer: true });
 Component.register(marked, { type: { const: true }, [mark]: true });
@@ -53,7 +53,7 @@ const register = (key: unknown, declaration: object): void => {
 };
 
 describe("Component.register", () => {
-    it("records the declaration, and its thread: none for a struct, else its own or \"world\"", () => {
+    it("records the declaration, and its thread: none for a struct or a string, else its own or \"world\"", () => {
         expect(declarationOf(parent)).toEqual({ type: Entity.schema, reference: "owner" });
         expect(kindOf(parent)).toBe("component");
         expect(threadOfDeclaration({ type: Entity.schema })).toBe(null);
@@ -61,7 +61,10 @@ describe("Component.register", () => {
         expect(threadOfDeclaration({ type: { type: "object", properties: { at: { type: "number" } } } })).toBe(null);
         expect(threadOfDeclaration({ type: { type: "array", items: { type: "number" } } })).toBe("world");
         expect(threadOfDeclaration({ type: { type: "object", properties: { at: { type: "number" } }, required: [] } })).toBe("world");
-        expect([parent, label, placed, position].map(name => threadOfDeclaration(declarationOf(name) ?? {}))).toEqual([null, "world", "typesComponentTest", null]);
+        expect([parent, label, placed, position].map(name => threadOfDeclaration(declarationOf(name) ?? {}))).toEqual([null, null, "typesComponentTest", null]);
+        expect(threadOfDeclaration({ type: { anyOf: [{ const: "edit" }, { const: "view" }] } })).toBe(null);
+        expect(threadOfDeclaration({ type: { anyOf: [{ type: "string" }, { type: "null" }] } })).toBe(null);
+        expect(threadOfDeclaration({ type: { anyOf: [{ type: "string" }, { type: "number" }] } })).toBe("world");
     });
     it("accepts the same declaration again, as a module evaluated again makes it, and rejects a different one or a key of another kind", () => {
         expect(() => Component.register(count, { type: { type: "number" } })).not.toThrow();
@@ -95,6 +98,8 @@ describe("Component.register", () => {
     it("checks thread and transfer as far as values tell", () => {
         expect(() => register(Symbol("typesComponentTest/placedStruct"), { type: { type: "number" }, thread: "main" })).toThrow("a struct lives in shared memory, so it has no thread");
         expect(() => register(Symbol("typesComponentTest/placedTag"), { type: { const: true }, thread: "main" })).toThrow("a struct lives in shared memory");
+        expect(() => register(Symbol("typesComponentTest/placedText"), { type: { type: "string" }, thread: "main" })).toThrow("a string lives in shared memory, so it has no thread");
+        expect(() => register(Symbol("typesComponentTest/placedMode"), { type: { anyOf: [{ const: "edit" }, { const: "view" }] }, thread: "main" })).toThrow("a string lives in shared memory");
         expect(() => register(Symbol("typesComponentTest/emptyThread"), { thread: "" })).toThrow("thread is a thread's name");
         expect(() => register(Symbol("typesComponentTest/dataTransfer"), { type: { type: "string" }, transfer: true })).toThrow("a value with a schema is data, which isn't Transferable");
         expect(() => register(Symbol("typesComponentTest/falseTransfer"), { transfer: false })).toThrow("transfer is true");

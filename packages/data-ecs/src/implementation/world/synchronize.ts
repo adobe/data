@@ -399,7 +399,7 @@ const copyColumn = (from: Storage, to: Storage, plan: Plan, order: Int32Array, f
             for (let i = 0; i < words; i++) target[t + i] = source[s + i];
         }
     }
-    else if (from.layout.kind === "linear" || from.layout.kind === "object") {
+    else if (from.layout.kind !== "constant") {
         for (let k = 0; k < count; k++) copyValue(from, plan.row[order[first + k]], to, toStart + k);
     }
     if (!to.ticked) return;
@@ -492,6 +492,7 @@ const leave = (state: State, entry: number): void => {
     const row = plan.row[entry];
     if (row < 0) return;
     const from = state.archetypes[plan.from[entry]];
+    if (from.strings.length !== 0) releaseStrings(state, from, row, plan.despawned[entry] === 1 ? null : state.archetypes[plan.to[entry]]);
     const moved = swapRemove(from, row);
     if (moved === -1) return;
     const index = indexOf(moved);
@@ -501,6 +502,17 @@ const leave = (state: State, entry: number): void => {
         state.entities.row[index] = row;
         // Its row changed, so what `up` keeps of it does.
         record(state.journal, index, state.entities.length);
+    }
+};
+
+/** Lets go of the strings' records a row leaving `from` holds that its entity doesn't take to `to`, null for a despawn. */
+const releaseStrings = (state: State, from: Archetype, row: number, to: Archetype | null): void => {
+    const { strings } = state;
+    if (strings === null || !strings.active) return;
+    const held = from.strings;
+    for (let s = 0; s < held.length; s++) {
+        const storage = held[s];
+        if (to === null || to.storageById[storage.component] === undefined) strings.retire(storage.views.u32[row]);
     }
 };
 

@@ -29,7 +29,7 @@ declare module "@adobe/data-ecs" {
         [pose]: { type: readonly [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number] };
     }
     export interface Resources {
-        [surface]: { type: string; thread: "tailsBenchmark" };
+        [surface]: { type: { readonly name: string }; thread: "tailsBenchmark" };
         [poked]: { type: number };
         [rowWork]: { type: number };
         [worldWork]: { type: number };
@@ -38,7 +38,8 @@ declare module "@adobe/data-ecs" {
 Component.register(place, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
 Component.register(pose, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 16, maxItems: 16 } });
 /** An object of the joined thread, as a canvas or the DOM is, which places the systems reading it there. */
-Resource.register(surface, { type: { type: "string", default: "surface" }, thread: "tailsBenchmark" });
+const surfaceStart = { name: "surface" };
+Resource.register(surface, { type: { type: "object", properties: { name: { type: "string" } }, default: surfaceStart }, thread: "tailsBenchmark" });
 Resource.register(poked, { type: { type: "integer", default: 0 } });
 Resource.register(rowWork, { type: { type: "integer", minimum: 0, maximum: 1_000_000, default: 0 } });
 Resource.register(worldWork, { type: { type: "number", default: 0 } });
@@ -62,7 +63,7 @@ const spawnPoses = System.create({ name: "tails/spawnPoses" }, ({ commands }) =>
 const here = System.create({ name: "tails/here" }, () => {});
 /** On the joined thread, terminal: reads every row's place, as a DOM-writing system reads positions. */
 const draw = System.create({ name: "tails/draw", components: { read: [place] }, resources: { read: [surface] } }, (row, { resources }) => {
-    if (resources[surface] === "surface") drawn.sum += row[place][0];
+    if (resources[surface] === surfaceStart) drawn.sum += row[place][0];
 });
 /** A tick of a world system and a 1,000-row tail that finishes before the next tick needs it. */
 export const promptTick = System.create({ name: "tails/promptTick", systems: [here, draw] });
@@ -70,11 +71,11 @@ export const promptTick = System.create({ name: "tails/promptTick", systems: [he
 /** On the joined thread, ahead of the late tail: busy for a while, as a main thread is with layout. */
 const busy = System.create({ name: "tails/busy", resources: { read: [surface] } }, ({ resources }) => {
     const until = performance.now() + 4;
-    while (performance.now() < until && resources[surface] === "surface");
+    while (performance.now() < until && resources[surface] === surfaceStart);
 });
 /** On the joined thread, terminal, after `busy`: reads every row's place and pose, and the resource `poke` writes. */
 const copied = System.create({ name: "tails/copied", components: { read: [place, pose] }, resources: { read: [surface, poked] }, after: [busy] }, (row, { resources }) => {
-    if (resources[surface] === "surface") drawn.sum += row[place][0] + row[pose][15] + resources[poked];
+    if (resources[surface] === surfaceStart) drawn.sum += row[place][0] + row[pose][15] + resources[poked];
 });
 export const lateTick = System.create({ name: "tails/lateTick", systems: [busy, copied] });
 /** On the world's thread: writes what the late tail reads, so it copies the rest of the tail's reads first. */
@@ -100,7 +101,7 @@ const overlapSimulate = System.create({ name: "tails/overlapSimulate", resources
 });
 /** On the joined thread, terminal: works on every row's place and pose, as a DOM-writing system on main does. */
 const overlapDraw = System.create({ name: "tails/overlapDraw", components: { read: [place, pose] }, resources: { read: [surface, rowWork] }, after: [overlapWrite] }, (row, { resources }) => {
-    if (resources[surface] !== "surface") return;
+    if (resources[surface] !== surfaceStart) return;
     let sum = row[place][0] + row[pose][15];
     for (let k = resources[rowWork]; k > 0; k--) sum = Math.sqrt(sum + k);
     drawn.sum += sum;

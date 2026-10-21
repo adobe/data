@@ -87,8 +87,8 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
 
 /**
  * Places a finalizer on a joined thread's channel, posting it there, or back on the world's thread with null. Its reads
- * are listed as the thread reads them: objects by their tags, linear structs by their bytes. Throws if the thread can't
- * name it.
+ * are listed as the thread reads them: objects by their tags, linear structs by their bytes, strings by handles of
+ * copies of their records. Throws if the thread can't name it.
  */
 export const placeFinalizer = (state: State, runner: FinalizerRunner, channel: TaskChannel | null): void => {
     const { finalizer } = runner;
@@ -99,17 +99,20 @@ export const placeFinalizer = (state: State, runner: FinalizerRunner, channel: T
     const objects: number[] = [];
     const linear: number[] = [];
     const strides: number[] = [];
+    const copies: boolean[] = [];
     for (const key of runner.reads) {
         const id = idOf(state, key);
         const layout = state.layouts[id];
         if (layout.kind === "object") objects.push(id);
-        else if (layout.kind === "linear") {
+        // A string's stops hold copies of its records, which the thread may read past their entity's sync point.
+        else if (layout.kind === "linear" || layout.kind === "string") {
             linear.push(id);
             strides.push(layout.stride);
+            copies.push(layout.kind === "string");
         }
     }
     const index = channel.placeFinalizer(state, finalizer);
-    runner.remote = { finalizer, index, objects, linear, strides, entries: [], channel };
+    runner.remote = { finalizer, index, objects, linear, strides, copies, entries: [], channel };
 };
 
 const matches = (runner: FinalizerRunner, archetype: Archetype): boolean => {

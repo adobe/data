@@ -23,7 +23,7 @@ declare module "@adobe/data-ecs" {
         [tag]: { type: true };
         [extra]: { type: number };
         [target]: { type: Entity };
-        [label]: { type: string | null; thread: "entityLookupsTest" };
+        [label]: { type: { readonly text: string } | null; thread: "entityLookupsTest" };
     }
 }
 Component.register(value, { type: { type: "number", precision: 1 } });
@@ -31,7 +31,7 @@ Component.register(other, { type: { type: "number" } });
 Component.register(tag, { type: { const: true } });
 Component.register(extra, { type: { type: "number" } });
 Component.register(target, { type: Entity.schema });
-Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "probe" }, thread: "entityLookupsTest" });
+Component.register(label, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: { text: "probe" } }, thread: "entityLookupsTest" });
 
 /**
  * What a probe saw of its target in one run: each lookup's `changed`, or null where it found nothing; the value it
@@ -92,7 +92,7 @@ export const threadProbe = System.create({
     components: { read: [target, label] },
     lookup: { found: { read: [value], changed: [value] }, tagged: { has: [tag], changed: [tag] }, empty: {}, has: { has: [tag] } },
 }, (row, { lookup }) => {
-    if (row[label] === "probe") scene.seen.push(seenOf(row[target], lookup));
+    if (row[label]?.text === "probe") scene.seen.push(seenOf(row[target], lookup));
 });
 
 /** Writes every `value` in its rows, stamping them. */

@@ -9,7 +9,10 @@ Referenced from `design.md`.
 - **Struct:** numbers, booleans, entities, fixed-length tuples and structs of those. A struct has a fixed size and
   lives in shared memory: columns, ticks, the entity table and resource cells of struct type, all in the arena
   (`memory.ts`), readable and writable from any thread the schedule gives them to. A struct has no thread.
-- **Object:** every other value: strings, variable-length arrays, plain objects, sets and maps, and values that aren't
+- **String:** any string, a union of string literals, either with `null`. A string lives in shared memory too, as a
+  record a handle names, which every thread reads, and has no thread; only the world's thread writes it (`design.md`,
+  "A string's storage").
+- **Object:** every other value: variable-length arrays, plain objects, sets and maps, and values that aren't
   data, registered without a schema (DOM nodes, GPU objects, functions). Each object component and object resource lives
   on one logical thread, and only the thread filling it reads or writes it. Objects are never copied between threads;
   one declared `transfer: true` may be moved, never copied.
@@ -100,7 +103,7 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 
 - **A system's thread** is the thread of every object component and object resource it names in `read`, `write`,
   `added`, `changed`, `lookup`, `up` and resource `is`, and the key parts of the indexes it looks up through or orders
-  its rows by. Components in `has` and `not` are structural, and read a shared
+  its rows by. Strings and structs don't place it. Components in `has` and `not` are structural, and read a shared
   presence word, so they don't place it. With no objects, a kernel runs on the pool and any other system on `world`.
   Render systems and `kernel: "gpu"` systems are on `world`, with `gpuDevice`.
 - **Errors when declared:** objects of two threads in one system or finalizer, in types and when it's created, which
@@ -120,18 +123,20 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   resources and declares no `lookup`, and `Finalizer.changes` watches and reads only the world's thread's values, in
   types and at creation; `before`/`after` across threads is an error at creation.
 - **Values for another thread's objects:** a command issued on one thread may give an object component of another
-  thread only its start or `null`, as tags the owning thread resolves. Any other value fails the command: a spawn's when
+  thread only its start or `null`, as tags the owning thread resolves, and a command issued on a joined thread gives a
+  string only its start. Any other value fails the command: a spawn's when
   it's issued, an add's when its system's commands are queued on the world's thread, or when it's issued on a joined
   one, where it drops and its system fails, so the issuing paths check nothing while no joined thread fills objects.
   A `transfer` value reaches its own thread through a run's input instead (see Transfers).
 - **`up` and `order` run only on `world`:** a system that declares either can't be placed on a joined thread, which
-  refuses the claim, or fails the system's registration once the thread is joined. So does a lookup through an index
-  with an object key part, which the world keeps on its own thread; one keyed by structs is read where the system runs.
+  refuses the claim, or fails the system's registration once the thread is joined. So does one that writes a string,
+  which only the world's thread writes, and a lookup through an index with an object or string key part, which the
+  world keeps on its own thread; one keyed by structs is read where the system runs.
   An index lookup's `changed: true` runs only on `world` too, observer systems' included, since the world decides from
   its index whether the system runs.
 - **Observer systems** are placed as other systems are, and run on their thread after the world's sync points (see
   Observer systems on joined threads); a joined thread's own, which its `add` or `run` takes, run there whatever they
-  read, and read only structs and the objects of the threads it fills.
+  read, and read only structs, strings and the objects of the threads it fills.
 
 ## Mechanisms
 
@@ -448,7 +453,8 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
 - **Stop lists** (`stop-lists.ts`): before apply, the world's thread writes one block per sync point with stops for that
   thread: per finalizer, in the world's finalizer order, a group of its stops as columns: each entity, its pre-apply
   archetype and row, the tag of each object it reads, and a copy of each linear struct it reads, in that component's
-  layout. The world copies a column at a time, finding each column's storage once per run of an archetype. Blocks are
+  layout, and of each string's record, by its handle, let go once the thread acknowledged the block: it may finalize
+  sync points after the row's own record was let go and freed. The world copies a column at a time, finding each column's storage once per run of an archetype. Blocks are
   linked in sync order, the first from the log header's stops word, each block's next offset stored once that block is
   whole, so a thread reads only whole blocks of published syncs. A block is freed once the thread acknowledged a later
   one, since the thread reads the next offset from the newest block it ran. The world wakes the thread after each sync
@@ -463,8 +469,8 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   imported fails each of its groups. What its finalizers throw is posted, and a later run's report lists it as a
   `"finalizer"` failure.
 - **The guarantee:** each such finalizer runs exactly once per stop, on its thread, before that thread's next task or
-  observer post after the sync point and before the entity's index is reused, seeing its declared struct reads
-  and its thread's objects as of before apply.
+  observer post after the sync point and before the entity's index is reused, seeing its declared struct and string
+  reads and its thread's objects as of before apply.
 - **Held indexes:** the index of an entity despawned with such stops is held, counted by index for each thread that
   hasn't acknowledged it, apart from `released`, so the leak scan never sees it and the free list never has it; the
   sync point after a thread acknowledges releases it once no thread holds it. A thread that's gone has its held indexes
@@ -505,7 +511,7 @@ fails to register, its run rejecting and an added one's failure in a later repor
   thread that saw the last post's posts word claims nothing until the post is whole; then it wakes the thread once for
   the pass, unless the thread hasn't read the last wake.
 - **Posts holding copies:** one that reads only struct resources, with no rows or lookups, posts copies of what it
-  reads: its head's flags, as of the sync point, and its resources' values, in its block's last line when they fit, as
+  reads (a string's handle would outlive its record there, so one reading a string resource posts as row systems do): its head's flags, as of the sync point, and its resources' values, in its block's last line when they fit, as
   they do for up to 80 bytes, or a snapshot of its own; it opens as copied, so the thread reads only its block. Its
   snapshot's words are written once, its flags only when they change, and its work's end is new for each post, so the
   thread's done word from the last needs no reset: a post writes its block's first and last lines. It has two blocks.
@@ -576,10 +582,12 @@ its tails before it resolves, with their failures in its report.
 - **Fallback snapshot.** Sometimes a conflicting writer is ready before the tail has finished its reads, as when main
   is late. The world's thread then evaluates the tail's head as the tail would, copies the declared linear struct reads
   of the passing rows from the position the tail reached, with their position, archetype, row and entity, and its
-  linear resources, into a tail buffer, a column at a time; exchanges the progress word for a sentinel; and waits until
+  linear resources, a string's handles among them, into a tail buffer, a column at a time; exchanges the progress word for a sentinel; and waits until
   the tail is done through what it had claimed, at most one chunk, spinning briefly before it waits. A claim that
   returns the sentinel reads the rest from the copy, rows from its own position on. The values are the same either
-  way, so this stays deterministic. A prompt main never copies. The copy lets the world's work after its writer
+  way, so this stays deterministic. A prompt main never copies. A string's handle in the copy names its record as of
+  the copy, which outlives the tail: a tick posts its tails once the last tick's are done, and a run waits for them, so
+  a tail ends before the second sync point after the one it reads, and a record let go is freed only then. The copy lets the world's work after its writer
   overlap the tail: where main's tail and that work together outlast a frame or a fixed step though each fits, ticks
   keep the cadence, 16.7 ms a tick at 60 Hz in node and chromium against 20.2 with the writer waiting for the tail, and
   back to back `tail overlap` takes 2.53 ms a tick against 4.70 for `tail overlap waiting`, in node. Where the

@@ -72,7 +72,7 @@ export const createThreadObserver = (host: ThreadObserverHost) => {
     const runnerHost: RunnerHost = {
         rows: directory.rows, archetypeAt: directory.archetypeAt, countOf: directory.countOf, tableCount: directory.tableCount,
         resourceRow: directory.resourceRow, refreshEntities: directory.refreshEntities, commands: noCommands,
-        numberOf: directory.numberOf, layoutOf: directory.layoutOf, mirror, refresh: directory.refresh,
+        numberOf: directory.numberOf, layoutOf: directory.layoutOf, mirror, refresh: directory.refresh, strings: directory.strings,
     };
     const placed: (Placed | undefined)[] = [];
 

@@ -17,4 +17,8 @@ export const remoteFinalizersCases = (load: () => Promise<typeof Fixture>) => de
             after: 3,
         });
     }, 30000);
+    it("read the strings their stops held, which the stop lists copy, after the world freed and reused their records", async () => {
+        const fixture = await load();
+        expect(await fixture.titledStops()).toEqual(Array.from({ length: 50 }, (_, k) => ({ serial: k, title: `t${k}` })));
+    }, 30000);
 });

@@ -28,7 +28,7 @@ declare module "@adobe/data-ecs" {
         [uid]: { type: number };
         [amount]: { type: number };
         [flag]: { type: true };
-        [label]: { type: string | null; thread: "moveLogTest" };
+        [label]: { type: { readonly text: string } | null; thread: "moveLogTest" };
         [note]: { type: Note | null; thread: "moveLogTest" };
         [own]: { type: string };
     }
@@ -38,7 +38,9 @@ Component.register(amount, { type: { type: "number" } });
 Component.register(flag, { type: { const: true } });
 /** A value that isn't data. */
 type Note = { readonly text: string; readonly read: () => string };
-Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "moveLogTest" });
+/** The label's start, which a command on another thread than its own gives it by this value. */
+const none = { text: "none" };
+Component.register(label, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: none }, thread: "moveLogTest" });
 Component.register(note, { thread: "moveLogTest" });
 Component.register(own, { type: { type: "string" } });
 
@@ -174,7 +176,7 @@ const property = (seed: number, minimum: number, steps: number): { readonly comp
                 const entity = someone();
                 const form = Math.floor(next() * 4);
                 both(commands => {
-                    if (form === 0) commands.add(entity, label, "none");
+                    if (form === 0) commands.add(entity, label, none);
                     else if (form === 1) commands.add(entity, note, null);
                     else if (form === 2) commands.add(entity, [amount, label], { [amount]: 2 });
                     else commands.add(entity, [flag, note, label], { [label]: null });
@@ -194,7 +196,7 @@ const property = (seed: number, minimum: number, steps: number): { readonly comp
                 const entity = someone();
                 const key = pick(remoteKeys);
                 const text = `v${step}.${o}`;
-                const value = key === label ? text : { text, read: () => text };
+                const value = key === label ? { text } : { text, read: () => text };
                 const component = idOf(world, key);
                 pushCommand(thread.here, addCommand, entity);
                 pushComponent(thread.here, component, slotValue(stage(mirror, entity, component, value, sync)));
@@ -254,7 +256,7 @@ describe("the move log", () => {
         const row = state.entities.row[index];
         const column = mirror.archetypes[archetype.id]?.byComponent[id];
         if (column === undefined) throw new Error("The mirror holds no labels.");
-        column.values[row] = "written";
+        column.values[row] = { text: "written" };
         const storage = archetype.storageById[id];
         if (storage === undefined) throw new Error("The world holds no labels.");
         storage.tags[row] = ownTag;
@@ -268,7 +270,7 @@ describe("the move log", () => {
         follow(mirror);
         expect(mirror.rebuilds).toBe(rebuilds + 1);
         const moved = indexOf(entity);
-        expect(cellOf(mirror, state.entities.archetype[moved], state.entities.row[moved], id)?.value).toBe("written");
+        expect(cellOf(mirror, state.entities.archetype[moved], state.entities.row[moved], id)?.value).toEqual({ text: "written" });
     });
     it("drops a staged slot whose command names an entity the sync point despawned, without a value", () => {
         const { state, mirror } = threaded(4096);
@@ -279,7 +281,7 @@ describe("the move log", () => {
         commands.despawn(entity);
         const buffer = createBuffer();
         pushCommand(buffer, addCommand, entity);
-        pushComponent(buffer, idOf(state, label), slotValue(stage(mirror, entity, idOf(state, label), "dropped", state.tick + 1)));
+        pushComponent(buffer, idOf(state, label), slotValue(stage(mirror, entity, idOf(state, label), { text: "dropped" }, state.tick + 1)));
         state.queued.push({ buffer: target.buffer, guarded: true }, { buffer, guarded: true });
         synchronize(state);
         follow(mirror);

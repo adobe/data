@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 
-it("rejects a kernel lookup of a value outside linear memory where the kernel is declared", async () => {
-    await expect(import("./kernel-lookup.test-helper.js")).rejects.toThrow(`Kernel "kernelLookupTest/labels": a lookup reads "kernelLookupTest/label", which isn't stored in linear memory.`);
+it("rejects a kernel lookup of a string, which kernels don't read, where the kernel is declared", async () => {
+    await expect(import("./kernel-lookup.test-helper.js")).rejects.toThrow(`Kernel "kernelLookupTest/labels": a lookup reads "kernelLookupTest/label", a string, which kernels don't read yet.`);
 });
 
 it("rejects a compiled kernel that doesn't match its schemas where the kernel is declared", async () => {

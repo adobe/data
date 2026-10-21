@@ -17,6 +17,7 @@ import { lineWords } from './protocol.js';
 import { claimThreads, releaseThreads } from './remote.js';
 import { createTaskChannel, type TaskChannel } from './remote-systems.js';
 import { endStops } from './stop-lists.js';
+import { dropRecords, keepRecords } from './strings.js';
 import { idOf, type Key, type State } from './state.js';
 import { heldInput, type HeldInput } from './transfers.js';
 
@@ -386,6 +387,8 @@ export const createSharing = (host: SharingHost) => {
         thread.status = "gone";
         threads.delete(thread);
         byNumber.delete(thread.number);
+        // With no thread left to read them, strings' records are let go between runs, unless another shares first.
+        if (threads.size === 0 && state.strings !== null) host.between(() => { if (threads.size === 0 && state.strings !== null) dropRecords(state.strings, state.archetypes); });
         // Its channels close; runs whose input moved to it can't run, and reject.
         for (const peer of thread.peers) {
             peer.peers.delete(thread);
@@ -491,6 +494,8 @@ export const createSharing = (host: SharingHost) => {
         };
         threads.add(thread);
         byNumber.set(thread.number, thread);
+        // From now on the thread may read strings, which it reads out of their records.
+        if (state.strings !== null) keepRecords(state.strings, state.archetypes);
         show(thread, "joining");
         thread.channel.onMessage(message => { if (thread.status !== "gone" || message.kind === "leave") receive(thread, message); });
         thread.channel.onClose(() => gone(thread));

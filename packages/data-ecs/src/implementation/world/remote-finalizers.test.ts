@@ -173,7 +173,7 @@ describe("finalizers on a joined thread", () => {
         // Placed there by the thread's object resource alone: stops of rows holding none of its objects, which its log
         // has no entries for, run there too.
         const heard: string[] = [];
-        Finalizer.create(identify({ name: "remoteFinalizersTest/heard", components: { read: [serial], not: [widget] }, resources: { read: [tone] } }, "remoteFinalizersTest#heard"), (row, { resources }) => { heard.push(`${row[serial]}:${resources[tone]}`); });
+        Finalizer.create(identify({ name: "remoteFinalizersTest/heard", components: { read: [serial], not: [widget] }, resources: { read: [tone] } }, "remoteFinalizersTest#heard"), (row, { resources }) => { heard.push(`${row[serial]}:${resources[tone].text}`); });
         const plain = System.create({ name: "remoteFinalizersTest/plain" }, ({ commands }) => {
             for (let k = 0; k < 3; k++) commands.spawn([serial, place])({ [serial]: 50 + k, [place]: [0, 0] });
         });

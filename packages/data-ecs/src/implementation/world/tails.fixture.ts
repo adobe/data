@@ -7,7 +7,7 @@ import { createWorld, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
 import { tailWriters } from "./tails.js";
 import type { FromTailsWorker, ToTailsWorker } from "./tails-worker.fixture.js";
-import { counter, noStall, seed, setSpawning, setStall, stallAtChunk, stallBefore, tallied, ticked } from "./tails.test-helper.js";
+import { counter, noStall, reword, seed, setSpawning, setStall, stallAtChunk, stallBefore, tallied, ticked } from "./tails.test-helper.js";
 
 /**
  * Scenarios of tails on a joined worker, run built in node and from source in chromium: a terminal system there over
@@ -207,5 +207,26 @@ export const growing = async () => {
     const seen = await summary(worker);
     await worker.terminate();
     driver.close();
+    return seen;
+};
+
+/**
+ * A tail stalled before it reads the words of its tick while the world's runs rewrite every word six times, which
+ * would free and reuse the records it reads were the runs not to wait for it.
+ */
+export const spanning = async () => {
+    const frames = gatedFrames();
+    const world = createWorld({ [workers]: 0, [always]: true }, { loop: frames });
+    const { worker } = await joined(world);
+    await world.run(seed, { count: 1000 });
+    await world.run(setStall, { mode: stallBefore, pause: 200 });
+    world.add(ticked);
+    await frames.next();
+    await until(Observe.resource(world, counter), value => value >= 1);
+    for (let round = 0; round < 6; round++) await world.run(reword, { round });
+    await watched(worker, 1, 1000);
+    await world.dispose();
+    const seen = await summary(worker);
+    await worker.terminate();
     return seen;
 };

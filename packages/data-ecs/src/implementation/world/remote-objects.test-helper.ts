@@ -19,13 +19,18 @@ declare module "@adobe/data-ecs" {
         [serial]: { type: number };
         [phase]: { type: number };
         [flag]: { type: true };
-        [caption]: { type: string | null; thread: "remoteObjects" };
+        [caption]: { type: { readonly text: string } | null; thread: "remoteObjects" };
     }
 }
 Component.register(serial, { type: { type: "number" } });
 Component.register(phase, { type: { type: "number" } });
 Component.register(flag, { type: { const: true } });
-Component.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "remoteObjects" });
+/** The caption's start, which a command here gives it by this value. */
+const none = { text: "none" };
+Component.register(caption, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: none }, thread: "remoteObjects" });
+
+/** A caption's text, null for none, as the watchers record it. */
+const textOf = (value: { readonly text: string } | null): string | null => value === null ? null : value.text;
 
 /** The watched entity, serial 0. */
 export const seed = System.create({ name: "remoteObjectsTest/seed" }, ({ commands }) => {
@@ -50,7 +55,7 @@ export const churn = System.create({ name: "remoteObjectsTest/churn", components
     }
     else {
         commands.remove(row.entity, flag);
-        commands.add(row.entity, caption, "none");
+        commands.add(row.entity, caption, none);
     }
     for (let k = 1; k <= 4; k++) {
         if (k % 2 === 0) commands.spawn([serial, phase, caption])({ [serial]: k, [phase]: 0, [caption]: null });
@@ -72,7 +77,7 @@ export const observerWatch = System.create({ name: "remoteObjectsTest/observerWa
     if (observer.entity === null) return;
     const row = lookup.values(observer.entity);
     if (row === null) return;
-    observer.seen?.(row[phase] % 2 === 1, lookup.flagged(observer.entity) !== null, row[caption]);
+    observer.seen?.(row[phase] % 2 === 1, lookup.flagged(observer.entity) !== null, textOf(row[caption]));
 });
 
 /** Watches `entity` until `count` values came, checking each value's objects agree with its structs. */
@@ -97,6 +102,6 @@ export const watch = (remote: World, entity: Entity, count: number, observers: O
         return;
     }
     stops.push(Observe.entity(remote, entity, { required: [phase, caption], optional: [flag] })(value => {
-        if (value !== null && values < count) seen(value[phase] % 2 === 1, value[flag] === true, value[caption]);
+        if (value !== null && values < count) seen(value[phase] % 2 === 1, value[flag] === true, textOf(value[caption]));
     }));
 });

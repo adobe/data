@@ -17,6 +17,7 @@ const parent = Symbol("typesSystemTest/parent");
 const total = Symbol("typesSystemTest/total");
 const paused = Symbol("typesSystemTest/paused");
 const height = Symbol("typesSystemTest/height");
+const tags = Symbol("typesSystemTest/tags");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -26,6 +27,7 @@ declare module "@adobe/data-ecs" {
         [unregistered]: { type: number };
         [parent]: { type: Entity; reference: "weak" };
         [height]: { type: number };
+        [tags]: { type: readonly string[] };
     }
     export interface Resources {
         [document]: { type: Document | null; thread: "main" };
@@ -38,6 +40,7 @@ declare module "@adobe/data-ecs" {
 Component.register(position, { type: { type: "number" } });
 Component.register(label, { type: { type: "string" } });
 Component.register(node, { thread: "main" });
+Component.register(tags, { type: { type: "array", items: { type: "string" } } });
 Resource.register(document, { thread: "main" });
 Resource.register(time, { type: { type: "number", default: 0 } });
 Component.register(parent, { type: Entity.schema, reference: "weak" });
@@ -143,12 +146,16 @@ describe("System.create", () => {
     });
     it("derives its thread from its object components and resources, and rejects two", () => {
         const show = System.create({ name: "typesSystemTest/show", components: { read: [position, node] }, resources: { read: [time, document] } }, (row, { resources }) => { row[node].textContent = `${row[position]} ${resources[time]} ${resources[document]?.title}`; });
-        const count = System.create({ name: "typesSystemTest/count", components: { read: [label], has: [node] } }, row => { void row[label]; });
+        const count = System.create({ name: "typesSystemTest/count", components: { read: [tags], has: [node] } }, row => { void row[tags]; });
         const tick = System.create({ name: "typesSystemTest/tick", components: { write: [position] } }, row => { row[position] += 1; });
         const leaves = [show, count, tick].map(system => definitionOf(system));
         expect(leaves.map(leaf => leaf === undefined || leaf.kind === "composite" ? undefined : threadOf(leaf.declaration, "System", leaf.name))).toEqual(["main", "world", null]);
-        expect(() => create({ name: "typesSystemTest/span", components: { read: [label], write: [node] } })).toThrow('System "typesSystemTest/span" uses values on threads "world" and "main"');
-        expect(() => create({ name: "typesSystemTest/spanResource", components: { read: [label] }, resources: { is: [document] } })).toThrow('uses values on threads "world" and "main"');
+        expect(() => create({ name: "typesSystemTest/span", components: { read: [tags], write: [node] } })).toThrow('System "typesSystemTest/span" uses values on threads "world" and "main"');
+        expect(() => create({ name: "typesSystemTest/spanResource", components: { read: [tags] }, resources: { is: [document] } })).toThrow('uses values on threads "world" and "main"');
+        // A string lives in shared memory, so it goes with any thread's objects.
+        const caption = System.create({ name: "typesSystemTest/caption", components: { read: [label, node] } }, row => { row[node].textContent = row[label]; });
+        const captionLeaf = definitionOf(caption);
+        expect(captionLeaf === undefined || captionLeaf.kind === "composite" ? undefined : threadOf(captionLeaf.declaration, "System", captionLeaf.name)).toBe("main");
         expect(() => create({ name: "typesSystemTest/unregistered", components: { read: [unregistered] } })).toThrow(`uses component "typesSystemTest/unregistered", which isn't a registered component`);
         expect(() => create({ name: "typesSystemTest/wrongKind", components: { read: [time] } })).toThrow(`uses component "typesSystemTest/time", which isn't a registered component`);
     });

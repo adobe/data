@@ -56,6 +56,22 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
   accept, since the factories are for tests and debugging.
 - **An observer pass's failures are in the next run's report,** not their own run's, so each report's errors are
   written once; nothing reports them until another run or tick. Decided.
+- **Strings live in shared memory and have no thread:** any string, a union of string literals, and either with
+  `null`, which is handle 0. A `thread` on one is rejected in types and at registration. Recommended: accept.
+- **Records only while a thread may read them:** the world's thread holds string values as objects, and keeps records
+  from the first `share` until the last thread is gone, so a world with no joined thread pays nothing for them (`string
+  read 10K` 2.78 ns a row, as `object read 10K`; `string write 10K` 19.5 ns against 21). Recommended: accept.
+- **Writing strings with a joined thread costs a record each:** `string write 10K joined` 127 ns a row, most of it
+  flattening the new string to copy its code units; `TextEncoder.encodeInto` and copies through scratch measured the
+  same. Recommended: accept; revisit with writes encoded lazily, at the next point a joined thread could read them.
+- **Only the world's thread writes strings:** a system placed on a joined thread that writes one is rejected, and a
+  command there gives one only its start. Recommended: accept for now; a joined thread's writes would need records
+  allocated there, through the arena's top in shared memory.
+- **Kernels don't read strings yet,** by type and check, and **an index keyed by strings is looked up only on the
+  world's thread,** which keeps it by values. Recommended: accept for now; kernels would need the records' code units
+  compared in the compiler, and joined lookups an index of interned records.
+- **An observer system on a joined thread that reads a string resource doesn't post copies of its resources:** nothing
+  waits for such posts, and a handle there could outlive its record, so it posts as row systems do. Recommended: accept.
 
 ## Findings from the todo sample (`src/samples/todo/README.md`)
 
@@ -69,6 +85,14 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
    Proposal: a second level of change ticks, one per 32–64 rows.
 6. **Nothing awaits the next tick.** Tests watch `clock` with an observer system. Proposal: a test helper in
    `src/observe`.
+
+## Findings from strings in shared memory
+
+- **A joined finalizer read a resource of its thread as undefined:** in `remote-finalizers.test.ts`, "that throw are in
+  a later run's report", the finalizer's `resources[tone]`, an object of its thread, is undefined for the stops of a
+  sync point soon after the thread joined, where the same finalizer reads it in the other cases; the fixture reads it
+  optionally now. The test checks no tone, so whether it was undefined before, as a string, wasn't seen. Worth finding
+  out whether a remote finalizer can run before its thread's resources reach its mirror.
 
 ## Features to discuss
 

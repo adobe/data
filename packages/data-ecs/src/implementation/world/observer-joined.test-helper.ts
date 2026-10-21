@@ -14,24 +14,35 @@ export const stall = Symbol("observerJoinedWorkerTest/stall");
 export const heat = Symbol("observerJoinedWorkerTest/heat");
 export const rate = Symbol("observerJoinedWorkerTest/rate");
 export const phase = Symbol("observerJoinedWorkerTest/phase");
+export const word = Symbol("observerJoinedWorkerTest/word");
+export const motto = Symbol("observerJoinedWorkerTest/motto");
+export const mottoRound = Symbol("observerJoinedWorkerTest/mottoRound");
 declare module "@adobe/data-ecs" {
     export interface Components {
         [stamp]: { type: number };
         [spot]: { type: readonly [number, number, number] };
         [heat]: { type: number };
         [rate]: { type: number };
+        [word]: { type: string };
     }
     export interface Resources {
         [counter]: { type: number };
         [stall]: { type: number };
         [phase]: { type: number };
+        [motto]: { type: string };
+        [mottoRound]: { type: number };
     }
 }
 Component.register(stamp, { type: { type: "integer" } });
 Component.register(spot, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
 Component.register(heat, { type: { type: "number", precision: 1 } });
 Component.register(rate, { type: { type: "number", precision: 1 } });
+/** A string the world writes each tick, which lives in shared memory where the observer system reads it. */
+Component.register(word, { type: { type: "string" } });
 Resource.register(counter, { type: { type: "integer", default: 0 } });
+/** A string resource the world writes with the round it's of, which an observer system on the thread reads alone. */
+Resource.register(motto, { type: { type: "string", default: "motto 0" } });
+Resource.register(mottoRound, { type: { type: "integer", default: 0 } });
 /** Moves on once a joined thread asked the world to run its observer system, so the world's thread knows it did. */
 Resource.register(phase, { type: { type: "integer", default: 0 } });
 /**
@@ -75,18 +86,22 @@ export const hold = (): void => {
     while (Atomics.load(words, holdWord) === 0) Atomics.wait(words, holdWord, 0);
 };
 
-/** On the world's thread: the counter moves on once a tick, then every row's stamp and spot take it. */
+/** A tick's word, of a length that varies with it, so records of every size are freed and reused. */
+export const wordOf = (value: number): string => `${"·".repeat(value % 37)}${value}`;
+
+/** On the world's thread: the counter moves on once a tick, then every row's stamp, spot and word take it. */
 export const count = System.create({ name: "observerJoinedWorkerTest/count", resources: { write: [counter] } }, ({ resources }) => {
     resources[counter] += 1;
 });
-export const advance = System.create({ name: "observerJoinedWorkerTest/advance", components: { write: [stamp, spot] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
+export const advance = System.create({ name: "observerJoinedWorkerTest/advance", components: { write: [stamp, spot, word] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
     const value = resources[counter];
     row[stamp] = value;
     row[spot] = [value, -value, value];
+    row[word] = wordOf(value);
 });
 export const ticked = System.create({ name: "observerJoinedWorkerTest/ticked", systems: [count, advance] });
 export const seed = System.create({ name: "observerJoinedWorkerTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
-    for (let k = 0; k < input.count; k++) commands.spawn([stamp, spot])({ [stamp]: 0, [spot]: [0, 0, 0] });
+    for (let k = 0; k < input.count; k++) commands.spawn([stamp, spot, word])({ [stamp]: 0, [spot]: [0, 0, 0], [word]: wordOf(0) });
 });
 export const setStall = System.create({ name: "observerJoinedWorkerTest/setStall", input: { type: "object", properties: { pause: { type: "number" } } }, resources: { write: [stall] } }, ({ input, resources }) => {
     resources[stall] = input.pause;
@@ -97,12 +112,12 @@ export type Seen = { counter: number; rows: number; wrong: number };
 export const seen: Seen[] = [];
 
 /** Reads every row, which must all be of one tick, pausing at the end of its first chunk while `stall` says so. */
-export const watchRows = System.create({ name: "observerJoinedWorkerTest/watchRows", observer: true, components: { read: [stamp, spot] }, resources: { read: [counter, stall] } }, (row, { resources }) => {
+export const watchRows = System.create({ name: "observerJoinedWorkerTest/watchRows", observer: true, components: { read: [stamp, spot, word] }, resources: { read: [counter, stall] } }, (row, { resources }) => {
     const value = resources[counter];
     let last = seen.at(-1);
     if (last === undefined || last.counter !== value || last.rows === 1000) seen.push(last = { counter: value, rows: 0, wrong: 0 });
     const [x, y, z] = row[spot];
-    if (row[stamp] !== value || x !== value || y !== -value || z !== value) last.wrong++;
+    if (row[stamp] !== value || x !== value || y !== -value || z !== value || row[word] !== wordOf(value)) last.wrong++;
     last.rows++;
     if (last.rows === 63) pauseAt(resources[stall], value);
 });
@@ -142,4 +157,24 @@ export const byHeat = Index.create({ name: "observerJoinedWorkerTest/byHeat", ke
 /** Counts the rows at least 150 hot, through the sorted index on what the GPU kernel writes. */
 export const countHot = System.create({ name: "observerJoinedWorkerTest/countHot", observer: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
     hot.push(lookup.hot({ ">=": 150 }).length);
+});
+
+/** On the world's thread: the motto of a round, and the round, every motto of one size. */
+export const mottoOf = (round: number): string => `motto ${round % 10}`;
+export const setMotto = System.create({ name: "observerJoinedWorkerTest/setMotto", input: { type: "object", properties: { round: { type: "integer" } } }, resources: { write: [motto, mottoRound] } }, ({ input, resources }) => {
+    resources[motto] = mottoOf(input.round);
+    resources[mottoRound] = input.round;
+});
+
+/** What each run of `watchMotto` read, by round. */
+export const mottos: { readonly round: number; readonly motto: string }[] = [];
+
+/**
+ * Reads only resources, a string among them: waits on the gate first, while `stall` says so, its round plus one, then
+ * reads the motto, which must be its round's.
+ */
+export const watchMotto = System.create({ name: "observerJoinedWorkerTest/watchMotto", observer: true, resources: { read: [motto, mottoRound, stall] } }, ({ resources }) => {
+    const round = resources[mottoRound];
+    pauseAt(resources[stall], round + 1);
+    mottos.push({ round, motto: resources[motto] });
 });

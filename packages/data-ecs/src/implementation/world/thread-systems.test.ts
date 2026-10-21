@@ -60,14 +60,14 @@ describe("systems on a joined thread", () => {
         await remote.dispose();
         await world.dispose();
     });
-    it("give the world's objects only their start or null: a command giving another drops and fails its system, a spawn throws", async () => {
+    it("give the world's strings only their start: a command giving another drops and fails its system, a spawn throws", async () => {
         const { world, remote } = await joined();
         await world.run(crowd, { count: 1 });
         const given = await runReported(world, giveKept);
-        expect(given.failures.map(failure => [failure.name, failure.message])).toEqual([["threadSystemsTest/giveKept", '"threadSystemsTest/kept" lives on thread "world", so a command on another thread gives it only its start or null.']]);
+        expect(given.failures.map(failure => [failure.name, failure.message])).toEqual([["threadSystemsTest/giveKept", '"threadSystemsTest/kept" is a string, which only the world\'s thread writes, so a command on another thread gives it only its start.']]);
         expect(given.dropped).toBe(1);
         const spawned = await runReported(world, spawnKept);
-        expect(spawned.failures.map(failure => [failure.name, failure.message])).toEqual([["threadSystemsTest/spawnKept", '"threadSystemsTest/kept" lives on thread "world", so a command on another thread gives it only its start or null.']]);
+        expect(spawned.failures.map(failure => [failure.name, failure.message])).toEqual([["threadSystemsTest/spawnKept", '"threadSystemsTest/kept" is a string, which only the world\'s thread writes, so a command on another thread gives it only its start.']]);
         expect(await Observe.toPromise(Observe.count(world, { required: [kept] }))).toBe(0);
         await remote.dispose();
         await world.dispose();
@@ -83,7 +83,7 @@ describe("systems on a joined thread", () => {
         expect(report.skipped).toEqual(["threadSystemsTest/write"]);
         const [entity] = await Observe.toPromise(Observe.select(world, { required: [uid] }));
         expect(await runReported(world, write)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
-        expect(await Observe.toPromise(Observe.entity(world, entity, { required: [caption] }))).toEqual({ [caption]: "written" });
+        expect(await Observe.toPromise(Observe.entity(world, entity, { required: [caption] }))).toEqual({ [caption]: { text: "written" } });
         await world.dispose();
     });
     it("fail every system of a task the thread can't view the memory for, its first and a later one, rather than report they ran", async () => {

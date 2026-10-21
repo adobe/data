@@ -62,7 +62,7 @@ export const storageChunkAdded = 5;
 export const storageChunkChanged = 6;
 export const storageChunks = 7;
 /**
- * Storage flags: it keeps ticks; it has a column in linear memory; its objects are a joined thread's, whose number is
+ * Storage flags: it keeps ticks; it has a column in linear memory, a string's of handles included; its objects are a joined thread's, whose number is
  * the flags from `threadShift` on, and its column holds each row's tag (`move-log.ts`).
  */
 export const tickedFlag = 1;
@@ -136,7 +136,8 @@ const writeArchetype = (directory: LayoutDirectory, archetype: Archetype): void 
     for (let s = 0; s < archetype.storages.length; s++) {
         const storage = archetype.storages[s];
         const base = recordWords + s * storageWords;
-        const linear = storage.layout.kind === "linear";
+        // A string's column of handles is in linear memory too, its records with it.
+        const linear = storage.layout.kind === "linear" || storage.layout.kind === "string";
         const { remote } = storage;
         record[base + storageComponent] = storage.component;
         record[base + storageFlags] = (storage.ticked ? tickedFlag : 0) | (linear ? linearFlag : 0) | (remote === null ? 0 : remoteFlag | (remote.thread << threadShift));

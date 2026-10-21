@@ -21,4 +21,8 @@ export const observerJoinedCases = (load: () => Promise<typeof Fixture>) => desc
         expect({ failures: seen.failures, wrong: seen.wrong, fewest: seen.fewest, most: seen.most }).toEqual({ failures: [], wrong: 0, fewest: 1000, most: 1000 });
         expect(seen.runs).toBeGreaterThan(10);
     }, 30000);
+    it("read a string resource as of their sync point, though the world's runs go on writing it while one runs", async () => {
+        const fixture = await load();
+        expect(await fixture.mottoHeld()).toEqual([{ round: 1, motto: "motto 1" }]);
+    }, 30000);
 });

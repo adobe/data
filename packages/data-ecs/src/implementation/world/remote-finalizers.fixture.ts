@@ -5,7 +5,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import type { FromRemoteFinalizersWorker, ToRemoteFinalizersWorker } from "./remote-finalizers-worker.fixture.js";
-import { despawn, released, scenario, serial, sorted, spawn, type Released } from "./remote-finalizers.test-helper.js";
+import { despawn, released, retitle, scenario, serial, sorted, spawn, spawnTitled, type Released } from "./remote-finalizers.test-helper.js";
 import { fillReports, runReported } from "./reports.test-helper.js";
 
 /**
@@ -114,4 +114,27 @@ export const diesHolding = async () => {
     const after = await reused();
     await world.dispose();
     return { held: despawned.size, whileHeld, failures: report.failures.map(failure => [failure.kind, failure.name, failure.message]), after };
+};
+
+/**
+ * Titled rows despawned while the worker runs nothing, then the world's thread rewriting the titles of others six
+ * times, so the records the despawned rows' titles were in are freed and reused before the worker finalizes them:
+ * the titles its finalizer read.
+ */
+export const titledStops = async () => {
+    const world = createWorld({ [workers]: 0 });
+    const { worker } = await joined(world);
+    await world.run(spawnTitled, { from: 0, count: 50 });
+    await worker.ask({ kind: "pause", milliseconds: 300 });
+    await world.run(despawn, { serials: Array.from({ length: 50 }, (_, k) => k) });
+    await world.run(spawnTitled, { from: 100, count: 50 });
+    for (let round = 0; round < 6; round++) await world.run(retitle, { round });
+    let seen: readonly { readonly serial: number; readonly title: string }[] = [];
+    for (let k = 0; k < 200 && seen.length < 50; k++) {
+        const reply = await worker.ask({ kind: "entitled" });
+        seen = reply.kind === "entitled" ? reply.entitled : [];
+    }
+    await worker.terminate();
+    await world.dispose();
+    return [...seen].sort((a, b) => a.serial - b.serial);
 };

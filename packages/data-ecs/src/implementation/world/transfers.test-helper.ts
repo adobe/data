@@ -28,12 +28,12 @@ declare module "@adobe/data-ecs" {
         [depth]: { type: number };
     }
     export interface Resources {
-        [anchor]: { type: string; thread: "transfersTest" };
+        [anchor]: { type: { readonly text: string }; thread: "transfersTest" };
         [order]: { type: number };
     }
 }
 /** An object resource of "transfersTest", which places the systems reading it there. */
-Resource.register(anchor, { type: { type: "string", default: "anchor" }, thread: "transfersTest" });
+Resource.register(anchor, { type: { type: "object", properties: { text: { type: "string" } }, default: { text: "anchor" } }, thread: "transfersTest" });
 /** Counts the runs that read it, in the order they ran. */
 Resource.register(order, { type: { type: "integer", default: 0 } });
 Component.register(port, { thread: "transfersTest", transfer: true });
@@ -58,7 +58,7 @@ const store = (value: unknown, resources: { [order]: number }): void => {
 
 /** On "transfersTest": records the buffer it's given. */
 export const storeThere = System.create({ name: "transfersTest/storeThere", input: { type: "object", properties: { buffer: any } }, resources: { read: [anchor], write: [order] } }, ({ input, resources }) => {
-    if (resources[anchor] === "anchor") store(input.buffer, resources);
+    if (resources[anchor].text === "anchor") store(input.buffer, resources);
 });
 /** On the world's thread: records the buffer it's given. */
 export const storeHere = System.create({ name: "transfersTest/storeHere", input: { type: "object", properties: { buffer: any } }, resources: { write: [order] } }, ({ input, resources }) => {
@@ -73,7 +73,7 @@ export const mark = System.create({ name: "transfersTest/mark", input: { type: "
 export const attachThere = System.create({
     name: "transfersTest/attachThere", input: { type: "object", properties: { entity: Entity.schema, value: any } }, resources: { read: [anchor] },
 }, ({ input, resources, commands }) => {
-    if (resources[anchor] !== "anchor") return;
+    if (resources[anchor].text !== "anchor") return;
     kept.push(input.value);
     if (input.value instanceof MessagePort) commands.add(input.entity, port, input.value);
     else if (typeof ImageBitmap === "function" && input.value instanceof ImageBitmap) commands.add(input.entity, bitmap, input.value);
@@ -86,7 +86,7 @@ export const attachHere = System.create({ name: "transfersTest/attachHere", inpu
 });
 /** On "transfersTest": says hello through the port it's given, which only moving it there, not copying it, gives. */
 export const greetThere = System.create({ name: "transfersTest/greetThere", input: { type: "object", properties: { port: any } }, resources: { read: [anchor] } }, ({ input, resources }) => {
-    if (input.port instanceof MessagePort) input.port.postMessage(resources[anchor]);
+    if (input.port instanceof MessagePort) input.port.postMessage(resources[anchor].text);
 });
 
 /** On the world's thread: spawns an entity holding the port it's given. */

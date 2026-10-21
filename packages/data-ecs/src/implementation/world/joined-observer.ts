@@ -18,7 +18,7 @@ import {
     doneWord, endWord, headExecuted, headRan, progressWord, snapshotCapacityWord, snapshotFlagsWord, snapshotLayout, snapshotOffsetWord, snapshotResourceArchetypeWord,
     snapshotResourceRowWord, snapshotRowsWord, snapshotStartWord, snapshotted, tailBlockWords, waitingWord, type SnapshotLayout,
 } from './tail-blocks.js';
-import { copyRest, waitDone, type Copied } from './tails.js';
+import { copyRest, linearOf, waitDone, type Copied } from './tails.js';
 import { recordWordsOf } from './thread-indexes.js';
 import type { Pool } from './pool.js';
 import { chunkShift } from './kernel.js';
@@ -214,21 +214,11 @@ export const createJoinedObserverRunner = (state: State, leaf: Leaf, target: Obs
     const { declaration } = leaf;
     const { components, resources } = declaration;
     const ids = (keys: readonly Key[] | undefined): number[] => [...new Set((keys ?? []).map(key => idOf(state, key)))];
+    // Strings live in shared memory, as structs do.
     const isStruct = (id: number): boolean => state.layouts[id].kind !== "object";
-    const linear = (list: readonly number[]): { ids: number[]; strides: number[] } => {
-        const found: number[] = [];
-        const strides: number[] = [];
-        for (const id of list) {
-            const layout = state.layouts[id];
-            if (layout.kind !== "linear") continue;
-            found.push(id);
-            strides.push(layout.stride);
-        }
-        return { ids: found, strides };
-    };
     const contextKeys = [...new Set<Key>([...resources?.read ?? [], ...resources?.is ?? []])];
-    const reads = linear(ids(components?.read));
-    const resourceReads = linear(contextKeys.map(key => idOf(state, key)));
+    const reads = linearOf(state, ids(components?.read));
+    const resourceReads = linearOf(state, contextKeys.map(key => idOf(state, key)));
     const looked = lookupReadsOf(state, declaration.lookup);
     const block = state.memory.allocate(observerBlockBytes);
     const buffer = state.memory.memory.buffer;
@@ -244,7 +234,10 @@ export const createJoinedObserverRunner = (state: State, leaf: Leaf, target: Obs
         named.push([name, record]);
     }
     const resourceIds = ids([...resources?.read ?? [], ...resources?.is ?? [], ...resources?.not ?? [], ...resources?.changed ?? []]);
-    const layout = components === undefined && records.length === 0 && Object.keys(declaration.lookup ?? {}).length === 0 && resourceIds.every(isStruct)
+    // A contained post's resources are written in its block, which nothing waits for: a string's handle there could
+    // outlive its record, so one reading a string posts as others do.
+    const layout = components === undefined && records.length === 0 && Object.keys(declaration.lookup ?? {}).length === 0
+        && resourceIds.every(id => isStruct(id) && state.layouts[id].kind !== "string")
         ? snapshotLayout(1, [], resourceReads.strides)
         : null;
     const slotAt = (at: number, slotLayout: SnapshotLayout): Slot => {

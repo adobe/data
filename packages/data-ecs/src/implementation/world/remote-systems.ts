@@ -3,6 +3,7 @@ import { entityWatchesOf, lookupComponentsOf } from './lookup-keys.js';
 import type { Leaf as FinalizerLeaf } from '../../interface/finalizer/created.js';
 import type { Warning } from '../../interface/report/failure.js';
 import { declarationOf, idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';
+import { unsharedKeyOf } from './index-keys.js';
 import { layoutOf } from '../../interface/registry/layout.js';
 import type { Archetype } from './archetype.js';
 import { chunkShift } from './kernel.js';
@@ -410,7 +411,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         post({ protocol: "@adobe/data-ecs/join@1", kind: "finalizers", finalizers: [{ index, id, keys }] });
         return index;
     };
-    const stops = createStopWriter(arena, log);
+    const stops = createStopWriter(arena, log, state.strings);
     const owned: Tail[] = [];
 
     return {
@@ -499,11 +500,14 @@ export const unplaceable = (leaf: Leaf, thread: string): string | null => {
     if (leaf.declaration.up !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and declares up, which runs only on the world's thread.`;
     if (leaf.declaration.order !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and orders its rows by an index, which runs only on the world's thread.`;
     if (leaf.declaration.target !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and on one entity, which runs only on the world's thread.`;
+    const { components, resources } = leaf.declaration;
+    const string = [...components?.write ?? [], ...resources?.write ?? []].find(key => layoutOf(declarationOf(key)?.type).kind === "string");
+    if (string !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and writes "${labelOf(string)}", a string, which only the world's thread writes.`;
     for (const lookup of Object.values(leaf.declaration.lookup ?? {})) {
         const index = indexOfLookup(lookup);
-        const object = index?.declaration.key.find(key => layoutOf(declarationOf(key)?.type).kind === "object");
+        const object = index === undefined ? undefined : unsharedKeyOf(index.declaration.key);
         if (index !== undefined && object !== undefined) {
-            return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object)}" is an object, so it runs only on the world's thread.`;
+            return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object.key)}" is ${object.what}, so it runs only on the world's thread.`;
         }
         if (index !== undefined && watchesEntries(lookup)) return entriesOnJoined(leaf, thread, labelOfItem(index));
     }

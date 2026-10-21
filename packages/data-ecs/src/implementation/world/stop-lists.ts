@@ -1,5 +1,6 @@
 import type { Finalizer } from '../../interface/finalizer/created.js';
 import type { Memory } from './memory.js';
+import type { StringStore } from './strings.js';
 import { logFinalizedWord, logStopsWord, type MoveLog } from './move-log.js';
 
 // Stop lists (threads.md, "Finalizers on other threads"): what a joined thread's finalizers need of the entities a sync
@@ -9,7 +10,8 @@ import { logFinalizedWord, logStopsWord, type MoveLog } from './move-log.js';
 // A block's words: its sync, modulo 2^32; the next block's offset, stored once it's written, 0 until then; its groups;
 // its bytes. Then a group per finalizer with stops, in the world's finalizer order: its index on the thread, its stops,
 // its bytes; then as columns, each on 8 bytes, every stop's entity (f64), its archetype and row before apply (u32), the
-// tag of each object it reads (u32), and the value of each linear struct it reads in that component's layout.
+// tag of each object it reads (u32), and the value of each linear struct it reads in that component's layout, or for a
+// string, the handle of a copy of its record, freed with the block, since the thread may read it sync points later.
 
 export const blockSyncWord = 0;
 export const blockNextWord = 1;
@@ -50,6 +52,8 @@ export type StopsOf = {
     readonly objects: readonly number[];
     readonly linear: readonly number[];
     readonly strides: readonly number[];
+    /** By linear read: whether it's a string's handles, whose records the block holds copies of. */
+    readonly copies: readonly boolean[];
     /** This sync point's stops, as plan entries, reused by every sync point. */
     readonly entries: number[];
 };
@@ -63,6 +67,8 @@ type Written = {
     readonly held: number[];
     /** Its finalizers and their stops, reported if the thread is gone before it acknowledges. */
     readonly stopped: readonly (readonly [Finalizer, number])[];
+    /** The copies of strings' records its stops hold, let go once the thread acknowledges. */
+    readonly strings: number[];
     acknowledged: boolean;
 };
 
@@ -70,6 +76,8 @@ type Written = {
 export type StopWriter = {
     readonly memory: Memory;
     readonly log: MoveLog;
+    /** The world's records of strings, which stops copy. */
+    readonly strings: StringStore | null;
     /** Finalizers with stops this sync point, in order, whose block is written once every finalizer ran. */
     readonly staged: StopsOf[];
     readonly written: Written[];
@@ -77,7 +85,7 @@ export type StopWriter = {
     unwoken: boolean;
 };
 
-export const createStopWriter = (memory: Memory, log: MoveLog): StopWriter => ({ memory, log, staged: [], written: [], unwoken: false });
+export const createStopWriter = (memory: Memory, log: MoveLog, strings: StringStore | null): StopWriter => ({ memory, log, strings, staged: [], written: [], unwoken: false });
 
 /**
  * Indexes of entities despawned with stops of joined threads' finalizers: by index, how many threads haven't
@@ -94,6 +102,26 @@ const hold = (holds: Holds, index: number): void => {
         holds.counts = counts;
     }
     if (holds.counts[index]++ === 0) holds.size++;
+};
+
+/**
+ * Writes the handles of copies of a string's records at word `at`, for a group's `count` stops at the archetypes and
+ * rows its words there name, keeping each copy in `copied`. Copying may grow the memory, which leaves `u32` over the
+ * block as it was: it's shared.
+ */
+const copyStrings = (strings: StringStore, copied: number[], u32: Uint32Array, at: number, count: number, archetypeWords: number, rowWords: number, id: number, archetypes: StopSource["archetypes"]): void => {
+    let archetype = -1;
+    let handles: Uint32Array | undefined;
+    for (let i = 0; i < count; i++) {
+        if (u32[archetypeWords + i] !== archetype) {
+            archetype = u32[archetypeWords + i];
+            handles = archetypes[archetype].storageById[id]?.views.u32;
+        }
+        if (handles === undefined) continue;
+        const copy = strings.copy(handles[u32[rowWords + i]]);
+        copied.push(copy);
+        u32[at + i] = copy;
+    }
 };
 
 /** A storage as stops are copied from it: its tags, or its linear values. */
@@ -126,6 +154,7 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
     const f64 = new Float64Array(buffer);
     const held: number[] = [];
     const stopped: (readonly [Finalizer, number])[] = [];
+    const copied: number[] = [];
     u32[(offset >> 2) + blockSyncWord] = sync >>> 0;
     u32[(offset >> 2) + blockNextWord] = 0;
     u32[(offset >> 2) + blockGroupsWord] = staged.length;
@@ -133,7 +162,7 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
     let group = offset + blockHeaderBytes;
     const { entity, from, despawned, archetypes, row: rows, holds } = source;
     for (const stops of staged) {
-        const { entries, objects, linear, strides } = stops;
+        const { entries, objects, linear, strides, copies } = stops;
         const count = entries.length;
         const size = groupBytes(count, objects.length, strides);
         u32[(group >> 2) + groupIndexWord] = stops.index;
@@ -174,6 +203,11 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
             const words = (stride & 3) === 0 ? stride >> 2 : 0;
             let archetype = -1;
             let values: Copied["views"] | undefined;
+            if (copies[k] && writer.strings !== null) {
+                copyStrings(writer.strings, copied, u32, column >> 2, count, archetypeWords, rowWords, id, archetypes);
+                column += columnBytes(count, stride);
+                continue;
+            }
             for (let i = 0; i < count; i++) {
                 if (u32[archetypeWords + i] !== archetype) {
                     archetype = u32[archetypeWords + i];
@@ -203,8 +237,15 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
     // Stored last, so the thread reads the block only once it's whole.
     if (last === undefined) Atomics.store(writer.log.header, logStopsWord, offset);
     else Atomics.store(u32, (last.offset >> 2) + blockNextWord, offset);
-    writer.written.push({ offset, bytes, sync: sync >>> 0, held, stopped, acknowledged: false });
+    writer.written.push({ offset, bytes, sync: sync >>> 0, held, stopped, strings: copied, acknowledged: false });
     writer.unwoken = true;
+};
+
+/** Lets go of the copies of strings' records a block's stops hold. */
+const letGo = (writer: StopWriter, block: Written): void => {
+    const { strings } = writer;
+    if (strings !== null) for (let k = 0; k < block.strings.length; k++) strings.retire(block.strings[k]);
+    block.strings.length = 0;
 };
 
 /** Returns a held index once no thread finalizes it any more: it's reusable after the sync point. */
@@ -232,6 +273,7 @@ export const settleStops = (writer: StopWriter, holds: Holds, released: number[]
         if (!block.acknowledged) {
             block.acknowledged = true;
             unhold(holds, released, block.held);
+            letGo(writer, block);
         }
         newest = k;
     }
@@ -250,6 +292,7 @@ export const endStops = (writer: StopWriter, holds: Holds, released: number[], l
         if (block.acknowledged) continue;
         block.acknowledged = true;
         unhold(holds, released, block.held);
+        letGo(writer, block);
         for (const [finalizer, count] of block.stopped) missed.set(finalizer, (missed.get(finalizer) ?? 0) + count);
     }
     return [...missed].map(([finalizer, count]) => ({

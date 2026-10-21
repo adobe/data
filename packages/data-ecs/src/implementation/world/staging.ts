@@ -73,7 +73,7 @@ const grow = (batch: SpawnBatch): void => {
  */
 export const writerOf = (column: Column, start: unknown): Writer => {
     const { unitStride, unitOffset, lanes } = column;
-    const general: Writer = column.layout.kind === "object"
+    const general: Writer = column.layout.kind === "object" || column.layout.kind === "string"
         ? (row, value) => {
             if (column.remote !== null && value !== undefined && value !== null && value !== start) throw new Error(column.remote);
             writeColumn(column, row, value === undefined ? start : value);
@@ -115,7 +115,8 @@ const writeColumn = (column: Column, row: number, value: unknown): void => {
     }
     const { layout } = column;
     if (layout.kind === "linear") layout.write(views, row, value);
-    else if (layout.kind === "object") column.values[row] = value;
+    // A string is written into its record as the batch commits, on the world's thread.
+    else if (layout.kind === "object" || layout.kind === "string") column.values[row] = value;
 };
 
 /** The row the batch's next spawn writes, growing it first if it's full. */

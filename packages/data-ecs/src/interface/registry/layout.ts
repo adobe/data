@@ -1,4 +1,5 @@
 import type { Schema } from '../schema/schema.js';
+import { isString } from './schemas.js';
 
 /** A path from a value to one scalar leaf: `[]` for a scalar, `[1]` for a tuple element, `["x"]` for a struct field. */
 export type Path = readonly (number | string)[];
@@ -34,7 +35,9 @@ export type Leaf = {
  * How a component's values are stored.
  * - `constant`: a `const` schema; no storage, every value is `value`.
  * - `linear`: interleaved elements of `stride` bytes in one column. `read` copies a value out; `write` replaces it.
- * - `object`: a JS array of values, main thread only.
+ * - `string`: the world's thread's values, as `object`'s, and a 4-byte handle per row, in one column, to each one's
+ *   record in shared memory, which other threads read; only the world's thread writes them.
+ * - `object`: a JS array of values, on its logical thread only.
  */
 export type Layout =
     | { readonly kind: "constant"; readonly value: unknown }
@@ -45,7 +48,14 @@ export type Layout =
         readonly read: (views: Views, row: number) => unknown;
         readonly write: (views: Views, row: number, value: unknown) => void;
     }
+    | { readonly kind: "string"; readonly stride: 4 }
     | { readonly kind: "object" };
+
+/** The layout of every string. */
+const stringLayout: Layout = { kind: "string", stride: 4 };
+
+/** The layout of values stored as they are. */
+export const objectLayout: Layout = { kind: "object" };
 
 export const bytesOf = (view: View): number => view === "f64" ? 8 : view === "u8" ? 1 : 4;
 
@@ -273,13 +283,14 @@ const gpuLayoutOf = (schema: Schema): "storage" | "vertex" | undefined =>
  */
 /** A value without a schema isn't data, so it's stored as it is. */
 export const layoutOf = (schema: Schema | undefined): Layout => {
-    if (schema === undefined) return { kind: "object" };
+    if (schema === undefined) return objectLayout;
     if ("const" in schema) return { kind: "constant", value: schema.const };
+    if (isString(schema)) return stringLayout;
     const rules: Rules = gpuLayoutOf(schema) ?? "cpu";
     const shape = shapeOf(schema);
     if (shape === null) {
         if (rules !== "cpu") throw new Error(`A ${rules} layout needs numbers, integers, booleans, fixed-length tuples and structs with every property required.`);
-        return { kind: "object" };
+        return objectLayout;
     }
     const placed = place(shape, [], rules);
     // An array of elements: each is padded to its alignment.

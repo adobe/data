@@ -1,6 +1,7 @@
 import type { Thread } from '../../interface/thread/thread.js';
 import type { World } from '../../interface/world/world.js';
 import { declarationOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, labelOfItem, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';
+import { unsharedKeyOf } from './index-keys.js';
 import { layoutOf, type Views } from '../../interface/registry/layout.js';
 import {
     completedWord, done, fitsInline, inputByMessage, inputLayoutOf, inputMoved, noInput, pending, platformLocks, postedWord, protocolName, runSlots, signalWord, unposted, unreadWord,
@@ -546,8 +547,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             const read = readable(declared.read);
             let indexed: string | ObserverIndex | null = null;
             if (index !== undefined) {
-                const object = index.declaration.key.find(key => layoutOf(declarationOf(key)?.type).kind === "object");
-                if (object !== undefined) throw new Error(`Observer system "${label}" looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object)}" is an object, so it runs only on the world's thread.`);
+                const object = unsharedKeyOf(index.declaration.key);
+                if (object !== undefined) throw new Error(`Observer system "${label}" looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object.key)}" is ${object.what}, so it runs only on the world's thread.`);
                 if (declared.changed === true) throw new Error(`Observer system "${label}" runs when index "${labelOfItem(index)}" changed, as its lookup "${name}"'s changed is true, so it runs only on the world's thread.`);
                 const { key, components: held, sorted, unique } = index.declaration;
                 // One without an id, made in a function, is named by its declaration, and the world makes one like it.

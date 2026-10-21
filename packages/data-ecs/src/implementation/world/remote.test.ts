@@ -24,7 +24,7 @@ declare module "@adobe/data-ecs" {
     }
     export interface Components {
         [point]: { type: number };
-        [caption]: { type: string | null; thread: "remoteTest" };
+        [caption]: { type: { readonly text: string } | null; thread: "remoteTest" };
         [widget]: { type: Widget | null; thread: "remoteTest" };
         [kept]: { type: string };
         [guarded]: { type: Widget | null; thread: "remoteTestFinalized" };
@@ -34,7 +34,9 @@ declare module "@adobe/data-ecs" {
 /** A value that isn't data. */
 type Widget = { readonly draw: () => string };
 Component.register(point, { type: { type: "number" } });
-Component.register(caption, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "remoteTest" });
+/** The caption's start, which a command here gives it by this value. */
+const none = { text: "none" };
+Component.register(caption, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: none }, thread: "remoteTest" });
 Component.register(widget, { thread: "remoteTest" });
 Component.register(kept, { type: { type: "string" } });
 /** A widget, or the number a kernel gives one, which only the world's thread could hold. */
@@ -48,16 +50,16 @@ const nullCaptions = System.create({ name: "remoteTest/nullCaptions", components
     commands.add(row.entity, caption, null);
 });
 const restartCaptions = System.create({ name: "remoteTest/restartCaptions", components: { has: [caption, point] } }, (row, { commands }) => {
-    commands.add(row.entity, caption, "none");
+    commands.add(row.entity, caption, none);
 });
 const dropCaptions = System.create({ name: "remoteTest/dropCaptions", components: { has: [caption] } }, (row, { commands }) => {
     commands.remove(row.entity, caption);
 });
 const giveCaption = System.create({ name: "remoteTest/giveCaption", components: { has: [point] } }, (row, { commands }) => {
-    commands.add(row.entity, caption, "a caption only the thread gives");
+    commands.add(row.entity, caption, { text: "a caption only the thread gives" });
 });
 const spawnCaptioned = System.create({ name: "remoteTest/spawnCaptioned" }, ({ commands }) => {
-    commands.spawn([point, caption])({ [point]: 1, [caption]: "a caption only the thread gives" });
+    commands.spawn([point, caption])({ [point]: 1, [caption]: { text: "a caption only the thread gives" } });
 });
 /** A kernel giving the thread's objects null, which they take, and a number, which they don't. */
 const nullCaptionsKernel = System.create({ name: "remoteTest/nullCaptionsKernel", kernel: "cpu", components: { has: [caption], read: [point] } }, (row, { commands }) => {
@@ -68,7 +70,7 @@ const numberHandlesKernel = System.create({ name: "remoteTest/numberHandlesKerne
 });
 /** Reaches its commands, so it isn't terminal: its tier blocks rather than running as a tail. */
 const readCaptions = System.create({ name: "remoteTest/readCaptions", components: { read: [caption] } }, (row, { commands }) => {
-    if (row[caption] === "never") commands.despawn(row.entity);
+    if (row[caption]?.text === "never") commands.despawn(row.entity);
 });
 const idle = System.create({ name: "remoteTest/idle" }, () => {});
 const after = System.create({ name: "remoteTest/after" }, () => {});
@@ -123,7 +125,7 @@ describe("objects a joined thread fills", () => {
         await statusOf(world, "joined");
         const entity = await spawnOne(world, 6);
         const listed = Observe.entity(remote, entity, { required: [caption, widget] });
-        expect(await until(listed, value => value !== null)).toEqual({ [caption]: "none", [widget]: null });
+        expect(await until(listed, value => value !== null)).toEqual({ [caption]: none, [widget]: null });
         expect((await runReported(world, nullCaptionsKernel)).failures).toEqual([]);
         expect(await until(listed, value => value?.[caption] === null)).toEqual({ [caption]: null, [widget]: null });
         const report = await runReported(world, numberHandlesKernel);
@@ -153,7 +155,7 @@ describe("objects a joined thread fills", () => {
         await statusOf(world, "gone");
         await world.run(after);
         expect(await Observe.toPromise(Observe.entity(world, first, { required: [caption, widget] }))).toEqual({ [caption]: null, [widget]: null });
-        expect(await Observe.toPromise(Observe.entity(world, second, { required: [caption] }))).toEqual({ [caption]: "none" });
+        expect(await Observe.toPromise(Observe.entity(world, second, { required: [caption] }))).toEqual({ [caption]: none });
         expect((await runReported(world, readCaptions)).failures).toEqual([]);
         await world.dispose();
     });

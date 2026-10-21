@@ -1,10 +1,11 @@
-import type { Layout, Leaf, Scalar } from '../../interface/registry/layout.js';
+import { declarationOf } from '../../interface/registry/index.js';
+import { layoutOf, type Layout, type Leaf, type Scalar } from '../../interface/registry/layout.js';
 import type { Storage } from './archetype.js';
 
 /**
  * How an index encodes its key into 32-bit words that compare and hash as values do: each struct leaf as one word, two
- * for an f64, in an order-preserving form, so unsigned lexicographic word order is key order; an object part as the id
- * its value is interned under; a constant part as nothing.
+ * for an f64, in an order-preserving form, so unsigned lexicographic word order is key order; an object part, or a
+ * string as the world's thread holds it, as the id its value is interned under; a constant part as nothing.
  */
 export type KeyPart =
     | { readonly kind: "leaves"; readonly leaves: readonly Leaf[]; readonly words: number; readonly first: number }
@@ -30,7 +31,7 @@ export const keyPartsOf = (layouts: readonly Layout[]): { readonly parts: readon
     const parts = layouts.map((layout): KeyPart => {
         const first = words;
         if (layout.kind === "constant") return { kind: "constant", first };
-        if (layout.kind === "object") {
+        if (layout.kind === "object" || layout.kind === "string") {
             words++;
             return { kind: "object", first, interned: createInterned() };
         }
@@ -40,6 +41,16 @@ export const keyPartsOf = (layouts: readonly Layout[]): { readonly parts: readon
         return { kind: "leaves", leaves: layout.leaves, words: count, first };
     });
     return { parts, words };
+};
+
+/** An index's first key part whose keys only the world's thread keeps, by their values: an object or a string. */
+export const unsharedKeyOf = (key: readonly symbol[]): { readonly key: symbol; readonly what: string } | undefined => {
+    for (const part of key) {
+        const { kind } = layoutOf(declarationOf(part)?.type);
+        if (kind === "object") return { key: part, what: "an object" };
+        if (kind === "string") return { key: part, what: "a string, which the world's thread keeps keys of" };
+    }
+    return undefined;
 };
 
 /** Words a part takes. */

@@ -21,12 +21,13 @@ declare module "@adobe/data-ecs" {
     }
     export interface Components {
         [serial]: { type: number };
-        [label]: { type: string | null; thread: "logBenchmark" };
+        [label]: { type: { readonly text: string } | null; thread: "logBenchmark" };
         [moved]: { type: true };
     }
 }
 Component.register(serial, { type: { type: "number" } });
-Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "none" }, thread: "logBenchmark" });
+const none = { text: "none" };
+Component.register(label, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: none }, thread: "logBenchmark" });
 Component.register(moved, { type: { const: true } });
 
 /** Entities moved, and swapped out of the rows they leave, per sync point of `log replay`. */
@@ -82,7 +83,7 @@ const logReplay = async (rounds = 40): Promise<number> => {
         await Promise.resolve();
     }
     const last = state.archetypes.find(archetype => archetype.count === replayMoves * 2);
-    if (last === undefined || cellOf(mirror, last.id, 0, idOf(state, label))?.value !== "none") throw new Error("log replay: the mirror doesn't hold the rows' objects.");
+    if (last === undefined || cellOf(mirror, last.id, 0, idOf(state, label))?.value !== none) throw new Error("log replay: the mirror doesn't hold the rows' objects.");
     return best;
 };
 
@@ -99,7 +100,7 @@ const logRebuild = async (rounds = 20): Promise<number> => {
         await Promise.resolve();
     }
     const archetype = state.archetypes.find(candidate => candidate.count === rebuildRows);
-    if (archetype === undefined || cellOf(mirror, archetype.id, rebuildRows - 1, idOf(state, label))?.value !== "none") throw new Error("log rebuild: the mirror doesn't hold the rows' objects.");
+    if (archetype === undefined || cellOf(mirror, archetype.id, rebuildRows - 1, idOf(state, label))?.value !== none) throw new Error("log rebuild: the mirror doesn't hold the rows' objects.");
     return best;
 };
 

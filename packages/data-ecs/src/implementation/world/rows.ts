@@ -5,6 +5,7 @@ import type { Commands } from '../../interface/system/commands.js';
 import type { Layout, TypedArray } from '../../interface/registry/layout.js';
 import { stampChanged, writeF32Lanes, writeGeneral, writeOf, type Archetype, type Storage } from './archetype.js';
 import { readCell, writeCell } from './cells.js';
+import { readString, writeString } from './strings.js';
 import { indexOf, locate } from './entities.js';
 import { ownTag } from './move-log.js';
 import { resourceCell } from './resources.js';
@@ -17,13 +18,16 @@ import type { WorldIndex } from './indexes.js';
  * What an accessor row reads and writes: a storage, or a joined thread's view of one. A joined thread's own objects
  * have `tags`, the world's tags of their rows, which a write marks as the thread's own value.
  */
-export type RowStorage = Pick<Storage, "layout" | "views" | "values" | "write" | "ticked" | "added" | "changed" | "chunkAdded" | "chunkChanged" | "tags">;
+export type RowStorage = Pick<Storage, "layout" | "views" | "strings" | "values" | "write" | "ticked" | "added" | "changed" | "chunkAdded" | "chunkChanged" | "tags">;
 
 /** What a row binds to: an archetype, or a joined thread's view of one. */
 export type RowArchetype = { readonly id: number; readonly entities: Float64Array; readonly storageById: readonly (RowStorage | undefined)[] };
 
-/** What rows need of their world: layouts by component id, the rows made so far, and the running system's tick. */
-export type RowHost = { readonly layouts: readonly Layout[]; readonly rows: Map<string, Row>; readonly tick: number };
+/**
+ * What rows need of their world: layouts by component id, the rows made so far, the running system's tick, and on a
+ * joined thread, that its strings are read out of their records, since only the world's thread holds their values.
+ */
+export type RowHost = { readonly layouts: readonly Layout[]; readonly rows: Map<string, Row>; readonly tick: number; readonly records?: true };
 
 /** One declared component's storage in the archetype a row is bound to, and the typed array its scalar leaves are read through. */
 type Slot = { storage: RowStorage; view: TypedArray };
@@ -42,12 +46,13 @@ export type Row = {
 };
 
 /** Chosen once per component, so a read doesn't dispatch on the layout; tuples of f32 lanes are read as array literals. */
-const getterOf = (layout: Layout, slot: Slot, row: Row): () => unknown => {
+const getterOf = (host: RowHost, layout: Layout, slot: Slot, row: Row): () => unknown => {
     if (layout.kind === "constant") {
         const { value } = layout;
         return () => value;
     }
-    if (layout.kind === "object") return () => slot.storage.values[row.index];
+    if (layout.kind === "object" || (layout.kind === "string" && host.records !== true)) return () => slot.storage.values[row.index];
+    if (layout.kind === "string") return () => readString(slot.storage, row.index);
     const { write, unitStride, unitOffset, lanes } = writeOf(layout);
     if (write === writeF32Lanes && lanes === 2) return () => {
         const { view } = slot;
@@ -77,6 +82,11 @@ const setterOf = (host: RowHost, layout: Layout, slot: Slot, row: Row): (value: 
         // A joined thread's own object: the world's tag says its value is the thread's.
         if (storage.tags.length !== 0) storage.tags[index] = ownTag;
         stampChanged(storage, index, host.tick);
+    };
+    if (layout.kind === "string") return value => {
+        const { storage } = slot;
+        writeString(storage, row.index, value);
+        stampChanged(storage, row.index, host.tick);
     };
     const { write, unitStride, unitOffset, lanes } = writeOf(layout);
     // Array values of f32 lanes and scalars are stored directly, converting as `layout.write` does.
@@ -137,7 +147,7 @@ export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly
     keys.forEach((key, i) => {
         const layout = host.layouts[ids[i]];
         Object.defineProperty(value, key, {
-            get: getterOf(layout, slots[i], row),
+            get: getterOf(host, layout, slots[i], row),
             set: writes.includes(key) ? setterOf(host, layout, slots[i], row) : undefined,
             enumerable: true,
         });
@@ -155,14 +165,18 @@ type SharedRow = Row & { readonly slots: Slot[] };
 type SharedValue = { readonly [rowOfValue]: SharedRow };
 
 /** As `getterOf`, but one function for every row of a shape, finding its row and slot through the value. */
-const sharedGetterOf = (layout: Layout, i: number): (this: SharedValue) => unknown => {
+const sharedGetterOf = (host: RowHost, layout: Layout, i: number): (this: SharedValue) => unknown => {
     if (layout.kind === "constant") {
         const { value } = layout;
         return () => value;
     }
-    if (layout.kind === "object") return function (this: SharedValue): unknown {
+    if (layout.kind === "object" || (layout.kind === "string" && host.records !== true)) return function (this: SharedValue): unknown {
         const row = this[rowOfValue];
         return row.slots[i].storage.values[row.index];
+    };
+    if (layout.kind === "string") return function (this: SharedValue): unknown {
+        const row = this[rowOfValue];
+        return readString(row.slots[i].storage, row.index);
     };
     const { write, unitStride, unitOffset, lanes } = writeOf(layout);
     if (write === writeF32Lanes && lanes === 2) return function (this: SharedValue): unknown {
@@ -204,7 +218,7 @@ const sharedEntity = function (this: SharedValue): number {
  */
 export const sharedRows = (host: RowHost, keys: readonly Key[], ids: readonly number[]): (archetype: RowArchetype) => Row => {
     const prototype = {};
-    const getters = keys.map((_, i) => sharedGetterOf(host.layouts[ids[i]], i));
+    const getters = keys.map((_, i) => sharedGetterOf(host, host.layouts[ids[i]], i));
     return archetype => {
         const value: object = Object.create(prototype);
         const row: SharedRow = {

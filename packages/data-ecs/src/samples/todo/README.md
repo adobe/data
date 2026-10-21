@@ -152,10 +152,6 @@ What the current API does and doesn't offer the DOM path, each with the change i
   a count-only index for what reads only `length`.
 - **A change filter scans a whole chunk for one changed row,** 1024 ticks for each system with `changed`. *Proposal:*
   a second level of ticks per 32 or 64 rows, or a list of the rows changed per chunk.
-- **Values a binding reads must be on `main`.** Strings and other objects live on one logical thread, and a system
-  can't mix `"world"` and `"main"` values even when the world is on the main thread, so `label` and `filter` are
-  declared `thread: "main"` and the model systems that write them run there. *No change needed* while the world is on
-  the main thread; a world on a worker would need these values copied to `main`.
 - **Nothing awaits the next tick.** Tests watch `clock` changes through an observer, after a first run that passes it
   regardless, and a world ticks only while a system that isn't an observer is added. *Proposal:* none for consumers; a
   test helper in `src/observe` would do.

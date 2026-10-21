@@ -9,8 +9,8 @@ export const filter = Symbol("filter");
 
 declare module "@adobe/data-ecs" {
     interface Resources {
-        [filter]: { type: Filter; thread: "main" };
+        [filter]: { type: Filter };
     }
 }
 
-Resource.register(filter, { type: { ...filterSchema, default: "all" }, thread: "main" });
+Resource.register(filter, { type: { ...filterSchema, default: "all" } });

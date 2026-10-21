@@ -74,7 +74,11 @@ export type Copied = {
     /** Struct components it reads or filters on, and struct resources it reads, conditions on or filters on. */
     readonly reads: readonly number[];
     readonly resourceReads: readonly number[];
-    /** Its linear component reads, in `read` order, and linear resource reads, in its context's order, with strides. */
+    /**
+     * Its linear component reads, in `read` order, and linear resource reads, in its context's order, with strides: a
+     * string's are its handles, whose records outlive any snapshot's reader, which is done before the second sync point
+     * after the one it reads.
+     */
     readonly linear: readonly number[];
     readonly strides: readonly number[];
     readonly resources: readonly number[];
@@ -107,12 +111,13 @@ export type Tail = Copied & {
     unresolved: boolean;
 };
 
-const linearOf = (state: State, ids: readonly number[]): { readonly ids: readonly number[]; readonly strides: readonly number[] } => {
+/** The reads of `ids` in linear memory, a string's handles included, with their strides. */
+export const linearOf = (state: State, ids: readonly number[]): { readonly ids: readonly number[]; readonly strides: readonly number[] } => {
     const linear: number[] = [];
     const strides: number[] = [];
     for (const id of ids) {
         const layout: Layout = state.layouts[id];
-        if (layout.kind !== "linear") continue;
+        if (layout.kind !== "linear" && layout.kind !== "string") continue;
         linear.push(id);
         strides.push(layout.stride);
     }

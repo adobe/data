@@ -20,7 +20,6 @@ const parent = Symbol("indexCreateTest/parent");
 const unregistered = Symbol("indexCreateTest/unregistered");
 const handle = Symbol("indexCreateTest/handle");
 const view = Symbol("indexCreateTest/view");
-const title = Symbol("indexCreateTest/title");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -34,7 +33,6 @@ declare module "@adobe/data-ecs" {
         [parent]: { type: Entity; reference: "owner" };
         [handle]: { type: () => void };
         [view]: { type: { readonly label: string }; thread: "main" };
-        [title]: { type: string; thread: "main" };
     }
 }
 Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
@@ -47,7 +45,6 @@ Component.register(shown, { type: { const: true } });
 Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(handle, {});
 Component.register(view, { type: { type: "object", properties: { label: { type: "string" } } }, thread: "main" });
-Component.register(title, { type: { type: "string" }, thread: "main" });
 
 /** Declares as an untyped caller would, bypassing the types' checks. */
 const untyped = (declaration: object): unknown => Reflect.apply(Index.create, undefined, [declaration]);
@@ -90,7 +87,8 @@ describe("Index.create", () => {
         expect(() => Index.create({ key: [point, node] })).not.toThrow();
     });
     it("throws for object parts on two threads and for has and not naming what they can't", () => {
-        expect(() => untyped({ name: "bad", key: [name, view] })).toThrow(`object key parts on threads "world" and "main"`);
+        expect(() => untyped({ name: "bad", key: [node, view] })).toThrow(`key parts on threads "world" and "main"`);
+        expect(() => untyped({ name: "bad", key: [name, view] })).toThrow(`key parts on threads "world" and "main"; its object parts live on one thread, the world's beside a string`);
         expect(() => untyped({ name: "bad", key: [amount], components: { has: [unregistered] } })).toThrow("isn't a registered component");
         expect(() => untyped({ name: "bad", key: [amount], components: { not: [unregistered] } })).toThrow("isn't a registered component");
         expect(() => untyped({ name: "bad", key: [amount], components: { not: [amount] } })).toThrow(`excludes "indexCreateTest/amount", which it holds by`);
@@ -117,7 +115,7 @@ describe("systems and finalizers looking up through an index", () => {
         expect(() => untypedSystem({ name: "bad", lookup: { near: { index: grid, changed: [name] } } })).toThrow(`lookup "near" watches "indexCreateTest/name"`);
         expect(() => untypedSystem({ name: "bad", components: { write: [cell] }, lookup: { near: { index: grid } } })).toThrow(`goes through an index keyed by "indexCreateTest/cell", which the system writes`);
         expect(() => untypedSystem({ name: "bad", components: { write: [amount] }, lookup: { near: { index: grid, read: [amount] } } })).toThrow(`reads "indexCreateTest/amount", which the system writes`);
-        expect(() => untypedSystem({ name: "bad", kernel: "cpu", components: { write: [amount] }, lookup: { near: { index: Index.create({ key: [name] }) } } })).toThrow(`keyed by "indexCreateTest/name", which isn't stored in linear memory`);
+        expect(() => untypedSystem({ name: "bad", kernel: "cpu", components: { write: [amount] }, lookup: { near: { index: Index.create({ key: [name] }) } } })).toThrow(`keyed by "indexCreateTest/name", a string, which kernels don't read yet`);
         expect(() => Reflect.apply(Finalizer.create, undefined, [{ name: "bad", components: { read: [amount] }, lookup: { near: { index: grid, read: [name] } } }, () => {}])).toThrow(`Finalizer "bad": lookup "near" reads`);
         expect(labelOfItem(grid)).toBe("indexCreateTest/grid");
     });
@@ -132,8 +130,8 @@ describe("systems ordering their rows by an index", () => {
         expect(isLeaf(leaf) ? [...accessOf(leaf).reads] : null).toEqual([cell, amount]);
         const writer = System.create({ name: "indexCreateTest/rankWriter", components: { write: [amount] } }, row => { row[amount] = 0; });
         expect(() => System.create([ordered, writer])).toThrow(`both access "indexCreateTest/amount" and one writes it`);
-        const byTitle = Index.create({ key: [title], sorted: true });
-        expect(threadOf({ order: byTitle }, "System", "placed")).toBe("main");
+        // Every value a sorted index orders lives in shared memory, strings included, so its key places nothing.
+        expect(threadOf({ order: Index.create({ key: [name], sorted: true }) }, "System", "unplaced")).toBe(null);
     });
     it("throw for an order by what isn't a sorted index, without components, with up, on the GPU, or writing its key", () => {
         expect(() => untypedSystem({ name: "bad", components: { read: [cell] }, order: { name: "fake" } })).toThrow(`System "bad" orders its rows by a value Index.create didn't return`);
@@ -142,6 +140,6 @@ describe("systems ordering their rows by an index", () => {
         expect(() => untypedSystem({ name: "bad", components: { read: [cell] }, up: { through: parent }, order: ranked })).toThrow("uses both up and order");
         expect(() => untypedSystem({ name: "bad", kernel: "gpu", components: { write: [cell] }, order: ranked })).toThrow("GPU kernels have no order yet");
         expect(() => untypedSystem({ name: "bad", components: { write: [amount] }, order: ranked })).toThrow(`its rows are ordered by an index keyed by "indexCreateTest/amount", which the system writes`);
-        expect(() => untypedSystem({ name: "bad", kernel: "cpu", components: { write: [amount] }, order: Index.create({ key: [name], sorted: true }) })).toThrow(`ordered by an index keyed by "indexCreateTest/name", which isn't stored in linear memory`);
+        expect(() => untypedSystem({ name: "bad", kernel: "cpu", components: { write: [amount] }, order: Index.create({ key: [name], sorted: true }) })).toThrow(`ordered by an index keyed by "indexCreateTest/name", a string, which kernels don't read yet`);
     });
 });

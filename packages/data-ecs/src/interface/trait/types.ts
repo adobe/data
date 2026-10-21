@@ -4,18 +4,18 @@ import type { Entity } from '../entity/entity.js';
 import type { IsNode, IsTransferable } from '../platform/platform.js';
 import type { Resource } from '../resource/resource.js';
 import type { Reduction } from '../resource/reduction.js';
-import type { IsStruct } from '../schema/is-struct.js';
+import type { IsString, IsStruct } from '../schema/is-struct.js';
 import type { Thread } from '../thread/thread.js';
 
 /** The value type of the component or resource `N`. */
 type ValueOf<N> = N extends Component.Key ? Component.Value<N> : N extends Resource.Key ? Resource.Value<N> : never;
 
 /**
- * Whether each component's and resource's value is a struct, computed once so a check is a lookup. Its keys are
- * remapped (`as K`) so a generic key's lookup stays one: resolved as `IsStruct` of a generic value, as a registration
- * resolves its contextual type, it recurses without end.
+ * Whether each component's and resource's value is a struct, `"string"` for a string, computed once so a check is a
+ * lookup. Its keys are remapped (`as K`) so a generic key's lookup stays one: resolved as `IsStruct` of a generic value,
+ * as a registration resolves its contextual type, it recurses without end.
  */
-type Structs = { readonly [K in Component.Key | Resource.Key as K]: IsStruct<ValueOf<K>> };
+type Structs = { readonly [K in Component.Key | Resource.Key as K]: IsString<ValueOf<K>> extends true ? "string" : IsStruct<ValueOf<K>> };
 
 /**
  * The value each trait allows on the component or resource `N`. Augment it, with this exact type parameter, to
@@ -47,10 +47,10 @@ export interface Traits<N extends Component.Key | Resource.Key> {
         ? [Resource.Value<N>] extends [boolean] ? "&" | "|" | "^" : Structs[N] extends true ? Reduction : never
         : never;
     /**
-     * The logical thread an object lives on, `"world"` without it. Not on a struct, which lives in shared memory. A DOM
-     * `Node` lives on `"main"`, and says so.
+     * The logical thread an object lives on, `"world"` without it. Not on a struct or a string, which live in shared
+     * memory. A DOM `Node` lives on `"main"`, and says so.
      */
-    readonly thread: Structs[N] extends true ? never : IsNode<ValueOf<N>> extends true ? "main" : Thread;
+    readonly thread: Structs[N] extends true | "string" ? never : IsNode<ValueOf<N>> extends true ? "main" : Thread;
     /** The value may be moved, never copied, to its thread: only a Transferable value. */
     readonly transfer: IsTransferable<ValueOf<N>> extends true ? true : never;
 }

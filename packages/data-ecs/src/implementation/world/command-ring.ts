@@ -234,7 +234,8 @@ const batchBytes = (batch: SpawnBatch, slots: Slots | null): number => {
     let bytes = 16 + padded(4 * columns.length) + 8 * count;
     for (const column of columns) {
         if (column.layout.kind === "linear") bytes += padded(count * column.stride);
-        else if (column.layout.kind === "object") {
+        // A string, which only the world's thread writes, crosses as its start, as another thread's object does.
+        else if (column.layout.kind === "object" || column.layout.kind === "string") {
             // A joined thread's own objects take any value, staged as its segment is written.
             if (slots === null) for (let row = 0; row < count; row++) if (objectTag(column.values[row]) < 0) throw unencodable(column.id);
             bytes += 16 * count;
@@ -261,7 +262,7 @@ const putBatch = (views: Views, start: number, batch: SpawnBatch, slots: Slots |
             u8.set(column.views.u8.subarray(0, count * column.stride), at);
             at += padded(count * column.stride);
         }
-        else if (column.layout.kind === "object") {
+        else if (column.layout.kind === "object" || column.layout.kind === "string") {
             for (let row = 0; row < count; row++, at += 16) {
                 const value = column.values[row];
                 // A joined thread's own object holds what its spawn gave it, staged there.
@@ -370,7 +371,7 @@ const decodeBatch = (views: Views, at: number, layouts: readonly Layout[], start
             columnViews = viewsOf(buffer, byteOffset + next, count * stride);
             next += padded(count * stride);
         }
-        else if (layout.kind === "object") {
+        else if (layout.kind === "object" || layout.kind === "string") {
             for (let row = 0; row < count; row++, next += 16) values.push(tagValue(u32[next >> 2], f64[(next >> 3) + 1], starts[id]));
         }
         return { id, layout, ...writeOf(layout), stride, views: columnViews, values, remote: null };
@@ -404,7 +405,7 @@ const blockBytes = (u32: Uint32Array, at: number, layouts: readonly Layout[]): n
         const layout = layouts[u32[(at >> 2) + 4 + c]];
         if (layout === undefined) return -1;
         if (layout.kind === "linear") bytes += padded(count * layout.stride);
-        else if (layout.kind === "object") bytes += 16 * count;
+        else if (layout.kind === "object" || layout.kind === "string") bytes += 16 * count;
     }
     return bytes;
 };

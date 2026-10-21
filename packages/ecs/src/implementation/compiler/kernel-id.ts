@@ -13,8 +13,8 @@ const encode = (parent: string, index: number): string => `${Buffer.from(parent)
 export const kernelHash = (identity: string): string => createHash("sha256").update(identity).digest("base64url").slice(0, 10);
 
 /**
- * The root-absolute url of a kernel module on the dev server. It imports the same way from vite-node and from a
- * browser module worker. The hash makes an edited kernel a new module, and lets `load` reject a stale url.
+ * The root-absolute url of a kernel module on the dev server, which a page and its module workers import from it. The
+ * hash makes an edited kernel a new module, and lets `load` reject a stale url.
  */
 export const serveUrl = (parent: string, index: number, hash: string): string => `${servePrefix}${encode(parent, index)}?h=${hash}`;
 

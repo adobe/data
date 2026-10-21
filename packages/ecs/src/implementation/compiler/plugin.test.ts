@@ -197,6 +197,12 @@ test("a build gives each kernel the url of its own chunk", async () => {
     expect(results).toEqual([[6, 8], [9, 12]]);
 });
 
+/** The url a page's code gives a module's first kernel, as the dev server serves it to a browser and its workers. */
+const servedUrl = async (server: ViteDevServer, module: string): Promise<string> => {
+    const code = (await server.transformRequest(module))?.code ?? "";
+    return /"(\/@ecs-kernel\/[^"]+)"/.exec(code)?.[1] ?? "";
+};
+
 test("serve loads a kernel module by url, also before its parent was transformed", async () => {
     // Modules are untyped here; their shapes are what the plugin emits.
     const description: KernelDescription = await serve(async server => {
@@ -204,14 +210,25 @@ test("serve loads a kernel module by url, also before its parent was transformed
         expect(server.config.optimizeDeps.exclude).toContain("@adobe/ecs");
         return parent.description;
     });
-    expect(description.url).toMatch(/^\/@ecs-kernel\/.+\?h=/);
-    const module = await serve(server => server.ssrLoadModule(description.url));
+    const url = await serve(server => servedUrl(server, fixture));
+    expect(url).toMatch(/^\/@ecs-kernel\/.+\?h=/);
+    const module = await serve(server => server.ssrLoadModule(url));
     expect(runs({ create: module.create }, description)).toEqual([6, 8]);
 });
 
-test("serve rejects a url for a different version of the kernel", async () => {
+test("serve in node gives each kernel a url a node worker imports, as a pool's do outside the dev server", async () => {
     const description: KernelDescription = await serve(async server => (await server.ssrLoadModule(fixture)).description);
-    const stale = description.url.replace(/\?h=.*/, "?h=stale");
+    expect(description.url).toMatch(/^data:text\/javascript;base64,/);
+    const { Worker } = await import("node:worker_threads");
+    const worker = new Worker(`const { parentPort } = require("node:worker_threads");
+import(${JSON.stringify(description.url)}).then(module => parentPort.postMessage(typeof module.create), error => parentPort.postMessage(String(error)));`, { eval: true });
+    const reply = await new Promise<unknown>(resolve => worker.once("message", resolve));
+    await worker.terminate();
+    expect(reply).toBe("function");
+});
+
+test("serve rejects a url for a different version of the kernel", async () => {
+    const stale = (await serve(server => servedUrl(server, fixture))).replace(/\?h=.*/, "?h=stale");
     await expect(serve(server => server.ssrLoadModule(stale))).rejects.toThrow(/changed since its description was compiled/);
 });
 

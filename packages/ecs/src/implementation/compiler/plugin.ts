@@ -82,6 +82,16 @@ const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
  *
  * The plugin adds itself to worker bundles; an instance after the first in one bundle does nothing.
  */
+/** Where a served kernel's url goes in node's code, until its module is compiled. */
+const inlinePlaceholder = (index: number, hash: string): string => `@ecs-kernel-inline/${index}/${hash}`;
+
+/** Code with each kernel's placeholder replaced by its module as a `data:` url, which node imports on any thread. */
+const inlineKernels = (code: string, kernels: readonly string[], hashes: readonly string[]): string =>
+    kernels.reduce((inlined, source, index) => inlined.replaceAll(
+        JSON.stringify(inlinePlaceholder(index, hashes[index] ?? "")),
+        JSON.stringify(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`),
+    ), code);
+
 export const kernelPlugin = (): Plugin => {
     let serve = true;
     let root = process.cwd();
@@ -182,18 +192,20 @@ export const kernelPlugin = (): Plugin => {
                 const resolved = await this.resolve(source, id);
                 return resolved !== null && (resolved.external ? source === packageName : isNamespaceModule(resolved.id, namespace));
             });
-            const linker = linkerFor(options?.ssr === true, this);
+            const ssr = options?.ssr === true;
+            const linker = linkerFor(ssr, this);
             const hashes: string[] = [];
-            const result = await transformKernels(code, id, parse, async source => {
+            const transformed = await transformKernels(code, id, parse, async source => {
                 const resolved = await this.resolve(source, id);
                 return resolved !== null && isSystemModule(resolved.id);
             }, (index, identity) => {
                 const hash = kernelHash(identity);
                 hashes[index] = hash;
-                return serve
-                    ? JSON.stringify(serveUrl(id, index, hash))
-                    : `import.meta.ROLLUP_FILE_URL_${emitChunk(this, buildId(id, index), hash)}`;
+                if (!serve) return `import.meta.ROLLUP_FILE_URL_${emitChunk(this, buildId(id, index), hash)}`;
+                // Served to node, a kernel's module is its url, so a pool's workers, which import it outside the server, read it too.
+                return JSON.stringify(ssr ? inlinePlaceholder(index, hash) : serveUrl(id, index, hash));
             }, linker);
+            const result = ssr && transformed !== null && !("failure" in transformed) ? { ...transformed, code: inlineKernels(transformed.code, transformed.kernels, hashes) } : transformed;
             const parent = id.split("?")[0] ?? id;
             if (result === null) {
                 kernels.delete(id);

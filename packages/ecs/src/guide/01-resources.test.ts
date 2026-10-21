@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Resource, System } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { Resource, System, World } from "../index.js";
 
 // A resource is a key whose value a world holds once.
 export const gravity = Symbol("gravity");
@@ -31,8 +30,8 @@ const read = System.create({ observer: true, resources: { read: [gravity, names,
 
 it("holds one value per world", async () => {
     // A world starts each resource at its default, or at the value given when it's created.
-    await using earth = createWorld();
-    await using moon = createWorld({ [gravity]: -1.6 });
+    await using earth = World.create();
+    await using moon = World.create({ [gravity]: -1.6 });
     // run: runs a system once.
     await earth.run(read);
     expect(values).toEqual([-9.8, new Map(), null]);

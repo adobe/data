@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { System, workers } from "../../../../index.js";
-import { create } from "../../../../implementation/index.js";
+import { System, workers, World } from "../../../../index.js";
 import { filter, type Filter } from "./data.js";
 import { setFilter } from "./model.js";
 
@@ -10,7 +9,7 @@ const readFilter = System.create({ name: "test/readFilter", observer: true, reso
 });
 
 it("shows every todo until a filter is set", async () => {
-    await using world = create({ [workers]: 0 });
+    await using world = World.create({ [workers]: 0 });
     await world.run(readFilter);
     expect(seen).toBe("all");
     await world.run(setFilter, { filter: "completed" });

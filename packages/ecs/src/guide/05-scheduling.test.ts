@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, System } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { Component, System, World } from "../index.js";
 
 const health = Symbol("health");
 const damage = Symbol("damage");
@@ -33,7 +32,7 @@ const read = System.create({ observer: true, components: { read: [health] } }, r
 });
 
 it("orders a composite's members by their constraints", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     await world.run(spawn);
     await world.run(frame);
     await world.run(read);
@@ -54,7 +53,7 @@ const report = System.create({ components: { read: [health] }, during: [render] 
 const phased = System.create([report, poison, update, render]);
 
 it("orders systems during phases by the order of the phases", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     await world.run(spawn);
     await world.run(phased);
     expect(seen).toEqual([9]);

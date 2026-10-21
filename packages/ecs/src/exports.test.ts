@@ -28,7 +28,7 @@ const install = (): void => {
 };
 
 const consumer = `
-import { Archetype, Component, Index, Rule, System, World, gpuDevice } from "@adobe/ecs";
+import { Archetype, Component, Index, Rule, System, World, gpuDevice, workers } from "@adobe/ecs";
 export const position = Symbol("exportsTest/position");
 export const element = Symbol("exportsTest/element");
 export const shown = Symbol("exportsTest/shown");
@@ -47,9 +47,8 @@ export const placed = Index.create({ name: "exportsTest/placed", key: [position]
 export const ranked = Index.create({ key: [position], sorted: true });
 export const after = System.create({ components: { read: [position] }, lookup: { next: { index: ranked, read: [position] } } }, (row, { lookup }) => { void lookup.next({ ">": row[position] }).length; });
 export const sortedName = (index: Index<{ readonly sorted: true }>): string => index.name;
-// How a world is created is the implementation's; the interface gives its type.
-declare const create: () => World;
-export const world = create();
+// A world comes from the one import every other value does.
+export const world: World = World.create({ [workers]: 0 });
 export const read = System.create({ observer: true, components: { read: [position] }, resources: { read: [gpuDevice] }, lookup: { at: { read: [position] } } }, () => {});
 export const added = world.add(read);
 `;

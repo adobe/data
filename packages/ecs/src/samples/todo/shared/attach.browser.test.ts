@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Entity, System, workers } from "../../../index.js";
-import { create } from "../../../implementation/index.js";
+import { Entity, System, workers, World } from "../../../index.js";
 import { attach, entityOf, entityOfElement } from "./attach.js";
 
 afterEach(() => {
@@ -10,7 +9,7 @@ afterEach(() => {
 /** Two live entities of a world, for elements to show. */
 const twoEntities = async (): Promise<readonly [Entity, Entity]> => {
     const spawned: Entity[] = [];
-    await using world = create({ [workers]: 0 });
+    await using world = World.create({ [workers]: 0 });
     await world.run(System.create({ name: "attachTest/spawn" }, ({ commands }) => {
         spawned.push(commands.spawn([])({}), commands.spawn([])({}));
     }));

@@ -1,5 +1,4 @@
-import { workers, type World } from "../../../index.js";
-import { create } from "../../../implementation/index.js";
+import { World, workers } from "../../../index.js";
 import * as exported from "../features/index.js";
 import { all } from "../shared/connect.js";
 import { define } from "../shared/elements/define.js";
@@ -17,7 +16,7 @@ export type App = { readonly world: World; readonly dispose: () => Promise<void>
  */
 export const createApp = (root: HTMLElement): App => {
     for (const feature of features) define(feature.elements);
-    const world = create(features.reduce<Resources>((resources, feature) => ({ ...resources, ...feature.resources(root) }), { [workers]: 0 }));
+    const world = World.create(features.reduce<Resources>((resources, feature) => ({ ...resources, ...feature.resources(root) }), { [workers]: 0 }));
     for (const { system } of features) if (system !== null) world.add(system);
     world.add(logFailures);
     const disconnect = all(...features.map(feature => feature.connect(world, root)));

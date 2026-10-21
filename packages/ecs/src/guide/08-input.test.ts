@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Entity, System } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { Component, Entity, System, World } from "../index.js";
 
 const health = Symbol("health");
 
@@ -38,7 +37,7 @@ const read = System.create({ observer: true, components: { read: [health] } }, r
 });
 
 it("runs a system with a value", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     await world.run(spawn);
     // Systems with input are run, not added; a composite's input has every field its members declare.
     await world.run(hit, { amount: 3 });

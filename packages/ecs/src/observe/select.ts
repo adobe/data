@@ -1,4 +1,4 @@
-import { Index, System, type Component, type Entity, type World } from '../index.js';
+import { Index, System, type Component, type Entity, type World } from '../interface/index.js';
 import { compare, predicateOf } from './compare.js';
 import type { Observe } from './observe.js';
 import { createAll, createCount, createHeap, createSorted, inEntityOrder, indexOf, type Gather, type Page, type Term, type Values } from './plans.js';

@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Resource, System } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { Component, Resource, System, World } from "../index.js";
 
 const score = Symbol("score");
 const shown = Symbol("shown");
@@ -51,7 +50,7 @@ const readShown = System.create({ observer: true, components: { read: [shown] } 
 });
 
 it("runs systems only for what changed since they last ran", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     await world.run(load);
     await world.run(load);
     await world.run(readShown);
@@ -77,7 +76,7 @@ const readSteps = System.create({ observer: true, resources: { read: [steps] } }
 });
 
 it("runs systems only while their conditions hold", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     await world.run(step);
     await world.run(open);
     await world.run(step);

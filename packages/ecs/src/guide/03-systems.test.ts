@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Report, Resource, System, Vec3 } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { Component, Report, Resource, System, Vec3, World } from "../index.js";
 
 const position = Symbol("position");
 const velocity = Symbol("velocity");
@@ -57,7 +56,7 @@ const read = System.create({ observer: true, components: { read: [position], not
 });
 
 it("runs a system once per entity, or once", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     // run: runs a system once.
     await world.run(spawn);
     await world.run(move);
@@ -80,7 +79,7 @@ const logFailures = System.create({ observer: true, components: { read: [Report.
 });
 
 it("reports what failed as entities", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     world.add(logFailures);
     const run: number = await world.run(fail);
     expect(run).toBe(1);

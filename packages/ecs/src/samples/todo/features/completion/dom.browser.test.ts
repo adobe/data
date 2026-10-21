@@ -1,6 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { Entity, workers } from "../../../../index.js";
-import { create } from "../../../../implementation/index.js";
+import { Entity, workers, World } from "../../../../index.js";
 import { entityOfElement } from "../../shared/attach.js";
 import { settled, watchTicks } from "../../shared/ticks.test-helper.js";
 import * as todos from "../todos/dom.js";
@@ -24,7 +23,7 @@ it("shows the counts and whether all are done, and clears the rows of todos done
     const count = document.createElement("todo-summary");
     const box = document.createElement("todo-toggle-all");
     document.body.append(box, list, count);
-    await using world = create({ [workers]: 0, [todos.list]: list, [summary]: count, [toggleAllBox]: box });
+    await using world = World.create({ [workers]: 0, [todos.list]: list, [summary]: count, [toggleAllBox]: box });
     await watchTicks(world);
     for (const system of [todos.dom, dom]) world.add(system);
     const state = (): string => `${count.remaining} left, ${count.completed} done, ${box.empty ? "empty" : box.checked ? "all done" : "some left"}, ${list.children.length} rows`;

@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Entity, System } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { Component, Entity, System, World } from "../index.js";
 
 const ship = Symbol("ship");
 const parent = Symbol("parent");
@@ -46,7 +45,7 @@ const countTargeting = System.create({ observer: true, components: { has: [targe
 const countAll = System.create({ observer: true, components: {} }, () => { counts.all += 1; });
 
 it("removes components with their host, and follows references", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     await world.run(spawn);
     await world.run(deselect);
     await world.run(countOutlined);

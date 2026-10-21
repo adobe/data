@@ -1,4 +1,4 @@
-import type { Component, Resource } from '../index.js';
+import type { Component, Resource } from '../interface/index.js';
 
 type Primitive = string | number | boolean | bigint | symbol | null | undefined;
 

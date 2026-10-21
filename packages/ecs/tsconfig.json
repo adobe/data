@@ -24,8 +24,7 @@
   ],
   "exclude": [
     "src/interface",
-    "src/observe",
-    "src/index.ts"
+    "src/observe"
   ],
   "references": [
     {

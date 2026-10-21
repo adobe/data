@@ -1,4 +1,4 @@
-import { Component, Resource, type Entity, type World } from '../index.js';
+import { Component, Resource, type Entity, type World } from '../interface/index.js';
 import { Observe } from './index.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;

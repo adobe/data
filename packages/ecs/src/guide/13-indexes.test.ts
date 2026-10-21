@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Index, System } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { Component, Index, System, World } from "../index.js";
 
 const cell = Symbol("cell");
 const crowded = Symbol("crowded");
@@ -77,7 +76,7 @@ const spawn = System.create(({ commands }) => {
 });
 
 it("finds rows by key, by range and in order", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     world.add(countPlayers);
     await world.run(spawn);
     expect(playerCount).toBe(3);

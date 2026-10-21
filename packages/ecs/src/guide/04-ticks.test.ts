@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Resource, System, always, cadence, clock } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { always, cadence, clock, Resource, System, World } from "../index.js";
 
 const elapsed = Symbol("elapsed");
 
@@ -31,7 +30,7 @@ const readTime = System.create({ observer: true, resources: { read: [elapsed, cl
 it("runs added systems on every tick", async () => {
     // cadence ticks once per animation frame by default; fixed ticks every step milliseconds, each with that delta.
     // A tick runs only after a run arrives, unless always is set.
-    await using world = createWorld({ [cadence]: { kind: "fixed", step: 10 }, [always]: true });
+    await using world = World.create({ [cadence]: { kind: "fixed", step: 10 }, [always]: true });
     const ticked = new Promise<number>(resolve => { reached = resolve; });
     // add: runs a system on every tick.
     world.add(advance);

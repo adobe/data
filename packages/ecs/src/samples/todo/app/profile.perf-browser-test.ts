@@ -1,8 +1,7 @@
 /// <reference types="@vitest/browser-playwright" />
 import { it } from "vitest";
 import { cdp } from "vitest/browser";
-import { Entity, System, workers } from "../../../index.js";
-import { create } from "../../../implementation/index.js";
+import { Entity, System, World, workers } from "../../../index.js";
 import { bindCompletion } from "../features/completion/dom.js";
 import { bindFilters, filterRows } from "../features/filter/dom.js";
 import { addGenerated } from "../features/generate/model.js";
@@ -73,7 +72,7 @@ it("profiles a run's fixed cost", async () => {
         channel.port2.postMessage(null);
     }), 2001)} |`);
     {
-        await using world = create({ [workers]: 0 });
+        await using world = World.create({ [workers]: 0 });
         lines.push(`| empty world, a run that changes nothing | ${await timeRuns(() => world.run(nothing), 2001)} |`);
         for (const system of [bindRows, placeRows, filterRows, bindFilters, bindCompletion, logFailures, createRows]) {
             world.add(system);

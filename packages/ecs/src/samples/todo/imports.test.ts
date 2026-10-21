@@ -3,10 +3,9 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-/** The sample's folder, and the package root it imports the ECS from. */
+/** The sample's folder, the package root it imports the ECS from, and the implementation's index, which it never does. */
 const sample = dirname(fileURLToPath(import.meta.url));
 const packageIndex = resolve(sample, "../../index.js");
-/** Where samples take `World.create` from: the implementation's `create`. */
 const implementationIndex = resolve(sample, "../../implementation/index.js");
 
 /** The features each feature builds on. */
@@ -50,7 +49,7 @@ const broken = (file: string, specifier: string): string | null => {
     if (inElements(file)) return inElements(target) ? null : "an element imports what isn't an element";
     const from = segmentsOf(file);
     const to = segmentsOf(target);
-    if (to === null) return target === packageIndex || target === implementationIndex || test ? null : "imports the package other than by its root";
+    if (to === null) return target === packageIndex || (test && target !== implementationIndex) ? null : "imports the package other than by its root";
     if (to[0] === "app" && from?.[0] !== "app") return "imports the app";
     if (from?.[0] === "shared" && to[0] === "features") return "shared code imports a feature";
     const feature = featureOf(file);
@@ -61,12 +60,6 @@ const broken = (file: string, specifier: string): string | null => {
     if (feature !== null && from?.[from.length - 1] === "model.ts" && to[to.length - 1] !== "data.js") return "a model imports what isn't data";
     return null;
 };
-
-/** The names a file imports from the implementation's index other than `create`, which is `World.create`. */
-const otherCreators = (file: string, code: string): string[] => [...code.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)]
-    .filter(match => match[2] !== undefined && match[2].startsWith(".") && resolve(dirname(file), match[2]) === implementationIndex)
-    .flatMap(match => (match[1] ?? "").split(",").map(name => name.trim().replace(/^type\s+/, "")).filter(name => name !== "" && name !== "create"))
-    .map(name => `${relative(sample, file)}: ${name}`);
 
 /** Every import in the sample that breaks a rule, with the rule. */
 const violations = (files: readonly string[], codeOf: (file: string) => string): string[] => files.flatMap(file =>
@@ -82,11 +75,12 @@ describe("the todo sample's imports", () => {
         expect(violations(files, file => readFileSync(file, "utf8"))).toEqual([]);
     });
 
-    it("create worlds through World.create alone, never the implementation's createWorld", () => {
-        const files = filesOf(sample);
-        expect(files.flatMap(file => otherCreators(file, readFileSync(file, "utf8")))).toEqual([]);
-        expect(otherCreators(join(sample, "app", "app.ts"), `import { create, createWorld } from "../../../implementation/index.js"; import type { CreatedWorld } from "../../../implementation/index.js";`))
-            .toEqual(["app/app.ts: createWorld", "app/app.ts: CreatedWorld"]);
+    it("create worlds through World.create from the package root, never through the implementation", () => {
+        const at = (...path: string[]): string => join(sample, ...path);
+        expect(violations([at("app", "app.ts"), at("app", "app.test.ts")], () => `import { create } from "../../../implementation/index.js";`)).toEqual([
+            `app/app.ts: ../../../implementation/index.js: imports the package other than by its root`,
+            `app/app.test.ts: ../../../implementation/index.js: imports the package other than by its root`,
+        ]);
     });
 
     it("find each kind of import that breaks a rule", () => {

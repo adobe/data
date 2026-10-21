@@ -26,7 +26,9 @@ Humans own the interface and agents own the implementation: agents don't add to 
 - **`src/implementation`** holds `createWorld` and everything behind it, the kernel compiler included. It imports
   types and the registry's read side from `src/interface`.
 - **`src/samples`** holds one folder per sample, its page included; `pnpm sample` serves them.
-- `src/index.ts` exports `src/interface`. Tests, samples and benchmarks take `createWorld` from `src/implementation`.
+- `src/index.ts` exports `src/interface`, and `World` as a value too, whose `create` is the implementation's, so
+  `import { World } from "@adobe/ecs"` gives consumers the type and `World.create`. Samples and the guide create
+  worlds that way; tests and benchmarks may take `createWorld` from `src/implementation` for its test hooks.
 - `tsc -b` emits only into `dist`; delete any `.js` or `.d.ts` that appears beside sources.
 
 ## Naming

@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Resource, System } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { Component, Resource, System, World } from "../index.js";
 
 const health = Symbol("health");
 const seen = Symbol("seen");
@@ -42,7 +41,7 @@ const readSeen = System.create({ observer: true, resources: { read: [seen] } }, 
 });
 
 it("applies commands at the sync point that ends each run", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     await world.run(frame);
     await world.run(readSeen);
     expect(counted).toBe(0);
@@ -53,7 +52,7 @@ it("applies commands at the sync point that ends each run", async () => {
 
 it("runs observer systems after each sync point", async () => {
     healths.length = 0;
-    await using world = createWorld();
+    await using world = World.create();
     world.add(watch);
     await world.run(spawn);
     expect(healths).toEqual([5]);

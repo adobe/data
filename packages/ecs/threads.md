@@ -82,7 +82,7 @@ Component.register(domNode, { thread: "main" });
 Component.register(textureSource, { transfer: true });
 
 // On the thread that holds the world:
-const world = createWorld(resources?);
+const world = World.create(resources?);
 world.share(port);   // lets another thread join through the port: a MessagePort, a Worker, or a worker's own scope
 
 // On another thread, after importing the modules whose systems and finalizers run there.

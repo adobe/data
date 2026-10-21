@@ -1,5 +1,4 @@
-import { Entity, System, workers, type World } from "../../../../index.js";
-import { create } from "../../../../implementation/index.js";
+import { Entity, System, workers, World } from "../../../../index.js";
 import { done, label, order, ordered } from "./data.js";
 import { addTodo } from "./model.js";
 
@@ -22,7 +21,7 @@ export const labelsOf = async (world: World): Promise<string[]> => (await todosO
 
 /** A world without a kernel pool, holding todos with these labels, in this order. */
 export const withTodos = async (...labels: string[]): Promise<World> => {
-    const world = create({ [workers]: 0 });
+    const world = World.create({ [workers]: 0 });
     for (const text of labels) await world.run(addTodo, { label: text });
     return world;
 };

@@ -1,4 +1,4 @@
-import type { Component } from '../index.js';
+import type { Component } from '../interface/index.js';
 
 type Comparison<T> = {
     readonly "=="?: T;

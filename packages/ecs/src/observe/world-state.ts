@@ -1,4 +1,4 @@
-import { Report, System, type World } from '../index.js';
+import { Report, System, type World } from '../interface/index.js';
 
 // What the factories keep for each world: the values observers share, their subscribers, and the observer systems that
 // read the world for them. Every shape of observer is one observer system, never one per subscriber or entity.

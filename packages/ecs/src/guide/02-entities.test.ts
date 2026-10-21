@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Archetype, Component, System, Vec3 } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { Archetype, Component, System, Vec3, World } from "../index.js";
 
 // A component is a key whose values entities hold, declared and registered as a resource is.
 export const position = Symbol("position");
@@ -45,7 +44,7 @@ const countParticles = System.create({ observer: true, components: { has: Partic
 });
 
 it("spawns entities with components", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     await world.run(spawn);
     await world.run(readFoes);
     await world.run(countParticles);

@@ -85,7 +85,7 @@ Adding a feature is a folder and a line in `features/index.ts`.
 - `app/proportional.browser.test.ts`: each operation's DOM mutations, and how often the DOM systems reach rows, are
   the same with 100 todos as with 2,000, less what each row it changed costs.
 - `imports.test.ts`: the layer rules above, elements importing nothing but each other, and worlds, the tests' and
-  benchmarks' too, made only through `World.create`, the implementation's `create`, never its `createWorld`.
+  benchmarks' too, made only through `World.create` from the package root, never through the implementation.
   `build.test.ts`: the page builds. `app/log-failures.test.ts`: a run's failures logged once each, an observer pass's at the next pass.
 - `app/todo.perf-browser-test.ts` and `app/profile.perf-browser-test.ts`, with `pnpm test:perf src/samples/todo`:
   times, mutation counts and a profile, logged.

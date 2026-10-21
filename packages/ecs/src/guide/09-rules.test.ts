@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Rule, System } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { Component, Rule, System, World } from "../index.js";
 
 const mesh = Symbol("mesh");
 const sprite = Symbol("sprite");
@@ -47,7 +46,7 @@ const read = System.create({ observer: true, components: { read: [layer], has: [
 });
 
 it("derives components from the components an entity has", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     await world.run(spawn);
     await world.run(read);
     expect(layers).toEqual([1, 1]);

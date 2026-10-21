@@ -10,7 +10,7 @@
     ],
     "paths": {
       "@adobe/ecs": [
-        "../index.ts"
+        "../interface/index.ts"
       ]
     },
     "lib": [
@@ -21,8 +21,7 @@
     ]
   },
   "include": [
-    "./**/*",
-    "../index.ts"
+    "./**/*"
   ],
   "references": [
     {

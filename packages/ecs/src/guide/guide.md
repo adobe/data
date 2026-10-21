@@ -44,7 +44,7 @@ Each component and resource is declared once, by augmenting `Components` or `Res
 traits, `type` among them, and registered once with the same traits. Registration's types check the two match.
 `type` is registered as a JSON Schema for the value, in which `{ type: "set", items }` and
 `{ type: "map", keys, values }` describe a `ReadonlySet` and a `ReadonlyMap`. Traits of your own augment `Traits`.
-The examples create worlds with `createWorld()`.
+The examples create worlds with `World.create()`.
 
 ## Basics
 
@@ -80,7 +80,7 @@ const read = System.create({ observer: true, resources: { read: [gravity, names,
     values = [resources[gravity], resources[names], resources[audio]];
 });
 
-await using moon = createWorld({ [gravity]: -1.6 });
+await using moon = World.create({ [gravity]: -1.6 });
 // run: runs a system once.
 await moon.run(read);
 expect(values[0]).toBe(-1.6);
@@ -214,7 +214,7 @@ const watch = System.create({ observer: true, resources: { read: [elapsed], chan
 
 // cadence ticks once per animation frame by default; fixed ticks every step milliseconds, each with that delta.
 // A tick runs only after a run arrives, unless always is set.
-await using world = createWorld({ [cadence]: { kind: "fixed", step: 10 }, [always]: true });
+await using world = World.create({ [cadence]: { kind: "fixed", step: 10 }, [always]: true });
 const ticked = new Promise<number>(resolve => { reached = resolve; });
 // add: runs a system on every tick.
 world.add(advance);

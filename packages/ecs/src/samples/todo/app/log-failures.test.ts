@@ -1,6 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { System, workers } from "../../../index.js";
-import { create } from "../../../implementation/index.js";
+import { System, World, workers } from "../../../index.js";
 import { logFailures } from "./log-failures.js";
 
 const fails = System.create({ name: "test/fails" }, () => {
@@ -17,7 +16,7 @@ afterEach(() => {
 
 it("logs a run's failures once each, and an observer pass's at the next pass", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    await using world = create({ [workers]: 0 });
+    await using world = World.create({ [workers]: 0 });
     world.add(logFailures);
     await world.run(fails);
     expect(error).toHaveBeenCalledWith("A run failed", [expect.objectContaining({ kind: "system", message: "broken" })]);

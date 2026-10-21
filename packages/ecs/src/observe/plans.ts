@@ -1,4 +1,4 @@
-import type { Component, Entity } from '../index.js';
+import type { Component, Entity } from '../interface/index.js';
 import { compare, compareNumbers } from './compare.js';
 
 // What a query's rows are gathered into, row by row, from a scan or an index's list: a count; every entity, put in

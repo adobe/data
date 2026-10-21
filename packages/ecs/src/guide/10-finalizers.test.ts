@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Finalizer, System } from "../index.js";
-import { createWorld } from "../implementation/index.js";
+import { Component, Finalizer, System, World } from "../index.js";
 
 const handle = Symbol("handle");
 
@@ -32,14 +31,14 @@ const destroy = System.create({ components: { read: [handle] } }, (row, { comman
 });
 
 it("releases what entities held when they stop matching", async () => {
-    await using world = createWorld();
+    await using world = World.create();
     await world.run(spawn);
     await world.run(destroy);
     expect([...open]).toEqual([]);
 });
 
 it("releases what every entity holds when the world is disposed", async () => {
-    const world = createWorld();
+    const world = World.create();
     await world.run(spawn);
     // dispose runs every finalizer for the entities it still matches.
     await world.dispose();
@@ -58,7 +57,7 @@ Finalizer.changes({ watch: [handle] }, changes => {
 
 it("records each sync point's structural changes", async () => {
     saved.length = 0;
-    await using world = createWorld();
+    await using world = World.create();
     await world.run(spawn);
     await world.run(destroy);
     expect(saved.sort()).toEqual(["7 → null", "8 → null", "null → 7", "null → 8"]);

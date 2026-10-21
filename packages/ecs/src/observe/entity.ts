@@ -1,4 +1,4 @@
-import { Index, System, type Component, type Entity, type World } from '../index.js';
+import { Index, System, type Component, type Entity, type World } from '../interface/index.js';
 import type { Observe } from './observe.js';
 import { createEntry, give, giveFirst, keysId, labelOf, none, noDelivery, ownName, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
 

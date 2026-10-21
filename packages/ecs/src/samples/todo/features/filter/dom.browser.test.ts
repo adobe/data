@@ -1,6 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { Entity, workers } from "../../../../index.js";
-import { create } from "../../../../implementation/index.js";
+import { Entity, workers, World } from "../../../../index.js";
 import { entityOfElement } from "../../shared/attach.js";
 import { settled, watchTicks } from "../../shared/ticks.test-helper.js";
 import * as todos from "../todos/dom.js";
@@ -22,7 +21,7 @@ it("shows the filter on its buttons, and hides the rows it leaves out, writing o
     const list = document.createElement("todo-list");
     const buttons = document.createElement("todo-filters");
     document.body.append(buttons, list);
-    await using world = create({ [workers]: 0, [todos.list]: list, [filters]: buttons });
+    await using world = World.create({ [workers]: 0, [todos.list]: list, [filters]: buttons });
     await watchTicks(world);
     for (const system of [todos.dom, dom]) world.add(system);
     for (const text of ["a", "b"]) await world.run(addTodo, { label: text });
@@ -66,7 +65,7 @@ it("shows the filter on its buttons, and hides the rows it leaves out, writing o
 it("moves focus off a row it hides, to the nearest row it shows", async () => {
     const list = document.createElement("todo-list");
     document.body.append(list);
-    await using world = create({ [workers]: 0, [todos.list]: list });
+    await using world = World.create({ [workers]: 0, [todos.list]: list });
     await watchTicks(world);
     for (const system of [todos.dom, dom]) world.add(system);
     for (const text of ["a", "b", "c"]) await world.run(addTodo, { label: text });

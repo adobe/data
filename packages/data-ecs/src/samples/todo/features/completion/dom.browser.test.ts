@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from "vitest";
-import { workers } from "../../../../index.js";
+import { Entity, workers } from "../../../../index.js";
 import { create } from "../../../../implementation/index.js";
+import { entityOfElement } from "../../shared/attach.js";
 import { settled, watchTicks } from "../../shared/ticks.test-helper.js";
 import * as todos from "../todos/dom.js";
 import { TodoList } from "../todos/elements/todo-list.js";
@@ -35,8 +36,8 @@ it("shows the counts and whether all are done, and clears the rows of todos done
     expect(state()).toBe("3 left, 0 done, some left, 3 rows");
     const entityAt = (index: number) => {
         const row = list.children[index];
-        const entity = row === undefined ? undefined : todos.todoOf.get(row);
-        if (entity === undefined) throw new Error(`No row ${index}.`);
+        const entity = entityOfElement(row ?? null);
+        if (entity === Entity.none) throw new Error(`No row ${index}.`);
         return entity;
     };
     await settled(world.run(toggleTodo, { entity: entityAt(0) }));

@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { Entity, workers } from "../../../../index.js";
 import { create } from "../../../../implementation/index.js";
+import { entityOfElement } from "../../shared/attach.js";
 import { settled, watchTicks } from "../../shared/ticks.test-helper.js";
 import * as todos from "../todos/dom.js";
 import { TodoList } from "../todos/elements/todo-list.js";
@@ -29,8 +30,8 @@ it("shows the filter on its buttons, and hides the rows it leaves out, writing o
     const rows = [...list.querySelectorAll("todo-row")];
     const entityAt = (index: number): Entity => {
         const element = rows[index];
-        const entity = element === undefined ? undefined : todos.todoOf.get(element);
-        if (entity === undefined) throw new Error(`No row ${index}.`);
+        const entity = entityOfElement(element ?? null);
+        if (entity === Entity.none) throw new Error(`No row ${index}.`);
         return entity;
     };
     await settled(world.run(toggleTodo, { entity: entityAt(1) }));
@@ -71,7 +72,7 @@ it("moves focus off a row it hides, to the nearest row it shows", async () => {
     for (const text of ["a", "b", "c"]) await world.run(addTodo, { label: text });
     await settled(world.run(addTodo, { label: "d" }));
     const [a, b, c, d] = [...list.querySelectorAll("todo-row")];
-    const entityOf = (element: Element | undefined): Entity => (element === undefined ? undefined : todos.todoOf.get(element)) ?? Entity.none;
+    const entityOf = (element: Element | undefined): Entity => entityOfElement(element ?? null);
     await world.run(toggleTodo, { entity: entityOf(b) });
     await settled(world.run(toggleTodo, { entity: entityOf(c) }));
     // Filtered out: b's nearest row shown is d, after c, which is hidden too.

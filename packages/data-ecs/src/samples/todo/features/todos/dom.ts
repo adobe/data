@@ -1,4 +1,5 @@
-import { Component, Entity, Finalizer, Index, Resource, System } from "../../../../index.js";
+import { Component, Finalizer, Index, Resource, System } from "../../../../index.js";
+import { attach } from "../../shared/attach.js";
 import { done, label, order, todo } from "./data.js";
 import { TodoList } from "./elements/todo-list.js";
 import { TodoRow } from "./elements/todo-row.js";
@@ -20,24 +21,19 @@ declare module "@adobe/data-ecs" {
 Component.register(row, { thread: "main" });
 Resource.register(list, { thread: "main" });
 
-/** The todo each row shows, for events from rows. Rows are never reused, so an entry lives as long as its row. */
-export const todoOf = new WeakMap<Element, Entity>();
-
 /** Todos with rows, in list order. */
 const placed = Index.create({ name: "todos/placed", key: [order], sorted: true, components: { has: [todo, row] } });
 
 /**
- * Gives each new todo a row, while the page has a list for it. It isn't placed until the row is the todo's, so a todo
- * gone first never shows one.
+ * Gives each new todo a row, attached to it for events from the row, while the page has a list for it. It isn't placed
+ * until the row is the todo's, so a todo gone first never shows one.
  */
 export const createRows = System.create({
     name: "todos/createRows",
     components: { has: [todo], not: [row] },
     resources: { is: [list] },
 }, (item, { commands }) => {
-    const element = document.createElement("todo-row");
-    todoOf.set(element, item.entity);
-    commands.add(item.entity, row, element);
+    commands.add(item.entity, row, attach(document.createElement("todo-row"), item.entity));
 });
 
 /** Writes what changed of each todo to its row. */

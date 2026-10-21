@@ -6,9 +6,6 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 
 - **An index lookup's `changed: true`:** a system runs only when the index's entries changed since it last ran, so
   `bindSummary` and `bindToggleAll` lose their early returns; then merge them into one system.
-- **The entity an element shows:** a shared `attach(element, entity)` and `entityOf(event)`, keyed by a `unique symbol`
-  read through `in` narrowing, `entityOf` searching the event's composed path; it replaces `todoOf` and its `WeakMap`
-  and resolves finding 3 below.
 
 ## Decisions for the maintainers
 
@@ -61,9 +58,6 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 2. **Observer systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities
    don't work as bindings. Proposal: allow `up` in observer systems, since it only reads; let `order` take an index over
    the entity a reference names.
-3. **No lookup from an element to its entity.** Object key parts are interned by structure (`index-keys.ts`), so every
-   element is the same key. Proposal: identity-keyed object parts as a component trait, or document a `WeakMap` as the
-   pattern.
 4. **Low-cardinality hash indexes cost O(bucket) per change.** Buckets are kept in entity order and shifted on removal:
    one toggle costs 26, 62 and 400 µs at 1K, 10K and 100K. Proposal: unordered buckets with swap-remove and a position
    map, or a count-only index.

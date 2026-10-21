@@ -6,8 +6,9 @@ import { filter } from "../features/filter/data.js";
 import { setFilter } from "../features/filter/model.js";
 import { addGenerated } from "../features/generate/model.js";
 import { done } from "../features/todos/data.js";
-import { createRows, dom, list, todoOf } from "../features/todos/dom.js";
+import { createRows, dom, list } from "../features/todos/dom.js";
 import { addTodo, editTodo, moveTodo, toggleTodo } from "../features/todos/model.js";
+import { entityOfElement } from "../shared/attach.js";
 import { nextTick, watchTicks } from "../shared/ticks.test-helper.js";
 import { createApp } from "./app.js";
 
@@ -95,7 +96,7 @@ const collectFailures = System.create({ name: "perf/collectFailures", observer: 
  * The todos in list order, read once, before anything's timed: indexing a list's `children` far from the last index
  * read walks them.
  */
-const listedTodos = (): readonly Entity[] => [...found("todo-list").children].map(element => todoOf.get(element) ?? Entity.none);
+const listedTodos = (): readonly Entity[] => [...found("todo-list").children].map(entityOfElement);
 
 /** Forces the style and layout a change left, so their cost counts too. */
 const forceLayout = (): void => {

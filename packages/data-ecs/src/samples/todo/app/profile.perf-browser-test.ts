@@ -6,8 +6,9 @@ import { create } from "../../../implementation/index.js";
 import { bindSummary, bindToggleAll } from "../features/completion/dom.js";
 import { bindFilters, filterRows } from "../features/filter/dom.js";
 import { addGenerated } from "../features/generate/model.js";
-import { bindRows, createRows, placeRows, todoOf } from "../features/todos/dom.js";
+import { bindRows, createRows, placeRows } from "../features/todos/dom.js";
 import { toggleTodo } from "../features/todos/model.js";
+import { entityOfElement } from "../shared/attach.js";
 import { createApp, type App } from "./app.js";
 import { logFailures } from "./log-failures.js";
 
@@ -43,7 +44,7 @@ const appWith = async (n: number): Promise<{ readonly app: App; readonly listed:
     const app = createApp(document.body);
     await app.world.run(addGenerated, { count: n });
     await app.world.run(createRows);
-    return { app, listed: [...document.querySelectorAll("todo-row")].map(element => todoOf.get(element) ?? Entity.none) };
+    return { app, listed: [...document.querySelectorAll("todo-row")].map(entityOfElement) };
 };
 
 /** The share of a profile's samples each function took, by itself, largest first. */

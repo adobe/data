@@ -29,7 +29,8 @@ done or none, clear those done, filter, and generate 10 or 1,000 todos.
   - Rows out of view skip their rendering (`content-visibility: auto`).
 - **Events become runs** in each feature's `events.ts`: listeners on the page's root call `world.run(system, input)`
   and leave the promise; a rejected run goes unhandled, which the browser logs. An event from a row names its todo
-  through `todoOf`, a `WeakMap` from row to entity that `createRows` fills. Systems acting on one todo name it as their
+  through `entityOf(event)`, the entity the first target on its composed path shows: `createRows` attaches each row
+  to its todo (`attach`), and a move's `item` and `before` are read with `entityOfElement`. Systems acting on one todo name it as their
   `target`, so they run on its row alone, writing it in place, and on nothing once it's gone.
 - **Failures** of runs and ticks alike are in their reports, entities the world keeps; the app adds `logFailures`, an
   observer system with `changed: [Report.errors]` that logs them; each report's errors are written once, and an
@@ -45,6 +46,7 @@ app/log-failures.ts   logFailures
 features/index.ts     exports every feature
 shared/feature.ts     Feature: what the app needs of a feature
 shared/connect.ts     on and all: listening for events, and stopping several listeners at once
+shared/attach.ts      attach, entityOf and entityOfElement: the entity an element shows, for its events
 shared/elements/      define: defining the elements features list
 features/<feature>/
     data.ts           components, resources, archetypes and indexes: the feature's data
@@ -68,6 +70,8 @@ Adding a feature is a folder and a line in `features/index.ts`.
 
 - `*/model.test.ts`, in node: each feature's model systems against a world, read back through observer systems.
 - `*/elements/*.browser.test.ts`: elements alone, with no world: properties set, the render checked, events recorded.
+- `shared/attach.browser.test.ts`: the entity an element was attached to, found from an event on it or within its open
+  shadow root, and none for others.
 - `*/dom.browser.test.ts`: a feature's DOM systems driving real elements, after the loop ticks: rows inserted,
   removed without a node left, moved with only the moved row touched and its focus kept, filtered with focus moved
   off, edited; no rows without a list; none for a todo deleted before its tick; several runs before one tick; all
@@ -121,11 +125,10 @@ What the current API does and doesn't offer the DOM path, each with the change i
   the tick after it's made. *Proposal:* allow `up` in observer systems, which only read through it.
 - **`order` can't go with `up`.** Views can't be placed in their models' order from a system over the views.
   *Proposal:* let `order` take an index over the entity a reference names, or allow it with `up`.
-- **No entity is found by its element.** Object parts of index keys are interned by structure (`index-keys.ts`,
-  `canonical` is `JSON.stringify`), so every element is the same key `{}` and an index on `row` can't tell rows apart.
-  The sample keeps a `WeakMap` from row to entity, written where the row is made, which costs one entry per row and
-  nothing per run. *Proposal:* identity-keyed object parts, as a trait of the component (`key: "identity"`), for
-  unique lookups by element; otherwise document the `WeakMap` as the pattern.
+- **No index finds an entity by its element.** Object parts of index keys are interned by structure
+  (`index-keys.ts`, `canonical` is `JSON.stringify`), so every element is the same key `{}` and an index on `row`
+  can't tell rows apart. The sample attaches the entity to the element where the row is made, under a symbol only
+  `shared/attach.ts` holds, which costs one property per row and nothing per run. *No change needed.*
 - **A binding helper can't be typed** from the public types. A generic `bindProperties(element, { label, done })`
   builds `components: { read: [element, ...keys] }` with keys widened to `keyof Components`, and `System.create`
   rejects it: `Property '"error: its object components and resources live on different threads"' is missing`, since

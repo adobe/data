@@ -3,9 +3,9 @@ import { Entity, type World } from "../../../index.js";
 import { toggleAll } from "../features/completion/model.js";
 import { setFilter } from "../features/filter/model.js";
 import { addGenerated } from "../features/generate/model.js";
-import { todoOf } from "../features/todos/dom.js";
 import { TodoRow } from "../features/todos/elements/todo-row.js";
 import { addTodo, deleteTodo, editTodo, moveTodo, toggleTodo } from "../features/todos/model.js";
+import { entityOfElement } from "../shared/attach.js";
 import { nextTick, watchTicks } from "../shared/ticks.test-helper.js";
 import { createApp } from "./app.js";
 
@@ -100,7 +100,7 @@ const workWith = async (n: number): Promise<Record<string, Work>> => {
     const { world } = app;
     await world.run(addGenerated, { count: n });
     await nextTick();
-    const listed = [...document.querySelectorAll("todo-row")].map(row => todoOf.get(row) ?? Entity.none);
+    const listed = [...document.querySelectorAll("todo-row")].map(entityOfElement);
     const at = (index: number): Entity => listed[(index + n) % n] ?? Entity.none;
     for (let i = 0; i < n; i += 2) await world.run(toggleTodo, { entity: at(i) });
     await nextTick();

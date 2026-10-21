@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Entity, System, workers, type World } from "../../../../index.js";
 import { create } from "../../../../implementation/index.js";
+import { entityOfElement } from "../../shared/attach.js";
 import { settled, watchTicks } from "../../shared/ticks.test-helper.js";
-import { dom, list, row, todoOf } from "./dom.js";
+import { dom, list, row } from "./dom.js";
 import { TodoList } from "./elements/todo-list.js";
 import { TodoRow } from "./elements/todo-row.js";
 import { addTodo, deleteTodo, editTodo, moveTodo, toggleTodo } from "./model.js";
@@ -49,8 +50,8 @@ const shown = (element: TodoList): string[] => rowsOf(element).map(row => `${row
 
 const todoAt = (element: TodoList, index: number): Entity => {
     const row = rowsOf(element)[index];
-    const entity = row === undefined ? undefined : todoOf.get(row);
-    if (entity === undefined) throw new Error(`No row ${index}.`);
+    const entity = entityOfElement(row ?? null);
+    if (entity === Entity.none) throw new Error(`No row ${index}.`);
     return entity;
 };
 

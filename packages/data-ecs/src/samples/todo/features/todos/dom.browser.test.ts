@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Entity, System, workers, type World } from "../../../../index.js";
-import { createWorld } from "../../../../implementation/index.js";
+import { create } from "../../../../implementation/index.js";
 import { settled, watchTicks } from "../../shared/ticks.test-helper.js";
 import { dom, list, row, todoOf } from "./dom.js";
 import { TodoList } from "./elements/todo-list.js";
@@ -19,7 +19,7 @@ afterEach(() => {
 const createDriven = async (): Promise<{ readonly world: World; readonly element: TodoList }> => {
     const element = document.createElement("todo-list");
     document.body.append(element);
-    const world = createWorld({ [workers]: 0, [list]: element });
+    const world = create({ [workers]: 0, [list]: element });
     await watchTicks(world);
     world.add(dom);
     return { world, element };
@@ -155,7 +155,7 @@ describe("the todos feature's DOM systems", () => {
     });
 
     it("make no rows while the page has no list", async () => {
-        await using world = createWorld({ [workers]: 0 });
+        await using world = create({ [workers]: 0 });
         await watchTicks(world);
         world.add(dom);
         await settled(world.run(addTodo, { label: "a" }));

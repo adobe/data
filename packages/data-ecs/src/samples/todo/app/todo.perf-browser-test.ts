@@ -1,6 +1,6 @@
 import { it } from "vitest";
 import { Entity, Report, System, workers, type World } from "../../../index.js";
-import { createWorld } from "../../../implementation/index.js";
+import { create } from "../../../implementation/index.js";
 import { toggleAll } from "../features/completion/model.js";
 import { filter } from "../features/filter/data.js";
 import { setFilter } from "../features/filter/model.js";
@@ -184,7 +184,7 @@ const benchmarkListFilter = async (n: number): Promise<void> => {
     element.style.display = "block";
     element.style.maxHeight = "600px";
     document.body.append(style, element);
-    await using world = createWorld({ [workers]: 0, [list]: element });
+    await using world = create({ [workers]: 0, [list]: element });
     await watchTicks(world);
     for (const system of [dom, markList]) world.add(system);
     await world.run(addGenerated, { count: n });

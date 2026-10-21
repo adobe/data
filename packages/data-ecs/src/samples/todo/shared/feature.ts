@@ -1,10 +1,10 @@
 import type { System } from "../../../index.js";
-import type { createWorld } from "../../../implementation/index.js";
+import type { create } from "../../../implementation/index.js";
 import type { Connect } from "./connect.js";
 import type { Elements } from "./elements/define.js";
 
 /** Values resources start at, as a world takes them. */
-export type Resources = Exclude<Parameters<typeof createWorld>[0], undefined>;
+export type Resources = Exclude<Parameters<typeof create>[0], undefined>;
 
 /**
  * What the app needs of a feature to compose it with the others. Its components, resources, indexes, rules and

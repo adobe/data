@@ -2,7 +2,7 @@
 import { it } from "vitest";
 import { cdp } from "vitest/browser";
 import { Entity, System, workers } from "../../../index.js";
-import { createWorld } from "../../../implementation/index.js";
+import { create } from "../../../implementation/index.js";
 import { bindSummary, bindToggleAll } from "../features/completion/dom.js";
 import { bindFilters, filterRows } from "../features/filter/dom.js";
 import { addGenerated } from "../features/generate/model.js";
@@ -72,7 +72,7 @@ it("profiles a run's fixed cost", async () => {
         channel.port2.postMessage(null);
     }), 2001)} |`);
     {
-        await using world = createWorld({ [workers]: 0 });
+        await using world = create({ [workers]: 0 });
         lines.push(`| empty world, a run that changes nothing | ${await timeRuns(() => world.run(nothing), 2001)} |`);
         for (const system of [bindRows, placeRows, filterRows, bindFilters, bindSummary, bindToggleAll, logFailures, createRows]) {
             world.add(system);

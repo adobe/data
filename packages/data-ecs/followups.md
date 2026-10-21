@@ -4,8 +4,6 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 
 ## Queued (decided, not started)
 
-- **The todo sample creates its world through `World.create`,** the only external way to get one, never the
-  implementation's `createWorld`; its `world` is typed `World`, with no test hooks.
 - **An index lookup's `changed: true`:** a system runs only when the index's entries changed since it last ran, so
   `bindSummary` and `bindToggleAll` lose their early returns; then merge them into one system.
 - **The entity an element shows:** a shared `attach(element, entity)` and `entityOf(event)`, keyed by a `unique symbol`

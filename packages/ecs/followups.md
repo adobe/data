@@ -31,7 +31,12 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
   at 10K) and puts the filter's meaning in the list element.
 - **One-off reads:** `world.run` returns no value, so a one-off read needs an observer system that writes into an outer
   variable.
-- **Kernel lookup types:** they lack `has` and `not`, though the compiler accepts them.
+- **Kernel lookup types:** they lack `has` and `not`, though the compiler accepts them. A consumer needs them to ask
+  from a kernel whether a node's parent is selected. Proposed: optional `has` and `not` on kernel lookups by entity.
+- **Per-row CPU values in render systems:** a render body's tables are `{ count, bind }`, so it can't draw with a
+  per-row object such as a texture's bind group, and a row body can't learn its GPU row. A consumer drawing an image
+  per row keeps its own instance buffer, 4,000 draws in 2.1 ms a tick. Possible: tables giving their entities in GPU
+  row order. Not needed until a consumer's profile says so.
 - **Report retention:** the last 256 runs keep their reports (`retainedRuns` in `reports.ts`), a fixed internal
   constant; a later run takes the oldest one's entity. Recommended: keep it internal until a consumer needs another; then
   a world option or resource.

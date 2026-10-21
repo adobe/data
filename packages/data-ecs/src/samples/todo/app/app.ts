@@ -5,7 +5,7 @@ import { filter } from "../features/filter/feature.js";
 import { generate } from "../features/generate/feature.js";
 import { todos } from "../features/todos/feature.js";
 import type { Resources } from "../shared/feature.js";
-import { logTickFailures } from "./tick-failures.js";
+import { logFailures } from "./log-failures.js";
 
 /** The app's features. Each knows only those it builds on; none knows the app. */
 const features = [todos, filter, completion, generate];
@@ -24,7 +24,7 @@ export type App = { readonly world: World; readonly dispose: () => Promise<void>
 export const createApp = (root: HTMLElement): App => {
     const world = createWorld(features.reduce<Resources>((resources, feature) => ({ ...resources, ...feature.resources(root) }), { [workers]: 0 }));
     for (const feature of features) for (const system of feature.systems) world.add(system);
-    world.add(logTickFailures);
+    world.add(logFailures);
     const disconnects = features.map(feature => feature.connect(world, root));
     return {
         world,

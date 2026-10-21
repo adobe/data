@@ -192,8 +192,8 @@ const failingObserver = System.create({ name: "test/failingObserver", observer: 
 const pass = System.create({ name: "test/pass", observer: true }, () => {});
 
 describe("the todo app's failures", () => {
-    /** The messages of the failures logged as a tick's. */
-    const tickFailures = (): string[] => errors.flatMap(values => Array.isArray(values) && values[0] === "A tick failed" && Array.isArray(values[1])
+    /** The messages of the failures logged. */
+    const tickFailures = (): string[] => errors.flatMap(values => Array.isArray(values) && values[0] === "A run failed" && Array.isArray(values[1])
         ? values[1].flatMap((failure: unknown) => typeof failure === "object" && failure !== null && "message" in failure ? [String(failure.message)] : [])
         : []);
 

@@ -27,11 +27,11 @@ done or none, clear those done, filter, and generate 10 or 1,000 todos.
     changes, as their todo or the filter changes, and moves focus off a row it hides to the nearest one shown.
   - *Removed* by a finalizer on the row, which runs whatever ends the todo, `world.dispose()` included.
   - Rows out of view skip their rendering (`content-visibility: auto`).
-- **Events become runs** in each feature's `events.ts`: listeners on the page's root call `world.run(system, input)`,
-  and log what the run's report says failed, or why it was rejected. An event from a row names its todo through
-  `todoOf`, a `WeakMap` from row to entity that `createRows` fills.
-- **Ticks' failures** reach no event's listener, so the app adds `logTickFailures`, an observer system that logs the
-  failures in the `report` resource it hasn't logged yet.
+- **Events become runs** in each feature's `events.ts`: listeners on the page's root call `world.run(system, input)`
+  and leave the promise; a rejected run goes unhandled, which the browser logs. An event from a row names its todo
+  through `todoOf`, a `WeakMap` from row to entity that `createRows` fills.
+- **Failures** of runs and ticks alike are reports, entities the world spawns; the app adds `logFailures`, an observer
+  system with `changed: [Report.failures]` that logs each failure once, an observer pass's at the next pass.
 
 ## Structure
 
@@ -39,9 +39,9 @@ done or none, clear those done, filter, and generate 10 or 1,000 todos.
 index.html            the page: the fixed elements and their layout
 app/app.ts            lists the features, defines their elements, creates the world and connects the events
 app/main.ts           starts the app on the page
-app/tick-failures.ts  logTickFailures
+app/log-failures.ts   logFailures
 shared/feature.ts     Feature: what the app needs of a feature
-shared/connect.ts     on, reported: listening for events and logging failed runs
+shared/connect.ts     on: listening for events
 features/<feature>/
     data.ts           components, resources, archetypes and indexes: the feature's data
     model.ts          systems with input, one per thing a user does: they change data and know no DOM
@@ -67,11 +67,12 @@ Adding a feature is a folder and a line in `app/app.ts`.
   off, edited; no rows without a list; none for a todo deleted before its tick; several runs before one tick; all
   removed on dispose.
 - `app/app.browser.test.ts`: the whole app on the page's markup, used through DOM events as a user would, with no
-  console errors; edits committed on blur; a row's events after its todo is deleted; ticks' failures logged.
+  console errors; edits committed on blur; a row's events after its todo is deleted; a tick's system's and observer
+  system's failures logged.
 - `app/proportional.browser.test.ts`: each operation's DOM mutations, and how often the DOM systems reach rows, are
   the same with 100 todos as with 2,000, less what each row it changed costs.
 - `imports.test.ts`: the layer rules above, and elements importing nothing but each other. `build.test.ts`: the page
-  builds. `shared/connect.test.ts`: failed and rejected runs are logged.
+  builds. `app/log-failures.test.ts`: a run's failures logged once each, an observer pass's at the next pass.
 - `app/todo.perf-browser-test.ts` and `app/profile.perf-browser-test.ts`, with `pnpm test:perf src/samples/todo`:
   times, mutation counts and a profile, logged.
 
@@ -123,11 +124,6 @@ What the current API does and doesn't offer the DOM path, each with the change i
   rejects it: `Property '"error: its object components and resources live on different threads"' is missing`, since
   any component might be on another thread; its body then reads by `Reflect`. *Proposal:* none unless bindings get
   their own constructor; a binding is four to six lines.
-- **A tick's observer failures can't be followed.** The world adds them to the tick's report after its pass
-  (`amendReport` in `create.ts` writes the cell without a stamp), so an observer system with `changed: [report]` never
-  sees them, and a tick that follows replaces the report before any pass reads it: only a run's pass in between does.
-  `logTickFailures` reads `report` on every pass to catch them. *Proposal:* stamp the amended report, so `changed`
-  passes once more; or a failure channel systems follow, such as a reduced resource every failure contributes to.
 - **A run's fixed cost** in Chromium is small, and none of it is a task: a run that changes nothing takes 1.0 µs back
   to back in an empty world, at most 0.3 µs more with the app's seven observer systems added, and 2.5 µs in the app
   with 1K todos, where a

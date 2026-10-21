@@ -9,7 +9,7 @@ import { addGenerated } from "../features/generate/model.js";
 import { bindRows, createRows, placeRows, todoOf } from "../features/todos/dom.js";
 import { toggleTodo } from "../features/todos/model.js";
 import { createApp, defineElements, type App } from "./app.js";
-import { logTickFailures } from "./tick-failures.js";
+import { logFailures } from "./log-failures.js";
 
 /**
  * Where a run's fixed cost goes in Chromium: runs timed one at a time and back to back, in a world gaining the app's
@@ -76,7 +76,7 @@ it("profiles a run's fixed cost", async () => {
     {
         await using world = createWorld({ [workers]: 0 });
         lines.push(`| empty world, a run that changes nothing | ${await timeRuns(() => world.run(nothing), 2001)} |`);
-        for (const system of [bindRows, placeRows, filterRows, bindFilters, bindSummary, bindToggleAll, logTickFailures, createRows]) {
+        for (const system of [bindRows, placeRows, filterRows, bindFilters, bindSummary, bindToggleAll, logFailures, createRows]) {
             world.add(system);
             lines.push(`| + ${system.name} | ${await timeRuns(() => world.run(nothing), 2001)} |`);
         }

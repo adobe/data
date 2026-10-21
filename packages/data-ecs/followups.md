@@ -2,6 +2,18 @@
 
 Open items awaiting a decision or work. Remove an item once it's decided or done.
 
+## Queued (decided, not started)
+
+- **The todo sample creates its world through `World.create`,** the only external way to get one, never the
+  implementation's `createWorld`; its `world` is typed `World`, with no test hooks.
+- **An index lookup's `changed: true`:** a system runs only when the index's entries changed since it last ran, so
+  `bindSummary` and `bindToggleAll` lose their early returns; then merge them into one system.
+- **The entity an element shows:** a shared `attach(element, entity)` and `entityOf(event)`, keyed by a `unique symbol`
+  read through `in` narrowing, `entityOf` searching the event's composed path; it replaces `todoOf` and its `WeakMap`
+  and resolves finding 3 below.
+- **`World.run`'s doc comment** still says observer systems' failures are added to the run's report; they're in the
+  next run's.
+
 ## Decisions for the maintainers
 
 - **Re-adding an observer system:** a re-added observer system runs from the next pass, even for a run already queued,

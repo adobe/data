@@ -1,0 +1,38 @@
+{
+  "extends": "../data/tsconfig-base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true,
+    "types": [
+      "@webgpu/types"
+    ],
+    "paths": {
+      "@adobe/ecs": [
+        "./src/index.ts"
+      ]
+    },
+    "lib": [
+      "ES2024",
+      "ESNext.Disposable",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "src/interface",
+    "src/observe",
+    "src/index.ts"
+  ],
+  "references": [
+    {
+      "path": "./src/interface"
+    },
+    {
+      "path": "./src/observe"
+    }
+  ]
+}

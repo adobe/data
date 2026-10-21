@@ -36,12 +36,12 @@ export type Group<C extends Component.Key> = {
     readonly to: readonly C[] | null;
     readonly added: readonly C[];
     readonly removed: readonly C[];
-    /** Removed and added again within the sync point. */
+    /** Given a value by an add while the entity has it before and after, removed and added again meanwhile or not. */
     readonly replaced: readonly C[];
     readonly entities: readonly Entity[];
 };
 
-/** A sync point's structural changes to the watched components, before they apply. */
+/** A sync point's structural changes to the watched components, and the values adds replace, before they apply. */
 export type ChangeSet<C extends Component.Key> = {
     readonly groups: readonly Group<C>[];
     /** The value before the sync point, or null if the entity didn't have it. */

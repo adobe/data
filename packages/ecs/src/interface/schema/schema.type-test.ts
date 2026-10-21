@@ -140,6 +140,14 @@ check<Equal<IsData<ReadonlyMap<string, { readonly x: number }>>, true>>();
 check<Equal<IsData<ReadonlySet<() => void>>, false>>();
 check<Equal<IsData<Set<string>>, false>>();
 check<Equal<IsData<Map<string, number>>, false>>();
+// An object is data only when every member is: a record of handles isn't, however deep they are.
+check<Equal<IsData<{ readonly context: GPUCanvasContext; readonly canvas: HTMLCanvasElement }>, false>>();
+check<Equal<IsData<{ readonly pipelines: { readonly fill: GPURenderPipeline } }>, false>>();
+check<Equal<IsData<{ readonly items: readonly { readonly blob: Blob }[] }>, false>>();
+check<Equal<IsData<{ readonly at: readonly [number, number]; readonly label?: string; readonly nested: { readonly x: number } }>, true>>();
+// A recursive data type is still data.
+type Tree = { readonly value: number; readonly children: readonly Tree[] };
+check<Equal<IsData<Tree>, true>>();
 // Neither is a struct: neither lives in shared memory.
 check<Equal<IsStruct<ReadonlySet<number>>, false>>();
 check<Equal<IsStruct<ReadonlyMap<number, number>>, false>>();

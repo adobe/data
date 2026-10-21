@@ -271,10 +271,48 @@ describe("changes finalizers", () => {
         groups.length = values.length = 0;
         await run(commands => { commands.add(a, [label, handle], { [label]: "a", [handle]: 3 }); commands.despawn(b); commands.add(a, hidden, true); });
         expect(groups).toEqual([
-            { from: [handle], to: [handle, label], added: [label], removed: [], replaced: [], entities: 1 },
+            { from: [handle], to: [handle, label], added: [label], removed: [], replaced: [handle], entities: 1 },
             { from: [handle, label], to: null, added: [], removed: [handle, label], replaced: [], entities: 1 },
         ]);
         expect(values).toEqual([[1, 3], [2, null]]);
+        await world.dispose();
+    });
+
+    it("see a value an add gives a component the entity keeps as replaced, removed and added again or not", async () => {
+        const groups: unknown[] = [];
+        const values: unknown[] = [];
+        Finalizer.changes({ name: "finalizersTest/replacing", watch: [handle, label] }, ({ groups: seen, previous, next }) => {
+            for (const group of seen) {
+                groups.push({ ...group, entities: group.entities.length });
+                for (const entity of group.entities) values.push([previous(entity, handle), next(entity, handle)]);
+            }
+        });
+        const world = createWorld({ [workers]: 0 });
+        const run = step(world);
+        let a = Entity.none, b = Entity.none, c = Entity.none;
+        await run(commands => { a = commands.spawn([handle, label])({ [handle]: 1, [label]: "a" }); b = commands.spawn([handle, label])({ [handle]: 2, [label]: "b" }); c = commands.spawn([handle, label])({ [handle]: 3, [label]: "c" }); });
+        groups.length = values.length = 0;
+        await run(commands => {
+            commands.add(a, handle, 10);
+            commands.add(a, handle, 11);
+            commands.remove(b, handle);
+            commands.add(b, handle, 20);
+            commands.add(c, handle, 30);
+            commands.remove(c, handle);
+        });
+        expect(groups).toEqual([
+            { from: [handle, label], to: [handle, label], added: [], removed: [], replaced: [handle], entities: 2 },
+            { from: [handle, label], to: [label], added: [], removed: [handle], replaced: [], entities: 1 },
+        ]);
+        expect(values).toEqual([[1, 11], [2, 20], [3, null]]);
+        groups.length = values.length = 0;
+        // Consecutive entries between the same archetypes, adding different components, group apart.
+        await run(commands => { commands.add(a, handle, 12); commands.add(b, label, "b2"); commands.add(c, label, "c2"); });
+        expect(groups).toEqual([
+            { from: [handle, label], to: [handle, label], added: [], removed: [], replaced: [handle], entities: 1 },
+            { from: [handle, label], to: [handle, label], added: [], removed: [], replaced: [label], entities: 1 },
+            { from: [label], to: [label], added: [], removed: [], replaced: [label], entities: 1 },
+        ]);
         await world.dispose();
     });
 });

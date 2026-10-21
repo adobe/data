@@ -215,13 +215,19 @@ export const isMissing = (value: unknown): boolean => value === missing;
 /** A watched component's newest key: watched components are registered and not derived, so they're essential. */
 const essential = (state: State, id: number): Essential => newestKeyOf(state.keys[id]) as Essential;
 
+/** A group of a change set, as it's built. */
+type Grouped = { from: Essential[] | null; to: Essential[] | null; added: Essential[]; removed: Essential[]; replaced: Essential[]; entities: Entity[] };
+
+/** No components, shared by every group that replaces none. */
+const none: readonly number[] = [];
+
 /** The sync point's structural changes to a changes finalizer's components, grouped by how they changed. */
 const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queued[]): ChangeSet<Essential> => {
     const { plan, archetypes, entities } = state;
     const { watches } = runner;
     const names = (archetype: Archetype | null): Essential[] | null =>
         archetype === null ? null : archetype.components.filter(watches).map(id => essential(state, id));
-    const groups = new Map<string, { from: Essential[] | null; to: Essential[] | null; added: Essential[]; removed: Essential[]; replaced: Essential[]; entities: Entity[] }>();
+    const groups = new Map<string, Grouped>();
     /** By `from` and `to` archetype ids: the watched components on each side, and those added and removed. */
     const pairs = new Map<number, { readonly before: Essential[] | null; readonly after: Essential[] | null; readonly added: Essential[]; readonly removed: Essential[] }>();
     const pairOf = (from: Archetype | null, to: Archetype | null) => {
@@ -235,30 +241,82 @@ const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queue
         }
         return pair;
     };
-    const add = (entity: number, from: Archetype | null, to: Archetype | null, fresh: readonly number[]): void => {
+    /** The watched components an entry's adds give a value that it has before and after, in id order, removed meanwhile or not. */
+    const scratch: number[] = [];
+    const scan = (from: Archetype, to: Archetype, buffer: number, start: number, end: number): void => {
+        const { ids } = queued[buffer].buffer;
+        for (let k = start; k < end; k++) {
+            const id = ids[k];
+            if (from.storageById[id] !== undefined && to.storageById[id] !== undefined && watches(id) && !scratch.includes(id)) scratch.push(id);
+        }
+    };
+    const replacedOf = (entry: number, from: Archetype | null, to: Archetype | null): readonly number[] => {
+        if (entry < 0 || from === null || to === null || plan.start[entry] < 0) return none;
+        scratch.length = 0;
+        scan(from, to, plan.buffer[entry], plan.start[entry], plan.end[entry]);
+        const more = plan.more.size === 0 ? undefined : plan.more.get(entry);
+        if (more !== undefined) for (let r = 0; r < more.length; r += 3) scan(from, to, more[r], more[r + 1], more[r + 2]);
+        return scratch.length === 0 ? none : scratch.slice().sort((a, b) => a - b);
+    };
+    /**
+     * The last entry's archetypes, the components its one range of values names, none without one, and its group, null
+     * for no change: consecutive entries, as one system's commands over one archetype make, usually share all three.
+     */
+    let lastFrom: Archetype | null | undefined;
+    let lastTo: Archetype | null | undefined;
+    const lastIds: number[] = [];
+    let lastGroup: Grouped | null = null;
+    /** Whether an entry's one range of values, or none, names the components the last one's did. */
+    const sameIds = (entry: number): boolean => {
+        const start = entry < 0 ? -1 : plan.start[entry];
+        if (start < 0) return lastIds.length === 0;
+        const { ids } = queued[plan.buffer[entry]].buffer;
+        const length = plan.end[entry] - start;
+        if (length !== lastIds.length) return false;
+        for (let i = 0; i < length; i++) if (ids[start + i] !== lastIds[i]) return false;
+        return true;
+    };
+    const add = (entity: number, from: Archetype | null, to: Archetype | null, entry: number): void => {
         // The resource entity's components are resources, not changes, and reports are the world's own.
         if (from?.resource === true || to?.resource === true || from?.meta === true || to?.meta === true) return;
-        const replaced = fresh.length === 0 ? fresh : fresh.filter(id => watches(id) && from?.storageById[id] !== undefined && to?.storageById[id] !== undefined);
+        const single = entry < 0 || plan.more.size === 0 || !plan.more.has(entry);
+        if (single && from === lastFrom && to === lastTo && sameIds(entry)) {
+            lastGroup?.entities.push(asEntity(entity));
+            return;
+        }
+        const replaced = replacedOf(entry, from, to);
         const { before, after, added, removed } = pairOf(from, to);
-        if (replaced.length === 0 && added.length === 0 && removed.length === 0) return;
-        const key = `${from?.id ?? -1}:${to?.id ?? -1}:${replaced.join(",")}`;
-        let group = groups.get(key);
-        if (group === undefined) groups.set(key, group = { from: before, to: after, added, removed, replaced: replaced.map(id => essential(state, id)), entities: [] });
-        group.entities.push(asEntity(entity));
+        let group: Grouped | null = null;
+        if (replaced.length > 0 || added.length > 0 || removed.length > 0) {
+            const key = `${from?.id ?? -1}:${to?.id ?? -1}:${replaced.join(",")}`;
+            group = groups.get(key) ?? null;
+            if (group === null) groups.set(key, group = { from: before, to: after, added, removed, replaced: replaced.map(id => essential(state, id)), entities: [] });
+            group.entities.push(asEntity(entity));
+        }
+        lastFrom = undefined;
+        if (!single) return;
+        lastFrom = from;
+        lastTo = to;
+        lastGroup = group;
+        lastIds.length = 0;
+        const start = entry < 0 ? -1 : plan.start[entry];
+        if (start < 0) return;
+        const { ids } = queued[plan.buffer[entry]].buffer;
+        for (let k = start; k < plan.end[entry]; k++) lastIds.push(ids[k]);
     };
     for (let entry = 0; entry < plan.count; entry++) {
         const from = fromOf(state, entry);
         const despawned = plan.despawned[entry] === 1;
         // Spawned and despawned within the sync point: never there before or after.
         if (from === null && despawned) continue;
-        add(plan.entity[entry], from, despawned ? null : archetypes[plan.to[entry]], plan.fresh.get(entry) ?? []);
+        add(plan.entity[entry], from, despawned ? null : archetypes[plan.to[entry]], entry);
     }
     // Batch spawns no command touched, which have no entry.
     for (const [id, first] of state.born ?? []) {
         const archetype = archetypes[id];
         for (let row = first; row < archetype.count; row++) {
             const entity = archetype.entities[row];
-            if ((plan.slots[indexOf(entity)] ?? -1) < 0) add(entity, null, archetype, []);
+            if ((plan.slots[indexOf(entity)] ?? -1) < 0) add(entity, null, archetype, -1);
         }
     }
     const live = (entity: Entity, id: number): unknown => {

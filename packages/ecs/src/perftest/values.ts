@@ -1,5 +1,6 @@
 import { Archetype } from "../interface/archetype/archetype.js";
 import { Component } from "../interface/component/component.js";
+import { Finalizer } from "../interface/finalizer/finalizer.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
@@ -53,6 +54,9 @@ const seeded = async (pool: number): Promise<World> => {
     return world;
 };
 
+/** Entities the watching finalizer saw replace a pose, its last sync point. */
+let replacedPoses = 0;
+
 export const valueBenchmarks: readonly Benchmark[] = [
     {
         name: "struct copy 100K",
@@ -65,6 +69,26 @@ export const valueBenchmarks: readonly Benchmark[] = [
             const world = await seeded(0);
             const best = await fastest(() => world.run(showPose));
             await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "struct replace kernel watched",
+        operation: "As `struct replace kernel main`, with a changes finalizer watching both components: an edit history recording each commit's replaced values.",
+        per: "commands",
+        n: 2 * rows,
+        typical: [1_000, 100_000],
+        best: { bytes: 32, basis: "Each command writes its 40-byte struct or 8-byte vec2 and reads its entity's 8-byte location." },
+        run: async () => {
+            // Program-wide, so made here, in this benchmark's own process.
+            Finalizer.changes({ name: "values/history", watch: [pose, extent] }, ({ groups }) => {
+                replacedPoses = 0;
+                for (const group of groups) if (group.replaced.includes(pose)) replacedPoses += group.entities.length;
+            });
+            const world = await seeded(0);
+            const best = await fastest(() => world.run(commitPose));
+            await world.dispose();
+            if (replacedPoses !== rows) throw new Error("struct replace kernel watched: wrong count");
             return best;
         },
     },

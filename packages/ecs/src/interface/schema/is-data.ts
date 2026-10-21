@@ -1,16 +1,21 @@
 type Method = (...parameters: never[]) => unknown;
 
+/** How deep `NotData` looks into members: deeper ones count as data, so recursive types stay finite. */
+type Depth = [never, 0, 1, 2, 3, 4];
+
 /**
- * True for a value that isn't data: a function, or an object with a method. A `ReadonlySet` or `ReadonlyMap` is data
- * when what it holds is, but a `Set` or `Map`, which changes in place, isn't. Only an object's own members are looked at.
+ * True for a value that isn't data: a function, an object with a member that isn't data, or a `Set` or `Map`, which
+ * changes in place. A `ReadonlySet` or `ReadonlyMap` is data when what it holds is. Members are looked at five levels
+ * deep.
  */
-type NotData<T> =
+type NotData<T, D extends number = 5> =
+    [D] extends [never] ? false :
     T extends string | number | boolean | bigint | symbol | null | undefined ? false :
     T extends Method ? true :
-    T extends readonly (infer E)[] ? NotData<E> :
-    T extends ReadonlyMap<infer K, infer V> ? (T extends Map<K, V> ? true : NotData<K> | NotData<V>) :
-    T extends ReadonlySet<infer E> ? (T extends Set<E> ? true : NotData<E>) :
-    T extends object ? (true extends { [K in keyof T]-?: T[K] extends Method ? true : false }[keyof T] ? true : false) :
+    T extends readonly (infer E)[] ? NotData<E, Depth[D]> :
+    T extends ReadonlyMap<infer K, infer V> ? (T extends Map<K, V> ? true : NotData<K, Depth[D]> | NotData<V, Depth[D]>) :
+    T extends ReadonlySet<infer E> ? (T extends Set<E> ? true : NotData<E, Depth[D]>) :
+    T extends object ? (true extends { [K in keyof T]-?: NotData<T[K], Depth[D]> }[keyof T] ? true : false) :
     false;
 
 /**

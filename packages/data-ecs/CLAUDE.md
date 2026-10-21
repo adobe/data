@@ -29,6 +29,11 @@ Humans own the interface and agents own the implementation: agents don't add to 
 - `src/index.ts` exports `src/interface`. Tests, samples and benchmarks take `createWorld` from `src/implementation`.
 - `tsc -b` emits only into `dist`; delete any `.js` or `.d.ts` that appears beside sources.
 
+## Naming
+
+- **Archetypes count as types, so they're PascalCase:** `Todo`, and in a namespace `Report.Archetype`, not
+  `Report.archetype`. Component and resource keys, indexes and systems are camelCase values.
+
 ## Real-time performance
 
 The ECS runs every frame, so performance is a requirement, not a polish step, and it outranks every other concern:

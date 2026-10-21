@@ -35,7 +35,8 @@ export const checkKernel = (leaf: Leaf, description: KernelDescription): void =>
     const fail = (message: string): never => { throw new Error(`Kernel "${labelOfItem(leaf)}": ${message}`); };
     const queried = new Set<Key>([...query?.read ?? [], ...query?.write ?? []]);
     const written = new Set<Key>(query?.write);
-    const readable = new Set<Key>(resources?.read);
+    // A condition in `is` is readable too, and the compiler lists it with the reads.
+    const readable = new Set<Key>([...resources?.read ?? [], ...resources?.is ?? []]);
     for (const key of description.resources) if (!readable.has(key)) fail(`reads resource "${labelOf(key)}", which isn't in resources.read.`);
     for (const column of description.columns) {
         if (column.kind === "entity") continue;

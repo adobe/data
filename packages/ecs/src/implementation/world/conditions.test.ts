@@ -46,6 +46,9 @@ const frame = System.create({ name: "conditionsTest/frame", systems: [tick, afte
 const grow = System.create({ name: "conditionsTest/grow", kernel: "cpu", components: { write: [value] }, resources: { not: [paused] } }, row => {
     row[value] = row[value] + 1;
 });
+const growWhilePaused = System.create({ name: "conditionsTest/growWhilePaused", kernel: "cpu", components: { write: [value] }, resources: { is: [paused] } }, row => {
+    row[value] = row[value] + 1;
+});
 
 describe("resource conditions", () => {
     it("skip a system while they don't hold, successfully, so systems after it still run", async () => {
@@ -106,6 +109,15 @@ describe("resource conditions", () => {
         await world.run(grow);
         await world.run(pause);
         await world.run(grow);
+        const [entity] = await select(world, { required: [value] });
+        expect(await read(world, entity, value)).toBe(2);
+    });
+    it("run a kernel only while its `is` condition holds", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(System.create({ name: "conditionsTest/seed" }, ({ commands }) => { commands.spawn([value])({ [value]: 1 }); }));
+        await world.run(growWhilePaused);
+        await world.run(pause);
+        await world.run(growWhilePaused);
         const [entity] = await select(world, { required: [value] });
         expect(await read(world, entity, value)).toBe(2);
     });

@@ -59,4 +59,28 @@ describe("layoutOf", () => {
         expect(layout.read(views, 1)).toEqual([1, 2, 3]);
         expect([...views.f32.subarray(0, 8)]).toEqual([-1, -1, -1, -1, 1, 2, 3, -1]);
     });
+
+    it("reads and writes structs of every leaf kind, nested and with any member name", () => {
+        const integer: Schema = { type: "integer", minimum: 0, maximum: 255 };
+        const layout = layoutOf({
+            type: "object",
+            properties: {
+                ["__proto__"]: f32,
+                flag: { type: "boolean" },
+                count: integer,
+                at: vec(2),
+                inner: { type: "object", properties: { x: { type: "number" }, pairs: { type: "array", items: vec(2), minItems: 2, maxItems: 2 } } },
+            },
+        });
+        if (layout.kind !== "linear") throw new Error("not linear");
+        const buffer = new ArrayBuffer(256);
+        const views = { f32: new Float32Array(buffer), f64: new Float64Array(buffer), i32: new Int32Array(buffer), u32: new Uint32Array(buffer), u8: new Uint8Array(buffer) };
+        const value = JSON.parse('{ "__proto__": 0.5, "flag": true, "count": 7, "at": [1, 2], "inner": { "x": 0.25, "pairs": [[3, 4], [5, 6]] } }');
+        layout.write(views, 1, value);
+        const read = layout.read(views, 1);
+        expect(read).toEqual(value);
+        expect(Object.getPrototypeOf(read)).toBe(Object.prototype);
+        layout.write(views, 1, { flag: false, count: 1, at: [0, 0] });
+        expect(layout.read(views, 1)).toEqual(JSON.parse('{ "__proto__": null, "flag": false, "count": 1, "at": [0, 0], "inner": { "x": null, "pairs": [[null, null], [null, null]] } }', (_, leaf: unknown) => leaf === null ? NaN : leaf));
+    });
 });

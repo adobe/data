@@ -14,6 +14,7 @@ import { finalizedBenchmarks } from "./finalized.js";
 import { tailBenchmarks } from "./tails.js";
 import { transferBenchmarks } from "./transfers.js";
 import { indexBenchmarks } from "./indexes.js";
+import { structReplace, valueBenchmarks } from "./values.js";
 import { observedGpuBenchmarks } from "./observed-gpu.js";
 
 /** Every worker's copy bandwidth together, through browser workers running the calibration script. */
@@ -79,6 +80,9 @@ const gpuFastest = async (device: GPUDevice, run: () => Promise<unknown>, batch 
 const benchmarks = (device: GPUDevice): readonly Benchmark[] => [
     ...placed([main, pooled]),
     ...indexBenchmarks.filter(benchmark => benchmark.name.endsWith(" workers")),
+    ...valueBenchmarks,
+    structReplace("main", 0),
+    structReplace("workers", threads, "threads"),
     wake,
     {
         name: "loop tick idle",

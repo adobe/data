@@ -75,6 +75,11 @@ const addRange = (state: State, entry: number, buffer: number, start: number, en
         plan.end[entry] = end;
         return;
     }
+    // The next of its commands in the same buffer, as a body's adds to one row are, extends its range.
+    if (plan.buffer[entry] === buffer && plan.end[entry] === start && !plan.more.has(entry)) {
+        plan.end[entry] = end;
+        return;
+    }
     let more = plan.more.get(entry);
     if (more === undefined) plan.more.set(entry, more = []);
     more.push(buffer, start, end);

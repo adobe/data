@@ -274,6 +274,61 @@ const nodeOf = (shape: Shape, leaves: readonly Leaf[], next: { index: number }):
     };
 };
 
+/** Whether code can be generated here; a content security policy without `'unsafe-eval'` forbids it. */
+let generating = true;
+
+/** A struct member's name as an object literal's key: quoted, and computed for `__proto__`, which a plain key would make the prototype. */
+const propertyOf = (name: string): string => name === "__proto__" ? `[${JSON.stringify(name)}]` : JSON.stringify(name);
+
+/**
+ * A struct's or nested tuple's read and write as straight-line code: one literal of its leaves' loads, and one store per
+ * leaf, rather than a call per leaf and properties added one at a time. Only numbers, view names and quoted member
+ * names are written into the code. A value that isn't an object is written through `fallback`. Null where code can't
+ * be generated.
+ */
+const generatedNode = (shape: Shape, leaves: readonly Leaf[], fallback: Node): Node | null => {
+    if (!generating) return null;
+    const at = (leaf: Leaf): string => `views.${leaf.view}[row * ${leaf.unitStride} + ${leaf.unitOffset}]`;
+    let next = 0;
+    const literal = (node: Shape): string => {
+        if (node.kind === "scalar") {
+            const leaf = leaves[next++];
+            return leaf.scalar === "boolean" ? `${at(leaf)} !== 0` : at(leaf);
+        }
+        if (node.kind === "tuple") return `[${node.items.map(literal).join(", ")}]`;
+        return `{ ${node.items.map((item, i) => `${propertyOf(node.names[i])}: ${literal(item)}`).join(", ")} }`;
+    };
+    const read = literal(shape);
+    next = 0;
+    let temporaries = 0;
+    // A member of `value` is read directly when `value` is known to be an object, and through `element` otherwise.
+    const stores = (node: Shape, value: string, object: boolean): string[] => {
+        if (node.kind === "scalar") return [`${at(leaves[next++])} = Number(${value});`];
+        const keys = node.kind === "struct" ? node.names.map(name => JSON.stringify(name)) : node.items.map((_, i) => String(i));
+        return node.items.flatMap((item, i) => {
+            const member = object ? `${value}[${keys[i]}]` : `element(${value}, ${keys[i]})`;
+            if (item.kind === "scalar") return stores(item, member, false);
+            const temporary = `t${temporaries++}`;
+            return [`const ${temporary} = ${member};`, ...stores(item, temporary, false)];
+        });
+    };
+    const body = [
+        `return { read: (views, row) => (${read}), write: (views, row, value) => {`,
+        `if (typeof value !== "object" || value === null) { fallback.write(views, row, value); return; }`,
+        ...stores(shape, "value", true),
+        "} };",
+    ].join("\n");
+    try {
+        // The factory returns the node its body above makes.
+        const node: Node = new Function("element", "fallback", body)(element, fallback);
+        return node;
+    }
+    catch {
+        generating = false;
+        return null;
+    }
+};
+
 const gpuLayoutOf = (schema: Schema): "storage" | "vertex" | undefined =>
     "type" in schema && (schema.type === "object" || schema.type === "array") ? schema.layout : undefined;
 
@@ -300,7 +355,9 @@ export const layoutOf = (schema: Schema | undefined): Layout => {
         unitStride: stride / bytesOf(leaf.view),
         unitOffset: leaf.offset / bytesOf(leaf.view),
     }));
-    const node = nodeOf(shape, leaves, { index: 0 });
+    const built = nodeOf(shape, leaves, { index: 0 });
+    // Scalars and tuples of scalars are already straight-line.
+    const node = shape.kind === "struct" || (shape.kind === "tuple" && shape.items.some(item => item.kind !== "scalar")) ? generatedNode(shape, leaves, built) ?? built : built;
     return { kind: "linear", leaves, stride, read: node.read, write: node.write };
 };
 

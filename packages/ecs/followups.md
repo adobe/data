@@ -115,6 +115,10 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
   `up filtered after a reparent` +45%, `up small tree in a big world` +79%. They're the same at `c6bb3c83`, before
   strings, so the drift is older. Worth bisecting from `e3c30aa1`.
 
+- **`tail late snapshot 10K` is about 58× slower than this machine's record at `e3c30aa1`:** 482 ns against 8.2 a row
+  copied, in node and chromium alike, already at `ace67077`. Worth bisecting from `e3c30aa1`; the strings commit
+  touched tails' snapshots.
+
 - **A joined thread's first tail task once never finished,** under heavy machine load (two test suites at once): the
   world waited on `channel.idle()` with task 1 posted and not done (`threads.browser.test.ts`, tails "see one tick's
   values"). It didn't recur in 25 runs without the extra load, and the base failed once on another threads test in the

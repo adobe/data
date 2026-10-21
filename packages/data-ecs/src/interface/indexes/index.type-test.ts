@@ -265,3 +265,29 @@ System.create({
     // @ts-expect-error kernels are ordered only by indexes of struct keys
     order: named,
 }, () => {});
+
+// An index lookup's `changed: true` runs its system only when the index's entries changed since it last ran: its
+// lists' `changed` then reports entries alone. Observer systems and CPU kernels take it; it's not a list of components.
+System.create({ observer: true, lookup: { living: { index: living, changed: true } } }, ({ lookup }) => {
+    const rows = lookup.living();
+    check<Equal<typeof rows.changed, boolean>>();
+    check<Equal<typeof rows.length, number>>();
+});
+System.create({ components: { read: [cell] }, lookup: { near: { index: grid, read: [position], changed: true } } }, (row, { lookup }) => {
+    void lookup.near(row[cell]).at(0)[position];
+});
+System.create({
+    kernel: "cpu",
+    components: { read: [cell], write: [velocity] },
+    lookup: { near: { index: grid, changed: true } },
+}, () => {});
+System.create({
+    // @ts-expect-error only an index lookup's `changed` may be true
+    lookup: { player: { read: [health], changed: true } },
+}, () => {});
+System.create({
+    // @ts-expect-error `changed` is true or a list of components
+    lookup: { living: { index: living, changed: false } },
+}, () => {});
+// @ts-expect-error a finalizer runs on each entity that stops matching, so its lookups' `changed` is never true
+Finalizer.create({ components: { read: [owner] }, lookup: { tasks: { index: tasksOf, changed: true } } }, () => {});

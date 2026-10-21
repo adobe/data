@@ -1,8 +1,8 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
-import type { Lookup } from '../../interface/system/access.js';
-import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, itemOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration } from '../../interface/registry/index.js';
+import type { SystemLookup } from '../../interface/system/access.js';
+import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, itemOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration, watchedBy } from '../../interface/registry/index.js';
 import { layoutOf, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { stampChanged, writeOf } from './archetype.js';
 import { emptyViews } from './arrays.js';
@@ -681,7 +681,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
                     unique: index.declaration.unique === true,
                     reads,
                     readIds: reads.map(numberOf),
-                    watched: "changed" in declared ? declared.changed?.length ?? 0 : 0,
+                    watched: watchedBy(declared).length,
                     record,
                 });
                 threadIndexes.push(threadIndex);
@@ -1103,7 +1103,7 @@ const localStorage = (component: number, layout: Layout, views: Views, values: u
 };
 
 /** A lookup returning `read` values keyed by component, from this thread's views. */
-const lookupOf = (host: RunnerHost, lookup: Lookup) => {
+const lookupOf = (host: RunnerHost, lookup: SystemLookup) => {
     const read = (lookup.read ?? []).map(host.numberOf);
     const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
     const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
@@ -1129,7 +1129,7 @@ const lookupOf = (host: RunnerHost, lookup: Lookup) => {
 };
 
 /** A lookup reading nothing, from this thread's views: the shared empty row for every entity it finds. */
-const emptyLookupOf = (host: RunnerHost, lookup: Lookup) => {
+const emptyLookupOf = (host: RunnerHost, lookup: SystemLookup) => {
     const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
     const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
     return (entity: Entity): object | null => {
@@ -1150,7 +1150,7 @@ const emptyLookupOf = (host: RunnerHost, lookup: Lookup) => {
  * a component `watched` names may have changed in it after `since`. A GPU kernel's column stamps reach this thread as
  * row ticks; a component keeping no ticks counts as changed.
  */
-const changedLookupOf = (host: RunnerHost, lookup: Lookup, watched: readonly Key[], since: Since) => {
+const changedLookupOf = (host: RunnerHost, lookup: SystemLookup, watched: readonly Key[], since: Since) => {
     const read = (lookup.read ?? []).map(host.numberOf);
     const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
     const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
@@ -1183,7 +1183,7 @@ const changedLookupOf = (host: RunnerHost, lookup: Lookup, watched: readonly Key
 };
 
 /** The lookup by entity a declaration chooses, once: with `changed`, reading nothing, or reading values. */
-const entityLookupOf = (host: RunnerHost, lookup: Lookup, since: Since) => {
+const entityLookupOf = (host: RunnerHost, lookup: SystemLookup, since: Since) => {
     const watched = "index" in lookup ? undefined : lookup.changed;
     if (watched !== undefined) return changedLookupOf(host, lookup, watched, since);
     return (lookup.read ?? []).length === 0 ? emptyLookupOf(host, lookup) : lookupOf(host, lookup);

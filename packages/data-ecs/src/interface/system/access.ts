@@ -34,6 +34,17 @@ export type Lookup =
     | { readonly index: Index; readonly read?: readonly Component.Key[]; readonly changed?: readonly Component.Key[] };
 
 /**
+ * A system's lookup. An index lookup's `changed: true` makes the index a change filter, as a resource in `changed` is:
+ * every row passes when an entity entered or left the index, or moved to another key or position in it, since the
+ * system last ran. A system whose only change filters these are runs only then, skipped before its body otherwise, as
+ * when a condition fails, keeping its `lastRun`. Its lists' `changed` then reports those changes alone. Only on the
+ * world's thread.
+ */
+export type SystemLookup =
+    | Lookup
+    | { readonly index: Index; readonly read?: readonly Component.Key[]; readonly changed: true };
+
+/**
  * The parent each row's values flow down from: the entity its `through` reference names, read before the row. Rows
  * run parent first, so a parent's value is the one written earlier in the same run, and `read` may name components the
  * system writes.

@@ -127,6 +127,8 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 - **`up` and `order` run only on `world`:** a system that declares either can't be placed on a joined thread, which
   refuses the claim, or fails the system's registration once the thread is joined. So does a lookup through an index
   with an object key part, which the world keeps on its own thread; one keyed by structs is read where the system runs.
+  An index lookup's `changed: true` runs only on `world` too, observer systems' included, since the world decides from
+  its index whether the system runs.
 - **Observer systems** are placed as other systems are, and run on their thread after the world's sync points (see
   Observer systems on joined threads); a joined thread's own, which its `add` or `run` takes, run there whatever they
   read, and read only structs and the objects of the threads it fills.

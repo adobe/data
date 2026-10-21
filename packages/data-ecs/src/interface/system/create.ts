@@ -35,7 +35,7 @@ type IndexLookups<D> = {
             ? {
                 readonly index?: Index<{ readonly key: readonly Exclude<Component.Key, Written<D, "components">>[] }>;
                 readonly read?: readonly Exclude<HeldBy<I>, Written<D, "components">>[];
-                readonly changed?: readonly HeldBy<I>[];
+                readonly changed?: readonly HeldBy<I>[] | true;
             }
             : { readonly changed?: readonly (Listed<Lookups<D>[N], "read"> | Listed<Lookups<D>[N], "has">)[] }
     };
@@ -61,7 +61,7 @@ type Lists<D extends Declaration> = {
 
 type Kernel = {
     readonly components?: { readonly read?: readonly StructComponent[]; readonly write?: readonly StructComponent[] };
-    readonly lookup?: { readonly [name: string]: { readonly read?: readonly StructComponent[]; readonly changed?: readonly Component.Key[]; readonly index?: Index<{ readonly key: readonly StructComponent[] }> } };
+    readonly lookup?: { readonly [name: string]: { readonly read?: readonly StructComponent[]; readonly changed?: readonly Component.Key[] | true; readonly index?: Index<{ readonly key: readonly StructComponent[] }> } };
     readonly up?: { readonly read?: readonly StructComponent[] };
     readonly order?: Index<{ readonly key: readonly StructComponent[] }>;
     readonly resources?: { readonly read?: readonly StructResource[]; readonly write?: never };

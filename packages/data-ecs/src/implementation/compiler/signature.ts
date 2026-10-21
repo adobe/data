@@ -122,6 +122,8 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
                     const listed = fields.filter(([field]) => field !== "index");
                     const read = listed.flatMap(([field, item]) => {
                         if (index ? field !== "read" && field !== "changed" : field !== "read" && field !== "has" && field !== "not" && field !== "changed") return fail(item, `lookup.${lookup}.${field} is not allowed in a kernel declaration`);
+                        // An index lookup's `changed: true` filters the system's runs, which the world does before calling it.
+                        if (index && field === "changed" && item.value.type === "Literal" && item.value.value === true) return [];
                         const names = identifiers(item.value, `lookup.${lookup}.${field}`, lists);
                         return field === "read" ? names : [];
                     });

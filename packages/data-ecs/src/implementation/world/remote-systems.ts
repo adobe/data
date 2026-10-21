@@ -2,7 +2,7 @@ import type { Leaf } from '../../interface/system/leaf.js';
 import { entityWatchesOf, lookupComponentsOf } from './lookup-keys.js';
 import type { Leaf as FinalizerLeaf } from '../../interface/finalizer/created.js';
 import type { Warning } from '../../interface/report/failure.js';
-import { declarationOf, idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
+import { declarationOf, idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import { layoutOf } from '../../interface/registry/layout.js';
 import type { Archetype } from './archetype.js';
 import { chunkShift } from './kernel.js';
@@ -488,9 +488,13 @@ export const finalizerKeysOf = (finalizer: FinalizerLeaf): readonly symbol[] => 
 };
 
 /**
- * Why a leaf can't run on a joined thread, or null when it can: `up`, `order`, one entity, and lookups through indexes
- * with an object key part, which live on the world's thread, run only there.
+ * Why a leaf can't run on a joined thread, or null when it can: `up`, `order`, one entity, lookups through indexes with
+ * an object key part, which live on the world's thread, and indexes as change filters run only there.
  */
+/** Why a leaf with an index as a change filter can't run on a joined thread. */
+export const entriesOnJoined = (leaf: Leaf, thread: string, index: string): string =>
+    `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and when index "${index}" changed, a lookup's changed being true, which runs only on the world's thread.`;
+
 export const unplaceable = (leaf: Leaf, thread: string): string | null => {
     if (leaf.declaration.up !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and declares up, which runs only on the world's thread.`;
     if (leaf.declaration.order !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and orders its rows by an index, which runs only on the world's thread.`;
@@ -501,6 +505,7 @@ export const unplaceable = (leaf: Leaf, thread: string): string | null => {
         if (index !== undefined && object !== undefined) {
             return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object)}" is an object, so it runs only on the world's thread.`;
         }
+        if (index !== undefined && watchesEntries(lookup)) return entriesOnJoined(leaf, thread, labelOfItem(index));
     }
     return null;
 };
@@ -512,7 +517,7 @@ const remoteIndexesOf = (state: State, lookup: Leaf["declaration"]["lookup"], ac
     const named: (readonly [string, number])[] = [];
     for (const [name, index] of acquired.byName) {
         const declared = lookup?.[name];
-        const watched = (declared !== undefined && "changed" in declared ? declared.changed ?? [] : []).map(key => idOf(state, key));
+        const watched = (declared === undefined ? [] : watchedBy(declared)).map(key => idOf(state, key));
         const record = state.memory.allocate(8 * recordWordsOf(index.sorted !== null, watched.length));
         indexes.push({ index, watched, record });
         named.push([name, record]);

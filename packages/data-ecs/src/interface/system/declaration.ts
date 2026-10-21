@@ -1,7 +1,7 @@
 import type { Index } from '../indexes/index-type.js';
 import type { Resource } from '../resource/resource.js';
 import type { Schema } from '../schema/schema.js';
-import type { ComponentAccess, Lookup, ResourceAccess, Up } from './access.js';
+import type { ComponentAccess, ResourceAccess, SystemLookup, Up } from './access.js';
 import type { Name } from './name.js';
 import type { Shader } from './render.js';
 import type { System } from './system.js';
@@ -24,7 +24,7 @@ export type Declaration = {
     readonly kernel?: "cpu" | "gpu";
     /** The entities it runs over, and what it reads and writes of theirs. Omitted for a system that runs once per run. */
     readonly components?: ComponentAccess;
-    readonly lookup?: { readonly [name: string]: Lookup };
+    readonly lookup?: { readonly [name: string]: SystemLookup };
     /**
      * Runs rows in depth order through `through`, so each reads its parent's `read` values after the parent ran, as
      * the context's `up`, or null for a row without a parent. With change filters, a row also passes when its parent,

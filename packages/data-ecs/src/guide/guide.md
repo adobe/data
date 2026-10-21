@@ -491,20 +491,20 @@ const find = System.create({ input: { type: "object", properties: { id: { type: 
 [`13-indexes.test.ts`](13-indexes.test.ts#L51-L56)
 
 ```ts
-// An index without a key holds every entity with its components, in entity order. Added, this observer system keeps a
-// count as players come and go.
+// An index without a key holds every entity with its components, in entity order. With changed: true, this observer
+// system runs only when an entity entered or left the index, so added, it keeps a count as players come and go.
 const players = Index.create({ key: [], components: { has: [player] } });
 let playerCount = 0;
-const countPlayers = System.create({ observer: true, lookup: { players: { index: players } } }, ({ lookup }) => {
-    const all = lookup.players();
-    if (all.changed) playerCount = all.length;
+const countPlayers = System.create({ observer: true, lookup: { players: { index: players, changed: true } } }, ({ lookup }) => {
+    playerCount = lookup.players().length;
 });
 ```
 
-[`13-indexes.test.ts`](13-indexes.test.ts#L58-L65)
+[`13-indexes.test.ts`](13-indexes.test.ts#L58-L64)
 
 A list stays valid until its call site runs again. Lists and rows read only what the index holds and its lookup's
-`read` names, and `list.changed` tells whether an entity entered, left or moved in it since the system last ran.
+`read` names, and `list.changed` tells whether an entity entered, left or moved in it since the system last ran. A
+lookup's `changed: true` runs its system only when that happened anywhere in the index.
 
 ### 14. Kernels
 

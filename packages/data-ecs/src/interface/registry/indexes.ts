@@ -25,7 +25,15 @@ export const indexDefinitionOf = (value: unknown): Created | undefined => typeof
 type Key = symbol;
 
 /** A lookup as a declaration holds it: by entity, or through an index. */
-type AnyLookup = { readonly index?: unknown; readonly read?: readonly Key[]; readonly has?: readonly Key[]; readonly changed?: readonly Key[] };
+type AnyLookup = { readonly index?: unknown; readonly read?: readonly Key[]; readonly has?: readonly Key[]; readonly changed?: readonly Key[] | true };
+
+const noKeys: readonly never[] = [];
+
+/** The components whose changes a lookup's rows or lists report: none for an index lookup's `changed: true`. */
+export const watchedBy = <K extends PropertyKey>(lookup: { readonly changed?: readonly K[] | true }): readonly K[] => lookup.changed === true ? noKeys : lookup.changed ?? noKeys;
+
+/** Whether a lookup's `changed` is true: its index's entries changing is a change filter of its system. */
+export const watchesEntries = (lookup: AnyLookup): boolean => lookup.changed === true;
 
 /** The index a lookup goes through, or undefined for a lookup by entity. */
 export const indexOfLookup = (lookup: AnyLookup): Created | undefined => lookup.index === undefined ? undefined : indexDefinitionOf(lookup.index);
@@ -34,13 +42,17 @@ export const indexOfLookup = (lookup: AnyLookup): Created | undefined => lookup.
 export const lookupKeysOf = (lookup: AnyLookup): readonly Key[] => indexOfLookup(lookup)?.declaration.key ?? [];
 
 /**
- * Throws for a lookup by entity whose `changed` names a component it neither reads nor has, and for an index lookup
- * whose `index` isn't a value `Index.create` returned, or whose `read` or `changed` names a component that not every
- * entity the index holds has.
+ * Throws for a lookup by entity whose `changed` names a component it neither reads nor has, for an index lookup whose
+ * `index` isn't a value `Index.create` returned, or whose `read` or `changed` names a component that not every entity
+ * the index holds has, and for a `changed: true` but on a system's index lookup.
  */
 export const checkLookup = (what: "System" | "Finalizer", name: string, lookupName: string, lookup: AnyLookup): void => {
+    if (lookup.changed === true) {
+        if (what === "Finalizer") throw new Error(`Finalizer "${name}": lookup "${lookupName}"'s changed is true, which only a system's index lookup takes; a finalizer runs on each entity that stops matching.`);
+        if (lookup.index === undefined) throw new Error(`System "${name}": lookup "${lookupName}"'s changed is true, which only an index lookup takes; name the components it watches.`);
+    }
     if (lookup.index === undefined) {
-        for (const key of lookup.changed ?? []) {
+        for (const key of watchedBy(lookup)) {
             if (!(lookup.read ?? []).includes(key) && !(lookup.has ?? []).includes(key)) throw new Error(`${what} "${name}": lookup "${lookupName}" watches "${labelOf(key)}", which it neither reads nor has; name it in its read or has.`);
         }
         return;
@@ -54,7 +66,7 @@ export const checkLookup = (what: "System" | "Finalizer", name: string, lookupNa
         }
     };
     check("reads", lookup.read);
-    check("watches", lookup.changed);
+    check("watches", watchedBy(lookup));
 };
 
 /** The key parts a system's rows are ordered by: its `order` index's, or none. */

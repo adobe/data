@@ -187,8 +187,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const addedIds = (query?.added ?? []).map(key => idOf(state, key));
     const changedIds = (query?.changed ?? []).map(key => idOf(state, key));
     const resourceChanged = resources?.changed ?? [];
-    const filtered = addedIds.length + changedIds.length + resourceChanged.length > 0;
     const indexLookups = acquireLookups(state, declaration.lookup, declaration.order);
+    /** The indexes whose entries changing passes every row, as a changed resource does: its lookups' with `changed: true`. */
+    const indexFilters = indexLookups.filters;
+    const indexFiltered = indexFilters.length > 0;
+    const filtered = addedIds.length + changedIds.length + resourceChanged.length + indexFilters.length > 0;
     /** Its `lastRun` while it runs, which its lookups' lists and rows compare with. */
     const lookupSince: Since = { value: since };
     let kernel: BoundKernel | null = null;
@@ -854,6 +857,13 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     };
     const holds = (): boolean => conditionIs.every(holding) && !conditionNot.some(holding);
     const conditioned = conditionIs.length + conditionNot.length > 0;
+    /** Whether an index of `indexFilters` changed its entries since `since`: refreshed before its tier, so current. */
+    const indexesChangedSince = (since: number): boolean => {
+        for (let k = 0; k < indexFilters.length; k++) if (indexFilters[k].changed > since) return true;
+        return false;
+    };
+    /** Whether its only change filters are indexes, so a run in which none changed passes no row. */
+    const indexesOnly = indexFiltered && addedIds.length + changedIds.length + resourceChanged.length === 0 && up === null;
 
     /** A GPU kernel that could never run on the GPU is rejected in every world, with or without one. */
     const load = async (): Promise<void> => {
@@ -881,6 +891,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         if (holdings.removed) return noChunks;
         // A system whose conditions don't hold is skipped, successfully, and keeps its `lastRun`.
         if (conditioned && !holds()) return noChunks;
+        const indexesChanged = indexFiltered && indexesChangedSince(lastRun);
+        // One filtered only by indexes, none of which changed, is skipped as when a condition fails.
+        if (indexesOnly && !indexesChanged) return noChunks;
         const tick = ++state.tick;
         for (let k = 0; k < writes.length; k++) state.written[writes[k]] = tick;
         lookupSince.value = lastRun;
@@ -897,7 +910,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         holder.buffer = owned[0];
         chunks[0] = ownedChunks[0];
         try {
-            const resourcesChanged = resourceChanged.length > 0 && resourcesChangedSince(lastRun);
+            const resourcesChanged = indexesChanged || (resourceChanged.length > 0 && resourcesChangedSince(lastRun));
             /** -1 passes every row. */
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             context.bind();
@@ -913,7 +926,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 if (ran) system.body(context.value);
                 return chunks;
             }
-            // Only a resource filter, and no resource changed: no row passes, unless its parent changed.
+            // Only resource and index filters, none of which changed: no row passes, unless its parent changed.
             if (since >= 0 && addedIds.length + changedIds.length === 0 && up === null) return chunks;
             ran = true;
             refreshMatches();

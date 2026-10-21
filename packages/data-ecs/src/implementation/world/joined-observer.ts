@@ -1,6 +1,6 @@
 import type { Leaf } from '../../interface/system/leaf.js';
-import type { Lookup } from '../../interface/system/access.js';
-import { idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
+import type { SystemLookup } from '../../interface/system/access.js';
+import { idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import type { Archetype } from './archetype.js';
 import { readCell } from './cells.js';
 import { indexOf } from './entities.js';
@@ -11,7 +11,7 @@ import { flushBetween, countChanged } from './layout-directory.js';
 import { logSyncWord, type MoveLog } from './move-log.js';
 import { lineWords } from './protocol.js';
 import type { ToJoined } from './joining.js';
-import { keysOf, liftColumns } from './remote-systems.js';
+import { entriesOnJoined, keysOf, liftColumns } from './remote-systems.js';
 import { createRunner, type Runner } from './runner.js';
 import { idOf, type Key, type State } from './state.js';
 import {
@@ -170,13 +170,13 @@ export const createObserverTarget = (thread: number, label: string, post: (messa
 
 const unique = (ids: readonly number[]): readonly number[] => [...new Set(ids)];
 
-const lookupReadsOf = (state: State, lookup: { readonly [name: string]: Lookup } | undefined): { readonly reads: readonly number[]; readonly watched: readonly number[] } => {
+const lookupReadsOf = (state: State, lookup: { readonly [name: string]: SystemLookup } | undefined): { readonly reads: readonly number[]; readonly watched: readonly number[] } => {
     const reads: number[] = [];
     const watched: number[] = [];
     for (const name in lookup) {
         const declared = lookup[name];
         const index = indexOfLookup(declared);
-        const changed = "changed" in declared ? declared.changed ?? [] : [];
+        const changed = watchedBy(declared);
         for (const key of [...declared.read ?? [], ...changed, ...index?.declaration.key ?? []]) reads.push(idOf(state, key));
         if (index === undefined) for (const key of changed) watched.push(idOf(state, key));
     }
@@ -197,6 +197,10 @@ const startCounting = (state: State): void => {
  * the tick it last ran at.
  */
 export const createJoinedObserverRunner = (state: State, leaf: Leaf, target: ObserverTarget, since = 0): Runner => {
+    for (const lookup of Object.values(leaf.declaration.lookup ?? {})) {
+        const index = indexOfLookup(lookup);
+        if (index !== undefined && watchesEntries(lookup)) throw new Error(entriesOnJoined(leaf, threadOf(leaf.declaration, "System", leaf.name) ?? target.label, labelOfItem(index)));
+    }
     // One placed there by the objects it names, rather than the thread's own, is named there by its id and its keys'.
     if (!state.observer.proxies.has(leaf)) {
         if (idOfItem(leaf) === undefined) {
@@ -233,7 +237,7 @@ export const createJoinedObserverRunner = (state: State, leaf: Leaf, target: Obs
     const named: (readonly [string, number])[] = [];
     for (const [name, index] of base.holdings.indexes?.byName ?? []) {
         const declared = declaration.lookup?.[name];
-        const watched = (declared !== undefined && "changed" in declared ? declared.changed ?? [] : []).map(key => idOf(state, key));
+        const watched = (declared === undefined ? [] : watchedBy(declared)).map(key => idOf(state, key));
         const words = recordWordsOf(index.sorted !== null, watched.length);
         const record = state.memory.allocate(8 * words);
         records.push({ index, watched, record, words });

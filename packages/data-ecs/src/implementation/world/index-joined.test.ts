@@ -145,6 +145,15 @@ const inOrder = System.create({ name: "indexJoinedTest/inOrder", components: { r
     row[label] = String(row[rank]);
 });
 
+/** Systems on the joined thread and an observer system of its objects, each with an index as a change filter, which run only on the world's thread. */
+const countWhenMoved = System.create({ name: "indexJoinedTest/countWhenMoved", components: { read: [cell], write: [label] }, lookup: { near: { index: grid, changed: true } } }, (row, { lookup }) => {
+    row[label] = String(lookup.near(row[cell]).length);
+});
+const readWhenMoved = System.create({ name: "indexJoinedTest/readWhenMoved", observer: true, components: { read: [label] }, lookup: { near: { index: grid, changed: true } } }, row => {
+    void row[label];
+});
+const ownWhenMoved = System.create({ name: "indexJoinedTest/ownWhenMoved", observer: true, lookup: { near: { index: grid, changed: true } } }, () => {});
+
 /** The entities `readLabels` reads, and their labels. */
 const reading: { entities: readonly Entity[]; labels: readonly string[] } = { entities: [], labels: [] };
 const readLabels = System.create({ name: "indexJoinedTest/readLabels", observer: true, lookup: { labeled: { read: [label] } } }, ({ lookup }) => {
@@ -249,7 +258,7 @@ describe("systems on a joined thread looking up through indexes", () => {
         await remote.dispose();
         await world.dispose();
     });
-    it("throw for an index with an object key part, which the world keeps on its own thread, and for an order", async () => {
+    it("throw for an index with an object key part, which the world keeps on its own thread, for an order, and for an index as a change filter", async () => {
         const world = createWorld({ [workers]: 0 });
         const channel = new MessageChannel();
         world.share(channel.port1);
@@ -257,6 +266,10 @@ describe("systems on a joined thread looking up through indexes", () => {
         await joinedStatus(world);
         await expect(world.run(byName)).rejects.toThrow('looks up through index "indexJoinedTest/names", whose key part "indexJoinedTest/name" is an object, so it runs only on the world\'s thread.');
         await expect(world.run(inOrder)).rejects.toThrow("orders its rows by an index, which runs only on the world's thread");
+        const moved = `and when index "indexJoinedTest/grid" changed, a lookup's changed being true, which runs only on the world's thread.`;
+        await expect(world.run(countWhenMoved)).rejects.toThrow(`System "indexJoinedTest/countWhenMoved" runs on thread "indexJoinedTest", which a joined thread fills, ${moved}`);
+        await expect(world.run(readWhenMoved)).rejects.toThrow(`System "indexJoinedTest/readWhenMoved" runs on thread "indexJoinedTest", which a joined thread fills, ${moved}`);
+        expect(() => remote.add(ownWhenMoved)).toThrow(`Observer system "indexJoinedTest/ownWhenMoved" runs when index "indexJoinedTest/grid" changed, as its lookup "near"'s changed is true, so it runs only on the world's thread.`);
         await remote.dispose();
         await world.dispose();
     });

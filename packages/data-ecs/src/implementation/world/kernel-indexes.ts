@@ -1,5 +1,5 @@
 import { samePath, type Path } from '../../interface/registry/layout.js';
-import { labelOf } from '../../interface/registry/index.js';
+import { labelOf, watchedBy } from '../../interface/registry/index.js';
 import type { KernelDescription } from './kernel.js';
 import { partWords } from './index-keys.js';
 import { sortedStride } from './index-sorted.js';
@@ -42,7 +42,7 @@ const valuesOf = (paths: readonly Path[], part: WorldIndex["parts"][number], fai
  * a probe whose key doesn't match its index's: a hash index takes the whole key, a sorted one a prefix whose last part
  * may be a comparison, and each part all its leaves.
  */
-export const kernelIndexesOf = (state: State, description: KernelDescription, lookups: readonly { readonly read?: readonly Key[]; readonly changed?: readonly Key[]; readonly index?: unknown }[], byName: ReadonlyMap<string, WorldIndex>, fail: (message: string) => never): readonly (KernelIndex | null)[] =>
+export const kernelIndexesOf = (state: State, description: KernelDescription, lookups: readonly { readonly read?: readonly Key[]; readonly changed?: readonly Key[] | true; readonly index?: unknown }[], byName: ReadonlyMap<string, WorldIndex>, fail: (message: string) => never): readonly (KernelIndex | null)[] =>
     description.lookups.map((name, lookup): KernelIndex | null => {
         const index = byName.get(name);
         if (index === undefined) return null;
@@ -80,7 +80,7 @@ export const kernelIndexesOf = (state: State, description: KernelDescription, lo
             if (found === undefined) return fail(`lookup "${name}" reads "${labelOf(state.keys[component])}" at [${path.join(", ")}], which isn't a scalar of it; destructure tuples and structs or index their fields`);
             return { read, leaf: { component, view: found.view, unitStride: found.unitStride, unitOffset: found.unitOffset, boolean: found.scalar === "boolean" }, offset: found.offset, stride: layout.stride };
         });
-        const watched = ("changed" in declared ? declared.changed ?? [] : []).map(key => idOf(state, key));
+        const watched = watchedBy(declared).map(key => idOf(state, key));
         const stride = sorted ? sortedStride(words) : recordKey + words;
         return {
             lookup,

@@ -301,7 +301,66 @@ const readLengths = System.create({ name: "indexes/readLengths", lookup: { untag
     found = sum;
 });
 
+/** Entities a flag sorts into two buckets, as a todo list's done does; and observer systems watching their counts. */
+const flagged = 10_000;
+const watchers = 100;
+const flag = Symbol("indexes/flag");
+declare module "@adobe/data-ecs" {
+    export interface Components {
+        [flag]: { type: boolean };
+    }
+}
+Component.register(flag, { type: { type: "boolean" } });
+const byFlag = Index.create({ name: "indexes/byFlag", key: [flag] });
+const seedFlags = System.create({ name: "indexes/seedFlags" }, ({ commands }) => {
+    for (let i = 0; i < flagged; i++) commands.spawn([flag])({ [flag]: i % 2 === 0 });
+});
+/** A run of observer systems alone, which passes every one added. */
+const pass = System.create({ name: "indexes/pass", observer: true }, () => {});
+/** A count of each bucket, written only when the index's entries changed: by `changed: true`, or by its lists' `changed`. */
+const countsWhenChanged = (filtered: boolean): System => filtered
+    ? System.create({ observer: true, lookup: { byFlag: { index: byFlag, changed: true } } }, ({ lookup }) => {
+        found += lookup.byFlag(false).length + lookup.byFlag(true).length;
+    })
+    : System.create({ observer: true, lookup: { byFlag: { index: byFlag } } }, ({ lookup }) => {
+        const off = lookup.byFlag(false);
+        const on = lookup.byFlag(true);
+        if (!off.changed && !on.changed) return;
+        found += off.length + on.length;
+    });
+/** The fastest pass of `watchers` observer systems of counts while the index rests. */
+const restingCounts = async (filtered: boolean): Promise<number> => {
+    const world = inline();
+    await world.run(seedFlags);
+    for (let k = 0; k < watchers; k++) world.add(countsWhenChanged(filtered));
+    found = 0;
+    await world.run(pass);
+    check(found === watchers * flagged, "every observer system counts on its first pass");
+    const best = await fastest(() => world.run(pass));
+    check(found === watchers * flagged, "none counts again while the index rests");
+    await world.dispose();
+    return best;
+};
+
 export const indexBenchmarks: readonly Benchmark[] = [
+    {
+        name: "observer index unchanged 100",
+        operation: "A pass of 100 observer systems, each writing two buckets' counts of a 10K-entity index only when its entries changed, by `changed: true`, while nothing changes: what such a binding costs each frame at rest, the pass's own cost included.",
+        per: "observer systems",
+        n: watchers,
+        typical: [1, 100],
+        best: { bytes: 8, basis: "Each observer system compares its index's changed tick, 8 bytes." },
+        run: () => restingCounts(true),
+    },
+    {
+        name: "observer index unchanged 100 by lists",
+        operation: "As `observer index unchanged 100`, each body looking up both buckets and returning when neither list changed: the saving `changed: true` makes.",
+        per: "observer systems",
+        n: watchers,
+        typical: [1, 100],
+        best: { bytes: 8, basis: "Each observer system compares its index's changed tick, 8 bytes." },
+        run: () => restingCounts(false),
+    },
     {
         name: "index idle",
         operation: "A run of a system looking up through 1,000 indexes when nothing they hold changed: what keeping an index costs each frame while its entities rest.",

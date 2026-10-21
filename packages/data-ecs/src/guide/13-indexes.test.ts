@@ -55,13 +55,12 @@ const find = System.create({ input: { type: "object", properties: { id: { type: 
     found = lookup.byId(input.id)?.entity ?? null;
 });
 
-// An index without a key holds every entity with its components, in entity order. Added, this observer system keeps a
-// count as players come and go.
+// An index without a key holds every entity with its components, in entity order. With changed: true, this observer
+// system runs only when an entity entered or left the index, so added, it keeps a count as players come and go.
 const players = Index.create({ key: [], components: { has: [player] } });
 let playerCount = 0;
-const countPlayers = System.create({ observer: true, lookup: { players: { index: players } } }, ({ lookup }) => {
-    const all = lookup.players();
-    if (all.changed) playerCount = all.length;
+const countPlayers = System.create({ observer: true, lookup: { players: { index: players, changed: true } } }, ({ lookup }) => {
+    playerCount = lookup.players().length;
 });
 
 const crowds: number[] = [];

@@ -4,6 +4,7 @@ import { entryWords, findBucket, lengthOf, recordKey, recordLength, recordStart,
 import { blockAt, blockBase, bound, firstPosition, treeMaximum, type SortedView } from './index-sorted.js';
 import { sharedRows, type Row, type RowArchetype, type RowHost } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
+import { watchedBy } from '../../interface/registry/index.js';
 
 /** A system's `lastRun` while it runs, which its lists' `changed` compares with: -1 in finalizers, which have none. */
 export type Since = { value: number };
@@ -606,7 +607,7 @@ export const lookupFunction = (lookup: IndexLookup): (...key: unknown[]) => unkn
 };
 
 /** A lookup through one of the world's indexes, for a main-thread body or finalizer. */
-export const createIndexLookup = (state: State, index: IndexView, declared: { readonly read?: readonly Key[]; readonly changed?: readonly Key[] }, since: Since): (...key: unknown[]) => unknown => {
+export const createIndexLookup = (state: State, index: IndexView, declared: { readonly read?: readonly Key[]; readonly changed?: readonly Key[] | true }, since: Since): (...key: unknown[]) => unknown => {
     const reads = declared.read ?? [];
     return lookupFunction({
         rows: state,
@@ -615,7 +616,7 @@ export const createIndexLookup = (state: State, index: IndexView, declared: { re
         unique: index.unique,
         reads,
         readIds: reads.map(key => idOf(state, key)),
-        watched: (declared.changed ?? []).map(key => idOf(state, key)),
+        watched: watchedBy(declared).map(key => idOf(state, key)),
         since,
         replaced: state.replaced,
     });

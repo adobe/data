@@ -1,7 +1,7 @@
 import type { IndexDefinition } from '../../interface/registry/index.js';
-import { indexDefinitionOf, indexOfLookup, labelOfItem } from '../../interface/registry/index.js';
+import { indexDefinitionOf, indexOfLookup, labelOfItem, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import type { Failure } from '../../interface/report/failure.js';
-import type { Lookup } from '../../interface/system/access.js';
+import type { SystemLookup } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
 import { readCell } from './cells.js';
 import { chunkShift } from './kernel.js';
@@ -45,6 +45,11 @@ export type WorldIndex = {
     /** The journal position it read up to, or -1 before it's built; the tick it was last refreshed at. */
     position: number;
     refreshed: number;
+    /**
+     * The tick of the last refresh at which an entity entered or left it or moved to another key or position in it, or
+     * it was built; 0 before.
+     */
+    changed: number;
     /** By watched component: how many lookups watch it, and the tick its ticks were read up to. */
     readonly watchers: Map<number, number>;
     readonly scanned: Map<number, number>;
@@ -117,6 +122,7 @@ export const acquireIndex = (state: State, definition: IndexDefinition): WorldIn
         members: [],
         position: -1,
         refreshed: 0,
+        changed: 0,
         watchers: new Map(),
         scanned: new Map(),
         hash: sorted ? null : createHashTable(state.memory, words),
@@ -426,6 +432,7 @@ const finishRefresh = async (state: State, index: WorldIndex, end: number, tick:
 
 /** Builds an index again: in phases, across the pool when there is one, for a large hash index keyed by structs; else here. */
 const rebuildAny = (state: State, index: WorldIndex, tick: number, failures: Failure[], pool: Pool | null): Promise<void> | null => {
+    index.changed = tick;
     const phased = rebuildPhased(state, index, tick, failures, pool);
     if (phased !== false) return phased;
     rebuild(state, index, tick, failures);
@@ -507,6 +514,7 @@ const patch = (state: State, index: WorldIndex, hash: HashTable, count: number, 
     // A unique index's insertions, as bucket and entity index pairs, checked once all apply.
     let inserted = 0;
     const remove = (bucket: number, entity: number): void => {
+        index.changed = tick;
         holdKey(hash, index, bucket, false);
         if (lengthOf(hash, bucket) >= mergeMinimum) wait(bucket, entity, -1, 0);
         else removeEntry(hash, bucket, entity, tick);
@@ -534,6 +542,7 @@ const patch = (state: State, index: WorldIndex, hash: HashTable, count: number, 
             continue;
         }
         if (!fresh) holdKey(hash, index, bucket, true);
+        index.changed = tick;
         if (old >= 0) remove(old, entity);
         if (lengthOf(hash, bucket) >= mergeMinimum) wait(bucket, entity, archetypeId, row);
         else insertEntry(hash, bucket, entity, archetypeId, row, tick);
@@ -578,6 +587,7 @@ const patchSorted = (state: State, index: WorldIndex, sorted: SortedTable, count
             if (old < 0) continue;
             if (objects) holdWords(index, sorted.entries, old, false);
             removeSorted(sorted, entity, tick);
+            index.changed = tick;
             continue;
         }
         const archetype = state.archetypes[archetypeId];
@@ -595,6 +605,7 @@ const patchSorted = (state: State, index: WorldIndex, sorted: SortedTable, count
             removeSorted(sorted, entity, tick);
         }
         insertSorted(sorted, key, 0, objects ? valuesOfKey(index, key, 0, values) : values, entity, archetypeId, row, tick);
+        index.changed = tick;
         if (index.unique) {
             if (inserted + 1 > index.inserted.length) index.inserted = fit(index.inserted, inserted + 1);
             index.inserted[inserted++] = entity;
@@ -1126,20 +1137,24 @@ export type IndexLookups = {
     readonly byName: ReadonlyMap<string, WorldIndex>;
     readonly ordered: WorldIndex | null;
     readonly uses: readonly IndexUse[];
+    /** The indexes of its lookups with `changed: true`, each once: their entries changing is a change filter. */
+    readonly filters: readonly WorldIndex[];
     readonly release: () => void;
 };
 
 const noUses: readonly IndexUse[] = [];
 const noIndexes: ReadonlyMap<string, WorldIndex> = new Map();
 /** What a declaration without lookups through indexes acquires. */
-const noLookups: IndexLookups = { byName: noIndexes, ordered: null, uses: noUses, release: () => {} };
+const noFilters: readonly WorldIndex[] = [];
+const noLookups: IndexLookups = { byName: noIndexes, ordered: null, uses: noUses, filters: noFilters, release: () => {} };
 
 /** Acquires the indexes a declaration's lookups go through, watching what they watch, once each per index. */
-export const acquireLookups = (state: State, lookup: { readonly [name: string]: Lookup } | undefined, order?: unknown): IndexLookups => {
+export const acquireLookups = (state: State, lookup: { readonly [name: string]: SystemLookup } | undefined, order?: unknown): IndexLookups => {
     const ordering = indexDefinitionOf(order) ?? null;
     if (lookup === undefined && ordering === null) return noLookups;
     const byName = new Map<string, WorldIndex>();
     const watching = new Map<WorldIndex, Set<number>>();
+    const filters: WorldIndex[] = [];
     const acquired = (found: IndexDefinition): WorldIndex => {
         let index = [...watching.keys()].find(other => other.definition === found);
         if (index === undefined) {
@@ -1154,7 +1169,8 @@ export const acquireLookups = (state: State, lookup: { readonly [name: string]: 
         const index = acquired(found);
         byName.set(name, index);
         const declared = lookup[name];
-        for (const key of "changed" in declared ? declared.changed ?? [] : []) watching.get(index)?.add(idOf(state, key));
+        for (const key of watchedBy(declared)) watching.get(index)?.add(idOf(state, key));
+        if (watchesEntries(declared) && !filters.includes(index)) filters.push(index);
     }
     const ordered = ordering === null ? null : acquired(ordering);
     if (watching.size === 0) return noLookups;
@@ -1167,6 +1183,7 @@ export const acquireLookups = (state: State, lookup: { readonly [name: string]: 
         byName,
         ordered,
         uses,
+        filters: filters.length === 0 ? noFilters : filters,
         release: () => {
             if (released) return;
             released = true;

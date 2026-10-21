@@ -53,3 +53,82 @@ export const locateThroughMap = (code: string, mappings: string): Module["locate
         return { line, column };
     };
 };
+
+/** A source map of one source, version 3, as a bundler takes one from a transform. */
+export type SourceMap = { readonly version: 3; readonly sources: string[]; readonly sourcesContent: string[]; readonly names: string[]; readonly mappings: string };
+
+/** Text inserted before the character at offset `at`; insertions at one offset keep their order. */
+export type Insertion = { readonly at: number; readonly text: string };
+
+/** Appends `value` as a base64 VLQ, the sign in its lowest bit. */
+const encode = (value: number, into: string[]): void => {
+    let rest = value < 0 ? (-value << 1) | 1 : value << 1;
+    do {
+        let digit = rest & 31;
+        rest >>>= 5;
+        if (rest > 0) digit |= 32;
+        into.push(base64[digit] ?? "");
+    } while (rest > 0);
+};
+
+const word = /[\w$]/;
+
+/**
+ * `code` with `insertions` made, and its map back to `code` named `source`. Every character of `code` keeps its source
+ * position: a segment starts each line, each word or run of other characters, and what follows an insertion, so a
+ * position maps to its own column without interpolating. Inserted text maps to nothing of its own.
+ */
+export const insertInto = (code: string, insertions: readonly Insertion[], source: string): { readonly code: string; readonly map: SourceMap } => {
+    const ordered = insertions.map((insertion, order) => ({ insertion, order })).sort((a, b) => a.insertion.at - b.insertion.at || a.order - b.order);
+    const output: string[] = [];
+    const mappings: string[] = [];
+    let generatedColumn = 0;
+    let lineHasSegment = false;
+    let lastGeneratedColumn = 0;
+    let lastSourceLine = 0;
+    let lastSourceColumn = 0;
+    let sourceLine = 0;
+    let sourceColumn = 0;
+    let next = 0;
+    let inserted = true;
+    const newLine = (): void => {
+        mappings.push(";");
+        generatedColumn = 0;
+        lastGeneratedColumn = 0;
+        lineHasSegment = false;
+    };
+    const write = (text: string): void => {
+        output.push(text);
+        for (let k = 0; k < text.length; k++) {
+            if (text[k] === "\n") newLine();
+            else generatedColumn++;
+        }
+    };
+    for (let at = 0; at <= code.length; at++) {
+        while (next < ordered.length && ordered[next].insertion.at === at) {
+            write(ordered[next++].insertion.text);
+            inserted = true;
+        }
+        if (at === code.length) break;
+        const character = code[at] ?? "";
+        if (character !== "\n" && (inserted || sourceColumn === 0 || word.test(character) !== word.test(code[at - 1] ?? ""))) {
+            if (lineHasSegment) mappings.push(",");
+            encode(generatedColumn - lastGeneratedColumn, mappings);
+            encode(0, mappings);
+            encode(sourceLine - lastSourceLine, mappings);
+            encode(sourceColumn - lastSourceColumn, mappings);
+            lastGeneratedColumn = generatedColumn;
+            lastSourceLine = sourceLine;
+            lastSourceColumn = sourceColumn;
+            lineHasSegment = true;
+        }
+        inserted = false;
+        write(character);
+        if (character === "\n") {
+            sourceLine++;
+            sourceColumn = 0;
+        }
+        else sourceColumn++;
+    }
+    return { code: output.join(""), map: { version: 3, sources: [source], sourcesContent: [code], names: [], mappings: mappings.join("") } };
+};

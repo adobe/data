@@ -159,3 +159,11 @@ describe("package exports", () => {
         expect(trait).toContain(`Argument of type '"persisted"' is not assignable`);
     }, 60_000);
 });
+
+describe("the package's dependencies", () => {
+    it("are none at run time: consumers install nothing with it", () => {
+        const manifest: unknown = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+        const listed = typeof manifest === "object" && manifest !== null ? ["dependencies", "optionalDependencies", "bundledDependencies"].filter(field => field in manifest) : [];
+        expect(listed).toEqual([]);
+    });
+});

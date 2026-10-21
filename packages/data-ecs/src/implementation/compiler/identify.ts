@@ -1,11 +1,11 @@
 /// <reference types="node" />
 import type { Expression, Node, Program } from 'estree';
-import MagicString, { type SourceMap } from 'magic-string';
 import { posix } from 'node:path';
 import { idsName } from '../../interface/registry/ids.js';
 import { children, isFunction } from './estree.js';
 import { moduleScope } from './module-scope.js';
 import { attachKernelPath } from './paths.js';
+import { insertInto, type Insertion, type SourceMap } from './source-map.js';
 
 export type Parse = (code: string) => Program;
 
@@ -145,12 +145,11 @@ export const identify = async (code: string, id: string, parse: Parse, resolve: 
     }
     if (found.length === 0 || declaresInModule(program, "Symbol") || declaresInModule(program, "globalThis")) return null;
     const identifier = uniqueName(code, "identify$");
-    const edited = new MagicString(code);
+    const insertions: Insertion[] = [];
     for (const { value, binding } of found) {
-        edited.appendLeft(value.start, `${identifier}(`);
-        edited.appendRight(value.end, `, ${JSON.stringify(`${id}#${binding}`)})`);
+        insertions.push({ at: value.start, text: `${identifier}(` }, { at: value.end, text: `, ${JSON.stringify(`${id}#${binding}`)})` });
     }
     const ids = JSON.stringify(idsName);
-    edited.append(`\nfunction ${identifier}(value, id) { const ids = Symbol.for(${ids}); (globalThis[ids] || (globalThis[ids] = new Map())).set(value, id); return value; }\n`);
-    return { code: edited.toString(), map: edited.generateMap({ source: id, hires: "boundary", includeContent: true }) };
+    insertions.push({ at: code.length, text: `\nfunction ${identifier}(value, id) { const ids = Symbol.for(${ids}); (globalThis[ids] || (globalThis[ids] = new Map())).set(value, id); return value; }\n` });
+    return insertInto(code, insertions, id);
 };

@@ -14,8 +14,8 @@ export type World = {
      * nothing, and warnings. Rejects only when the run can't happen or finish: registration fails, the world is
      * disposed, its GPU device is lost, or its sync point can't apply a command's value. Observer systems, the run's and
      * those added, run after its sync point and its report, before it resolves; their throws are `"system"` failures
-     * added to its report after them. A run of observer systems alone runs them once after an empty sync point, and
-     * doesn't wake the loop.
+     * in the next run's report, since each report's errors are written once. A run of observer systems alone runs them
+     * once after an empty sync point, and doesn't wake the loop.
      */
     run<I>(system: System<I>, ...input: Input<NoInfer<I>>): Promise<number>;
     /**

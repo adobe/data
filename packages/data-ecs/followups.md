@@ -11,8 +11,6 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 - **The entity an element shows:** a shared `attach(element, entity)` and `entityOf(event)`, keyed by a `unique symbol`
   read through `in` narrowing, `entityOf` searching the event's composed path; it replaces `todoOf` and its `WeakMap`
   and resolves finding 3 below.
-- **`World.run`'s doc comment** still says observer systems' failures are added to the run's report; they're in the
-  next run's.
 
 ## Decisions for the maintainers
 

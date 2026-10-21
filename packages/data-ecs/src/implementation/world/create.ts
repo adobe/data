@@ -549,9 +549,9 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     /**
      * One tick: the clock, the added systems as one composite, then the tick's report, then observer systems with the
-     * tick's values, their failures added to the report. While its tails or an earlier tick's run, observer systems run
-     * at once, their failures in the report written once those tails are done, unless one reads reports, when the tick
-     * waits for those tails first.
+     * tick's values, their failures in the next run's report. While its tails or an earlier tick's run, observer systems
+     * run at once, their failures in the tick's report written once those tails are done, unless one reads reports, when
+     * the tick waits for those tails first.
      */
     const tick = (_: Composite, clockValue: Clock): Promise<void> => enqueue(async () => {
         // What's added as the tick starts: systems removed since the loop asked for it aren't in it.

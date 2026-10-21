@@ -26,9 +26,10 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 - **Report retention:** the last 256 runs keep their reports (`retainedRuns` in `reports.ts`), a fixed internal
   constant; a later run takes the oldest one's entity. Recommended: keep it internal until a consumer needs another; then
   a world option or resource.
-- **The cost of a report for every run:** a clean run costs about 125 ns more in node (`run idle` 333 to 500 ns, `run
-  observer` 166 to 291), half of it the two clock reads `elapsed` takes. Dropping `elapsed` would save about 60 ns a
-  run. Recommended: keep it.
+- **The cost of a report for every run:** a clean run costs about 125 ns more in node (`run idle` 333 to 458 ns, `run
+  observer` 166 to 291), half of it the two clock reads `elapsed` takes. Decided: timing stays on. Check again if runs
+  get cheap enough for it to matter: a `Report.timing` resource, off by default with `elapsed` NaN, measured `run idle`
+  416 ns and `run observer` 208.
 - **Reports are hidden from queries that require no component,** as the resource entity is: an index or system with no
   `has` or `read`, and changes finalizers watching everything, don't see them. Recommended: accept, since they're the
   world's own.

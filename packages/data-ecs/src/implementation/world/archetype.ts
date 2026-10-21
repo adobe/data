@@ -103,6 +103,8 @@ export type Archetype = {
     capacity: number;
     /** Holds the resource entity, so queries and systems never see it. */
     readonly resource: boolean;
+    /** Holds reports, which only queries that require a component see. */
+    readonly meta: boolean;
     /** Whether a storage holds values as objects, which a removed row must release. */
     readonly objects: boolean;
     /** The logs of the joined threads whose objects it holds, which its moves are appended to; null for none. */
@@ -182,7 +184,7 @@ export const startTicks = (memory: Memory, archetype: Archetype, storage: Storag
  * Creates an archetype, listed in `bumped` for the layout directory's next flush; storages of components a joined
  * thread fills, by `remote`, hold their tags.
  */
-export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, ticked: ReadonlySet<number>, bumped: Archetype[], replaced: { count: number }, remote: readonly (MoveLog | undefined)[]): Archetype => {
+export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, meta: boolean, ticked: ReadonlySet<number>, bumped: Archetype[], replaced: { count: number }, remote: readonly (MoveLog | undefined)[]): Archetype => {
     const storages = components.map(component => createStorage(memory, component, layouts[component], initialCapacity, resource || ticked.has(component)));
     const storageById: (Storage | undefined)[] = [];
     for (const storage of storages) storageById[storage.component] = storage;
@@ -199,6 +201,7 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
         count: 0,
         capacity: initialCapacity,
         resource,
+        meta,
         objects: storages.some(storage => storage.layout.kind === "object"),
         version: 0,
         replaced,

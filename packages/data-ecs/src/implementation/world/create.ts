@@ -14,8 +14,10 @@ import { finalizeAll, refreshFinalizerIndexes, type Thrown } from './finalizers.
 import { startWatches } from './indexes.js';
 import { clean as cleanReport, execute, type ExecuteContext } from './execute.js';
 import type { RunReport } from './failures.js';
-import { createReports, isClean } from './reports.js';
+import { createReports, type RunValues, type Slot } from './reports.js';
 import { synchronizeAlone } from './synchronize.js';
+import { startRan } from './state.js';
+import type { CommandBuffer } from './buffer.js';
 import { keysOf } from './remote-systems.js';
 import { Report } from '../../interface/report/report.js';
 import { joinedIn, runObserver } from './observer.js';
@@ -161,6 +163,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     let pool: Pool | null = null;
     const context: { -readonly [K in keyof ExecuteContext]: ExecuteContext[K] } = {
         state, runnerOf: registrar.runnerOf, kernelIndexOf: registrar.kernelIndexOf, workers: null, publish: () => {}, tails: null,
+        beforeSync: (failures, skipped, warnings, warningCount) => reports.beforeSync(failures, skipped, warnings, warningCount),
     };
 
     /** Waits for every joined thread's task in flight, as a tail may be, before what moves rows a tail may still read. */
@@ -348,51 +351,66 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     /** Run numbers: every run and tick takes the next, in the order they run. */
     let runs = 0;
     /**
-     * Reports' commands, applied as a sync point of their own, or, while tails run on joined threads, which a sync
-     * point between runs would disturb, queued for the next run's or tick's.
+     * Commands of reports between runs, applied as a sync point of their own once observer systems on joined threads in
+     * progress have finished; or, while tails run there, which a sync point between runs would disturb, queued for the
+     * next run's or tick's.
      */
-    const reports = createReports(state, buffer => {
-        if (state.tails.length !== 0) state.queued.push({ buffer, guarded: false });
-        else {
+    const applyAlone = (buffer: CommandBuffer): Promise<void> | null => {
+        if (state.tails.length !== 0) {
+            state.queued.push({ buffer, guarded: false });
+            return null;
+        }
+        const settling = state.observer.posts.length === 0 ? null : settlePosts(state, true);
+        if (settling === null) {
             synchronizeAlone(state, buffer);
             publishLayouts();
+            return null;
         }
-    });
-    /** A tick's report, which `perform` leaves without `pass`, with its tails in `tailing`. */
+        return settling.then(() => {
+            if (disposed) return;
+            synchronizeAlone(state, buffer);
+            publishLayouts();
+        });
+    };
+    const reports = createReports(state, applyAlone);
+    const reportIds = [idOf(state, Report.run)];
+    const noIds: readonly number[] = [];
+    /** A tick's report, its slot and what it ran, which `perform` leaves without `pass`, with its tails in `tailing`. */
     let performed: RunReport = cleanReport;
+    let performedSlot: Slot | null = null;
+    let performedValues: RunValues | null = null;
+
+    /** What the last run ran, for its report, reused run to run: a tick whose report waits for its tails copies it. */
+    const ranValues: RunValues = { number: 0, elapsed: 0, systems: 0, workers: 0, joined: 0, main: false, gpu: false, dropped: 0 };
+    /** What run `run` ran, gathered by its tiers, once its sync point is done, into `ranValues`. */
+    const valuesOf = (run: number, started: number, dropped: number): RunValues => {
+        const { ran } = state;
+        ranValues.number = run;
+        ranValues.elapsed = performance.now() - started;
+        ranValues.systems = ran.systems;
+        ranValues.workers = context.workers?.pool.takePosted() ?? 0;
+        ranValues.joined = ran.joined.size;
+        ranValues.main = ran.main;
+        ranValues.gpu = ran.gpu;
+        ranValues.dropped = dropped;
+        return ranValues;
+    };
 
     /**
-     * Writes run `run`'s report unless it's clean, after the run's sync point, despawning reports too old; a clean run
-     * despawns those alone. Observer systems on joined threads in progress finish first, the rest posted again after.
+     * Writes a run's report into its slot after the run's sync point, its errors with it: once tails on joined threads
+     * reading reports have copied them, and observer systems there reading them have finished.
      */
-    const writeReport = (run: number, report: RunReport): Promise<void> | null => {
-        const clean = report === cleanReport || isClean(report);
-        if (clean && !reports.due(run)) return null;
-        if (state.observer.posts.length !== 0 && state.tails.length === 0) {
-            const settling = settlePosts(state, true);
-            if (settling !== null) return settling.then(() => applyReport(run, report, clean));
-        }
-        applyReport(run, report, clean);
-        return null;
-    };
-    const applyReport = (run: number, report: RunReport, clean: boolean): void => {
-        if (disposed) return;
-        if (clean) reports.retire(run);
-        else reports.write(run, report);
+    const writeReport = (slot: Slot, values: RunValues, report: RunReport): Promise<void> | null => {
+        if (disposed) return null;
+        const tails = state.tails.length === 0 ? null : settleKeys(state, reportIds, noIds);
+        const posts = state.observer.posts.length === 0 ? null : settleObserverKeys(state, reportIds, noIds);
+        if (tails === null && posts === null) return reports.finish(slot, values, report, state.tails.length !== 0);
+        return Promise.all([tails, posts]).then(() => disposed ? undefined : reports.finish(slot, values, report, state.tails.length !== 0) ?? undefined);
     };
 
-    /** Adds the failures of a run's observer pass to its report, spawning it if the run was clean. */
-    const amendReport = (run: number, failures: readonly Failure[]): Promise<void> | null => {
-        if (state.observer.posts.length !== 0 && state.tails.length === 0) {
-            const settling = settlePosts(state, true);
-            if (settling !== null) return settling.then(() => applyAmendment(run, failures));
-        }
-        applyAmendment(run, failures);
-        return null;
-    };
-    const applyAmendment = (run: number, failures: readonly Failure[]): void => {
-        if (!disposed) reports.amend(run, failures);
-    };
+    /** Adds the failures of a run's observer pass to its report. */
+    const amendReport = (slot: Slot, run: number, failures: readonly Failure[]): Promise<void> | null =>
+        disposed ? null : reports.amend(slot, run, failures, state.tails.length !== 0);
 
     /**
      * Runs a registered system or composite, ending in a sync point, and resolves to its number. With `pass`, its
@@ -414,32 +432,45 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (isHeld(value) && (definition.kind === "composite" || registrar.runnerOf(definition).remote?.channel !== value.channel)) {
             throw new Error(`System "${labelOfItem(definition)}": the run's input moved to a joined thread that's gone.`);
         }
+        const run = ++runs;
+        const started = performance.now();
+        // A run of observer systems alone has an empty sync point.
+        const empty = schedule.tiers.length === 0 && skipsSync();
+        // Its report's entity, spawned or reused by commands its own sync point applies, or for an empty one, applied
+        // alone, which leaves other commands for the next.
+        let slot: Slot | Promise<Slot> = empty ? reports.beginAlone(run) : reports.begin(run);
+        if (slot instanceof Promise) slot = await slot;
         let report: RunReport;
         let tails: Promise<TailOutcome> | null = null;
         try {
-            // A run of observer systems alone has an empty sync point.
-            report = schedule.tiers.length === 0 && skipsSync() ? cleanReport : await execute(context, schedule, value, definition);
+            if (empty) {
+                startRan(state.ran);
+                report = cleanReport;
+            }
+            else report = await execute(context, schedule, value, definition);
         }
         finally {
             tails = context.tails;
             context.tails = null;
             if (deviceChanged()) await followDevice();
         }
-        const run = ++runs;
+        const values = valuesOf(run, started, report.dropped);
         if (!pass) {
             tailing = tails;
             performed = report;
+            performedSlot = slot;
+            performedValues = values;
             return run;
         }
         // A run is a transaction: it ends once its tails have.
         if (tails !== null) report = withTails(report, await tails);
         report = withFailures(report, takeFailures());
-        const writing = writeReport(run, report);
+        const writing = writeReport(slot, values, report);
         if (writing !== null) await writing;
         const passed = passObserver(schedule.observer, loop.observer(), joinedRunOf(value));
         const failures = passed instanceof Promise ? await passed : passed;
         if (failures !== null) {
-            const amending = amendReport(run, failures);
+            const amending = amendReport(slot, run, failures);
             if (amending !== null) await amending;
         }
         return run;
@@ -530,6 +561,9 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (disposed || composite === null) return;
         let report: RunReport;
         let run: number;
+        let slot: Slot;
+        let values: RunValues;
+        const begun = runs;
         try {
             if (registrar.registered(composite) === undefined) {
                 ensureResources(state, loopResources);
@@ -553,9 +587,22 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             run = await perform(composite, undefined, false, schedule);
             report = performed;
             performed = cleanReport;
+            slot = performedSlot ?? reports.lastSlot();
+            values = performedValues ?? valuesOf(run, performance.now(), 0);
+            performedSlot = performedValues = null;
         }
         catch (error) {
-            run = ++runs;
+            // A tick that failed before its run took a number takes one now, its report spawned between runs.
+            if (runs === begun) {
+                run = ++runs;
+                slot = await reports.beginAlone(run);
+            }
+            else {
+                run = runs;
+                slot = reports.lastSlot();
+            }
+            startRan(state.ran);
+            values = valuesOf(run, performance.now(), 0);
             report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: none, dropped: 0, warnings: none };
         }
         report = withFailures(report, takeFailures());
@@ -567,7 +614,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 // Observer systems get the tick's values now; its report is written once its tails, and every earlier
                 // tick's, have run.
                 const passed = passObserver(noLeaves, observer);
-                const entry: PendingReport = { run, report: withFailures(report, passed instanceof Promise ? await passed : passed), tails, done: tails === null };
+                const entry: PendingReport = { slot, values: { ...values }, report: withFailures(report, passed instanceof Promise ? await passed : passed), tails, done: tails === null };
                 pending.push(entry);
                 if (tails !== null) void tails.then(outcome => {
                     entry.report = withTails(entry.report, outcome);
@@ -584,18 +631,18 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             if (tails !== null) report = withTails(report, await tails);
         }
         if (disposed) return;
-        const writing = writeReport(run, report);
+        const writing = writeReport(slot, values, report);
         if (writing !== null) await writing;
         const passed = passObserver(noLeaves, observer);
         const failures = passed instanceof Promise ? await passed : passed;
         if (failures !== null) {
-            const amending = amendReport(run, failures);
+            const amending = amendReport(slot, run, failures);
             if (amending !== null) await amending;
         }
     });
 
     /** Ticks whose reports wait for their tails, in order. */
-    type PendingReport = { readonly run: number; report: RunReport; readonly tails: Promise<TailOutcome> | null; done: boolean };
+    type PendingReport = { readonly slot: Slot; readonly values: RunValues; report: RunReport; readonly tails: Promise<TailOutcome> | null; done: boolean };
     const pending: PendingReport[] = [];
     /**
      * Writes the reports of ticks whose tails, and every earlier tick's, have run: at once, unless one waits for
@@ -605,7 +652,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         while (pending.length > 0 && pending[0].done) {
             const entry = pending.shift();
             if (entry === undefined || disposed) continue;
-            const writing = writeReport(entry.run, entry.report);
+            const writing = writeReport(entry.slot, entry.values, entry.report);
             if (writing !== null) return writing.then(() => flushReports() ?? undefined);
         }
         return null;

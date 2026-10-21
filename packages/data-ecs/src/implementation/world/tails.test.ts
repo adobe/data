@@ -82,8 +82,8 @@ describe("tails", () => {
         const first = counters.findIndex(value => value > 0);
         expect(counters.slice(first, first + 4)).toEqual([0, 1, 2, 3].map(k => counters[first] + k));
         const reports: (readonly [number, readonly string[]])[] = [];
-        const reading = System.create({ observer: true, components: { read: [Report.failures], changed: [Report.failures] }, resources: { read: [counter] } }, (row, { resources }) => {
-            reports.push([resources[counter], row[Report.failures].map(failure => failure.message)]);
+        const reading = System.create({ observer: true, components: { read: [Report.errors], changed: [Report.errors] }, resources: { read: [counter] } }, (row, { resources }) => {
+            reports.push([resources[counter], row[Report.errors].failures.map(failure => failure.message)]);
         });
         world.add(reading);
         const followed = followReports(world);

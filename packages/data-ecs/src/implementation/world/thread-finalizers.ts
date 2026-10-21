@@ -21,7 +21,7 @@ import type { Key } from './state.js';
 /** A storage of a joined thread's view, as its finalizers' rows read it. */
 type FinalizedStorage = RowStorage & { readonly component: number };
 /** An archetype of a joined thread's view, as its systems see it. */
-type FinalizedArchetype = RowArchetype & { readonly components: readonly number[]; readonly resource: boolean; readonly storageById: readonly (FinalizedStorage | undefined)[] };
+type FinalizedArchetype = RowArchetype & { readonly components: readonly number[]; readonly resource: boolean; readonly meta: boolean; readonly storageById: readonly (FinalizedStorage | undefined)[] };
 
 /** What a joined thread gives its finalizers. */
 export type ThreadFinalizersHost<A extends FinalizedArchetype> = {
@@ -295,7 +295,7 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
             finalizer.cells();
             for (let id = 0; id < host.tableCount(); id++) {
                 const archetype = host.archetypeAt(id);
-                if (archetype === undefined || archetype.resource) continue;
+                if (archetype === undefined || archetype.resource || (archetype.meta && finalizer.required.length === 0)) continue;
                 const { components } = archetype;
                 if (!finalizer.required.every(component => components.includes(component)) || finalizer.excluded.some(component => components.includes(component))) continue;
                 const count = host.countOf(archetype);

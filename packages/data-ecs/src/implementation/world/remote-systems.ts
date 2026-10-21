@@ -552,7 +552,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
     const matched = (): readonly Archetype[] => {
         for (; checked < state.archetypes.length; checked++) {
             const archetype = state.archetypes[checked];
-            if (query !== undefined && !archetype.resource && required.every(id => archetype.storageOf.has(id)) && !excluded.some(id => archetype.storageOf.has(id))) matches.push(archetype);
+            if (query !== undefined && !archetype.resource && !(archetype.meta && required.length === 0) && required.every(id => archetype.storageOf.has(id)) && !excluded.some(id => archetype.storageOf.has(id))) matches.push(archetype);
         }
         return matches;
     };

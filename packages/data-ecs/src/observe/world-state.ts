@@ -245,9 +245,9 @@ export const stateOf = (world: World): WorldState => {
         stashed: new Map(),
         // Run, never added, so no tick waits for its tails to give it a report: a report's failures are complete by
         // the pass after its run, so the next of the factories' runs sees them.
-        rethrow: System.create({ name: ownName("Observe/rethrow"), observer: true, components: { read: [Report.run, Report.failures], changed: [Report.failures] } }, row => {
-            const run = row[Report.run];
-            const failures = row[Report.failures];
+        rethrow: System.create({ name: ownName("Observe/rethrow"), observer: true, components: { read: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
+            const run = row[Report.run].number;
+            const failures = row[Report.errors].failures;
             const rethrown = created.ownRuns.get(run);
             if (rethrown !== undefined) rethrowOwn(created, run, failures, rethrown);
             else if (failures.some(failure => ownNames.has(failure.name))) created.stashed.set(run, failures);

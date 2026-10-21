@@ -120,6 +120,12 @@ Benchmarks read through observer systems and the factories (E of the observers p
 
 The built-in observers and mailboxes removed (F of the observers plan), alternating against `87a81495`, node, four rounds and six for the closest: runs and ticks no longer start, read back for or deliver to observers. `run observer` 208 → 166–167 ns, `run idle` 375 → 334–375 ns, `joined resource factory` 5.0–5.3 → 4.3–5.0 µs a tick, `joined observer resource` 4.4–5.6 → 4.1–4.6 µs; within noise: `run 50 idle`, `observer idle 100`, `loop tick idle` (1.72–1.85 against 1.71–1.79 µs), `sync point one spawn`, `remote run`, `handoff`, `fused tiers`, `tail prompt`, `tail late snapshot 10K`, `tail overlap`, `joined observer 10K` (0.40–0.49 against 0.40–0.47 ms), `joined select 10K factory`, `read run observer`, and `read run`, 9.5–11.4 against 10.1–11.8 µs, a new system each read.
 
+A report for every run and tick, `Report.run` written in place and `Report.errors` only with errors, alternating against `76f4670e`, node, six rounds, medians: `run idle` 333 → 458 ns, `run observer` 166 → 291, `run 50 idle` 3.63 → 3.75 µs a run, `loop tick idle` 1.70 → 1.92 µs a tick, `sync point one spawn` 875 → 1,000 ns, `read run observer` 7.9 → 9.1 µs, `remote run` 10.0 → 10.6 µs, and `run failing` 12.0 → 9.9 µs, its errors joining its own sync point rather than one of their own.
+- **About 125 ns a run:** two `performance.now()` calls for `elapsed`, 31 ns each, then locating the report, writing its struct and stamping it.
+- **`Report.run` is written field by field** through its layout's leaves, not the general struct writer: `run idle` 583 → 500 ns, and `run observer` 375 → 291.
+- **What a tier ran is worked out once per list of runners:** counting each runner every run took `run 50 idle` to 4.08 µs a run.
+- **A reused report keeps its errors and takes new ones in place,** so a run with a blocking tier every tick changes no archetype, and its sync point isn't one tails wait for.
+
 ## Where the gains came from
 
 Step figures marked (vitest) are from the node vitest lane: read them as relative.

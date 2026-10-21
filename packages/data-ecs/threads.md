@@ -145,11 +145,11 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   and `waitAsync` settle between ticks, which a microtask would starve, and unclamped, as `setTimeout(0)` isn't.
 - **`run(system, input)`** is a transaction: runs are sequential in call order, each its own sync point, and each one
   makes the next beat tick.
-- **Failures of runs and ticks** are reports, entities the world spawns on its thread: `Report.run` and
-  `Report.dropped` are structs every thread reads, `failures`, `skipped` and `warnings` objects on the world's thread. A
-  thread that dies doesn't reject a run or a tick: its systems are in `skipped`, each with a `"thread"` failure, and
-  later tiers still run. A tier that waited for a joined thread is in the report's `warnings`, so a run or tick with a
-  blocking tier spawns a report.
+- **Runs and ticks have reports,** entities the world keeps on its thread: `Report.run`, a struct every thread reads,
+  counts the joined threads that took part; `Report.errors`, an object on the world's thread, is there only when
+  something went wrong. A thread that dies doesn't reject a run or a tick: its systems are in `skipped`, each with a
+  `"thread"` failure, and later tiers still run. A tier that waited for a joined thread is in the report's `warnings`;
+  a reused report holding errors already takes them in place, so a blocking tier every tick changes no archetype.
 - **Observer systems** run on `world` after each run's and tick's sync point; those on joined threads are posted to them
   in the same pass. They never make the loop tick, and a run of them alone doesn't
   wake it. While a tick's tails run on, its observer systems run at

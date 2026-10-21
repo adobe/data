@@ -116,7 +116,7 @@ const matches = (runner: FinalizerRunner, archetype: Archetype): boolean => {
     let known = runner.matches[archetype.id] ?? 0;
     if (known === 0) {
         const { storageById } = archetype;
-        known = !archetype.resource && runner.required.every(id => storageById[id] !== undefined) && runner.excluded.every(id => storageById[id] === undefined) ? 1 : 2;
+        known = !archetype.resource && !(archetype.meta && runner.required.length === 0) && runner.required.every(id => storageById[id] !== undefined) && runner.excluded.every(id => storageById[id] === undefined) ? 1 : 2;
         runner.matches[archetype.id] = known;
     }
     return known === 1;
@@ -233,8 +233,8 @@ const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queue
         return pair;
     };
     const add = (entity: number, from: Archetype | null, to: Archetype | null, fresh: readonly number[]): void => {
-        // The resource entity's components are resources, not changes.
-        if (from?.resource === true || to?.resource === true) return;
+        // The resource entity's components are resources, not changes, and reports are the world's own.
+        if (from?.resource === true || to?.resource === true || from?.meta === true || to?.meta === true) return;
         const replaced = fresh.length === 0 ? fresh : fresh.filter(id => watches(id) && from?.storageById[id] !== undefined && to?.storageById[id] !== undefined);
         const { before, after, added, removed } = pairOf(from, to);
         if (replaced.length === 0 && added.length === 0 && removed.length === 0) return;

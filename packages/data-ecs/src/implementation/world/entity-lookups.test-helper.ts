@@ -2,7 +2,7 @@ import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
-import { dropReports } from "./reports.test-helper.js";
+import { fillReports } from "./reports.test-helper.js";
 
 // Lookups by entity with `changed`, where systems run: probes on the world's thread, and on thread
 // "entityLookupsTest", which a joined thread fills, as they read a probe's object there.
@@ -145,6 +145,8 @@ export const retarget = System.create({ name: "entityLookupsTest/retarget", comp
 export const scenario = async (world: World, probe: System): Promise<{ readonly seen: readonly Seen[]; readonly reused: boolean }> => {
     scene.subject = scene.stale = Entity.none;
     scene.seen = [];
+    // Past the runs that spawn reports, whose entities would take the subject's freed index first.
+    await fillReports(world);
     await world.run(edit, { action: "spawn" });
     // The first run, then one with nothing changed.
     await world.run(probe);
@@ -166,7 +168,6 @@ export const scenario = async (world: World, probe: System): Promise<{ readonly 
     // Despawned, then its index reused by a new entity.
     await world.run(edit, { action: "despawn" });
     await world.run(probe);
-    await world.run(dropReports);
     await world.run(edit, { action: "reuse" });
     await world.run(retarget);
     await world.run(probe);

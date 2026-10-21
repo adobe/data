@@ -6,6 +6,8 @@ import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type Tables } from "./create.js";
 import { collector, freshKernel, tablesAfterCollecting } from "./lifetime.test-helper.js";
 import { readResource } from "./reads.test-helper.js";
+import { fillReports, runOf } from "./reports.test-helper.js";
+import { Report } from "../../interface/report/report.js";
 
 /** Scenarios of what kernels hold across the pool, run built in node and from source in chromium. */
 
@@ -54,18 +56,20 @@ const measure = System.create({
  * Runs `count` new values of a kernel, as a module evaluated again makes, each once, on two workers: the world's tables
  * before and after, once collected where a collector is exposed; whether one was; and the last run's total.
  */
-export const freshKernels = async (count: number): Promise<{ readonly before: Tables; readonly after: Tables; readonly collected: boolean; readonly total: number }> => {
+export const freshKernels = async (count: number): Promise<{ readonly before: Tables; readonly after: Tables; readonly collected: boolean; readonly total: number; readonly ran: Report[typeof Report.run] }> => {
     const world = createWorld({ [workers]: 2 }, { minimumChunk: 64 });
     try {
         await world.run(seed);
+        // Past the runs that spawn reports, which grow the entity table.
+        await fillReports(world);
         await world.run(measure);
         await world.run(freshKernel(measure));
         await world.run(measure);
         const before = await tablesAfterCollecting(world);
         for (let k = 0; k < count; k++) await world.run(freshKernel(measure));
-        await world.run(measure);
+        const last = await world.run(measure);
         const after = await tablesAfterCollecting(world);
-        return { before, after, collected: collector() !== null, total: await readResource(world, total) };
+        return { before, after, collected: collector() !== null, total: await readResource(world, total), ran: await runOf(world, last) };
     }
     finally {
         await world.dispose();

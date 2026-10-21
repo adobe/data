@@ -188,7 +188,7 @@ const refreshMembers = (state: State, index: WorldIndex): void => {
         if (member[id] !== 0) continue;
         const archetype = archetypes[id];
         const { storageById } = archetype;
-        let holds = !archetype.resource;
+        let holds = !archetype.resource && !(archetype.meta && index.keys.length === 0 && index.has.length === 0);
         for (let k = 0; holds && k < index.keys.length; k++) holds = storageById[index.keys[k]] !== undefined;
         for (let k = 0; holds && k < index.has.length; k++) holds = storageById[index.has[k]] !== undefined;
         for (let k = 0; holds && k < index.not.length; k++) holds = storageById[index.not[k]] === undefined;

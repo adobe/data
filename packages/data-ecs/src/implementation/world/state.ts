@@ -30,6 +30,54 @@ import type { Failure } from '../../interface/report/failure.js';
 export type Key = string | symbol;
 
 /** Everything a world stores. Components and resources share ids; resources live on `resourceEntity`. */
+/** What a run ran, gathered as its tiers run: how many systems, whether any ran on `main`, GPU work, joined threads by their logs. */
+export type Ran = { systems: number; main: boolean; gpu: boolean; readonly joined: Set<MoveLog> };
+
+type RanRunner = { readonly placement: string; readonly remote: { readonly channel: { readonly log: MoveLog } } | null };
+
+/** What a tier's runners run, worked out once per list of runners and `main`'s claim: joined threads' logs, and flags. */
+type TierRan = { readonly main: MoveLog | undefined; readonly here: boolean; readonly onMain: boolean; readonly gpu: boolean; readonly logs: readonly MoveLog[] };
+const tiersRan = new WeakMap<readonly RanRunner[], TierRan>();
+
+const tierRanOf = (runners: readonly RanRunner[], main: MoveLog | undefined): TierRan => {
+    const known = tiersRan.get(runners);
+    if (known !== undefined && known.main === main) return known;
+    let here = false;
+    let onMain = false;
+    let gpu = false;
+    const logs: MoveLog[] = [];
+    for (let i = 0; i < runners.length; i++) {
+        const { remote, placement } = runners[i];
+        if (remote !== null) {
+            if (!logs.includes(remote.channel.log)) logs.push(remote.channel.log);
+            if (remote.channel.log === main) onMain = true;
+        }
+        else here = true;
+        if (placement !== "cpu") gpu = true;
+    }
+    const tier = { main, here, onMain: onMain || (here && main === undefined), gpu, logs };
+    tiersRan.set(runners, tier);
+    return tier;
+};
+
+/** Counts a tier's runners into `ran`: one on a joined thread by its log, one here on `main` unless a joined thread claims it. */
+export const countRan = (state: State, runners: readonly RanRunner[]): void => {
+    const { ran } = state;
+    ran.systems += runners.length;
+    const tier = tierRanOf(runners, state.claims.get("main"));
+    if (tier.onMain) ran.main = true;
+    if (tier.gpu) ran.gpu = true;
+    for (let k = 0; k < tier.logs.length; k++) ran.joined.add(tier.logs[k]);
+};
+
+/** Starts gathering what a run ran. */
+export const startRan = (ran: Ran): void => {
+    ran.systems = 0;
+    ran.main = false;
+    ran.gpu = false;
+    if (ran.joined.size !== 0) ran.joined.clear();
+};
+
 export type State = {
     readonly memory: Memory;
     readonly entities: Entities;
@@ -148,6 +196,10 @@ export type State = {
     readonly claims: Map<string, MoveLog>;
     readonly logs: MoveLog[];
     claimed: boolean;
+    /** What the run in progress ran, for its report: systems, whether any ran on `main`, GPU work, joined threads' logs. */
+    readonly ran: Ran;
+    /** Report components, whose archetypes only queries that require a component see. */
+    readonly meta: Set<number>;
     /** Whether a joined thread reads the layout directory's counts: one holds claims, or has observer systems placed. */
     counting: boolean;
     /** Observer systems on joined threads (`joined-observer.ts`). */
@@ -246,6 +298,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         claims: new Map(),
         logs: [],
         claimed: false,
+        ran: { systems: 0, main: false, gpu: false, joined: new Set() },
+        meta: new Set(),
         counting: false,
         observer: createObserverState(),
         counted: [],
@@ -374,7 +428,7 @@ export const archetypeOf = (state: State, components: readonly number[]): Archet
     const key = components.join(",");
     const existing = state.archetypeByKey.get(key);
     if (existing !== undefined) return existing;
-    const archetype = createArchetype(state.memory, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)), state.ticked, state.bumped, state.replaced, state.remote);
+    const archetype = createArchetype(state.memory, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)), components.some(id => state.meta.has(id)), state.ticked, state.bumped, state.replaced, state.remote);
     state.archetypes.push(archetype);
     state.archetypeByKey.set(key, archetype);
     return archetype;

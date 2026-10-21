@@ -7,6 +7,7 @@ import type { World } from "../../interface/world/world.js";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld } from "./create.js";
 import { collector, heapAfterCollecting, tablesAfterCollecting } from "./lifetime.test-helper.js";
+import { fillReports } from "./reports.test-helper.js";
 
 const count = Symbol("lifetimeTest/count");
 const parent = Symbol("lifetimeTest/parent");
@@ -60,6 +61,8 @@ describe("what a system holds", () => {
         expect(collector()).not.toBeNull();
         const world = createWorld({ [workers]: 0 });
         await world.run(seed);
+        // Past the runs that spawn reports, which grow the entity table.
+        await fillReports(world);
         await runFresh(world, 4);
         const before = await tablesAfterCollecting(world);
         await runFresh(world, fresh);

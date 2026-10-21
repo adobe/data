@@ -1,5 +1,4 @@
 import type { Component } from '../component/component.js';
-import type { Entity } from '../entity/entity.js';
 import * as resources from '../resources/index.js';
 import { System } from '../system/system.js';
 import { main, watchTime } from '../system/system.type-test.js';
@@ -12,12 +11,20 @@ const check = <_T extends true>() => { };
 declare const world: World;
 
 // Each key is a component, declared under its namespaced computed key.
-check<Equal<Component.Value<typeof Report.run>, number>>();
-check<Equal<Component.Value<typeof Report.failures>, readonly Report.Failure[]>>();
-check<Equal<Component.Value<typeof Report.skipped>, readonly string[]>>();
-check<Equal<Component.Value<typeof Report.dropped>, number>>();
-check<Equal<Component.Value<typeof Report.warnings>, readonly Report.Warning[]>>();
-check<Equal<typeof Report.Archetype, readonly [typeof Report.run, typeof Report.failures, typeof Report.skipped, typeof Report.dropped, typeof Report.warnings]>>();
+type Run = {
+    readonly number: number;
+    readonly elapsed: number;
+    readonly systems: number;
+    readonly workers: number;
+    readonly joined: number;
+    readonly main: boolean;
+    readonly gpu: boolean;
+    readonly dropped: number;
+};
+type Errors = { readonly failures: readonly Report.Failure[]; readonly skipped: readonly string[]; readonly warnings: readonly Report.Warning[] };
+check<Equal<Component.Value<typeof Report.run>, Run>>();
+check<Equal<Component.Value<typeof Report.errors>, Errors>>();
+check<Equal<typeof Report.Archetype, readonly [typeof Report.run]>>();
 
 // A failure and a warning, as data.
 declare const failure: Report.Failure;
@@ -25,42 +32,32 @@ check<Equal<typeof failure.kind, "system" | "finalizer" | "gpu" | "thread" | "in
 check<Equal<typeof failure.stack, string | null>>();
 check<Equal<Report.Warning, { readonly kind: "blocking"; readonly name: string; readonly message: string }>>();
 
-// A report's values, as rows and lookups give them.
-check<Equal<Report, {
-    readonly [Report.run]: number;
-    readonly [Report.failures]: readonly Report.Failure[];
-    readonly [Report.skipped]: readonly string[];
-    readonly [Report.dropped]: number;
-    readonly [Report.warnings]: readonly Report.Warning[];
-}>>();
+// A report's values: errors only when something went wrong.
+check<Equal<Report, { readonly [Report.run]: Run; readonly [Report.errors]?: Errors }>>();
 
-// An observer system follows reports by their components, and one-off reads find a run's by its number.
+// An observer system follows reports by their components.
 const logged: Report.Failure[] = [];
-export const logger = System.create({ observer: true, components: { read: [Report.run, Report.failures], changed: [Report.failures] } }, row => {
-    const run: number = row[Report.run];
-    for (const each of row[Report.failures]) logged.push(each);
+export const logger = System.create({ observer: true, components: { read: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
+    const number: number = row[Report.run].number;
+    for (const each of row[Report.errors].failures) logged.push(each);
     // @ts-expect-error a report's lists are read-only
-    row[Report.failures].push(logged[0]);
-    void run;
+    row[Report.errors].failures.push(logged[0]);
+    void number;
 });
-let found: Report | null = null;
-export const reportOf = System.create({ observer: true, lookup: { reports: { index: Report.byRun, read: Report.Archetype } } }, ({ lookup }) => {
-    const row = lookup.reports(1);
-    found = row;
-    const entity: Entity | undefined = row?.entity;
-    const older = lookup.reports({ "<": 10 });
-    for (let i = 0; i < older.length; i++) void older.at(i)[Report.run];
-    void entity;
+export const timings = System.create({ observer: true, components: { read: [Report.run], changed: [Report.run] } }, row => {
+    const { elapsed, systems, workers, joined, main: onMain, gpu, dropped } = row[Report.run];
+    void [elapsed, systems, workers, joined, onMain, gpu, dropped];
 });
-void found;
 
 // A run resolves to its number; a rejected run rejects.
 const ran: Promise<number> = world.run(main);
 const observed: Promise<number> = world.run(watchTime);
 void [ran, observed];
+// @ts-expect-error no index by run: indexes key on whole components
+void Report.byRun;
+// @ts-expect-error no failures component: they're in errors
+void Report.failures;
 // @ts-expect-error no World.Report: a report is entities
 export type Reported = World.Report;
-// @ts-expect-error no World.Run: a run's result is a number
-export type Ran = World.Run;
 // @ts-expect-error no report resource: reports are entities
 void resources.report;

@@ -5,7 +5,7 @@ import { emptyViews } from './arrays.js';
 import { tableLength } from './entities.js';
 import {
     archetypeField, capacityField, cursorField, entitiesVersionField, entitiesWord, freeCapacityField, freeField, generationField, linearFlag,
-    recordCapacity, recordCount, recordEntities, recordFlags, recordStorages, recordVersion, recordWords, remoteFlag, resourceEntityWord, resourceFlag,
+    recordCapacity, recordCount, recordEntities, recordFlags, recordStorages, recordVersion, recordWords, metaFlag, remoteFlag, resourceEntityWord, resourceFlag,
     rowField, storageAdded, storageChanged, storageChunkAdded, storageChunkChanged, storageChunks, storageColumn, storageComponent, storageFlags,
     storageWords, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
 } from './layout-directory.js';
@@ -28,6 +28,8 @@ export type ThreadArchetype = RowArchetype & {
     readonly mirrored: Mirrored | null | undefined;
     readonly components: readonly number[];
     readonly resource: boolean;
+    /** Whether it holds reports, which only queries that require a component see. */
+    readonly meta: boolean;
     readonly storageById: readonly (ThreadStorage | undefined)[];
 };
 
@@ -143,6 +145,7 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
         return {
             id, record, version, mirrored, components, storageById,
             resource: (words[record + recordFlags] & resourceFlag) !== 0,
+            meta: (words[record + recordFlags] & metaFlag) !== 0,
             entities: new Float64Array(buffer, words[record + recordEntities], capacity),
         };
     };

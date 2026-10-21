@@ -71,11 +71,12 @@ const fail = System.create({ name: "fail" }, () => {
     throw new Error("broken");
 });
 
-// A run resolves to its number. A run or tick that went wrong has a report, an entity: an observer system added to
-// read reports' failures as they change logs them. Observer systems' failures join their report after them.
+// A run resolves to its number. Every run and tick has a report, an entity: `Report.run` says what it ran and how long
+// it took, and `Report.errors` is there only when something went wrong. An observer system added to follow errors as
+// they change logs them; observer systems' failures join their report after them.
 const logged: string[] = [];
-const logFailures = System.create({ observer: true, components: { read: [Report.failures], changed: [Report.failures] } }, row => {
-    for (const failure of row[Report.failures]) logged.push(`${failure.name}: ${failure.message}`);
+const logFailures = System.create({ observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
+    for (const failure of row[Report.errors].failures) logged.push(`${failure.name}: ${failure.message}`);
 });
 
 it("reports what failed as entities", async () => {

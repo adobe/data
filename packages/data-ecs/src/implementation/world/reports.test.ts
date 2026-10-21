@@ -1,12 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Component, Index, Report, Resource, System, clock, workers } from "../../index.js";
 import { createWorld } from "./create.js";
-import { createReports, retainedRuns } from "./reports.js";
-import type { CommandBuffer } from "./buffer.js";
-import type { RunReport } from "./failures.js";
-import { createState } from "./state.js";
-import { applySync, prepareSync, synchronizeAlone } from "./synchronize.js";
-import { reportOf } from "./reports.test-helper.js";
+import { retainedRuns } from "./reports.js";
+import { reportOf, runOf } from "./reports.test-helper.js";
 
 const amount = Symbol("reportsTest/amount");
 const level = Symbol("reportsTest/level");
@@ -36,34 +32,50 @@ const failingObserver = System.create({ name: "reportsTest/failingObserver", obs
 
 /** What a logger following reports saw, by pass: each changed report's run and failures' messages. */
 const logged: (readonly [number, readonly string[]])[] = [];
-const logger = System.create({ name: "reportsTest/logger", observer: true, components: { read: [Report.run, Report.failures], changed: [Report.failures] } }, row => {
-    logged.push([row[Report.run], row[Report.failures].map(failure => failure.message)]);
+const logger = System.create({ name: "reportsTest/logger", observer: true, components: { read: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
+    logged.push([row[Report.run].number, row[Report.errors].failures.map(failure => failure.message)]);
 });
 
-/** The run numbers of every report, oldest first. */
+/** The run numbers of every report, in entity order, and of those with errors. */
 let numbers: number[] = [];
+let withErrors: number[] = [];
 const allReports = Index.create({ name: "reportsTest/allReports", key: [], components: { has: [Report.run] } });
-const listReports = System.create({ name: "reportsTest/listReports", observer: true, lookup: { all: { index: Report.byRun, read: [Report.run] }, any: { index: allReports } } }, ({ lookup }) => {
+const erredReports = Index.create({ name: "reportsTest/erredReports", key: [], components: { has: [Report.run, Report.errors] } });
+const listReports = System.create({ name: "reportsTest/listReports", observer: true, lookup: { all: { index: allReports, read: [Report.run] }, erred: { index: erredReports, read: [Report.run] } } }, ({ lookup }) => {
     const all = lookup.all();
     numbers = [];
-    for (let i = 0; i < all.length; i++) numbers.push(all.at(i)[Report.run]);
-    if (lookup.any().length !== all.length) throw new Error("a report without every component");
+    for (let i = 0; i < all.length; i++) numbers.push(all.at(i)[Report.run].number);
+    const erred = lookup.erred();
+    withErrors = [];
+    for (let i = 0; i < erred.length; i++) withErrors.push(erred.at(i)[Report.run].number);
 });
 
 const inline = () => createWorld({ [workers]: 0 });
+const sorted = (values: readonly number[]) => [...values].sort((a, b) => a - b);
 
 describe("reports", () => {
-    it("number every run in order, one of observer systems alone included, and spawn none for a clean run", async () => {
+    it("number every run in order, one of observer systems alone included, each with a report", async () => {
         await using world = inline();
         expect(await world.run(nothing)).toBe(1);
         expect(await world.run(raise)).toBe(2);
         expect(await world.run(idle)).toBe(3);
         expect(await reportOf(world, 2)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
-        await world.run(listReports);
-        expect(numbers).toEqual([]);
+        const listed = await world.run(listReports);
+        expect(sorted(numbers)).toEqual([1, 2, 3, 4, listed]);
+        expect(withErrors).toEqual([]);
     });
 
-    it("spawn a report for a run that failed or dropped commands, which an observer system sees in that run's pass", async () => {
+    it("say what a run ran: its systems, on main with no joined thread claiming it, and how long it took", async () => {
+        await using world = inline();
+        const both = await world.run(System.create([nothing, raise]));
+        const values = await runOf(world, both);
+        expect({ ...values, elapsed: 0 }).toEqual({ number: both, elapsed: 0, systems: 2, workers: 0, joined: 0, main: true, gpu: false, dropped: 0 });
+        expect(values.elapsed).toBeGreaterThanOrEqual(0);
+        const alone = await runOf(world, await world.run(idle));
+        expect({ ...alone, elapsed: 0 }).toEqual({ number: alone.number, elapsed: 0, systems: 0, workers: 0, joined: 0, main: false, gpu: false, dropped: 0 });
+    });
+
+    it("give a failed run errors, which an observer system sees in that run's pass, and a dropping run only its count", async () => {
         await using world = inline();
         logged.length = 0;
         world.add(logger);
@@ -74,14 +86,13 @@ describe("reports", () => {
         await world.run(spawn);
         const dropping = await world.run(despawnAll);
         expect(await reportOf(world, dropping)).toEqual({ failures: [], skipped: [], dropped: 1, warnings: [] });
-        // A report of dropped commands alone has no failures to log.
-        expect(logged).toHaveLength(2);
+        expect(logged).toHaveLength(1);
         await world.run(listReports);
-        expect(numbers).toEqual([failed, dropping]);
+        expect(withErrors).toEqual([failed]);
         world.remove(logger);
     });
 
-    it("add an observer pass's failures to its run's report, spawned for a clean run, which a logger sees at the next pass", async () => {
+    it("add an observer pass's failures to its run's report, which a logger sees at the next pass", async () => {
         await using world = inline();
         logged.length = 0;
         world.add(failingObserver);
@@ -98,20 +109,35 @@ describe("reports", () => {
         expect(logged.slice(1)).toEqual([[failed, ["run failed"]], [failed, ["run failed", "observer failed"]]]);
     });
 
-    it(`despawn reports ${retainedRuns} runs old, oldest first, as later runs pass them`, async () => {
+    it(`keep the last ${retainedRuns} runs' reports, a later run taking the oldest one's entity and dropping its errors`, async () => {
         await using world = inline();
         const first = await world.run(fail);
         const second = await world.run(fail);
-        // Up to the last run that keeps the first report, this listing's.
         while (await world.run(nothing) < first + retainedRuns - 2);
         await world.run(listReports);
-        expect(numbers).toEqual([first, second]);
-        // This run makes the first report too old, though the run itself is clean.
+        expect(numbers).toHaveLength(retainedRuns);
+        expect(sorted(withErrors)).toEqual([first, second]);
+        // This run takes the first report's entity, and its errors go.
+        const next = await world.run(listReports);
+        expect(numbers).toHaveLength(retainedRuns);
+        expect(sorted(numbers)[0]).toBe(second);
+        expect(sorted(numbers).at(-1)).toBe(next);
+        expect(withErrors).toEqual([second]);
+    });
+
+    it("write a reused report's errors in place when its run has errors too, and a logger sees each run's own", async () => {
+        await using world = inline();
+        logged.length = 0;
+        world.add(logger);
+        const failWith = System.create({ name: "reportsTest/failWith", input: { type: "object", properties: { k: { type: "integer" } } } }, ({ input }) => { throw new Error(`run ${input.k}`); });
+        for (let k = 0; k < retainedRuns; k++) await world.run(failWith, { k });
+        logged.length = 0;
+        const reused = await world.run(failWith, { k: retainedRuns });
+        expect(logged).toEqual([[reused, [`run ${retainedRuns}`]]]);
+        expect((await reportOf(world, reused)).failures.map(({ message }) => message)).toEqual([`run ${retainedRuns}`]);
         await world.run(listReports);
-        expect(numbers).toEqual([second]);
-        const third = await world.run(fail);
-        await world.run(listReports);
-        expect(numbers).toEqual([third]);
+        expect(numbers).toHaveLength(retainedRuns);
+        world.remove(logger);
     });
 
     it("number ticks with runs, apart from the clock's tick, and report a failing tick's systems", async () => {
@@ -134,27 +160,5 @@ describe("reports", () => {
         const tickRuns = logged.map(([number]) => number).filter(number => number > run && number < next);
         expect(tickRuns.length).toBeGreaterThan(0);
         expect(logged.find(([number]) => number === tickRuns[0])?.[1]).toEqual(["run failed"]);
-    });
-
-    it("despawn each old report once, though their despawns wait for a later sync point", () => {
-        const state = createState();
-        const queued: CommandBuffer[] = [];
-        let waiting = false;
-        const reports = createReports(state, buffer => {
-            if (waiting) queued.push(buffer);
-            else synchronizeAlone(state, buffer);
-        });
-        const failed: RunReport = { failures: [{ kind: "system", name: "reportsTest/unit", message: "failed", stack: null }], skipped: [], dropped: 0, warnings: [] };
-        reports.write(1, failed);
-        reports.write(2, failed);
-        // As while tails run: two reports, each making one older report too old, before either's commands apply.
-        waiting = true;
-        reports.write(1 + retainedRuns, failed);
-        reports.write(2 + retainedRuns, failed);
-        state.queued.push(...queued.map(buffer => ({ buffer, guarded: false })));
-        expect(prepareSync(state, true)).toBe(true);
-        // A despawn queued twice would drop the second.
-        expect(state.plan.dropped).toBe(0);
-        applySync(state);
     });
 });

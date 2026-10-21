@@ -5,8 +5,10 @@ import type * as Fixture from "./lifetime.fixture.js";
 export const lifetimeCases = (load: () => Promise<typeof Fixture>) => describe("what a kernel holds", () => {
     it("lives as long as the kernel: new values of one kernel leave every table as it was, on every worker too", async () => {
         const fixture = await load();
-        const { before, after, collected, total } = await fixture.freshKernels(200);
+        const { before, after, collected, total, ran } = await fixture.freshKernels(200);
         expect(total).toBe(fixture.rows - 1);
+        // Its report counts the kernel's run and the workers it ran on.
+        expect({ systems: ran.systems, workers: ran.workers, joined: ran.joined, gpu: ran.gpu }).toEqual({ systems: 1, workers: 2, joined: 0, gpu: false });
         expect(before.workers).toHaveLength(2);
         // Workers keep a kernel by its code, so new values of it add nothing there, collected or not.
         expect(after.workers).toEqual(before.workers);

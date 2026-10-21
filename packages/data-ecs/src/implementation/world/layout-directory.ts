@@ -50,6 +50,8 @@ export const recordCount = 5;
 export const recordWords = 6;
 /** Record flags: it's the resource archetype, of the entity resources live on. */
 export const resourceFlag = 1;
+/** Record flags: it holds reports, which only queries that require a component see. */
+export const metaFlag = 2;
 export const storageWords = 8;
 export const storageComponent = 0;
 export const storageFlags = 1;
@@ -129,7 +131,7 @@ const writeArchetype = (directory: LayoutDirectory, archetype: Archetype): void 
     record[recordCapacity] = archetype.capacity;
     record[recordEntities] = archetype.entities.byteOffset;
     record[recordStorages] = archetype.storages.length;
-    record[recordFlags] = archetype.resource ? resourceFlag : 0;
+    record[recordFlags] = (archetype.resource ? resourceFlag : 0) | (archetype.meta ? metaFlag : 0);
     record[recordCount] = archetype.count;
     for (let s = 0; s < archetype.storages.length; s++) {
         const storage = archetype.storages[s];

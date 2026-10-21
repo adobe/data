@@ -617,7 +617,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
             const archetype = host.archetypeAt(checked);
             if (archetype === undefined) break;
             const has = (id: number): boolean => archetype.components.includes(id);
-            if (!archetype.resource && required.every(has) && !excluded.some(has)) matches.push(checked);
+            if (!archetype.resource && !(archetype.meta && required.length === 0) && required.every(has) && !excluded.some(has)) matches.push(checked);
         }
     };
     const ownInput = inputFor(leaf);
@@ -980,7 +980,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         }
         let first = 0;
         while (first < rows && positions[first] < position) first++;
-        const row = bindRow({ id: -1, entities, storageById, record: -1, version: -1, mirrored: null, components: [], resource: false });
+        const row = bindRow({ id: -1, entities, storageById, record: -1, version: -1, mirrored: null, components: [], resource: false, meta: false });
         const subject = row.value;
         try {
             for (let index = first; index < rows && !halted; index++) {

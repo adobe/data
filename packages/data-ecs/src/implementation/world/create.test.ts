@@ -9,7 +9,7 @@ import { count, read, readEach, readEntity, readResource, select } from "./reads
 import { World } from "../../interface/world/world.js";
 import { attachKernel } from "./attach-kernel.js";
 import { createWorld } from "../index.js";
-import { reportOf, runReported } from "./reports.test-helper.js";
+import { fillReports, reportOf, runReported } from "./reports.test-helper.js";
 import { Report } from "../../interface/report/report.js";
 
 type Vec2 = readonly [number, number];
@@ -138,6 +138,8 @@ describe("World.create", () => {
             else for (const entity of spawned) commands.despawn(entity);
         });
         const world = createWorld();
+        // Past the runs that spawn reports, whose entities would take the freed index first.
+        await fillReports(world);
         await world.run(edit, { action: "spawn" });
         await world.run(edit, { action: "despawn" });
         await world.run(edit, { action: "spawn" });
@@ -222,13 +224,14 @@ describe("World.create", () => {
         expect(await count(world, { required: [velocity] })).toBe(1);
     });
 
-    it("spawns no report for runs with nothing to report", async () => {
+    it("gives every run a report, with no errors for runs with nothing to report", async () => {
         const quiet = System.create({ name: "createTest/quiet" }, () => {});
         await using world = createWorld();
         const first = await world.run(quiet);
         expect(await world.run(quiet)).toBe(first + 1);
         expect(await reportOf(world, first)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
-        expect(await count(world, { required: [Report.run] })).toBe(0);
+        expect(await count(world, { required: [Report.errors] })).toBe(0);
+        expect(await count(world, { required: [Report.run] })).toBeGreaterThanOrEqual(2);
     });
 
     it("reports what isn't an Error as text, without a stack", async () => {

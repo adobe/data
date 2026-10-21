@@ -40,7 +40,7 @@ export const refreshDirectory = (state: State, directory: Directory, layout = la
     state.archetypes.forEach((archetype, id) => {
         const base = id * words(directory);
         const { storageById } = archetype;
-        const matches = !archetype.resource && [...read, ...has].every(component => storageById[component] !== undefined) && not.every(component => storageById[component] === undefined);
+        const matches = !archetype.resource && !(archetype.meta && read.length + has.length === 0) && [...read, ...has].every(component => storageById[component] !== undefined) && not.every(component => storageById[component] === undefined);
         records[base] = matches ? 1 : 0;
         const first = directory.entities ? 2 : 1;
         if (directory.entities) records[base + 1] = matches ? archetype.entities.byteOffset : 0;

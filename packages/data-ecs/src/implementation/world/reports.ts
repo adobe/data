@@ -1,90 +1,207 @@
-import type { Failure } from '../../interface/report/failure.js';
 import { Report } from '../../interface/report/report.js';
-import { createBuffer, despawnCommand, pushCommand, spawnCommand, addCommand, type CommandBuffer } from './buffer.js';
+import type { Failure, Warning } from '../../interface/report/failure.js';
+import { stampChanged } from './archetype.js';
+import { addCommand, createBuffer, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
+import { writeCell } from './cells.js';
+import type { Views } from '../../interface/registry/layout.js';
 import { pushValues } from './commands.js';
 import { locate, reserve } from './entities.js';
 import type { RunReport } from './failures.js';
-import type { State } from './state.js';
+import { idOf, type State } from './state.js';
 
-/** How many runs a report is kept for: once a run's number is this much past a report's, that report is despawned. */
+/** How many runs keep their reports: past that, each run's report reuses the oldest one's entity. */
 export const retainedRuns = 256;
 
-/** Whether a run has nothing to report. */
-export const isClean = (report: RunReport): boolean =>
-    report.failures.length === 0 && report.skipped.length === 0 && report.dropped === 0 && report.warnings.length === 0;
+/** What a run reports in `Report.run`. */
+export type RunValues = {
+    number: number;
+    elapsed: number;
+    systems: number;
+    workers: number;
+    joined: number;
+    main: boolean;
+    gpu: boolean;
+    dropped: number;
+};
 
-const none: readonly never[] = [];
+type Errors = { readonly failures: readonly Failure[]; readonly skipped: readonly string[]; readonly warnings: readonly Warning[] };
 
 /**
- * The world's reports, as entities: each spawned by the commands `apply` takes, which the world applies as a sync point
- * of the report's own after its run's, or in the next one, so `changed` filters see it; those `retainedRuns` older are
- * despawned with it, oldest first. Clean runs spawn nothing; `due` tells, with one comparison, when one has a report
- * to despawn. The world keeps the reports it spawned in run order, which finds the old ones without the index
- * `Report.byRun` a lookup would build each time (perf.md, "Tried and not kept").
+ * A report entity, of the run that last took it. `errors` is what its `Report.errors` holds, or will once commands
+ * queued for it apply; null without. `own` tells whether those are its run's, not an earlier run's it reuses.
  */
-export const createReports = (state: State, apply: (buffer: CommandBuffer) => void) => {
-    /** The run at which the oldest report is due to be despawned; Infinity with none. */
-    let retireAt = Infinity;
-    /** The reports spawned and not yet despawned, by run number and entity, in run order. */
-    const spawnedRuns: number[] = [];
-    const spawnedEntities: number[] = [];
-    /** The last report spawned, which failures found after it are added to. */
-    let last: { run: number; entity: number; failures: readonly Failure[] } | null = null;
+export type Slot = { entity: number; run: number; errors: Errors | null; own: boolean };
 
-    /**
-     * Despawns, into `buffer`, the reports older than `run` by `retainedRuns` or more that are still alive, and moves
-     * `retireAt` to the oldest one left or `spawned`, a run whose report the same sync point spawns.
-     */
-    const retire = (buffer: CommandBuffer, run: number, spawned: number): void => {
-        let k = 0;
-        while (k < spawnedRuns.length && spawnedRuns[k] <= run - retainedRuns) {
-            if (locate(state.entities, spawnedEntities[k]) >= 0) pushCommand(buffer, despawnCommand, spawnedEntities[k]);
-            k++;
-        }
-        spawnedRuns.splice(0, k);
-        spawnedEntities.splice(0, k);
-        retireAt = Math.min(spawnedRuns.length === 0 ? Infinity : spawnedRuns[0], spawned) + retainedRuns;
+/** Whether a run has nothing for `Report.errors`. */
+export const isClean = (report: RunReport): boolean => report.failures.length === 0 && report.skipped.length === 0 && report.warnings.length === 0;
+
+const none: readonly never[] = [];
+const noErrors: Errors = { failures: none, skipped: none, warnings: none };
+
+const sameCounts = (a: Errors, b: Errors): boolean =>
+    a.failures.length === b.failures.length && a.skipped.length === b.skipped.length && a.warnings.length === b.warnings.length;
+
+/** Fields of `Report.run`, in no particular order: what `createRunWriter` writes. */
+const runFields = ["number", "elapsed", "systems", "workers", "joined", "main", "gpu", "dropped"] as const satisfies readonly (keyof RunValues)[];
+
+/** A writer of `RunValues` into a storage of `Report.run`, by the leaf of each field in `layout`. */
+const createRunWriter = (layout: State["layouts"][number]) => {
+    if (layout.kind !== "linear") throw new Error("Report.run isn't a struct.");
+    const leafOf = (field: string) => {
+        const leaf = layout.leaves.find(each => each.path[0] === field);
+        if (leaf === undefined) throw new Error(`Report.run has no ${field}.`);
+        return leaf;
+    };
+    const [number, elapsed, systems, workers, joined, main, gpu, dropped] = runFields.map(leafOf);
+    return (views: Views, row: number, values: RunValues): void => {
+        views[number.view][row * number.unitStride + number.unitOffset] = values.number;
+        views[elapsed.view][row * elapsed.unitStride + elapsed.unitOffset] = values.elapsed;
+        views[systems.view][row * systems.unitStride + systems.unitOffset] = values.systems;
+        views[workers.view][row * workers.unitStride + workers.unitOffset] = values.workers;
+        views[joined.view][row * joined.unitStride + joined.unitOffset] = values.joined;
+        views[main.view][row * main.unitStride + main.unitOffset] = values.main ? 1 : 0;
+        views[gpu.view][row * gpu.unitStride + gpu.unitOffset] = values.gpu ? 1 : 0;
+        views[dropped.view][row * dropped.unitStride + dropped.unitOffset] = values.dropped;
+    };
+};
+
+/**
+ * The world's reports: an entity for each of the last `retainedRuns` runs and ticks. Each run takes one as it starts:
+ * a new one, spawned by its own sync point, until that many are, then the oldest. Once its sync point is done, its
+ * `Report.run` is written in place, stamped so `changed` filters see it. `Report.errors` is written in place too when
+ * the entity holds it already, so a reused entity changes archetype only when its run's errors come or go; adding or
+ * removing it joins the run's sync point when known before it, else applies with `applyAlone`.
+ */
+export const createReports = (state: State, applyAlone: (buffer: CommandBuffer) => Promise<void> | null) => {
+    const runId = idOf(state, Report.run);
+    const errorsId = idOf(state, Report.errors);
+    state.meta.add(runId).add(errorsId);
+    const slots: Slot[] = [];
+    /** The slot the next run takes once every one is spawned. */
+    let oldest = 0;
+    /** The slot the last run took. */
+    let last: Slot | null = null;
+
+    /** The storage and row of a slot's component `id`, while its entity holds it. */
+    const cellOf = (slot: Slot, id: number) => {
+        const index = locate(state.entities, slot.entity);
+        if (index < 0) return null;
+        const storage = state.archetypes[state.entities.archetype[index]]?.storageById[id];
+        return storage === undefined ? null : { storage, row: state.entities.row[index] };
     };
 
-    /** Spawns run `run`'s report with `values`, retiring older ones in the same sync point. */
-    const spawn = (run: number, report: RunReport): void => {
+    /** Writes `Report.run` field by field through its layout's leaves, without the general writer's walk. */
+    const writeRun = createRunWriter(state.layouts[runId]);
+
+    /** Writes `errors` into a slot: in place when its entity holds them, stamped; else by an add, queued or alone. */
+    const putErrors = (slot: Slot, errors: Errors, queue: boolean): Promise<void> | null => {
+        const pending = slot.errors !== null && cellOf(slot, errorsId) === null;
+        slot.errors = errors;
+        slot.own = true;
+        const cell = cellOf(slot, errorsId);
+        if (cell !== null) {
+            writeCell(cell.storage, cell.row, errors);
+            stampChanged(cell.storage, cell.row, ++state.tick);
+            return null;
+        }
         const buffer = createBuffer();
-        const entity = reserve(state.entities);
-        pushValues(state, buffer, spawnCommand, entity, {
-            [Report.run]: run, [Report.failures]: report.failures, [Report.skipped]: report.skipped, [Report.dropped]: report.dropped, [Report.warnings]: report.warnings,
+        pushValues(state, buffer, addCommand, slot.entity, { [Report.errors]: errors });
+        if (queue || pending) {
+            state.queued.push({ buffer, guarded: false });
+            return null;
+        }
+        return applyAlone(buffer);
+    };
+
+    /**
+     * Takes run `run`'s slot: a new entity, spawned by commands queued for the next sync point, until every one is,
+     * then the oldest, or a new one in its place when a system despawned it.
+     */
+    const take = (run: number): Slot => {
+        let slot: Slot;
+        if (slots.length < retainedRuns) {
+            slot = { entity: -1, run, errors: null, own: false };
+            slots.push(slot);
+        }
+        else {
+            slot = slots[oldest];
+            oldest = (oldest + 1) % retainedRuns;
+            slot.run = run;
+            slot.own = false;
+            if (locate(state.entities, slot.entity) >= 0) return last = slot;
+            slot.errors = null;
+        }
+        slot.entity = reserve(state.entities);
+        const buffer = createBuffer();
+        pushValues(state, buffer, spawnCommand, slot.entity, {
+            [Report.run]: { number: run, elapsed: 0, systems: 0, workers: 0, joined: 0, main: false, gpu: false, dropped: 0 } satisfies RunValues,
         });
-        if (run >= retireAt) retire(buffer, run, run);
-        else retireAt = Math.min(retireAt, run + retainedRuns);
-        apply(buffer);
-        last = { run, entity, failures: report.failures };
-        let at = spawnedRuns.length;
-        while (at > 0 && spawnedRuns[at - 1] > run) at--;
-        spawnedRuns.splice(at, 0, run);
-        spawnedEntities.splice(at, 0, entity);
+        state.queued.push({ buffer, guarded: false });
+        return last = slot;
     };
 
     return {
-        /** Whether a clean run `run` has older reports to despawn. */
-        due: (run: number): boolean => run >= retireAt,
-        /** Spawns the report of run `run`, which isn't clean. */
-        write: spawn,
-        /** Despawns, as a sync point of its own, the reports run `run` makes too old. */
-        retire: (run: number): void => {
-            const buffer = createBuffer();
-            retire(buffer, run, Infinity);
-            apply(buffer);
+        /** The slot the last run took. */
+        lastSlot: (): Slot => {
+            if (last === null) throw new Error("No run took a report yet.");
+            return last;
         },
-        /** Adds failures found after run `run`'s report was written, stamped, spawning it if the run was clean. */
-        amend: (run: number, failures: readonly Failure[]): void => {
-            if (last === null || last.run !== run) {
-                spawn(run, { failures, skipped: none, dropped: 0, warnings: none });
-                return;
+        /** Takes the report of run `run`, which is about to run: what that takes joins the run's own sync point. */
+        begin: take,
+        /** Takes run `run`'s report between runs: what that takes applies as a sync point of its own. */
+        beginAlone: (run: number): Slot | Promise<Slot> => {
+            const queued = state.queued.length;
+            const slot = take(run);
+            if (state.queued.length === queued) return slot;
+            const applying = applyAlone(state.queued.splice(queued, 1)[0].buffer);
+            return applying === null ? slot : applying.then(() => slot);
+        },
+        /**
+         * Puts, for the run that took the last slot, `Report.errors` for what went wrong before its sync point:
+         * failures, skipped systems and the first `warningCount` warnings, copied, since the run's lists grow.
+         */
+        beforeSync: (failures: readonly Failure[] | null, skipped: readonly string[] | null, warnings: readonly Warning[], warningCount: number): void => {
+            if (last === null || (failures === null && skipped === null && warningCount === 0)) return;
+            const errors = { failures: failures === null ? none : failures.slice(), skipped: skipped === null ? none : skipped.slice(), warnings: warningCount === 0 ? none : warnings.slice(0, warningCount) };
+            void putErrors(last, errors, true);
+        },
+        /**
+         * Writes run `run`'s report into its slot once its sync point is done: `Report.run`, then its errors when it
+         * has more than were put before, or clears those an earlier run left. While tails run on joined threads, a
+         * removal waits for the next sync point, the errors emptied meanwhile.
+         */
+        finish: (slot: Slot, values: RunValues, report: RunReport, tailsRun: boolean): Promise<void> | null => {
+            if (slot.run !== values.number) return null;
+            const cell = cellOf(slot, runId);
+            if (cell === null) return null;
+            writeRun(cell.storage.views, cell.row, values);
+            stampChanged(cell.storage, cell.row, ++state.tick);
+            if (!isClean(report)) {
+                const errors = { failures: report.failures, skipped: report.skipped, warnings: report.warnings };
+                return slot.own && slot.errors !== null && sameCounts(slot.errors, errors) ? null : putErrors(slot, errors, tailsRun);
             }
+            if (slot.errors === null || slot.own) return null;
+            const held = cellOf(slot, errorsId);
+            if (held !== null) {
+                writeCell(held.storage, held.row, noErrors);
+                stampChanged(held.storage, held.row, ++state.tick);
+            }
+            slot.errors = null;
             const buffer = createBuffer();
-            const all = [...last.failures, ...failures];
-            pushValues(state, buffer, addCommand, last.entity, { [Report.failures]: all });
-            apply(buffer);
-            last.failures = all;
+            pushCommand(buffer, removeCommand, slot.entity);
+            pushComponent(buffer, errorsId, undefined);
+            if (tailsRun) {
+                state.queued.push({ buffer, guarded: false });
+                return null;
+            }
+            return applyAlone(buffer);
+        },
+        /** Adds failures found once run `run`'s report was written, adding `Report.errors` when it had none. */
+        amend: (slot: Slot, run: number, failures: readonly Failure[], tailsRun: boolean): Promise<void> | null => {
+            if (slot.run !== run || locate(state.entities, slot.entity) < 0) return null;
+            const errors = slot.own ? slot.errors : null;
+            const amended = errors === null ? { failures, skipped: none, warnings: none } : { failures: [...errors.failures, ...failures], skipped: errors.skipped, warnings: errors.warnings };
+            return putErrors(slot, amended, tailsRun);
         },
     };
 };

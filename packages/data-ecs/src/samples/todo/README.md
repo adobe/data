@@ -30,8 +30,8 @@ done or none, clear those done, filter, and generate 10 or 1,000 todos.
 - **Events become runs** in each feature's `events.ts`: listeners on the page's root call `world.run(system, input)`
   and leave the promise; a rejected run goes unhandled, which the browser logs. An event from a row names its todo
   through `todoOf`, a `WeakMap` from row to entity that `createRows` fills.
-- **Failures** of runs and ticks alike are reports, entities the world spawns; the app adds `logFailures`, an observer
-  system with `changed: [Report.failures]` that logs each failure once, an observer pass's at the next pass.
+- **Failures** of runs and ticks alike are in their reports, entities the world keeps; the app adds `logFailures`, an
+  observer system with `changed: [Report.errors]` that logs each failure once, an observer pass's at the next pass.
 
 ## Structure
 

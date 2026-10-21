@@ -2,7 +2,7 @@ import type { Leaf } from '../../interface/system/leaf.js';
 import type { Chunk, ChunkResult, Runner, Workers } from './runner.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
 import type { Archetype, Storage } from './archetype.js';
-import { idOf, type State } from './state.js';
+import { countRan, idOf, startRan, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
 import { applySync, prepareSync, syncPending } from './synchronize.js';
 import { activate } from './activate.js';
@@ -36,6 +36,11 @@ export type ExecuteContext = {
     readonly publish: () => void;
     /** The last run's tails, posted after its sync point, until the caller takes them; null when it had none. */
     tails: Promise<TailOutcome> | null;
+    /**
+     * Given what went wrong before a run's sync point, each list null or a count of none, queues what its report needs
+     * for them into that sync point.
+     */
+    readonly beforeSync: (failures: readonly Failure[] | null, skipped: readonly string[] | null, warnings: readonly Warning[], warningCount: number) => void;
 };
 
 /**
@@ -324,6 +329,7 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
     for (let v = first; v <= last; v++) {
         const leaves = schedule.tiers[v];
         const runners = prepared.runners[v];
+        countRan(state, runners);
         let failed = false;
         for (let i = 0; i < runners.length; i++) {
             const { remote } = runners[i];
@@ -342,6 +348,7 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
     const { state, kernelIndexOf, workers, publish } = context;
     const { gpu } = state;
     context.tails = null;
+    startRan(state.ran);
     let schedule = whole;
     let prepared = preparedFor(context, whole);
     if (prepared.placement !== state.placement) {
@@ -433,6 +440,7 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
                 if (folds !== null && runner.targets.length > 0) contribute(state, folds, runner, runner.finish(failed), failed);
             }
             if (remote > 0) prepared.tasks.clear();
+            countRan(state, runners);
             if (gpu !== null) markWrites(gpu, runners);
             if (tierFailed) {
                 for (let later = t + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (outcome.skipped ??= []).push(labelOfItem(leaf));
@@ -449,6 +457,8 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
                 gpu.beforeSync();
             }
             try {
+                // The report's errors known so far join this sync point.
+                context.beforeSync(outcome.failures, outcome.skipped, prepared.warnings, prepared.warningCount);
                 // A sync point counts as a write to everything a tail still reads.
                 if (state.tails.length !== 0) {
                     activate(state);
@@ -499,6 +509,7 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
             // A thread runs one task at a time: the last tick's tail there, if it's still running, first.
             for (const runner of tailing.runners) if (runner.remote?.channel.busy() === true) await runner.remote.channel.idle();
             context.tails = postTails(state, tailing.runners, tailing.leaves, tailing.tiers, args);
+            countRan(state, tailing.runners);
         }
     }
     // Conflicts unique indexes found while refreshing for finalizers.

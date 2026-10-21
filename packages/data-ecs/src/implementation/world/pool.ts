@@ -48,6 +48,8 @@ export type Pool = {
      * mapped to the same range each tier finds its rows in cache. With no room for claims, splits the range evenly.
      */
     readonly claimed: (first: number, workers: number, task: FastTask, grain: number) => Promise<TaskResult>[];
+    /** How many workers were posted a task since the last call, which starts the count again. */
+    readonly takePosted: () => number;
     readonly close: () => void;
     /**
      * At a sync point, once its segments are drained and while no task runs: empties every command ring, growing each
@@ -123,7 +125,15 @@ export const createPool = (ports: readonly WorkerPort[], arena: Memory): Pool =>
     for (let worker = 0; worker < size; worker++) placeRing(worker);
     /** Whether a task wrote into a command ring since the last rewind. */
     let written = false;
-    const kill = (slot: Slot, error: Error): void => {
+    /** The workers posted a task since `takePosted` last ran, and how many. */
+    const postedTo = new Uint8Array(size);
+    let postedCount = 0;
+    const markPosted = (worker: number): void => {
+        if (postedTo[worker] !== 0) return;
+        postedTo[worker] = 1;
+        postedCount++;
+    };
+    const kill =(slot: Slot, error: Error): void => {
         slot.dead ??= error;
         for (const { settle } of slot.pending.values()) settle({ commands: emptyBuffer, error: slot.dead });
         slot.pending.clear();
@@ -185,6 +195,7 @@ export const createPool = (ports: readonly WorkerPort[], arena: Memory): Pool =>
     };
 
     const post = (worker: number, task: FastTask, line: number, grain: number, self: number, participants: number): Promise<TaskResult> => {
+        markPosted(worker);
         const slot = slots[worker];
         if (slot.dead !== null) return Promise.resolve({ commands: emptyBuffer, error: slot.dead });
         const count = ++sent[worker];
@@ -246,6 +257,14 @@ export const createPool = (ports: readonly WorkerPort[], arena: Memory): Pool =>
     return {
         size,
         claimed,
+        takePosted: () => {
+            const count = postedCount;
+            if (count !== 0) {
+                postedTo.fill(0);
+                postedCount = 0;
+            }
+            return count;
+        },
         broadcast: message => {
             close();
             for (const slot of slots) if (slot.dead === null) slot.port.post(message);
@@ -269,6 +288,7 @@ export const createPool = (ports: readonly WorkerPort[], arena: Memory): Pool =>
         },
         request: (worker, message) => new Promise(settle => {
             close();
+            markPosted(worker);
             const slot = slots[worker];
             if (slot.dead !== null) return settle({ commands: emptyBuffer, error: slot.dead });
             const task = nextTask++;

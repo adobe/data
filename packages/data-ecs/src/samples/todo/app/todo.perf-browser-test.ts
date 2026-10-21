@@ -89,8 +89,8 @@ const nothing = System.create({ name: "perf/nothing" }, () => {});
 
 /** The failures of every report the apps measured spawned, which none should. */
 const failed: Report.Failure[] = [];
-const collectFailures = System.create({ name: "perf/collectFailures", observer: true, components: { read: [Report.failures], changed: [Report.failures] } }, row => {
-    failed.push(...row[Report.failures]);
+const collectFailures = System.create({ name: "perf/collectFailures", observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
+    failed.push(...row[Report.errors].failures);
 });
 
 /**

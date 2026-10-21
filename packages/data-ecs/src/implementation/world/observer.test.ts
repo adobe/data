@@ -49,8 +49,8 @@ const inCell = System.create({ name: "observerTest/inCell", observer: true, look
 const failing = System.create({ name: "observerTest/failing", observer: true, resources: { read: [level] } }, ({ resources }) => {
     if (resources[level] > 0) throw new Error("observer failed");
 });
-const watchReport = System.create({ name: "observerTest/watchReport", observer: true, components: { read: [Report.failures], changed: [Report.failures] } }, row => {
-    seen.reports.push(row[Report.failures].length);
+const watchReport = System.create({ name: "observerTest/watchReport", observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
+    seen.reports.push(row[Report.errors].failures.length);
 });
 const raiseThenWatch = System.create([raise, watchLevel]);
 const watchLevelChanges = System.create({ name: "observerTest/watchLevelChanges", observer: true, resources: { read: [level], changed: [level] } }, ({ resources }) => {

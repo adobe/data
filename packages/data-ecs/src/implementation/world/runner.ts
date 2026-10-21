@@ -354,7 +354,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     function refreshMatches(): void {
         for (; checked < state.archetypes.length; checked++) {
             const archetype = state.archetypes[checked];
-            if (!archetype.resource && required.every(id => archetype.storageOf.has(id)) && !excluded.some(id => archetype.storageOf.has(id))) matches.push(archetype);
+            if (!archetype.resource && !(archetype.meta && required.length === 0) && required.every(id => archetype.storageOf.has(id)) && !excluded.some(id => archetype.storageOf.has(id))) matches.push(archetype);
         }
     }
 

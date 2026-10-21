@@ -7,7 +7,7 @@ import { System } from "../../interface/system/system.js";
 import { createWorld } from "../index.js";
 import { Observe } from "../../observe/index.js";
 import { settle } from "./observe.test-helper.js";
-import { runReported } from "./reports.test-helper.js";
+import { fillReports, runReported } from "./reports.test-helper.js";
 import { retainedRuns } from "./reports.js";
 import { Report } from "../../interface/report/report.js";
 
@@ -354,6 +354,8 @@ describe("observing entities", () => {
 
     it("gives null once the entity is despawned, and nothing for another entity that reuses its index", async () => {
         await using world = createWorld();
+        // Past the runs that spawn reports, whose entities would take the freed index first.
+        await fillReports(world);
         await world.run(create);
         const despawned = target;
         const seen: unknown[] = [];
@@ -775,8 +777,9 @@ describe("the factories' own runs", () => {
         const nothing = System.create({ name: "observeCasesTest/nothing" }, () => {});
         let reports = -1;
         const caught = await catching(async () => {
-            // Its notifier throws once the failed run's report is despawned, which a run of the factories' own does.
-            count(world, { required: [Report.run] })(value => {
+            // Its notifier throws once the failed run's report loses its errors, which a run of the factories' own does
+            // as it takes that report's entity.
+            count(world, { required: [Report.errors] })(value => {
                 if (reports === 1 && value === 0) throw new Error("count failed");
                 reports = value;
             });
@@ -784,12 +787,12 @@ describe("the factories' own runs", () => {
             const failed = await world.run(fail);
             expect(reports).toBe(1);
             while (await world.run(nothing) < failed + retainedRuns - 1);
-            // The factories' runs for these first values: the first despawns the report, failing in its pass.
+            // The factories' runs for these first values: the first takes the report, failing in its pass.
             resource(world, level)(() => {});
             await settle(world);
             resource(world, other)(() => {});
             await settle(world);
         });
-        expect(caught.map(error => error instanceof Error ? error.message : error)).toEqual([expect.stringMatching(/^Observe\.count\(Report\/run\).*: count failed$/)]);
+        expect(caught.map(error => error instanceof Error ? error.message : error)).toEqual([expect.stringMatching(/^Observe\.count\(Report\/errors\).*: count failed$/)]);
     });
 });

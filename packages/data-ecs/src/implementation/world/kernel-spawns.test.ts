@@ -6,6 +6,8 @@ import { workers } from "../../interface/resources/workers.js";
 import { count, read, readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { indexOf } from "./entities.js";
+import { retainedRuns } from "./reports.js";
+import { fillReports } from "./reports.test-helper.js";
 
 const index = Symbol("kernelSpawnsTest/index");
 const value = Symbol("kernelSpawnsTest/value");
@@ -130,6 +132,8 @@ describe("kernel spawns", () => {
 
     it("reuse the indexes their blocks of reservations leave unused, so a few spawns a run don't grow the entity table", async () => {
         const world = createWorld({ [workers]: 0 });
+        // Past the runs that spawn reports, which take indexes of their own.
+        await fillReports(world);
         await world.run(seed, { count: 3 });
         const seen = new Set<number>();
         for (let run = 0; run < 50; run++) {
@@ -140,7 +144,7 @@ describe("kernel spawns", () => {
             await world.run(despawnMade);
         }
         // Each run reserves a block; what it leaves unused goes back to the free list, and is taken again.
-        expect(Math.max(...seen)).toBeLessThan(32);
+        expect(Math.max(...seen)).toBeLessThan(retainedRuns + 32);
         await world.dispose();
     });
 

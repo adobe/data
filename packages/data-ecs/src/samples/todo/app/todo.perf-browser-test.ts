@@ -1,5 +1,5 @@
 import { it } from "vitest";
-import { Entity, System, workers, type World } from "../../../index.js";
+import { Entity, Report, System, workers, type World } from "../../../index.js";
 import { createWorld } from "../../../implementation/index.js";
 import { toggleAll } from "../features/completion/model.js";
 import { filter } from "../features/filter/data.js";
@@ -64,13 +64,14 @@ globalThis.requestAnimationFrame = callback => platformFrame(time => {
  * Runs `operation` `repeats` times, each timed and followed by the tick a run brings, timed from its frame's start to
  * the end of its observer systems; then once more, counting its mutations.
  */
-const measure = async (operation: string, n: number, repeats: number, run: (repeat: number) => Promise<World.Report>, settle: () => void = () => {}): Promise<void> => {
+const measure = async (operation: string, n: number, repeats: number, run: (repeat: number) => Promise<number>, settle: () => void = () => {}): Promise<void> => {
     const once = async (repeat: number): Promise<number> => {
         const start = performance.now();
-        const report = await run(repeat);
+        await run(repeat);
         settle();
         const ms = performance.now() - start;
-        if (report.failures.length > 0) throw new Error(`${operation} failed: ${JSON.stringify(report.failures)}`);
+        // A failing run's report is spawned before its pass, which logs it.
+        if (failed.length > 0) throw new Error(`${operation} failed: ${JSON.stringify(failed)}`);
         return ms;
     };
     const times: number[] = [];
@@ -85,6 +86,12 @@ const measure = async (operation: string, n: number, repeats: number, run: (repe
 };
 
 const nothing = System.create({ name: "perf/nothing" }, () => {});
+
+/** The failures of every report the apps measured spawned, which none should. */
+const failed: Report.Failure[] = [];
+const collectFailures = System.create({ name: "perf/collectFailures", observer: true, components: { read: [Report.failures], changed: [Report.failures] } }, row => {
+    failed.push(...row[Report.failures]);
+});
 
 /**
  * The todos in list order, read once, before anything's timed: indexing a list's `children` far from the last index
@@ -108,6 +115,7 @@ const alternateFilter = (world: World) => (repeat: number) => world.run(setFilte
 const generated = async (n: number): Promise<{ readonly app: ReturnType<typeof createApp>; readonly ms: number }> => {
     document.body.innerHTML = markup;
     const app = createApp(document.body);
+    app.world.add(collectFailures);
     await watchTicks(app.world);
     const start = performance.now();
     await app.world.run(addGenerated, { count: n });

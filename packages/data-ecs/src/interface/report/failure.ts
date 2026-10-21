@@ -1,21 +1,4 @@
-/** What went wrong in a run, as data. Empty lists and a zero mean the run succeeded. */
-export type Report = {
-    /** Systems, finalizers, GPU work, threads and unique indexes that failed, in the order they ran or were found. */
-    readonly failures: readonly Failure[];
-    /**
-     * The labels of systems that didn't run: those in tiers after one that failed, and those of a joined thread that's
-     * gone, each with a `"thread"` failure.
-     */
-    readonly skipped: readonly string[];
-    /** Commands that did nothing, since their entity wasn't alive at the sync point. */
-    readonly dropped: number;
-    /**
-     * What ran but slowed the run. `"blocking"`: a system that runs on a thread a joined thread fills and isn't
-     * terminal, so its tier waited for that thread, by the system's label.
-     */
-    readonly warnings: readonly { readonly kind: "blocking"; readonly name: string; readonly message: string }[];
-};
-
+/** What failed in a run: a system, finalizer, GPU work, thread or unique index. */
 export type Failure = {
     /**
      * What failed: a system or finalizer that threw, GPU work, a system whose thread is gone, which didn't run, or a
@@ -35,3 +18,9 @@ export type Failure = {
     /** The thrown Error's `stack`, as the JavaScript engine formats it, for logs and display; null when it had none. */
     readonly stack: string | null;
 };
+
+/**
+ * What ran but slowed a run. `"blocking"`: a system that runs on a thread a joined thread fills and isn't terminal, so
+ * its tier waited for that thread, by the system's label.
+ */
+export type Warning = { readonly kind: "blocking"; readonly name: string; readonly message: string };

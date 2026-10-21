@@ -1,5 +1,5 @@
 import type { Leaf } from '../../interface/system/leaf.js';
-import type { Failure } from '../../interface/world/report.js';
+import type { Failure } from '../../interface/report/failure.js';
 import { labelOfItem } from '../../interface/registry/index.js';
 import { readAhead, type ExecuteContext } from './execute.js';
 import { failureOf } from './failures.js';

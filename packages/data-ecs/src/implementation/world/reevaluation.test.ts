@@ -3,6 +3,7 @@ import { System } from "../../index.js";
 import { Observe } from "../../observe/index.js";
 import { bump, score } from "./reevaluation.test-helper.js";
 import { createWorld } from "../index.js";
+import { runReported } from "./reports.test-helper.js";
 
 const spawn = System.create({ name: "reevaluation/spawn" }, ({ commands }) => { commands.spawn([score])({ [score]: 0 }); });
 
@@ -13,7 +14,7 @@ const broken = System.create({ name: "reevaluation/bump" }, () => {
 
 it("labels systems that share a name by their ids", async () => {
     await using world = createWorld();
-    const { failures } = await world.run(broken);
+    const { failures } = await runReported(world, broken);
     expect(failures.map(({ name }) => name)).toEqual(["reevaluation/bump (@adobe/data-ecs/src/implementation/world/reevaluation.test.ts#broken)"]);
 });
 

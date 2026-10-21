@@ -6,6 +6,7 @@ import { createWorld, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import type { FromRemoteFinalizersWorker, ToRemoteFinalizersWorker } from "./remote-finalizers-worker.fixture.js";
 import { despawn, released, scenario, serial, sorted, spawn, type Released } from "./remote-finalizers.test-helper.js";
+import { dropReports, runReported } from "./reports.test-helper.js";
 
 /**
  * Scenarios of finalizers on a joined worker, run built in node and from source in chromium: the same stops as an
@@ -106,7 +107,9 @@ export const diesHolding = async () => {
     const whileHeld = await reused();
     await worker.terminate();
     await until(world.threads, threads => threads.at(-1)?.status === "gone");
-    const report = await world.run(spawn, { from: 20, count: 0 });
+    const report = await runReported(world, spawn, { from: 20, count: 0 });
+    // Its report took an index it released; dropped, every one is free again.
+    await world.run(dropReports);
     await world.run(spawn, { from: 30, count: 6 });
     const after = await reused();
     await world.dispose();

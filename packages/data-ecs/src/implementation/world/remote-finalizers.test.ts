@@ -9,6 +9,7 @@ import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import { attach, despawn, eventually, finalized, marked, place, released, retone, scenario, serial, sorted, spawn, throwing, tone, widget } from "./remote-finalizers.test-helper.js";
+import { runReported } from "./reports.test-helper.js";
 
 // Finalizers on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
 
@@ -117,13 +118,13 @@ describe("finalizers on a joined thread", () => {
         await world.run(despawn, { serials: [0, 1, 2] });
         expect(await eventually(() => released.length === 3)).toBe(true);
         // Its failure reaches the world by message, in time for a later run.
-        let report = await world.run(despawn, { serials: [] });
+        let report = await runReported(world, despawn, { serials: [] });
         for (let k = 0; k < 100 && report.failures.length === 0; k++) {
             await new Promise(resolve => setTimeout(resolve, 1));
-            report = await world.run(despawn, { serials: [] });
+            report = await runReported(world, despawn, { serials: [] });
         }
         expect(report.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["finalizer", "remoteFinalizersTest/release", "remoteFinalizersTest: 1 throws"]]);
-        expect((await world.run(despawn, { serials: [] })).failures).toEqual([]);
+        expect((await runReported(world, despawn, { serials: [] })).failures).toEqual([]);
         await remote.dispose();
         await world.dispose();
     });
@@ -148,7 +149,7 @@ describe("finalizers on a joined thread", () => {
         await statusOf(world, "gone");
         expect(released.map(stop => [stop.serial, stop.widget])).toEqual([[0, "w0"]]);
         // Its objects came back as their starts, with the thread's values its own.
-        const report = await world.run(despawn, { serials: [1] });
+        const report = await runReported(world, despawn, { serials: [1] });
         expect(report.failures).toEqual([]);
         expect(released.map(stop => [stop.serial, stop.widget])).toEqual([[0, "w0"], [1, null]]);
         await world.dispose();
@@ -163,10 +164,10 @@ describe("finalizers on a joined thread", () => {
         Finalizer.create(identify({ name: "remoteFinalizersTest/late", components: { read: [widget, serial] } }, "remoteFinalizersTest#late"), row => { late.push(`${row[serial]}:${String(row[widget])}`); });
         // Declared in a function, so the build gives it no id.
         Finalizer.create({ name: "remoteFinalizersTest/unnamed", components: { read: [widget] } }, () => {});
-        const first = await world.run(despawn, { serials: [0] });
+        const first = await runReported(world, despawn, { serials: [0] });
         expect(first.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["finalizer", "remoteFinalizersTest/unnamed", 'Finalizer "remoteFinalizersTest/unnamed" runs on thread "remoteFinalizersTest", which a joined thread fills, and has no id, so that thread can\'t name it; the build gives top-level finalizers one.']]);
         expect(await eventually(() => late.length === 1)).toBe(true);
-        expect((await world.run(despawn, { serials: [1] })).failures).toEqual([]);
+        expect((await runReported(world, despawn, { serials: [1] })).failures).toEqual([]);
         expect(await eventually(() => late.length === 2)).toBe(true);
         expect(late).toEqual(["0:null", "1:null"]);
         // Placed there by the thread's object resource alone: stops of rows holding none of its objects, which its log
@@ -178,7 +179,7 @@ describe("finalizers on a joined thread", () => {
         });
         await world.run(plain);
         await world.run(retone, { tone: "soft" });
-        expect((await world.run(despawn, { serials: [50, 52] })).failures).toEqual([]);
+        expect((await runReported(world, despawn, { serials: [50, 52] })).failures).toEqual([]);
         expect(await eventually(() => heard.length === 2)).toBe(true);
         expect(heard).toEqual(["50:soft", "52:soft"]);
         await remote.dispose();

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { Component, Index, Resource, System, report, workers } from "../../index.js";
+import { Component, Index, Report, Resource, System, workers } from "../../index.js";
 import { isObserver, requireDefinition } from "../../interface/registry/index.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld } from "./create.js";
 import { tablesAfterCollecting } from "./lifetime.test-helper.js";
 import { createLoop } from "./loop.js";
 import { unplaceable } from "./remote-systems.js";
-import { readResource } from "./reads.test-helper.js";
+import { reportOf, runReported } from "./reports.test-helper.js";
 
 const amount = Symbol("observerTest/amount");
 const cell = Symbol("observerTest/cell");
@@ -49,8 +49,8 @@ const inCell = System.create({ name: "observerTest/inCell", observer: true, look
 const failing = System.create({ name: "observerTest/failing", observer: true, resources: { read: [level] } }, ({ resources }) => {
     if (resources[level] > 0) throw new Error("observer failed");
 });
-const watchReport = System.create({ name: "observerTest/watchReport", observer: true, resources: { read: [report], changed: [report] } }, ({ resources }) => {
-    seen.reports.push(resources[report].failures.length);
+const watchReport = System.create({ name: "observerTest/watchReport", observer: true, components: { read: [Report.failures], changed: [Report.failures] } }, row => {
+    seen.reports.push(row[Report.failures].length);
 });
 const raiseThenWatch = System.create([raise, watchLevel]);
 const watchLevelChanges = System.create({ name: "observerTest/watchLevelChanges", observer: true, resources: { read: [level], changed: [level] } }, ({ resources }) => {
@@ -84,9 +84,10 @@ describe("observer systems", () => {
         await using world = inline();
         await world.run(raise);
         expect(seen.levels).toEqual([]);
-        expect(await world.run(watchLevel)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
+        const ran = await world.run(watchLevel);
         expect(seen.levels).toEqual([1]);
         expect(seen.contexts.map(context => "commands" in context)).toEqual([false]);
+        expect(await reportOf(world, ran)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
     });
 
     it("run after every run they're added to, reading what its sync point left, each once", async () => {
@@ -126,10 +127,12 @@ describe("observer systems", () => {
         await using world = inline();
         world.add(failing);
         world.add(watchLevel);
-        expect((await world.run(nothing)).failures).toEqual([]);
-        const { failures } = await world.run(raise);
-        expect(failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "observerTest/failing", "observer failed"]]);
+        const clean = await world.run(nothing);
+        const raised = await world.run(raise);
         expect(seen.levels).toEqual([0, 1]);
+        expect((await reportOf(world, clean)).failures).toEqual([]);
+        const { failures } = await reportOf(world, raised);
+        expect(failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "observerTest/failing", "observer failed"]]);
     });
 
     it("don't make the loop tick, and runs of them alone don't wake it", async () => {
@@ -145,24 +148,24 @@ describe("observer systems", () => {
         expect(asked.frames).toBe(1);
     });
 
-    it("run after each tick, seeing its report, which then holds their failures without notifying them again", async () => {
+    it("run after each tick, their failures then added to its report, stamped, so the next pass sees them", async () => {
         reset();
         await using world = inline();
         world.add(raise);
         world.add(failing);
         world.add(watchReport);
-        await world.run(nothing);
-        while (seen.reports.length < 2) await new Promise(resolve => setTimeout(resolve, 1));
-        // Read once the tick ran, by a run of observer systems alone, which ticks nothing: the report holds their
-        // failures.
-        expect((await readResource(world, report)).failures.map(({ kind, name }) => [kind, name])).toEqual([["system", "observerTest/failing"]]);
-        // The run's pass, then the tick's: each saw the report as written, before the failures went in.
-        expect(seen.reports).toEqual([0, 0]);
-        // Putting the failures in notified nothing: a run of observer systems alone, waking no tick, doesn't run it
-        // again.
-        const { failures } = await world.run(count);
-        expect(failures.map(({ name }) => name)).toEqual(["observerTest/failing"]);
-        expect(seen.reports).toEqual([0, 0]);
+        world.add(watchLevel);
+        const ran = await world.run(nothing);
+        while (!seen.levels.includes(1)) await new Promise(resolve => setTimeout(resolve, 1));
+        // The tick's pass ran before its failures went in, and saw no report.
+        expect(seen.reports).toEqual([]);
+        // The next pass, a run of observer systems alone, which ticks nothing, sees them; it fails too.
+        const counted = await world.run(count);
+        expect(counted).toBe(ran + 2);
+        expect(seen.reports).toEqual([1]);
+        const tick = await reportOf(world, ran + 1);
+        expect(tick.failures.map(({ kind, name }) => [kind, name])).toEqual([["system", "observerTest/failing"]]);
+        expect((await reportOf(world, counted)).failures.map(({ name }) => name)).toEqual(["observerTest/failing"]);
     });
 
     it("leave the composite ticks run as it is when one added alone is removed, and release what it held", async () => {

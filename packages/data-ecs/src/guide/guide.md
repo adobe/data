@@ -177,6 +177,26 @@ expect(moved).toEqual([[1, 0, 0]]);
 
 [`03-systems.test.ts`](03-systems.test.ts#L34-L68)
 
+```ts
+const fail = System.create({ name: "fail" }, () => {
+    throw new Error("broken");
+});
+
+// A run resolves to its number. A run or tick that went wrong has a report, an entity: an observer system added to
+// read reports' failures as they change logs them. Observer systems' failures join their report after them.
+const logged: string[] = [];
+const logFailures = System.create({ observer: true, components: { read: [Report.failures], changed: [Report.failures] } }, row => {
+    for (const failure of row[Report.failures]) logged.push(`${failure.name}: ${failure.message}`);
+});
+
+world.add(logFailures);
+const run: number = await world.run(fail);
+expect(run).toBe(1);
+expect(logged).toEqual(["fail: broken"]);
+```
+
+[`03-systems.test.ts`](03-systems.test.ts#L70-L86)
+
 ### 4. Ticks and cadence
 
 ```ts

@@ -1,6 +1,6 @@
 import type { IndexDefinition } from '../../interface/registry/index.js';
 import { indexDefinitionOf, indexOfLookup, labelOfItem } from '../../interface/registry/index.js';
-import type { Failure } from '../../interface/world/report.js';
+import type { Failure } from '../../interface/report/failure.js';
 import type { Lookup } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
 import { readCell } from './cells.js';

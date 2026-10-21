@@ -1,4 +1,4 @@
-import { System, report, type Resource, type World } from '../index.js';
+import { System, type Resource, type World } from '../index.js';
 import type { Observe } from './observe.js';
 import { createEntry, give, giveFirst, none, noDelivery, ownName, passed, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
 
@@ -27,22 +27,20 @@ const shapes = new WeakMap<WorldState, Map<Resource.Key, ResourceShape>>();
 
 const createShape = (state: WorldState, byKey: Map<Resource.Key, ResourceShape>, key: Resource.Key): ResourceShape => {
     const entry = createEntry<unknown>(undefined);
-    // A tick's report takes the failures of its observer systems after they ran, unstamped, so it's never held.
-    const held = key !== report;
     const label = ownName(`Observe.resource(${key.description ?? "?"})`);
     // On a joined thread, first values come once a run of this system resolved, never in its pass: none to skip.
     const { joined } = state;
     const notifier = System.create({ name: label, observer: true, resources: { read: [key], changed: [key] } }, ({ resources }) => {
         passed(state);
         entry.value = resources[key];
-        entry.valid = held;
+        entry.valid = true;
         if (entry.stopped > 0) sweepSubscribers(entry);
         throwFailed(give(entry, 0, true, state.pass, joined ? -1 : state.pass, none));
     });
     const reader = System.create({ name: label, observer: true, resources: { read: [key] } }, ({ resources }) => {
         const through = shape.called.shift() ?? 0;
         entry.value = resources[key];
-        entry.valid = held;
+        entry.valid = true;
         // The maintenance system counts this pass after the run's own systems, before the notifier runs in it.
         give(entry, through, false, state.pass + 1, -1, none);
     });

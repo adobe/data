@@ -12,6 +12,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
 import { Observe } from "../../observe/index.js";
+import { runReported } from "./reports.test-helper.js";
 
 const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
 const position = Symbol("gpuTest/position");
@@ -551,7 +552,7 @@ describe("render systems", () => {
     it("that fail lose only their own work", async () => {
         const world = createWorld({ [gpuDevice]: await device() });
         await world.run(spawn);
-        expect((await world.run(failing)).failures.map(failure => failure.message)).toEqual(["draw failed"]);
+        expect((await runReported(world, failing)).failures.map(failure => failure.message)).toEqual(["draw failed"]);
         expect((await positions(world))[0]).toEqual([1, 0, 0.5]);
         await world.dispose();
     });
@@ -569,10 +570,10 @@ describe("render systems", () => {
         await world.run(invalid);
         // The device reports the error once it has processed the run's work.
         await own.queue.onSubmittedWorkDone();
-        const [failure] = (await world.run(spawn)).failures;
+        const [failure] = (await runReported(world, spawn)).failures;
         expect([failure.kind, failure.name]).toEqual(["gpu", "gpuTest/invalid"]);
         expect(failure.message).toMatch(/^validation: /);
-        expect((await world.run(spawn)).failures).toEqual([]);
+        expect((await runReported(world, spawn)).failures).toEqual([]);
         await world.dispose();
     });
 

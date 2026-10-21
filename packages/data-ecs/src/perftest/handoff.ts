@@ -6,6 +6,7 @@ import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import { backToBack, createWorld, type CreatedWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
+import { runReported } from "../implementation/world/reports.test-helper.js";
 
 // Benchmarks of systems on a joined thread, which claims "handoffBenchmark": tiers handing off between the world's
 // thread and the joined one, and consecutive tiers on the joined one, which run as one task. Their systems reach their
@@ -120,7 +121,7 @@ const ticksBest = async (system: System<void>, stretches = 5): Promise<number> =
             });
             world.add(system);
         });
-        const report = await world.run(system);
+        const report = await runReported(world, system);
         if (report.failures.length > 0 || report.warnings.length === 0) throw new Error(`handoff: the joined thread didn't run its systems: ${report.failures[0]?.message ?? "none placed there"}.`);
     }
     finally {

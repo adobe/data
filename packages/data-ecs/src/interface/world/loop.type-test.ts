@@ -1,5 +1,5 @@
 import {
-    Finalizer, System, always, cadence, clock, gpuDevice, report, wake, workers,
+    Finalizer, System, always, cadence, clock, gpuDevice, wake, workers,
     type Component, type Resource, type World,
 } from '../index.js';
 import type { Create } from './create.js';
@@ -31,10 +31,9 @@ export const platformPool: World = create({ [workers]: null });
 check<Equal<Resource.Value<typeof always>, boolean>>();
 check<Equal<Resource.Value<typeof wake>, number>>();
 check<Equal<Resource.Value<typeof clock>, { readonly now: number; readonly delta: number; readonly tick: number }>>();
-check<Equal<Resource.Value<typeof report>, World.Report>>();
 check<Equal<Resource.Value<typeof cadence>, { readonly kind: "frame" } | { readonly kind: "fixed"; readonly step: number; readonly maxSteps?: number }>>();
 // Built-in resources are symbols, so worlds start them at other values through their imported keys.
-check<Equal<[typeof gpuDevice, typeof workers, typeof cadence, typeof always, typeof wake, typeof clock, typeof report] extends readonly symbol[] ? true : false, true>>();
+check<Equal<[typeof gpuDevice, typeof workers, typeof cadence, typeof always, typeof wake, typeof clock] extends readonly symbol[] ? true : false, true>>();
 // @ts-expect-error a resource key is its imported symbol, never its description
 create({ workers: 2 });
 
@@ -43,10 +42,9 @@ type Removed = "component" | "persistent" | "shared" | "threadPort" | "threadSta
 check<Equal<Extract<Removed, keyof typeof Ecs | Component.Key>, never>>();
 
 // Systems read the loop's state, ask for a wake time and change its cadence.
-System.create({ name: "loopTypeTest/read", resources: { read: [clock, report] } }, ({ resources }) => {
+System.create({ name: "loopTypeTest/read", resources: { read: [clock] } }, ({ resources }) => {
     const now: number = resources[clock].now;
-    const failures: number = resources[report].failures.length;
-    void [now, failures];
+    void now;
 });
 System.create({ name: "loopTypeTest/pace", resources: { write: [cadence, always] } }, ({ resources }) => {
     resources[cadence] = { kind: "fixed", step: 1000 / 60, maxSteps: 2 };
@@ -55,8 +53,6 @@ System.create({ name: "loopTypeTest/pace", resources: { write: [cadence, always]
 System.create({ name: "loopTypeTest/sleep", reduce: { [wake]: "min" } }, ({ reduce }) => { reduce[wake](1000); });
 // @ts-expect-error clock is written only by the world
 System.create({ name: "loopTypeTest/clock", resources: { write: [clock] } }, () => {});
-// @ts-expect-error report is written only by the world
-System.create({ name: "loopTypeTest/report", resources: { write: [report] } }, () => {});
 // @ts-expect-error wake is reduced, never written
 System.create({ name: "loopTypeTest/wake", resources: { write: [wake] } }, () => {});
 // @ts-expect-error a finalizer doesn't write clock either
@@ -64,10 +60,8 @@ Finalizer.create({ name: "loopTypeTest/finalizeClock", components: {}, resources
 // @ts-expect-error a cadence is a frame or a fixed step
 System.create({ name: "loopTypeTest/badCadence", resources: { write: [cadence] } }, ({ resources }) => { resources[cadence] = { kind: "fixed" }; });
 
-// Worlds start the loop's settings at other values; clock and report are the world's own.
+// Worlds start the loop's settings at other values; clock is the world's own.
 const paced: World = create({ [cadence]: { kind: "fixed", step: 10 }, [always]: true, [workers]: 2 });
 // @ts-expect-error clock is written only by the world
 create({ [clock]: { now: 0, delta: 0, tick: 0 } });
-// @ts-expect-error report is written only by the world
-create({ [report]: { failures: [], skipped: [], dropped: 0, warnings: [] } });
 void paced;

@@ -3,7 +3,7 @@ import type { Rule } from '../../interface/rule/created.js';
 import { requireDefinition, type Definition } from '../../interface/registry/index.js';
 import type { World } from '../../interface/world/world.js';
 import type { Create, InitialResources } from '../../interface/world/create.js';
-import type { Failure } from '../../interface/world/report.js';
+import type { Failure } from '../../interface/report/failure.js';
 import { joinWorld } from './join.js';
 import { createSharing, type ThreadProgress } from './sharing.js';
 import { gpuDevice } from '../../interface/resources/gpu-device.js';
@@ -12,8 +12,12 @@ import { createGpu } from './gpu.js';
 import { readCell, writeCell } from './cells.js';
 import { finalizeAll, refreshFinalizerIndexes, type Thrown } from './finalizers.js';
 import { startWatches } from './indexes.js';
-import type { Report } from '../../interface/world/report.js';
-import { clean, execute, type ExecuteContext } from './execute.js';
+import { clean as cleanReport, execute, type ExecuteContext } from './execute.js';
+import type { RunReport } from './failures.js';
+import { createReports, isClean } from './reports.js';
+import { synchronizeAlone } from './synchronize.js';
+import { keysOf } from './remote-systems.js';
+import { Report } from '../../interface/report/report.js';
 import { joinedIn, runObserver } from './observer.js';
 import { joinedRunOf, postObserver, settlePosts, settleObserverKeys } from './joined-observer.js';
 import type { Leaf } from '../../interface/system/leaf.js';
@@ -29,11 +33,10 @@ import { createRegistrar, type Registration } from './register.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
 import { ensureProgramResources, activate, finalizerCrossing, placeFinalizers } from './activate.js';
-import { firstKeyOf, isObserver, isWorldWritten, kindOf, programVersion, scheduleOf, type Composite } from '../../interface/registry/index.js';
+import { firstKeyOf, isObserver, isWorldWritten, kindOf, orderKeysOf, programVersion, scheduleOf, type Composite } from '../../interface/registry/index.js';
 import { always } from '../../interface/resources/always.js';
 import { cadence, type Cadence } from '../../interface/resources/cadence.js';
 import { clock } from '../../interface/resources/clock.js';
-import { report as reportResource } from '../../interface/resources/report.js';
 import { wake } from '../../interface/resources/wake.js';
 import { stampChanged } from './archetype.js';
 import { failureOf } from './failures.js';
@@ -101,7 +104,7 @@ export type Tables = {
 export type CreatedWorld = World & { readonly threads: (notify: (value: readonly ThreadProgress[]) => void) => () => void; readonly tables: () => Promise<Tables> };
 
 /** The loop's state, added to a world when its first tick runs. */
-const loopResources: readonly Key[] = [cadence, always, wake, clock, reportResource];
+const loopResources: readonly Key[] = [cadence, always, wake, clock];
 
 /**
  * Loads kernels, rejecting with the first failure only once every load has settled, so none finishes after the
@@ -120,13 +123,20 @@ const workersOf = (platform: WorkerPlatform, value: unknown): number =>
 const defaultMinimumChunk = 16384;
 
 /** A report with more failures, or the same report without any. */
-const withFailures = (report: Report, failures: readonly Failure[] | null): Report =>
+const withFailures = (report: RunReport, failures: readonly Failure[] | null): RunReport =>
     failures === null ? report : { ...report, failures: [...report.failures, ...failures] };
 
 /** A report with its tails' failures and skipped systems. */
-const withTails = (report: Report, { failures, skipped }: TailOutcome): Report => failures === null && skipped === null ? report : {
+const withTails = (report: RunReport, { failures, skipped }: TailOutcome): RunReport => failures === null && skipped === null ? report : {
     ...report, failures: failures === null ? report.failures : [...report.failures, ...failures], skipped: skipped === null ? report.skipped : [...report.skipped, ...skipped],
 };
+
+/** Report components, by their first keys, for knowing which systems read reports. */
+const reportKeys: ReadonlySet<Key> = new Set(Report.Archetype.map(firstKeyOf));
+
+/** Whether leaves read reports: name a report component in their declarations, lookups or order. */
+const readReports = (leaves: readonly Leaf[]): boolean =>
+    leaves.some(leaf => [...keysOf(leaf), ...orderKeysOf(leaf.declaration)].some(key => reportKeys.has(firstKeyOf(key))));
 
 /** Creates a world on this thread, as `World.create` does, with options for tests and benchmarks. */
 export const createWorld = (resources: InitialResources = {}, options: WorldOptions = {}): CreatedWorld => {
@@ -335,12 +345,63 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
      */
     const skipsSync = (): boolean => state.gpu === null && state.channels.length === 0 && state.tails.length === 0 && state.queued.length === 0 && state.observer.count === 0;
 
+    /** Run numbers: every run and tick takes the next, in the order they run. */
+    let runs = 0;
     /**
-     * Runs a registered system or composite, ending in a sync point, then, with `pass`, runs observer systems. One
-     * async step for all, so a run awaits nothing more. `registered` is its schedule as it was registered, which it
-     * runs if a system it holds was removed since, skipping that system.
+     * Reports' commands, applied as a sync point of their own, or, while tails run on joined threads, which a sync
+     * point between runs would disturb, queued for the next run's or tick's.
      */
-    const perform = async (definition: Definition, value: unknown, pass: boolean, registered: Schedule | undefined): Promise<Report> => {
+    const reports = createReports(state, buffer => {
+        if (state.tails.length !== 0) state.queued.push({ buffer, guarded: false });
+        else {
+            synchronizeAlone(state, buffer);
+            publishLayouts();
+        }
+    });
+    /** A tick's report, which `perform` leaves without `pass`, with its tails in `tailing`. */
+    let performed: RunReport = cleanReport;
+
+    /**
+     * Writes run `run`'s report unless it's clean, after the run's sync point, despawning reports too old; a clean run
+     * despawns those alone. Observer systems on joined threads in progress finish first, the rest posted again after.
+     */
+    const writeReport = (run: number, report: RunReport): Promise<void> | null => {
+        const clean = report === cleanReport || isClean(report);
+        if (clean && !reports.due(run)) return null;
+        if (state.observer.posts.length !== 0 && state.tails.length === 0) {
+            const settling = settlePosts(state, true);
+            if (settling !== null) return settling.then(() => applyReport(run, report, clean));
+        }
+        applyReport(run, report, clean);
+        return null;
+    };
+    const applyReport = (run: number, report: RunReport, clean: boolean): void => {
+        if (disposed) return;
+        if (clean) reports.retire(run);
+        else reports.write(run, report);
+    };
+
+    /** Adds the failures of a run's observer pass to its report, spawning it if the run was clean. */
+    const amendReport = (run: number, failures: readonly Failure[]): Promise<void> | null => {
+        if (state.observer.posts.length !== 0 && state.tails.length === 0) {
+            const settling = settlePosts(state, true);
+            if (settling !== null) return settling.then(() => applyAmendment(run, failures));
+        }
+        applyAmendment(run, failures);
+        return null;
+    };
+    const applyAmendment = (run: number, failures: readonly Failure[]): void => {
+        if (!disposed) reports.amend(run, failures);
+    };
+
+    /**
+     * Runs a registered system or composite, ending in a sync point, and resolves to its number. With `pass`, its
+     * report is written once its tails are done, then observer systems run, their failures added to it; without, its
+     * report is left in `performed` and its tails in `tailing`. One async step for all, so a run awaits nothing more.
+     * `registered` is its schedule as it was registered, which it runs if a system it holds was removed since,
+     * skipping that system.
+     */
+    const perform = async (definition: Definition, value: unknown, pass: boolean, registered: Schedule | undefined): Promise<number> => {
         // Resources added between runs move the resource entity, whose structs a tail may still read.
         if (ensured.version !== programVersion() && (state.channels.length > 0 || state.observer.posts.length > 0)) await drainTails();
         ensureProgramResources(state, ensured);
@@ -353,44 +414,57 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (isHeld(value) && (definition.kind === "composite" || registrar.runnerOf(definition).remote?.channel !== value.channel)) {
             throw new Error(`System "${labelOfItem(definition)}": the run's input moved to a joined thread that's gone.`);
         }
-        let report: Report;
+        let report: RunReport;
         let tails: Promise<TailOutcome> | null = null;
         try {
             // A run of observer systems alone has an empty sync point.
-            report = schedule.tiers.length === 0 && skipsSync() ? clean : await execute(context, schedule, value, definition);
+            report = schedule.tiers.length === 0 && skipsSync() ? cleanReport : await execute(context, schedule, value, definition);
         }
         finally {
             tails = context.tails;
             context.tails = null;
             if (deviceChanged()) await followDevice();
         }
-        // A run is a transaction: it ends once its tails have; a tick's report waits for them without holding the
-        // queue.
-        if (tails !== null) {
-            if (pass) report = withTails(report, await tails);
-            else tailing = tails;
+        const run = ++runs;
+        if (!pass) {
+            tailing = tails;
+            performed = report;
+            return run;
         }
-        if (!pass) return report;
+        // A run is a transaction: it ends once its tails have.
+        if (tails !== null) report = withTails(report, await tails);
+        report = withFailures(report, takeFailures());
+        const writing = writeReport(run, report);
+        if (writing !== null) await writing;
         const passed = passObserver(schedule.observer, loop.observer(), joinedRunOf(value));
-        return withFailures(report, passed instanceof Promise ? await passed : passed);
+        const failures = passed instanceof Promise ? await passed : passed;
+        if (failures !== null) {
+            const amending = amendReport(run, failures);
+            if (amending !== null) await amending;
+        }
+        return run;
     };
 
     /**
-     * Failures for the next pass's report: of registering observer systems `add` was given, and those joined threads
-     * report between runs.
+     * Failures for the next run's or tick's report: of registering observer systems `add` was given, and those joined
+     * threads report between runs.
      */
     let observerFailures: Failure[] | null = null;
+    const takeFailures = (): Failure[] | null => {
+        const failures = observerFailures;
+        observerFailures = null;
+        return failures;
+    };
     const noLeaves: readonly Leaf[] = [];
+    const none: readonly never[] = [];
 
     /**
      * Runs observer systems, the run's and those added, after a sync point, and posts those on joined threads, the
      * run's owed to joined run `run` (0 for none); returns the failures of those that ran here.
      */
     const passObserver = (own: readonly Leaf[], added: readonly Leaf[], run = 0): Failure[] | null | Promise<Failure[] | null> => {
-        const failures = observerFailures;
-        observerFailures = null;
-        if (own.length === 0 && added.length === 0) return state.observer.pending.size === 0 ? failures : postAfter(failures, own, added, run);
-        const ran = runObserver(context, own, added, failures);
+        if (own.length === 0 && added.length === 0) return state.observer.pending.size === 0 ? null : postAfter(null, own, added, run);
+        const ran = runObserver(context, own, added, null);
         if (state.observer.count === 0) return ran;
         return ran instanceof Promise ? ran.then(done => postAfter(done, own, added, run)) : postAfter(ran, own, added, run);
     };
@@ -425,16 +499,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         });
     };
 
-    /** Whether observer systems read the tick's report, so a tick waits for its tails before running them. */
+    /** Whether observer systems read reports, so a tick waits for its tails before running them. */
     const observerReadReport = new WeakMap<readonly Leaf[], boolean>();
     const readsReportOf = (leaves: readonly Leaf[]): boolean => {
         let reads = observerReadReport.get(leaves);
-        if (reads === undefined) {
-            const key = firstKeyOf(reportResource);
-            reads = leaves.some(({ declaration: { resources } }) =>
-                [...resources?.read ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? []].some(each => firstKeyOf(each) === key));
-            observerReadReport.set(leaves, reads);
-        }
+        if (reads === undefined) observerReadReport.set(leaves, reads = readReports(leaves));
         return reads;
     };
 
@@ -451,24 +520,26 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     /**
      * One tick: the clock, the added systems as one composite, then the tick's report, then observer systems with the
-     * tick's values. The report then holds the failures of observer systems, its own readers' included, without
-     * stamping them again. While its tails or an earlier tick's run, observer systems run at once, unless one reads the
-     * report, which waits for them so it sees the tick's.
+     * tick's values, their failures added to the report. While its tails or an earlier tick's run, observer systems run
+     * at once, their failures in the report written once those tails are done, unless one reads reports, when the tick
+     * waits for those tails first.
      */
     const tick = (_: Composite, clockValue: Clock): Promise<void> => enqueue(async () => {
         // What's added as the tick starts: systems removed since the loop asked for it aren't in it.
         const composite = loop.current();
         if (disposed || composite === null) return;
-        let report: Report;
+        let report: RunReport;
+        let run: number;
         try {
             if (registrar.registered(composite) === undefined) {
                 ensureResources(state, loopResources);
                 await complete(registrar.register(composite));
             }
             const schedule = registrar.registered(composite);
-            if (reports.length > 0 && readsReport(composite)) {
-                await Promise.all(reports.map(pending => pending.tails));
-                flushReports();
+            if (pending.length > 0 && readsReport(composite)) {
+                await Promise.all(pending.map(each => each.tails));
+                const flushing = flushReports();
+                if (flushing !== null) await flushing;
             }
             if (state.tails.length !== 0) {
                 const waiting = settleKeys(state, [], [clockId]);
@@ -479,80 +550,72 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 if (waiting !== null) await waiting;
             }
             writeOwn(clock, clockValue);
-            report = await perform(composite, undefined, false, schedule);
+            run = await perform(composite, undefined, false, schedule);
+            report = performed;
+            performed = cleanReport;
         }
         catch (error) {
-            report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: [], dropped: 0, warnings: [] };
+            run = ++runs;
+            report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: none, dropped: 0, warnings: none };
         }
+        report = withFailures(report, takeFailures());
         const tails = tailing;
         tailing = null;
         const observer = loop.observer();
-        if (tails !== null || reports.length > 0) {
+        if (tails !== null || pending.length > 0) {
             if (observer.length === 0 || !readsReportOf(observer)) {
                 // Observer systems get the tick's values now; its report is written once its tails, and every earlier
                 // tick's, have run.
                 const passed = passObserver(noLeaves, observer);
-                const pending: PendingReport = { report: withFailures(report, passed instanceof Promise ? await passed : passed), tails, done: tails === null };
-                reports.push(pending);
+                const entry: PendingReport = { run, report: withFailures(report, passed instanceof Promise ? await passed : passed), tails, done: tails === null };
+                pending.push(entry);
                 if (tails !== null) void tails.then(outcome => {
-                    pending.report = withTails(pending.report, outcome);
-                    pending.done = true;
+                    entry.report = withTails(entry.report, outcome);
+                    entry.done = true;
                     void enqueue(async () => flushReports());
                 });
-                flushReports();
+                const flushing = flushReports();
+                if (flushing !== null) await flushing;
                 return;
             }
-            await Promise.all(reports.map(pending => pending.tails));
-            flushReports();
+            await Promise.all(pending.map(each => each.tails));
+            const flushing = flushReports();
+            if (flushing !== null) await flushing;
             if (tails !== null) report = withTails(report, await tails);
         }
         if (disposed) return;
-        writeOwnReport(report);
+        const writing = writeReport(run, report);
+        if (writing !== null) await writing;
         const passed = passObserver(noLeaves, observer);
-        amendReport(report, passed instanceof Promise ? await passed : passed);
+        const failures = passed instanceof Promise ? await passed : passed;
+        if (failures !== null) {
+            const amending = amendReport(run, failures);
+            if (amending !== null) await amending;
+        }
     });
 
-    /** Writes a tick's report, stamped so systems see it. */
-    const writeOwnReport = (report: Report): void => {
-        if (readResource(reportResource) !== report) writeOwn(reportResource, report);
-    };
-
-    /** Puts failures found once a tick's report was written into it, without stamping it again; returns the report it holds. */
-    const amendReport = (report: Report, failures: readonly Failure[] | null): Report => {
-        if (failures === null) return report;
-        const amended = withFailures(report, failures);
-        const cell = findResource(state, reportResource);
-        if (cell !== undefined) writeCell(cell.storage, cell.row, amended);
-        return amended;
-    };
-
-    /** Writes a tick's report, unless the world is disposed. */
-    const writeReport = (report: Report): void => {
-        if (!disposed) writeOwnReport(report);
-    };
-
     /** Ticks whose reports wait for their tails, in order. */
-    type PendingReport = { report: Report; readonly tails: Promise<TailOutcome> | null; done: boolean };
-    const reports: PendingReport[] = [];
-    /** Writes the reports of ticks whose tails, and every earlier tick's, have run. */
-    const flushReports = (): void => {
-        while (reports.length > 0 && reports[0].done) {
-            const pending = reports.shift();
-            if (pending !== undefined) writeReport(pending.report);
+    type PendingReport = { readonly run: number; report: RunReport; readonly tails: Promise<TailOutcome> | null; done: boolean };
+    const pending: PendingReport[] = [];
+    /**
+     * Writes the reports of ticks whose tails, and every earlier tick's, have run: at once, unless one waits for
+     * observer systems in progress on joined threads, when the rest follow it.
+     */
+    const flushReports = (): Promise<void> | null => {
+        while (pending.length > 0 && pending[0].done) {
+            const entry = pending.shift();
+            if (entry === undefined || disposed) continue;
+            const writing = writeReport(entry.run, entry.report);
+            if (writing !== null) return writing.then(() => flushReports() ?? undefined);
         }
+        return null;
     };
     const clockId = idOf(state, clock);
-    /** Whether a tick's systems read its report, so a tick waits for the last one's tails first. */
+    /** Whether a tick's systems read reports, so a tick waits for the last one's tails first. */
     const readersOfReport = new WeakMap<Composite, boolean>();
     const readsReport = (composite: Composite): boolean => {
         let reads = readersOfReport.get(composite);
-        if (reads === undefined) {
-            const schedule = registrar.registered(composite);
-            const key = firstKeyOf(reportResource);
-            reads = schedule?.tiers.some(tier => tier.some(({ declaration: { resources } }) =>
-                [...resources?.read ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? []].some(each => firstKeyOf(each) === key))) ?? false;
-            readersOfReport.set(composite, reads);
-        }
+        if (reads === undefined) readersOfReport.set(composite, reads = registrar.registered(composite)?.tiers.some(readReports) ?? false);
         return reads;
     };
 
@@ -569,7 +632,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     });
 
     /** Runs a system or composite with its input, as `run` does. */
-    const runWith = (system: { readonly name: string }, value: unknown): Promise<Report> => {
+    const runWith = (system: { readonly name: string }, value: unknown): Promise<number> => {
         let registration: Registration | null = null;
         let definition: Definition | undefined;
         try {

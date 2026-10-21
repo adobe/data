@@ -8,7 +8,7 @@ part is one the implementation can change freely later.
 
 Name and export a type only when a consumer would use it to declare something in their own code. Every exported name
 is more for a reader to learn. A type that only describes a parameter, a result or part of one stays unexported, often
-inline. A consumer who wants it can infer it, for example `World.Report["warnings"][number]`.
+inline. A consumer who wants it can infer it, for example `Parameters<World["share"]>[0]`.
 
 ## Humans own the interface
 

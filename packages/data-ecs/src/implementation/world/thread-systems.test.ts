@@ -5,6 +5,7 @@ import { createWorld, join, type CreatedWorld } from "./create.js";
 import { pageBytes } from "./memory.js";
 import { Observe } from "../../observe/index.js";
 import { caption, changes, countWritten, crowd, flagCrowd, giveKept, kept, objectsThere, scenario, spawnKept, uid, unflagCrowd, write } from "./thread-systems.test-helper.js";
+import { reportOf, runReported } from "./reports.test-helper.js";
 
 // Systems on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
 
@@ -62,10 +63,10 @@ describe("systems on a joined thread", () => {
     it("give the world's objects only their start or null: a command giving another drops and fails its system, a spawn throws", async () => {
         const { world, remote } = await joined();
         await world.run(crowd, { count: 1 });
-        const given = await world.run(giveKept);
+        const given = await runReported(world, giveKept);
         expect(given.failures.map(failure => [failure.name, failure.message])).toEqual([["threadSystemsTest/giveKept", '"threadSystemsTest/kept" lives on thread "world", so a command on another thread gives it only its start or null.']]);
         expect(given.dropped).toBe(1);
-        const spawned = await world.run(spawnKept);
+        const spawned = await runReported(world, spawnKept);
         expect(spawned.failures.map(failure => [failure.name, failure.message])).toEqual([["threadSystemsTest/spawnKept", '"threadSystemsTest/kept" lives on thread "world", so a command on another thread gives it only its start or null.']]);
         expect(await Observe.toPromise(Observe.count(world, { required: [kept] }))).toBe(0);
         await remote.dispose();
@@ -76,12 +77,12 @@ describe("systems on a joined thread", () => {
         await world.run(crowd, { count: 1 });
         await world.run(write);
         const leaving = remote.dispose();
-        const report = await world.run(write);
+        const report = await runReported(world, write);
         await leaving;
         expect(report.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["thread", "threadSystemsTest/write", 'Thread "threadSystemsTest" is gone, so its systems don\'t run.']]);
         expect(report.skipped).toEqual(["threadSystemsTest/write"]);
         const [entity] = await Observe.toPromise(Observe.select(world, { required: [uid] }));
-        expect(await world.run(write)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
+        expect(await runReported(world, write)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         expect(await Observe.toPromise(Observe.entity(world, entity, { required: [caption] }))).toEqual({ [caption]: "written" });
         await world.dispose();
     });
@@ -101,18 +102,18 @@ describe("systems on a joined thread", () => {
         await world.run(crowd, { count: 1 });
         const header = new Uint32Array((await given).buffer, 0, 1);
         const pages = Atomics.load(header, 0);
-        /** A run of `write` while the world says the memory is a page longer than it is: its failures, or null once it never settles. */
+        /** A run of `write` while the world says the memory is a page longer than it is: its number, or null once it never settles. */
         const short = async () => {
             Atomics.store(header, 0, pages + 1);
-            const report = await Promise.race([world.run(write), new Promise<null>(resolve => setTimeout(() => resolve(null), 5000))]);
+            const ran = await Promise.race([world.run(write), new Promise<null>(resolve => setTimeout(() => resolve(null), 5000))]);
             Atomics.store(header, 0, pages);
-            return report === null ? null : report.failures.map(failure => [failure.kind, failure.name, failure.message]);
+            return ran;
         };
+        const failuresOf = async (ran: number | null) => ran === null ? null : (await reportOf(world, ran)).failures.map(failure => [failure.kind, failure.name, failure.message]);
         const failed = [["system", "threadSystemsTest/write", `This thread's memory is ${pages * pageBytes} bytes, short of the ${(pages + 1) * pageBytes} the world stored.`]];
-        expect(await short()).toEqual(failed);
-        expect((await world.run(write)).failures).toEqual([]);
-        expect(await short()).toEqual(failed);
-        expect((await world.run(write)).failures).toEqual([]);
+        // Read once every run ran, as the thread saw them.
+        const runs = [await short(), await world.run(write), await short(), await world.run(write)];
+        expect(await Promise.all(runs.map(failuresOf))).toEqual([failed, [], failed, []]);
         await remote.dispose();
         await world.dispose();
     });

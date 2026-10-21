@@ -1,10 +1,10 @@
 import type { World } from '../../interface/world/world.js';
-import type { Failure, Report } from '../../interface/world/report.js';
+import type { Failure } from '../../interface/report/failure.js';
 import { definitionOf, idOfKey, indexDefinitionOf, itemOfId, keyOfId, labelOfItem, requireDefinition, type Definition } from '../../interface/registry/index.js';
 import type { Views } from '../../interface/registry/layout.js';
 import { failureOf } from './failures.js';
 import {
-    clean, completedWord, controlBytes, inputByMessage, inputLayoutOf, inputMoved, platformLocks, postedWord, protocolName, rejected, reported, runSlots,
+    completedWord, done, controlBytes, inputByMessage, inputLayoutOf, inputMoved, platformLocks, postedWord, protocolName, rejected, runSlots, slotRun,
     signalWord, unreadWord, slotInput, slotNumber, slotPayload, slotStatus, slotViews, slotWords, slotsWord, threadChannel, unposted,
     type ObserverDeclaration, type ObserverIndex, type ThreadChannel, type ToJoined, type ToWorld,
 } from './joining.js';
@@ -24,7 +24,7 @@ import { heldInput, type HeldInput } from './transfers.js';
 export type SharingHost = {
     readonly state: State;
     /** Runs a system as `world.run` does. */
-    readonly run: (definition: Definition, input: unknown) => Promise<Report>;
+    readonly run: (definition: Definition, input: unknown) => Promise<number>;
     /** A failure for the next run's report. */
     readonly defer: (failure: Failure) => void;
     /**
@@ -93,15 +93,13 @@ type Joined = {
 
 const hasWaitAsync = (): boolean => typeof Atomics.waitAsync === "function";
 
-const isClean = (report: Report): boolean => report.failures.length === 0 && report.skipped.length === 0 && report.dropped === 0 && report.warnings.length === 0;
-
 const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 /**
  * The world's side of joined threads: `share` records a thread joining, then its handshake records its claims, which a
  * thread claimed twice can't join; `progress` shows each one's, in the order they were shared. Runs come through its
  * slots in shared memory, in sequence, naming systems by its numbers, and complete through its completed word, with a
- * report posted only when it isn't clean; its observer systems are posted to it after each sync point, with one notify
+ * number in its slot; its observer systems are posted to it after each sync point, with one notify
  * per thread a turn.
  */
 export const createSharing = (host: SharingHost) => {
@@ -163,12 +161,17 @@ export const createSharing = (host: SharingHost) => {
         if (waking.push(thread) === 1) queueMicrotask(flush);
     };
 
-    /** A run finished: its status in its slot, its report posted unless clean, and completed advanced through those in order. */
-    const finish = (thread: Joined, sequence: number, status: number, message: ToJoined | null): void => {
+    /**
+     * A run finished: its status and its number, the run's or 0 for a rejection, in its slot, a rejection posted, and
+     * completed advanced through those in order.
+     */
+    const finish = (thread: Joined, sequence: number, status: number, run: number, message: ToJoined | null): void => {
         const { control } = thread;
         if (control === null || thread.status === "gone") return;
         if (message !== null) post(thread, message);
-        Atomics.store(control, slotsWord + ((sequence - 1) % runSlots) * slotWords + slotStatus, status);
+        const base = slotsWord + ((sequence - 1) % runSlots) * slotWords;
+        Atomics.store(control, base + slotRun, run);
+        Atomics.store(control, base + slotStatus, status);
         thread.finished.add(sequence);
         let completed = thread.completed;
         while (thread.finished.delete(completed + 1)) completed++;
@@ -179,7 +182,7 @@ export const createSharing = (host: SharingHost) => {
     };
 
     const reject = (thread: Joined, sequence: number, text: string): void =>
-        finish(thread, sequence, rejected, { protocol: protocolName, kind: "rejected", sequence, message: text });
+        finish(thread, sequence, rejected, 0, { protocol: protocolName, kind: "rejected", sequence, message: text });
 
     /** Run `sequence` of `thread`, whose input moved to `holder`, finished: if no task there took it, it's released there. */
     const released = (holder: Joined | null, thread: Joined, sequence: number, held: HeldInput | null = null): void => {
@@ -238,7 +241,7 @@ export const createSharing = (host: SharingHost) => {
             const layout = bytes >= 0 && definition.kind !== "composite" ? inputLayoutOf(definition, definition.declaration.input) : null;
             const held = holder !== null && holder.tasks !== null ? heldInput(thread.number, sequence, holder.tasks) : null;
             const value = own ? joinedRun(sequence) : held ?? (layout !== null && layout.kind === "linear" ? layout.read(thread.views[slot], 0) : input);
-            let ran: Promise<Report>;
+            let ran: Promise<number>;
             try {
                 ran = host.run(definition, value);
             }
@@ -248,7 +251,7 @@ export const createSharing = (host: SharingHost) => {
                 continue;
             }
             const settled = ran.then(
-                report => isClean(report) ? finish(thread, sequence, clean, null) : finish(thread, sequence, reported, { protocol: protocolName, kind: "report", sequence, report }),
+                run => finish(thread, sequence, done, run, null),
                 error => reject(thread, sequence, messageOf(error)),
             );
             if (held !== null) void settled.then(() => released(holder, thread, sequence, held));

@@ -210,6 +210,8 @@ export const reduce = System.create({ name: "suite/reduce", kernel: "cpu", compo
 
 /** A system no entity matches: what a run costs with nothing to do. */
 export const idle = System.create({ name: "suite/idle", components: { has: [unused] } }, () => {});
+/** A system that throws, so each run of it has a report to spawn. */
+export const failing = System.create({ name: "suite/failing" }, () => { throw new Error("suite: failing"); });
 /** An observer system no entity matches: a run of it alone has no tiers. */
 export const idleObserver = System.create({ name: "suite/idleObserver", observer: true, components: { has: [unused] } }, () => {});
 

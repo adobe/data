@@ -3,6 +3,7 @@ import { Index } from "../../interface/indexes/index-type.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
+import { runReported } from "./reports.test-helper.js";
 
 /** Scenarios of indexes built again across the pool, run built in node and from source in chromium. */
 
@@ -107,7 +108,7 @@ export const simulate = async (threads: number): Promise<{ readonly folds: reado
         const expected: number[] = [];
         const failures: string[] = [];
         for (let round = 0; round < 2; round++) {
-            const report = await world.run(read);
+            const report = await runReported(world, read);
             failures.push(...report.failures.map(failure => `${failure.kind} ${failure.name} ${failure.message}`));
             folds.push(seen.grid, seen.rows, seen.serials);
             byCell = [];

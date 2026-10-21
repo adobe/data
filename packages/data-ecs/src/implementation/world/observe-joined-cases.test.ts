@@ -7,6 +7,7 @@ import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { Observe } from "../../observe/index.js";
+import { reportOf } from "./reports.test-helper.js";
 
 // The observer factories of `src/observe` on a joined thread's world, with the world and the thread on this one,
 // joined through a MessageChannel. Each case waits for the value it expects, so it holds whenever values come.
@@ -205,8 +206,10 @@ describe("observer factories on a joined thread", () => {
         const reported: string[] = [];
         const caught = await catching(async () => {
             observe();
-            for (let k = 4; k < 6; k++) for (const failure of (await world.run(spawnPlaced, { x: k })).failures) reported.push(failure.message);
+            const runs: number[] = [];
+            for (let k = 4; k < 6; k++) runs.push(await world.run(spawnPlaced, { x: k }));
             await new Promise(resolve => setTimeout(resolve, 10));
+            for (const run of runs) for (const failure of (await reportOf(world, run)).failures) reported.push(failure.message);
         });
         // The entity observer's system, added, fails in a run's report; the selection's scan, run, rejects, rethrown.
         expect([...reported, ...caught.map(String)]).toEqual([

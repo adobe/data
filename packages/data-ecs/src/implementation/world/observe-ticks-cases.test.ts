@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { Component, Resource, System, always, cadence, clock, report, wake, workers } from "../../index.js";
+import { Component, Resource, System, always, cadence, clock, wake, workers } from "../../index.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld } from "./create.js";
 import { Observe } from "../../observe/index.js";
+import { followReports, reportOf, runReported } from "./reports.test-helper.js";
 
 // Ticks and tick stamps, read through the observer factories of `src/observe`.
 
@@ -32,6 +33,7 @@ const count = System.create({ name: "observeTicksCasesTest/count", resources: { 
 const watch = System.create({ name: "observeTicksCasesTest/watch", resources: { read: [clock], write: [seen] } }, ({ resources }) => { resources[seen] = resources[clock].tick; });
 const fail = System.create({ name: "observeTicksCasesTest/fail" }, () => { throw new Error("tick failed"); });
 const nothing = System.create({ name: "observeTicksCasesTest/nothing" }, () => {});
+const idle = System.create({ name: "observeTicksCasesTest/idle", observer: true }, () => {});
 const fast = System.create({ name: "observeTicksCasesTest/fast", resources: { write: [cadence, always] } }, ({ resources }) => {
     resources[cadence] = { kind: "fixed", step: 1 };
     resources[always] = true;
@@ -137,33 +139,32 @@ describe("ticks", () => {
         expect(await toPromise(resource(world, frames))).toBe(2);
     });
 
-    it("keep the last tick's report in the report resource", async () => {
+    it("spawn a failing tick's report", async () => {
         await using world = createWorld({ [workers]: 0 });
+        const reports = followReports(world);
         world.add(fail);
         await world.run(nothing);
-        const last = await until(resource(world, report), next => next.failures.length > 0);
+        const last = await reports.until(next => next.failures.length > 0);
         expect(last.failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "observeTicksCasesTest/fail", "tick failed"]]);
     });
 
-    it("report an observer that throws on a tick's values, the tick's report among them, in that tick's report", async () => {
+    it("add what an observer throws on a tick's values to that tick's report, which the next pass sees", async () => {
         await using world = createWorld({ [workers]: 0 });
+        const reports = followReports(world);
         world.add(count);
-        let reports = 0;
-        const stop = resource(world, report)(() => {
-            // The first call is the current value; the second is the tick's report.
-            if (++reports === 2) throw new Error("report observer failed");
-        });
         let counts = 0;
         const stopFrames = resource(world, frames)(() => {
             if (++counts === 2) throw new Error("frames observer failed");
         });
         await world.run(nothing);
         await until(resource(world, frames), next => next === 1);
-        const ticked = await toPromise(resource(world, report));
-        expect(ticked.failures.map(({ kind, message }) => [kind, message]).sort()).toEqual([["system", "frames observer failed"], ["system", "report observer failed"]]);
+        // A run of observer systems alone, which ticks nothing, so its pass is the next.
+        const next = await world.run(idle);
+        const ticked = await reports.until(report => report.failures.length > 0);
+        expect(ticked.failures.map(({ kind, message }) => [kind, message])).toEqual([["system", "frames observer failed"]]);
+        expect(ticked.run).toBeLessThan(next);
         // Nothing of the tick's is left for the next run's report.
-        expect((await world.run(nothing)).failures).toEqual([]);
-        stop();
+        expect((await reportOf(world, next)).failures).toEqual([]);
         stopFrames();
     });
 

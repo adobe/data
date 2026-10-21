@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, Resource, System, Vec3 } from "../index.js";
+import { Component, Report, Resource, System, Vec3 } from "../index.js";
 import { createWorld } from "../implementation/index.js";
 
 const position = Symbol("position");
@@ -65,4 +65,23 @@ it("runs a system once per entity, or once", async () => {
     await world.run(read);
     expect(moved).toEqual([[1, 0, 0]]);
     expect(counted).toBe(1);
+});
+
+const fail = System.create({ name: "fail" }, () => {
+    throw new Error("broken");
+});
+
+// A run resolves to its number. A run or tick that went wrong has a report, an entity: an observer system added to
+// read reports' failures as they change logs them. Observer systems' failures join their report after them.
+const logged: string[] = [];
+const logFailures = System.create({ observer: true, components: { read: [Report.failures], changed: [Report.failures] } }, row => {
+    for (const failure of row[Report.failures]) logged.push(`${failure.name}: ${failure.message}`);
+});
+
+it("reports what failed as entities", async () => {
+    await using world = createWorld();
+    world.add(logFailures);
+    const run: number = await world.run(fail);
+    expect(run).toBe(1);
+    expect(logged).toEqual(["fail: broken"]);
 });

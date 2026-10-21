@@ -10,6 +10,7 @@ import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
+import { dropReports, runReported } from "./reports.test-helper.js";
 
 // Systems on a joined thread looking up through the world's indexes, the world and the thread on this one, against a
 // world running them itself.
@@ -163,9 +164,10 @@ const scenario = async (world: CreatedWorld, holder: World): Promise<{ readonly 
     const warnings: (readonly string[])[] = [];
     await world.run(seed);
     for (let round = 0; round < 5; round++) {
-        const report = await world.run(tick);
+        const report = await runReported(world, tick);
         expect(report.failures).toEqual([]);
         warnings.push(report.warnings.map(warning => warning.name));
+        await world.run(dropReports);
         seen.push(await labels(holder, world));
         await world.run(stir, { round });
         await world.run(rerank, { round });

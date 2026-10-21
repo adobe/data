@@ -23,12 +23,30 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 - **One-off reads:** `world.run` returns no value, so a one-off read needs an observer system that writes into an outer
   variable.
 - **Kernel lookup types:** they lack `has` and `not`, though the compiler accepts them.
+- **Report retention:** a report is despawned once a run's number is 256 past its own (`retainedRuns` in
+  `reports.ts`), a fixed internal constant. Recommended: keep it internal until a consumer needs another; then a world
+  option or resource. The world finds old reports from its own list of those it spawned rather than through
+  `Report.byRun`, as the plan said, since a lookup there costs a failing run 87–170 µs against 2.5 µs (perf.md); reports
+  a system spawns aren't retired. Recommended: accept.
+- **Reports of blocking tiers:** a run or tick whose tier waits for a joined thread has a `"blocking"` warning, so it
+  spawns a report, every tick for a world whose main thread runs blocking DOM systems. Recommended: accept, since a
+  blocking tier already costs that thread's latency; or drop warnings from what makes a run unclean.
+- **Report components are writable:** systems may write or despawn reports, which are ordinary entities; only the world
+  spawns them. Recommended: accept, as with any entity; or make them world-written as `clock` is.
+- **`Report.byRun` holds every report component** (`has`), so a lookup through it reads any of them; a report a system
+  stripped of one isn't in it. Recommended: accept.
+- **Reports while tails run:** a report's commands wait for the next run's or tick's sync point while tails run on a
+  joined thread, since a sync point of its own between runs disturbs them; that run's pass, not its own, sees it.
+  Recommended: accept.
+- **A joined thread's own observer runs:** what such a run's body throws reaches the world for its next report rather
+  than the run's, and a `run` of several of its own observer systems resolves to the last one's number. Recommended:
+  accept.
+- **The factories' own failures** are rethrown out of band from their runs' reports, a pass's failures once a later run
+  of theirs sees them, so the last run's wait for the next; on a joined thread they're only in the world's reports.
+  Recommended: accept, since the factories are for tests and debugging.
 
 ## Findings from the todo sample (`src/samples/todo/README.md`)
 
-1. **A tick's observer failures can't be followed.** `amendReport` writes them into `report` without a new stamp, so
-   `changed: [report]` never fires for them, and the next tick replaces that report before any pass reads it.
-   Proposal: stamp the amendment, or add a failure channel systems can follow.
 2. **Observer systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities
    don't work as bindings. Proposal: allow `up` in observer systems, since it only reads; let `order` take an index over
    the entity a reference names.

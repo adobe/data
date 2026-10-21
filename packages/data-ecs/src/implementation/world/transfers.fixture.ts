@@ -4,6 +4,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import type { FromTransfersWorker, ToTransfersWorker } from "./transfers-worker.fixture.js";
 import { idle, kept, marks, order, stored } from "./transfers.test-helper.js";
+import { reportOf } from "./reports.test-helper.js";
 
 /**
  * Scenarios of transfers between joined workers, run built in node and from source in chromium: the world here, a
@@ -76,11 +77,21 @@ const storedOf = async (worker: Worker) => {
 
 /** The loader moving `count` buffers of `bytes` each, and a MessagePort, to the filler, whose systems take them. */
 export const moves = async (count: number, bytes: number) => {
-    const { filler, loader, end } = await joined();
-    const moved = await loader.ask({ kind: "moves", count, bytes });
+    const { world, filler, loader, end } = await joined();
+    const reply = await loader.ask({ kind: "moves", count, bytes });
+    if (reply.kind !== "moved") throw new Error("transfers: the loader didn't say what moved.");
+    const { runs, ...moved } = reply;
+    const failures = await failuresOf(world, runs);
     const { stored: received } = await storedOf(filler);
     await end();
-    return { moved, received };
+    return { moved: { ...moved, failures }, received };
+};
+
+/** How many failures the reports of a joined thread's runs list, read on the world's thread, which holds them. */
+const failuresOf = async (world: CreatedWorld, runs: readonly number[]): Promise<number> => {
+    let failures = 0;
+    for (const run of runs) failures += (await reportOf(world, run)).failures.length;
+    return failures;
 };
 
 /** Resolves with what `promise` does, or `otherwise` after `milliseconds`. */
@@ -112,7 +123,9 @@ export const late = async () => {
     const orderWhileBlocked = await Observe.toPromise(Observe.resource(world, order));
     Atomics.store(block, 0, 1);
     Atomics.notify(block, 0);
-    const settled = await loader.ask({ kind: "settled" });
+    const reply = await loader.ask({ kind: "settled" });
+    if (reply.kind !== "settled") throw new Error("transfers: the loader didn't say how its runs settled.");
+    const settled = { kind: reply.kind, failures: await failuresOf(world, reply.runs) };
     const { stored: received } = await storedOf(filler);
     await end();
     return { posted, worldRun, orderWhileBlocked, settled, stores: received.map(([, , seen]) => seen), marks: marks.map(({ value, order }) => [value, order]) };
@@ -120,8 +133,13 @@ export const late = async () => {
 
 /** Commands giving values the loader moved to a dead entity, on the filler and here: each released on its thread. */
 export const drops = async () => {
-    const { filler, loader, end } = await joined();
-    const dropped = await loader.ask({ kind: "drops" });
+    const { world, filler, loader, end } = await joined();
+    const reply = await loader.ask({ kind: "drops" });
+    if (reply.kind !== "dropped") throw new Error("transfers: the loader didn't say what dropped.");
+    const { runs, ...rest } = reply;
+    const counts: number[] = [];
+    for (const run of runs) counts.push((await reportOf(world, run)).dropped);
+    const dropped = { ...rest, dropped: counts };
     const { widths } = await storedOf(filler);
     const here = kept.map(value => typeof ImageBitmap === "function" && value instanceof ImageBitmap ? value.width : -1);
     await end();

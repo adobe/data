@@ -7,6 +7,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
+import { reportOf, runReported } from "./reports.test-helper.js";
 
 // A world and a thread joining it through a MessageChannel, both on this thread: the protocol without workers.
 
@@ -95,7 +96,7 @@ describe("joining", () => {
     it("lands runs from a joined thread in call order, with struct and object input, each its own sync point", async () => {
         const { world, remote } = joined();
         const runs = [remote.run(add, { amount: 1 }), remote.run(append, { name: "a" }), remote.run(add, { amount: 2 }), remote.run(append, { name: "b" }), remote.run(add, { amount: 3 })];
-        const reports = await Promise.all(runs);
+        const reports = await Promise.all((await Promise.all(runs)).map(run => reportOf(world, run)));
         expect(reports).toEqual(runs.map(() => ({ failures: [], skipped: [], dropped: 0, warnings: [] })));
         expect(await Observe.toPromise(Observe.resource(world, total))).toBe(123);
         expect(await Observe.toPromise(Observe.resource(world, names))).toEqual(["a", "b"]);
@@ -134,13 +135,13 @@ describe("joining", () => {
         await remote.dispose();
         await world.dispose();
     });
-    it("resolves a run that failed with its report, and rejects a run of a system without an id", async () => {
+    it("resolves a run that failed with its number, its report the world's, and rejects a run of a system without an id", async () => {
         const { world, remote } = joined();
-        const report = await remote.run(fail);
+        const report = await reportOf(world, await remote.run(fail));
         expect(report.failures.map(failure => failure.message)).toEqual(["joinTest failure"]);
         const local = System.create(() => {});
         await expect(remote.run(local)).rejects.toThrow(`System "${labelOfItem(local)}" has no id, so it can't run from another thread`);
-        expect(await remote.run(idle)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
+        expect(await reportOf(world, await remote.run(idle))).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         await remote.dispose();
         await world.dispose();
     });
@@ -154,7 +155,7 @@ describe("joining", () => {
         const two = join(second.port2, { threads: ["main"] });
         await expect(two.run(idle)).rejects.toThrow('Thread "main" is claimed twice.');
         expect(await statusOf(world, 1, "gone")).toEqual({ status: "gone", claims: [] });
-        expect(await one.run(idle)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
+        expect(await reportOf(world, await one.run(idle))).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         await one.dispose();
         await two.dispose();
         await world.dispose();

@@ -55,7 +55,7 @@ const todoAt = (element: TodoList, index: number): Entity => {
 };
 
 /** The child list changes `run` makes to the list once its tick passed. */
-const childChanges = async (element: TodoList, run: () => Promise<World.Report>): Promise<{ readonly added: number; readonly removed: number }> => {
+const childChanges = async (element: TodoList, run: () => Promise<number>): Promise<{ readonly added: number; readonly removed: number }> => {
     const records: MutationRecord[] = [];
     const observer = new MutationObserver(delivered => records.push(...delivered));
     observer.observe(element, { childList: true });

@@ -9,6 +9,8 @@ import { count, read, readEach, readEntity, readResource, select } from "./reads
 import { World } from "../../interface/world/world.js";
 import { attachKernel } from "./attach-kernel.js";
 import { createWorld } from "../index.js";
+import { reportOf, runReported } from "./reports.test-helper.js";
+import { Report } from "../../interface/report/report.js";
 
 type Vec2 = readonly [number, number];
 
@@ -214,18 +216,19 @@ describe("World.create", () => {
             throw new Error("boom");
         });
         const world = createWorld();
-        const [failure] = (await world.run(fail)).failures;
+        const [failure] = (await runReported(world, fail)).failures;
         expect([failure.kind, failure.name, failure.message]).toEqual(["system", "createTest/fail", "boom"]);
         expect(failure.stack).toContain("boom");
         expect(await count(world, { required: [velocity] })).toBe(1);
     });
 
-    it("shares one report among runs with nothing to report", async () => {
+    it("spawns no report for runs with nothing to report", async () => {
         const quiet = System.create({ name: "createTest/quiet" }, () => {});
         await using world = createWorld();
-        const report = await world.run(quiet);
-        expect(report).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
-        expect(await world.run(quiet)).toBe(report);
+        const first = await world.run(quiet);
+        expect(await world.run(quiet)).toBe(first + 1);
+        expect(await reportOf(world, first)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
+        expect(await count(world, { required: [Report.run] })).toBe(0);
     });
 
     it("reports what isn't an Error as text, without a stack", async () => {
@@ -234,7 +237,7 @@ describe("World.create", () => {
             throw { code: 7 };
         });
         await using world = createWorld();
-        expect((await world.run(fail)).failures).toEqual([{ kind: "system", name: "createTest/failText", message: "[object Object]", stack: null }]);
+        expect((await runReported(world, fail)).failures).toEqual([{ kind: "system", name: "createTest/failText", message: "[object Object]", stack: null }]);
     });
 
     it("reports the systems a failed tier skips, and the commands that did nothing", async () => {
@@ -247,8 +250,8 @@ describe("World.create", () => {
         const fails = System.create({ name: "createTest/failsFirst" }, () => { throw new Error("first"); });
         const later = System.create({ name: "createTest/later", after: [fails] }, () => {});
         await using world = createWorld();
-        expect(await world.run(doomed)).toEqual({ failures: [], skipped: [], dropped: 2, warnings: [] });
-        const report = await world.run(System.create({ name: "createTest/failedTier", systems: [fails, later] }));
+        expect(await runReported(world, doomed)).toEqual({ failures: [], skipped: [], dropped: 2, warnings: [] });
+        const report = await runReported(world, System.create({ name: "createTest/failedTier", systems: [fails, later] }));
         expect(report.skipped).toEqual(["createTest/later"]);
         expect(report.failures.map(failure => failure.name)).toEqual(["createTest/failsFirst"]);
     });

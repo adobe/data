@@ -4,7 +4,7 @@ import { System } from "../../interface/system/system.js";
 import { Observe } from "../../observe/index.js";
 import { createWorld, join } from "./create.js";
 import { scopeChannel } from "./port.js";
-import { drive, idle, names, total, until, type Driven } from "./joining.test-helper.js";
+import { drive, idle, names, total, until, withReports, type Driven, type Reported } from "./joining.test-helper.js";
 
 /** A thread joining a world through the port it's sent and driving it, or holding a world it shares through it. */
 
@@ -18,12 +18,13 @@ export type ToJoiningWorker =
     | { readonly kind: "host"; readonly port: Port }
     /** Hold a world shared through this worker's own scope, which this fixture's messages share. */
     | { readonly kind: "host scope" }
-    | { readonly kind: "state" };
+    /** Once the thread that joined has left: the world's state, and the reports of the runs it drove. */
+    | { readonly kind: "state"; readonly driven?: Driven };
 export type FromJoiningWorker =
     | { readonly kind: "driven"; readonly driven: Driven }
     | { readonly kind: "joined"; readonly ran: string }
     | { readonly kind: "shared" }
-    | { readonly kind: "state"; readonly total: number; readonly names: readonly string[]; readonly status: string | null };
+    | { readonly kind: "state"; readonly driven: Reported | null; readonly total: number; readonly names: readonly string[]; readonly status: string | null };
 
 const channel = scopeChannel<FromJoiningWorker, ToJoiningWorker>();
 let hosted: ReturnType<typeof createWorld> | null = null;
@@ -54,11 +55,12 @@ channel.onMessage(async message => {
         hosted = world;
         channel.post({ kind: "shared" });
     }
-    else if (hosted !== null) {
+    else if (message.kind === "state" && hosted !== null) {
         // Once the thread that joined has left.
         const threads = await until(hosted.threads, shown => shown[0]?.status === "gone");
         channel.post({
             kind: "state",
+            driven: message.driven === undefined ? null : await withReports(hosted, message.driven),
             total: await Observe.toPromise(Observe.resource(hosted, total)),
             names: await Observe.toPromise(Observe.resource(hosted, names)),
             status: threads[0]?.status ?? null,

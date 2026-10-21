@@ -7,6 +7,7 @@ import { createWorld, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
 import type { FromThreadSystemsWorker, ToThreadSystemsWorker } from "./thread-systems-worker.fixture.js";
 import { caption, changes, count, countThere, counted, scenario, stall } from "./thread-systems.test-helper.js";
+import { reportOf, runReported } from "./reports.test-helper.js";
 
 /**
  * Scenarios of systems on a joined worker, run built in node and from source in chromium: the same runs as an inline
@@ -109,9 +110,10 @@ export const diesMidTask = async () => {
     const running = world.run(stall);
     await new Promise(resolve => setTimeout(resolve, 50));
     await worker.terminate();
-    const report = await within(running, 20000, null);
+    const ran = await within(running, 20000, null);
+    const report = ran === null ? null : await reportOf(world, ran);
     // Placed here again once its claims are released: a run on the world's thread.
-    const after = report === null ? null : await within(world.run(count), 20000, null);
+    const after = report === null ? null : await within(runReported(world, count), 20000, null);
     await world.dispose();
     return {
         report: report === null ? null : { failures: report.failures.map(failure => [failure.kind, failure.name, failure.message]), skipped: report.skipped },

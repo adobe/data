@@ -8,6 +8,7 @@ import { System } from "../../interface/system/system.js";
 import { backToBack } from "./loop.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { bumpKernel, edit, expected, lateProbe, probe, scenario, scene, target, threadProbe, value } from "./entity-lookups.test-helper.js";
+import { runReported } from "./reports.test-helper.js";
 
 /** What a finalizer's lookup gave as probes were despawned. */
 const finalized: (boolean | null)[] = [];
@@ -56,7 +57,7 @@ describe("lookups by entity with changed", () => {
         const { seen, reused } = await scenario(world, threadProbe);
         expect(reused).toBe(true);
         expect(seen).toEqual(expected);
-        expect((await world.run(threadProbe)).warnings.map(warning => warning.name)).toEqual(["entityLookupsTest/threadProbe"]);
+        expect((await runReported(world, threadProbe)).warnings.map(warning => warning.name)).toEqual(["entityLookupsTest/threadProbe"]);
         await remote.dispose();
         await world.dispose();
     });

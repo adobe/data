@@ -11,6 +11,7 @@ import { System } from "../../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { tablesAfterCollecting } from "./lifetime.test-helper.js";
 import { backToBack } from "./loop.js";
+import { runReported } from "./reports.test-helper.js";
 
 const cell = Symbol("indexesTest/cell");
 const weight = Symbol("indexesTest/weight");
@@ -185,13 +186,13 @@ describe("unique indexes", () => {
             commands.spawn([serverId])({ [serverId]: 8 });
         }));
         const [first, second] = await Observe.toPromise(Observe.select(world, { required: [serverId] }));
-        const report = await world.run(find, { id: 7 });
+        const report = await runReported(world, find, { id: 7 });
         expect(report.failures).toEqual([]);
         expect(known).toBe(first);
         await world.run(find, { id: 9 });
         expect(known).toBe(null);
         await world.run(System.create(({ commands }) => { commands.add(second, serverId, 7); }));
-        const conflicted = await world.run(find, { id: 7 });
+        const conflicted = await runReported(world, find, { id: 7 });
         expect(known).toBe(first);
         expect(conflicted.failures).toEqual([{
             kind: "index",
@@ -200,7 +201,7 @@ describe("unique indexes", () => {
             stack: null,
         }]);
         // Found once: the next run reports nothing.
-        expect((await world.run(find, { id: 7 })).failures).toEqual([]);
+        expect((await runReported(world, find, { id: 7 })).failures).toEqual([]);
     });
 });
 
@@ -551,9 +552,9 @@ describe("sorted indexes on the main thread", () => {
         const [first, second] = await Observe.toPromise(Observe.select(world, { required: [label] }));
         let kept: Entity | null = null;
         const find = System.create({ lookup: { names: { index: byName } } }, ({ lookup }) => { kept = lookup.names("one")?.entity ?? null; });
-        expect((await world.run(find)).failures).toEqual([]);
+        expect((await runReported(world, find)).failures).toEqual([]);
         await world.run(System.create(({ commands }) => { commands.add(second, label, "one"); }));
-        const report = await world.run(find);
+        const report = await runReported(world, find);
         expect(kept).toBe(first);
         expect(report.failures).toEqual([{ kind: "index", name: "indexesTest/byName", message: `Index "indexesTest/byName" is unique, and entities ${first} and ${second} both have key "one"; lookups give ${first}, the one with the lower entity index.`, stack: null }]);
     });

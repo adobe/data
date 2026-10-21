@@ -1,8 +1,6 @@
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
-import type { Failure } from '../../interface/world/report.js';
 import { definitionOf, isLeaf, itemOfId, labelOfItem } from '../../interface/registry/index.js';
-import { failureOf } from './failures.js';
 import { cancelled, notRun, opening, outcomeWord, postedWord, removedWord, runsWord, observerBlockWords, syncWord, tickSlot } from './joined-observer.js';
 import { protocolName, type ObserverSetup, type ToWorld } from './joining.js';
 import type { Mirror } from './mirror.js';
@@ -28,15 +26,13 @@ export type ThreadObserverHost = {
 
 /**
  * An observer system of this thread's own, by its number for it: its value, its runner once the world placed it, and
- * what its runs gave, by the newest run each post was for.
+ * the newest of its runs a post ran for.
  */
 export type Local = {
     readonly number: number;
     readonly leaf: Leaf;
     runner: ThreadRunner | null;
-    /** The newest of its runs a post ran for, and the failure of each such post, in order. */
     ran: number;
-    readonly results: { readonly through: number; readonly failure: Failure | null }[];
     /** Whether it's placed on this thread now: false once removed, until placed again. */
     placed: boolean;
     /** The last of this thread's runs posted before it was last removed here: those that didn't run then never do. */
@@ -190,12 +186,8 @@ export const createThreadObserver = (host: ThreadObserverHost) => {
         // Read first: the world may write its next post here once this one says what it did.
         const runs = Atomics.load(control, runsWord);
         const outcome = runner.runTail(block.ticks[1], undefined, control, sync, 0, noStamps, claimed, outcomeWord);
-        const failure = outcome.error === undefined ? null : failureOf("system", entry.label, outcome.error);
-        if (own !== undefined && runs > 0) {
-            own.ran = Math.max(own.ran, runs);
-            own.results.push({ through: runs, failure });
-        }
-        else if (outcome.error !== undefined) {
+        if (own !== undefined && runs > 0) own.ran = Math.max(own.ran, runs);
+        if (outcome.error !== undefined) {
             const found = errors ?? [];
             found.push([entry.index, errorOf(outcome.error)]);
             return found;
@@ -204,7 +196,7 @@ export const createThreadObserver = (host: ThreadObserverHost) => {
     };
 
     /**
-     * Runs every new post here; returns how many ran. What an added one threw goes to the world, for its next report.
+     * Runs every new post here; returns how many ran. What one threw goes to the world, for its next report.
      * Of a system's two blocks, only one holds a post it hasn't claimed, the newest.
      */
     const process = (): number => {
@@ -236,11 +228,5 @@ export const createThreadObserver = (host: ThreadObserverHost) => {
     };
 };
 
-/** The failure of a run of a local observer system, once a post for it ran: undefined until then. */
-export const resultOf = (local: Local, sequence: number): { readonly failure: Failure | null } | undefined => {
-    if (local.ran < sequence) return undefined;
-    const found = local.results.find(result => result.through >= sequence);
-    // Earlier results are for runs settled before this one.
-    while (local.results.length > 1 && local.results[0].through < sequence) local.results.shift();
-    return found === undefined ? { failure: null } : found;
-};
+/** Whether a post ran for run `sequence` of a local observer system, or none ever will, since it was removed first. */
+export const settledFor = (local: Local, sequence: number): boolean => local.ran >= sequence || local.stopped >= sequence;

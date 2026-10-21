@@ -4,7 +4,7 @@ import { Entity } from "../entity/entity.js";
 import { definitionOf, firstItemOf, labelOfItem, requireDefinition, sameItem, scheduleOf, threadOf } from "../registry/index.js";
 import { identify } from "../registry/ids.test-helper.js";
 import { Resource } from "../resource/resource.js";
-import { clock, gpuDevice, report } from "../resources/index.js";
+import { clock, gpuDevice } from "../resources/index.js";
 import { System } from "./system.js";
 
 const position = Symbol("typesSystemTest/position");
@@ -97,7 +97,6 @@ describe("System.create", () => {
     });
     it("rejects writing what only the world writes, for untyped callers", () => {
         expect(() => create({ name: "typesSystemTest/clock", resources: { write: [clock] } })).toThrow(`writes "clock", which only the world writes`);
-        expect(() => create({ name: "typesSystemTest/report", resources: { write: [report] } })).toThrow(`writes "report", which only the world writes`);
     });
     it("rejects what types reject, for untyped callers", () => {
         expect(() => create({ name: "typesSystemTest/both", components: { read: [position], write: [position] } })).toThrow("in both components read and write");

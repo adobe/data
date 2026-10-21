@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Archetype } from "../../interface/archetype/archetype.js";
+import { Report } from "../../interface/report/report.js";
 import { Component } from "../../interface/component/component.js";
 import type { Essential } from "../../interface/component/value.js";
 import { Entity } from "../../interface/entity/entity.js";
@@ -13,6 +14,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { Observe } from "../../observe/index.js";
 import { count, read, readEntity, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { runReported } from "./reports.test-helper.js";
 
 type Vec3 = readonly [number, number, number];
 const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
@@ -98,7 +100,7 @@ const withCommands = () => {
     const issue = System.create({ name: "commandsTest/issue" }, ({ commands }) => body(commands));
     const run = async (next: (commands: Commands) => void): Promise<void> => {
         body = next;
-        const [failure] = (await world.run(issue)).failures;
+        const [failure] = (await runReported(world, issue)).failures;
         if (failure !== undefined) throw new Error(failure.message);
     };
     return { world, run };
@@ -182,7 +184,8 @@ describe("spawn", () => {
         await expect(tried([level])).rejects.toThrow(`"commandsTest/level" is a resource, not a component`);
         await expect(tried([score, score])).rejects.toThrow(`lists "commandsTest/score" twice`);
         await expect(tried(["commandsTest/score"])).rejects.toThrow("a component's key is a symbol");
-        expect(await count(world, {})).toBe(0);
+        // Nothing spawned but the failed runs' reports.
+        expect(await count(world, { not: [Report.run] })).toBe(0);
         await world.dispose();
     });
 });

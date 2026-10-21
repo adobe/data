@@ -7,6 +7,9 @@ import { System } from "../../interface/system/system.js";
 import { createWorld } from "../index.js";
 import { Observe } from "../../observe/index.js";
 import { settle } from "./observe.test-helper.js";
+import { runReported } from "./reports.test-helper.js";
+import { retainedRuns } from "./reports.js";
+import { Report } from "../../interface/report/report.js";
 
 // The observer factories of `src/observe`. Each case subscribes, settles, then expects, so it holds whenever a first
 // value comes.
@@ -278,7 +281,7 @@ describe("observing resources", () => {
         });
         resource(world, level)(value => seen.push(value));
         await settle(world);
-        const { failures } = await world.run(raise, { by: 1 });
+        const { failures } = await runReported(world, raise, { by: 1 });
         expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([
             { kind: "system", name: expect.stringMatching(/^Observe\.resource\(observeCasesTest\/level\)/), message: "observer failed" },
         ]);
@@ -306,7 +309,7 @@ describe("observing resources", () => {
             await settle(world);
         });
         expect(caught.map(error => error instanceof Error ? error.message : error)).toEqual(["first failed"]);
-        expect((await world.run(raise, { by: 1 })).failures).toEqual([]);
+        expect((await runReported(world, raise, { by: 1 })).failures).toEqual([]);
         expect(calls).toBe(1);
     });
 });
@@ -416,8 +419,8 @@ describe("observing entities", () => {
         });
         stopSecond = entity(world, target, { required: [weight] })(value => seen.push(`second ${value?.[weight]}`));
         await settle(world);
-        expect((await world.run(weigh)).failures).toEqual([]);
-        expect((await world.run(weigh)).failures).toEqual([]);
+        expect((await runReported(world, weigh)).failures).toEqual([]);
+        expect((await runReported(world, weigh)).failures).toEqual([]);
         stopSecond();
         expect(seen).toEqual(["first 1", "second 1", "first 3", "first 5"]);
     });
@@ -444,7 +447,7 @@ describe("observing entities", () => {
         });
         entity(world, target, { required: [weight] })(value => seen.push(value));
         await settle(world);
-        const { failures } = await world.run(weigh);
+        const { failures } = await runReported(world, weigh);
         expect(failures.map(({ kind, message }) => ({ kind, message }))).toEqual([{ kind: "system", message: "observer failed" }]);
         expect(seen).toEqual([{ [weight]: 1 }, { [weight]: 3 }]);
     });
@@ -604,7 +607,7 @@ describe("observing queries", () => {
         const seen: number[] = [];
         const stop = count(world, { required: [score, benched] })(value => seen.push(value));
         await settle(world);
-        const { failures } = await world.run(bench);
+        const { failures } = await runReported(world, bench);
         expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([
             { kind: "system", name: expect.stringMatching(/^Observe\.count\(observeCasesTest\/score, observeCasesTest\/benched\)/), message: "observer failed" },
         ]);
@@ -762,5 +765,31 @@ describe("observing a page of a query", () => {
         for (const page of [{ offset: -1, limit: 1 }, { offset: 1.5, limit: 1 }, { offset: 0, limit: -1 }, { offset: 0, limit: Number.NaN }]) {
             expect(() => select(world, { required: [rank], page })(() => {})).toThrow("page");
         }
+    });
+});
+
+describe("the factories' own runs", () => {
+    it("rethrow their systems' failures out of band, from their reports, once a later run of theirs read them", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        const fail = System.create({ name: "observeCasesTest/failRun" }, () => { throw new Error("run failed"); });
+        const nothing = System.create({ name: "observeCasesTest/nothing" }, () => {});
+        let reports = -1;
+        const caught = await catching(async () => {
+            // Its notifier throws once the failed run's report is despawned, which a run of the factories' own does.
+            count(world, { required: [Report.run] })(value => {
+                if (reports === 1 && value === 0) throw new Error("count failed");
+                reports = value;
+            });
+            await settle(world);
+            const failed = await world.run(fail);
+            expect(reports).toBe(1);
+            while (await world.run(nothing) < failed + retainedRuns - 1);
+            // The factories' runs for these first values: the first despawns the report, failing in its pass.
+            resource(world, level)(() => {});
+            await settle(world);
+            resource(world, other)(() => {});
+            await settle(world);
+        });
+        expect(caught.map(error => error instanceof Error ? error.message : error)).toEqual([expect.stringMatching(/^Observe\.count\(Report\/run\).*: count failed$/)]);
     });
 });

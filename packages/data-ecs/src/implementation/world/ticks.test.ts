@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Resource, System, clock, report, workers } from "../../index.js";
+import { Resource, System, clock, workers } from "../../index.js";
 import { createWorld } from "./create.js";
 
 // The cases of ticks that read through observers are in `observe-ticks-cases.test.ts`.
@@ -30,7 +30,5 @@ describe("World.create", () => {
     it("rejects starting a resource only the world writes", () => {
         // @ts-expect-error clock is written only by the world
         expect(() => createWorld({ [clock]: { now: 0, delta: 0, tick: 0 } })).toThrow('"clock" is written only by the world');
-        // @ts-expect-error report is written only by the world
-        expect(() => createWorld({ [report]: { failures: [], skipped: [], dropped: 0, warnings: [] } })).toThrow('"report" is written only by the world');
     });
 });

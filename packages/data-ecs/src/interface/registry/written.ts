@@ -1,9 +1,8 @@
 import { clock } from '../resources/clock.js';
-import { report } from '../resources/report.js';
 import { labelOf } from './names.js';
 
 /** Resources only the world writes. */
-const worldWritten: ReadonlySet<symbol> = new Set([clock, report]);
+const worldWritten: ReadonlySet<symbol> = new Set([clock]);
 
 /** Throws if `writes` lists a resource only the world writes. */
 export const checkWorldWritten = (what: string, writes: readonly (symbol)[] | undefined): void => {

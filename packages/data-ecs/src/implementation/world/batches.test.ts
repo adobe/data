@@ -10,6 +10,7 @@ import { Observe } from "../../observe/index.js";
 import { createBuffer } from "./buffer.js";
 import { createCommands } from "./commands.js";
 import { createState } from "./state.js";
+import { runReported } from "./reports.test-helper.js";
 
 type Vec3 = readonly [number, number, number];
 const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
@@ -80,7 +81,7 @@ describe("staged spawns", () => {
             if (poison) commands.spawn([position, score])({ [position]: [0, 0, 0], [score]: Symbol("x") as unknown as number });
         });
         const world = createWorld({ [workers]: 0 });
-        expect((await world.run(spawn)).failures).toHaveLength(1);
+        expect((await runReported(world, spawn)).failures).toHaveLength(1);
         expect(await readEach(world, spawned, score)).toEqual([0, 1, 2]);
         poison = false;
         await world.run(spawn);

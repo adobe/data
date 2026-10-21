@@ -1,6 +1,5 @@
 import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
-import type { Report } from './report.js';
 
 /**
  * A world. Systems read and change it; observer systems read it after each run's and tick's sync point. Every member's
@@ -9,24 +8,25 @@ import type { Report } from './report.js';
 export type World = {
     /**
      * The one way to change state. Runs are sequential in call order; physically, any that don't conflict overlap. Each
-     * runs a system or composite, ending in a sync point, and resolves to what went wrong, if anything: systems,
-     * finalizers and GPU work that failed, systems skipped after a failed tier, and commands that did nothing. Rejects
-     * only when the run can't happen or finish: registration fails, the world is disposed, its GPU device is lost, or
-     * its sync point can't apply a command's value. Observer systems, the run's and those added, run after its sync
-     * point, before it resolves, their throws `"system"` failures in its report; a run of observer systems alone runs
-     * them once after an empty sync point, and doesn't wake the loop.
+     * runs a system or composite, ending in a sync point, and resolves to its number: every run and tick takes the
+     * next, in the order they run. What went wrong, if anything, is a report the world spawns for that number (see
+     * `Report`): systems, finalizers and GPU work that failed, systems skipped after a failed tier, commands that did
+     * nothing, and warnings. Rejects only when the run can't happen or finish: registration fails, the world is
+     * disposed, its GPU device is lost, or its sync point can't apply a command's value. Observer systems, the run's and
+     * those added, run after its sync point and its report, before it resolves; their throws are `"system"` failures
+     * added to its report after them. A run of observer systems alone runs them once after an empty sync point, and
+     * doesn't wake the loop.
      */
-    run<I>(system: System<I>, ...input: Input<NoInfer<I>>): Promise<Report>;
+    run<I>(system: System<I>, ...input: Input<NoInfer<I>>): Promise<number>;
     /**
      * Adds a system to every tick, from the next one on, ordered with those already added by its constraints, as a
      * composite's members are. A tick runs on a beat of the `cadence` resource where `always` is set, `wake` is due or
      * a run arrived since the last tick, and only while some system is added. Throws for a system with no ordering path
-     * to one already added that conflicts with it; failures appear in the `report` resource. An observer system runs
-     * after every run's and tick's sync point instead. It never conflicts and doesn't count as an added system for
-     * ticking. In a tick it sees the tick's report, which then holds its failures without notifying again. On a joined
-     * thread `add` takes only observer systems, whose keys need ids: each runs on that thread after the world's sync
-     * points, once for the newest when the thread fell behind, reading structs and the objects of the threads it fills
-     * as of one sync point; its failures are in a later run's report.
+     * to one already added that conflicts with it; failures are in the tick's report. An observer system runs after
+     * every run's and tick's sync point instead. It never conflicts and doesn't count as an added system for ticking.
+     * On a joined thread `add` takes only observer systems, whose keys need ids: each runs on that thread after the
+     * world's sync points, once for the newest when the thread fell behind, reading structs and the objects of the
+     * threads it fills as of one sync point; its failures are in a later run's report.
      */
     add(system: System<void>): void;
     /**

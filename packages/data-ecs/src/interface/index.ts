@@ -6,6 +6,7 @@ export { Gpu } from './gpu/gpu.js';
 export { Index } from './indexes/index-type.js';
 export * from './math/index.js';
 export * from './resources/index.js';
+export { Report } from './report/report.js';
 export { Resource } from './resource/resource.js';
 export { Rule } from './rule/rule.js';
 export type { Schema } from './schema/schema.js';

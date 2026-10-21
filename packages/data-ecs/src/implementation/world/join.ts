@@ -1,11 +1,10 @@
 import type { Thread } from '../../interface/thread/thread.js';
-import type { Report } from '../../interface/world/report.js';
 import type { World } from '../../interface/world/world.js';
 import { declarationOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, labelOfItem, requireDefinition, threadOf, threadOfDeclaration, type Definition } from '../../interface/registry/index.js';
 import { layoutOf, type Views } from '../../interface/registry/layout.js';
 import {
-    clean, completedWord, fitsInline, inputByMessage, inputLayoutOf, inputMoved, noInput, pending, platformLocks, postedWord, protocolName, runSlots, signalWord, unposted, unreadWord,
-    slotInput, slotNumber, slotPayload, slotSequence, slotStatus, slotViews, slotWords, slotsWord, threadChannel, type ObserverDeclaration, type ObserverIndex, type ObserverLookup, type ThreadChannel, type ToJoined, type ToPeer, type ToWorld,
+    completedWord, done, fitsInline, inputByMessage, inputLayoutOf, inputMoved, noInput, pending, platformLocks, postedWord, protocolName, runSlots, signalWord, unposted, unreadWord,
+    slotInput, slotNumber, slotPayload, slotRun, slotStatus, slotViews, slotWords, slotsWord, threadChannel, type ObserverDeclaration, type ObserverIndex, type ObserverLookup, type ThreadChannel, type ToJoined, type ToPeer, type ToWorld,
 } from './joining.js';
 import { currentBuffer, sharedMemoryAvailable } from './memory.js';
 import { logRunWord } from './move-log.js';
@@ -14,27 +13,13 @@ import { defaultOf } from './state.js';
 import { createThreadSystems, type SystemSetup } from './thread-systems.js';
 import { taskBlockWords } from './thread-tasks.js';
 import { createThreadDirectory } from './thread-directory.js';
-import { createThreadObserver, resultOf, type Local } from './thread-observer.js';
+import { createThreadObserver, settledFor, type Local } from './thread-observer.js';
 import type { Leaf } from '../../interface/system/leaf.js';
-import type { Failure } from '../../interface/world/report.js';
 import { isObserver, scheduleOf } from '../../interface/registry/schedule.js';
 import { releaseInput, transferablesOf } from './transfers.js';
 
-/** Shared by every clean report: read-only, so none needs its own. */
-const none: readonly never[] = [];
-const cleanReport: Report = { failures: none, skipped: none, dropped: 0, warnings: none };
-
-/** What a run of an observer system of this thread's own gave when no post ran it, its system removed first. */
-const noResult = { failure: null };
-
-/** A report with an observer system's failure, or as it is. */
-const withFailure = (report: Report, result: { readonly failure: Failure | null } | null): Report =>
-    result === null || result.failure === null ? report : { ...report, failures: [...report.failures, result.failure] };
-
-/** The reports of runs of several observer systems, as one. */
-const mergeReports = (reports: readonly Report[]): Report => reports.reduce((all, report) => ({
-    failures: [...all.failures, ...report.failures], skipped: [...all.skipped, ...report.skipped], dropped: all.dropped + report.dropped, warnings: [...all.warnings, ...report.warnings],
-}), cleanReport);
+/** The last of the numbers of runs of several observer systems. */
+const lastOf = (runs: readonly number[]): number => Math.max(...runs);
 
 /** An observer system's leaves: itself, or a composite's members when they're all observer; null for any other system. */
 const observerLeavesOf = (definition: Definition): readonly Leaf[] | null => {
@@ -44,8 +29,8 @@ const observerLeavesOf = (definition: Definition): readonly Leaf[] | null => {
     return schedule.tiers.length === 0 && schedule.observer.length > 0 ? schedule.observer : null;
 };
 
-/** A run not yet settled: how to settle it, and its report or rejection once posted. */
-type Run = { readonly resolve: (report: Report) => void; readonly reject: (error: unknown) => void; message: ToJoined | null; error: unknown; readonly local: Local | null };
+/** A run not yet settled: how to settle it, and its rejection once posted. */
+type Run = { readonly resolve: (run: number) => void; readonly reject: (error: unknown) => void; message: ToJoined | null; error: unknown; readonly local: Local | null };
 
 /** A run waiting for a free slot, or for the thread to have joined. */
 type Waiting = { readonly sequence: number; readonly number: number; readonly definition: Definition; readonly input: unknown };
@@ -233,7 +218,6 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         const base = slotsWord + slot * slotWords;
         control[base + slotStatus] = pending;
         control[base + slotNumber] = number;
-        control[base + slotSequence] = sequence;
         const schema = definition.kind === "composite" ? undefined : definition.declaration.input;
         const layout = fitsInline(schema, input) ? inputLayoutOf(definition, schema) : null;
         if (layout !== null && layout.kind === "linear") {
@@ -279,25 +263,24 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         if (written > 0) waiting.splice(0, written);
     };
 
-    /** Settles runs the world completed, in order: a clean one at once, any other once its report or rejection arrived. */
+    /** Settles runs the world completed, in order: a done one at once, a rejected one once its rejection arrived. */
     const settle = (): void => {
         while (settled < completed && control !== null) {
             const next = settled + 1;
             const run = runs.get(next);
-            const status = control[slotsWord + ((next - 1) % runSlots) * slotWords + slotStatus];
-            if (run !== undefined && status !== clean && run.message === null) return;
+            const base = slotsWord + ((next - 1) % runSlots) * slotWords;
+            const status = control[base + slotStatus];
+            if (run !== undefined && status !== done && run.message === null) return;
             // A run of this thread's own observer system settles once a post for it ran here, unless it was removed
-            // since.
-            const result = run === undefined || run.local === null ? null : resultOf(run.local, next) ?? (run.local.stopped >= next ? noResult : undefined);
-            if (result === undefined) return;
+            // since; what it threw goes to the world, for its next report.
+            if (run !== undefined && run.local !== null && !settledFor(run.local, next)) return;
             settled = next;
             runs.delete(next);
             if (run === undefined) continue;
             const { message } = run;
             if (run.error !== undefined) run.reject(run.error);
-            else if (message === null) run.resolve(withFailure(cleanReport, result));
-            else if (message.kind === "report") run.resolve(withFailure(message.report, result));
-            else if (message.kind === "rejected") run.reject(new Error(message.message));
+            else if (status === done) run.resolve(control[base + slotRun]);
+            else if (message !== null && message.kind === "rejected") run.reject(new Error(message.message));
         }
     };
 
@@ -447,7 +430,6 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 systems?.disposed();
                 return fail(new Error("The world is disposed."));
             }
-            case "report":
             case "rejected": {
                 const run = runs.get(message.sequence);
                 if (run !== undefined) run.message = message;
@@ -592,7 +574,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         // A number of this thread's, never posted as a name: the declaration names it.
         const number = numbers.size;
         numbers.set(`#observer:${number}`, number);
-        const local: Local = { number, leaf, runner: null, ran: 0, results: [], placed: false, stopped: 0 };
+        const local: Local = { number, leaf, runner: null, ran: 0, placed: false, stopped: 0 };
         localsByLeaf.set(leaf, local);
         localsByNumber.set(number, new WeakRef(local));
         collected.register(leaf, number);
@@ -601,9 +583,9 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
     };
 
     /** Posts a run of a system this thread numbers `number`; `local` for one of its own observer systems. */
-    const runNumbered = (number: number, definition: Definition, input: unknown, local: Local | null): Promise<Report> => {
+    const runNumbered = (number: number, definition: Definition, input: unknown, local: Local | null): Promise<number> => {
         if (failure !== null) return Promise.reject(failure);
-        const ran = new Promise<Report>((resolve, reject) => {
+        const ran = new Promise<number>((resolve, reject) => {
             const next = ++sequence;
             runs.set(next, { resolve, reject, message: null, error: undefined, local });
             waiting.push({ sequence: next, number, definition, input });
@@ -627,7 +609,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                     if (failure !== null) return Promise.reject(failure);
                     const locals = leaves.map(localOf);
                     if (locals.length === 1) return runNumbered(locals[0].number, locals[0].leaf, undefined, locals[0]);
-                    return Promise.all(locals.map(local => runNumbered(local.number, local.leaf, undefined, local))).then(mergeReports);
+                    return Promise.all(locals.map(local => runNumbered(local.number, local.leaf, undefined, local))).then(lastOf);
                 }
                 id = idOfItem(definition);
                 if (id === undefined) throw new Error(`System "${labelOfItem(definition)}" has no id, so it can't run from another thread; the build gives top-level systems one.`);

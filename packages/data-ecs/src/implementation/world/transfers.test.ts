@@ -6,6 +6,7 @@ import { createWorld, join, type CreatedWorld } from "./create.js";
 import { asEntity } from "./entities.js";
 import { peersOf } from "./join.js";
 import { attachHere, attachThere, greetThere, kept, mark, marks, spawnHere, storeHere, storeThere, stored, unregistered } from "./transfers.test-helper.js";
+import { reportOf, runReported } from "./reports.test-helper.js";
 
 // Transfers, with the world, the thread filling "transfersTest" and a thread filling none on this one, joined through
 // MessageChannels: a run's Transferable input moves to the thread its system runs on.
@@ -67,7 +68,8 @@ describe("transfers", () => {
         const runs = [loader.run(storeThere, { buffer: buffers[0] }), loader.run(mark, { value: 1 }), loader.run(storeThere, { buffer: buffers[1] }), loader.run(mark, { value: 2 })];
         // Moved, not copied: the loader's are detached as soon as it runs them.
         expect(buffers.map(buffer => buffer.byteLength)).toEqual([0, 0]);
-        expect((await Promise.all(runs)).map(report => report.warnings.map(warning => warning.kind))).toEqual([["blocking"], [], ["blocking"], []]);
+        const reports = await Promise.all((await Promise.all(runs)).map(run => reportOf(world, run)));
+        expect(reports.map(report => report.warnings.map(warning => warning.kind))).toEqual([["blocking"], [], ["blocking"], []]);
         expect(stored.map(({ bytes, first, order }) => [bytes, first, order])).toEqual([[1024, 1, 0], [1024, 2, 2]]);
         expect(marks).toEqual([{ value: 1, order: 1 }, { value: 2, order: 3 }]);
         await loader.dispose();
@@ -80,7 +82,7 @@ describe("transfers", () => {
         const greeted = new Promise<unknown>(resolve => {
             channel.port2.onmessage = event => resolve(event.data);
         });
-        expect((await loader.run(greetThere, { port: channel.port1 })).failures).toEqual([]);
+        expect((await reportOf(world, await loader.run(greetThere, { port: channel.port1 }))).failures).toEqual([]);
         expect(await greeted).toBe("anchor");
         channel.port2.close();
         await loader.dispose();
@@ -92,7 +94,7 @@ describe("transfers", () => {
         const buffer = bufferOf(3);
         const ran = loader.run(storeHere, { buffer });
         expect(buffer.byteLength).toBe(0);
-        expect(await ran).toEqual(clean);
+        expect(await reportOf(world, await ran)).toEqual(clean);
         expect(stored.map(({ bytes, first }) => [bytes, first])).toEqual([[1024, 3]]);
         await loader.dispose();
         await filler.dispose();
@@ -125,8 +127,8 @@ describe("transfers", () => {
         const here = new MessageChannel();
         const closes = [closed(there.port2), closed(here.port2)];
         const dead = asEntity(123456);
-        expect((await loader.run(attachThere, { entity: dead, value: there.port1 })).dropped).toBe(1);
-        expect((await loader.run(attachHere, { entity: dead, value: here.port1 })).dropped).toBe(1);
+        expect((await reportOf(world, await loader.run(attachThere, { entity: dead, value: there.port1 }))).dropped).toBe(1);
+        expect((await reportOf(world, await loader.run(attachHere, { entity: dead, value: here.port1 }))).dropped).toBe(1);
         expect(await Promise.all(closes)).toEqual([true, true]);
         await loader.dispose();
         await filler.dispose();
@@ -147,8 +149,8 @@ describe("transfers", () => {
         const dropped = new MessageChannel();
         const landed = new MessageChannel();
         const closes = [closed(dropped.port2, 200), closed(landed.port2, 200)];
-        expect((await world.run(attachHere, { entity: asEntity(123456), value: dropped.port1 })).dropped).toBe(1);
-        expect((await world.run(spawnHere, { value: landed.port1 })).dropped).toBe(0);
+        expect((await runReported(world, attachHere, { entity: asEntity(123456), value: dropped.port1 })).dropped).toBe(1);
+        expect((await runReported(world, spawnHere, { value: landed.port1 })).dropped).toBe(0);
         expect(await Promise.all(closes)).toEqual([true, false]);
         await world.dispose();
     });

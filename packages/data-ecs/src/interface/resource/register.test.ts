@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../component/component.js";
 import { declarationOf, kindOf, threadOfDeclaration } from "../registry/index.js";
-import { always, cadence, clock, gpuDevice, report, wake, workers } from "../resources/index.js";
+import { always, cadence, clock, gpuDevice, wake, workers } from "../resources/index.js";
 import { Resource } from "./resource.js";
 
 const time = Symbol("typesResourceTest/time");
@@ -83,13 +83,13 @@ describe("Resource.register", () => {
         expect(declarationOf(workers)).toEqual({ type: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }], default: null } });
         // null isn't a struct, so workers is an object resource on "world".
         expect(threadOfDeclaration(declarationOf(workers) ?? {})).toBe("world");
-        const defaults = [cadence, always, wake, clock, report].map(name => {
+        const defaults = [cadence, always, wake, clock].map(name => {
             const type = declarationOf(name)?.type;
             return type !== undefined && "default" in type ? type.default : undefined;
         });
-        expect(defaults).toEqual([{ kind: "frame" }, false, Infinity, { now: 0, delta: 0, tick: 0 }, { failures: [], skipped: [], dropped: 0, warnings: [] }]);
+        expect(defaults).toEqual([{ kind: "frame" }, false, Infinity, { now: 0, delta: 0, tick: 0 }]);
         expect(declarationOf(wake)?.reduce).toBe("min");
-        expect([cadence, always, wake, clock, report].map(name => threadOfDeclaration(declarationOf(name) ?? {}))).toEqual(["world", null, null, null, "world"]);
+        expect([cadence, always, wake, clock].map(name => threadOfDeclaration(declarationOf(name) ?? {}))).toEqual(["world", null, null, null]);
     });
     it("checks thread and transfer as far as values tell", () => {
         expect(declarationOf(cache)).toEqual({ default: new Map(), thread: "main" });

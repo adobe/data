@@ -13,7 +13,8 @@ import { locate } from './entities.js';
 import { clearBuffer, createBuffer } from './buffer.js';
 import { drainSegment, type Segment } from './command-ring.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
-import type { Failure, Report } from '../../interface/world/report.js';
+import type { Failure, Warning } from '../../interface/report/failure.js';
+import type { RunReport } from './failures.js';
 import { liftColumnStamps, type RemoteSystem, type TaskChannel } from './remote-systems.js';
 import { failureOf } from './failures.js';
 import { checkCommands } from './remote.js';
@@ -24,7 +25,7 @@ import { mergeUses, refreshUses, type IndexUse } from './indexes.js';
 const none: readonly never[] = [];
 const noChunks: readonly Chunk[] = [];
 /** The report of a run with nothing to report. */
-export const clean: Report = { failures: none, skipped: none, dropped: 0, warnings: none };
+export const clean: RunReport = { failures: none, skipped: none, dropped: 0, warnings: none };
 
 export type ExecuteContext = {
     readonly state: State;
@@ -43,7 +44,7 @@ export type ExecuteContext = {
  * ran them. A failing system stops the run after its tier finishes: later tiers are skipped, and commands so far still
  * apply. `system` is the one the run was given, which the GPU's errors are reported under.
  */
-export const execute = async (context: ExecuteContext, schedule: Schedule, args: unknown, system: { readonly name: string }): Promise<Report> => {
+export const execute = async (context: ExecuteContext, schedule: Schedule, args: unknown, system: { readonly name: string }): Promise<RunReport> => {
     const { gpu } = context.state;
     if (gpu === null) return executeTiers(context, schedule, args, null);
     const lost = gpu.lost();
@@ -107,9 +108,9 @@ type Prepared = {
      * The run's warnings, the first `warningCount`, and the last report made of warnings alone, reused while a run's
      * are the same. Counted rather than truncated: setting an array's length costs a run more than all of this.
      */
-    readonly warnings: Report["warnings"][number][];
+    readonly warnings: Warning[];
     warningCount: number;
-    warned: Report | null;
+    warned: RunReport | null;
     /** The run's failures and skipped systems, allocated only when there's something to list. */
     readonly outcome: Outcome;
     /** The placement its tails were found for, and they: the schedule without them, and them in schedule order. */
@@ -337,7 +338,7 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
     return last;
 };
 
-const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unknown, earlier: Failure[] | null): Promise<Report> => {
+const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unknown, earlier: Failure[] | null): Promise<RunReport> => {
     const { state, kernelIndexOf, workers, publish } = context;
     const { gpu } = state;
     context.tails = null;
@@ -511,7 +512,7 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
 };
 
 /** A report of warnings alone: the last one made, while a run's warnings are the same, so a steady run allocates none. */
-const warnedReport = (prepared: Prepared): Report => {
+const warnedReport = (prepared: Prepared): RunReport => {
     const { warnings, warningCount, warned } = prepared;
     if (warned !== null && warned.warnings.length === warningCount) {
         let same = true;

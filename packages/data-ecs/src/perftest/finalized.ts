@@ -5,6 +5,7 @@ import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
+import { runReported } from "../implementation/world/reports.test-helper.js";
 
 // Despawning entities whose objects a joined thread fills, with a finalizer on that thread: the world's thread writes
 // each stop's declared struct reads into the thread's stop list and doesn't wait for it. The joined thread is
@@ -93,7 +94,7 @@ const despawnObjects = async (rounds = 30): Promise<number> => {
         for (let round = 0; round < rounds; round++) {
             await world.run(spawn);
             const start = performance.now();
-            const report = await world.run(despawn);
+            const report = await runReported(world, despawn);
             const time = performance.now() - start;
             if (report.failures.length > 0) throw new Error(`despawn objects: ${report.failures[0].message}`);
             if (round > 1) best = Math.min(best, time);

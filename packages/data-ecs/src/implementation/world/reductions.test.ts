@@ -10,6 +10,7 @@ import type { Name } from "../../interface/system/name.js";
 import { createRegistrar } from "./register.js";
 import { createState } from "./state.js";
 import { workers } from "../../interface/resources/workers.js";
+import { runReported } from "./reports.test-helper.js";
 
 const position = Symbol("reductionsTest/position");
 const mass = Symbol("reductionsTest/mass");
@@ -178,7 +179,7 @@ describe("reductions", () => {
         await world.run(fails);
         const before = await readResource(world, total);
         fail = true;
-        expect((await world.run(fails)).failures.map(failure => failure.message)).toEqual(["contributor failed"]);
+        expect((await runReported(world, fails)).failures.map(failure => failure.message)).toEqual(["contributor failed"]);
         expect(await readResource(world, total)).toBe(before);
         // A resource filter passes on its first run; after that `level` doesn't change, so its runs are skipped.
         await world.run(filtered);

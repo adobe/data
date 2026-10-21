@@ -7,6 +7,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
+import { runReported } from "./reports.test-helper.js";
 
 // Objects a joined thread fills, with the world and the thread on this one, joined through a MessageChannel.
 
@@ -111,8 +112,8 @@ describe("objects a joined thread fills", () => {
         await statusOf(world, "joined");
         await spawnOne(world, 2);
         const message = '"remoteTest/caption" lives on thread "remoteTest", which a joined thread fills, so a command here gives it only its start or null.';
-        expect((await world.run(giveCaption)).failures.map(failure => failure.message)).toEqual([message]);
-        expect((await world.run(spawnCaptioned)).failures.map(failure => failure.message)).toEqual([message]);
+        expect((await runReported(world, giveCaption)).failures.map(failure => failure.message)).toEqual([message]);
+        expect((await runReported(world, spawnCaptioned)).failures.map(failure => failure.message)).toEqual([message]);
         expect(await Observe.toPromise(Observe.count(world, { required: [caption] }))).toBe(1);
         await remote.dispose();
         await world.dispose();
@@ -123,9 +124,9 @@ describe("objects a joined thread fills", () => {
         const entity = await spawnOne(world, 6);
         const listed = Observe.entity(remote, entity, { required: [caption, widget] });
         expect(await until(listed, value => value !== null)).toEqual({ [caption]: "none", [widget]: null });
-        expect((await world.run(nullCaptionsKernel)).failures).toEqual([]);
+        expect((await runReported(world, nullCaptionsKernel)).failures).toEqual([]);
         expect(await until(listed, value => value?.[caption] === null)).toEqual({ [caption]: null, [widget]: null });
-        const report = await world.run(numberHandlesKernel);
+        const report = await runReported(world, numberHandlesKernel);
         expect(report.failures.map(failure => [failure.name, failure.message])).toEqual([["remoteTest/numberHandlesKernel", '"remoteTest/handle" lives on thread "remoteTest", which a joined thread fills, so a command here gives it only its start or null.']]);
         expect(report.dropped).toBe(1);
         await remote.dispose();
@@ -135,7 +136,7 @@ describe("objects a joined thread fills", () => {
         const { world, remote } = joined();
         await statusOf(world, "joined");
         await spawnOne(world, 3);
-        expect(await world.run(readCaptions)).toEqual({
+        expect(await runReported(world, readCaptions)).toEqual({
             failures: [], skipped: [], dropped: 0,
             warnings: [{ kind: "blocking", name: "remoteTest/readCaptions", message: 'System "remoteTest/readCaptions" runs on thread "remoteTest", which a joined thread fills, so its tier waits for that thread.' }],
         });
@@ -153,7 +154,7 @@ describe("objects a joined thread fills", () => {
         await world.run(after);
         expect(await Observe.toPromise(Observe.entity(world, first, { required: [caption, widget] }))).toEqual({ [caption]: null, [widget]: null });
         expect(await Observe.toPromise(Observe.entity(world, second, { required: [caption] }))).toEqual({ [caption]: "none" });
-        expect((await world.run(readCaptions)).failures).toEqual([]);
+        expect((await runReported(world, readCaptions)).failures).toEqual([]);
         await world.dispose();
     });
     it("refuse a claim of a thread whose finalizers or systems the joined thread can't run, and take one whose systems it imported", async () => {
@@ -161,7 +162,7 @@ describe("objects a joined thread fills", () => {
         await world.run(readCaptions);
         const taken = joined();
         await statusOf(taken.world, "joined");
-        expect((await taken.world.run(readCaptions)).warnings.map(warning => warning.name)).toEqual(["remoteTest/readCaptions"]);
+        expect((await runReported(taken.world, readCaptions)).warnings.map(warning => warning.name)).toEqual(["remoteTest/readCaptions"]);
         await taken.remote.dispose();
         await taken.world.dispose();
         // Declared in a function, so the build gives it no id, and another thread can't name it.

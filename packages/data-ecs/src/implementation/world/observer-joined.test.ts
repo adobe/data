@@ -5,6 +5,7 @@ import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { tablesOf } from "./join.js";
 import { Observe } from "../../observe/index.js";
+import { reportOf, runReported } from "./reports.test-helper.js";
 
 // Observer systems on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
 
@@ -218,23 +219,29 @@ describe("observer systems on a joined thread", () => {
             const high = lookup.cells({ ">=": 5 });
             seen.tagged.push(all.length * 1000 + high.length * 100 + (high.at(0)?.[amount] ?? 0));
         });
-        expect(await remote.run(sizes)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
+        expect(await reportOf(world, await remote.run(sizes))).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         await world.run(move);
-        expect(await remote.run(sizes)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
+        expect(await reportOf(world, await remote.run(sizes))).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         // Two tagged; then one cell at 11 or more, holding 11, then both, the first holding 1.
         expect(seen.tagged).toEqual([2111, 2201]);
         expect(seen.looked).toEqual([[true], [true]]);
         await close();
     });
 
-    it("run from the joined thread, resolving once its body ran there, with its failure in the report", async () => {
+    it("run from the joined thread, resolving once its body ran there, with its failure in a later run's report", async () => {
         reset();
         const { world, remote, close } = await joined();
         await world.run(raise);
-        expect(await remote.run(watchLevel)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
+        expect(await reportOf(world, await remote.run(watchLevel))).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         expect(seen.levels).toEqual([1]);
         await world.run(raise);
-        const report = await remote.run(failing);
+        await remote.run(failing);
+        // Its failure reaches the world by message, in time for a later run.
+        let report = await runReported(world, nothing);
+        for (let k = 0; k < 100 && report.failures.length === 0; k++) {
+            await new Promise(resolve => setTimeout(resolve, 1));
+            report = await runReported(world, nothing);
+        }
         expect(report.failures.map(failure => [failure.kind, failure.message])).toEqual([["system", "observer joined failure"]]);
         await close();
     });
@@ -247,7 +254,7 @@ describe("observer systems on a joined thread", () => {
         await world.run(raise);
         await world.run(raise);
         await turns();
-        const report = await world.run(nothing);
+        const report = await runReported(world, nothing);
         expect(report.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["system", "observerJoinedTest/failing", "observer joined failure"]]);
         await close();
     });
@@ -311,7 +318,7 @@ describe("observer systems on a joined thread", () => {
         const added = made();
         world.add(added);
         await turns();
-        const report = await world.run(nothing);
+        const report = await runReported(world, nothing);
         expect(report.failures.map(failure => [failure.kind, failure.name])).toEqual([["system", "observerJoinedTest/madeLabels#2"]]);
         world.remove(added);
         await turns();
@@ -323,7 +330,7 @@ describe("observer systems on a joined thread", () => {
         reset();
         const { world, remote } = await joined(["observerJoinedTest"]);
         await world.run(spawnLabelled);
-        expect(await world.run(readLabels)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
+        expect(await runReported(world, readLabels)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         await settled(() => seen.labels.length === 1);
         expect(seen.labels).toEqual(["4"]);
         remote.add(watchLevel);

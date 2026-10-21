@@ -9,6 +9,7 @@ import type { World } from "../interface/world/world.js";
 import { backToBack, createWorld, type CreatedWorld } from "../implementation/index.js";
 import { tailWriters } from "../implementation/world/tails.js";
 import type { Benchmark } from "./benchmark.js";
+import { runReported } from "../implementation/world/reports.test-helper.js";
 
 // Tails: terminal systems on a joined worker, which claims "tailsBenchmark", running after their tick's sync point
 // while the world goes on. The joined thread is `joined.ts`.
@@ -160,7 +161,7 @@ const prompt = async (stretches = 5): Promise<number> => {
     let best = Infinity;
     try {
         await world.run(spawnPlaces);
-        const report = await world.run(promptTick);
+        const report = await runReported(world, promptTick);
         if (report.failures.length > 0 || report.warnings.length > 0) throw new Error(`tail prompt: the tail didn't run as one: ${report.failures[0]?.message ?? report.warnings[0]?.message}.`);
         await new Promise<void>(resolve => {
             let ticks = 0;
@@ -204,7 +205,7 @@ const late = async (rounds = 30): Promise<number> => {
             await world.run(nothing);
             await ticked;
             const start = performance.now();
-            const report = await world.run(poke);
+            const report = await runReported(world, poke);
             const time = performance.now() - start;
             if (report.failures.length > 0) throw new Error(`tail late snapshot: ${report.failures[0].message}`);
             if (round > 1) best = Math.min(best, time);
@@ -233,7 +234,7 @@ const overlap = async (waiting: boolean, stretches = 5): Promise<number> => {
     try {
         await world.run(spawnPoses);
         await world.run(setOverlap);
-        const report = await world.run(overlapTick);
+        const report = await runReported(world, overlapTick);
         if (report.failures.length > 0 || report.warnings.length > 0) throw new Error(`tail overlap: the tail didn't run as one: ${report.failures[0]?.message ?? report.warnings[0]?.message}.`);
         await new Promise<void>(resolve => {
             let ticks = 0;

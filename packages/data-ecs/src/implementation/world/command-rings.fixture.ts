@@ -7,6 +7,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { createWorld } from "./create.js";
 import { countingWorkers } from "./platforms.test-helper.js";
 import { read, readEach, select } from "./reads.test-helper.js";
+import { runReported } from "./reports.test-helper.js";
 
 /** Scenarios of workers' command rings against the main thread alone, run built in node and from source in chromium. */
 
@@ -128,7 +129,7 @@ type Failed = { readonly failures: readonly string[]; readonly weights: readonly
 /** The run's failures, then every row's weight and extent, and the spawns, after `failing` throws at its last row. */
 export const failed = (count: number): Promise<Failed> => using(createWorld({ [workers]: count }, { minimumChunk: 64 }), async world => {
     await world.run(targets, { count: 1_000 });
-    const report = await world.run(failing);
+    const report = await runReported(world, failing);
     const rows = await select(world, { required: [index] });
     const spawned = await readEach(world, await select(world, { required: [made] }), made);
     return {

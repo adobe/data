@@ -25,7 +25,7 @@ import { createObserverState, type ObserverState } from './joined-observer.js';
 import { claimComponent } from './remote.js';
 import type { IndexDefinition } from '../../interface/registry/index.js';
 import type { WorldIndex } from './indexes.js';
-import type { Failure } from '../../interface/world/report.js';
+import type { Failure } from '../../interface/report/failure.js';
 
 export type Key = string | symbol;
 

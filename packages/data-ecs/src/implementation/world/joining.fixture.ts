@@ -5,7 +5,7 @@ import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join } from "./create.js";
 import type { FromJoiningWorker, ToJoiningWorker } from "./joining-worker.fixture.js";
-import { add, drive, names, total, until } from "./joining.test-helper.js";
+import { add, drive, names, total, until, withReports } from "./joining.test-helper.js";
 
 /**
  * Scenarios of a thread joining a world on another, run built in node and from source in chromium: a worker joining a
@@ -71,7 +71,7 @@ export const worldHere = async () => {
     const claims = (await joined)[0]?.claims ?? null;
     const gone = (await until(world.threads, threads => threads[0]?.status === "gone"))[0];
     const result = {
-        driven: reply.kind === "driven" ? reply.driven : null,
+        driven: reply.kind === "driven" ? await withReports(world, reply.driven) : null,
         claims,
         status: gone?.status ?? null,
         total: await Observe.toPromise(Observe.resource(world, total)),
@@ -90,9 +90,9 @@ export const worldThere = async () => {
     const remote = join(port2, { threads: ["main"] });
     const driven = await drive(remote, unimportedByWorker);
     await remote.dispose();
-    const state = await worker.ask({ kind: "state" });
+    const state = await worker.ask({ kind: "state", driven });
     await worker.terminate();
-    return { driven, ...state.kind === "state" ? { total: state.total, names: state.names, status: state.status } : {} };
+    return state.kind === "state" ? { driven: state.driven, total: state.total, names: state.names, status: state.status } : { driven: null };
 };
 
 /** A worker that joined, then is ended from outside: its status, `"gone"` if the world heard of it. */

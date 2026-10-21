@@ -5,6 +5,7 @@ import { createWorld, join } from "./create.js";
 import { scopeChannel } from "./port.js";
 import { changed, seed, seen, tailSystems, ticked, type Seen } from "./tails.test-helper.js";
 import { tailSnapshots } from "./thread-systems.js";
+import { reportOf, runReported } from "./reports.test-helper.js";
 
 /**
  * A thread joining a world through the port it's sent, claiming "tailsTest", whose systems it imports: it tells what
@@ -41,9 +42,9 @@ const leaveQueued = async (): Promise<FromTailsWorker> => {
     await world.run(ticked);
     const leaving = remote.dispose();
     const runs = [world.run(ticked), world.run(ticked)];
-    const reports = await Promise.all(runs);
+    const reports = await Promise.all((await Promise.all(runs)).map(run => reportOf(world, run)));
     await leaving;
-    const after = await world.run(ticked);
+    const after = await runReported(world, ticked);
     await world.dispose();
     return { kind: "left", skipped: reports.map(report => report.skipped), after: after.failures.length };
 };

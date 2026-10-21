@@ -37,27 +37,9 @@ void world.synchronize;
 // @ts-expect-error no World.Query: observer systems declare what they read
 export type NoQuery = World.Query<[typeof persistent]>;
 
-const ran: Promise<World.Report> = world.run(main);
-const moved: Promise<World.Report> = world.run(move, { distance: 1 });
-const reported = async () => {
-    const { failures, skipped, dropped, warnings } = await world.run(main);
-    for (const failure of failures) {
-        check<Equal<typeof failure.kind, "system" | "finalizer" | "gpu" | "thread" | "index">>();
-        const text: string = `${failure.name}: ${failure.message}`;
-        const stack: string | null = failure.stack;
-        void [text, stack];
-    }
-    const names: readonly string[] = skipped;
-    const count: number = dropped;
-    for (const warning of warnings) {
-        check<Equal<typeof warning, { readonly kind: "blocking"; readonly name: string; readonly message: string }>>();
-    }
-    // @ts-expect-error a report is read-only
-    warnings.push({ kind: "blocking", name: "", message: "" });
-    // @ts-expect-error a report is read-only
-    failures.push({ kind: "system", name: "", message: "", stack: null });
-    void [names, count];
-};
+// A run resolves to its number; what went wrong is in its report (`Report`).
+const ran: Promise<number> = world.run(main);
+const moved: Promise<number> = world.run(move, { distance: 1 });
 // @ts-expect-error a system with input needs it
 world.run(move);
 // @ts-expect-error input must match its schema
@@ -80,7 +62,7 @@ const usingDispose = async () => {
     await using scoped = create();
     await scoped.run(main);
 };
-void [disposed, usingDispose, ran, moved, reported, created, withResources];
+void [disposed, usingDispose, ran, moved, created, withResources];
 
 // How a world is created is the implementation's: World names no Create or InitialResources.
 check<Equal<ReturnType<Create>, World>>();
@@ -88,13 +70,12 @@ check<Equal<ReturnType<Create>, World>>();
 export type Created = World.Create;
 // @ts-expect-error no World.InitialResources: Parameters<typeof createWorld>[0]
 export type Initial = World.InitialResources;
-// @ts-expect-error no World.Failure: World.Report["failures"][number]
+// @ts-expect-error no World.Failure: Report.Failure
 export type Failed = World.Failure;
-// A warning's type is inferred from the report's: World.Report["warnings"][number].
-// @ts-expect-error no World.Warning
+// @ts-expect-error no World.Warning: Report.Warning
 export type Warned = World.Warning;
 
 // An observer system is added to every run and tick, or run once after an empty sync point.
 const addedObserver: void = world.add(watchTime);
-const ranObserver: Promise<World.Report> = world.run(watchTime);
+const ranObserver: Promise<number> = world.run(watchTime);
 void [addedObserver, ranObserver];

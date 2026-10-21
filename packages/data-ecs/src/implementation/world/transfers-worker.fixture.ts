@@ -1,6 +1,5 @@
 import type { MessagePort as NodeMessagePort } from "node:worker_threads";
 import { requireDefinition } from "../../interface/registry/index.js";
-import type { Report } from "../../interface/world/report.js";
 import type { World } from "../../interface/world/world.js";
 import { join } from "./create.js";
 import { asEntity } from "./entities.js";
@@ -27,14 +26,14 @@ export type FromTransfersWorker =
     | { readonly kind: "joined" }
     | { readonly kind: "blocking" }
     | { readonly kind: "stored"; readonly stored: readonly (readonly [number, number, number])[]; readonly widths: readonly number[] }
-    | { readonly kind: "moved"; readonly detached: number; readonly greeted: unknown; readonly failures: number }
+    | { readonly kind: "moved"; readonly detached: number; readonly greeted: unknown; readonly runs: readonly number[] }
     | { readonly kind: "posted"; readonly detached: boolean }
-    | { readonly kind: "settled"; readonly failures: number }
-    | { readonly kind: "dropped"; readonly dropped: readonly number[]; readonly closed: boolean; readonly widths: readonly number[] };
+    | { readonly kind: "settled"; readonly runs: readonly number[] }
+    | { readonly kind: "dropped"; readonly runs: readonly number[]; readonly closed: boolean; readonly widths: readonly number[] };
 
 const channel = scopeChannel<FromTransfersWorker, ToTransfersWorker>();
 let remote: World | null = null;
-let posted: Promise<Report>[] = [];
+let posted: Promise<number>[] = [];
 
 const later = (milliseconds = 0): Promise<void> => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -77,10 +76,10 @@ const respond = async (message: Exclude<ToTransfersWorker, { readonly kind: "blo
             ports.port2.onmessage = event => resolve(event.data);
         });
         runs.push(world.run(greetThere, { port: ports.port1 }));
-        const reports = await Promise.all(runs);
+        const numbers = await Promise.all(runs);
         const greeting = await greeted;
         ports.port2.close();
-        return { kind: "moved", detached, greeted: greeting, failures: reports.reduce((sum, report) => sum + report.failures.length, 0) };
+        return { kind: "moved", detached, greeted: greeting, runs: numbers };
     }
     if (message.kind === "late") {
         const buffer = bufferOf(9, 1 << 20);
@@ -88,23 +87,22 @@ const respond = async (message: Exclude<ToTransfersWorker, { readonly kind: "blo
         return { kind: "posted", detached: buffer.byteLength === 0 };
     }
     if (message.kind === "settled") {
-        const reports = await Promise.all(posted);
-        return { kind: "settled", failures: reports.reduce((sum, report) => sum + report.failures.length, 0) };
+        return { kind: "settled", runs: await Promise.all(posted) };
     }
     // Commands giving a dead entity values: they drop, and each value is released on its thread.
     const dead = asEntity(123456);
     const ports = new MessageChannel();
     const closing = closed(ports.port2);
-    const dropped = [(await world.run(attachThere, { entity: dead, value: ports.port1 })).dropped];
+    const runs = [await world.run(attachThere, { entity: dead, value: ports.port1 })];
     const there = await bitmap();
     const here = await bitmap();
     if (there !== null && here !== null) {
-        dropped.push((await world.run(attachThere, { entity: dead, value: there })).dropped);
-        dropped.push((await world.run(attachHere, { entity: dead, value: here })).dropped);
+        runs.push(await world.run(attachThere, { entity: dead, value: there }));
+        runs.push(await world.run(attachHere, { entity: dead, value: here }));
     }
     // Moved, so detached here: zero wide.
     const widths = there === null || here === null ? [] : [there.width, here.width];
-    return { kind: "dropped", dropped, closed: await closing, widths };
+    return { kind: "dropped", runs, closed: await closing, widths };
 };
 
 channel.onMessage(async message => {

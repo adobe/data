@@ -24,7 +24,7 @@ Referenced from `design.md`.
   finalize, apply), the kernel pool and the GPU device. Any thread can create a world; it stays
   there for the world's life.
 - **The loop is core.** A world ticks the systems `add` gave it, on the beats of its `cadence`, with its state as
-  resources: `cadence`, `always`, `wake`, `clock` and `report`. One world runs one loop.
+  resources: `cadence`, `always`, `wake` and `clock`. One world runs one loop.
 - **There's no GPU thread.** `gpuDevice` lives on `world`, with the world, so GPU storage, kernels and render systems
   never wait on another thread.
 - **Objects default to `world`.** A declaration without `thread` is on `world`; one with it names a logical thread.
@@ -145,13 +145,17 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   and `waitAsync` settle between ticks, which a microtask would starve, and unclamped, as `setTimeout(0)` isn't.
 - **`run(system, input)`** is a transaction: runs are sequential in call order, each its own sync point, and each one
   makes the next beat tick.
-- **Failures of ticks** are in the `report` resource. A thread that dies doesn't reject a run or a tick: its systems
-  are in `skipped`, each with a `"thread"` failure, and later tiers still run. A tier that waited for a joined thread
-  is in the report's `warnings`.
+- **Failures of runs and ticks** are reports, entities the world spawns on its thread: `Report.run` and
+  `Report.dropped` are structs every thread reads, `failures`, `skipped` and `warnings` objects on the world's thread. A
+  thread that dies doesn't reject a run or a tick: its systems are in `skipped`, each with a `"thread"` failure, and
+  later tiers still run. A tier that waited for a joined thread is in the report's `warnings`, so a run or tick with a
+  blocking tier spawns a report.
 - **Observer systems** run on `world` after each run's and tick's sync point; those on joined threads are posted to them
   in the same pass. They never make the loop tick, and a run of them alone doesn't
   wake it. While a tick's tails run on, its observer systems run at
-  once with its values, unless one reads `report`, when the tick waits for its tails first so it sees the tick's.
+  once with its values, unless one reads a report component, when the tick waits for its tails first so it sees the
+  tick's report. While tails run, a report's commands wait for the next sync point, which settles them, rather than
+  apply as a sync point of their own between runs.
 
 ### Shared layout directory
 
@@ -343,9 +347,9 @@ bytes with every number an f64 so it crosses exactly, is written in the slot; ot
 with that sequence number, which the world waits for when it reaches the slot, as it waits for an id's message, so runs
 land in call order. An input that can't be posted marks its slot, which the world completes without running. Each run
 is its own sync point, as on the world's thread, and makes the next beat tick. The world writes the run's status in its
-slot, clean, reported or rejected, and advances the completed word through the runs finished in order; `run` resolves
-through it, and the report or rejection is posted only when the run isn't clean, the thread settling runs in order once
-it has both.
+slot, done with the run's number beside it or rejected, and advances the completed word through the runs finished in
+order; `run` resolves through it to that number, and a rejection is posted, the thread settling runs in order once it
+has both. Its report, if any, is the world's, read on the world's thread.
 
 ### Object columns on other threads
 
@@ -530,9 +534,9 @@ fails to register, its run rejecting and an added one's failure in a later repor
   cadence the thread claims well before. A post owed to a run that a move outside a sync point cancelled is posted again
   between runs.
 - **Ticks and reports:** a post takes a tick after its sync point, which becomes its `lastRun` once the thread ran it.
-  What a body throws is a `"system"` failure in a later run's report, named by the system's label on its thread; in a
-  joined thread's `run` of its own, in that run's report, which resolves once a post for it ran there, or once it was
-  removed before one did.
+  What a body throws is a `"system"` failure in a later run's report, named by the system's label on its thread, a
+  joined thread's `run` of its own included, which resolves once a post for it ran there, or once it was removed before
+  one did; a `run` of several of its own resolves to the last one's number.
 - **Removal:** on the thread, `remove` stops it at once, from its next row on, and the world removes the system it
   stands; on the world's thread, as other systems placed on joined threads: its removed word is set, which the thread
   checks before it claims a post, and the thread drops it and says so. Its block and records are freed once the thread
@@ -587,8 +591,8 @@ its tails before it resolves, with their failures in its report.
 - **What waits for a tail to finish:** the next task on its thread, and what moves rows a tail may still read outside
   a sync point: registration, resources added between runs, a GPU device change, and joined threads joining or leaving.
 - **Report.** A tick ends in two steps: its tiers and sync point, which release the world's queue so N+1 can start, and
-  its report, written to the `report` resource once after its tails, and every earlier tick's, so their failures are in
-  it. A tick whose systems read the `report` resource waits for the last tick's tails first.
+  its report, written once after its tails, and every earlier tick's, so their failures are in it; while tails run, its
+  commands go to the next sync point. A tick whose systems read reports waits for the last tick's tails first.
 
 ### Transfers
 

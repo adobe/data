@@ -1,5 +1,4 @@
 import type { World } from '../../interface/world/world.js';
-import type { Report } from '../../interface/world/report.js';
 import type { WorkerError } from './protocol.js';
 import type { Schema } from '../../interface/schema/schema.js';
 import { layoutOf, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
@@ -153,8 +152,6 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
     /** A component whose objects the thread fills, by the world's number, with its id: null for one without. */
     | { readonly kind: "component"; readonly component: number; readonly id: string | null }
     | { readonly kind: "refused"; readonly message: string }
-    /** The report of run `sequence`, posted only when it isn't clean. */
-    | { readonly kind: "report"; readonly sequence: number; readonly report: Report }
     | { readonly kind: "rejected"; readonly sequence: number; readonly message: string }
     /** Where the joined thread can't wait without blocking: runs completed, or a task or observer post waits for it. */
     | { readonly kind: "wake" }
@@ -238,14 +235,15 @@ export const completedWord = 2 * lineWords;
 export const slotsWord = 3 * lineWords;
 
 /**
- * Runs in flight a joined thread holds room for, each in slot `(sequence - 1) % runSlots`: its status, which the world
- * writes before completing it, the system's number, its sequence and its input's length in bytes, then the input.
+ * Runs in flight a joined thread holds room for, each in slot `(sequence - 1) % runSlots`: its status and the run's
+ * number, which the world writes before completing it, the system's number, and its input's length in bytes, then the
+ * input.
  */
 export const runSlots = 64;
 export const slotWords = 64;
 export const slotStatus = 0;
 export const slotNumber = 1;
-export const slotSequence = 2;
+export const slotRun = 2;
 export const slotInput = 3;
 export const slotPayload = 4;
 export const controlBytes = (slotsWord + runSlots * slotWords) * 4;
@@ -260,11 +258,10 @@ export const inputByMessage = -2;
 export const inputMoved = -3;
 /** A slot's system number for a run whose input couldn't be posted, which the world completes without running. */
 export const unposted = -1;
-/** Slot statuses: in flight; done with a clean report; done with a report or a rejection, posted. */
+/** Slot statuses: in flight; done, its number in the slot; rejected, the rejection posted. */
 export const pending = 0;
-export const clean = 1;
-export const reported = 2;
-export const rejected = 3;
+export const done = 1;
+export const rejected = 2;
 
 /** The schema with every number widened to f64, so a run's input crosses exactly as given. */
 const widened = (schema: Schema): Schema => {

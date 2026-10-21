@@ -1,4 +1,4 @@
-import { System, type World } from '../index.js';
+import { Report, System, type World } from '../index.js';
 
 // What the factories keep for each world: the values observers share, their subscribers, and the observer systems that
 // read the world for them. Every shape of observer is one observer system, never one per subscriber or entity.
@@ -68,6 +68,15 @@ export type WorldState = {
     readonly deliver: System;
     /** What a rejected run of the factories' own does. */
     readonly rejected: (error: unknown) => void;
+    /**
+     * The factories' own runs, by number, with how many of each one's report's failures were rethrown; and the
+     * failures of the factories' systems in reports of runs not known to be theirs yet, by run.
+     */
+    readonly ownRuns: Map<number, number>;
+    readonly stashed: Map<number, readonly Report.Failure[]>;
+    /** Run with each of the factories' own systems, as a composite: what reads the reports their runs gave. */
+    readonly rethrow: System;
+    readonly composites: WeakMap<System, System>;
 };
 
 const states = new WeakMap<World, WorldState>();
@@ -89,8 +98,24 @@ export const ownName = (name: string): string => {
     return name;
 };
 
-const rethrowFailures = (report: { readonly failures: readonly { readonly name: string; readonly message: string }[] }): void => {
-    for (const failure of report.failures) if (ownNames.has(failure.name)) rethrowLater(new Error(`${failure.name}: ${failure.message}`));
+/** Own runs kept for their reports: a run's report is complete by the pass after it, so only the newest matter. */
+const ownRunsKept = 16;
+
+/** Rethrows the failures of the factories' systems in run `run`'s report, past those rethrown already. */
+const rethrowOwn = (state: WorldState, run: number, failures: readonly Report.Failure[], from: number): void => {
+    for (let k = from; k < failures.length; k++) if (ownNames.has(failures[k].name)) rethrowLater(new Error(`${failures[k].name}: ${failures[k].message}`));
+    state.ownRuns.set(run, failures.length);
+};
+
+/** A run of the factories' own resolved: its report's failures so far are rethrown, and those to come once seen. */
+const ownRun = (state: WorldState, run: number): void => {
+    const { ownRuns, stashed } = state;
+    const failures = stashed.get(run);
+    if (failures === undefined) ownRuns.set(run, 0);
+    else rethrowOwn(state, run, failures, 0);
+    // Runs resolve in order, so what's stashed for earlier ones is never a run of the factories'.
+    for (const stashedRun of stashed.keys()) if (stashedRun <= run) stashed.delete(stashedRun);
+    for (const kept of ownRuns.keys()) if (kept <= run - ownRunsKept) ownRuns.delete(kept);
 };
 
 const ignore = (): void => {
@@ -108,19 +133,24 @@ const rejectedOf = (world: World) => (error: unknown): void => {
     world.run(alive).then(() => rethrowLater(error), ignore);
 };
 
-/** A run of the factories' own, whose report nothing returns: its failures, and its rejection, are rethrown out of band. */
+/**
+ * A run of the factories' own, whose report nothing reads: its failures of their systems, and its rejection, are
+ * rethrown out of band.
+ */
 const runOwn = (state: WorldState, system: System): void => {
-    state.world.run(system).then(rethrowFailures, state.rejected);
+    let composite = state.composites.get(system);
+    if (composite === undefined) state.composites.set(system, composite = System.create([system, state.rethrow]));
+    state.world.run(composite).then(run => ownRun(state, run), state.rejected);
 };
 
 const noTasks: readonly (() => void)[] = [];
 
-/** A run of a joined thread's shape for first values: once it resolved, a post for it ran there, so `read` gives them. */
+/**
+ * A run of a joined thread's shape for first values: once it resolved, a post for it ran there, so `read` gives them.
+ * What its system threw is in a later report of the world's.
+ */
 const runJoined = (state: WorldState, read: Read, batch: number): void => {
-    state.world.run(read.system).then(report => {
-        rethrowFailures(report);
-        read.delivered(batch);
-    }, state.rejected);
+    state.world.run(read.system).then(() => read.delivered(batch), state.rejected);
 };
 
 /** Runs what subscribers waiting for the open flush need, in call order after every run called before them. */
@@ -211,6 +241,18 @@ export const stateOf = (world: World): WorldState => {
         deliveries: [],
         idle: [],
         rejected: rejectedOf(world),
+        ownRuns: new Map(),
+        stashed: new Map(),
+        // Run, never added, so no tick waits for its tails to give it a report: a report's failures are complete by
+        // the pass after its run, so the next of the factories' runs sees them.
+        rethrow: System.create({ name: ownName("Observe/rethrow"), observer: true, components: { read: [Report.run, Report.failures], changed: [Report.failures] } }, row => {
+            const run = row[Report.run];
+            const failures = row[Report.failures];
+            const rethrown = created.ownRuns.get(run);
+            if (rethrown !== undefined) rethrowOwn(created, run, failures, rethrown);
+            else if (failures.some(failure => ownNames.has(failure.name))) created.stashed.set(run, failures);
+        }),
+        composites: new WeakMap(),
         deliver: System.create({ name: ownName("Observe/deliver"), observer: true }, () => {
             const delivery = created.deliveries.shift();
             if (delivery === undefined) return;

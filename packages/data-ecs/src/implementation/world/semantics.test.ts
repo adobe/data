@@ -6,6 +6,7 @@ import { System } from "../../interface/system/system.js";
 import { count, readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
+import { runReported } from "./reports.test-helper.js";
 
 type Vec2 = readonly [number, number];
 const vec2 = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } as const satisfies Schema;
@@ -67,7 +68,7 @@ describe("semantics", () => {
         const b = createWorld({ [workers]: 0 });
         await b.run(spawn);
         poison = true;
-        expect((await a.run(spawn)).failures).toHaveLength(1);
+        expect((await runReported(a, spawn)).failures).toHaveLength(1);
         poison = false;
         const errors: string[] = [];
         await b.run(spawn).catch(e => errors.push("b:" + String(e)));

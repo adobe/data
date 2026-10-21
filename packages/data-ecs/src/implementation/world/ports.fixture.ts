@@ -6,6 +6,7 @@ import { createWorld } from "./create.js";
 import { lendBrowserWorkers, lendNodeWorkers, lentWorkers, platformWorkers, type WorkerPlatform } from "./worker-platform.js";
 import type { Lent } from "./port.js";
 import { simulate } from "./workers.fixture.js";
+import { runReported } from "./reports.test-helper.js";
 
 /** Scenarios of workers that die, are lent, or serve a world on a worker, run built in node and from source in chromium. */
 
@@ -61,8 +62,8 @@ export const killedMidTask = async (by: "exit" | "owner", wasm: boolean): Promis
     };
     const world = createWorld({ [workers]: 1 }, { minimumChunk: 64, wasm, pool: platform });
     await world.run(seed);
-    const first = (await world.run(heavy)).failures.map(failure => failure.message);
-    const second = (await world.run(heavy)).failures.map(failure => failure.message);
+    const first = (await runReported(world, heavy)).failures.map(failure => failure.message);
+    const second = (await runReported(world, heavy)).failures.map(failure => failure.message);
     const disposed = await Promise.race([world.dispose().then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 20000))]);
     return { first, second, disposed };
 };

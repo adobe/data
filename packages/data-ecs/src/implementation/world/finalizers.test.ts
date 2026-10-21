@@ -9,6 +9,7 @@ import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { count, read, readEach, readResource, select } from "./reads.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
+import { reportOf } from "./reports.test-helper.js";
 
 const handle = Symbol("finalizersTest/handle");
 const hidden = Symbol("finalizersTest/hidden");
@@ -197,7 +198,7 @@ describe("finalizers", () => {
         const run = step(world);
         let a = Entity.none;
         await run(commands => { a = commands.spawn([ordered])({ [ordered]: 1 }); });
-        const { failures } = await run(commands => commands.despawn(a));
+        const { failures } = await reportOf(world, await run(commands => commands.despawn(a)));
         expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "finalizer", name: "finalizersTest/throws", message: "finalizer failed" }]);
         expect(order).toEqual(["first", "second"]);
         expect(await read(world, a, handle)).toBeNull();

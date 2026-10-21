@@ -18,8 +18,8 @@ export const watchTicks = async (world: World): Promise<void> => {
 export const nextTick = (): Promise<void> => new Promise(resolve => waiting.push(resolve));
 
 /** Waits for a run, then for the tick after it. */
-export const settled = async (run: Promise<World.Report>): Promise<World.Report> => {
-    const report = await run;
+export const settled = async (run: Promise<number>): Promise<number> => {
+    const ran = await run;
     await nextTick();
-    return report;
+    return ran;
 };

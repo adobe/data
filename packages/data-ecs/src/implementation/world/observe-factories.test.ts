@@ -9,6 +9,7 @@ import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { tablesOf } from "./join.js";
 import { settle } from "./observe.test-helper.js";
+import { runReported } from "./reports.test-helper.js";
 
 // How the internal factories of `src/observe` run: systems shared by shape, first values batched or given at once, warm
 // reads, and what they hold released once idle.
@@ -209,7 +210,7 @@ describe("observer factories", () => {
         }
         expect(caught).toEqual([]);
         // The world's runs still report it.
-        expect((await world.run(nothing)).failures.map(failure => failure.name)).toEqual(["observeFactoriesTest/failing"]);
+        expect((await runReported(world, nothing)).failures.map(failure => failure.name)).toEqual(["observeFactoriesTest/failing"]);
     });
 });
 

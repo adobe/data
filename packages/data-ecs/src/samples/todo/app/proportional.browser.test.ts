@@ -75,7 +75,7 @@ const countReaches = (): (() => void) => {
 type Work = { readonly mutations: number; readonly reaches: number };
 
 /** The mutations of the page and its open shadow roots, and the rows reached, from `change` until the tick after it. */
-const workOf = async (change: () => Promise<World.Report>): Promise<Work> => {
+const workOf = async (change: () => Promise<number>): Promise<Work> => {
     let mutations = 0;
     const observer = new MutationObserver(records => {
         mutations += records.length;

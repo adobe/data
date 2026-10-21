@@ -4,6 +4,7 @@ import { Observe } from "../../observe/index.js";
 import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
+import { runReported, type Reported } from "./reports.test-helper.js";
 
 // Keys and systems both threads of the thread systems fixtures import: systems on thread "threadSystemsTest", which a
 // joined thread fills, beside systems on the world's thread, and what each world holds after the same runs.
@@ -220,7 +221,7 @@ export const snapshot = async (world: World, objects: Objects): Promise<Snapshot
 };
 
 /** A report as data both worlds compare: its warnings apart, which only a world with a joined thread has. */
-const comparable = ({ failures, skipped, dropped, warnings }: World.Report) => ({
+const comparable = ({ failures, skipped, dropped, warnings }: Reported) => ({
     report: { failures: failures.map(failure => [failure.kind, failure.name, failure.message]), skipped, dropped },
     warnings: warnings.map(warning => warning.name),
 });
@@ -233,21 +234,21 @@ export const scenario = async (world: World, objects: Objects = objectsThere(wor
     const snapshots: Snapshot[] = [];
     const reports: unknown[] = [];
     const warnings: (readonly string[])[] = [];
-    const ran = (report: World.Report): void => {
+    const ran = (report: Reported): void => {
         const { report: data, warnings: names } = comparable(report);
         reports.push(data);
         warnings.push(names);
     };
-    ran(await world.run(seed, { count: 12 }));
+    ran(await runReported(world, seed, { count: 12 }));
     for (let k = 0; k < 6; k++) {
-        ran(await world.run(tick));
+        ran(await runReported(world, tick));
         snapshots.push(await snapshot(world, objects));
     }
-    ran(await world.run(stamp, { text: "stamped" }));
-    ran(await world.run(failing));
+    ran(await runReported(world, stamp, { text: "stamped" }));
+    ran(await runReported(world, failing));
     snapshots.push(await snapshot(world, objects));
-    ran(await world.run(disable));
-    for (let k = 0; k < 2; k++) ran(await world.run(tick));
+    ran(await runReported(world, disable));
+    for (let k = 0; k < 2; k++) ran(await runReported(world, tick));
     snapshots.push(await snapshot(world, objects));
     return { snapshots, reports, warnings };
 };

@@ -5,7 +5,7 @@ import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVis
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
 import { forest, local as hierarchyLocal, nudge, parent as hierarchyParent, propagate, propagateChanged, reparent, sprout, turnover, under } from "./hierarchy.js";
 import * as structural from "./structural.js";
-import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, idleObserver, index, indexSum, observe, poke, pokeCluster, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
+import { chain, churn, emit, failing, fastest, follow, highest, hits, idle, idles, idleObserver, index, indexSum, observe, poke, pokeCluster, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
 
 import type { Benchmark } from "./benchmark.js";
 import { loopTickIdle, loopTicks, observerIdles } from "./loop.js";
@@ -112,6 +112,21 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(() => inline(), 10_000);
             const best = await fastest(() => world.run(idle));
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "run failing",
+        operation: "Running one system that throws, in a world of 10K entities: each run spawns its report, and once runs pass the reports kept, despawns the oldest, against `run idle`.",
+        per: "runs",
+        n: 1,
+        typical: [1, 1],
+        best: runBest,
+        run: async () => {
+            const world = await seeded(() => inline(), 10_000);
+            // Past the reports kept, so each timed run despawns one too, as a failing run does in steady state.
+            const best = await fastest(() => world.run(failing), 1000, 300);
             await world.dispose();
             return best;
         },

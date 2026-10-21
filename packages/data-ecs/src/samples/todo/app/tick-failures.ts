@@ -1,22 +1,14 @@
-import { System, report, type World } from "../../../index.js";
+import { Report, System } from "../../../index.js";
 
-/** The last tick's report logged, and how many of its failures were. */
-let logged: World.Report | null = null;
-let count = 0;
+/** The failures logged: a report's failures only grow, by its observer pass's, keeping those it had. */
+const logged = new WeakSet<Report.Failure>();
 
 /**
- * Logs what ticks' reports say failed: nothing else sees them, since no event started those runs. It reads `report`
- * on every pass, without `changed`, because the failures of a tick's observer systems are added to the tick's report
- * after its pass and don't mark it changed. Those are logged by the next run's pass; a tick that came first would
- * replace the report, but this app ticks only after a run.
+ * Logs what reports say failed, as they change: nothing else sees a tick's. The failures of a pass's observer systems
+ * are added to its report after it, so the next pass logs them.
  */
-export const logTickFailures = System.create({ name: "app/logTickFailures", observer: true, resources: { read: [report] } }, ({ resources }) => {
-    const current = resources[report];
-    if (current === logged && current.failures.length === count) return;
-    // An amended report keeps the failures it had, so only those after them are new.
-    const amended = logged !== null && logged.failures.length <= current.failures.length && logged.failures.every((failure, i) => current.failures[i] === failure);
-    const fresh = current.failures.slice(amended ? count : 0);
-    logged = current;
-    count = current.failures.length;
+export const logTickFailures = System.create({ name: "app/logTickFailures", observer: true, components: { read: [Report.failures], changed: [Report.failures] } }, row => {
+    const fresh = row[Report.failures].filter(failure => !logged.has(failure));
+    for (const failure of fresh) logged.add(failure);
     if (fresh.length > 0) console.error("A tick failed", fresh);
 });

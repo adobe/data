@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Entity } from "../../../../index.js";
 import { addTodo, deleteTodo, editTodo, moveTodo, toggleTodo } from "./model.js";
 import { entityOf, labelsOf, todosOf, withTodos } from "./todos.test-helper.js";
+import { runReported } from "../../../../implementation/world/reports.test-helper.js";
 
 describe("todos", () => {
     it("adds todos at the end, trimmed, and ignores blank labels", async () => {
@@ -34,7 +35,7 @@ describe("todos", () => {
         const milk = await entityOf(world, "milk");
         await world.run(deleteTodo, { entity: milk });
         expect(await labelsOf(world)).toEqual(["eggs"]);
-        const report = await world.run(deleteTodo, { entity: milk });
+        const report = await runReported(world, deleteTodo, { entity: milk });
         expect(report.failures).toEqual([]);
         await world.run(toggleTodo, { entity: milk });
         expect(await labelsOf(world)).toEqual(["eggs"]);

@@ -6,7 +6,7 @@ export const observerJoinedCases = (load: () => Promise<typeof Fixture>) => desc
     it("read every row as of one sync point while the world ticks on writing them, from a copy once a writer is ready first", async () => {
         const fixture = await load();
         const seen = await fixture.continuous("rows");
-        expect({ wrong: seen.wrong, fewest: seen.fewest, most: seen.most }).toEqual({ wrong: 0, fewest: 1000, most: 1000 });
+        expect({ failures: seen.failures, wrong: seen.wrong, fewest: seen.fewest, most: seen.most }).toEqual({ failures: [], wrong: 0, fewest: 1000, most: 1000 });
         // Each run a writer was ready for partway read the rest from its copy.
         expect(seen.partway?.released.length).toBe(5);
         expect(seen.partway?.switched).toBe(5);
@@ -18,7 +18,7 @@ export const observerJoinedCases = (load: () => Promise<typeof Fixture>) => desc
     it("look every row up as of one sync point while the world ticks on writing them, the writers waiting for it", async () => {
         const fixture = await load();
         const seen = await fixture.continuous("lookups");
-        expect({ wrong: seen.wrong, fewest: seen.fewest, most: seen.most }).toEqual({ wrong: 0, fewest: 1000, most: 1000 });
+        expect({ failures: seen.failures, wrong: seen.wrong, fewest: seen.fewest, most: seen.most }).toEqual({ failures: [], wrong: 0, fewest: 1000, most: 1000 });
         expect(seen.runs).toBeGreaterThan(10);
     }, 30000);
 });

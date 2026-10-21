@@ -9,6 +9,7 @@ import type { LoopPlatform } from "./loop.js";
 import type { FromObserverWorker, ToObserverWorker } from "./observer-joined-worker.fixture.js";
 import { counter, gateWords, holdWord, phase, reachedWord, releasedWord, seed, setStall, spawnHeated, ticked, warm } from "./observer-joined.test-helper.js";
 import { tailWriters } from "./tails.js";
+import { followReports } from "./reports.test-helper.js";
 
 /**
  * Scenarios of observer systems a joined worker adds, run built in node and from source in chromium: a system over
@@ -180,6 +181,8 @@ export const continuous = async (system: "rows" | "lookups") => {
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: frames });
     const worker = await joined(world);
     const words = new Int32Array(new SharedArrayBuffer(gateWords * 4));
+    // What the worker's runs threw, which reach the world's reports.
+    const reports = followReports(world);
     await world.run(seed, { count: 1000 });
     world.add(ticked);
     await worker.ask({ kind: "add", system, gate: words });
@@ -195,12 +198,14 @@ export const continuous = async (system: "rows" | "lookups") => {
         partway = await writerReadyPartway(world, worker, frames, words);
         behind = await fellBehind(world, worker, frames, words);
     }
+    const failures = reports.seen.flatMap(report => report.failures.map(failure => failure.message));
     await world.dispose();
     const reply = await seenBy(worker);
     await worker.terminate();
     frames.close();
     const { seen } = reply;
     return {
+        failures: [...new Set(failures)],
         runs: seen.length,
         wrong: seen.reduce((sum, run) => sum + run.wrong, 0),
         fewest: Math.min(...seen.map(run => run.rows)),

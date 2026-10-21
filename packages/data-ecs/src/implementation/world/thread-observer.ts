@@ -182,6 +182,8 @@ export const createThreadObserver = (host: ThreadObserverHost) => {
             giveBack(control);
             return false;
         }
+        // The world's memory may have grown since the last post: its views cover it first.
+        directory.refresh();
         directory.rows.tick = block.ticks[0];
         // Read first: the world may write its next post here once this one says what it did.
         const runs = Atomics.load(control, runsWord);

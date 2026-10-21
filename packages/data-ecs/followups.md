@@ -61,6 +61,21 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 6. **Nothing awaits the next tick.** Tests watch `clock` with an observer system. Proposal: a test helper in
    `src/observe`.
 
+## Features to discuss
+
+- **Computed index keys:** an index keyed on a value computed from a component, such as a struct field
+  (`position.x`, `Report.run.number`), instead of only whole components. Two possible forms:
+  `key: [[Report.run, "number"]]` (a field path) or `keyOf: run => run.number` (a function). Open questions:
+  - how key words are laid out in shared memory;
+  - lookups on workers, on joined threads and in kernels (JS and WASM);
+  - change tracking that follows the field, not the whole component;
+  - whether a function form can run anywhere but the world's thread.
+- **Discriminated struct unions:** unions of structs with a number, boolean or string-literal discriminant, stored in
+  fixed size (a tag column plus the variants' fields) so they live in shared memory. Today `isStruct`
+  (`interface/registry/schemas.ts`) treats every `anyOf` as an object. The work covers row readers and writers,
+  narrowing on the tag in the kernel compiler, WGSL layouts, and snapshots. Check first whether the type-level
+  `IsStruct` already calls numeric-tagged unions structs while the runtime doesn't.
+
 ## Performance
 
 - **`transfer`, chromium:** its median varied with machine load. Check it alone on a quiet machine before the next

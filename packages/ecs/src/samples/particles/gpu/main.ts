@@ -1,5 +1,4 @@
-import { createWorld } from '../../../implementation/index.js';
-import { Gpu, System, gpuDevice } from '../../../index.js';
+import { Gpu, System, World, gpuDevice } from '../../../index.js';
 import { createDraw, enabled, move, moveOnCpu, position, spawn, visible } from './particles.js';
 
 /**
@@ -56,7 +55,7 @@ const start = async (): Promise<void> => {
     context.configure({ device, format, alphaMode: "opaque" });
 
     const moving = mode === "gpu" ? [move] : mode === "cpu" ? [moveOnCpu] : [];
-    const world = createWorld({ [gpuDevice]: device });
+    const world = World.create({ [gpuDevice]: device });
     const { draw, ready } = createDraw(device, Gpu.layout(device), context, format);
     await ready;
     const frame = System.create({ name: "gpuParticles/frame", systems: [...moving, draw] });

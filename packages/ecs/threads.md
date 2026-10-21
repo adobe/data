@@ -86,11 +86,11 @@ const world = World.create(resources?);
 world.share(port);   // lets another thread join through the port: a MessagePort, a Worker, or a worker's own scope
 
 // On another thread, after importing the modules whose systems and finalizers run there.
-const joined = join(port, { threads: ["main"] });
+const joined = World.join(port, { threads: ["main"] });
 ```
 
-`join`, the implementation's, returns the same `World` type; the interface names neither it nor its port or options,
-which it infers from `share`. Its `run` works as on the world's thread, its `add` and `remove` take only observer
+`World.join`, from the package root as `World.create` is, returns the same `World` type; its port is `share`'s, and
+the interface names no type for it, its port or its options. Its `run` works as on the world's thread, its `add` and `remove` take only observer
 systems, which run there, `share` throws there, and its `dispose` disconnects this thread; disposing on the world's thread disposes the world, and joined threads' runs
 reject from then on. `share` returns nothing: a joined thread's progress (`"joining"`, `"joined"` once the threads it
 claims are its own, `"gone"` once they're released) and its claims are the implementation's own storage, which

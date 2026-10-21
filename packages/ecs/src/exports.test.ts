@@ -49,6 +49,9 @@ export const after = System.create({ components: { read: [position] }, lookup: {
 export const sortedName = (index: Index<{ readonly sorted: true }>): string => index.name;
 // A world comes from the one import every other value does.
 export const world: World = World.create({ [workers]: 0 });
+// Another thread joins it through the other end of a channel the world shares.
+declare const port: MessagePort;
+export const joined: World = World.join(port, { threads: ["main"] });
 export const read = System.create({ observer: true, components: { read: [position] }, resources: { read: [gpuDevice] }, lookup: { at: { read: [position] } } }, () => {});
 export const added = world.add(read);
 `;

@@ -1,4 +1,4 @@
-import { join } from '../../implementation/index.js';
+import { World } from '../../index.js';
 import { addSprite } from './sprites.js';
 
 // The loader, on a worker: it joins the world through the port main sends, then encodes textures as images and decodes
@@ -27,7 +27,7 @@ const encoded = async (index: number): Promise<Blob> => {
 };
 
 const load = async (port: MessagePort): Promise<void> => {
-    const world = join(port);
+    const world = World.join(port);
     for (let index = 0; index < count; index++) {
         const bitmap = await createImageBitmap(await encoded(index));
         // Moved, not copied: `bitmap` is detached here once the run is posted.

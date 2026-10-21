@@ -1,10 +1,9 @@
-import { createWorld } from '../../implementation/index.js';
-import { always } from '../../index.js';
+import { World, always } from '../../index.js';
 import { frame } from './sprites.js';
 
 // The world, on a worker: main and the loader join it through the ports main sends, and it draws every frame.
 
-const world = createWorld({ [always]: true });
+const world = World.create({ [always]: true });
 world.add(frame);
 self.onmessage = (event: MessageEvent<unknown>) => {
     const ports: unknown = typeof event.data === "object" && event.data !== null ? Reflect.get(event.data, "ports") : null;

@@ -1,5 +1,4 @@
-import { join } from '../../implementation/index.js';
-import { System } from '../../index.js';
+import { System, World } from '../../index.js';
 import { attachSurface, stats } from './sprites.js';
 
 /**
@@ -33,7 +32,7 @@ const start = async (): Promise<void> => {
     const forLoader = new MessageChannel();
     world.postMessage({ ports: [forMain.port1, forLoader.port1] }, [forMain.port1, forLoader.port1]);
     loader.postMessage({ port: forLoader.port2 }, [forLoader.port2]);
-    const joined = join(forMain.port2);
+    const joined = World.join(forMain.port2);
     // Moved to the world's thread in the run's input: the canvas is drawn there from now on.
     await joined.run(attachSurface, { canvas: canvas.transferControlToOffscreen() });
     joined.add(show);

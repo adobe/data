@@ -3,6 +3,7 @@ import type { Rule } from '../../interface/rule/created.js';
 import { requireDefinition, type Definition } from '../../interface/registry/index.js';
 import type { World } from '../../interface/world/world.js';
 import type { Create, InitialResources } from '../../interface/world/create.js';
+import type { Join } from '../../interface/world/join.js';
 import type { Failure } from '../../interface/report/failure.js';
 import { joinWorld } from './join.js';
 import { createSharing, type ThreadProgress } from './sharing.js';
@@ -820,4 +821,4 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 export const create: Create = resources => createWorld(resources);
 
 /** Joins a world another thread shared, through the other end of its port, as `joinWorld` does. */
-export const join: typeof joinWorld = (port, options) => joinWorld(port, options);
+export const join: Join = (port, options) => joinWorld(port, options);

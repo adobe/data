@@ -15,7 +15,7 @@ world.share({});
 // @ts-expect-error a thread is shared through one port
 world.share();
 
-// Joining is the implementation's: the interface names no join, its options or its port.
+// The package root's World.join joins; World names no type for it, its options or its port.
 // @ts-expect-error no World.Join
 export type Joining = World.Join;
 // @ts-expect-error no World.JoinOptions

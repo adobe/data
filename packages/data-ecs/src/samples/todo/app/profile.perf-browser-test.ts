@@ -3,7 +3,7 @@ import { it } from "vitest";
 import { cdp } from "vitest/browser";
 import { Entity, System, workers } from "../../../index.js";
 import { create } from "../../../implementation/index.js";
-import { bindSummary, bindToggleAll } from "../features/completion/dom.js";
+import { bindCompletion } from "../features/completion/dom.js";
 import { bindFilters, filterRows } from "../features/filter/dom.js";
 import { addGenerated } from "../features/generate/model.js";
 import { bindRows, createRows, placeRows } from "../features/todos/dom.js";
@@ -75,7 +75,7 @@ it("profiles a run's fixed cost", async () => {
     {
         await using world = create({ [workers]: 0 });
         lines.push(`| empty world, a run that changes nothing | ${await timeRuns(() => world.run(nothing), 2001)} |`);
-        for (const system of [bindRows, placeRows, filterRows, bindFilters, bindSummary, bindToggleAll, logFailures, createRows]) {
+        for (const system of [bindRows, placeRows, filterRows, bindFilters, bindCompletion, logFailures, createRows]) {
             world.add(system);
             lines.push(`| + ${system.name} | ${await timeRuns(() => world.run(nothing), 2001)} |`);
         }

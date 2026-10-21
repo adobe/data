@@ -27,11 +27,14 @@ done or none, clear those done, filter, and generate 10 or 1,000 todos.
     changes, as their todo or the filter changes, and moves focus off a row it hides to the nearest one shown.
   - *Removed* by a finalizer on the row, which runs whatever ends the todo, `world.dispose()` included.
   - Rows out of view skip their rendering (`content-visibility: auto`).
+- **Fixed elements showing counts** are bound by an observer system that runs only when an index's entries changed:
+  `bindCompletion` looks up `completion/byDone` with `changed: true`, so it writes the summary and the toggle-all box
+  after a pass in which a todo was added, removed or toggled, and is skipped before its body otherwise.
 - **Events become runs** in each feature's `events.ts`: listeners on the page's root call `world.run(system, input)`
   and leave the promise; a rejected run goes unhandled, which the browser logs. An event from a row names its todo
   through `entityOf(event)`, the entity the first target on its composed path shows: `createRows` attaches each row
-  to its todo (`attach`), and a move's `item` and `before` are read with `entityOfElement`. Systems acting on one todo name it as their
-  `target`, so they run on its row alone, writing it in place, and on nothing once it's gone.
+  to its todo (`attach`), and a move's `item` and `before` are read with `entityOfElement`. Systems acting on one
+  todo name it as their `target`, so they run on its row alone, writing it in place, and on nothing once it's gone.
 - **Failures** of runs and ticks alike are in their reports, entities the world keeps; the app adds `logFailures`, an
   observer system with `changed: [Report.errors]` that logs them; each report's errors are written once, and an
   observer pass's failures are in the next run's report.
@@ -135,7 +138,7 @@ What the current API does and doesn't offer the DOM path, each with the change i
   any component might be on another thread; its body then reads by `Reflect`. *Proposal:* none unless bindings get
   their own constructor; a binding is four to six lines.
 - **A run's fixed cost** in Chromium is small, and none of it is a task: a run that changes nothing takes 1.0 µs back
-  to back in an empty world, at most 0.3 µs more with the app's seven observer systems added, and 2.5 µs in the app
+  to back in an empty world, at most 0.3 µs more with the app's observer systems added, and 2.5 µs in the app
   with 1K todos, where a
   task round trip takes 7.6 µs. Node's `run idle` is 0.33 µs. A run made right after a frame, as an event's is, takes
   0.02–0.10 ms, which is the CPU coming back from idle, not the ECS. Toggling one todo of 10K takes 62 µs, of which

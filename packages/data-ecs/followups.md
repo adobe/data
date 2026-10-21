@@ -4,10 +4,14 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 
 ## Queued (decided, not started)
 
-- **An index lookup's `changed: true`:** a system runs only when the index's entries changed since it last ran, so
-  `bindSummary` and `bindToggleAll` lose their early returns; then merge them into one system.
 
 ## Decisions for the maintainers
+
+- **An index lookup's `changed: true` is a change filter,** as a resource in `changed` is: when the index changed every
+  row passes, and otherwise rows pass by the system's other change filters, so with `components.changed` it runs the
+  rows that changed even while the index didn't. Only a system whose change filters are all such indexes, with no
+  `up`, is skipped before its body, keeping its `lastRun`. The alternative, a condition, would run no row while the
+  index is unchanged, whatever else changed. Recommended: accept.
 
 - **Re-adding an observer system:** a re-added observer system runs from the next pass, even for a run already queued,
   while a first add waits for registration. Recommended: accept.

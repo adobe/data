@@ -18,17 +18,30 @@ export type SpawnSite = Range & {
     readonly values: readonly Range[];
 };
 
-/**
- * A key as a module-scope expression, or null when the property isn't a module constant's computed key. A plain,
- * string or number key fails the build: it's never a component's, since component keys are symbols.
- */
+/** A plain, string or number key, which is never a component's, since component keys are symbols. */
+const plainKey = (property: Property | SpreadElement): boolean =>
+    property.type === "Property" && property.kind === "init" && !property.method && (!property.computed || property.key.type === "Literal");
+
+/** A key as a module-scope expression, or null when the property isn't a module constant's computed key. */
 const keyOf = (property: Property | SpreadElement, module: ModuleScope, declared: ReadonlySet<string>): string | null => {
-    if (property.type !== "Property" || property.kind !== "init" || property.method) return null;
+    if (property.type !== "Property" || property.kind !== "init" || property.method || !property.computed) return null;
     const { key } = property;
-    if (!property.computed || key.type === "Literal") return fail(key, "a command's keys are its components' symbols, as [key]; a plain or string key is never a component's");
     if (key.type !== "Identifier") return null;
     return module.has(key.name) && !declared.has(key.name) ? key.name : null;
 };
+
+/** Whether an add's components are a list as written: an array literal, or a module constant of one or of `Archetype.create`. */
+const listed = (components: Expression, module: ModuleScope, declared: ReadonlySet<string>): boolean => {
+    if (components.type === "ArrayExpression") return true;
+    if (components.type !== "Identifier" || declared.has(components.name)) return false;
+    const binding = module.get(components.name);
+    if (binding?.kind !== "const") return false;
+    const { init } = binding;
+    return init.type === "ArrayExpression" || (init.type === "CallExpression" && init.callee.type === "MemberExpression" && !init.callee.computed
+        && init.callee.property.type === "Identifier" && init.callee.property.name === "create" && init.arguments[0]?.type === "ArrayExpression");
+};
+
+const plainKeyFailure = "a command's keys are its components' symbols, as [key]; a plain or string key is never a component's";
 
 /** Where a body reaches its commands: a name bound to them, or a context parameter's `commands`. */
 const commandsOf = (parameter: Node | undefined): { readonly name: string; readonly viaContext: boolean } | null => {
@@ -76,7 +89,10 @@ export const spawnSites = (body: Node, module: ModuleScope, context: number): { 
             const values = spawn !== null ? node.arguments[0] : add?.[2];
             const entity = add?.[0] ?? null;
             if (components !== null && components.type !== "SpreadElement" && entity?.type !== "SpreadElement" && values?.type === "ObjectExpression") {
-                const keys = values.properties.map(property => keyOf(property, module, declared));
+                // A spawn's values, or a list add's, are keyed by components; one component's object value has keys of its own.
+                const plain = values.properties.find(plainKey);
+                if (plain !== undefined && (spawn !== null || listed(components, module, declared))) return fail(plain.type === "Property" ? plain.key : plain, plainKeyFailure);
+                const keys = plain === undefined ? values.properties.map(property => keyOf(property, module, declared)) : [null];
                 if (keys.every((key): key is string => key !== null)) {
                     sites.push({
                         kind: spawn !== null ? "spawn" : "add",

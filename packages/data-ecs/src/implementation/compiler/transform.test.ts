@@ -1006,6 +1006,7 @@ describe("commands in main-thread systems", () => {
             ["a spread", "const values = { [score]: 1 }; commands.add(1, [score, mass], { ...values, [mass]: 2 });"],
             ["a key that isn't a module constant", "const key = score; commands.add(1, [score], { [key]: 1 });"],
             ["one component", "commands.add(1, score, 1);"],
+            ["one component's object value", `commands.add(1, score, { text: "a", "size": 2 });`],
         ])("leave %s as written", async (_, body) => {
             const { calls } = await spawned(body);
             expect(calls).toEqual([["add", 1, expect.anything(), expect.anything()]]);

@@ -57,6 +57,7 @@ Systems change that data, once per run or on every tick.
 export const gravity = Symbol("gravity");
 export const names = Symbol("names");
 export const audio = Symbol("audio");
+export const focused = Symbol("focused");
 
 // Its traits are declared; `type` is the value's type.
 declare module "@adobe/ecs" {
@@ -64,6 +65,7 @@ declare module "@adobe/ecs" {
         [gravity]: { type: number };
         [names]: { type: ReadonlyMap<string, number> };
         [audio]: { type: AudioContext | null };
+        [focused]: { type: Entity };
     }
 }
 
@@ -73,11 +75,13 @@ Resource.register(gravity, { type: { type: "number", default: -9.8 } });
 Resource.register(names, { type: { type: "map", keys: { type: "string" }, values: { type: "number" } }, default: new Map() });
 // A value that isn't data has no schema and is stored as it is. A type that allows null starts there.
 Resource.register(audio, {});
+// No entity is Entity.none rather than null, so an entity stays data every thread reads.
+Resource.register(focused, { type: { ...Entity.schema, default: Entity.none } });
 
 // Systems read a world: an observer only reads, after the world's changes apply.
 let values: readonly unknown[] = [];
-const read = System.create({ observer: true, resources: { read: [gravity, names, audio] } }, ({ resources }) => {
-    values = [resources[gravity], resources[names], resources[audio]];
+const read = System.create({ observer: true, resources: { read: [gravity, names, audio, focused] } }, ({ resources }) => {
+    values = [resources[gravity], resources[names], resources[audio], resources[focused]];
 });
 
 await using moon = World.create({ [gravity]: -1.6 });
@@ -86,7 +90,7 @@ await moon.run(read);
 expect(values[0]).toBe(-1.6);
 ```
 
-[`01-resources.test.ts`](01-resources.test.ts#L5-L41)
+[`01-resources.test.ts`](01-resources.test.ts#L5-L45)
 
 ### 2. Entities, components and archetypes
 
@@ -224,7 +228,23 @@ expect(await ticked).toBeGreaterThanOrEqual(30);
 world.remove(advance);
 ```
 
-[`04-ticks.test.ts`](04-ticks.test.ts#L15-L49)
+[`04-ticks.test.ts`](04-ticks.test.ts#L17-L51)
+
+```ts
+// A system asks for another tick by contributing a time to wake: the first tick at or after it runs. Work that a tick's
+// commands start and a later tick finishes asks for the next one this way.
+const step = System.create({ resources: { read: [clock], write: [steps] }, reduce: { [wake]: "min" } }, ({ resources, reduce }) => {
+    resources[steps] += 1;
+    if (resources[steps] < 3) reduce[wake](resources[clock].now);
+});
+
+await using world = World.create({ [cadence]: { kind: "fixed", step: 10 } });
+world.add(step);
+// One run arriving ticks once; step's wakes tick twice more.
+await world.run(System.create(() => {}));
+```
+
+[`04-ticks.test.ts`](04-ticks.test.ts#L53-L74)
 
 ## Intermediate
 

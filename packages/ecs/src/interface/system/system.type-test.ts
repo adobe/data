@@ -2,6 +2,7 @@ import { Resource } from '../resource/resource.js';
 import { Component } from '../component/component.js';
 import { Entity } from '../entity/entity.js';
 import { System } from './system.js';
+import type { Index } from '../indexes/index-type.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
@@ -232,6 +233,26 @@ System.create({
     kernel: "cpu",
     // @ts-expect-error kernel lookups must read linear values
     lookup: { labels: { read: [label] } },
+}, () => {});
+
+declare const byTarget: Index<{ readonly key: readonly [typeof target] }>;
+
+// A kernel's lookup by entity matches has and not, as any system's does.
+System.create({
+    name: "test/followPlayers",
+    kernel: "cpu",
+    components: { read: [target], write: [position] },
+    lookup: { players: { read: [position], has: [player], not: [velocity] } },
+}, (row, { lookup }) => {
+    const found = lookup.players(row[target]);
+    if (found !== null) row[position] = found[position];
+});
+
+System.create({
+    name: "test/followPlayers",
+    kernel: "cpu",
+    // @ts-expect-error an index lookup matches what its index holds, so it takes no has
+    lookup: { byTarget: { index: byTarget, read: [position], has: [player] } },
 }, () => {});
 
 System.create({

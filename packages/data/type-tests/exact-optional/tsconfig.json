@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig-base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "tsBuildInfoFile": "../../dist/type-tests/exact-optional.tsbuildinfo",
+    "exactOptionalPropertyTypes": true
+  },
+  "include": ["**/*.ts"],
+  "references": [{ "path": "../../src" }]
+}

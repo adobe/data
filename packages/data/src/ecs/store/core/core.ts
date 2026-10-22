@@ -15,7 +15,10 @@ import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 // stays a real column (see the Archetype interface) but is never part of a read.
 export type EntityValues<C> = { readonly [K in StringKeyof<C & OptionalComponents>]: (C & OptionalComponents)[K] }
 export type EntityReadValues<C> = { readonly [K in StringKeyof<C & OptionalComponents> as string extends K ? never : K]?: (C & OptionalComponents)[K] }
-export type EntityUpdateValues<C> = Partial<Omit<C, IdComponent>>;
+// `undefined` removes the component (the entity migrates to the archetype
+// without it), so every value admits it explicitly — under
+// `exactOptionalPropertyTypes` an optional key alone would not.
+export type EntityUpdateValues<C> = { [K in keyof Omit<C, IdComponent>]?: C[K] | undefined };
 
 export type ArchetypeQueryOptions<C extends object, PK extends string = never> = {
     exclude?: readonly StringKeyof<C & RequiredComponents & OptionalComponents>[];

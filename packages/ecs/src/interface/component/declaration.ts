@@ -12,13 +12,27 @@ export type Starting<T> = null extends T ? { readonly default?: T } : { readonly
 
 type Same<A, B> = (<X>() => X extends A ? 1 : 2) extends (<X>() => X extends B ? 1 : 2) ? true : false;
 
+/** How deep `Flattened` goes: deeper values are compared as they are, so recursive types stay finite. */
+type Depth = [never, 0, 1, 2, 3, 4, 5, 6, 7];
+
+/** `T` with every object, at any depth up to eight, as one object type, so `A & B` compares equal to the object it is. */
+type Flattened<T, D extends number = 8> =
+    [D] extends [never] ? T :
+    T extends string | number | boolean | bigint | symbol | null | undefined | ((...parameters: never[]) => unknown) ? T :
+    T extends ReadonlyMap<infer K, infer V> ? (T extends Map<K, V> ? T : ReadonlyMap<Flattened<K, Depth[D]>, Flattened<V, Depth[D]>>) :
+    T extends ReadonlySet<infer E> ? (T extends Set<E> ? T : ReadonlySet<Flattened<E, Depth[D]>>) :
+    { [K in keyof T]: Flattened<T[K], Depth[D]> };
+
+/** Whether `A` and `B` are the same type, flattened only when they aren't identical. */
+type Equivalent<A, B> = Same<A, B> extends true ? true : Same<Flattened<A>, Flattened<B>>;
+
 /**
  * Nothing when schema `S` describes exactly the declared type `T` and its `default`, if any, is a `T`; else a required
  * property naming the problem, so registration fails to compile and says why. A check rather than `type`'s own type,
  * so `type` is inferred from the schema alone.
  */
 export type Describing<S, T> =
-    ((S extends Schema ? Same<Schema.ToType<S>, T> : false) extends true ? {} : { readonly "the schema describes another type than the declared one": T })
+    ((S extends Schema ? Equivalent<Schema.ToType<S>, T> : false) extends true ? {} : { readonly "the schema describes another type than the declared one": T })
     & (S extends { readonly default: infer V } ? ([V] extends [T] ? {} : { readonly "the schema's default isn't of the declared type": T }) : {});
 
 /** A derived component starts at its schema's `default`, at its `const`, or at `null` when its type allows it. */

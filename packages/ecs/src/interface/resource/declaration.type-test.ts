@@ -8,6 +8,11 @@ const selected = Symbol("declarationTypeTest/selected");
 const device = Symbol("declarationTypeTest/device");
 const page = Symbol("declarationTypeTest/page");
 const handles = Symbol("declarationTypeTest/handles");
+const candidates = Symbol("declarationTypeTest/candidates");
+const misnamed = Symbol("declarationTypeTest/misnamed");
+
+type Box = { readonly x: number; readonly y: number };
+type Candidate = Box & { readonly id: number };
 
 declare module '@adobe/ecs' {
     export interface Resources {
@@ -19,6 +24,8 @@ declare module '@adobe/ecs' {
         [device]: { type: GPUDevice | null };
         [page]: { type: Document; thread: "main" };
         [handles]: { type: Map<string, number> };
+        [candidates]: { type: readonly Candidate[] };
+        [misnamed]: { type: readonly Candidate[] };
     }
 }
 
@@ -40,6 +47,12 @@ Resource.register(handles, { default: new Map() });
 Resource.register(gravity, { type: { type: "string", default: "" } });
 // @ts-expect-error a map's values are numbers
 Resource.register(names, { type: { type: "map", keys: { type: "string" }, values: { type: "string" } }, default: new Map() });
+
+// An intersection describes the object it equals.
+const number = { type: "number" } as const;
+Resource.register(candidates, { type: { type: "array", items: { type: "object", properties: { id: number, x: number, y: number }, required: ["id", "x", "y"] }, default: [] } });
+// @ts-expect-error a member's name differs
+Resource.register(misnamed, { type: { type: "array", items: { type: "object", properties: { key: number, x: number, y: number }, required: ["key", "x", "y"] }, default: [] } });
 
 // Every declared trait is registered, with its declared value, and nothing undeclared is.
 // @ts-expect-error a declared trait is missing

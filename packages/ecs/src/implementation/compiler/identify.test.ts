@@ -4,7 +4,7 @@ import { parseAst } from 'vite';
 import { idOfKey, takeIdOfDeclaration } from '../../interface/registry/ids.js';
 import { estreeOf } from './estree.js';
 import { identify as identifyModule, moduleIdOf } from './identify.js';
-import { attachKernelPath } from './paths.js';
+import { ownCopy } from './paths.js';
 import { decodeMappings } from './source-map.js';
 
 const parse = (code: string) => estreeOf(parseAst(code));
@@ -104,7 +104,7 @@ describe("identify, for systems, rules and finalizers", () => {
         expect(typeof declaration === "object" && declaration !== null ? [Reflect.get(declaration, "name"), takeIdOfDeclaration(declaration), takeIdOfDeclaration(declaration)] : declaration).toEqual(["move", "src/keys.ts#move", undefined]);
     });
     test("identifies a kernel's call the kernel transform wrapped", async () => {
-        const result = await identify(`import { attachKernel as attachKernel$ } from ${JSON.stringify(attachKernelPath)};\nimport { System } from "@adobe/ecs";\nconst grow = attachKernel$(System.create({ name: "grow", kernel: "cpu" }, () => {}), {});`);
+        const result = await identify(`import { attachKernel as attachKernel$ } from ${JSON.stringify(ownCopy.attachKernel)};\nimport { System } from "@adobe/ecs";\nconst grow = attachKernel$(System.create({ name: "grow", kernel: "cpu" }, () => {}), {});`);
         expect(declared(result?.code)).toEqual([[`{ name: "grow", kernel: "cpu" }`, "src/keys.ts#grow"]]);
     });
     test("follows the namespace to the module that exports it, under any local name", async () => {

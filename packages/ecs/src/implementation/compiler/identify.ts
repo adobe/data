@@ -5,7 +5,7 @@ import { posix } from 'node:path';
 import { idsName } from '../../interface/registry/ids.js';
 import { children, isFunction } from './estree.js';
 import { moduleScope } from './module-scope.js';
-import { attachKernelPath } from './paths.js';
+import { isAttachKernelModule } from './paths.js';
 import { insertInto, type Insertion, type SourceMap } from './source-map.js';
 
 export type Parse = (code: string) => Program;
@@ -76,7 +76,7 @@ const localsOf = async (program: Program, resolve: ResolveNamespace): Promise<{ 
         for (const specifier of statement.specifiers) {
             if (specifier.type !== "ImportSpecifier" || specifier.imported.type !== "Identifier") continue;
             const imported = specifier.imported.name;
-            if (statement.source.value === attachKernelPath && imported === "attachKernel") attach.add(specifier.local.name);
+            if (imported === "attachKernel" && isAttachKernelModule(statement.source.value)) attach.add(specifier.local.name);
             else if (isNamespace(imported) && await resolve(statement.source.value, imported)) namespaces.set(specifier.local.name, imported);
         }
     }

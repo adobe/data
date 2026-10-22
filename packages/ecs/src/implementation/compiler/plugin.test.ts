@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -373,4 +373,40 @@ test("a build takes a name from a package external to it as one key, and registr
     const { description }: { description: KernelDescription } = await import(/* @vite-ignore */ url(externalKey));
     expect(description.keys.map(String)).toEqual(["Symbol(heat)"]);
     await expect(import(/* @vite-ignore */ url(externalList))).rejects.toThrow(`System "externalList" names a list of components where a command takes one component; its kernel's build couldn't read the list, so name it from a module the build reads, or as an array literal.`);
+});
+
+test("compiled code imports the runtime from the copy of the package its module imports, not the plugin's own", async () => {
+    // A project whose installed copy of the package is a directory of its own, as a lockfile's copy is beside a linked one.
+    const project = join(directory, "copied");
+    const copy = join(project, "node_modules/@adobe/ecs");
+    const own = fileURLToPath(new URL("../../..", import.meta.url));
+    mkdirSync(copy, { recursive: true });
+    cpSync(join(own, "package.json"), join(copy, "package.json"));
+    cpSync(join(own, "dist"), join(copy, "dist"), { recursive: true, filter: file => !/\.(map|d\.ts)$|\.test\./.test(file) });
+    writeFileSync(join(project, "package.json"), JSON.stringify({ name: "copy-app", type: "module" }));
+    const module = join(project, "copied.js");
+    writeFileSync(module, `import { System, Component } from "@adobe/ecs";
+const score = Symbol("score");
+Component.register(score, { type: { type: "number" } });
+export const kernel = System.create({ name: "copied", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+export const spawner = System.create({ name: "copiedSpawner", components: { read: [score] } }, (row, { commands }) => { commands.spawn([score])({ [score]: row[score] }); });
+`);
+    const server = await createServer({
+        configFile: false, logLevel: "silent", root: project, plugins: [kernelPlugin()],
+        appType: "custom", server: { middlewareMode: true, hmr: false, watch: null }, optimizeDeps: { noDiscovery: true },
+    });
+    try {
+        const code = (await server.transformRequest(module))?.code ?? "";
+        const imported = [...code.matchAll(/^import .* from "([^"]+)";$/gm)].map(match => match[1] ?? "");
+        // The server serves files under its root by their path from it: here, the project's copy.
+        expect(imported.filter(path => path.includes("/implementation/world/"))).toEqual([
+            "/node_modules/@adobe/ecs/dist/implementation/world/attach-kernel.js",
+            "/node_modules/@adobe/ecs/dist/implementation/world/prepared-spawn.js",
+        ]);
+        expect(code).not.toContain(own);
+        // The copy's System namespace is recognized, so its declarations take their ids.
+        expect(code).toContain(`"copy-app/copied.js#kernel"`);
+    } finally {
+        await server.close();
+    }
 });

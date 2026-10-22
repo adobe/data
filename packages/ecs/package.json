@@ -1,15 +1,31 @@
 {
   "name": "@adobe/ecs",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Adobe ECS",
   "type": "module",
   "sideEffects": false,
-  "private": true,
+  "private": false,
+  "independentVersion": true,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/*.type-test.*",
+    "!dist/**/*.test-helper.*",
+    "!dist/**/*.cases.*",
+    "!dist/**/*.fixture.*",
+    "!dist/fixtures",
+    "!dist/guide",
+    "!dist/perf",
+    "!dist/perftest",
+    "!dist/samples",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "cp ../../LICENSE . && tsc -b",
     "dev": "tsc -b -w --preserveWatchOutput",
     "typecheck": "tsc -b",
     "test": "pnpm exec playwright install chromium && vitest --run",

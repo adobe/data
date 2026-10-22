@@ -572,7 +572,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 const owner = archetype < owners.length ? owners[archetype] : -1;
                 if (owner < 0) continue;
                 if (owner !== current || row === null || value === null) {
-                    row = bindRow(matches[owner]);
+                    // The row is found once; after, it's bound in place, as often as every row when archetypes interleave.
+                    if (row === null) row = bindRow(matches[owner]);
+                    else row.bind(matches[owner]);
                     value = row.value;
                     current = owner;
                 }

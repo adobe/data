@@ -9,8 +9,11 @@ import { labelOfItem, orderKeysOf } from '../../interface/registry/index.js';
 import { entityWatchesOf, indexWatchesOf, lookupComponentsOf, orderComponentsOf } from './lookup-keys.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
-/** `ticked`: components the new systems filter on, which must keep ticks before they run. */
-export type Registration = { readonly resources: readonly Key[]; readonly ticked: readonly number[]; readonly kernels: readonly Runner[]; readonly rollback: () => void };
+/**
+ * `ticked`: components the new systems filter on or hold GPU copies of, which must keep ticks before they run;
+ * `resident`: those they hold GPU copies of.
+ */
+export type Registration = { readonly resources: readonly Key[]; readonly ticked: readonly number[]; readonly resident: readonly number[]; readonly kernels: readonly Runner[]; readonly rollback: () => void };
 
 export type Registrar = {
     /** Validates and records a system with all its members. Throws without recording anything on failure. */
@@ -94,6 +97,14 @@ const lookupObserved = (leaf: Leaf): readonly Key[] => {
 /** The components a leaf needs ticks on: those it filters on, and those `upObserved` and `lookupObserved` give. */
 const tickedBy = (leaf: Leaf): readonly Key[] =>
     [...leaf.declaration.components?.added ?? [], ...leaf.declaration.components?.changed ?? [], ...upObserved(leaf), ...lookupObserved(leaf)];
+
+/** The components whose GPU copies a leaf uses: a render system's accessors, and a GPU kernel's columns and what it reads through `up`. */
+const residentBy = (leaf: Leaf): readonly Key[] => {
+    const { declaration } = leaf;
+    if (leaf.kind === "render") return Object.values(declaration.shader?.accessors ?? {});
+    if (declaration.kernel !== "gpu") return [];
+    return [...declaration.components?.read ?? [], ...declaration.components?.write ?? [], ...declaration.up?.read ?? []];
+};
 
 /** The components whose `changed` stamps a leaf reads, so kernels writing them must keep their stamps. */
 const observedBy = (leaf: Leaf): readonly Key[] => {
@@ -265,8 +276,9 @@ export const createRegistrar = (state: State): Registrar => {
             }
             state.runnersVersion++;
         };
+        const resident = added.flatMap(({ system }) => isLeaf(system) ? residentBy(system).map(key => idOf(state, key)) : []);
         const ticked = added.flatMap(({ system }) => isLeaf(system) ? tickedBy(system).map(key => idOf(state, key)) : []);
-        return { resources: [...resources], ticked, kernels, rollback };
+        return { resources: [...resources], ticked: resident.length === 0 ? ticked : [...ticked, ...resident], resident, kernels, rollback };
     };
 
     /**

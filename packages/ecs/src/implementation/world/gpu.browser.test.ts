@@ -633,3 +633,61 @@ describe("render systems", () => {
         await world.dispose();
     });
 });
+
+/** The x a spawned position reaches after one `move`, of the one row the nudges below write. */
+const nudged = 3000;
+
+const nudgeRow = System.create({ name: "gpuTest/nudgeRow", components: { write: [position] } }, row => {
+    const [px, py, pz] = row[position];
+    if (px === nudged) row[position] = [px, py + 1, pz];
+});
+
+const nudgeKernel = System.create({ name: "gpuTest/nudgeKernel", kernel: "cpu", components: { write: [position] } }, row => {
+    const [px, py, pz] = row[position];
+    if (px === nudged) row[position] = [px, py + 1, pz];
+});
+
+/** The sizes of the row uploads a device's queue writes from now on: record writes pass no size. */
+const uploadSizes = (own: GPUDevice): number[] => {
+    const sizes: number[] = [];
+    const { queue } = own;
+    const write = queue.writeBuffer.bind(queue);
+    queue.writeBuffer = (buffer, offset, data, dataOffset, size) => {
+        if (size !== undefined) sizes.push(size);
+        write(buffer, offset, data, dataOffset, size);
+    };
+    return sizes;
+};
+
+describe("CPU writes to GPU copies", () => {
+    const cases = [
+        { name: "a row system", nudge: nudgeRow, threads: 0, wasm: true },
+        { name: "a WASM kernel", nudge: nudgeKernel, threads: 0, wasm: true },
+        { name: "a JS kernel", nudge: nudgeKernel, threads: 0, wasm: false },
+        { name: "a WASM kernel on workers", nudge: nudgeKernel, threads: 2, wasm: true },
+        { name: "a JS kernel on workers", nudge: nudgeKernel, threads: 2, wasm: false },
+    ];
+    it.each(cases)("upload only the chunks they changed: $name", async ({ nudge, threads, wasm }) => {
+        const own = await device();
+        const sizes = uploadSizes(own);
+        const gpuWorld = createWorld({ [workers]: threads, [gpuDevice]: own }, { minimumChunk: 64, wasm });
+        const cpuWorld = createWorld({ [workers]: 0 });
+        for (const world of [gpuWorld, cpuWorld]) {
+            await world.run(spawn);
+            // Loaded before a GPU system uses what it writes, so it loads again to stamp it.
+            await world.run(nudge);
+            await world.run(move);
+        }
+        // The first upload is whole: 2,500 rows each of the tagged and untagged archetypes' positions and velocities.
+        expect(sizes.length).toBe(4);
+        const stride = sizes[0] / (count / 2);
+        for (const world of [gpuWorld, cpuWorld]) await world.run(nudge);
+        sizes.length = 0;
+        for (const world of [gpuWorld, cpuWorld]) await world.run(move);
+        // The nudged row is the tagged archetype's row 1,499 (entity 2,999), in its second chunk of 1,024 rows.
+        expect(sizes).toEqual([1024 * stride]);
+        expect(await positions(gpuWorld)).toEqual(await positions(cpuWorld));
+        await gpuWorld.dispose();
+        await cpuWorld.dispose();
+    });
+});

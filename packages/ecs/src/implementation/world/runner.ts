@@ -13,7 +13,7 @@ import { createBlock, endBlock, indexOf, locate, reserveFrom } from './entities.
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, parentBinder, rowBinder } from './rows.js';
-import { scalarValue, scalarValues } from './wasm.js';
+import { scalarValue, scalarValues, type WasmKernel } from './wasm.js';
 import { idOf, type State } from './state.js';
 import { accessorsOf } from '../../interface/gpu/accessors.js';
 import { recordWords } from './gpu.js';
@@ -54,6 +54,10 @@ const claimsPerWorker = 8;
 
 const noPartials = new Float64Array(0);
 const noIndexParameters: readonly number[] = [];
+const noAddresses: readonly number[] = [];
+
+/** An archetype's change filters for a runner, and the WASM addresses of its columns and filters (`filterCache`). */
+type Filtered = { readonly version: number; readonly filters: readonly Filter[]; addresses: readonly number[]; addressed: WasmKernel | null };
 
 /**
  * Runs one leaf system. Each run takes a new tick, which becomes the system's `lastRun`. `start` does main-thread work
@@ -369,10 +373,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     };
 
     /**
-     * By archetype: its change filters, `added` then `changed`, rows and chunks, and the WASM addresses of its columns
-     * and filters, kept until its arrays are replaced.
+     * By archetype: its change filters, `added` then `changed`, rows and chunks, kept until its arrays are replaced;
+     * and the WASM addresses of its columns and filters, for the WASM kernel `addressed` they were taken for, since a
+     * kernel loaded again may stamp a tick column the last one muted.
      */
-    const filterCache = new Map<Archetype, { readonly version: number; readonly filters: readonly Filter[]; addresses: readonly number[] | null }>();
+    const filterCache = new Map<Archetype, Filtered>();
     const noFilters: readonly Filter[] = [];
 
     const filteredOf = (archetype: Archetype) => {
@@ -388,7 +393,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged }];
             }),
         ];
-        const entry: { readonly version: number; readonly filters: readonly Filter[]; addresses: readonly number[] | null } = { version: archetype.version, filters, addresses: null };
+        const entry: Filtered = { version: archetype.version, filters, addresses: noAddresses, addressed: null };
         filterCache.set(archetype, entry);
         return entry;
     };
@@ -438,12 +443,16 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const compiled = bound.compiled();
         if (compiled === null || bound.wasm === null) return;
         const entry = filteredOf(archetype);
-        // Column and filter addresses: the columns are kept per archetype version too.
-        const addresses = entry.addresses ??= [
-            ...bound.columnsOf(archetype).map(column => column.byteOffset),
-            ...entry.filters.map(filter => filter.ticks.byteOffset),
-            ...entry.filters.map(filter => filter.chunks.byteOffset),
-        ];
+        // Column and filter addresses: the columns are kept per archetype version and load too.
+        if (entry.addressed !== bound.wasm) {
+            entry.addresses = [
+                ...bound.columnsOf(archetype).map(column => column.byteOffset),
+                ...entry.filters.map(filter => filter.ticks.byteOffset),
+                ...entry.filters.map(filter => filter.chunks.byteOffset),
+            ];
+            entry.addressed = bound.wasm;
+        }
+        const { addresses } = entry;
         const lookups = bound.lookupParameters();
         const { scalars } = bound.wasm;
         const call = wasmArguments;
@@ -721,7 +730,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             words[0] = archetype.count;
             sources.forEach((source, k) => {
                 const storage = source.kind === "field" ? archetype.storageById[source.id] : undefined;
-                words[1 + k] = storage === undefined ? 0 : gpu.upload(archetype, storage);
+                words[1 + k] = storage === undefined ? 0 : gpu.upload(archetype, storage, tick);
             });
             scalars.forEach((value, s) => { floats[1 + sources.length + s] = value; });
             dispatches.push({ offset: gpu.record(keyOf(archetype), words), count: archetype.count });
@@ -780,7 +789,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             words[0] = count;
             sources.forEach((source, k) => {
                 const storage = source.kind === "field" ? archetype.storageById[source.id] : undefined;
-                words[1 + k] = storage === undefined ? 0 : gpu.upload(archetype, storage);
+                words[1 + k] = storage === undefined ? 0 : gpu.upload(archetype, storage, tick);
             });
             const base = 1 + sources.length;
             words[base] = rowsAddress + start;
@@ -788,7 +797,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             words[base + 2] = parent === null ? 0 : 1;
             upIds.forEach((id, k) => {
                 const storage = parent?.storageById[id];
-                words[base + 3 + k] = parent === null || storage === undefined ? 0 : gpu.upload(parent, storage);
+                words[base + 3 + k] = parent === null || storage === undefined ? 0 : gpu.upload(parent, storage, tick);
             });
             scalars.forEach((value, s) => { floats[base + 3 + upIds.length + s] = value; });
             dispatches.push({ offset: gpu.record(`${leafNumber}:up:${group}`, words), count });
@@ -815,7 +824,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         }
     };
 
-    const runRender = (): void => {
+    const runRender = (tick: number): void => {
         const gpu = state.gpu;
         // The device may be set to null after the system registered.
         if (gpu === null) return failPlacement("needs a world with a gpu device");
@@ -826,7 +835,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             words[0] = archetype.count;
             accessors.forEach((accessor, k) => {
                 const storage = archetype.storageById[idOf(state, accessor.component)];
-                words[1 + k] = storage === undefined ? 0 : gpu.upload(archetype, storage);
+                words[1 + k] = storage === undefined ? 0 : gpu.upload(archetype, storage, tick);
             });
             const offset = gpu.record(keyOf(archetype), words);
             return { count: archetype.count, bind: (pass: GPURenderPassEncoder | GPUComputePassEncoder) => pass.setBindGroup(group, gpu.renderGroup(), [offset]) };
@@ -918,7 +927,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             if (indexed && kernel !== null) indexParameters = kernel.refreshIndexes(lastRun);
             if (placement === "render") {
                 refreshMatches();
-                runRender();
+                runRender(tick);
                 return chunks;
             }
             if (query === undefined) {

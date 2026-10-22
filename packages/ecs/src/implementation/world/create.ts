@@ -44,7 +44,7 @@ import { wake } from '../../interface/resources/wake.js';
 import { stampChanged } from './archetype.js';
 import { failureOf } from './failures.js';
 import { createLoop, platformFrame, platformTimer, type Clock, type LoopPlatform } from './loop.js';
-import { createState, defaultOf, idOf, startTicking, type Key } from './state.js';
+import { createState, defaultOf, idOf, reside, startTicking, type Key } from './state.js';
 import { indexOf } from './entities.js';
 import { isHeld } from './transfers.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
@@ -238,14 +238,15 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     /** Adds resources, then loads kernels on the main thread and in every worker. Undoes the registration if loading fails. */
     const complete = async (registration: Registration): Promise<void> => {
-        const { resources, ticked, kernels } = registration;
+        const { resources, ticked, resident, kernels } = registration;
         try {
             await drainTails();
             ensureResources(state, resources);
             // Kept after a rollback: ticks nothing reads cost only memory.
             startTicking(state, ticked);
+            const residing = reside(state, resident);
             publishLayouts();
-            await load(kernels);
+            await load(residing ? [...kernels, ...registrar.kernels().filter(runner => runner.kernel?.stale() === true && !kernels.includes(runner))] : kernels);
             await loadOnWorkers();
         }
         catch (error) {

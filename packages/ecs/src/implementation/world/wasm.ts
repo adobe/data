@@ -1246,9 +1246,10 @@ export const generateWasm = (
         switch (current.kind) {
             case "set": emit(current.value); code.push(op.localSet, ...unsigned(local(current.local))); return;
             case "store": return store(current.column, current.value);
+            // A chunk column stays when its row column is muted, for a component held on the GPU.
             case "stamp":
-                if (columns[current.column].muted === true) return;
-                store(current.column, "tick");
+                if (columns[current.column].muted !== true) store(current.column, "tick");
+                if (columns[current.chunks].muted === true) return;
                 return stampChunk(current.chunks, 0);
             case "if":
                 emit(current.test);
@@ -1453,19 +1454,21 @@ export const generateWasm = (
                 return;
             }
             case "stamp": {
-                if (columns[current.column].muted === true) return;
-                // Ticks are dense f64: four rows are two f64x2 stores.
-                for (let half = 0; half < 2; half++) {
-                    const address = (): void => { code.push(op.localGet, ...unsigned(columnParameter(current.column)), op.localGet, ...unsigned(rowLocal), op.i32Const, 3, op.i32Shl, op.i32Add); };
-                    address();
-                    code.push(op.localGet, 2, ...simd(vop.f64Splat));
-                    if (mask !== null) {
+                // Ticks are dense f64: four rows are two f64x2 stores; a chunk column stays when its row column is muted.
+                if (columns[current.column].muted !== true) {
+                    for (let half = 0; half < 2; half++) {
+                        const address = (): void => { code.push(op.localGet, ...unsigned(columnParameter(current.column)), op.localGet, ...unsigned(rowLocal), op.i32Const, 3, op.i32Shl, op.i32Add); };
                         address();
-                        code.push(...simd(vop.load), 3, ...unsigned(16 * half));
-                        code.push(op.localGet, ...unsigned(mask), ...simd(half === 0 ? vop.i64ExtendLowS : vop.i64ExtendHighS), ...simd(vop.bitselect));
+                        code.push(op.localGet, 2, ...simd(vop.f64Splat));
+                        if (mask !== null) {
+                            address();
+                            code.push(...simd(vop.load), 3, ...unsigned(16 * half));
+                            code.push(op.localGet, ...unsigned(mask), ...simd(half === 0 ? vop.i64ExtendLowS : vop.i64ExtendHighS), ...simd(vop.bitselect));
+                        }
+                        code.push(...simd(vop.store), 3, ...unsigned(16 * half));
                     }
-                    code.push(...simd(vop.store), 3, ...unsigned(16 * half));
                 }
+                if (columns[current.chunks].muted === true) return;
                 // The group may straddle two chunks. Under a mask this can stamp a chunk no lane changed, which only costs a scan.
                 stampChunk(current.chunks, 0);
                 stampChunk(current.chunks, 3);

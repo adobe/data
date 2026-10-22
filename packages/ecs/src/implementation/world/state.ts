@@ -123,8 +123,16 @@ export type State = {
     readonly observedCounts: number[];
     /** Workers' kernel indexes, by kernel module url, so they're bounded by code. */
     readonly kernelIndexes: Map<string, number>;
-    /** Components some registered system filters on with `added` or `changed`, or a finalizer's index follows; only they keep ticks. */
+    /**
+     * Components some registered system filters on with `added` or `changed`, a finalizer's index follows, or a GPU
+     * system holds copies of; only they keep ticks.
+     */
     readonly ticked: Set<number>;
+    /**
+     * Components some system registered since the world began holds GPU copies of. Kernels keep their chunk stamps,
+     * so a GPU copy uploads only the chunks CPU writes changed.
+     */
+    readonly resident: Set<number>;
     /** Main-thread spawns since the last sync point, by component set. */
     readonly batches: SpawnBatch[];
     readonly batchByKey: Map<string, SpawnBatch>;
@@ -274,6 +282,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         referencesWritten: [],
         journal: createJournal(),
         ticked: new Set(),
+        resident: new Set(),
         batches: [],
         batchByKey: new Map(),
         unused: [],
@@ -451,6 +460,20 @@ export const startTicking = (state: State, components: readonly number[]): void 
             if (storage !== undefined) startTicks(state.memory, archetype, storage, state.tick);
         }
     }
+};
+
+/**
+ * Marks components as held on the GPU, once they keep ticks. Returns whether any is new, so kernels that muted its
+ * chunk stamps load again.
+ */
+export const reside = (state: State, components: readonly number[]): boolean => {
+    let added = false;
+    for (const id of components) {
+        if (state.resident.has(id)) continue;
+        state.resident.add(id);
+        added = true;
+    }
+    return added;
 };
 
 /** The archetype with `id` added, through a cached edge. Creating one allocates, so this runs only at sync points. */

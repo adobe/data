@@ -137,6 +137,11 @@ Sync points waiting only for tails that read the world's memory, against `c21e8e
 - **A tail reading only its own thread's objects isn't settled at a sync point,** having nothing there a sync point writes: 474 → 12.8 ns.
 - **The benchmark times the run alone,** reading its report after: 12.8 → 9.0 ns. Reading it through `runReported` timed a second run as well.
 
+GPU copies uploading only the chunks CPU writes changed, against `a4eef10e`, chromium, three runs each: new `gpu upload one row 100K`, a target system writing one of 100K 12-byte positions a render system draws, as a drag does, 0.44–0.47 → 0.048–0.058 ms a run; the upload writes the row's chunk of 1,024 rows, 12 KB, rather than the whole 1.2 MB column. New `gpu upload all rows 100K`, a CPU kernel writing every row before the draw, within noise: 5.35–5.55 → 5.24–5.47 ns a row; `observe gpu entity factory` within noise, 0.44–0.51 ms both.
+- **Components a GPU kernel or render system uses keep ticks,** and kernels writing them keep their chunk stamps, though not their row stamps unless a change filter observes them: once per call for a kernel writing every row, a chunk stamp per written row otherwise.
+- **An upload writes each run of adjacent chunks stamped since its last upload** or holding rows a sync point appended or disturbed, clamped to the row count; a column with GPU writes the CPU hasn't read back writes only those rows. A whole-column stamp (`columnChanged`) uploads nothing: only GPU kernels make one, and their writes are on the GPU already.
+- **A WASM kernel's column addresses are kept per load as well as per archetype version:** a kernel loaded again to stamp a component that already kept ticks went on passing the muted column's address, 0, and wrote its stamps over the entity table there.
+
 ## Where the gains came from
 
 Step figures marked (vitest) are from the node vitest lane: read them as relative.

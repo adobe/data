@@ -238,9 +238,11 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     }));
     /**
      * Changed and chunk columns of components no registered system filters on are muted: nothing reads those ticks,
-     * so the WASM drops their stamps and the JS kernel stamps one dummy element.
+     * so the WASM drops their stamps and the JS kernel stamps one dummy element. Chunk columns of components held on
+     * the GPU stay, since uploads read them.
      */
-    const mutedNow = (): boolean[] => sources.map(source => (source.kind === "changed" || source.kind === "chunks") && !state.observed.has(source.id));
+    const stamped = (source: Extract<Source, { readonly id: number }>): boolean => state.observed.has(source.id) || (source.kind === "chunks" && state.resident.has(source.id));
+    const mutedNow = (): boolean[] => sources.map(source => (source.kind === "changed" || source.kind === "chunks") && !stamped(source));
     const upWasmColumns: WasmColumn[] = upSources.map(source => {
         const layout = state.layouts[source.id];
         return { view: source.leaf.view, stride: layout.kind === "linear" ? layout.stride : 0, offset: source.leaf.offset, boolean: source.leaf.scalar === "boolean", component: source.id };
@@ -278,7 +280,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             if (loadedFor === null) return true;
             for (let k = 0; k < sources.length; k++) {
                 const source = sources[k];
-                if (muted[k] && source.kind !== "entity" && state.observed.has(source.id)) return true;
+                if (muted[k] && source.kind !== "entity" && stamped(source)) return true;
             }
             return false;
         },

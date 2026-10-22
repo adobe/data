@@ -198,7 +198,30 @@ const rescore = System.create({ name: "wasmTest/rescore", components: { write: [
     if (chosen.has(row.entity)) row[score] += 1;
 });
 
+/** Keeps ticks of `score` without observing its changes, so kernels writing it mute their stamps. */
+const scoreAdded = System.create({ name: "wasmTest/scoreAdded", components: { added: [score] } }, () => {});
+const raise = System.create({ name: "wasmTest/raise", kernel: "cpu", components: { write: [score] } }, row => {
+    row[score] += 1;
+});
+let raised = 0;
+const countRaised = System.create({ name: "wasmTest/countRaised", components: { changed: [score] } }, () => { raised++; });
+
 describe("WASM kernels", () => {
+    it("stamp what they write once a change filter observes a component that already kept ticks", async () => {
+        for (const simd of [true, false]) {
+            await using ecs = createWorld({ [workers]: 0 }, { simd });
+            await ecs.run(seed, { count: 100 });
+            await ecs.run(scoreAdded);
+            await ecs.run(raise);
+            raised = 0;
+            // Observing `score` loads `raise` again with its stamps, while `score`'s columns stay where they were.
+            await ecs.run(countRaised);
+            await ecs.run(raise);
+            await ecs.run(countRaised);
+            expect(raised, `simd ${simd}`).toBe(200);
+        }
+    });
+
     it("pass exactly the rows a change filter passes, across blocks of rows and their edges", async () => {
         const rows = [0, 3, 7, 8, 15, 16, 40, 41, 42, 43, 44, 45, 46, 47, 63, 64, 98, 99];
         for (const [wasm, simd] of [[true, true], [true, false], [false, false]] as const) {

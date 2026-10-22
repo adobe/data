@@ -335,7 +335,7 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
             const { remote } = runners[i];
             if (remote !== null && settled(state, folds, outcome, runners[i], leaves[i], settleRemote(state, remote, done))) failed = true;
         }
-        if (gpu !== null) markWrites(gpu, runners);
+        if (gpu !== null) markWrites(state, gpu, runners);
         if (failed) {
             for (let later = v + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (outcome.skipped ??= []).push(labelOfItem(leaf));
             return -1;
@@ -441,7 +441,7 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
             }
             if (remote > 0) prepared.tasks.clear();
             countRan(state, runners);
-            if (gpu !== null) markWrites(gpu, runners);
+            if (gpu !== null) markWrites(state, gpu, runners);
             if (tierFailed) {
                 for (let later = t + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (outcome.skipped ??= []).push(labelOfItem(leaf));
                 break;
@@ -592,14 +592,17 @@ export const readAhead = async (state: State, gpu: GpuEngine, runners: readonly 
     await gpu.readback([...storages]);
 };
 
-/** CPU writes make GPU copies out of date; GPU kernels mark their own writes as they dispatch. */
-const markWrites = (gpu: GpuEngine, runners: readonly Runner[]): void => {
+/**
+ * CPU writes make GPU copies out of date; GPU kernels mark their own writes as they dispatch. Writes to a component
+ * held on the GPU stamp its chunks, which uploads read, so only other storages are marked whole.
+ */
+const markWrites = (state: State, gpu: GpuEngine, runners: readonly Runner[]): void => {
     for (const runner of runners) {
         if (runner.placement !== "cpu" || runner.writes.length === 0) continue;
         for (const archetype of runner.matched()) {
             for (const id of runner.writes) {
                 const storage = archetype.storageById[id];
-                if (storage !== undefined) gpu.markCpuWrites(archetype, storage);
+                if (storage !== undefined && !(storage.ticked && state.resident.has(id))) gpu.markCpuWrites(archetype, storage);
             }
         }
     }

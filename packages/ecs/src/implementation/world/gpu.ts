@@ -2,6 +2,7 @@ import { labelOfItem } from '../../interface/registry/index.js';
 import { layout } from '../../interface/gpu/layout.js';
 import { recordBytes } from '../../interface/gpu/record.js';
 import type { Archetype, Storage } from './archetype.js';
+import { chunkShift } from './kernel.js';
 
 export { recordBytes };
 export const recordWords = recordBytes / 4;
@@ -11,9 +12,9 @@ const minimumBlockBytes = 256;
 const initialHeapBytes = 1 << 20;
 
 /**
- * The GPU copy of one storage: a block of the heap holding `capacity` rows at the storage's stride. `cpuDirty` rows
- * changed on the CPU since they were last uploaded; `gpuAhead` rows were written on the GPU since they were last
- * read back. Each is a row range, empty when `low >= high`.
+ * The GPU copy of one storage: a block of the heap holding `capacity` rows at the storage's stride. `dirty` rows
+ * changed on the CPU since they were last uploaded, beyond those in chunks a ticked storage stamped after `uploaded`;
+ * `ahead` rows were written on the GPU since they were last read back. Each is a row range, empty when `low >= high`.
  */
 type Resident = {
     readonly storage: Storage;
@@ -26,6 +27,8 @@ type Resident = {
     dirtyHigh: number;
     aheadLow: number;
     aheadHigh: number;
+    /** The tick of the run that last uploaded it: CPU writes since stamp later ticks. */
+    uploaded: number;
 };
 
 /**
@@ -46,8 +49,8 @@ export type GpuEngine = {
     readonly submit: () => void;
     /** Drops the run's encoder unsubmitted, after a body failed partway through recording. */
     readonly discard: () => void;
-    /** The word address of a storage's GPU copy, uploading rows the CPU changed first. */
-    readonly upload: (archetype: Archetype, storage: Storage) => number;
+    /** The word address of a storage's GPU copy, uploading rows the CPU changed first, for a run at `tick`. */
+    readonly upload: (archetype: Archetype, storage: Storage, tick: number) => number;
     /**
      * The word address of a block for `key` holding the first `count` elements of `array`, written when `changed` or
      * when the block moves, such as the row lists an `up` system's dispatches read.
@@ -59,6 +62,7 @@ export type GpuEngine = {
     readonly release: (prefix: string) => void;
     /** For tests of what a world holds: how many records and index blocks it keeps. */
     readonly records: () => number;
+    /** Marks every row of a storage changed on the CPU, for writes that may not stamp its chunks. */
     readonly markCpuWrites: (archetype: Archetype, storage: Storage) => void;
     readonly markGpuWrites: (archetype: Archetype, storage: Storage) => void;
     /** Whether a storage has GPU writes the CPU hasn't seen. */
@@ -157,7 +161,7 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         let resident = residents.get(storage);
         if (resident === undefined) {
             const stride = storage.layout.kind === "linear" ? storage.layout.stride : 0;
-            resident = { storage, archetype, stride, offset: 0, bytes: 0, capacity: 0, dirtyLow: 0, dirtyHigh: 0, aheadLow: 0, aheadHigh: 0 };
+            resident = { storage, archetype, stride, offset: 0, bytes: 0, capacity: 0, dirtyLow: 0, dirtyHigh: 0, aheadLow: 0, aheadHigh: 0, uploaded: 0 };
             residents.set(storage, resident);
         }
         if (resident.capacity < archetype.capacity) {
@@ -186,16 +190,44 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         return resident;
     };
 
-    const upload = (archetype: Archetype, storage: Storage): number => {
+    /** Writes rows `low` to `high` of a storage into its GPU copy. */
+    const write = (resident: Resident, low: number, high: number): void => {
+        // A queue write lands before work recorded but not yet submitted, which may read these rows.
+        submit();
+        const start = low * resident.stride;
+        device.queue.writeBuffer(heap, resident.offset + start, resident.storage.views.u8, start, (high - low) * resident.stride);
+    };
+
+    const upload = (archetype: Archetype, storage: Storage, tick: number): number => {
         const resident = residentOf(archetype, storage);
-        const high = Math.min(resident.dirtyHigh, archetype.count);
-        if (resident.dirtyLow < high) {
-            // A queue write lands before work recorded but not yet submitted, which may read these rows.
-            submit();
-            const start = resident.dirtyLow * resident.stride;
-            device.queue.writeBuffer(heap, resident.offset + start, storage.views.u8, start, (high - resident.dirtyLow) * resident.stride);
+        const { count } = archetype;
+        const low = resident.dirtyLow;
+        const high = Math.min(resident.dirtyHigh, count);
+        // Rows the GPU wrote and the CPU hasn't read back are newer there, so only the dirty rows are written: CPU
+        // systems read them back before writing them, so nothing else changed.
+        if (storage.ticked && !ahead.has(resident)) {
+            // A write per run of adjacent chunks stamped since the last upload or holding dirty rows. Outside the dirty
+            // rows the CPU's rows are the GPU's, so writing whole chunks costs only bytes.
+            const { chunkChanged } = storage;
+            const { uploaded } = resident;
+            const chunks = (count + (1 << chunkShift) - 1) >> chunkShift;
+            const dirtyFirst = low < high ? low >> chunkShift : chunks;
+            const dirtyEnd = low < high ? ((high - 1) >> chunkShift) + 1 : 0;
+            let first = -1;
+            for (let chunk = 0; chunk < chunks; chunk++) {
+                if (chunkChanged[chunk] > uploaded || (chunk >= dirtyFirst && chunk < dirtyEnd)) {
+                    if (first < 0) first = chunk;
+                }
+                else if (first >= 0) {
+                    write(resident, first << chunkShift, chunk << chunkShift);
+                    first = -1;
+                }
+            }
+            if (first >= 0) write(resident, first << chunkShift, count);
         }
+        else if (low < high) write(resident, low, high);
         resident.dirtyLow = resident.dirtyHigh = 0;
+        resident.uploaded = tick;
         return resident.offset / 4;
     };
 

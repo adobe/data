@@ -143,4 +143,9 @@ describe("systems ordering their rows by an index", () => {
         expect(() => untypedSystem({ name: "bad", components: { write: [amount] }, order: ranked })).toThrow(`its rows are ordered by an index keyed by "indexCreateTest/amount", which the system writes`);
         expect(() => untypedSystem({ name: "bad", kernel: "cpu", components: { write: [amount] }, order: Index.create({ key: [name], sorted: true }) })).toThrow(`ordered by an index keyed by "indexCreateTest/name", a string, which kernels don't read yet`);
     });
+    it("throw for a render system's order by what isn't a sorted index", () => {
+        const untypedRender = (order: object): unknown => Reflect.apply(System.render, undefined, [{ name: "bad", order, shader: { accessors: { amount } } }, () => {}]);
+        expect(() => untypedRender({ name: "fake" })).toThrow(`System "bad" orders its rows by a value Index.create didn't return`);
+        expect(() => untypedRender(Index.create({ name: "indexCreateTest/hashedForRender", key: [amount] }))).toThrow(`orders its rows by index "indexCreateTest/hashedForRender", which isn't sorted`);
+    });
 });

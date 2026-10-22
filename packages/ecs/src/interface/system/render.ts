@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Component } from '../component/component.js';
+import type { Index } from '../indexes/index-type.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
 import { nameOf } from '../registry/items.js';
 import { claimSystem } from '../registry/program.js';
@@ -22,7 +23,10 @@ import type { OneThread, ThreadedBy, ThreadsOf } from './threads.js';
  */
 export type Shader = { readonly group?: number; readonly accessors: { readonly [name: string]: StructComponent } };
 
-/** One group of matching rows, `0` to `count`. `bind` sets the world's bind group for it on a pass. */
+/**
+ * One group of matching rows, `0` to `count`: an archetype's, or with `order` every matching row in its order. `bind`
+ * sets the world's bind group for it on a pass.
+ */
 export type RenderTable = {
     readonly count: number;
     readonly bind: (pass: GPURenderPassEncoder | GPUComputePassEncoder) => void;
@@ -44,6 +48,11 @@ type RenderDeclaration = {
     readonly components?: { readonly has?: readonly Component.Key[]; readonly not?: readonly Component.Key[] };
     /** It runs only while `gpuDevice` is set, as if `is` listed it. */
     readonly resources?: { readonly read?: readonly Resource.Key[]; readonly is?: readonly Condition[]; readonly not?: readonly Condition[] };
+    /**
+     * Draws every matching row as one table, in this sorted index's order: key order, then entity order. Its shaders'
+     * accessors then take a row's position in that order.
+     */
+    readonly order?: Index<{ readonly sorted: true; readonly key: readonly Component.Key[] }>;
     readonly shader: Shader;
     readonly before?: readonly System<unknown>[];
     readonly after?: readonly System<unknown>[];
@@ -56,7 +65,12 @@ type Rendered<D extends RenderDeclaration> = D & { readonly components: { readon
 /**
  * Declares a render system: it runs once per run on `gpuDevice`'s thread, in schedule order, and records GPU work over
  * the GPU copy of the components its accessors name, which the world uploads first as needed. It runs only while the
- * world has a `gpuDevice`. Throws as `create` does, and for an accessor its shader can't read on the GPU.
+ * world has a `gpuDevice`. Its body's `tables` hold one table per matching archetype, each in row order; with `order`,
+ * exactly one table of every matching row, across archetypes, in the index's order, so instance `i` is the i-th: a
+ * shader's accessors take that position as their `row`, with the same names and signatures. Throws as `create` does,
+ * for an `order` that isn't a sorted index, and for an accessor its shader can't read on the GPU. A run with `order`
+ * fails, as a failure in its report, when a matching archetype holds more rows than 32 bits name beside its slot:
+ * 2^31 with up to two matching archetypes, 2^30 with up to four, and so on.
  */
 export const render = <const D extends RenderDeclaration>(
     declaration: D & OneThread<ThreadsOf<D> | ThreadOfResource<typeof gpuDevice>, ThreadedBy<D>>,

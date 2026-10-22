@@ -35,6 +35,12 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
   per-row object such as a texture's bind group, and a row body can't learn its GPU row. A consumer drawing an image
   per row keeps its own instance buffer, 4,000 draws in 2.1 ms a tick. Possible: tables giving their entities in GPU
   row order. Not needed until a consumer's profile says so.
+- **Paint order across render tables:** a render system draws each matching archetype as its own table in row order,
+  so 2D content of several kinds (shapes, images, paths) can't be blended back to front without the consumer keeping
+  its own sorted instance list. Proposal: `order: index` on `System.render`, giving one table spanning its archetypes
+  whose `bind` sets a buffer of the index's rows in sorted order with each archetype's column base addresses; every
+  column already lives in one heap, so accessors resolve a sorted instance to its row. Not needed while consumers draw
+  every kind with one shader from their own list.
 - **Report retention:** the last 256 runs keep their reports (`retainedRuns` in `reports.ts`), a fixed internal
   constant; a later run takes the oldest one's entity. Recommended: keep it internal until a consumer needs another; then
   a world option or resource.

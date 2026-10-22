@@ -22,6 +22,9 @@
     "!dist/perf",
     "!dist/perftest",
     "!dist/samples",
+    "!dist/observe",
+    "!dist/**/*.tsbuildinfo",
+    "src",
     "LICENSE"
   ],
   "scripts": {

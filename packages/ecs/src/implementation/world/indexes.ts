@@ -1067,6 +1067,8 @@ const sortedOrder = (index: WorldIndex, count: number, keys: Uint32Array): Int32
         order.set(ordered);
         return order;
     }
+    // Entries already in key order, as a load in document order lists them, need no sort.
+    if (inKeyOrder(keys, count, words)) return order;
     const histogram = built.histogram;
     for (let w = words - 1; w >= 0; w--) {
         for (let shift = 0; shift < 32; shift += 16) {
@@ -1092,6 +1094,21 @@ const sortedOrder = (index: WorldIndex, count: number, keys: Uint32Array): Int32
     built.order = order;
     built.spare = spare;
     return order;
+};
+
+/** Whether each of `count` entries' keys, `words` each, is at least the one before, comparing words from the first. */
+const inKeyOrder = (keys: Uint32Array, count: number, words: number): boolean => {
+    for (let k = 1; k < count; k++) {
+        const previous = (k - 1) * words;
+        const next = k * words;
+        for (let w = 0; w < words; w++) {
+            const a = keys[previous + w];
+            const b = keys[next + w];
+            if (a < b) break;
+            if (a > b) return false;
+        }
+    }
+    return true;
 };
 
 /** Stamps the buckets holding rows whose watched component changed since it was last read, with `tick`. */

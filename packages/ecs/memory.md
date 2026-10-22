@@ -45,6 +45,12 @@ decisions about ecs here rather than in a personal memory, so every machine and 
 - **One-off systems created at runtime aren't a large source of expected runtime;** regressions confined to them are
   acceptable.
 
+## Checks
+
+- **The ECS is independent of the rest of the monorepo:** check only this package. Before a push, delete this package's
+  `*.tsbuildinfo`, then run `pnpm run build` (it is `tsc -b`, so it typechecks too) and `pnpm test` here. Never rebuild
+  or test other packages or run `pnpm -r` for ECS work.
+
 ## Follow-ups
 
 - **Open decisions and findings are tracked in `followups.md`.** Add new ones there, and remove an item once it's decided or done.

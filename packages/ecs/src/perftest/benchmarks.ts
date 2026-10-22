@@ -21,6 +21,7 @@ import { readBenchmarks } from "./reads.js";
 import { observedBenchmarks } from "./observed.js";
 import { systemBenchmarks } from "./systems.js";
 import { indexBenchmarks } from "./indexes.js";
+import { editorBenchmarks } from "./editor.js";
 import { stringBenchmarks } from "./strings.js";
 import { structReplace, valueBenchmarks } from "./values.js";
 import { createWorld } from "../implementation/index.js";
@@ -687,6 +688,7 @@ export const benchmarks: readonly Benchmark[] = [
     ...observedBenchmarks,
     ...systemBenchmarks,
     ...indexBenchmarks,
+    ...editorBenchmarks,
     ...stringBenchmarks,
     ...valueBenchmarks,
     structReplace("main", 0),

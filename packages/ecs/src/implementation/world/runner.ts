@@ -611,28 +611,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const runUp = (since: number, values: readonly unknown[], args: unknown, tick: number, workers: Workers | null, index: number): Promise<readonly ChunkResult[]> | null => {
         if (up === null) return null;
         const slot = partialCount === 0 ? 0 : takeSlots(1);
-        let next: () => readonly Run[] | null;
-        let clear = (): void => {};
-        if (since < 0) {
-            const order = up.levels(matches);
-            let depth = 0;
-            next = () => {
-                if (depth >= order.levels) return null;
-                const runs: Run[] = [];
-                for (let group = order.depthGroups[depth]; group < order.depthGroups[depth + 1]; group++) {
-                    if (order.groupEnds[group] === order.groupStarts[group]) continue;
-                    runs.push({ owner: order.groupOwners[group], parent: order.groupParents[group], rows: order.rows, parents: order.parents, start: order.groupStarts[group], end: order.groupEnds[group] });
-                }
-                depth++;
-                return runs;
-            };
-        }
-        else {
-            const pass = up.filtered(matches, addedIds, changedIds, since);
-            if (pass === null) return null;
-            next = pass.next;
-            clear = pass.clear;
-        }
+        const pass = since < 0 ? up.wholePass(up.levels(matches)) : up.filtered(matches, addedIds, changedIds, since);
+        if (pass === null) return null;
+        const { next, clear } = pass;
         const runLocally = (run: Run): void => runUpRows(matches[run.owner], run.parent, run.rows, run.parents, run.start, run.end, values, args, tick, slot);
         const parallel = workers !== null && kernel !== null && kernel.wasm !== null && kernel.compiled() !== null && partialCount === 0
             && kernel.lookupParameters().length + indexParameters.length + 3 + (kernel.description.upColumns?.length ?? 0) + kernel.wasm.scalars.length <= maximumScalars;

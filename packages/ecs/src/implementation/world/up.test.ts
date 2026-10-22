@@ -101,6 +101,12 @@ const loop = System.create({ name: "upTest/loop" }, ({ commands }) => {
 const close = System.create({ name: "upTest/close" }, ({ commands }) => { commands.add(entities.root, parent, entities.grandchild); });
 const open = System.create({ name: "upTest/open" }, ({ commands }) => { commands.add(entities.root, parent, entities.other); });
 const orphan = System.create({ name: "upTest/orphan" }, ({ commands }) => { commands.remove(entities.grandchild, parent); });
+/** Spawns `count` leaves under the grandchild, more than the journal keeps for a world this small. */
+const bulk: Entity[] = [];
+const bulkUnder = System.create({ name: "upTest/bulkUnder", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+    bulk.length = 0;
+    for (let i = 0; i < input.count; i++) bulk.push(commands.spawn([label, local, world, parent])({ [label]: "bulk", [local]: 1, [world]: 0, [parent]: entities.grandchild }));
+});
 
 const worlds = async (value: (entity: Entity) => Promise<number | null>): Promise<{ [name: string]: number | null }> =>
     Object.fromEntries(await Promise.all(Object.entries(entities).map(async ([name, entity]) => [name, await value(entity)])));
@@ -196,6 +202,27 @@ describe("up", () => {
         await ecs.run(propagateChanged);
         expect(ran).toEqual(["grandchild"]);
         expect(await read(ecs, entities.grandchild, world)).toBe(100);
+    });
+
+    it("runs every row after a spawn outruns the journal, with change filters, then only the rows that changed", async () => {
+        await using ecs = createWorld({ [workers]: 0 });
+        await ecs.run(spawn);
+        await ecs.run(nest);
+        await ecs.run(propagateChanged);
+        await ecs.run(bulkUnder, { count: 5000 });
+        ran.length = 0;
+        await ecs.run(propagateChanged);
+        expect(ran.length).toBe(4 + 5000);
+        expect(ran.slice(0, 4).sort()).toEqual(["child", "grandchild", "other", "root"]);
+        expect(await readEach(ecs, bulk.slice(0, 3), world)).toEqual([112, 112, 112]);
+        ran.length = 0;
+        await ecs.run(bump, { entity: entities.grandchild });
+        await ecs.run(propagateChanged);
+        expect(ran.length).toBe(1 + 5000);
+        expect(await readEach(ecs, [entities.grandchild, bulk[4999]], world)).toEqual([13, 14]);
+        ran.length = 0;
+        await ecs.run(propagateChanged);
+        expect(ran).toEqual([]);
     });
 
     it("finds a cycle a reparent closes after the tree was built, and runs its rows again once it opens", async () => {

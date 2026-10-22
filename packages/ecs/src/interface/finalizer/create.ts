@@ -9,7 +9,7 @@ import type { Resource } from '../resource/resource.js';
 import type { Listed, Property } from '../system/property.js';
 import type { ThreadOfComponent } from '../component/value.js';
 import type { Component } from '../component/component.js';
-import type { Elsewhere, OneThread, ThreadsOf } from '../system/threads.js';
+import type { Elsewhere, OneThread, ThreadedBy, ThreadsOf } from '../system/threads.js';
 import type { ChangeSet, Context, Row, Watched } from './body.js';
 import type { Changes, Leaf } from './created.js';
 import type { ChangesDeclaration, Declaration } from './declaration.js';
@@ -72,7 +72,7 @@ const checkOrder = (name: string, thread: string, declaration: { readonly before
  * or with a resource conflict.
  */
 export const create = <const D extends Declaration>(
-    declaration: D & Validate<D> & OneThread<ThreadsOf<D>> & Remote<D>,
+    declaration: D & Validate<D> & OneThread<ThreadsOf<D>, ThreadedBy<D>> & Remote<D>,
     body: (row: Row<D>, context: Context<D>) => void,
 ): Finalizer => {
     const id = takeIdOfDeclaration(declaration);

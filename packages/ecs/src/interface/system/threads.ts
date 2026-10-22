@@ -25,10 +25,19 @@ type PlacingResources<D> =
 /** The threads of the object components and resources a declaration uses. */
 export type ThreadsOf<D> = ThreadOfComponent<Placing<D> & Component.Key> | ThreadOfResource<PlacingResources<D> & Resource.Key>;
 
+/** Each object component and resource a declaration uses, by key, with the thread it lives on. */
+export type ThreadedBy<D> = {
+    readonly [K in (Placing<D> & Component.Key) | (PlacingResources<D> & Resource.Key) as [Thread<K>] extends [never] ? never : K]: Thread<K>;
+};
+type Thread<K> = K extends Component.Key ? ThreadOfComponent<K> : K extends Resource.Key ? ThreadOfResource<K> : never;
+
 type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
 
-/** Requires a property no declaration has when `T` holds more than one thread, so the declaration fails to compile. */
-export type OneThread<T> = true extends IsUnion<T> ? { readonly "error: its object components and resources live on different threads": T } : {};
+/**
+ * Requires a property no declaration has when `T` holds more than one thread, so the declaration fails to compile; its
+ * value names each key with its thread, `ThreadedBy` of the declaration.
+ */
+export type OneThread<T, Keys = T> = true extends IsUnion<T> ? { readonly "error: its object components and resources live on different threads": { readonly [K in keyof Keys]: Keys[K] } } : {};
 
 /**
  * Whether `T`, the thread a declaration's objects live on, is another than the world's, which a joined thread may fill;

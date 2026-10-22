@@ -150,8 +150,8 @@ describe("System.create", () => {
         const tick = System.create({ name: "typesSystemTest/tick", components: { write: [position] } }, row => { row[position] += 1; });
         const leaves = [show, count, tick].map(system => definitionOf(system));
         expect(leaves.map(leaf => leaf === undefined || leaf.kind === "composite" ? undefined : threadOf(leaf.declaration, "System", leaf.name))).toEqual(["main", "world", null]);
-        expect(() => create({ name: "typesSystemTest/span", components: { read: [tags], write: [node] } })).toThrow('System "typesSystemTest/span" uses values on threads "world" and "main"');
-        expect(() => create({ name: "typesSystemTest/spanResource", components: { read: [tags] }, resources: { is: [document] } })).toThrow('uses values on threads "world" and "main"');
+        expect(() => create({ name: "typesSystemTest/span", components: { read: [tags], write: [node] } })).toThrow('System "typesSystemTest/span" uses "typesSystemTest/tags" on "world" and "typesSystemTest/node" on "main"');
+        expect(() => create({ name: "typesSystemTest/spanResource", components: { read: [tags] }, resources: { is: [document] } })).toThrow('uses "typesSystemTest/tags" on "world" and "typesSystemTest/document" on "main"');
         // A string lives in shared memory, so it goes with any thread's objects.
         const caption = System.create({ name: "typesSystemTest/caption", components: { read: [label, node] } }, row => { row[node].textContent = row[label]; });
         const captionLeaf = definitionOf(caption);
@@ -218,7 +218,7 @@ describe("System.render", () => {
         const definition = definitionOf(draw);
         expect(definition?.kind === "render" ? [definition.declaration.components, definition.declaration.resources] : null).toEqual([{ read: [height] }, { is: [gpuDevice] }]);
         const render: (declaration: object) => unknown = declaration => Reflect.apply(System.render, undefined, [declaration, () => {}]);
-        expect(() => render({ name: "typesSystemTest/drawDocument", resources: { read: [document] }, shader: { accessors: {} } })).toThrow('uses values on threads "main" and "world"');
+        expect(() => render({ name: "typesSystemTest/drawDocument", resources: { read: [document] }, shader: { accessors: {} } })).toThrow('uses "typesSystemTest/document" on "main" and "gpuDevice" on "world"');
     });
     it("rejects at creation accessors its shader can't read, and reductions", () => {
         const render: (declaration: object) => unknown = declaration => Reflect.apply(System.render, undefined, [declaration, () => {}]);

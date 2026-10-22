@@ -13,7 +13,7 @@ import type { Leaf } from './leaf.js';
 import type { Name } from './name.js';
 import type { StructComponent } from './struct.js';
 import type { System } from './system.js';
-import type { OneThread, ThreadsOf } from './threads.js';
+import type { OneThread, ThreadedBy, ThreadsOf } from './threads.js';
 
 /**
  * How a render system's shaders reach its components: `accessors` names a WGSL function for each component it reads,
@@ -58,7 +58,7 @@ type Rendered<D extends RenderDeclaration> = D & { readonly components: { readon
  * world has a `gpuDevice`. Throws as `create` does, and for an accessor its shader can't read on the GPU.
  */
 export const render = <const D extends RenderDeclaration>(
-    declaration: D & OneThread<ThreadsOf<D> | ThreadOfResource<typeof gpuDevice>>,
+    declaration: D & OneThread<ThreadsOf<D> | ThreadOfResource<typeof gpuDevice>, ThreadedBy<D>>,
     body: Body<Rendered<D>>,
 ): System => {
     const id = takeIdOfDeclaration(declaration);

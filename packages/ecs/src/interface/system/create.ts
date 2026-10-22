@@ -17,7 +17,7 @@ import type { Leaf } from './leaf.js';
 import type { Listed, Property } from './property.js';
 import type { StructComponent, StructResource } from './struct.js';
 import type { System } from './system.js';
-import type { OneThread, ThreadsOf } from './threads.js';
+import type { OneThread, ThreadedBy, ThreadsOf } from './threads.js';
 import type { HeldBy } from './values.js';
 
 type Reduced<D extends Declaration> = keyof Property<D, "reduce"> & Resource.Key;
@@ -154,7 +154,7 @@ type Checked<C> = C extends Alone ? unknown : C extends CompositeDeclaration ? {
  * One argument, a body or a composite, is one overload, so a mistake in it is reported where it is rather than as no
  * overload matching.
  */
-export function create<const D extends Declaration>(declaration: D & Validate<D> & OneThread<ThreadsOf<D>>, body: Body<D>): System<InputOf<D>>;
+export function create<const D extends Declaration>(declaration: D & Validate<D> & OneThread<ThreadsOf<D>, ThreadedBy<D>>, body: Body<D>): System<InputOf<D>>;
 export function create<const C extends Alone | Composition>(only: C & Checked<C>): C extends Alone ? System : System<CompositeInputOf<MembersOf<C>>>;
 export function create(first: Declaration | Leaf["body"] | readonly System<unknown>[] | CompositeDeclaration, second?: Leaf["body"]): System<unknown> {
     // The plugin gives its id to the call's first argument: the declaration, the members, or the body made into a

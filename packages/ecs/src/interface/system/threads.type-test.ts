@@ -2,6 +2,10 @@ import { Resource } from '../resource/resource.js';
 import { Component } from '../component/component.js';
 import { Finalizer } from '../finalizer/finalizer.js';
 import { System } from './system.js';
+import type { ThreadedBy } from './threads.js';
+
+type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
+const check = <_T extends true>() => { };
 
 const node = Symbol("threadsTypeTest/node");
 const label = Symbol("threadsTypeTest/label");
@@ -105,3 +109,6 @@ Finalizer.changes({ name: "threadsTypeTest/save", watch: [label, position], reso
 Finalizer.changes({ name: "threadsTypeTest/saveNodes", watch: [node] }, () => {});
 // @ts-expect-error a changes finalizer reads no other thread's resources
 Finalizer.changes({ name: "threadsTypeTest/saveDocument", resources: { read: [document] } }, () => {});
+
+// The error names each object component and resource with its thread; data places nothing.
+check<Equal<ThreadedBy<{ readonly components: { readonly read: [typeof audio, typeof position] }; readonly resources: { readonly read: [typeof document, typeof time] } }>, { readonly [audio]: "threadsTypeTest"; readonly [document]: "main" }>>();

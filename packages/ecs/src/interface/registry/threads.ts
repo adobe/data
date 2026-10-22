@@ -37,13 +37,17 @@ export const requireRegistered = (what: "System" | "Finalizer", name: string, ki
  * none. Throws when they live on different threads, or a name it's placed by isn't registered as its kind.
  */
 export const threadOf = (declaration: Placed, what: "System" | "Finalizer", name: string): string | null => {
-    const threads = new Set<string>();
+    /** By thread, the labels of the keys placing it there. */
+    const threads = new Map<string, Set<string>>();
     const add = (kind: "component" | "resource", keys: readonly Key[] | undefined): void => {
         requireRegistered(what, name, kind, keys);
         for (const key of keys ?? []) {
             const found = declarationOf(key);
             const thread = found === undefined ? null : threadOfDeclaration(found);
-            if (thread !== null) threads.add(thread);
+            if (thread === null) continue;
+            const labels = threads.get(thread) ?? new Set<string>();
+            labels.add(`"${labelOf(key)}"`);
+            threads.set(thread, labels);
         }
     };
     const { components, lookup, up, resources } = declaration;
@@ -61,9 +65,9 @@ export const threadOf = (declaration: Placed, what: "System" | "Finalizer", name
     add("resource", resources?.write);
     add("resource", resources?.changed);
     add("resource", resources?.is);
-    const found = [...threads];
-    if (found.length > 1) {
-        throw new Error(`${what} "${name}" uses values on threads ${found.map(thread => `"${thread}"`).join(" and ")}; its object components and resources live on one thread.`);
+    if (threads.size > 1) {
+        const placed = [...threads].map(([thread, labels]) => `${[...labels].join(", ")} on "${thread}"`).join(" and ");
+        throw new Error(`${what} "${name}" uses ${placed}; its object components and resources live on one thread.`);
     }
-    return found[0] ?? null;
+    return threads.keys().next().value ?? null;
 };

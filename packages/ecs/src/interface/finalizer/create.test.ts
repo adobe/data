@@ -78,7 +78,7 @@ describe("Finalizer.create and Finalizer.changes", () => {
     it("reject what types reject, for untyped callers", () => {
         expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/both", components: {}, resources: { read: [time], write: [time] } })).toThrow("in both resources read and write");
         expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/reduced", components: {}, resources: { write: [total] } })).toThrow("which is reduced");
-        expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/span", components: { read: [node, tags] } })).toThrow('uses values on threads "main" and "world"');
+        expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/span", components: { read: [node, tags] } })).toThrow('uses "typesFinalizerTest/node" on "main" and "typesFinalizerTest/tags" on "world"');
         expect(() => untyped(Finalizer.changes, { name: "typesFinalizerTest/derived", watch: [slot] })).toThrow("which is derived");
         expect(() => untyped(Finalizer.changes, { name: "typesFinalizerTest/resource", watch: [time] })).toThrow("which isn't a registered component");
         expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/hasResource", components: { has: [time] } })).toThrow(`Finalizer "typesFinalizerTest/hasResource" uses component "typesFinalizerTest/time", which isn't a registered component`);
@@ -89,13 +89,13 @@ describe("Finalizer.create and Finalizer.changes", () => {
         expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/detachWriting", components: { read: [node] }, resources: { write: [time] } }))
             .toThrow(`Finalizer "typesFinalizerTest/detachWriting" runs on thread "main" and writes resources; one on another thread than the world's runs after the sync point, so it writes none.`);
         expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/pageWriting", components: { read: [tags] }, resources: { write: [page] } }))
-            .toThrow('uses values on threads "world" and "main"');
+            .toThrow('uses "typesFinalizerTest/tags" on "world" and "typesFinalizerTest/page" on "main"');
         expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/detachLooking", components: { read: [node] }, lookup: { labels: { read: [mark] } } }))
             .toThrow(`Finalizer "typesFinalizerTest/detachLooking" runs on thread "main" and looks up other entities; one on another thread than the world's runs after the sync point, so it looks up none.`);
         expect(() => untyped(Finalizer.changes, { name: "typesFinalizerTest/saveNodes", watch: [node] }))
             .toThrow(`Finalizer "typesFinalizerTest/saveNodes" watches or reads values on thread "main"; a changes finalizer runs on the world's thread, in the sync point.`);
         expect(() => untyped(Finalizer.changes, { name: "typesFinalizerTest/savePage", watch: [tags], resources: { read: [page] } }))
-            .toThrow('uses values on threads "world" and "main"');
+            .toThrow('uses "typesFinalizerTest/tags" on "world" and "typesFinalizerTest/page" on "main"');
         expect(() => untyped(Finalizer.changes, { name: "typesFinalizerTest/savePageOnly", resources: { read: [page] } }))
             .toThrow(`Finalizer "typesFinalizerTest/savePageOnly" watches or reads values on thread "main"; a changes finalizer runs on the world's thread, in the sync point.`);
         // Reading another thread's values, without writing or looking up, it's created.

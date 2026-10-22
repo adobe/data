@@ -13,6 +13,9 @@
 //   2. Publishing is governed solely by `private` + `pnpm -r publish`. A
 //      per-package `publish-public` script would reintroduce identity-specific
 //      publish logic, so it is forbidden.
+//   3. Every publishable package (private: false) holds a LICENSE identical to
+//      the monorepo's, which npm always packs, so each published package carries
+//      the license its source headers point to.
 //   3. In a feature-layered package, no runtime file imports the test tier: a
 //      feature's `spec/` or `ecs/conformance/`, `@adobe/data-testing`, or `vitest`.
 //      TS project references enforce this for data/services/ecs; this covers the
@@ -25,6 +28,8 @@ import { dirname, join, relative, resolve } from "node:path";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const packagesDir = join(root, "packages");
 
+const license = readFileSync(join(root, "LICENSE"), "utf8");
+
 const errors = [];
 for (const name of readdirSync(packagesDir)) {
   let pkg;
@@ -35,6 +40,17 @@ for (const name of readdirSync(packagesDir)) {
   }
   if (typeof pkg.private !== "boolean") {
     errors.push(`${name}: must set "private": true or false explicitly (absent must not mean publishable)`);
+  }
+  if (pkg.private === false) {
+    let own = null;
+    try {
+      own = readFileSync(join(packagesDir, name, "LICENSE"), "utf8");
+    } catch {
+      // checked below
+    }
+    if (own !== license) {
+      errors.push(`${name}: publishable packages hold a LICENSE identical to the monorepo's (copy ../../LICENSE)`);
+    }
   }
   if (pkg.scripts?.["publish-public"]) {
     errors.push(`${name}: remove the "publish-public" script — publishing is governed by the "private" field and \`pnpm -r publish\``);

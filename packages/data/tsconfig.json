@@ -3,6 +3,9 @@
   "references": [
     {
       "path": "./src"
+    },
+    {
+      "path": "./type-tests/exact-optional"
     }
   ]
 }

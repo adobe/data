@@ -35,6 +35,9 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
   per-row object such as a texture's bind group, and a row body can't learn its GPU row. A consumer drawing an image
   per row keeps its own instance buffer, 4,000 draws in 2.1 ms a tick. Possible: tables giving their entities in GPU
   row order. Not needed until a consumer's profile says so.
+- **Descending sorted indexes:** an ordered render reads its index front to back, so a consumer painting back to front
+  maps `instance_index` to `ecs_count() - 1u - instance_index`, which costs nothing. Possible: a `descending` option on
+  sorted indexes. Not needed until a consumer's profile or readability says so.
 - **Report retention:** the last 256 runs keep their reports (`retainedRuns` in `reports.ts`), a fixed internal
   constant; a later run takes the oldest one's entity. Recommended: keep it internal until a consumer needs another; then
   a world option or resource.

@@ -7,7 +7,7 @@ import { createWorld, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
 import { tailWriters } from "./tails.js";
 import type { FromTailsWorker, ToTailsWorker } from "./tails-worker.fixture.js";
-import { counter, noStall, reword, seed, setSpawning, setStall, stallAtChunk, stallBefore, tallied, ticked } from "./tails.test-helper.js";
+import { counter, heldTick, noStall, reword, seed, setSpawning, setStall, stallAtChunk, stallBefore, tallied, ticked } from "./tails.test-helper.js";
 
 /**
  * Scenarios of tails on a joined worker, run built in node and from source in chromium: a terminal system there over
@@ -229,4 +229,26 @@ export const spanning = async () => {
     const seen = await summary(worker);
     await worker.terminate();
     return seen;
+};
+
+/**
+ * A tail reading only its thread's objects, held in its body, while a run spawns rows: whether the run finished before
+ * the tail was let go, as its sync point writes nothing the tail reads.
+ */
+export const heldBody = async (): Promise<boolean> => {
+    const frames = gatedFrames();
+    const world = createWorld({ [workers]: 0, [always]: true }, { loop: frames });
+    const { worker } = await joined(world);
+    const words = new Int32Array(new SharedArrayBuffer(8));
+    await worker.ask({ kind: "gate", words });
+    await world.run(seed, { count: 10 });
+    world.add(heldTick);
+    await frames.next();
+    while (Atomics.load(words, 1) === 0) await new Promise(resolve => setTimeout(resolve, 1));
+    const ran = await within(world.run(seed, { count: 10 }).then(() => true), 5000, false);
+    Atomics.store(words, 0, 1);
+    Atomics.notify(words, 0);
+    await world.dispose();
+    await worker.terminate();
+    return ran;
 };

@@ -572,7 +572,8 @@ thread as one task, in schedule order, once that thread's last task finished, so
 its sync point. A tier in N+1 that writes what a tail reads waits for the tail's reads, which end when its body ends: a
 struct component it reads or filters on, or a struct resource it reads, conditions or filters on, written by a system,
 a reduction, a GPU readback, or the world's own clock. A sync point counts as a write to everything a tail reads, from
-its `materialize` on, since growth frees blocks the same sync point may reuse. A run is a transaction, so it waits for
+its `materialize` on, since growth frees blocks the same sync point may reuse; one reading no rows and no struct
+resources, only its own thread's objects, reads nothing there, so sync points don't wait for it. A run is a transaction, so it waits for
 its tails before it resolves, with their failures in its report.
 
 - **Claims.** A tail's work is numbered: position 0 is its head, which checks its conditions and resolves its

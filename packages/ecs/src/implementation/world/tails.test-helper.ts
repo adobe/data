@@ -144,10 +144,23 @@ export const tally = System.create({ name: "tailsTest/tally", components: { read
     changed.set(resources[counter], (changed.get(resources[counter]) ?? 0) + 1);
 });
 
+/** The words a held tail and the world share, once the world gives them: the gate opens at [0], the tail is held at [1]. */
+export const gate: { words: Int32Array | null } = { words: null };
+
+/** On the tail's thread, terminal, reading only that thread's objects: held in its body until the world opens the gate. */
+export const held = System.create({ name: "tailsTest/held", resources: { read: [canvas] } }, ({ resources }) => {
+    const { words } = gate;
+    if (words === null || resources[canvas].text !== "canvas") return;
+    Atomics.store(words, 1, 1);
+    Atomics.notify(words, 1);
+    Atomics.wait(words, 0, 0);
+});
+export const heldTick = System.create({ name: "tailsTest/heldTick", systems: [held] });
+
 /** Every tick: the world's systems, then the tails. */
 export const ticked = System.create({ name: "tailsTest/ticked", systems: [count, advance, grow, lead, watch] });
 /** The same, with `tally` counting what the watcher wrote. */
 export const tallied = System.create({ name: "tailsTest/tallied", systems: [count, advance, grow, lead, tally, watch] });
 
 /** Every system the joined thread runs, which it imports so the world can place them there. */
-export const tailSystems: readonly System<void>[] = [ticked, tallied, blocking];
+export const tailSystems: readonly System<void>[] = [ticked, tallied, blocking, heldTick];

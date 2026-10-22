@@ -9,7 +9,7 @@ import type { World } from "../interface/world/world.js";
 import { backToBack, createWorld, type CreatedWorld } from "../implementation/index.js";
 import { tailWriters } from "../implementation/world/tails.js";
 import type { Benchmark } from "./benchmark.js";
-import { runReported } from "../implementation/world/reports.test-helper.js";
+import { reportOf, runReported } from "../implementation/world/reports.test-helper.js";
 
 // Tails: terminal systems on a joined worker, which claims "tailsBenchmark", running after their tick's sync point
 // while the world goes on. The joined thread is `joined.ts`.
@@ -206,8 +206,10 @@ const late = async (rounds = 30): Promise<number> => {
             await world.run(nothing);
             await ticked;
             const start = performance.now();
-            const report = await runReported(world, poke);
+            const run = await world.run(poke);
             const time = performance.now() - start;
+            // Read by a run of its own, after the timed one.
+            const report = await reportOf(world, run);
             if (report.failures.length > 0) throw new Error(`tail late snapshot: ${report.failures[0].message}`);
             if (round > 1) best = Math.min(best, time);
             // The tail and the tick the run made finish.

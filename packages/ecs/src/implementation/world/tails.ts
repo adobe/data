@@ -453,8 +453,14 @@ export const settleRunners = (state: State, runners: readonly Runner[]): Promise
 export const settleKeys = (state: State, components: readonly number[], resources: readonly number[]): Promise<void> | null =>
     settleEach(state, tail => any(components, tail.reads) || any(resources, tail.resourceReads));
 
+/**
+ * Whether a tail reads the world's memory: rows, or struct resources. One that doesn't, reading only its own thread's
+ * objects, has nothing a sync point writes, so its sync points don't wait for its body.
+ */
+const readsMemory = (tail: Tail): boolean => tail.query || tail.resourceReads.length > 0;
+
 /** Before a sync point applies: it counts as a write to everything a tail reads, since growth frees blocks it may reuse. */
-export const settleAll = (state: State): Promise<void> | null => settleEach(state, () => true);
+export const settleAll = (state: State): Promise<void> | null => settleEach(state, readsMemory);
 
 /**
  * Stamps the objects a tail wrote from its snapshot, as the thread names them by entity and component, changed at its

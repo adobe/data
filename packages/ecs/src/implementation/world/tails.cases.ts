@@ -32,6 +32,10 @@ export const tailsCases = (load: () => Promise<typeof Fixture>) => describe("tai
         const seen = await fixture.spanning();
         expect({ runs: seen.runs, wrong: seen.wrong, fewest: seen.fewest, most: seen.most }).toEqual({ runs: 1, wrong: 0, fewest: 1000, most: 1000 });
     }, 30000);
+    it("aren't waited for by a sync point when they read only their thread's objects", async () => {
+        const fixture = await load();
+        expect(await fixture.heldBody()).toBe(true);
+    }, 30000);
     it("are skipped in every run queued when their thread left, and nothing waits for a tail on a thread that's gone", async () => {
         const fixture = await load();
         const skipped = ["tailsTest/lead", "tailsTest/watch"];

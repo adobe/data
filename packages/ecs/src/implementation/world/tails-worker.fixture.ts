@@ -3,7 +3,7 @@ import { requireDefinition } from "../../interface/registry/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld, join } from "./create.js";
 import { scopeChannel } from "./port.js";
-import { changed, seed, seen, tailSystems, ticked, type Seen } from "./tails.test-helper.js";
+import { changed, gate, seed, seen, tailSystems, ticked, type Seen } from "./tails.test-helper.js";
 import { tailSnapshots } from "./thread-systems.js";
 import { reportOf, runReported } from "./reports.test-helper.js";
 
@@ -15,9 +15,10 @@ import { reportOf, runReported } from "./reports.test-helper.js";
  */
 
 type Port = MessagePort | NodeMessagePort;
-export type ToTailsWorker = { readonly kind: "join"; readonly port: Port } | { readonly kind: "seen" } | { readonly kind: "leave queued" };
+export type ToTailsWorker = { readonly kind: "join"; readonly port: Port } | { readonly kind: "seen" } | { readonly kind: "leave queued" } | { readonly kind: "gate"; readonly words: Int32Array };
 export type FromTailsWorker =
     | { readonly kind: "joined" }
+    | { readonly kind: "gated" }
     | { readonly kind: "left"; readonly skipped: readonly (readonly string[])[]; readonly after: number }
     | { readonly kind: "seen"; readonly seen: readonly Seen[]; readonly changed: readonly (readonly [number, number])[]; readonly late: number; readonly switched: number };
 
@@ -56,6 +57,10 @@ channel.onMessage(async message => {
         for (const system of tailSystems) requireDefinition(system);
         join(message.port, { threads: ["tailsTest"] });
         channel.post({ kind: "joined" });
+    }
+    else if (message.kind === "gate") {
+        gate.words = message.words;
+        channel.post({ kind: "gated" });
     }
     else channel.post({ kind: "seen", seen, changed: [...changed], late: tailSnapshots.late, switched: tailSnapshots.switched });
 });

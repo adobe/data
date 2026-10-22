@@ -10,6 +10,10 @@
 // noise. Publishability is keyed off the same `private` field that governs
 // `pnpm -r publish`, so there is no package list to maintain here.
 //
+// A publishable package that sets `"independentVersion": true` in its own
+// package.json keeps its own version, which its maintainers bump by hand: it
+// publishes with the rest but isn't part of the lockstep release.
+//
 // Only the `"version"` line of each file is rewritten, so diffs stay one line
 // per package instead of a full reformat.
 
@@ -44,12 +48,17 @@ setVersion(rootPath, version);
 const packagesDir = join(root, "packages");
 const bumped = [];
 const skipped = [];
+const independent = [];
 for (const name of readdirSync(packagesDir)) {
   const pkgPath = join(packagesDir, name, "package.json");
   const pkg = tryReadPkg(pkgPath);
   if (!pkg) continue;
   if (pkg.private === true) {
     skipped.push(pkg.name ?? name);
+    continue;
+  }
+  if (pkg.independentVersion === true) {
+    independent.push(pkg.name ?? name);
     continue;
   }
   setVersion(pkgPath, version);
@@ -62,4 +71,5 @@ if (tryReadPkg(pluginPath)) setVersion(pluginPath, version);
 
 console.log(`v${version}`);
 console.log(`  bumped ${bumped.length}: ${bumped.sort().join(", ")}`);
+console.log(`  kept ${independent.length} independent: ${independent.sort().join(", ")}`);
 console.log(`  skipped ${skipped.length} private: ${skipped.sort().join(", ")}`);

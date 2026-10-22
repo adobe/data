@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Todos</title>
+    <link rel="icon" href="data:,">
+    <style>
+        :root {
+            --todo-accent: #2563eb; --todo-danger: #dc2626; --todo-line: #e5e7eb; --todo-muted: #9ca3af;
+            --todo-surface: #fff; --todo-hover: #f9fafb; --todo-page: #f3f4f6; --todo-text: #111827;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --todo-accent: #60a5fa; --todo-danger: #f87171; --todo-line: #374151; --todo-muted: #6b7280;
+                --todo-surface: #1f2937; --todo-hover: #273244; --todo-page: #111827; --todo-text: #f3f4f6;
+            }
+        }
+        body { margin: 0; padding: 32px 16px; display: flex; flex-direction: column; align-items: center; gap: 12px;
+            background: var(--todo-page); color: var(--todo-text); font: 15px/1.4 system-ui, sans-serif; }
+        h1 { margin: 0; font-weight: 300; font-size: 40px; color: var(--todo-accent); }
+        .app { box-sizing: border-box; width: 100%; max-width: 520px; display: flex; flex-direction: column; overflow: hidden;
+            border: 1px solid var(--todo-line); border-radius: 10px; background: var(--todo-surface);
+            box-shadow: 0 1px 3px rgb(0 0 0 / 0.08); }
+        header { display: flex; border-bottom: 1px solid var(--todo-line); }
+        todo-list { max-height: 60vh; }
+        footer { display: flex; align-items: center; gap: 12px; padding: 8px 12px; font-size: 13px; color: var(--todo-muted);
+            border-top: 1px solid var(--todo-line); }
+        footer todo-filters { margin: 0 auto; }
+        .app:has(todo-summary[empty]) footer { display: none; }
+        .hint { font-size: 12px; color: var(--todo-muted); }
+    </style>
+</head>
+<body>
+    <h1>todos</h1>
+    <div class="app">
+        <header>
+            <todo-toggle-all empty></todo-toggle-all>
+            <todo-entry></todo-entry>
+        </header>
+        <todo-list></todo-list>
+        <footer>
+            <todo-summary empty></todo-summary>
+            <todo-filters></todo-filters>
+        </footer>
+    </div>
+    <todo-generate></todo-generate>
+    <p class="hint">Double-click a todo to edit it. Drag it, or press Alt+↑ and Alt+↓, to move it.</p>
+    <script type="module" src="./app/main.ts"></script>
+</body>
+</html>

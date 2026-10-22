@@ -1,0 +1,3 @@
+import type { F32 } from "./f32.js";
+
+export const mod = ([x, y]: F32, m: number): F32 => [x - m * Math.floor(x / m), y - m * Math.floor(y / m)];

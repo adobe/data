@@ -39,7 +39,7 @@
   "devDependencies": {
     "@adobe/data": "workspace:*",
     "typescript": "^5.8.3",
-    "vitest": "^1.6.0"
+    "vitest": "^5.0.5"
   },
   "license": "MIT"
 }

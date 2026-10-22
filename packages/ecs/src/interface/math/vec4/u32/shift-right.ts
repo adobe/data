@@ -1,0 +1,9 @@
+import type { U32 as Vec4_U32 } from "./u32.js";
+import { U32 } from "../../u32/index.js";
+
+export const shiftRight = ([x, y, z, w]: Vec4_U32, s: number): Vec4_U32 => [
+    U32.shiftRight(x, s),
+    U32.shiftRight(y, s),
+    U32.shiftRight(z, s),
+    U32.shiftRight(w, s),
+];

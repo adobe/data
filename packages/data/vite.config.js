@@ -18,7 +18,5 @@ export default defineConfig({
     ],
     setupFiles: ['./src/test-setup.ts'],
     tsconfig: './tsconfig-base.json',
-    silent: false,
-    reporters: 'verbose',
   }
 })

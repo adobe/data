@@ -1,0 +1,31 @@
+{
+  "extends": "../../../data/tsconfig-base.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": "../../dist",
+    "tsBuildInfoFile": "../../dist/observe/tsconfig.tsbuildinfo",
+    "composite": true,
+    "types": [
+      "@webgpu/types"
+    ],
+    "paths": {
+      "@adobe/ecs": [
+        "../interface/index.ts"
+      ]
+    },
+    "lib": [
+      "ES2024",
+      "ESNext.Disposable",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "include": [
+    "./**/*"
+  ],
+  "references": [
+    {
+      "path": "../interface"
+    }
+  ]
+}

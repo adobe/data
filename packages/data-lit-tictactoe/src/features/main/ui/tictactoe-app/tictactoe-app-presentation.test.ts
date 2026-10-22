@@ -2,9 +2,17 @@
 // @vitest-environment jsdom
 // jsdom only so the lazy child-element wrappers (`void import(...)`) can load;
 // the assertions never touch the DOM.
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect } from "vitest";
 import { Template } from "@adobe/data-lit";
 import { render } from "./tictactoe-app-presentation.js";
+
+// The wrappers start loading their elements; let that finish before the environment is torn down.
+afterAll(async () => {
+  await Promise.all([
+    import("../tictactoe-board/tictactoe-board-element.js"),
+    import("../tictactoe-hud/tictactoe-hud-element.js"),
+  ]);
+});
 
 describe("tictactoe-app-presentation", () => {
   it("mounts the board and the hud", () => {

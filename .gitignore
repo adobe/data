@@ -51,3 +51,6 @@ packages/data/references
 
 # Playwright MCP capture artifacts
 .playwright-mcp/
+
+# Vitest browser attachments and failure screenshots
+.vitest/

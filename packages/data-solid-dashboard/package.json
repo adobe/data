@@ -19,9 +19,9 @@
     "@adobe/data-testing": "workspace:*",
     "jsdom": "^24.1.0",
     "typescript": "^5.8.3",
-    "vite": "^5.1.1",
-    "vite-plugin-checker": "^0.12.0",
-    "vite-plugin-solid": "^2.11.0",
-    "vitest": "^1.6.0"
+    "vite": "^8.3.4",
+    "vite-plugin-checker": "^0.14.5",
+    "vite-plugin-solid": "^2.11.14",
+    "vitest": "^5.0.5"
   }
 }

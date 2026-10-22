@@ -1,0 +1,412 @@
+import type { Leaf } from '../../interface/system/leaf.js';
+import { idOfItem, idOfKey, labelOf, requireDefinition, threadOf, type Definition } from '../../interface/registry/index.js';
+import { createRemoteRunner, unplaceable } from './remote-systems.js';
+import { createJoinedObserverRunner, type ObserverTarget } from './joined-observer.js';
+import { createRunner, releaseHoldings, removedRunner, stopHoldings, type Holdings, type Runner } from './runner.js';
+import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
+import { idOf, observe, unobserve, type Key, type State } from './state.js';
+import { labelOfItem, orderKeysOf } from '../../interface/registry/index.js';
+import { entityWatchesOf, indexWatchesOf, lookupComponentsOf, orderComponentsOf } from './lookup-keys.js';
+
+/** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
+/**
+ * `ticked`: components the new systems filter on or hold GPU copies of, which must keep ticks before they run;
+ * `resident`: those they hold GPU copies of.
+ */
+export type Registration = { readonly resources: readonly Key[]; readonly ticked: readonly number[]; readonly resident: readonly number[]; readonly kernels: readonly Runner[]; readonly rollback: () => void };
+
+export type Registrar = {
+    /** Validates and records a system with all its members. Throws without recording anything on failure. */
+    readonly register: (system: Definition) => Registration;
+    /** A registered system's schedule; undefined for one not registered, or holding a system forgotten since. */
+    readonly registered: (system: Definition) => Schedule | undefined;
+    /** A leaf's runner, or one that runs nothing for a leaf not registered, as a system removed during a run is. */
+    readonly runnerOf: (leaf: Leaf) => Runner;
+    /**
+     * Forgets systems, as removing them does: their schedules, and leaves' runners, which no run calls again once this
+     * returns. Returns what releases what the runners held, for once no run in progress uses them.
+     */
+    readonly forget: (systems: readonly Definition[]) => () => void;
+    /** Every system in a tree, the root included. */
+    readonly systemsOf: (root: Definition) => readonly Definition[];
+    /** A kernel runner's index, as workers know it. */
+    readonly kernelIndexOf: (runner: Runner) => number;
+    /** Every registered kernel runner. */
+    readonly kernels: () => readonly Runner[];
+    /** Rebuilds the runners of `kernel: "gpu"` systems for the world's current device, or for the CPU without one; returns them to load. */
+    readonly placeGpuKernels: () => readonly Runner[];
+    /**
+     * Why a joined thread that imported the systems of ids `imported` can't claim `threads`: a registered system on one
+     * it didn't import, or one without an id, or naming a key without one, or one that can't run on a joined thread;
+     * null when every one can run there.
+     */
+    readonly crossing: (threads: readonly string[], imported: ReadonlySet<string>) => string | null;
+    /** Places each registered system again, as claims were made or released: on its joined thread, or here. */
+    readonly place: () => void;
+    /**
+     * Registers a forgotten observer leaf again at once, with the runner it had, run again as a new runner would be:
+     * registering it before found every key and resource it names, so nothing is left to do asynchronously. False when
+     * it can't, as for one never registered, or whose runner a run in progress may still read as removed.
+     */
+    readonly reregister: (leaf: Leaf) => boolean;
+    /** For tests of what a world holds: how many schedules, runners and kernel indexes it keeps. */
+    readonly sizes: () => { readonly schedules: number; readonly runners: number; readonly kernels: number };
+};
+
+/** Every system in a tree, the root included. */
+const systemsOf = (root: Definition): Definition[] => {
+    const all = new Set<Definition>();
+    const visit = (system: Definition): void => {
+        if (all.has(system)) return;
+        all.add(system);
+        if (!isLeaf(system)) for (const member of system.declaration.systems) visit(requireDefinition(member));
+    };
+    visit(root);
+    return [...all];
+};
+
+/** Every component and resource a leaf names, so missing schemas throw at registration. */
+const keysOf = (leaf: Leaf): { readonly components: readonly Key[]; readonly resources: readonly Key[] } => {
+    const { components: access, lookup, resources } = leaf.declaration;
+    const components = [...access?.read ?? [], ...access?.write ?? [], ...access?.has ?? [], ...access?.not ?? [], ...access?.added ?? [], ...access?.changed ?? []];
+    for (const name in lookup) components.push(...lookupComponentsOf(lookup[name]));
+    const { up } = leaf.declaration;
+    if (up !== undefined) components.push(up.through, ...up.read ?? []);
+    components.push(...orderComponentsOf(leaf.declaration));
+    return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? [], ...reducedBy(leaf)] };
+};
+
+/** For a filtered `up` leaf: its parent reference and what it reads of its parent, whose changes also pass a row. */
+const upObserved = (leaf: Leaf): readonly Key[] => {
+    const { components, resources, up } = leaf.declaration;
+    const filtered = (components?.added?.length ?? 0) + (components?.changed?.length ?? 0) + (resources?.changed?.length ?? 0) > 0;
+    return up === undefined || !filtered ? [] : [up.through, ...up.read ?? []];
+};
+
+/**
+ * The components whose changes a leaf's lookups report: the key parts of indexes it looks up through or orders by,
+ * and what its lookups watch.
+ */
+const lookupObserved = (leaf: Leaf): readonly Key[] => {
+    const ordered = orderKeysOf(leaf.declaration);
+    const looked = indexWatchesOf(leaf.declaration.lookup);
+    const watched = entityWatchesOf(leaf.declaration.lookup);
+    return ordered.length + watched.length === 0 ? looked : [...looked, ...watched, ...ordered];
+};
+
+/** The components a leaf needs ticks on: those it filters on, and those `upObserved` and `lookupObserved` give. */
+const tickedBy = (leaf: Leaf): readonly Key[] =>
+    [...leaf.declaration.components?.added ?? [], ...leaf.declaration.components?.changed ?? [], ...upObserved(leaf), ...lookupObserved(leaf)];
+
+/** The components whose GPU copies a leaf uses: a render system's accessors, and a GPU kernel's columns and what it reads through `up`. */
+const residentBy = (leaf: Leaf): readonly Key[] => {
+    const { declaration } = leaf;
+    if (leaf.kind === "render") return Object.values(declaration.shader?.accessors ?? {});
+    if (declaration.kernel !== "gpu") return [];
+    return [...declaration.components?.read ?? [], ...declaration.components?.write ?? [], ...declaration.up?.read ?? []];
+};
+
+/** The components whose `changed` stamps a leaf reads, so kernels writing them must keep their stamps. */
+const observedBy = (leaf: Leaf): readonly Key[] => {
+    const indexed = lookupObserved(leaf);
+    const observed = [...leaf.declaration.components?.changed ?? [], ...upObserved(leaf)];
+    return indexed.length === 0 ? observed : [...new Set([...observed, ...indexed])];
+};
+
+/** Every key a leaf names, as `keysOf` gives them, flattened. */
+const allKeysOf = (leaf: Leaf): readonly Key[] => {
+    const { components, resources } = keysOf(leaf);
+    return [...components, ...resources];
+};
+
+/**
+ * The joined thread an observer leaf runs on: the one that added it, or the one filling its thread; undefined for one
+ * that runs here.
+ */
+const observerTargetOf = (state: State, leaf: Leaf): ObserverTarget | undefined => {
+    const { proxies, targets } = state.observer;
+    const target = proxies.get(leaf)?.target ?? (targets.size === 0 ? undefined : targets.get(threadOf(leaf.declaration, "System", leaf.name) ?? "world"));
+    return target === undefined || target.ended ? undefined : target;
+};
+
+/** A runner for a leaf where it runs now: on the joined thread filling its thread, or that added it, or here. */
+const placedRunner = (state: State, leaf: Leaf, since = 0): Runner => {
+    if (leaf.declaration.observer === true) {
+        const target = observerTargetOf(state, leaf);
+        return target === undefined ? createRunner(state, leaf, since) : createJoinedObserverRunner(state, leaf, target, since);
+    }
+    const thread = threadOf(leaf.declaration, "System", leaf.name);
+    const channel = thread === null ? undefined : state.threadTasks.get(thread);
+    return channel === undefined ? createRunner(state, leaf, since) : createRemoteRunner(state, leaf, channel, since);
+};
+
+/**
+ * A registered leaf, which lives only as long as its system: its system held weakly, what its runner holds, and the
+ * components whose changes it counts as watching.
+ */
+type Entry = { readonly leaf: WeakRef<Leaf>; holdings: Holdings; readonly observed: readonly number[]; released: boolean };
+
+/**
+ * What the finalization registry keeps of a system until it's collected, holding nothing of it: whether it's registered
+ * now, as one rolled back or forgotten isn't, and for a leaf its entry.
+ */
+type Registered = { entry: Entry | null; registered: boolean };
+
+/**
+ * What the registrar keeps of a system it registered, by the system: its record in the registry, its schedule, and the
+ * count of forgettings it was last found whole at. Kept across forgetting, so registering it again records nothing
+ * more. For a forgotten leaf whose runner registering it again runs again (`Runner.restart`), `parked` is its entry
+ * then, the runner kept as its leaf's, stopped: adding an observer system again costs no new runner.
+ */
+type Kept = { readonly held: Registered; schedule: Schedule | null; checked: number; parked: Entry | null };
+
+/**
+ * What a world keeps of each system it registered lives as long as the system's value: schedules and runners by
+ * system, held weakly, so a system nothing references any more is collected, and with it its runner, its command
+ * buffers and its `lastRun`. What a runner holds beyond its JS values is released once its system is collected.
+ */
+export const createRegistrar = (state: State): Registrar => {
+    const records = new WeakMap<Definition, Kept>();
+    const runners = new WeakMap<Leaf, Runner>();
+    /** Moves on whenever systems are forgotten, so a composite holding one is found to need registering again. */
+    let forgettings = 0;
+    /** Every registered leaf, for what goes over every runner: rare, at placements, device changes and kernel loads. */
+    const live = new Set<Entry>();
+    let scheduleCount = 0;
+
+    const release = (entry: Entry): void => {
+        if (entry.released) return;
+        entry.released = true;
+        live.delete(entry);
+        releaseHoldings(state, entry.holdings);
+        for (const id of entry.observed) unobserve(state, id);
+    };
+    /**
+     * Called once a registered system is collected, with its record: a leaf's entry, or null for a composite, and
+     * whether it's still registered, as a rolled-back one isn't, so no unregister token is kept per registration.
+     */
+    const collected = new FinalizationRegistry<Registered>(record => {
+        if (!record.registered) return;
+        record.registered = false;
+        scheduleCount--;
+        if (record.entry !== null) release(record.entry);
+    });
+
+    /** Each live leaf with its runner. */
+    const eachRunner = (visit: (leaf: Leaf, runner: Runner, entry: Entry) => void): void => {
+        for (const entry of live) {
+            const leaf = entry.leaf.deref();
+            const runner = leaf === undefined ? undefined : runners.get(leaf);
+            if (leaf !== undefined && runner !== undefined) visit(leaf, runner, entry);
+        }
+    };
+
+    /** Puts a new runner in an entry's place, releasing what the one it replaces held. */
+    const replace = (leaf: Leaf, entry: Entry, old: Runner, runner: Runner): void => {
+        runners.set(leaf, runner);
+        state.runnersVersion++;
+        releaseHoldings(state, old.holdings);
+        entry.holdings = runner.holdings;
+        if (runner.holdings.afterSync !== null) state.afterSync.add(runner.holdings.afterSync);
+    };
+
+    const register = (root: Definition): Registration => {
+        const added: { readonly system: Definition; readonly schedule: Schedule; readonly entry: Entry | null; readonly runner: Runner | null }[] = [];
+        const resources = new Set<Key>();
+        for (const system of systemsOf(root)) {
+            if (records.get(system)?.held.registered === true) continue;
+            const schedule = scheduleOf(system);
+            if (!isLeaf(system)) {
+                added.push({ system, schedule, entry: null, runner: null });
+                continue;
+            }
+            // Creating the system checked its declaration; registering it gives its keys ids in this world.
+            const keys = keysOf(system);
+            for (const key of keys.components) idOf(state, key);
+            for (const key of keys.resources) {
+                idOf(state, key);
+                resources.add(key);
+            }
+            const runner = parkedRunner(system) ?? placedRunner(state, system);
+            const entry: Entry = { leaf: new WeakRef(system), holdings: runner.holdings, observed: observedBy(system).map(key => idOf(state, key)), released: false };
+            added.push({ system, schedule, entry, runner });
+        }
+        let observing = false;
+        const kernels: Runner[] = [];
+        for (const { system, schedule, entry, runner } of added) {
+            const record = records.get(system);
+            if (record === undefined) {
+                const held: Registered = { entry, registered: true };
+                records.set(system, { held, schedule, checked: forgettings, parked: null });
+                collected.register(system, held);
+            }
+            else {
+                Object.assign(record.held, { entry, registered: true });
+                record.schedule = schedule;
+                record.checked = forgettings;
+                // Runs that read a removed runner for it read the new one.
+                if (runner !== null) state.runnersVersion++;
+            }
+            scheduleCount++;
+            if (runner === null || entry === null || !isLeaf(system)) continue;
+            runners.set(system, runner);
+            live.add(entry);
+            if (runner.holdings.afterSync !== null) state.afterSync.add(runner.holdings.afterSync);
+            if (runner.kernel !== null) kernels.push(runner);
+            for (const id of entry.observed) {
+                if (!state.observed.has(id)) observing = true;
+                observe(state, id);
+            }
+        }
+        // Lists of observer systems read before it registered, holding it as removed, read their runners again.
+        if (added.some(({ runner }) => runner !== null)) state.runnersVersion++;
+        // New `changed` filters observe more components, so kernels that muted their stamps must load again.
+        if (observing) eachRunner((_, runner) => { if (runner.kernel?.stale() === true && !kernels.includes(runner)) kernels.push(runner); });
+        const rollback = (): void => {
+            for (const { system, entry, runner } of added) {
+                const record = records.get(system);
+                if (record !== undefined) {
+                    Object.assign(record.held, { entry: null, registered: false });
+                    record.schedule = null;
+                }
+                scheduleCount--;
+                if (runner === null || entry === null || !isLeaf(system)) continue;
+                runners.delete(system);
+                release(entry);
+            }
+            state.runnersVersion++;
+        };
+        const resident = added.flatMap(({ system }) => isLeaf(system) ? residentBy(system).map(key => idOf(state, key)) : []);
+        const ticked = added.flatMap(({ system }) => isLeaf(system) ? tickedBy(system).map(key => idOf(state, key)) : []);
+        return { resources: [...resources], ticked: resident.length === 0 ? ticked : [...ticked, ...resident], resident, kernels, rollback };
+    };
+
+    /**
+     * A forgotten leaf's runner, run again as a new runner would be, where it would still run: here. Only once what it
+     * held was released, so no run in progress still reads it as removed.
+     */
+    const parkedRunner = (leaf: Leaf): Runner | null => {
+        const record = records.get(leaf);
+        const entry = record?.parked ?? null;
+        if (record === undefined || entry === null) return null;
+        record.parked = null;
+        const runner = runners.get(leaf);
+        if (runner === undefined || runner.restart === null || !entry.released || observerTargetOf(state, leaf) !== undefined) return null;
+        runner.restart(0);
+        return runner;
+    };
+
+    const reregister = (leaf: Leaf): boolean => {
+        const record = records.get(leaf);
+        const old = record?.parked ?? null;
+        if (record === undefined || old === null || record.held.registered) return false;
+        // Components it starts observing make kernels that muted their stamps load again, asynchronously.
+        for (const id of old.observed) if (!state.observed.has(id)) return false;
+        const runner = parkedRunner(leaf);
+        if (runner === null) return false;
+        const entry: Entry = { leaf: old.leaf, holdings: runner.holdings, observed: old.observed, released: false };
+        record.held.entry = entry;
+        record.held.registered = true;
+        record.schedule = scheduleOf(leaf);
+        record.checked = forgettings;
+        scheduleCount++;
+        live.add(entry);
+        for (const id of entry.observed) observe(state, id);
+        state.runnersVersion++;
+        return true;
+    };
+
+    const registered = (system: Definition): Schedule | undefined => {
+        const record = records.get(system);
+        if (record === undefined || !record.held.registered || record.schedule === null) return undefined;
+        if (record.checked !== forgettings) {
+            // A composite holding a system forgotten since registers again, its other members keeping their runners.
+            for (const tier of record.schedule.tiers) for (const leaf of tier) if (!runners.has(leaf)) return undefined;
+            record.checked = forgettings;
+        }
+        return record.schedule;
+    };
+
+    /** A leaf's runner; for one forgotten, as a removed system is, one that runs nothing: stopped, or `removedRunner`. */
+    const runnerOf = (leaf: Leaf): Runner => runners.get(leaf) ?? removedRunner;
+
+    const forget = (systems: readonly Definition[]): (() => void) => {
+        const stopped: Entry[] = [];
+        for (const system of systems) {
+            const record = records.get(system);
+            if (record === undefined || !record.held.registered) continue;
+            const { entry } = record.held;
+            Object.assign(record.held, { entry: null, registered: false });
+            record.schedule = null;
+            scheduleCount--;
+            if (entry === null || !isLeaf(system)) continue;
+            const runner = runners.get(system);
+            live.delete(entry);
+            // No run calls its body again from here, on any thread; what it holds goes once no run uses it.
+            stopHoldings(entry.holdings);
+            stopped.push(entry);
+            if (runner !== undefined && runner.restart !== null && runner.joined === null) record.parked = entry;
+            else runners.delete(system);
+        }
+        forgettings++;
+        state.runnersVersion++;
+        state.placement++;
+        return () => { for (const entry of stopped) release(entry); };
+    };
+
+    const kernels = (): readonly Runner[] => {
+        const found: Runner[] = [];
+        eachRunner((_, runner) => { if (runner.kernel !== null) found.push(runner); });
+        return found;
+    };
+
+    const placeGpuKernels = (): readonly Runner[] => {
+        const placed: Runner[] = [];
+        eachRunner((leaf, old, entry) => {
+            if (leaf.declaration.kernel !== "gpu") return;
+            const runner = createRunner(state, leaf);
+            replace(leaf, entry, old, runner);
+            placed.push(runner);
+        });
+        return placed;
+    };
+
+    const crossing = (threads: readonly string[], imported: ReadonlySet<string>): string | null => {
+        let problem: string | null = null;
+        eachRunner(leaf => {
+            if (problem !== null) return;
+            const thread = threadOf(leaf.declaration, "System", leaf.name);
+            if (thread === null || !threads.includes(thread)) return;
+            const label = labelOfItem(leaf);
+            const id = idOfItem(leaf);
+            if (id === undefined) problem = `System "${label}" runs on thread "${thread}" and has no id, so a joined thread can't run it; the build gives top-level systems one.`;
+            else if (!imported.has(id)) problem = `System "${label}" runs on thread "${thread}", which the joined thread claiming it never imported.`;
+            else {
+                const unnamed = allKeysOf(leaf).find(key => typeof key !== "symbol" || idOfKey(key) === undefined);
+                problem = unnamed !== undefined
+                    ? `System "${label}" runs on thread "${thread}" and names "${labelOf(unnamed)}", which has no id, so a joined thread can't name it; the build gives top-level keys one.`
+                    : unplaceable(leaf, thread);
+            }
+        });
+        return problem;
+    };
+
+    const place = (): void => {
+        eachRunner((leaf, old, entry) => {
+            if (leaf.declaration.observer === true) {
+                if (observerTargetOf(state, leaf) === old.joined?.target) return;
+                replace(leaf, entry, old, placedRunner(state, leaf, old.lastRun()));
+                return;
+            }
+            const thread = threadOf(leaf.declaration, "System", leaf.name);
+            const channel = thread === null ? undefined : state.threadTasks.get(thread);
+            if (channel === undefined ? old.remote === null : old.remote?.channel === channel) return;
+            replace(leaf, entry, old, placedRunner(state, leaf, old.lastRun()));
+        });
+        state.placement++;
+    };
+
+    const sizes = () => ({ schedules: scheduleCount, runners: live.size, kernels: state.kernelIndexes.size });
+
+    return { register, registered, runnerOf, forget, reregister, systemsOf, kernelIndexOf: runner => runner.kernel?.index ?? -1, kernels, placeGpuKernels, crossing, place, sizes };
+};

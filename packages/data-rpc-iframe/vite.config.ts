@@ -7,19 +7,22 @@ import checker from "vite-plugin-checker";
 export default defineConfig({
     plugins: [checker({ typescript: true })],
     optimizeDeps: {
-        esbuildOptions: {
-            tsconfigRaw: {
-                compilerOptions: { experimentalDecorators: true, useDefineForClassFields: false },
+        // Legacy decorators and `useDefineForClassFields: false`, as tsconfig.json sets for sources.
+        rolldownOptions: {
+            transform: {
+                decorator: { legacy: true },
+                assumptions: { setPublicClassFields: true },
+                typescript: { removeClassFieldsWithoutInitializer: true },
             },
         },
     },
     root: ".",
     build: {
         outDir: "dist",
-        rollupOptions: {
+        rolldownOptions: {
             input: {
-                main: resolve(__dirname, "index.html"),
-                sub: resolve(__dirname, "sub.html"),
+                main: resolve(import.meta.dirname, "index.html"),
+                sub: resolve(import.meta.dirname, "sub.html"),
             },
         },
     },

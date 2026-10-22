@@ -4,9 +4,12 @@ import checker from "vite-plugin-checker";
 export default defineConfig({
   plugins: [checker({ typescript: true })],
   optimizeDeps: {
-    esbuildOptions: {
-      tsconfigRaw: {
-        compilerOptions: { experimentalDecorators: true, useDefineForClassFields: false },
+    // Legacy decorators and `useDefineForClassFields: false`, as tsconfig.json sets for sources.
+    rolldownOptions: {
+      transform: {
+        decorator: { legacy: true },
+        assumptions: { setPublicClassFields: true },
+        typescript: { removeClassFieldsWithoutInitializer: true },
       },
     },
   },

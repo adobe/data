@@ -545,6 +545,12 @@ const cases = [
     testCase(u32, ["U32.countLeadingZeros", "U32.countOneBits", "U32.countTrailingZeros", "U32.reverseBits"], uo, true),
 ];
 
+/**
+ * How far a GPU result may be from the CPU's: WGSL bounds `sin` and `cos` only by an absolute error of 2^-11 on [-π, π],
+ * which the inputs, within 0.9 of zero, keep to; software adapters such as SwiftShader use that margin.
+ */
+const toleranceOf = (operation: string): number => /\.(sin|cos)$/.test(operation) ? 2 ** -11 : 1e-4;
+
 const device = async (): Promise<GPUDevice> => {
     const adapter = await navigator.gpu.requestAdapter();
     if (adapter === null) throw new Error("No WebGPU adapter.");
@@ -568,7 +574,7 @@ describe("declared WGSL builtins", () => {
                 const gpu = await values(gpuWorld, output);
                 const cpu = await values(cpuWorld, output);
                 const worst = Math.max(...gpu.map((value, i) => exact ? (value === cpu[i] ? 0 : Infinity) : Math.abs(value - (cpu[i] ?? NaN)) / Math.max(1, Math.abs(cpu[i] ?? NaN))));
-                if (gpu.length !== cpu.length || !(worst <= 1e-4)) mismatches.push(`${operations[op]}: ${worst}`);
+                if (gpu.length !== cpu.length || !(worst <= toleranceOf(operations[op]))) mismatches.push(`${operations[op]}: ${worst}`);
             }
         }
         expect(mismatches).toEqual([]);

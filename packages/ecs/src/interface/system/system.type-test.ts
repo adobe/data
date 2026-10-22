@@ -372,6 +372,19 @@ System.render({
     components: { read: [position] },
     shader: { accessors: { place: position } },
 }, () => {});
+// A pass helper several render systems share declares its context and tables by name.
+const drawAll = (gpu: System.RenderContext, pass: GPURenderPassEncoder): void => {
+    for (const table of gpu.tables) drawTable(table, pass);
+};
+const drawTable = (table: System.RenderTable, pass: GPURenderPassEncoder): void => {
+    table.bind(pass);
+    pass.draw(6, table.count);
+};
+System.render({ name: "test/drawShared", shader: { accessors: { place: position } } }, gpu => {
+    const pass = gpu.encoder.beginRenderPass({ colorAttachments: [] });
+    drawAll(gpu, pass);
+    pass.end();
+});
 
 // Names are optional: a declaration may leave it out, and a system that declares nothing is just its body.
 export const unnamed = System.create({ components: { write: [position] }, resources: { read: [time] } }, (row, { resources }) => {

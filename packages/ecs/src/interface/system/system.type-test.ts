@@ -386,6 +386,33 @@ System.render({ name: "test/drawShared", shader: { accessors: { place: position 
     drawAll(gpu, pass);
     pass.end();
 });
+// `order` draws every matching archetype as one table, in a sorted index's order.
+declare const byPosition: Index<{ readonly key: readonly [typeof position]; readonly sorted: true }>;
+declare const hashedByPosition: Index<{ readonly key: readonly [typeof position] }>;
+declare const someIndex: Index;
+System.render({ name: "test/drawOrdered", components: { has: [player] }, order: byPosition, shader: { accessors: { place: position } } }, gpu => {
+    const pass = gpu.encoder.beginRenderPass({ colorAttachments: [] });
+    drawAll(gpu, pass);
+    pass.end();
+});
+System.render({
+    name: "test/drawOrdered",
+    // @ts-expect-error a render system is ordered by a sorted index
+    order: hashedByPosition,
+    shader: { accessors: { place: position } },
+}, () => {});
+System.render({
+    name: "test/drawOrdered",
+    // @ts-expect-error an index whose declaration isn't known isn't known to be sorted
+    order: someIndex,
+    shader: { accessors: { place: position } },
+}, () => {});
+System.render({
+    name: "test/drawOrdered",
+    // @ts-expect-error an order is an index
+    order: [position],
+    shader: { accessors: { place: position } },
+}, () => {});
 
 // Names are optional: a declaration may leave it out, and a system that declares nothing is just its body.
 export const unnamed = System.create({ components: { write: [position] }, resources: { read: [time] } }, (row, { resources }) => {

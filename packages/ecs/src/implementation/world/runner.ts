@@ -33,6 +33,7 @@ import { acquireLookups, type IndexLookups, type IndexUse } from './indexes.js';
 import { createOrdered, type Ordered, type Passing } from './index-order.js';
 import { blockBase, type SortedTable } from './index-sorted.js';
 import type { Since } from './index-lookups.js';
+import { createOrderedRender } from './render-order.js';
 
 /**
  * One unit of a system's work for a run: the commands it issued, or for a worker's chunk its segment of the worker's
@@ -232,6 +233,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     });
     const accessors = declaration.shader === undefined ? [] : accessorsOf(declaration.shader);
     if (typeof accessors === "string") return failPlacement(`can't render: ${accessors}`);
+    /** A render system's one table in its `order` index's order. */
+    const orderedRender = leaf.kind !== "render" || indexLookups.ordered === null || ordered === null ? null
+        : createOrderedRender(indexLookups.ordered, ordered, accessors.map(accessor => idOf(state, accessor.component)), declaration.shader?.group ?? 0, `${leafNumber}:`);
     const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
     const writes = (query?.write ?? []).map(key => idOf(state, key));
     const looks = [...new Set([...Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []), ...declaration.up?.read ?? []])].map(key => idOf(state, key));
@@ -831,6 +835,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         if (gpu === null) return failPlacement("needs a world with a gpu device");
         if (typeof accessors === "string") return;
         holdings.gpu = gpu;
+        if (orderedRender !== null) return runOrderedRender(gpu, tick, orderedRender);
         const group = declaration.shader?.group ?? 0;
         const tables = matches.filter(archetype => archetype.count > 0).map(archetype => {
             words[0] = archetype.count;
@@ -845,6 +850,20 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         gpu.submit();
         try {
             system.body({ device: gpu.device, encoder: gpu.encoder(), tables }, context.value);
+        }
+        catch (error) {
+            gpu.discard();
+            throw error;
+        }
+    };
+
+    /** A render system with `order`: one table, nothing allocated while nothing it reads changed. */
+    const runOrderedRender = (gpu: GpuEngine, tick: number, render: NonNullable<typeof orderedRender>): void => {
+        const failure = render.prepare(gpu, matches, tick);
+        if (failure !== null) return failPlacement(`can't render: ${failure}`);
+        gpu.submit();
+        try {
+            system.body(render.context(gpu), context.value);
         }
         catch (error) {
             gpu.discard();

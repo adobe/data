@@ -51,6 +51,11 @@ export type WorldIndex = {
      * it was built; 0 before.
      */
     changed: number;
+    /**
+     * For a sorted index, the tick of the last refresh at which an entry moved to another archetype or row with its key
+     * and place unchanged, or it was built; 0 before.
+     */
+    moved: number;
     /** By watched component: how many lookups watch it, and the tick its ticks were read up to. */
     readonly watchers: Map<number, number>;
     readonly scanned: Map<number, number>;
@@ -124,6 +129,7 @@ export const acquireIndex = (state: State, definition: IndexDefinition): WorldIn
         position: -1,
         refreshed: 0,
         changed: 0,
+        moved: 0,
         watchers: new Map(),
         scanned: new Map(),
         hash: sorted ? null : createHashTable(state.memory, words),
@@ -434,6 +440,7 @@ const finishRefresh = async (state: State, index: WorldIndex, end: number, tick:
 /** Builds an index again: in phases, across the pool when there is one, for a large hash index keyed by structs; else here. */
 const rebuildAny = (state: State, index: WorldIndex, tick: number, failures: Failure[], pool: Pool | null): Promise<void> | null => {
     index.changed = tick;
+    index.moved = tick;
     const phased = rebuildPhased(state, index, tick, failures, pool);
     if (phased !== false) return phased;
     rebuild(state, index, tick, failures);
@@ -597,7 +604,7 @@ const patchSorted = (state: State, index: WorldIndex, sorted: SortedTable, count
         const fresh = index.objects && unknownValue(index, key);
         if (fresh) encodeRow(index, archetype, row, key, 0, true);
         if (old >= 0 && !fresh && sameStoredKey(sorted, old, key, 0)) {
-            relocateSorted(sorted, entity, archetypeId, row);
+            if (relocateSorted(sorted, entity, archetypeId, row)) index.moved = tick;
             continue;
         }
         if (objects && !fresh) holdWords(index, key, 0, true);

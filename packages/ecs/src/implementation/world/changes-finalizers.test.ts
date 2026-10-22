@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
 import { Component, Finalizer, Resource, System, World } from "../../index.js";
 import { Observe } from "../../observe/index.js";

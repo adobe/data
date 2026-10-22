@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Archetype } from "../../interface/archetype/archetype.js";
 import { Report } from "../../interface/report/report.js";

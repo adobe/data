@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { laneCount } from './intrinsics.js';
 import type { Program } from './kernel.js';
 import type { WasmColumn, WasmScalar } from './wasm.js';

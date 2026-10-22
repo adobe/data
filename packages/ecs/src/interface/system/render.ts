@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Component } from '../component/component.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
 import { nameOf } from '../registry/items.js';

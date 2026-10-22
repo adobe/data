@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Expression, ObjectExpression, Pattern } from 'estree';
 import { fail } from './failure.js';
 import type { Lists } from './lists.js';

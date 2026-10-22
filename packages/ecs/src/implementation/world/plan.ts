@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * A sync point's plan: each touched entity's net change, as reusable parallel arrays rather than an object per entity.
  * `to` is where it ends up; its values are command ranges, applied in issue order so later values win. Each world has

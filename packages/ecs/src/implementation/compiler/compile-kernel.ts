@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Node, ObjectExpression } from 'estree';
 import { bind } from './bind.js';
 import { requireExact } from './exact.js';

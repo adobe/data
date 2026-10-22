@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
 
 it("rejects a kernel lookup of a string, which kernels don't read, where the kernel is declared", async () => {

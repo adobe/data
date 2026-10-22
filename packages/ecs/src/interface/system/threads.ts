@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Component } from '../component/component.js';
 import type { ThreadOfComponent } from '../component/value.js';
 import type { Resource } from '../resource/resource.js';

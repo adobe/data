@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Mat4x4 } from "./index.js";
 
 export const scaling = (x: number, y: number, z: number): Mat4x4 => [

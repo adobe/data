@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Report } from '../../interface/report/report.js';
 import type { Failure, Warning } from '../../interface/report/failure.js';
 import { stampChanged } from './archetype.js';

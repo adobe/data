@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Cadence } from '../../interface/resources/cadence.js';
 import type { Composite, Definition } from '../../interface/registry/index.js';
 import { labelOfItem } from '../../interface/registry/index.js';

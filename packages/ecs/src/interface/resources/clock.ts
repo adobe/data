@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Resource } from '../resource/resource.js';
 
 /**

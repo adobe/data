@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import { definitionOf, isLeaf, itemOfId, labelOfItem } from '../../interface/registry/index.js';

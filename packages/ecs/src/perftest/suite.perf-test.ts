@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { it } from "vitest";
 import { benchmarks } from "./benchmarks.js";
 import { report } from "./suite.js";

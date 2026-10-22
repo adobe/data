@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Quat } from "../index.js";
 
 export const fromEuler = (x: number, y: number, z: number): Quat => {

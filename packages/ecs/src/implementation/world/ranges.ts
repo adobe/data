@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { chunkShift } from './kernel.js';
 
 /** One `added` or `changed` filter: per-row ticks, and the newest tick of each chunk of rows. */

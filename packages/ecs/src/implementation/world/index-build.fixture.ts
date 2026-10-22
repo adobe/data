@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Component } from "../../interface/component/component.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { workers } from "../../interface/resources/workers.js";

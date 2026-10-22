@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Feature } from "../../shared/feature.js";
 import { dom, filters } from "./dom.js";
 import { TodoFilters } from "./elements/todo-filters.js";

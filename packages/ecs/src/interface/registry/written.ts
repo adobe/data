@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { clock } from '../resources/clock.js';
 import { labelOf } from './names.js';
 

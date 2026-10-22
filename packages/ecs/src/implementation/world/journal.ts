@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * Entity indexes whose archetype or references sync points changed: spawned, despawned, moved to another archetype,
  * or written a reference. Kept only while some reader, an `up` system or an index, needs it. Positions count every

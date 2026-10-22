@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Finalizer } from '../../interface/finalizer/created.js';
 import type { Rule } from '../../interface/rule/created.js';
 import type { RuleFacts } from '../../interface/registry/strata.js';

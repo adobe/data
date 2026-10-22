@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Archetype, Component, Vec3 } from "../../index.js";
 
 export const position = Symbol("kernelImports/position");

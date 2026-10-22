@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import type { Schema } from "../../interface/schema/schema.js";

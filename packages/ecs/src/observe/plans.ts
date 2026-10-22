@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Component, Entity } from '../interface/index.js';
 import { compare, compareNumbers } from './compare.js';
 

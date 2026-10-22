@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** Rounds to the nearest integer, and halfway values to the even one, as WGSL's `round` does. */
 export const roundHalfEven = (x: number): number => {
     const rounded = Math.round(x);

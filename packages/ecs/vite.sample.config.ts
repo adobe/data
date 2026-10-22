@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { defineConfig } from "vite";
 import { kernelPlugin } from "./src/implementation/compiler/index.ts";
 import { isolation, sources } from "./vitest.plugins.ts";

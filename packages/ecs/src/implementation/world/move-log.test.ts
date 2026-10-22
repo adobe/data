@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import { createBuffer, addCommand, pushCommand, pushComponent, removeCommand, type CommandBuffer } from "./buffer.js";

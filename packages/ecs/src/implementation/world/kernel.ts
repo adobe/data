@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { WgslType } from '../../interface/math/intrinsic.js';
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Reduction } from '../../interface/resource/reduction.js';

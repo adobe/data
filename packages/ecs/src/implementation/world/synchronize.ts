@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Views } from '../../interface/registry/layout.js';
 import { copyValue, ensureCapacity, swapRemove, writeF32, writeF32Lanes, writeF64, writeI32, writeU32, type Archetype, type Storage } from './archetype.js';
 import { chunkShift } from './kernel.js';

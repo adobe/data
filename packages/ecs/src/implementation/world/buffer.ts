@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import type { KernelCommands } from './kernel.js';
 import type { Positional, SpawnBatch } from './staging.js';

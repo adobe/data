@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { ArrayExpression, Expression, Node } from 'estree';
 import { children } from './estree.js';
 import { resolveBinding, resolveExport, type Link, type Resolved } from './link.js';

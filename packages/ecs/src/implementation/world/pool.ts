@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { allocateArray, freeArray } from './arrays.js';
 import { emptyBuffer, type CommandBuffer } from './buffer.js';
 import type { Memory } from './memory.js';

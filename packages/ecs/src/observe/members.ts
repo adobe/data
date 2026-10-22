@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Component, Components, Entity, Resource, World } from '../interface/index.js';
 import { observeEntity } from './entity.js';
 import type { Observe } from './observe.js';

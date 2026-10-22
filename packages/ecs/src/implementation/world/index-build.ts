@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { capacityFor, entryWords, recordCapacity, recordHash, recordKey, recordLength, recordStart } from './index-hash.js';
 import { hashWords, orderF32, orderF64 } from './index-keys.js';
 

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import { idOfItem, idOfKey, labelOf, requireDefinition, threadOf, type Definition } from '../../interface/registry/index.js';
 import { createRemoteRunner, unplaceable } from './remote-systems.js';

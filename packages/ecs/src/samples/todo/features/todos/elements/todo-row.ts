@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * `<todo-row>`: one todo. Properties `label` and `done` drive it, and `done` is reflected as an attribute for styling;
  * `hidden` hides it, as it does any element. It dispatches `todo-toggle`, `todo-delete` and `todo-edit`, and never

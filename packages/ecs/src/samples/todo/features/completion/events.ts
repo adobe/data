@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { all, on, type Connect } from "../../shared/connect.js";
 import { clearCompleted, toggleAll } from "./model.js";
 

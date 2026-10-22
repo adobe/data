@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import type { AnyDeclaration } from "./declarations.js";
 import { identify } from "./ids.test-helper.js";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { layoutOf } from '../registry/layout.js';
 import { declarationOf, kindOf, labelOf } from '../registry/names.js';
 import { definitionOf } from '../registry/program.js';

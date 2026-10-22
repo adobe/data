@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Component } from "../component/component.js";
 import { createRegistry, type AnyDeclaration } from "../registry/declarations.js";
 import type { Schema } from "../schema/schema.js";

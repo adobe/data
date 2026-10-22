@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Quat } from "../index.js";
 import type { Mat4x4 } from "../mat4x4/index.js";
 

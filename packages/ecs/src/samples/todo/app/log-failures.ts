@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Report, System } from "../../../index.js";
 
 /** Logs what reports say failed, a run's an event started and a tick's alike: each report's errors are written once. */

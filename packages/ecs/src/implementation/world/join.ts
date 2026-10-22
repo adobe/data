@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Thread } from '../../interface/thread/thread.js';
 import type { World } from '../../interface/world/world.js';
 import { declarationOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, labelOfItem, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';

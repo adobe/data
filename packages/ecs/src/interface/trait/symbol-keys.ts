@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Components } from '../component/types.js';
 import type { Resources } from '../resource/types.js';
 import type { BuiltIn } from './key.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";

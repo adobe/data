@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { entityOf, entityOfElement } from "../../shared/attach.js";
 import { all, on, type Connect } from "../../shared/connect.js";
 import { addTodo, deleteTodo, editTodo, moveTodo, toggleTodo } from "./model.js";

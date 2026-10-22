@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * `<todo-list>`: holds rows as its children, in the order they're placed. Dragging a child onto another, or
  * Alt+ArrowUp and Alt+ArrowDown on a focused child, dispatches `todo-move` with the child and the one it should go

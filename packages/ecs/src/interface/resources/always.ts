@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Resource } from '../resource/resource.js';
 
 /** Whether every beat of the cadence runs a tick, not only beats where `wake` is due or a run arrived. False by default. */

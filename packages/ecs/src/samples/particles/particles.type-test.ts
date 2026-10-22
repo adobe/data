@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Resource } from '../../index.js';
 import { count } from './particles.js';
 

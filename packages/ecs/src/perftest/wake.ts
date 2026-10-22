@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { createMemory } from "../implementation/world/memory.js";
 import { createPool, type FastTask } from "../implementation/world/pool.js";
 import { idleKernel } from "../implementation/world/protocol.js";

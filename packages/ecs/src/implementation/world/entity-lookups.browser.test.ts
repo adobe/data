@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from "../../../schema/schema.js";
 import { schema as item } from "../../f32/schema.js";
 

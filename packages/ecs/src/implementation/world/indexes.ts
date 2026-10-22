@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { IndexDefinition } from '../../interface/registry/index.js';
 import { indexDefinitionOf, indexOfLookup, labelOfItem, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import type { Failure } from '../../interface/report/failure.js';

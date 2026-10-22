@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { World, workers } from "../../../index.js";
 import * as exported from "../features/index.js";
 import { all } from "../shared/connect.js";

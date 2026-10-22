@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Component, Finalizer, Index, Resource, System } from "../../../../index.js";
 import { attach } from "../../shared/attach.js";
 import { done, label, order, todo } from "./data.js";

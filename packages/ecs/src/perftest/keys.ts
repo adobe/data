@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * A microbenchmark of reading a values object's symbol keys, as commands and spawns do: each round builds the
  * object literal a spawn site would, then reads every key and its value. Run with `node dist/perf/run.js --keys`

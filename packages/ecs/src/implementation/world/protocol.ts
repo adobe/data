@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from '../../interface/schema/schema.js';
 import type { Endpoint } from './port.js';
 import type { WasmScalar } from './wasm.js';

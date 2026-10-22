@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { declarationOf, firstKeyOf, keyOfId, labelOf } from '../../interface/registry/index.js';
 import { layoutOf, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { writeOf } from './archetype.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 type Method = (...parameters: never[]) => unknown;
 
 /** Whether an object type has a method of its own, so it isn't data, looked at without recursing. */

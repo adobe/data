@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { World } from '../../interface/world/world.js';
 import type { Failure } from '../../interface/report/failure.js';
 import { definitionOf, idOfKey, indexDefinitionOf, itemOfId, keyOfId, labelOfItem, requireDefinition, type Definition } from '../../interface/registry/index.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, test } from "vitest";
 import type { Program } from "./kernel.js";
 import { generateWgsl } from "./wgsl.js";

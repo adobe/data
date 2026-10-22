@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
 import { Archetype, Component, System, Vec3, World } from "../index.js";
 

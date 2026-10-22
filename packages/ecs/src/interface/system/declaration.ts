@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Index } from '../indexes/index-type.js';
 import type { Resource } from '../resource/resource.js';
 import type { Schema } from '../schema/schema.js';

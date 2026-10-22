@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { lineWords } from './protocol.js';
 
 // What the world's thread and a joined thread filling objects share to run that thread's systems (threads.md, "Systems

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { AssignmentExpression, Expression as SourceExpression, Node, Pattern, UpdateExpression } from 'estree';
 import { access } from './access.js';
 import { failPattern } from './bind.js';

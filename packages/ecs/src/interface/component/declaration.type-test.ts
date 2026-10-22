@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Entity } from '../entity/entity.js';
 import { Vec3 } from '../math/index.js';
 import { Component } from './component.js';

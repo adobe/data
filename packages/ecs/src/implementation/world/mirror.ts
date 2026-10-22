@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { indexOf } from './entities.js';
 import {
     cursorField, entitiesWord, recordCount, recordEntities, recordStorages, recordWords,

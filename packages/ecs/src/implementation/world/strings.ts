@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { coveringBuffer, type Memory } from './memory.js';
 
 // Strings in shared memory (design.md, "A string's storage"): a string component's column holds a handle per row, to

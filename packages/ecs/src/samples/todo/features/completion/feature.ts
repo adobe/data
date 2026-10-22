@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Feature } from "../../shared/feature.js";
 import { dom, summary, toggleAllBox } from "./dom.js";
 import { TodoSummary } from "./elements/todo-summary.js";

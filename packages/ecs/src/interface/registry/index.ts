@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** What registration recorded, for the implementation to read. Not part of the public interface. */
 export type { AnyDeclaration } from './declarations.js';
 export { schemaOf, threadOfDeclaration } from './declarations.js';

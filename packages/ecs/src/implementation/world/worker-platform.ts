@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import type { MessagePort as NodeMessagePort, Worker as NodeWorker } from 'node:worker_threads';
 import type { FromWorker, ToWorker } from './protocol.js';

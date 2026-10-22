@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Component, Index, Report, Resource, System, workers } from "../../index.js";
 import { isObserver, requireDefinition } from "../../interface/registry/index.js";

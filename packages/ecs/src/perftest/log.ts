@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Component } from "../interface/component/component.js";
 import { createBuffer } from "../implementation/world/buffer.js";
 import { createCommands } from "../implementation/world/commands.js";

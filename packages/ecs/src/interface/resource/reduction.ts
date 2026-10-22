@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Key } from "./key.js";
 import type { Resources } from './types.js';
 

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Mat4x4 } from "./index.js";
 
 export const perspective = (fovy: number, aspect: number, near: number, far: number): Mat4x4 => {

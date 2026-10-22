@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Feature } from "../../shared/feature.js";
 import { TodoGenerate } from "./elements/todo-generate.js";
 import { connect } from "./events.js";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { recordBytes } from './record.js';
 
 const layouts = new WeakMap<GPUDevice, GPUBindGroupLayout>();

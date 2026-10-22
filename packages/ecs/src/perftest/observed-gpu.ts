@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Component } from "../interface/component/component.js";
 import type { Entity } from "../interface/entity/entity.js";
 import { gpuDevice } from "../interface/resources/gpu-device.js";

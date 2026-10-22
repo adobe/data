@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { SystemLookup } from '../../interface/system/access.js';
 import { idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';

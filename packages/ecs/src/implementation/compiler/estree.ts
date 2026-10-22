@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Node, Pattern, Program } from 'estree';
 import type { parseAst } from 'vite';
 

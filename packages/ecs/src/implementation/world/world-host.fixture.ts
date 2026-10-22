@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { scopeChannel } from "./port.js";
 import { lentWorkers } from "./worker-platform.js";
 import { simulate } from "./workers.fixture.js";

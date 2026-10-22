@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { allocateArray, growArray } from './arrays.js';
 import type { Archetype } from './archetype.js';
 import type { Entities } from './entities.js';

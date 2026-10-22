@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Archetype } from './archetype.js';
 import type { Memory } from './memory.js';
 

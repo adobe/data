@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { workersCases } from "./workers.cases.js";
 import { layoutDirectoryCases } from "./layout-directory.cases.js";
 import { poolCases } from "./pool.cases.js";

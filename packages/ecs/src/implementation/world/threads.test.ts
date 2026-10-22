@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { builtFixture } from "./fixtures.test-helper.js";
 import type * as Workers from "./workers.fixture.js";
 import { workersCases } from "./workers.cases.js";

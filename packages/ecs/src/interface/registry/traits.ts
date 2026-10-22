@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { claimKey, kindOf } from './names.js';
 import type { BuiltIn } from '../trait/key.js';
 

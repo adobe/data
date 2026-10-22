@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { CompositeDeclaration } from './composite-declaration.js';
 import type { Name } from './name.js';
 

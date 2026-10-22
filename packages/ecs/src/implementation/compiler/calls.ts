@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { SimpleCallExpression, Expression as SourceExpression, Node, SpreadElement, Statement as SourceStatement } from 'estree';
 import { mergeBranches } from './branches.js';
 import { bind } from './bind.js';

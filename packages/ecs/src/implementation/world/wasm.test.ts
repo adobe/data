@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import type { Program } from "./kernel.js";
 import { generateWasm, importsOf, type WasmColumn } from "./wasm.js";

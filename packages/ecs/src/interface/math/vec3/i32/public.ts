@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 export * from "./abs.js";
 export * from "./add.js";
 export * from "./bitwise-and.js";

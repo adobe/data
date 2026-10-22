@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { U32 } from "./index.js";
 import { intrinsic } from "../intrinsic.js";
 

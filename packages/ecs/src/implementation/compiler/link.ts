@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Program } from 'estree';
 import { createModule, locateIn, type Module, type ModuleBinding } from './module-scope.js';
 

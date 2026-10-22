@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { chunkShift, type Program } from './kernel.js';
 import type { Reduction } from '../../interface/resource/reduction.js';
 import type { View } from '../../interface/registry/layout.js';

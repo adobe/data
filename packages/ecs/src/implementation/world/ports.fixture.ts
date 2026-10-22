@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import { Component } from "../../interface/component/component.js";
 import { workers } from "../../interface/resources/workers.js";

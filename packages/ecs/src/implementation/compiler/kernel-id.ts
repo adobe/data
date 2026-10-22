@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import { createHash } from 'node:crypto';
 

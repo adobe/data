@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';

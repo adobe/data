@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { TypedArray, View } from '../../interface/registry/layout.js';
 import { encodeScalar } from './index-keys.js';
 import type { WasmKeyValue, WasmProbe } from './wasm.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Resource } from '../resource/resource.js';
 
 /** The cadence's value, for the implementation: `Resource.Value<typeof cadence>`. */

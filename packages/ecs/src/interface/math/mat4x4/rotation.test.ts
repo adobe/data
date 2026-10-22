@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, test } from "vitest";
 import { Mat4x4 } from "./index.js";
 import { Quat } from "../quat/index.js";

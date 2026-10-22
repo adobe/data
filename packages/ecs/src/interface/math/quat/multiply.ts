@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Quat } from "../index.js";
 
 export const multiply = ([x1, y1, z1, w1]: Quat, [x2, y2, z2, w2]: Quat): Quat => [

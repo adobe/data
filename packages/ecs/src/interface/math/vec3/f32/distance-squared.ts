@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { F32 } from "./f32.js";
 
 export const distanceSquared = (a: F32, b: F32): number => {

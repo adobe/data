@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Node, Pattern } from 'estree';
 import { children, declaredIn } from './estree.js';
 

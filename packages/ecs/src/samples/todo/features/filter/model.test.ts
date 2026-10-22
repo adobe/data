@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
 import { System, workers, World } from "../../../../index.js";
 import { filter, type Filter } from "./data.js";

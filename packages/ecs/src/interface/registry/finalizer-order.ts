@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Finalizer } from '../finalizer/created.js';
 import { firstItemOf, labelOfItem } from './items.js';
 import { firstKeyOf, labelOf } from './names.js';

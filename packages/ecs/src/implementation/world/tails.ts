@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Failure } from '../../interface/report/failure.js';
 import { declarationOf, firstKeyOf, labelOfItem } from '../../interface/registry/index.js';

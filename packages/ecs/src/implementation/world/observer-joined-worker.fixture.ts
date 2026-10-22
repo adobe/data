@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { MessagePort as NodeMessagePort } from "node:worker_threads";
 import type { Entity } from "../../interface/entity/entity.js";
 import type { World } from "../../interface/world/world.js";

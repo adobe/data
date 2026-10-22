@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Finalizer } from '../../interface/finalizer/created.js';
 import type { Memory } from './memory.js';
 import type { StringStore } from './strings.js';

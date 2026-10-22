@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Module } from './module-scope.js';
 import type { Unit } from './unit.js';
 import type { Value } from './value.js';

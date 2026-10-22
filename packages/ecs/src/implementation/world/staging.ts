@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
 import { viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32, type Archetype } from './archetype.js';

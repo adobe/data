@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { System } from "../../../index.js";
 import { todo } from "../features/todos/data.js";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Storage } from './archetype.js';
 import { indexOf, reserve } from './entities.js';
 import { defaultOf, idOf, type Key, type State } from './state.js';

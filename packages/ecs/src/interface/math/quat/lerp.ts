@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Quat } from "../index.js";
 import { add } from "./add.js";
 import { normalize } from "./normalize.js";

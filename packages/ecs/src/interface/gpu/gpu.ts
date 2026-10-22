@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** `Gpu.wgsl` and `Gpu.layout` give render systems' shaders and pipelines what they need from schemas alone. */
 export type Gpu = never;
 

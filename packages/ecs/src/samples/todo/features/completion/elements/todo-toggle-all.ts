@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * `<todo-toggle-all>`: the checkbox that marks every todo done, or none. Property `checked` is whether all are done,
  * and `empty`, reflected as an attribute, hides it while there are none. A click dispatches `todo-toggle-all` with

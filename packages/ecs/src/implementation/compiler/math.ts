@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** The `Math` functions allowed in kernels: pure and deterministic. */
 export const mathFunctions: ReadonlySet<string> = new Set([
     "abs", "sign", "floor", "ceil", "round", "trunc", "min", "max", "sqrt", "cbrt", "hypot",

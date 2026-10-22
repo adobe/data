@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 export * from './always.js';
 export { cadence } from './cadence.js';
 export * from './clock.js';

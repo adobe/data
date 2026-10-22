@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Node, ObjectExpression, Pattern } from 'estree';
 import { children, declaredIn, patternNames } from './estree.js';
 import type { Used } from './exact.js';

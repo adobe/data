@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Resource, System } from "../../../../index.js";
 import { done } from "../todos/data.js";
 import { row } from "../todos/dom.js";

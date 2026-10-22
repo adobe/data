@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Archetype } from './archetype.js';
 import { allocateArray, freeArray } from './arrays.js';
 import { blockAt, blockBase, firstPosition, type SortedTable } from './index-sorted.js';

@@ -2,6 +2,7 @@
   "name": "@adobe/ecs",
   "version": "0.1.0",
   "description": "Adobe ECS",
+  "license": "MIT",
   "type": "module",
   "sideEffects": false,
   "private": false,

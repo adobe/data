@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Archetype } from './archetype.js';
 import type { Holders } from './holders.js';
 import { strataOf, type RuleFacts, type Strata } from '../../interface/registry/strata.js';

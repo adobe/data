@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";

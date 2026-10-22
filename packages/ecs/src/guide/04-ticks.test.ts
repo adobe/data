@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
 import { always, cadence, clock, Resource, System, wake, World } from "../index.js";
 

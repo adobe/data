@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import {
     Finalizer, System, always, cadence, clock, gpuDevice, wake, workers,
     type Component, type Resource, type World,

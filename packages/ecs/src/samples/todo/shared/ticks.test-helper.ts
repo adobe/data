@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System, clock, type World } from "../../../index.js";
 
 const waiting: (() => void)[] = [];

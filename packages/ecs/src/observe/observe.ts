@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * Observes a sequence of values: `notify` is called zero or more times, possibly during the call that subscribes,
  * possibly later; an observer mustn't depend on either. Returns the function that stops it.

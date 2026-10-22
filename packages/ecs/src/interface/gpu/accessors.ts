@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { layoutOf, type Leaf } from '../registry/layout.js';
 import { declarationOf } from '../registry/index.js';
 import type { Shader } from '../system/render.js';

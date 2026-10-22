@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** What failed in a run: a system, finalizer, GPU work, thread or unique index. */
 export type Failure = {
     /**

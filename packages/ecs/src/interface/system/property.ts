@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 
 export type Property<T, K extends PropertyKey> = T extends { readonly [P in K]?: infer V } ? V : undefined;
 

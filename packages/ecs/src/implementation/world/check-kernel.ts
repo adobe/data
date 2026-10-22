@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { declarationOf, labelOf, labelOfItem } from '../../interface/registry/index.js';
 import { layoutOf, samePath, type Layout, type Path } from '../../interface/registry/layout.js';
 import type { Leaf } from '../../interface/system/leaf.js';

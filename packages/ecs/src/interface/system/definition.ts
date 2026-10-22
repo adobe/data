@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Composite } from './composite.js';
 import type { Leaf } from './leaf.js';
 

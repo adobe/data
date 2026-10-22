@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Resource } from '../resource/resource.js';
 import { Component } from '../component/component.js';
 import { Entity } from '../entity/entity.js';

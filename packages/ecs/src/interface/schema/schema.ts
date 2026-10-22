@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../entity/entity.js';
 
 /** Any value representable in JSON. */

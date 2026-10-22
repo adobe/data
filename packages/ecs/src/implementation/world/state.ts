@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { createHolds, type Holds } from './stop-lists.js';
 import type { Entity } from '../../interface/entity/entity.js';
 import { declarationOf, firstKeyOf, kindOf, labelOf } from '../../interface/registry/index.js';

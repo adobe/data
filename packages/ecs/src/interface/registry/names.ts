@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { AnyDeclaration } from './declarations.js';
 import { idOfKey } from './ids.js';
 import { sameItem } from './items.js';

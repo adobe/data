@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { chunkShift, type Path } from '../world/kernel.js';
 import type { Expression, Statement } from './ir.js';
 import { resolve, type Out } from './out.js';

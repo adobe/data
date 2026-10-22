@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 export * from "./add.js";
 export * from "./align-to.js";
 export * from "./conjugate.js";

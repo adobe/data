@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Component } from '../component/component.js';
 import type { Name } from './name.js';
 import type { Derived } from '../component/value.js';

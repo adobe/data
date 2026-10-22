@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Directive, Expression, FunctionDeclaration, MaybeNamedFunctionDeclaration, ModuleDeclaration, Pattern, Program, Statement } from 'estree';
 import { patternNames } from './estree.js';
 

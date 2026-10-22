@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Report } from "../../interface/report/report.js";
 import { retainedRuns } from "./reports.js";
 import { System } from "../../interface/system/system.js";

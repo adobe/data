@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Declaration } from '../../interface/system/declaration.js';
 import type { SystemLookup } from '../../interface/system/access.js';

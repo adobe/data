@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { U32 as Vec4_U32 } from "./u32.js";
 import { intrinsic } from "../../intrinsic.js";
 import type { U32 } from "../../u32/index.js";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 export { F32 } from "./f32/f32.js";
 export { I32 } from "./i32/i32.js";
 export { U32 } from "./u32/u32.js";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { allocateArray, freeArray } from './arrays.js';
 import type { State } from './state.js';
 

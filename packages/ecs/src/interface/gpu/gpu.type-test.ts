@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Component } from '../component/component.js';
 import type { Gpu } from '../index.js';
 import { System } from '../system/system.js';

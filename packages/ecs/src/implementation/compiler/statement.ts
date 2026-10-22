@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { DoWhileStatement, Expression, ForStatement, Node, WhileStatement } from 'estree';
 import { assign, update } from './assign.js';
 import { bind } from './bind.js';

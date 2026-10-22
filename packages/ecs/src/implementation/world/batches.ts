@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { ensureCapacity, type Archetype } from './archetype.js';
 import type { CommandBuffer } from './buffer.js';
 import { indexOf } from './entities.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from '../schema/schema.js';
 
 /** Whether a constant is a struct's value: numbers and booleans, in fixed arrays and objects. */

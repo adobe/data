@@ -5,6 +5,9 @@ input: feature
 output: feature
 ---
 
+If the feature already has `data/state/` or `services/main-service/`, it uses the legacy
+state-based layout: extend it in place per those legacy rules; don't migrate it unless asked.
+
 /graph-execute
     /build-data
     /build-services

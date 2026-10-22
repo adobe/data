@@ -6,8 +6,8 @@ import type { hop } from "./hop.js";
 // A bare 5-wide, 3-tall board. `hop` reads only frog / width / height / status,
 // so the lanes and hazards are irrelevant and left empty here.
 const base: Omit<State, "frog"> = {
-  width: 5,
-  height: 3,
+  boardWidth: 5,
+  boardHeight: 3,
   lanes: [],
   entities: new Map(),
   lives: 3,

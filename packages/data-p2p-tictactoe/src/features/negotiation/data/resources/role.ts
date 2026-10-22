@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Scope } from "@adobe/data/ecs";
 import type { ResourceSchema } from "@adobe/data/ecs";
-import { Schema } from "@adobe/data/schema";
+import { Schema, Scope } from "@adobe/data/schema";
 import { Role } from "../values/role/role.js";
 
 // This peer's side of the handshake; `null` until it hosts or joins.

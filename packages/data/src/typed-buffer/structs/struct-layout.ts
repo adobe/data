@@ -10,6 +10,12 @@ export type StructFieldPrimitiveType = "i32" | "u32" | "f32";
 export interface StructLayoutField {
     offset: number;
     type: StructFieldPrimitiveType | StructLayout;
+    /**
+     * Present on an object field that is not `required`: the value written when the
+     * field is absent (its schema `default`, else zeros). A struct stores every field,
+     * so an omitted one reads back as this value.
+     */
+    fill?: unknown;
 }
 
 /**

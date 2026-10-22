@@ -29,8 +29,8 @@ export const projection = {
     for (const arch of store.queryArchetypes(store.archetypes.Hazard.components)) {
       for (let row = arch.rowCount - 1; row >= 0; row--) store.delete(arch.columns.id.get(row));
     }
-    store.resources.width = state.width;
-    store.resources.height = state.height;
+    store.resources.boardWidth = state.boardWidth;
+    store.resources.boardHeight = state.boardHeight;
     store.resources.lanes = state.lanes;
     store.resources.frog = state.frog;
     store.resources.lives = state.lives;
@@ -41,8 +41,8 @@ export const projection = {
     }
   },
   toState: (store: CoreDatabase.Store): State => ({
-    width: store.resources.width,
-    height: store.resources.height,
+    boardWidth: store.resources.boardWidth,
+    boardHeight: store.resources.boardHeight,
     lanes: store.resources.lanes,
     entities: readEntities(store),
     frog: store.resources.frog,

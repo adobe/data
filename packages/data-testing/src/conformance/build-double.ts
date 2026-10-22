@@ -14,7 +14,10 @@ export type Schedule = Readonly<Record<string, readonly unknown[]>>;
 //
 // The returned double still gets wrapped by `recordCalls` on its way into a case's
 // args, so effect assertion is unchanged; only the RETURNS come from the case.
-export const buildDouble = (template: () => object, responses: Schedule | undefined): object => {
+//
+// `lenient` (the deprecated `Conformance.feature` path) skips the probe: an
+// unscheduled call returns `undefined`, whatever the method.
+export const buildDouble = (template: () => object, responses: Schedule | undefined, lenient = false): object => {
   const shape = template();
   const service = "serviceName" in shape ? String(shape.serviceName) : "service";
   const queues = new Map<string, unknown[]>(
@@ -23,7 +26,7 @@ export const buildDouble = (template: () => object, responses: Schedule | undefi
   return Object.fromEntries(
     Object.entries(shape).map(([key, value]) => {
       if (typeof value !== "function") return [key, value]; // serviceName and other non-method members pass through
-      const returnsValue = (value as () => unknown)() !== undefined;
+      const returnsValue = !lenient && (value as () => unknown)() !== undefined;
       return [
         key,
         (..._args: unknown[]): unknown => {

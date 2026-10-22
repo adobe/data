@@ -5,6 +5,8 @@ input: feature
 output: feature
 ---
 
+Legacy feature (has `data/state/` or `services/main-service/`)? Extend it in place per the legacy rules; don't migrate unless asked.
+
 Skip if the feature needs no indexed lookups.
 
 Create `ecs/indexes/`: `index-database.ts` (extends `CoreDatabase`, adds `indexes` from

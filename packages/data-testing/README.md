@@ -57,5 +57,7 @@ Conformance.checkFeature(implementation);
   `State`'s keys to the feature's resource and component names.
 - **`Match`** provides tolerant, matcher-aware comparison (`matches`, `ref`,
   `anyNumber`, `anyString`).
-- The lower-level runners (`runActions`, `runComputeds`, `runTransactions`,
-  `adaptCases`) remain for a feature that needs per-case ambient context.
+- An action that reads ambient per-case context (a peer `userId`) passes a test
+  `concurrency` and a `seedContext` to `Conformance.implementation`.
+- The lower-level runners (`runActions`, `runComputeds`, `runSystems`,
+  `runTransactions`, `adaptCases`) remain for custom harnesses.

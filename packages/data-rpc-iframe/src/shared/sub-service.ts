@@ -34,14 +34,14 @@ export namespace SubService {
         properties: {
             status: { type: "observe", value: { type: "string" } },
             inbox: { type: "observe", value: { type: "array", items: { type: "string" } } },
-            echo: { type: "function", signature: { parameters: [{ type: "string" }], returns: { type: "promise", value: { type: "string" } } } },
-            countUp: { type: "function", signature: { parameters: [{ type: "number" }], returns: { type: "generator", value: { type: "number" } } } },
-            notify: { type: "function", signature: { parameters: [{ type: "string" }] } },
+            echo: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "string" } }], returns: { type: "promise", value: { type: "string" } } } },
+            countUp: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "number" } }], returns: { type: "generator", value: { type: "number" } } } },
+            notify: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "string" } }] } },
             calc: {
                 type: "object",
                 properties: {
                     total: { type: "observe", value: { type: "number" } },
-                    add: { type: "function", signature: { parameters: [{ type: "number" }], returns: { type: "promise", value: { type: "number" } } } },
+                    add: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "number" } }], returns: { type: "promise", value: { type: "number" } } } },
                     reset: { type: "function" },
                 },
                 required: ["total", "add", "reset"],

@@ -26,7 +26,7 @@ const systemDatabasePlugin = Database.Plugin.create({
         const { resources } = db.store;
         if (!GameStatus.isPlaying(resources.status)) return;
         const dt = resources.frameDelta;
-        const { width, frog } = resources;
+        const { boardWidth: width, frog } = resources;
         const hazards = db.store.archetypes.Hazard.components;
 
         const lane = Lane.at(resources.lanes, frog.y);
@@ -65,7 +65,7 @@ const systemDatabasePlugin = Database.Plugin.create({
         if (lane === undefined) return;
 
         let covered = false;
-        if (Frog.onBoard(frog, resources.width)) {
+        if (Frog.onBoard(frog, resources.boardWidth)) {
           for (const arch of db.store.queryArchetypes(db.store.archetypes.Hazard.components)) {
             const { lane: laneCol, x: xCol, width: widthCol } = arch.columns;
             for (let i = 0; i < arch.rowCount && !covered; i++) {

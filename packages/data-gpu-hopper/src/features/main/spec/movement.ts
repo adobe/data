@@ -7,7 +7,7 @@ import { whilePlaying } from "./while-playing.js";
 // The `movement` system: scroll every hazard by `dt` and carry the frog on the log it
 // rides, found from the pre-scroll positions.
 export const movement = (
-  state: Pick<State, "entities" | "frog" | "lanes" | "width" | "status">,
+  state: Pick<State, "entities" | "frog" | "lanes" | "boardWidth" | "status">,
   { dt }: { readonly dt: number },
 ): Pick<State, "entities" | "frog"> =>
   whilePlaying(state.status, { entities: state.entities, frog: state.frog }, () => {
@@ -20,7 +20,7 @@ export const movement = (
         : undefined;
     const entities = new Map(
       [...state.entities].map(
-        ([id, hazard]) => [id, { ...hazard, x: Lane.nextX(hazard.x, hazard.velocity, dt, state.width) }] as const,
+        ([id, hazard]) => [id, { ...hazard, x: Lane.nextX(hazard.x, hazard.velocity, dt, state.boardWidth) }] as const,
       ),
     );
     const frog = carrier ? { x: state.frog.x + carrier.velocity * dt, y: state.frog.y } : state.frog;

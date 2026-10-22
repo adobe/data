@@ -106,6 +106,15 @@ Actions are fire-and-forget. If a caller needs a result, that's a
 transaction the binding invokes directly, *or* a new observable to
 subscribe to — never a return value awaited in render.
 
+## Presentation contract
+
+- The element imports its sibling `*-presentation.ts`, which exports exactly `render`
+  (consumers derive props with `Parameters<typeof render>[0]`).
+- Callback props are named as a verb or verbNoun (`toggleComplete`), never `on*`; the
+  element's variable matches the prop name.
+- Cleanup on unmount goes through a hook (`useEffect(() => () => …, [])`), not a
+  lifecycle override.
+
 ## Deletion test
 
 Strip the file to its essentials. What remains should be: optional

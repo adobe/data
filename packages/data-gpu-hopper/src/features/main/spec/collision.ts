@@ -11,7 +11,7 @@ type CollisionPatch = Pick<State, "frog" | "lives" | "score" | "status">;
 // The `collision` system: resolve the frog's fate where it stands — score a win, or on
 // a fatal outcome spend a life (respawn, or game over on the last life).
 export const collision = (
-  state: Pick<State, "entities" | "frog" | "lanes" | "width" | "status" | "score" | "lives">,
+  state: Pick<State, "entities" | "frog" | "lanes" | "boardWidth" | "status" | "score" | "lives">,
 ): CollisionPatch => {
   const held: CollisionPatch = { frog: state.frog, lives: state.lives, score: state.score, status: state.status };
   return whilePlaying(state.status, held, () => {

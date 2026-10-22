@@ -12,8 +12,8 @@ export const cases: Conformance.SpecCases<State, typeof newGame> = {
     {
       name: "resets a mid-game store to the initial game",
       before: {
-        width: 3,
-        height: 3,
+        boardWidth: 3,
+        boardHeight: 3,
         lanes: [
           { row: 0, kind: "grass" },
           { row: 1, kind: "river" },

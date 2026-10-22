@@ -13,5 +13,5 @@ export const loseLife = (t: CoreDatabase.Store) => {
     return;
   }
   resources.lives = lives;
-  resources.frog = Frog.start(resources.width);
+  resources.frog = Frog.start(resources.boardWidth);
 };

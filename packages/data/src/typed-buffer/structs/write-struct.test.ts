@@ -3,6 +3,10 @@ import { describe, it, expect } from "vitest";
 import { createWriteStruct } from "./create-write-struct.js";
 import { createDataView32 } from "../../internal/data-view-32/create-data-view-32.js";
 import type { StructLayout } from "./struct-layout.js";
+import { getStructLayout } from "./get-struct-layout.js";
+import { createReadStruct } from "./create-read-struct.js";
+import type { Schema } from "../../schema/index.js";
+import { F32 } from "../../math/f32/index.js";
 
 describe("WriteStruct", () => {
     it("Vec2 array root", () => {
@@ -173,3 +177,30 @@ describe("WriteStruct", () => {
         expect(writeMixed.toString()).toMatch(/const { (?=.*i32: __i32)(?=.*u32: __u32).*? } = data/);
     });
 }); 
+describe("WriteStruct optional fields", () => {
+    const vec2 = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } as const;
+    const roundTrip = (schema: Schema, value: unknown) => {
+        const layout = getStructLayout(schema);
+        const data = createDataView32(new ArrayBuffer(layout.size));
+        createWriteStruct(layout)(data, 0, value);
+        return createReadStruct(layout)(data, 0);
+    };
+
+    it("writes zeros for absent nested fields", () => {
+        expect(roundTrip({ type: "object", properties: { a: vec2, b: vec2 } }, {})).toEqual({ a: [0, 0], b: [0, 0] });
+    });
+
+    it("writes a field's own default when it is absent", () => {
+        const schema = { type: "object", properties: { a: { ...vec2, default: [3, 4] }, b: vec2 } } as const;
+        expect(roundTrip(schema, { b: [1, 2] })).toEqual({ a: [3, 4], b: [1, 2] });
+    });
+
+    it("writes 0, not NaN, for an absent primitive field", () => {
+        expect(roundTrip({ type: "object", properties: { x: F32.schema, y: F32.schema } }, { y: 2 })).toEqual({ x: 0, y: 2 });
+    });
+
+    it("leaves required fields unguarded", () => {
+        const layout = getStructLayout({ type: "object", properties: { x: F32.schema }, required: ["x"] });
+        expect(createWriteStruct(layout).toString()).not.toContain("??");
+    });
+});

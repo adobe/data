@@ -23,18 +23,21 @@ namespace AsyncArgService {
     export const schema = {
         type: "object",
         properties: {
-            awaitAndDouble: { type: "function", signature: { parameters: [promiseNum], returns: promiseNum } },
-            sumStream: { type: "function", signature: { parameters: [genNum], returns: promiseNum } },
-            first: { type: "function", signature: { parameters: [genNum], returns: promiseNum } },
+            awaitAndDouble: { type: "function", signature: { parameters: [{ name: "arg0", schema: promiseNum }], returns: promiseNum } },
+            sumStream: { type: "function", signature: { parameters: [{ name: "arg0", schema: genNum }], returns: promiseNum } },
+            first: { type: "function", signature: { parameters: [{ name: "arg0", schema: genNum }], returns: promiseNum } },
             combine: {
                 type: "function",
                 signature: {
                     parameters: [
                         {
-                            type: "object",
-                            properties: { label: { type: "promise", value: { type: "string" } }, nums: genNum },
-                            required: ["label", "nums"],
-                            additionalProperties: false,
+                            name: "arg0",
+                            schema: {
+                                type: "object",
+                                properties: { label: { type: "promise", value: { type: "string" } }, nums: genNum },
+                                required: ["label", "nums"],
+                                additionalProperties: false,
+                            },
                         },
                     ],
                     returns: { type: "promise", value: { type: "string" } },

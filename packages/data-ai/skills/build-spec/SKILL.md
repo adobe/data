@@ -5,6 +5,8 @@ input: feature
 output: feature
 ---
 
+Legacy feature (has `data/state/` or `services/main-service/`)? Extend it in place per the legacy rules; don't migrate unless asked.
+
 Create the feature's `spec/` folder, the specification the ECS will be conformed to:
 
 - `state.ts` — `State` built from `data/` types (singletons named for resources,

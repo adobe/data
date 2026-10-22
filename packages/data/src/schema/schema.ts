@@ -27,7 +27,18 @@ export type Conditional = {
 const schemaTypes = { number: true, integer: true, string: true, boolean: true, null: true, array: true, object: true, 'typed-buffer': true, blob: true, observe: true, promise: true, generator: true, function: true } as const;
 
 export interface Schema {
+  // Never set: it keeps a `Parameter` (`{ name, schema }`) from being mistaken for
+  // the schema it wraps.
+  readonly schema?: never;
   type?: keyof typeof schemaTypes;
+  // Names a TypeScript type that JSON Schema cannot describe (`Response`,
+  // `HTMLElement`, `ReadableStream`, …), for service schemas only. Set it on a
+  // schema with no `type`. `toTypeScript` emits the name verbatim; `ToType`
+  // resolves a global class name to its instance type, and any other name to `any`.
+  typeName?: string;
+  // Not supported: OpenAPI's `nullable`. Use `oneOf: [schema, { type: "null" }]`
+  // (see `Nullable`).
+  nullable?: never;
   title?: string;
   description?: string;
   conditionals?: readonly Conditional[];
@@ -87,33 +98,43 @@ export interface Schema {
    * `{ type: "function", signature: { parameters, returns } }` →
    * `(...args) => ToType<returns>`. Absent `parameters` ⇒ no args; absent
    * `returns` ⇒ void; absent `signature` entirely ⇒ `() => void`.
+   *
+   * Each parameter is a named descriptor (`Parameter`) rather than a bare schema,
+   * so the argument's name and its own documentation are known independently of
+   * its type (`parameter.schema`). `parameter.description` documents the argument;
+   * `parameter.schema.description` documents the type. Neither affects `ToType`,
+   * which derives the call signature positionally from `parameter.schema`.
+   * A bare Schema entry is the deprecated positional form; read either with
+   * `Parameter.schemaOf`.
    */
   signature?: {
-    readonly parameters?: readonly Schema[];
+    readonly parameters?: readonly (Parameter | Schema)[];
     readonly returns?: Schema;
-    /**
-     * Invocation policy — who may call this function from an **untrusted
-     * channel**. Read at runtime by the executor that performs the invocation;
-     * pure metadata that does NOT affect the type produced by `Schema.ToType`
-     * (a function differing only in `external` derives the same signature), nor
-     * service-schema validation or lazy wrapping.
-     *
-     * The two channels have **deliberately opposite default polarity**, matching
-     * their trust level. Resolve them with `resolveExternalInvocation(schema)`
-     * (see `resolve-external-invocation.ts`) — the single source of truth —
-     * rather than re-deriving per call site, because getting the `link` default
-     * wrong is a security hole.
-     *
-     * - `link` — a deeplink / URL: the least-trusted channel (anyone can craft a
-     *   URL and get a victim to open it in their authenticated session).
-     *   **Default-deny whitelist**: link-invocable only when `link === true`;
-     *   absent or `false` ⇒ not link-invocable.
-     * - `agent` — an agent acting on the user's behalf: more trusted.
-     *   **Default-allow blacklist**: agent-invocable unless `agent === false`.
-     */
-    readonly external?: { readonly agent?: boolean; readonly link?: boolean };
   };
+  /**
+   * Exposure policy for **untrusted channels**, valid on any schema (an action, a
+   * state, a nested group). For a function it governs invocation; for any other
+   * member it governs visibility (e.g. `toTypeScript` omits members hidden from the
+   * agent). Pure metadata: does NOT affect `ToType` or service-schema validation.
+   * Resolve it with `resolveExternalInvocation(schema)` — the single source of
+   * truth — rather than re-deriving per call site.
+   *
+   * The two channels have **deliberately opposite default polarity**, matching
+   * their trust level:
+   * - `link` — a deeplink / URL: the least-trusted channel (anyone can craft a URL
+   *   and get a victim to open it in their authenticated session).
+   *   **Default-deny whitelist**: exposed only when `link === true`.
+   * - `agent` — an agent acting on the user's behalf: more trusted.
+   *   **Default-allow blacklist**: exposed unless `agent === false`.
+   */
+  external?: { readonly agent?: boolean; readonly link?: boolean };
   properties?: { readonly [key: string]: Schema };
+  // Per-property metadata kept OUT of `properties` so a property whose type is a
+  // shared/by-reference schema can carry field-level docs without mutating that
+  // shared type. Keyed by the same property name as `properties`. Pure metadata:
+  // does NOT affect `ToType` (a schema differing only in `propertyMeta` derives
+  // the same type). See `PropertyMeta`.
+  propertyMeta?: { readonly [key: string]: PropertyMeta };
   required?: readonly string[];
   additionalProperties?: boolean | Schema;
   oneOf?: readonly Schema[];
@@ -133,4 +154,24 @@ export interface Schema {
     readonly step?: string;
     readonly cubicSpline?: string;
   };
+}
+
+/**
+ * A named function parameter: the argument's `name` and `description` are known
+ * independently of its type (`schema`). `description` documents the argument;
+ * `schema.description` documents the type. Only `schema` affects `ToType`.
+ */
+export interface Parameter {
+  readonly name: string;
+  readonly description?: string;
+  readonly schema: Schema;
+}
+
+/**
+ * Field-level metadata for one object property, held in `Schema.propertyMeta` so it
+ * stays independent of the property's (possibly shared) type. This interface is the
+ * extension point for future per-field metadata that must not live on the type.
+ */
+export interface PropertyMeta {
+  readonly description?: string;
 }

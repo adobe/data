@@ -154,3 +154,18 @@ describe("Database.create from plugin", () => {
     });
 });
 
+
+describe("Database.create name clashes", () => {
+    it("throws when a plugin's resource reuses a component name from the plugin it extends", () => {
+        const base = Database.Plugin.create({ components: { mode: { type: "number", default: 0 } } });
+        // @ts-expect-error — also a compile error; this covers the runtime check
+        const plugin = Database.Plugin.create({ extends: base, resources: { mode: { type: "number", default: 0 } } });
+        expect(() => Database.create(plugin)).toThrow(/"mode" is both a component and a resource/);
+    });
+
+    it("throws when combined plugins declare the name as a component and a resource", () => {
+        const a = Database.Plugin.create({ components: { size: { type: "number", default: 0 } } });
+        const b = Database.Plugin.create({ resources: { size: { type: "number", default: 0 } } });
+        expect(() => Database.create(Database.Plugin.combine(a, b))).toThrow(/"size" is both a component and a resource/);
+    });
+});

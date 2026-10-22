@@ -171,7 +171,11 @@ export type NoUnion<Key> = [Key] extends [UnionToIntersection<Key>]
  * Extra properties will cause a type error.
  */
 export type Exact<T, U extends T> =
-  U extends T
+  // `any` carries no keys to check, so it passes through rather than collapsing to
+  // `never`. Without this, relating a generic `<U>(row: Exact<T, U>)` signature to an
+  // any-row one (e.g. a `Store<any, any, any>` parameter) infers `U = any` and fails.
+  0 extends (1 & U) ? U
+  : U extends T
   ? Exclude<keyof U, keyof T> extends never
   ? U
   : never

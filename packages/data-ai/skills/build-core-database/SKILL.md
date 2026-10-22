@@ -5,6 +5,8 @@ input: feature
 output: feature
 ---
 
+Legacy feature (has `data/state/` or `services/main-service/`)? Extend it in place per the legacy rules; don't migrate unless asked.
+
 Create:
 
 - `ecs/core/archetypes.ts` — `Database.archetypes(components, { … })`, spreading each

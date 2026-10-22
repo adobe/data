@@ -17,12 +17,13 @@ type LooseCaseModule = { readonly args?: Schema; readonly cases: readonly Record
 const injectDoubles = (
   testCase: Record<string, unknown>,
   services: Readonly<Record<string, () => object>>,
+  lenient: boolean,
 ): Record<string, unknown> => {
   const responses = testCase["responses"] as Readonly<Record<string, Schedule>> | undefined;
   const args = testCase["args"] as object | undefined;
   const built: Record<string, object> = {};
   for (const [name, template] of Object.entries(services)) {
-    built[name] = buildDouble(template, responses?.[name]);
+    built[name] = buildDouble(template, responses?.[name], lenient);
   }
   const { responses: _responses, args: _args, ...rest } = testCase;
   return { ...rest, args: { ...built, ...(args ?? {}) } };
@@ -36,12 +37,14 @@ const injectDoubles = (
 // bridge from inert, data-only cases to the unchanged runners: the pure spec and the
 // ecs action side adapt WITH services (each side builds its own fresh doubles, so
 // their FIFO schedules never cross); the ecs transaction side adapts WITHOUT (a
-// transaction is a pure store mutation and never receives services).
+// transaction is a pure store mutation and never receives services). `lenientDoubles`
+// builds the deprecated `Conformance.feature` path's doubles (see `buildDouble`).
 export const adaptCases = (
   fns: Readonly<Record<string, AnyFn>>,
   cases: object,
   services: Readonly<Record<string, () => object>> | undefined,
   injectServices: boolean,
+  lenientDoubles = false,
 ): Record<string, Record<string, unknown>> => {
   const out: Record<string, Record<string, unknown>> = {};
   for (const [name, fn] of Object.entries(fns)) {
@@ -54,7 +57,7 @@ export const adaptCases = (
       out[`./${name}`] = { [name]: fn, cases: { cases: list } };
       continue;
     }
-    const adapted = injectServices && services ? list.map((testCase) => injectDoubles(testCase, services)) : list;
+    const adapted = injectServices && services ? list.map((testCase) => injectDoubles(testCase, services, lenientDoubles)) : list;
     out[`./${name}`] = {
       [name]: fn,
       cases: module.args ? { args: module.args, cases: adapted } : { cases: adapted },

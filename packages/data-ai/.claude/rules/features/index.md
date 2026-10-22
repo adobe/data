@@ -36,6 +36,10 @@ src/
 
 A feature creates only the layers and folders it uses.
 
+A feature that has `data/state/` or `services/main-service/` uses the **legacy
+state-based layout**: follow `data/state.md` and `services/main-service/` for it, and
+don't migrate it unless asked.
+
 ## Dependencies
 
 ```

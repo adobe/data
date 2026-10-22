@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it } from "vitest";
 import { Database, Store } from "@adobe/data/ecs";
-import type { Entity } from "@adobe/data/ecs";
+import type { ConcurrencyStrategyFactory, Entity } from "@adobe/data/ecs";
 import type { MatchOptions } from "../match/match.js";
 import { runActions } from "./run-actions.js";
 import { runComputeds } from "./run-computeds.js";
@@ -44,6 +44,9 @@ export interface FeatureRunConfig<State, StoreT, Db extends { store: StoreT }> {
   // Base service factories injected into every db (fakes for services whose factory
   // throws to require injection); per-case recording doubles override them.
   readonly services?: Readonly<Record<string, () => object>>;
+  // Ambient per-case context for actions (see `Implementation`).
+  readonly concurrency?: ConcurrencyStrategyFactory;
+  readonly seedContext?: (db: Db, before: State, args: unknown) => void;
   readonly match?: MatchOptions;
   // Override the ops discovered from the plugin facets.
   readonly ops?: {
@@ -96,7 +99,10 @@ export function runFeature<State, StoreT extends SchemaSource, Db extends { stor
   runActions<Db, StoreT, State>({
     makeDb: (services) =>
       Database.toSystemDatabase(
-        Database.create(config.plugin as never, { services: { ...baseServices(), ...services } }),
+        Database.create(config.plugin as never, {
+          services: { ...baseServices(), ...services },
+          concurrency: config.concurrency,
+        }),
       ) as unknown as Db,
     store: (db) => db.store,
     fromState,
@@ -104,6 +110,7 @@ export function runFeature<State, StoreT extends SchemaSource, Db extends { stor
     initial,
     transitions: config.transitions,
     actions: pick(actions, byAction),
+    seedContext: config.seedContext,
     match: config.match,
   });
 

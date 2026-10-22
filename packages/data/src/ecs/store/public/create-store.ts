@@ -45,6 +45,12 @@ export interface CreateStoreOptions {
     defaultFactories?: Record<string, () => unknown>;
 }
 
+// A resource is stored as a same-named component column on its own entity, so a
+// name can't be both: the schemas would collide and the component's queries would
+// return the resource's entity.
+const nameClashMessage = (name: string) =>
+    `"${name}" is both a component and a resource. A name must be one or the other; rename one of them.`;
+
 export function createStore<
     CS extends ComponentSchemas = {},
     RS extends ResourceSchemas = {},
@@ -92,9 +98,10 @@ export function createStore<
     // delete). Higher layers (`db.indexes`, `t.indexes`) expose this same
     // map by reference.
     //
-    // The reader is only used for `applyUpdate` — the patch passed to
-    // `store.update` may omit components an index covers, so the registry
-    // re-reads the full record to recompute the key. Seeding goes through
+    // The reader serves `applyInsert` and `applyUpdate` — an insert payload may
+    // omit `defaultFactory` components the archetype mints, and an update patch
+    // may omit components an index covers, so the registry re-reads the stored
+    // record to compute the key. Seeding goes through
     // `seedIndexFromArchetypes` instead (see below).
     const indexRegistry = createIndexRegistry(
         // `core.read` already excludes `id` (the identity is never a useful index
@@ -260,7 +267,7 @@ export function createStore<
             // the applicable indexes.
             indexRegistry.checkUniqueAvailableForInsert(archetype, values);
             const entity = rawInsert(values);
-            indexRegistry.applyInsert(entity, archetype, values);
+            indexRegistry.applyInsert(entity, archetype);
             return entity;
         };
     };
@@ -358,8 +365,11 @@ export function createStore<
             if (RESERVED_COMPONENT_NAMES.includes(name)) {
                 throw new Error(`Component name "${name}" is reserved by the ECS and cannot be defined.`);
             }
-            if (name in componentAndResourceSchemas) {
-                if (componentAndResourceSchemas[name as keyof typeof componentAndResourceSchemas] !== newComponentSchema) {
+            if (name in resourceSchemas) {
+                throw new Error(nameClashMessage(name));
+            }
+            if (name in componentSchemas) {
+                if (componentSchemas[name as keyof typeof componentSchemas] !== newComponentSchema) {
                     throw new Error(`Component schema for "${name}" must be identical when extending.`);
                 }
                 continue;
@@ -377,6 +387,9 @@ export function createStore<
             // the built-in quadrant marker / identity column in the shared schema map.
             if (RESERVED_COMPONENT_NAMES.includes(name)) {
                 throw new Error(`Resource name "${name}" is reserved by the ECS and cannot be defined.`);
+            }
+            if (name in componentSchemas) {
+                throw new Error(nameClashMessage(name));
             }
             if (name in resourceSchemas) {
                 if (resourceSchemas[name as keyof typeof resourceSchemas] !== newResourceSchema) {

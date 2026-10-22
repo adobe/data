@@ -34,8 +34,10 @@ export function createDatabaseFromSchema<
 ): DatabaseFromSchema<typeof schema> {
     return Database.create(
         Database.Plugin.create({
-            components: schema.components,
-            resources: schema.resources,
+            // Widened to the constraints: a generic `CS` can't be proven free of
+            // reserved names at compile time; the store still rejects them at runtime.
+            components: schema.components as ComponentSchemas,
+            resources: schema.resources as ResourceSchemas,
             archetypes: schema.archetypes as any,
             transactions: schema.transactions as any,
         })

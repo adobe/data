@@ -32,4 +32,16 @@ describe("buildDouble", () => {
     const double = buildDouble(template, undefined) as Rng;
     expect(double.log()).toBeUndefined();
   });
+
+  it("returns undefined for an unscheduled value method when lenient", () => {
+    const double = buildDouble(template, undefined, true) as Rng;
+    expect(double.next()).toBeUndefined();
+    expect(double.fetch()).toBeUndefined();
+  });
+
+  it("still throws once a lenient schedule is exhausted", () => {
+    const double = buildDouble(template, { next: [1] }, true) as Rng;
+    double.next();
+    expect(() => double.next()).toThrow('response schedule exhausted for "rng.next"');
+  });
 });

@@ -15,12 +15,12 @@ describe("State.create", () => {
   });
 
   it("spawns the frog centred on the bottom row", () => {
-    expect(state.frog).toEqual(Frog.start(state.width));
+    expect(state.frog).toEqual(Frog.start(state.boardWidth));
     expect(state.frog.y).toBe(0);
   });
 
   it("has a lane for every row of the board", () => {
-    for (let row = 0; row < state.height; row++) {
+    for (let row = 0; row < state.boardHeight; row++) {
       expect(Lane.at(state.lanes, row)).toBeDefined();
     }
   });

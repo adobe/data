@@ -17,8 +17,8 @@ export const riverLanes: readonly Lane[] = [
 
 // A full in-play state on the road board, frog resting on grass, no hazards.
 export const board = (overrides: Partial<State>): State => ({
-  width: 5,
-  height: 3,
+  boardWidth: 5,
+  boardHeight: 3,
   lanes: roadLanes,
   entities: new Map(),
   frog: { x: 2, y: 0 },

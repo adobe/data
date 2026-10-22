@@ -11,7 +11,8 @@
  *
  * - **document** — shared + durable: no flags (the default).
  * - **settings** — local + durable: `nonShared`.
- * - **presence** — shared + ephemeral: `nonPersistent`.
+ * - **presence** — shared + ephemeral: `nonPersistent`. Note: `@adobe/data-sync`
+ *   does not yet replicate `nonPersistent` data, so presence is not synced today.
  * - **session** — local + ephemeral: both.
  *
  * On a component these flags scope the column. An entity's own quadrant comes from

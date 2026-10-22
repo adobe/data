@@ -3,7 +3,7 @@
 import { TypedBuffer } from "../typed-buffer/typed-buffer.js";
 import { DeepReadonly, EquivalentTypes, False, True } from "../types/types.js";
 import type { Observe } from "../observe/index.js";
-import { Schema } from "./schema.js";
+import { Parameter, Schema } from "./schema.js";
 
 export type ToType<T, Depth extends number = 5> =
   T extends false ? void :
@@ -15,7 +15,8 @@ export type ToType<T, Depth extends number = 5> =
 
 type FromSchemaInternal<T, Depth extends number = 5> = T extends { const: infer Const } ? Const
   : T extends { enum: infer Enum } ? Enum extends ReadonlyArray<any> ? Enum[number] : never
-  : T extends { oneOf: infer Schemas }
+  // `anyOf` shares the `oneOf` branch: both are a union, and one branch adds no depth.
+  : T extends { oneOf: infer Schemas } | { anyOf: infer Schemas }
   ? Schemas extends ReadonlyArray<Schema> ? FromOneOfSchema<Schemas, Decrement<Depth>> : never
   : T extends { allOf: infer Schemas }
   ? Schemas extends ReadonlyArray<Schema> ? FromAllOfSchema<Schemas, Decrement<Depth>> : never
@@ -52,8 +53,17 @@ type FromSchemaInternal<T, Depth extends number = 5> = T extends { const: infer 
   ? AsyncGenerator<ToType<ValueSchema<T>, Decrement<Depth>>>
   : T extends { type: 'function' }
   ? FromSchemaFunction<T, Decrement<Depth>>
+  : T extends { typeName: infer N }
+  ? FromTypeName<N>
   : any
   ;
+
+// A global class name (`Response`, `HTMLElement`) resolves to its instance type;
+// any other name cannot be resolved here and is `any`.
+type FromTypeName<N> =
+  N extends keyof typeof globalThis
+  ? (typeof globalThis)[N] extends { prototype: infer P } ? P : any
+  : any;
 
 type Decrement<N extends number> = ((...x: any[]) => void) extends (
   arg: any,
@@ -74,10 +84,13 @@ type FromSchemaFunction<T, Depth extends number> =
 
 // The signature's parameters tuple; absent ⇒ no args.
 type SignatureParams<Sig> =
-  Sig extends { parameters: infer P } ? P extends readonly Schema[] ? P : readonly [] : readonly [];
+  Sig extends { parameters: infer P } ? P extends readonly (Parameter | Schema)[] ? P : readonly [] : readonly [];
 
-type FromSchemaArgs<P extends readonly Schema[], Depth extends number> = {
-  -readonly [K in keyof P]: ToType<P[K], Depth>;
+// Each parameter contributes its `schema` positionally (a bare Schema entry is its own
+// schema); the parameter `name` and `description` are metadata for tooling and do not
+// affect the derived signature.
+type FromSchemaArgs<P extends readonly (Parameter | Schema)[], Depth extends number> = {
+  -readonly [K in keyof P]: ToType<P[K] extends { readonly schema: infer S } ? S : P[K], Depth>;
 };
 
 // Absent `returns` ⇒ void (a function that returns nothing meaningful).
@@ -303,6 +316,20 @@ type TestAllOfSingle = ToType<{
 }>; // { name?: string }
 type CheckAllOfSingle = True<EquivalentTypes<TestAllOfSingle, { name?: string }>>;
 
+type TestAnyOf = ToType<{ anyOf: [{ type: 'string' }, { type: 'null' }] }>; // string | null
+type CheckAnyOf = True<EquivalentTypes<TestAnyOf, string | null>>;
+
+type TestTypeName = ToType<{ typeName: 'Response' }>; // Response
+type CheckTypeName = True<EquivalentTypes<TestTypeName, Response>>;
+
+type TestTypeNameNested = ToType<{
+  type: 'object', properties: { element: { typeName: 'HTMLElement' } }, required: ['element']
+}>; // { readonly element: HTMLElement }
+type CheckTypeNameNested = True<EquivalentTypes<TestTypeNameNested, { readonly element: HTMLElement }>>;
+
+type TestTypeNameUnknown = ToType<{ typeName: 'NotAGlobal' }>; // any
+type CheckTypeNameUnknown = True<EquivalentTypes<TestTypeNameUnknown, any>>;
+
 // ============================================================================
 // TYPE-CONSTRUCTOR SCHEMAS (data-adjacent types)
 // ============================================================================
@@ -330,7 +357,10 @@ type CheckGenerator = True<EquivalentTypes<TestGenerator, AsyncGenerator<boolean
 
 // function
 type TestFunction = ToType<{
-  type: 'function', signature: { parameters: [{ type: 'number' }, { type: 'string' }], returns: { type: 'boolean' } }
+  type: 'function', signature: {
+    parameters: [{ name: 'a', schema: { type: 'number' } }, { name: 'b', schema: { type: 'string' } }],
+    returns: { type: 'boolean' }
+  }
 }>; // (a: number, b: string) => boolean
 type CheckFunction = True<EquivalentTypes<TestFunction, (a: number, b: string) => boolean>>;
 
@@ -343,9 +373,9 @@ type CheckFunctionNoParams = True<EquivalentTypes<TestFunctionNoParams, () => vo
 // `external` invocation-policy metadata never affects the derived function type.
 type TestFunctionExternalIgnored = ToType<{
   type: 'function', signature: {
-    parameters: [{ type: 'number' }], returns: { type: 'promise', value: { type: 'number' } },
-    external: { link: true, agent: false }
-  }
+    parameters: [{ name: 'a', schema: { type: 'number' } }], returns: { type: 'promise', value: { type: 'number' } }
+  },
+  external: { link: true, agent: false }
 }>; // (a: number) => Promise<number>
 type CheckFunctionExternalIgnored = True<EquivalentTypes<TestFunctionExternalIgnored, (a: number) => Promise<number>>>;
 
@@ -355,10 +385,13 @@ type TestStreamingAction = ToType<{
   type: 'function',
   signature: {
     parameters: [{
-      type: 'object',
-      properties: { chunks: { type: 'generator', value: { type: 'number' } } },
-      required: ['chunks'],
-      additionalProperties: false
+      name: 'arg',
+      schema: {
+        type: 'object',
+        properties: { chunks: { type: 'generator', value: { type: 'number' } } },
+        required: ['chunks'],
+        additionalProperties: false
+      }
     }],
     returns: { type: 'promise', value: { type: 'null' } }
   }

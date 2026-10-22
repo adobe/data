@@ -76,10 +76,16 @@ calls actions, so conforming actions covers the path the app runs.
 - **Extra ECS tests** (collision selection, a refill after the field clears) live here
   too, since they need the spec or the projection.
 
-## Escape hatch: per-case ambient context
+## Per-case ambient context
 
-A feature whose action reads ambient per-peer context (a `userId` seeded under a
-custom concurrency, as in p2p presence) can't use `checkFeature`. It drives
-`Conformance.runActions` directly, feeding it
-`Conformance.adaptCases(spec.fns, spec.cases, spec.services, true)` with its own
-`makeDb` and `seedContext`. This is the only sanctioned use of the lower-level runners.
+An action that reads context the spec can't carry (the acting peer's `userId`,
+stamped by the db's concurrency at dispatch, as in p2p presence) still uses
+`checkFeature`. Pass a test `concurrency` and a `seedContext(db, before, args)` that
+primes it from each case:
+
+```ts
+Conformance.implementation(spec, { plugin, projection,
+  concurrency: peerConcurrency,
+  seedContext: (_db, _before, args) => { peerUserId = (args as { mark: string }).mark; },
+});
+```

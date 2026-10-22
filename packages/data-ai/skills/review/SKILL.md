@@ -6,6 +6,8 @@ input: a path to built output (a layer, a feature, or a whole app)
 output: a review — OPTIMAL, or a list of issues each tagged code | skill | rule
 ---
 
+Check a legacy feature (has `data/state/` or `services/main-service/`) against the legacy rules; don't flag the layout itself.
+
 Read the files under the given path and assess them against the relevant `features/`
 rules (each layer's rule and the cross-cutting rules — `namespace`, `data-modelling`,
 `type-casts`, `cohesion`, …):

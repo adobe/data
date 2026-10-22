@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Layout } from '../../interface/registry/layout.js';
 import { recordKey, type HashView } from './index-hash.js';
 import { keyPartsOf } from './index-keys.js';

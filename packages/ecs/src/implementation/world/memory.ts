@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** Bytes per WebAssembly page. */
 export const pageBytes = 65536;
 /** 4 GiB, the wasm32 limit. Shared memory reserves address space up front, not physical memory. */

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { TaskChannel } from './remote-systems.js';
 
 // Transfers (threads.md, "Transfers"): a run's input holding Transferable values moves them to the thread its system

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Archetype } from './archetype.js';
 import type { Kernel, KernelDescription, KernelModule } from './kernel.js';

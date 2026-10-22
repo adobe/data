@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Entity, System } from "../../../../index.js";
 import { Todo, done, label, order, orderAfter, ordered, todo } from "./data.js";
 

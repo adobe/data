@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { definitionOf, labelOfItem } from '../../interface/registry/index.js';
 import type { System } from '../../interface/system/system.js';
 import { checkKernel } from './check-kernel.js';

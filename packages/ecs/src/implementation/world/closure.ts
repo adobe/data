@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * Structural derivation: which components an archetype's entities have once rules and `within` are applied.
  * Datalog with stratified negation over the components each entity has. A rule adds the components it derives where

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld, join } from "./create.js";

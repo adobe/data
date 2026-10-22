@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { part, record } from "../../../shared/elements/elements.test-helper.js";
 import { TodoGenerate } from "./todo-generate.js";

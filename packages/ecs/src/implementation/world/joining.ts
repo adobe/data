@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { World } from '../../interface/world/world.js';
 import type { WorkerError } from './protocol.js';
 import type { Schema } from '../../interface/schema/schema.js';

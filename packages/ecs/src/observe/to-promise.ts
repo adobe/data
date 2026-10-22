@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Observe } from './observe.js';
 
 /** The first value an observer gets; it stops observing after it, even when that value comes during the subscribing call. */

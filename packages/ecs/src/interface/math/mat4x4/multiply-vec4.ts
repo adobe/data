@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Mat4x4 } from "./index.js";
 import type { Vec4 } from "../vec4/index.js";
 import { intrinsic } from "../intrinsic.js";

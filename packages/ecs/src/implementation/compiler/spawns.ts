@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Expression, Node, Property, SpreadElement } from 'estree';
 import { children, declaredIn } from './estree.js';
 import { fail } from './failure.js';

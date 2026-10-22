@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Quat } from "../index.js";
 import { conjugate } from "./conjugate.js";
 import { lengthSquared } from "./length-squared.js";

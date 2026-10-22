@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, test } from "vitest";
 import { U32, Vec2, Vec3, Vec4 } from "./index.js";
 

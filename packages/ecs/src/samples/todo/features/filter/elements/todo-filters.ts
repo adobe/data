@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * `<todo-filters>`: the choice of which todos to show. Its `filter` property marks the chosen button; a click
  * dispatches `todo-filter` with the button's filter, and the owner writes `filter` back.

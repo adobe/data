@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, test } from "vitest";
 import { decodeMappings, insertInto } from "./source-map.js";
 

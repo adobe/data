@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Gpu, System, World, gpuDevice } from '../../../index.js';
 import { createDraw, enabled, move, moveOnCpu, position, spawn, visible } from './particles.js';
 

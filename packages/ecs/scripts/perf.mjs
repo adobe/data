@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 // Runs the benchmarks, compares them with what this machine recorded last, and records them.
 //
 //   pnpm perf [filter]           node benchmarks whose names match the regular expression filter, each in a process

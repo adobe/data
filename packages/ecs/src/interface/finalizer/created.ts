@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { ChangesDeclaration, Declaration } from './declaration.js';
 
 // Bodies' parameters are checked where they're created, so a finalizer holds any body.

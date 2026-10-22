@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** Elements by their tag names, as a feature lists those it creates or finds on the page. */
 export type Elements = { readonly [name: string]: CustomElementConstructor };
 

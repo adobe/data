@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Component, Resource, System, Vec3, type World } from '../../index.js';
 
 export const position = Symbol("particles/position");

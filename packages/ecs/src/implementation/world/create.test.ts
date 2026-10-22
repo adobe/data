@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { identify } from "../../interface/registry/ids.test-helper.js";
 import { Component } from "../../interface/component/component.js";

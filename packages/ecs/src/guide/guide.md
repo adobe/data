@@ -90,7 +90,7 @@ await moon.run(read);
 expect(values[0]).toBe(-1.6);
 ```
 
-[`01-resources.test.ts`](01-resources.test.ts#L5-L45)
+[`01-resources.test.ts`](01-resources.test.ts#L6-L46)
 
 ### 2. Entities, components and archetypes
 
@@ -143,7 +143,7 @@ expect(foes).toEqual([[0, 10, 0]]);
 expect(particles).toBe(1);
 ```
 
-[`02-entities.test.ts`](02-entities.test.ts#L5-L58)
+[`02-entities.test.ts`](02-entities.test.ts#L6-L59)
 
 ### 3. Systems
 
@@ -179,7 +179,7 @@ await world.run(read);
 expect(moved).toEqual([[1, 0, 0]]);
 ```
 
-[`03-systems.test.ts`](03-systems.test.ts#L34-L68)
+[`03-systems.test.ts`](03-systems.test.ts#L35-L69)
 
 ```ts
 const fail = System.create({ name: "fail" }, () => {
@@ -200,7 +200,7 @@ expect(run).toBe(1);
 expect(logged).toEqual(["fail: broken"]);
 ```
 
-[`03-systems.test.ts`](03-systems.test.ts#L70-L86)
+[`03-systems.test.ts`](03-systems.test.ts#L71-L87)
 
 ### 4. Ticks and cadence
 
@@ -228,7 +228,7 @@ expect(await ticked).toBeGreaterThanOrEqual(30);
 world.remove(advance);
 ```
 
-[`04-ticks.test.ts`](04-ticks.test.ts#L17-L51)
+[`04-ticks.test.ts`](04-ticks.test.ts#L18-L52)
 
 ```ts
 // A system asks for another tick by contributing a time to wake: the first tick at or after it runs. Work that a tick's
@@ -244,7 +244,7 @@ world.add(step);
 await world.run(System.create(() => {}));
 ```
 
-[`04-ticks.test.ts`](04-ticks.test.ts#L53-L74)
+[`04-ticks.test.ts`](04-ticks.test.ts#L54-L75)
 
 ## Intermediate
 
@@ -263,7 +263,7 @@ const heal = System.create({ components: { write: [health] }, after: [hit] }, ro
 const frame = System.create([heal, hit]);
 ```
 
-[`05-scheduling.test.ts`](05-scheduling.test.ts#L18-L42)
+[`05-scheduling.test.ts`](05-scheduling.test.ts#L19-L43)
 
 ```ts
 // Phases are systems that do nothing; a system during one runs after what the phase follows and before what follows it.
@@ -278,7 +278,7 @@ const report = System.create({ components: { read: [health] }, during: [render] 
 const phased = System.create([report, poison, update, render]);
 ```
 
-[`05-scheduling.test.ts`](05-scheduling.test.ts#L44-L61)
+[`05-scheduling.test.ts`](05-scheduling.test.ts#L45-L62)
 
 ### 6. Sync points
 
@@ -298,7 +298,7 @@ const count = System.create({ components: { has: [health] }, resources: { write:
 const frame = System.create([spawn, count]);
 ```
 
-[`06-sync-points.test.ts`](06-sync-points.test.ts#L20-L52)
+[`06-sync-points.test.ts`](06-sync-points.test.ts#L21-L53)
 
 ```ts
 // An observer runs after the sync point of every run and tick it's added to, reading what it left; it writes nothing.
@@ -307,7 +307,7 @@ const watch = System.create({ observer: true, components: { read: [health] } }, 
 });
 ```
 
-[`06-sync-points.test.ts`](06-sync-points.test.ts#L35-L38)
+[`06-sync-points.test.ts`](06-sync-points.test.ts#L36-L39)
 
 ### 7. Change filters and conditions
 
@@ -323,7 +323,7 @@ const show = System.create({ components: { read: [score], write: [shown], change
 });
 ```
 
-[`07-change-filters.test.ts`](07-change-filters.test.ts#L35-L65)
+[`07-change-filters.test.ts`](07-change-filters.test.ts#L36-L66)
 
 ```ts
 // Runs only while each resource in is is neither null nor false, and each in not is; is reads it narrowed.
@@ -332,7 +332,7 @@ const step = System.create({ resources: { is: [map], not: [paused], write: [step
 });
 ```
 
-[`07-change-filters.test.ts`](07-change-filters.test.ts#L67-L88)
+[`07-change-filters.test.ts`](07-change-filters.test.ts#L68-L89)
 
 ### 8. Input
 
@@ -359,7 +359,7 @@ await world.run(hit, { amount: 3 });
 await world.run(heal, { entity: player, amount: 1 });
 ```
 
-[`08-input.test.ts`](08-input.test.ts#L18-L48)
+[`08-input.test.ts`](08-input.test.ts#L19-L49)
 
 ### 9. Rules
 
@@ -383,7 +383,7 @@ Rule.create({ components: { has: [sprite], not: [hidden] }, derive: [drawn] });
 Rule.create({ components: { has: [drawn] }, derive: [layer] });
 ```
 
-[`09-rules.test.ts`](09-rules.test.ts#L10-L58)
+[`09-rules.test.ts`](09-rules.test.ts#L11-L59)
 
 ### 10. Finalizers and change sets
 
@@ -397,7 +397,7 @@ Finalizer.create({ components: { read: [handle] } }, row => {
 await world.dispose();
 ```
 
-[`10-finalizers.test.ts`](10-finalizers.test.ts#L15-L47)
+[`10-finalizers.test.ts`](10-finalizers.test.ts#L16-L48)
 
 ```ts
 // Sees each sync point's structural changes to the components it watches, grouped by how entities changed, with
@@ -409,7 +409,7 @@ Finalizer.changes({ watch: [handle] }, changes => {
 });
 ```
 
-[`10-finalizers.test.ts`](10-finalizers.test.ts#L49-L65)
+[`10-finalizers.test.ts`](10-finalizers.test.ts#L50-L66)
 
 ### 11. Traits, within and references
 
@@ -441,7 +441,7 @@ const spawn = System.create(({ commands }) => {
 });
 ```
 
-[`11-traits.test.ts`](11-traits.test.ts#L11-L59)
+[`11-traits.test.ts`](11-traits.test.ts#L12-L60)
 
 ```ts
 // A trait of your own is a member of Traits<N>: the value it allows on key N, or never where it doesn't apply.
@@ -457,7 +457,7 @@ Trait.register(instanced);
 check<Equal<Extract<Component.With<typeof instanced>, typeof transform | typeof name>, typeof transform>>();
 ```
 
-[`11-traits.type-test.ts`](11-traits.type-test.ts#L6-L27)
+[`11-traits.type-test.ts`](11-traits.type-test.ts#L7-L28)
 
 ## Advanced
 
@@ -478,7 +478,7 @@ const count = System.create({ components: { read: [cell], write: [crowded] }, lo
 });
 ```
 
-[`13-indexes.test.ts`](13-indexes.test.ts#L27-L34)
+[`13-indexes.test.ts`](13-indexes.test.ts#L28-L35)
 
 ```ts
 // A sorted index keeps its key's order: lookups take a range, and `order` runs a system's rows in it.
@@ -497,7 +497,7 @@ const list = System.create({ observer: true, components: { read: [player] }, ord
 });
 ```
 
-[`13-indexes.test.ts`](13-indexes.test.ts#L36-L49)
+[`13-indexes.test.ts`](13-indexes.test.ts#L37-L50)
 
 ```ts
 // A unique index gives one row, or null.
@@ -508,7 +508,7 @@ const find = System.create({ input: { type: "object", properties: { id: { type: 
 });
 ```
 
-[`13-indexes.test.ts`](13-indexes.test.ts#L51-L56)
+[`13-indexes.test.ts`](13-indexes.test.ts#L52-L57)
 
 ```ts
 // An index without a key holds every entity with its components, in entity order. With changed: true, this observer
@@ -520,7 +520,7 @@ const countPlayers = System.create({ observer: true, lookup: { players: { index:
 });
 ```
 
-[`13-indexes.test.ts`](13-indexes.test.ts#L58-L64)
+[`13-indexes.test.ts`](13-indexes.test.ts#L59-L65)
 
 A list stays valid until its call site runs again. Lists and rows read only what the index holds and its lookup's
 `read` names, and `list.changed` tells whether an entity entered, left or moved in it since the system last ran. A

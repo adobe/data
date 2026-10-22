@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * The `Symbol.for` name of the global `Map` that code the plugin generates fills: from key to id, and from a
  * system's, rule's or finalizer's declaration to id. Its version changes with the map's format.

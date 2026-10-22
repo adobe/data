@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Statement } from './ir.js';
 import { resolve } from './out.js';
 

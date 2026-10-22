@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Path } from '../world/kernel.js';
 import { record } from './booleans.js';
 import type { Expression, Statement } from './ir.js';

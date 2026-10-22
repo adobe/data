@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** A benchmark and what it stands for, so its results read without its code. */
 export type Benchmark = {
     /** Stable across runs: results are tracked by it. */

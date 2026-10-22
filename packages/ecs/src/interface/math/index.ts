@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 export * from "./f32/index.js";
 export * from "./i32/index.js";
 export * from "./u32/index.js";

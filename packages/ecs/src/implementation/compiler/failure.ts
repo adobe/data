@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** Where an inlined function failed: the function, and the failing line in its file. */
 export type Frame = { readonly name: string; readonly file: string; readonly line: number; readonly column: number };
 

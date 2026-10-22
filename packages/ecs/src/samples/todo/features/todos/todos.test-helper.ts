@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Entity, System, workers, World } from "../../../../index.js";
 import { done, label, order, ordered } from "./data.js";
 import { addTodo } from "./model.js";

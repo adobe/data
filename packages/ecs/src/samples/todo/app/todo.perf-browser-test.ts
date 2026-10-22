@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { it } from "vitest";
 import { Entity, Report, System, workers, World } from "../../../index.js";
 import { toggleAll } from "../features/completion/model.js";

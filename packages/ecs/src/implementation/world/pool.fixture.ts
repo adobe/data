@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { createMemory, pageBytes, pagesWord, type Memory } from "./memory.js";
 import { createPool } from "./pool.js";
 import { idleKernel } from "./protocol.js";

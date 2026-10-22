@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { createBlock, endBlock, generationOf, indexOf, reserve, reserveFrom } from "./entities.js";
 import { createState } from "./state.js";

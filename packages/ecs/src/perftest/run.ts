@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import { calibrationSource, copyBandwidth, environmentLine, resultLine, threadsBandwidth, type Curve } from "./benchmark.js";
 import { benchmarks } from "./benchmarks.js";

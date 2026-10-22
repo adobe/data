@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from '../schema/schema.js';
 import type { Definition } from '../system/definition.js';
 import type { Leaf } from '../system/leaf.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * The instance type of the global constructor `Name`, or `never` where the loaded libraries don't declare it, so types
  * that name platform classes compile with or without the DOM and worker libraries.

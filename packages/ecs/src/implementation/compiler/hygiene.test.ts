@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
 import { Component, System } from "../../index.js";
 import { workers } from "../../interface/resources/workers.js";

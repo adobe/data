@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { emptyViews } from './arrays.js';
 import { writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32 } from './archetype.js';

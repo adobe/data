@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { U32 as Vec4_U32 } from "./u32.js";
 
 export const equals = (a: Vec4_U32, b: Vec4_U32): boolean =>

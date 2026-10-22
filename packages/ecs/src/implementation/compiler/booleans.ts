@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Expression, Statement } from './ir.js';
 import { references } from './ir.js';
 import type { Unit } from './unit.js';

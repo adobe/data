@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** One end of a channel between threads: messages each way, in the order they were posted. */
 export type Channel<Send, Receive> = {
     /** Posts a message, moving the buffers in `transfer`. */

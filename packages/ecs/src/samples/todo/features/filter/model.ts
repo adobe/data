@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System } from "../../../../index.js";
 import { filter, filterSchema } from "./data.js";
 

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { IsData } from "../schema/is-data.js";
 import type { Schema } from "../schema/schema.js";
 import type { Key as TraitKey } from "../trait/key.js";

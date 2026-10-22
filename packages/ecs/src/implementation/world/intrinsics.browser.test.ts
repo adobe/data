@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import { F32, Mat4x4, Quat, U32, Vec2, Vec3, Vec4 } from "../../interface/math/index.js";

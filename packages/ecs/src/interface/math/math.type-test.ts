@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Mat4x4, Quat, Vec2, Vec3, Vec4 } from '../index.js';
 
 // Each type is also a namespace of functions; `Vec3` is `Vec3.F32`, with integer vectors nested beside it.

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { on, type Connect } from "../../shared/connect.js";
 import { addGenerated } from "./model.js";
 

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { AssignmentProperty, MemberExpression, Node, Property } from 'estree';
 import { fail } from './failure.js';
 import type { Out } from './out.js';

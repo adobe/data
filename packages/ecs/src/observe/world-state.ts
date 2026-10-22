@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Report, System, type World } from '../interface/index.js';
 
 // What the factories keep for each world: the values observers share, their subscribers, and the observer systems that

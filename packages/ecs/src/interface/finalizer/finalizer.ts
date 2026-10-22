@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * A finalizer, the value `Finalizer.create` or `Finalizer.changes` returned: identified by that value, labeled by its
  * name, and listed in other finalizers' `before` and `after`.

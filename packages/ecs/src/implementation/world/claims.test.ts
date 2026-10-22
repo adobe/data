@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { claimPiece, startRanges } from "./claims.js";
 import { lineWords } from "./protocol.js";

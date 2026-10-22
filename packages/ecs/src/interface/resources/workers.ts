@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Resource } from '../resource/resource.js';
 
 /** The kernel pool's size, 0 for none, or `null`, the default, for the platform's choice. The pool follows it at sync points. */

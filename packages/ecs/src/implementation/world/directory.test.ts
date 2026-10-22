@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Resource } from "../../interface/resource/resource.js";
 import { indexOf, reserve } from "./entities.js";

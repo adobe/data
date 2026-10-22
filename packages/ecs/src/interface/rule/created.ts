@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Declaration } from './declaration.js';
 
 /** A rule: entities matching its components have the components it derives. */

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
 

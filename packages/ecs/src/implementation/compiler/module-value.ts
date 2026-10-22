@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Expression as SourceExpression, Node } from 'estree';
 import type { Program } from '../world/kernel.js';
 import { isValueType } from '../world/intrinsics.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="@vitest/browser-playwright" />
 import { it } from "vitest";
 import { cdp } from "vitest/browser";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { BinaryOperator } from 'estree';
 import type { Path, Program } from '../world/kernel.js';
 import type { Out } from './out.js';

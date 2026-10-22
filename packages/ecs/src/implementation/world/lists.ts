@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
 import { archetypeIndexOf, labelOf } from '../../interface/registry/index.js';
 import { batchOf } from './batches.js';

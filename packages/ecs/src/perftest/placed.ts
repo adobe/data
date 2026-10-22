@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { World } from "../interface/world/world.js";
 import { workers } from "../interface/resources/workers.js";
 import { createWorld } from "../implementation/world/create.js";

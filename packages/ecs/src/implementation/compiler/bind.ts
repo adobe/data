@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Identifier, Node, Pattern } from 'estree';
 import { access } from './access.js';
 import { set } from './booleans.js';

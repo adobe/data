@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * `<todo-summary>`: how many todos are left, and the button that clears those done, shown only while some are.
  * Properties `remaining` and `completed` drive it; `empty`, reflected as an attribute, is set while both are 0. The

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System } from "../../../../index.js";
 import { done, todo } from "../todos/data.js";
 import { byDone } from "./data.js";

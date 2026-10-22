@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Entity } from "../entity/entity.js";
 import { declarationOf, kindOf, threadOfDeclaration } from "../registry/index.js";

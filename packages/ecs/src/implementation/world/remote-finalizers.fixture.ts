@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import type { Entity } from "../../interface/entity/entity.js";
 import { Observe } from "../../observe/index.js";

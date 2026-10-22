@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Component, Resource } from "@adobe/ecs";
 import type { Key as TraitKey } from "../trait/key.js";
 

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';

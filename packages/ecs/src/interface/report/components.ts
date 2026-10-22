@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { register } from '../component/register.js';
 import type { Failure, Warning } from './failure.js';
 

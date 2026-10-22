@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import type { MessagePort as NodeMessagePort } from "node:worker_threads";
 import { join } from "../implementation/index.js";

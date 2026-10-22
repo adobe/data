@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { World } from '../../interface/world/world.js';
 import { System } from '../../interface/system/system.js';
 import { join } from './create.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { always } from "../interface/resources/always.js";
 import { System } from "../interface/system/system.js";
 import { backToBack, createWorld } from "../implementation/index.js";

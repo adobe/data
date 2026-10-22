@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { labelOfItem } from '../../interface/registry/index.js';
 import { layout } from '../../interface/gpu/layout.js';
 import { recordBytes } from '../../interface/gpu/record.js';

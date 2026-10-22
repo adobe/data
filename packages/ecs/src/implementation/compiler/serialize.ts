@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { printNumber } from './print.js';
 
 /** Data as a JS literal; unlike JSON, it keeps NaN, infinities and -0. */

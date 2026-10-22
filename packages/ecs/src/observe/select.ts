@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Index, System, type Component, type Entity, type World } from '../interface/index.js';
 import { compare, predicateOf } from './compare.js';
 import type { Observe } from './observe.js';

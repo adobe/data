@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Expression, ObjectExpression, Property, SpreadElement, Pattern } from 'estree';
 import type { Reduction } from '../../interface/resource/reduction.js';
 import { isReduction, reductionOperators } from '../../interface/registry/reduction.js';

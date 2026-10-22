@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Name } from './name.js';
 import type { System } from './system.js';
 

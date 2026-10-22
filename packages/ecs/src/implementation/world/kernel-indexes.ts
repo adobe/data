@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { samePath, type Path } from '../../interface/registry/layout.js';
 import { labelOf, watchedBy } from '../../interface/registry/index.js';
 import type { KernelDescription } from './kernel.js';

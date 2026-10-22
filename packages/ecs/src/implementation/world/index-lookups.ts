@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Scalar } from '../../interface/registry/layout.js';
 import { encodeScalar, encodeValue, hashWords, orderF32, orderF64, partWords, type KeyPart } from './index-keys.js';
 import { entryWords, findBucket, lengthOf, recordKey, recordLength, recordStart, startOf, type HashView } from './index-hash.js';

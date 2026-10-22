@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Node } from 'estree';
 import { set } from './booleans.js';
 import { dataValue, leavesOf, mapLeaves, sameShape, type Data } from './data.js';

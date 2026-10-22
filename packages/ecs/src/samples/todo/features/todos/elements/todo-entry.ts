@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * `<todo-entry>`: the field a new todo is typed into. Enter dispatches `todo-add` with the text and clears the field,
  * unless it holds only whitespace; Escape clears it. The draft is its own state.

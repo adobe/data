@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { declarationOf, labelOf, threadOfDeclaration } from '../../interface/registry/index.js';
 import { makeLocal, makeRemote } from './archetype.js';
 import type { CommandBuffer } from './buffer.js';

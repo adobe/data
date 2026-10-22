@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { SystemLookup } from '../../interface/system/access.js';
 import { indexDefinitionOf, indexOfLookup, watchedBy } from '../../interface/registry/index.js';
 import type { Component } from '../../interface/component/component.js';

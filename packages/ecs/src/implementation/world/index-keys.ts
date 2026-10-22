@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { declarationOf } from '../../interface/registry/index.js';
 import { layoutOf, type Layout, type Leaf, type Scalar } from '../../interface/registry/layout.js';
 import type { Storage } from './archetype.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Chunk, ChunkResult, Runner, Workers } from './runner.js';
 import type { Schedule } from '../../interface/registry/schedule.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, expect, it, vi } from "vitest";
 import { System, World, workers } from "../../../index.js";
 import { logFailures } from "./log-failures.js";

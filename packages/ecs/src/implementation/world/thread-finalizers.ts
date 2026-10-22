@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/finalizer/created.js';
 import { labelOf } from '../../interface/registry/index.js';
 import { objectLayout, viewsOf, type Layout } from '../../interface/registry/layout.js';

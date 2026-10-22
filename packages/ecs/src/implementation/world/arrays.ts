@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { viewsOf, type Views } from '../../interface/registry/layout.js';
 import type { Memory } from './memory.js';
 

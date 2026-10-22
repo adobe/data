@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Node, ObjectExpression, Program, SimpleCallExpression } from 'estree';
 import { compileKernel, type CompiledKernel } from './compile-kernel.js';
 import { children, isFunction } from './estree.js';

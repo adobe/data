@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { createSite, indexLookupOf, type Shape, type Site } from './index-lookups.js';
 
 /** Arguments a site passes at most: its key's scalars, flattened from literals. */

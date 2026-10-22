@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { ConditionalExpression, Identifier, LogicalExpression, Node } from 'estree';
 import { access } from './access.js';
 import { observe, set } from './booleans.js';

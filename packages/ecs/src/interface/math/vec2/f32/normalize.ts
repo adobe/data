@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { F32 } from "./f32.js";
 import { length } from "./length.js";
 import { scale } from "./scale.js";

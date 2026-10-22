@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
 import { labelsOf, todosOf, withTodos } from "../todos/todos.test-helper.js";
 import { addGenerated, generatedLabel } from "./model.js";

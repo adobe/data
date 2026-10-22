@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import type { ToWorker } from './protocol.js';
 import { browserPort, nodePort, platformWorkers, type WorkerPlatform, type WorkerPort } from './worker-platform.js';

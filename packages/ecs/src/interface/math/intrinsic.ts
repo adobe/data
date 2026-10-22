@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** A WGSL value type an intrinsic takes or returns, made of one lane per scalar leaf. */
 export type WgslType =
     | "f32" | "i32" | "u32"

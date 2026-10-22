@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Created } from '../indexes/created.js';
 import { labelOfItem, recordItem, registeredAs } from './items.js';
 import { firstKeyOf, labelOf, sameDeclaration } from './names.js';

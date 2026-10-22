@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { coveringBuffer, createMemory, pageBytes } from "./memory.js";
 

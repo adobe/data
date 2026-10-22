@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import { entityWatchesOf, lookupComponentsOf } from './lookup-keys.js';
 import type { Leaf as FinalizerLeaf } from '../../interface/finalizer/created.js';

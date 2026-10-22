@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { IsShared } from '../schema/is-struct.js';
 import type { Thread } from './thread.js';
 

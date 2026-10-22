@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, expect, it } from "vitest";
 import { Entity, type World } from "../../../index.js";
 import { toggleAll } from "../features/completion/model.js";

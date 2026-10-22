@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { IsData } from "./is-data.js";
 import type { IsStruct } from "./is-struct.js";
 import type { Schema } from "./schema.js";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Reduction } from '../resource/reduction.js';
 
 /** Every reduction operator. */

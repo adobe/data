@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 // Comparing and testing component values for queries: equality, order, and `where` conditions compiled once.
 
 /** Whether two values are equal: primitives by identity, objects and arrays by their own keys, recursively. */

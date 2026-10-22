@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Archetype } from '../../interface/archetype/archetype.js';
 import { Component } from '../../interface/component/component.js';
 

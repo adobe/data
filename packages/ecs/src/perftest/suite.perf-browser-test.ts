@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { it } from "vitest";
 import { gpuDevice } from "../interface/resources/gpu-device.js";
 import { createWorld } from "../implementation/world/create.js";

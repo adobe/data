@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { create as createArchetype } from '../archetype/create.js';
 import { run } from './components.js';
 

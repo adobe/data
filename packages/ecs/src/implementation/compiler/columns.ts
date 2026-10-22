@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Path } from '../world/kernel.js';
 import type { Expression } from './ir.js';
 import type { Unit } from './unit.js';

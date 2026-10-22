@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Commands } from '../../interface/system/commands.js';
 import { addCommand, despawnCommand, pushCommand, pushComponent, removeCommand, type CommandBuffer } from './buffer.js';
 import { listShapeOf, spawnerOf } from './lists.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from '../../interface/schema/schema.js';
 import { schemaOf } from '../../interface/registry/index.js';
 import { flushBetween } from './layout-directory.js';

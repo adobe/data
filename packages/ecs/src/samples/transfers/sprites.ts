@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Component, Resource, System, Vec2, clock } from '../../index.js';
 
 // The transfers sample's keys and systems, which every thread imports: the world, on a worker, draws sprites into the

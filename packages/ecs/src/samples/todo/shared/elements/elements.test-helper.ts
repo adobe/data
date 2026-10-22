@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** What tests of elements share: no world, only the DOM. */
 
 export type Recorded = { readonly type: string; readonly detail: unknown; readonly target: EventTarget | null };

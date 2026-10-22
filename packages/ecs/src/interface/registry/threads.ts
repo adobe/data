@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { threadOfDeclaration } from './declarations.js';
 import { lookupKeysOf, orderKeysOf } from './indexes.js';
 import { declarationOf, kindOf, labelOf } from './names.js';

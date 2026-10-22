@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { System, World } from "../../../index.js";
 import type { Connect } from "./connect.js";
 import type { Elements } from "./elements/define.js";

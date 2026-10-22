@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it } from "vitest";
 import { mutationsOf, part, record } from "../../../shared/elements/elements.test-helper.js";
 import { TodoEntry } from "./todo-entry.js";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Component, System } from "../../index.js";
 import { requireDefinition, type Composite } from "../../interface/registry/index.js";

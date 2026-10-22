@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Archetype, Component, Index } from "../../../../index.js";
 
 /** A todo's text. */

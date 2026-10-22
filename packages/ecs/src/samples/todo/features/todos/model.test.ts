@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Entity } from "../../../../index.js";
 import { addTodo, deleteTodo, editTodo, moveTodo, toggleTodo } from "./model.js";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { addTrait } from '../registry/traits.js';
 import type { BuiltIn, Key } from './key.js';
 

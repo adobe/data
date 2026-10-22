@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, expect, it } from "vitest";
 import { Entity, workers, World } from "../../../../index.js";
 import { entityOfElement } from "../../shared/attach.js";

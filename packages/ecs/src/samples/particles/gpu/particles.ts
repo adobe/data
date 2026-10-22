@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Archetype, Component, Gpu, System, Vec3 } from '../../../index.js';
 
 // The perf particles (src/perftest/particles.ts) on screen: 1M particles over four archetypes by visible and

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";

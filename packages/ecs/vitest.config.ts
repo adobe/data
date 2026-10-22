@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 import { kernelPlugin } from "./src/implementation/compiler/index.ts";

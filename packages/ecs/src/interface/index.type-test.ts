@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Component, Finalizer, Resource, Rule, System, gpuDevice, workers, type Gpu } from "@adobe/ecs";
 import type * as Ecs from "@adobe/ecs";
 import type { Create } from "./world/create.js";

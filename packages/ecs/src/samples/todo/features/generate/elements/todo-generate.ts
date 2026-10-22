@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** `<todo-generate>`: buttons that ask for generated todos, each dispatching `todo-generate` with its count. */
 
 const counts = [10, 1000];

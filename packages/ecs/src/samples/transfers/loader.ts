@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { World } from '../../index.js';
 import { addSprite } from './sprites.js';
 

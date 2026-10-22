@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import type { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";

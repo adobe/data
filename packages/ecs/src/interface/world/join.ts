@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Thread } from '../thread/thread.js';
 import type { World } from './world.js';
 

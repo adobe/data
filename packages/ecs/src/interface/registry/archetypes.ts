@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { labelOf } from './names.js';
 
 /** Where an archetype holds its program-wide index: a property no other code names. */

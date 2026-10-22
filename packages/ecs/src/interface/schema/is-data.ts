@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 type Method = (...parameters: never[]) => unknown;
 
 /** How deep `NotData` looks into members: deeper ones count as data, so recursive types stay finite. */

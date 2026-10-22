@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
 import { Component } from "../interface/component/component.js";
 import { Finalizer } from "../interface/finalizer/finalizer.js";

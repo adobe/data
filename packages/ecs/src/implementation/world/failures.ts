@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Failure, Warning } from '../../interface/report/failure.js';
 
 /** What went wrong in a run or tick, before the world spawns its report: empty lists and a zero when it's clean. */

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System, World } from '../../index.js';
 import { attachSurface, stats } from './sprites.js';
 

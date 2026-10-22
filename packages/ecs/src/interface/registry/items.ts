@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /** A registered system, rule or finalizer: what each constructor records, told apart by `kind`. */
 type Registered = { readonly kind: string; readonly name: string; readonly declaration: object };
 

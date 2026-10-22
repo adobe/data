@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { System } from "../../interface/system/system.js";
 import type { Leaf } from "../../interface/system/leaf.js";
 import { definitionOf } from "../../interface/registry/index.js";

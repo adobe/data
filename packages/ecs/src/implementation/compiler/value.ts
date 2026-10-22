@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { BlockStatement, Expression as SourceExpression, Pattern } from 'estree';
 import type { Path, Program } from '../world/kernel.js';
 import type { Expression } from './ir.js';

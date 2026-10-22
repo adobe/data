@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import type { Schema } from "../schema/schema.js";
 import { threadOfDeclaration } from "./declarations.js";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Commands } from '../../interface/system/commands.js';
 import type { Essential } from '../../interface/component/value.js';
 import type { Entity } from '../../interface/entity/entity.js';

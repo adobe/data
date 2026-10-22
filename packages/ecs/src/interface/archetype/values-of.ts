@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Component } from '../component/component.js';
 
 /** Components a spawn or add may leave out: a tag, whose value is `true`, and one whose type allows `null`, its start. */

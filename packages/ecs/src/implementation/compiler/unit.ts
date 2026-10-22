@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Node } from 'estree';
 import type { Expression } from './ir.js';
 import type { Link } from './link.js';

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { buildKernel, buildViews, phases, readPlan, runBuildStep } from './index-build.js';
 import type { Entity } from '../../interface/entity/entity.js';
 import { createBlock, endBlock, locate, reserveFrom, tableLength, type Block } from './entities.js';

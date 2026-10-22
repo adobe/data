@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Entity } from "../../../index.js";
 
 /** The key an element holds the entity it shows under: only `attach` writes it. */

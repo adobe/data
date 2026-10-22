@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
  * The `Symbol.for` name of the global `WeakSet` of system bodies the plugin proved never reach their context's
  * `commands`. Its version changes with the set's format.

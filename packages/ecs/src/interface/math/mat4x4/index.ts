@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 
 export type Mat4x4 = readonly [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
 

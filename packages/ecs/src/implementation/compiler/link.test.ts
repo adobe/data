@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, test } from 'vitest';
 import { parseAst } from 'vite';
 import { createLinker, isPending, resolveExport, type Link, type LinkHost } from './link.js';

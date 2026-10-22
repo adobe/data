@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 export { Archetype } from './archetype/archetype.js';
 export { Component } from './component/component.js';
 export { Entity } from './entity/entity.js';

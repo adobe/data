@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Finalizer } from '../finalizer/created.js';
 import type { Rule } from '../rule/created.js';
 import type { Definition } from '../system/definition.js';

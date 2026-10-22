@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 
 /** The fields of a run's input that a leaf declares, so other members' fields aren't copied to its workers. */

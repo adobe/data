@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Up } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
 import { generationOf, indexOf } from './entities.js';

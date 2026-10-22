@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from "./schema.js";
 
 const ok: Schema.ForType<true> = { const: true };

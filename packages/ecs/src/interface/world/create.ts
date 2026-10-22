@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Resource } from '../resource/resource.js';
 import type { WorldWritten } from '../resource/written.js';
 import type { World } from './world.js';

@@ -5,7 +5,7 @@ import { children, isFunction } from './estree.js';
 import { fail, failureOf, type Failure } from './failure.js';
 import { isPending, type Link, type Linker } from './link.js';
 import { createModule, locateIn, type Module } from './module-scope.js';
-import { attachKernelPath, prepareLookupPath, prepareSpawnPath } from './paths.js';
+import type { PackageCopy } from './paths.js';
 import { spawnSites } from './spawns.js';
 import { kernelOf } from './signature.js';
 import { usedBy } from './body-access.js';
@@ -16,8 +16,11 @@ import { lookupSites } from './lookups.js';
 import { terminalBodiesName } from '../world/terminal.js';
 
 export type Parse = (code: string) => Program;
-/** Whether an import specifier, resolved from the module being transformed, is the package's, which exports `System` and `Finalizer`. */
-export type ResolveSystemImport = (source: string) => Promise<boolean>;
+/**
+ * The copy of the package an import specifier, resolved from the module being transformed, is a module of that exports
+ * `System` and `Finalizer`; null when it's no such module. Compiled code imports the runtime from that copy.
+ */
+export type ResolveSystemImport = (source: string) => Promise<PackageCopy | null>;
 /**
  * The JS expression for kernel `index`'s module url. `identity` is everything the description and module are
  * compiled to (the description without its url, plus the module source), so it can version the url.
@@ -34,17 +37,21 @@ export type TransformResult =
 type Edit = { readonly start: number; readonly end: number; readonly text: string };
 
 /** The local names of the package's `System` and `Finalizer` namespaces, by the namespace each names. */
-const systemLocals = async (program: Program, resolveSystemImport: ResolveSystemImport): Promise<ReadonlyMap<string, "System" | "Finalizer">> => {
+/** The module's local names of `System` and `Finalizer`, and the copy of the package the first of them comes from. */
+const systemLocals = async (program: Program, resolveSystemImport: ResolveSystemImport): Promise<{ readonly locals: ReadonlyMap<string, "System" | "Finalizer">; readonly copy: PackageCopy | null }> => {
     const locals = new Map<string, "System" | "Finalizer">();
+    let copy: PackageCopy | null = null;
     for (const statement of program.body) {
         if (statement.type !== "ImportDeclaration" || typeof statement.source.value !== "string") continue;
         const specifiers = statement.specifiers.flatMap(specifier => specifier.type === "ImportSpecifier" && specifier.imported.type === "Identifier"
             && (specifier.imported.name === "System" || specifier.imported.name === "Finalizer") ? [{ local: specifier.local.name, imported: specifier.imported.name }] : []);
-        if (specifiers.length > 0 && await resolveSystemImport(statement.source.value)) {
+        const resolved = specifiers.length > 0 ? await resolveSystemImport(statement.source.value) : null;
+        if (resolved !== null) {
+            copy ??= resolved;
             for (const { local, imported } of specifiers) locals.set(local, imported === "System" ? "System" : "Finalizer");
         }
     }
-    return locals;
+    return { locals, copy };
 };
 
 type Created = "system" | "finalizer" | "changes";
@@ -128,8 +135,8 @@ export const transformKernels = async (
 ): Promise<TransformResult | null> => {
     if ((!code.includes("System") && !code.includes("Finalizer")) || id.includes("\0")) return null;
     const program = parse(code);
-    const locals = await systemLocals(program, resolveSystemImport);
-    if (locals.size === 0) return null;
+    const { locals, copy } = await systemLocals(program, resolveSystemImport);
+    if (copy === null) return null;
     const file = id.split("?")[0] ?? id;
     const module = createModule(file, program, locateIn(code));
     linker?.add(module);
@@ -230,10 +237,10 @@ export const transformKernels = async (
     let result = code;
     for (const edit of [...edits].sort((a, b) => b.start - a.start)) result = result.slice(0, edit.start) + edit.text + result.slice(edit.end);
     const imports = [
-        ...kernels.length > 0 ? [`import { attachKernel as ${attach} } from ${JSON.stringify(attachKernelPath)};`] : [],
-        ...spawning ? [`import { prepareSpawn as ${prepare} } from ${JSON.stringify(prepareSpawnPath)};`] : [],
-        ...adding ? [`import { prepareAdd as ${prepareAddName} } from ${JSON.stringify(prepareSpawnPath)};`] : [],
-        ...looking ? [`import { prepareLookup as ${prepareLookupName} } from ${JSON.stringify(prepareLookupPath)};`] : [],
+        ...kernels.length > 0 ? [`import { attachKernel as ${attach} } from ${JSON.stringify(copy.attachKernel)};`] : [],
+        ...spawning ? [`import { prepareSpawn as ${prepare} } from ${JSON.stringify(copy.preparedSpawn)};`] : [],
+        ...adding ? [`import { prepareAdd as ${prepareAddName} } from ${JSON.stringify(copy.preparedSpawn)};`] : [],
+        ...looking ? [`import { prepareLookup as ${prepareLookupName} } from ${JSON.stringify(copy.preparedLookup)};`] : [],
     ];
     const marking = terminals ? [`function ${terminal}(body) { const set = Symbol.for(${JSON.stringify(terminalBodiesName)}); (globalThis[set] || (globalThis[set] = new WeakSet())).add(body); return body; }`] : [];
     return { code: [...imports, result, ...prepared, ...marking].join("\n"), kernels, dependencies: [...dependencies] };

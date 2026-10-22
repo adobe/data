@@ -8,7 +8,7 @@ import { parseAst } from 'vite';
 import { chunkShift, type KernelDescription, type KernelModule, type Program } from '../world/kernel.js';
 import { transformKernels } from './transform.js';
 import { createLinker, type LinkHost } from './link.js';
-import { packageIndex } from './paths.js';
+import { ownCopy } from './paths.js';
 import { locateThroughMap } from './source-map.js';
 import { estreeOf } from './estree.js';
 import { Mat4x4, Quat, Vec3 } from '../../interface/math/index.js';
@@ -31,7 +31,7 @@ const target = "target";
 /** Modules by absolute path, for tests of imports: real files for anything not in `files`, and "ecs" for the package. */
 const host = (files: { readonly [file: string]: string }): LinkHost => ({
     resolve: async (specifier, importer) => {
-        if (specifier === "ecs") return packageIndex;
+        if (specifier === "ecs") return ownCopy.index;
         if (specifier === "external") return { error: "external is external to the build", unreadable: true };
         if (!specifier.startsWith(".")) return { error: `${specifier} can't be resolved from ${importer}` };
         const path = resolve(dirname(importer), specifier);
@@ -48,7 +48,7 @@ const host = (files: { readonly [file: string]: string }): LinkHost => ({
 });
 
 const transform = (source: string, files: { readonly [file: string]: string } = {}) => transformKernels(`${header}${source}`, "/test.js", parse,
-    async specifier => specifier === "ecs", index => JSON.stringify(`kernel:${index}`), createLinker(host(files), parse));
+    async specifier => specifier === "ecs" ? ownCopy : null, index => JSON.stringify(`kernel:${index}`), createLinker(host(files), parse));
 
 type Compiled = KernelDescription & KernelModule;
 
@@ -834,7 +834,7 @@ describe("subset", () => {
 
     test("non-kernel systems that may reach their commands and other modules are left untouched", async () => {
         expect(await transform(`const s = System.create({ name: "a", components: { read: [mass] } }, (row, context) => { const f = () => [row, context]; });`)).toBeNull();
-        expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: "cpu" }, () => {});`, "/x.js", parse, async () => false, () => "")).toBeNull();
+        expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: "cpu" }, () => {});`, "/x.js", parse, async () => null, () => "")).toBeNull();
     });
 });
 
@@ -879,7 +879,7 @@ describe("terminal bodies", () => {
         expect(alone !== null && "code" in alone ? alone.code : "").toContain("System.create(terminal$(() =>");
         const kernel = await transform(`const kernel = System.create({ name: "k", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = 1; });`);
         expect(kernel !== null && "code" in kernel ? kernel.code : "").not.toContain("terminal$");
-        const finalizer = await transformKernels(`import { Finalizer } from "ecs";\nconst f = Finalizer.create({ components: { read: [] } }, () => {});`, "/x.js", parse, async () => true, () => "");
+        const finalizer = await transformKernels(`import { Finalizer } from "ecs";\nconst f = Finalizer.create({ components: { read: [] } }, () => {});`, "/x.js", parse, async () => ownCopy, () => "");
         expect(finalizer).toBeNull();
     });
 });
@@ -1383,7 +1383,7 @@ describe("declared access", () => {
     });
 
     test("finalizers are checked as main-thread bodies, in files that import only Finalizer", async () => {
-        const finalizing = (source: string) => transformKernels(source, "/finalizer.js", parse, async specifier => specifier === "ecs", index => JSON.stringify(`kernel:${index}`));
+        const finalizing = (source: string) => transformKernels(source, "/finalizer.js", parse, async specifier => specifier === "ecs" ? ownCopy : null, index => JSON.stringify(`kernel:${index}`));
         const failed = async (source: string) => {
             const result = await finalizing(source);
             return result !== null && "failure" in result ? result.failure.message : "compiled";

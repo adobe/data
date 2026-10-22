@@ -9,7 +9,7 @@ import { describeFailure } from './failure.js';
 import { identify as identifyModule, moduleIdOf, type PackageNameOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
-import { isNamespaceModule, isSystemModule, packageIndex } from './paths.js';
+import { copyForImporter, namespaceCopyOf } from './paths.js';
 import { locateThroughMap } from './source-map.js';
 import { transformKernels } from './transform.js';
 
@@ -56,7 +56,7 @@ const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
         const resolved = await resolver().resolve(specifier, importer, { skipSelf: true });
         if (resolved === null) return { error: `${specifier} can't be resolved from ${importer}` };
         if (resolved.external) {
-            return specifier === packageName ? packageIndex : { error: `${specifier} is external to the build, so kernels can't inline from it`, unreadable: true };
+            return specifier === packageName ? copyForImporter(importer).index : { error: `${specifier} is external to the build, so kernels can't inline from it`, unreadable: true };
         }
         const id = resolved.id.split("?")[0] ?? resolved.id;
         return id.includes("\0") || !isAbsolute(id) ? { error: `${specifier} isn't a file` } : id;
@@ -191,14 +191,14 @@ export const kernelPlugin = (): Plugin => {
             const parse = (input: string) => estreeOf(this.parse(input));
             const identify = (input: string) => identifyModule(input, moduleIdOf(id, root, packageNameOf), parse, async (source, namespace) => {
                 const resolved = await this.resolve(source, id);
-                return resolved !== null && (resolved.external ? source === packageName : isNamespaceModule(resolved.id, namespace));
+                return resolved !== null && (resolved.external ? source === packageName : namespaceCopyOf(resolved.id, namespace) !== null);
             });
             const ssr = options?.ssr === true;
             const linker = linkerFor(ssr, this);
             const hashes: string[] = [];
             const transformed = await transformKernels(code, id, parse, async source => {
                 const resolved = await this.resolve(source, id);
-                return resolved !== null && isSystemModule(resolved.id);
+                return resolved === null ? null : namespaceCopyOf(resolved.id, "System");
             }, (index, identity) => {
                 const hash = kernelHash(identity);
                 hashes[index] = hash;

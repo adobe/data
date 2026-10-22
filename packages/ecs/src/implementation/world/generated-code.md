@@ -21,7 +21,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { transformKernels } from '../implementation/compiler/transform.js';
 import { createLinker } from '../implementation/compiler/link.js';
-import { packageIndex } from '../implementation/compiler/paths.js';
+import { ownCopy } from '../implementation/compiler/paths.js';
 import { estreeOf } from '../implementation/compiler/estree.js';
 import { generateWgsl } from '../implementation/world/wgsl.js';
 import { generateWasm, type WasmColumn } from '../implementation/world/wasm.js';
@@ -36,7 +36,7 @@ const move = System.create({ name: "move", kernel: "gpu", components: { read: [v
     // Resolves the package to its source and relative imports to files, stripping types as the plugin does.
     const linker = createLinker({
         resolve: async (specifier, importer) => {
-            if (specifier === "@adobe/ecs") return packageIndex;
+            if (specifier === "@adobe/ecs") return ownCopy.index;
             const path = resolve(dirname(importer), specifier);
             return existsSync(path.replace(/\.js$/, ".ts")) ? path.replace(/\.js$/, ".ts") : path;
         },
@@ -45,7 +45,7 @@ const move = System.create({ name: "move", kernel: "gpu", components: { read: [v
             return { code: file.endsWith(".ts") ? (await (await import("vite")).transformWithOxc(code, file, { lang: "ts" })).code : code };
         },
     }, parse);
-    const result = await transformKernels(source, "/move.js", parse, async s => s === "@adobe/ecs", i => JSON.stringify(`kernel:${i}`), linker);
+    const result = await transformKernels(source, "/move.js", parse, async s => s === "@adobe/ecs" ? ownCopy : null, i => JSON.stringify(`kernel:${i}`), linker);
     if (result === null || "failure" in result) throw new Error(JSON.stringify(result));
     console.log(result.code);
     console.log(result.kernels[0]);

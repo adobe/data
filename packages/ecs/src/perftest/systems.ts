@@ -4,6 +4,7 @@ import { always } from "../interface/resources/always.js";
 import { eachTick, ticksAfter } from "./observer.js";
 import { System } from "../interface/system/system.js";
 import { backToBack, createWorld } from "../implementation/index.js";
+import { retainedRuns } from "../implementation/world/reports.js";
 import type { Benchmark } from "./benchmark.js";
 import { idle } from "./suite.js";
 
@@ -57,7 +58,8 @@ const churning = async (churn: (() => System) | null, after: boolean, stretches 
         world.add(again);
         await ticksAfter(world, 2);
         world.remove(again);
-        await ticksAfter(world, 2);
+        // The world keeps the reports of its last runs and ticks, so it holds what it will hold once it has that many.
+        await ticksAfter(world, retainedRuns);
         await world.run(idle);
         const before = await world.tables();
         let added: System | null = null;

@@ -22,8 +22,12 @@ export const remoteFinalizersCases = (load: () => Promise<typeof Fixture>) => de
         const fixture = await load();
         expect(await fixture.titledStops()).toEqual(Array.from({ length: 50 }, (_, k) => ({ serial: k, title: `t${k}` })));
     }, 30000);
-    it("read a string resource as it was before their stops' sync point applied, after the world wrote it again and freed its record", async () => {
+    it("read one string resource, or two, as they were before their stops' sync point applied, after the world wrote them again and freed their records", async () => {
         const fixture = await load();
-        expect(await fixture.headedStops()).toEqual(Array.from({ length: 20 }, (_, k) => ({ serial: k, heading: k < 10 ? "h0" : "h6" })));
+        const heading = (k: number): string => k < 10 ? "h0" : "h6";
+        expect(await fixture.headedStops()).toEqual({
+            one: Array.from({ length: 20 }, (_, k) => ({ serial: k, heading: heading(k) })),
+            two: Array.from({ length: 20 }, (_, k) => ({ serial: k, heading: heading(k), subheading: `s${heading(k)}` })),
+        });
     }, 30000);
 });

@@ -20,6 +20,7 @@ export const tone = Symbol("remoteFinalizersTest/tone");
 export const title = Symbol("remoteFinalizersTest/title");
 export const headed = Symbol("remoteFinalizersTest/headed");
 export const heading = Symbol("remoteFinalizersTest/heading");
+export const subheading = Symbol("remoteFinalizersTest/subheading");
 declare module "@adobe/ecs" {
     export interface Threads {
         remoteFinalizersTest: true;
@@ -37,6 +38,7 @@ declare module "@adobe/ecs" {
     export interface Resources {
         [tone]: { type: { readonly text: string }; thread: "remoteFinalizersTest" };
         [heading]: { type: string };
+        [subheading]: { type: string };
     }
 }
 /** A value that isn't data, which only its thread holds. */
@@ -54,6 +56,7 @@ Component.register(title, { type: { type: "string" } });
 Component.register(headed, { type: { const: true } });
 /** A string resource, which the world's thread writes and the finalizer on the thread reads. */
 Resource.register(heading, { type: { type: "string", default: "h" } });
+Resource.register(subheading, { type: { type: "string", default: "s" } });
 
 /** A stop as the finalizer saw it, on the thread it ran on. */
 export type Released = { readonly serial: number; readonly place: readonly number[]; readonly marked: boolean; readonly widget: string | null; readonly label: string | null; readonly tone: string };
@@ -87,13 +90,22 @@ export const headline = Finalizer.create({ name: "remoteFinalizersTest/headline"
     headlined.push({ serial: row[serial], heading: resources[heading] });
 });
 
+/** Every headed stop finalized on this thread, in order, with the heading and subheading it read. */
+export const headlinedBoth: { readonly serial: number; readonly heading: string; readonly subheading: string }[] = [];
+
+/** On the finalizers' thread: two string resources as they were before each headed stop's sync point applied. */
+export const headlines = Finalizer.create({ name: "remoteFinalizersTest/headlines", components: { read: [serial, widget], has: [headed] }, resources: { read: [subheading, heading] } }, (row, { resources }) => {
+    headlinedBoth.push({ serial: row[serial], heading: resources[heading], subheading: resources[subheading] });
+});
+
 /** Spawns headed rows from the world's thread, with the thread's widget at null. */
 export const spawnHeaded = System.create({ name: "remoteFinalizersTest/spawnHeaded" }, ({ commands }, input: { readonly from: number; readonly count: number }) => {
     for (let k = input.from; k < input.from + input.count; k++) commands.spawn([serial, headed, widget])({ [serial]: k, [widget]: null });
 });
-/** From the world's thread: the heading. */
-export const rehead = System.create({ name: "remoteFinalizersTest/rehead", resources: { write: [heading] } }, ({ resources }, input: { readonly heading: string }) => {
+/** From the world's thread: the heading and subheading. */
+export const rehead = System.create({ name: "remoteFinalizersTest/rehead", resources: { write: [heading, subheading] } }, ({ resources }, input: { readonly heading: string }) => {
     resources[heading] = input.heading;
+    resources[subheading] = `s${input.heading}`;
 });
 
 /** Spawns titled rows from the world's thread, with the thread's widget at null. */

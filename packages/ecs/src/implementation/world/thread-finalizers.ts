@@ -138,16 +138,18 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         const resourceStarts = numbers.map(number => mirror.starts.get(number) ?? null);
         const ownValues: unknown[] = keys.map(() => undefined);
         const shared = own.includes(false);
-        // By key: its layout as a string resource, and its slot among a group's copies of them, -1 for any other.
-        const stringLayouts: (Layout | undefined)[] = [];
-        const stringSlots: number[] = [];
-        let stringResources = 0;
-        for (const key of keys) {
+        // By slot among a group's copies of string resources: its key's index and layout.
+        const stringKeys: number[] = [];
+        const stringLayouts: Layout[] = [];
+        keys.forEach((key, k) => {
             const layout = host.layoutOf(key);
-            const string = layout?.kind === "string";
-            stringLayouts.push(string ? layout : undefined);
-            stringSlots.push(string ? stringResources++ : -1);
-        }
+            if (layout?.kind !== "string") return;
+            stringKeys.push(k);
+            stringLayouts.push(layout);
+        });
+        const stringResources = stringKeys.length;
+        // Whether it reads a resource where it is even while a group holds copies of its strings.
+        const live = keys.some((key, k) => !own[k] && host.layoutOf(key)?.kind !== "string");
         if (keys.length > 0) {
             const values: object = Object.create({});
             keys.forEach((key, k) => {
@@ -173,21 +175,23 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
             context: value,
             stringResources,
             cells: strings => {
-                const found = shared ? host.resourceRow() : null;
+                const copied = strings >= 0 && stringResources > 0;
+                const found = (copied ? live : shared) ? host.resourceRow() : null;
                 for (let k = 0; k < keys.length; k++) {
                     // Before a rebuild too, its old rows are the mirror's, which hold what the rebuild keeps.
                     if (own[k]) ownValues[k] = resourceValueOf(mirror, numbers[k], resourceStarts[k]);
-                    else if (strings >= 0 && stringSlots[k] >= 0) {
-                        const layout = stringLayouts[k];
-                        if (layout === undefined) continue;
-                        // As before its stops' sync point applied, from the group's copy of its record.
-                        resolved[k].storage = columnStorage(numbers[k], layout, viewsOf(buffer, strings + 4 * stringSlots[k], 4), [], host.strings);
-                        resolved[k].row = 0;
-                    }
                     else {
                         resolved[k].storage = found?.archetype.storageById[numbers[k]];
                         resolved[k].row = found?.row ?? 0;
                     }
+                }
+                if (!copied) return;
+                // As before its stops' sync point applied, from the group's copies of their records: a handle a slot.
+                const views = viewsOf(buffer, strings, 4 * stringResources);
+                for (let slot = 0; slot < stringResources; slot++) {
+                    const k = stringKeys[slot];
+                    resolved[k].storage = columnStorage(numbers[k], stringLayouts[slot], views, [], host.strings);
+                    resolved[k].row = slot;
                 }
             },
             body: (row, context) => untyped.body(row, context),

@@ -410,7 +410,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                     current: () => {
                         if (replayed === null) return true;
                         const state = replay(replayed);
-                        return state !== "held" && (state !== "lapped" || rebuild(replayed));
+                        return state !== "held" && (state !== "lapped" || rebuild(replayed) === "rebuilt");
                     },
                 });
                 if (message.tasks !== null && mirror !== null) {

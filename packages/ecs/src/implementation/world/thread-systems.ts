@@ -359,11 +359,17 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         }));
     };
 
+    /** Whether the last rebuild found a sync point applying before or during it, so it can rebuild once that's applied. */
+    let moved = false;
     /** Brings the mirror up to the last published sync, which runs the finalizers of its stops; false while it can't. */
     const current = (): boolean => {
+        moved = false;
         const replayed = replay(mirror);
         if (replayed === "held") return false;
-        return replayed !== "lapped" || rebuild(mirror);
+        if (replayed !== "lapped") return true;
+        const rebuilt = rebuild(mirror);
+        moved = rebuilt === "moved";
+        return rebuilt === "rebuilt";
     };
 
     /** Whether a task can run: its systems known here, its input arrived, and the mirror through its sync. */
@@ -428,10 +434,13 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         return control;
     };
 
-    /** A task waiting for a sync point to finish applying, to rebuild its mirror, runs once it has. */
+    /**
+     * A task waiting for a sync point to finish applying, to rebuild its mirror, runs once it has: at once when the
+     * sync point applied during the rebuild, as nothing else may wake this thread before the task is done.
+     */
     let structureWaited = false;
     const retryAfterStructure = (): void => {
-        if (structureWaited || !applying(mirror)) return;
+        if (structureWaited || (!moved && !applying(mirror))) return;
         structureWaited = true;
         void waitStructure(mirror).then(() => {
             structureWaited = false;

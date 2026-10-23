@@ -11,6 +11,10 @@ import { createMoveLog, ownTag, slotValue, type MoveLog } from "./move-log.js";
 import { claimThreads } from "./remote.js";
 import { createState, defaultOf, idOf, startTicking, type State } from "./state.js";
 import { applySync, prepareSync, synchronize } from "./synchronize.js";
+import { logSyncWord } from "./move-log.js";
+import { createThreadDirectory } from "./thread-directory.js";
+import { createThreadSystems } from "./thread-systems.js";
+import { completionCapacityWord, completionOffsetWord, payloadCapacityWord, payloadCount, payloadOffsetWord, payloadSequence, payloadSync, ringBaseWord, ringCapacityWord, taskBlockWords, taskDoneWord, taskPostedWord } from "./thread-tasks.js";
 
 // The move log on one thread: a world whose objects of thread "moveLogTest" a mirror fills, against an inline world given
 // the same commands, compared after every sync point by each entity's id.
@@ -81,7 +85,7 @@ const inline = (): State => {
 /** Brings the mirror up to the last sync point, rebuilding when its log lapped it. */
 const follow = (mirror: Mirror): void => {
     const replayed = replay(mirror);
-    if (replayed === "lapped") expect(rebuild(mirror)).toBe(true);
+    if (replayed === "lapped") expect(rebuild(mirror)).toBe("rebuilt");
     else expect(replayed).toBe("current");
 };
 
@@ -323,5 +327,55 @@ describe("the move log", () => {
         state.queued.push({ buffer: target.buffer, guarded: true });
         synchronize(state);
         expect(words[record + recordCount]).toBe(4);
+    });
+    it("runs a thread's task once its rebuild failed for a sync point applied during it, with no wake after", async () => {
+        const { state, mirror, log } = threaded(4);
+        const { commands, target } = worldCommands(state);
+        const entity = commands.spawn([uid, label])({ [uid]: 1 });
+        state.queued.push({ buffer: target.buffer, guarded: true });
+        synchronize(state);
+        follow(mirror);
+        // The thread's task block, posting a task of no systems: it runs once the mirror is current.
+        const { memory } = state;
+        const block = memory.allocate(taskBlockWords * 4);
+        const control = new Int32Array(memory.memory.buffer, block, taskBlockWords);
+        const payload = memory.allocate(256);
+        const completion = memory.allocate(256);
+        const ring = memory.allocate(1 << 16);
+        Atomics.store(control, payloadOffsetWord, payload);
+        Atomics.store(control, payloadCapacityWord, 256);
+        Atomics.store(control, completionOffsetWord, completion);
+        Atomics.store(control, completionCapacityWord, 256);
+        Atomics.store(control, ringBaseWord, ring);
+        Atomics.store(control, ringCapacityWord, 1 << 16);
+        const systems = createThreadSystems({
+            memory: memory.memory, mirror, directory: createThreadDirectory(memory.memory, mirror), control, claims: new Set(["moveLogTest"]),
+            worldWaits: true, post: () => {}, keyNumber: () => 0, numbered: () => 0,
+        });
+        // More entries than the log holds, so the thread rebuilds.
+        for (let k = 0; k < 8; k++) commands.add(entity, amount, k);
+        state.queued.push({ buffer: target.buffer, guarded: true });
+        synchronize(state);
+        // A sync point applies while the thread rebuilds, after it read the structure epoch, and none follows it.
+        const through = mirror.finalize;
+        let applied = false;
+        mirror.finalize = (sync, old) => {
+            if (!applied) {
+                applied = true;
+                commands.add(entity, amount, 9);
+                state.queued.push({ buffer: target.buffer, guarded: true });
+                synchronize(state);
+            }
+            return through === null || through(sync, old);
+        };
+        const words = new Float64Array(memory.memory.buffer, payload, 32);
+        words[payloadSequence] = 1;
+        words[payloadSync] = Atomics.load(log.header, logSyncWord) >>> 0;
+        words[payloadCount] = 0;
+        Atomics.store(control, taskPostedWord, 1);
+        expect(systems.process()).toBe(false);
+        expect(applied).toBe(true);
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(Atomics.load(control, taskDoneWord)).toBe(1);
     });
 });

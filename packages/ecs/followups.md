@@ -109,11 +109,6 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 
 ## Performance
 
-- **A joined thread's first tail task once never finished,** under heavy machine load (two test suites at once): the
-  world waited on `channel.idle()` with task 1 posted and not done (`threads.browser.test.ts`, tails "see one tick's
-  values"). It didn't recur in 25 runs without the extra load, and the base failed once on another threads test in the
-  same comparison. Worth a stress run of the joined-thread suites under load.
-
 - **`transfer`, chromium:** its median varied with machine load. Check it alone on a quiet machine before the next
   record.
 - **`joined observer 10K`:** checking archetype versions once per post instead of per row would save some of the

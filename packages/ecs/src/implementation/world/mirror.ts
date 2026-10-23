@@ -39,6 +39,12 @@ type Staged = { readonly slot: number; readonly entity: number; readonly compone
 /** Whether replaying is done, waits for a component's key to be named, or found the log lapped or replaced. */
 export type Replayed = "current" | "held" | "lapped";
 
+/**
+ * Whether rebuilding is done; found a sync point applying before or during it, so it can rebuild once the structure
+ * epoch is even; or waits for a component's key to be named or a finalizer to be set up.
+ */
+export type Rebuilt = "rebuilt" | "moved" | "held";
+
 /** A joined thread's mirror of the world's rows holding its objects. */
 export type Mirror = {
     readonly memory: WebAssembly.Memory;
@@ -480,14 +486,13 @@ const previousValue = (old: readonly (Mirrored | null | undefined)[], entity: nu
 /**
  * Rebuilds every column from the layout directory, as of the last published sync, under the structure epoch: rows
  * from each archetype's `entities` and count, values by the tag each row's storage holds, a staged slot's taken, any
- * other the thread's own kept by entity, and ticks from the world's. Returns false while a sync point applies, or a
- * component it holds has no key named yet, having changed nothing.
+ * other the thread's own kept by entity, and ticks from the world's. Changes nothing unless it's `"rebuilt"`.
  */
-export const rebuild = (mirror: Mirror): boolean => {
+export const rebuild = (mirror: Mirror): Rebuilt => {
     refresh(mirror);
     const { words, signed, header, buffer } = mirror;
     const epoch = Atomics.load(signed, structureWord);
-    if ((epoch & 1) === 1) return false;
+    if ((epoch & 1) === 1) return "moved";
     const version = Atomics.load(header, logVersionWord);
     const sync = Atomics.load(header, logSyncWord) >>> 0;
     const published = Atomics.load(header, logPublishedWord) >>> 0;
@@ -502,7 +507,7 @@ export const rebuild = (mirror: Mirror): boolean => {
             indexed = true;
         }
         return previousValue(old, entity, component, start);
-    })) return false;
+    })) return "held";
     const archetypes: (Mirrored | null)[] = [];
     /** Staged slots the rebuild takes, settled only once it's complete. */
     const taken: number[] = [];
@@ -514,7 +519,7 @@ export const rebuild = (mirror: Mirror): boolean => {
             continue;
         }
         const columns = columnsOf(mirror, record);
-        if (columns === undefined) return false;
+        if (columns === undefined) return "held";
         if (columns === null) {
             archetypes.push(null);
             continue;
@@ -553,7 +558,7 @@ export const rebuild = (mirror: Mirror): boolean => {
         archetypes.push(archetype);
     }
     // An exchange, so every read above completes before it.
-    if (Atomics.add(signed, structureWord, 0) !== epoch) return false;
+    if (Atomics.add(signed, structureWord, 0) !== epoch) return "moved";
     for (const slot of taken) {
         const staged = stagedOf(mirror, slot);
         if (staged !== undefined) staged.live = false;
@@ -566,7 +571,7 @@ export const rebuild = (mirror: Mirror): boolean => {
     viewRing(mirror);
     settle(mirror);
     mirror.rebuilds++;
-    return true;
+    return "rebuilt";
 };
 
 /** A storage's first word in a record, by its component. */

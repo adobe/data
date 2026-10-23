@@ -1,6 +1,6 @@
 # @adobe/ecs
 
-A high-performance entity component system for real-time TypeScript apps on the web.
+A high-performance Entity Component System for web-based applications, simulations and games.
 
 ## Features
 

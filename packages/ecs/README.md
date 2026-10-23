@@ -1,6 +1,7 @@
 # @adobe/ecs
 
-A high-performance Entity Component System for web-based applications, simulations and games.
+A high-performance, multithreaded, GPU-integrated Entity Component System for web-based applications, simulations and
+games.
 
 ## Features
 

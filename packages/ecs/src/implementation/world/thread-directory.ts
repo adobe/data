@@ -106,6 +106,7 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
         viewed.views = viewsOf(latest, 0, latest.byteLength);
         pages = current;
         archetypes.length = 0;
+        // Defensive: rows bound to the old views still read the same shared memory, and arrays that moved bumped `replacedWord`.
         replaced.count++;
         entitiesVersion = -1;
         settle();
@@ -222,6 +223,7 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
                 layouts[number] = layoutOf(declarationOf(key)?.type);
                 // Views hold storages only of components with layouts here, so they're made again.
                 archetypes.length = 0;
+                // Defensive: a lookup's read keys are named before its runner and pool exist, so no bound row lacks a storage.
                 replaced.count++;
             }
         }

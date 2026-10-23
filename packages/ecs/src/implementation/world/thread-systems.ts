@@ -834,6 +834,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             bind();
             if (threadIndexes.length !== 0) {
+                // Settles the count after `ready()` or `current()` may have rebuilt the mirror, since `runTask` settles before them.
                 const buffer = host.refresh();
                 for (let k = 0; k < threadIndexes.length; k++) threadIndexes[k].refresh(buffer);
             }

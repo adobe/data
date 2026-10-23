@@ -1,11 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, expect, test } from 'vitest';
-import { build, createServer, type Rollup, type ViteDevServer } from 'vite';
+import { build, createServer, parseAst, transformWithOxc, type Rollup, type ViteDevServer } from 'vite';
 import type { KernelDescription, KernelModule } from '../world/kernel.js';
 import { kernelPlugin } from './plugin.js';
 
@@ -70,21 +70,6 @@ import { kernelOf } from ${source("../world/attach-kernel.ts")};
 import { score } from "./linked-keys.js";
 import { Listed } from "./listed.js";
 const kernel = System.create({ name: "listing", kernel: "cpu", components: { read: [score] } }, (row, { commands }) => { commands.spawn(Listed)({ [score]: row[score] }); });
-export const description = kernelOf(kernel);
-`);
-/** An application importing a kernel a library ships uncompiled, from its `dist`. */
-const application = join(directory, "application.js");
-mkdirSync(join(directory, "node_modules/@adobe"), { recursive: true });
-symlinkSync(fileURLToPath(new URL("../../..", import.meta.url)), join(directory, "node_modules/@adobe/ecs"));
-mkdirSync(join(directory, "node_modules/kernel-library/dist"), { recursive: true });
-writeFileSync(join(directory, "node_modules/kernel-library/package.json"), JSON.stringify({ name: "kernel-library", type: "module", exports: "./dist/index.js" }));
-writeFileSync(join(directory, "node_modules/kernel-library/dist/index.js"), `import { Component, System } from "@adobe/ecs";
-const score = Symbol("score");
-Component.register(score, { type: { type: "number" } });
-export const kernel = System.create({ name: "library", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
-`);
-writeFileSync(application, `import { kernelOf } from ${source("../world/attach-kernel.ts")};
-import { kernel } from "kernel-library";
 export const description = kernelOf(kernel);
 `);
 /** Two kernels in one module, writing different functions of the entity. */
@@ -155,6 +140,47 @@ writeFileSync(externalKey, externalKernel("externalKey", "heat"));
 const externalList = join(directory, "external-list.js");
 writeFileSync(externalList, externalKernel("externalList", "Pair"));
 afterAll(() => rmSync(directory, { recursive: true, force: true }));
+
+const own = fileURLToPath(new URL("../../..", import.meta.url));
+/** The modules an installed copy's code starts from: its root, its worker, and those compiled code imports. */
+const copyEntries = ["index", "implementation/world/worker", "implementation/world/attach-kernel", "implementation/world/prepared-spawn", "implementation/world/prepared-lookup"];
+let builtDist: Promise<ReadonlyMap<string, string>> | null = null;
+
+/** Every relative module a module's code imports or re-exports from. */
+const relativeImports = (code: string): readonly string[] => parseAst(code).body.flatMap(statement =>
+    (statement.type === "ImportDeclaration" || statement.type === "ExportAllDeclaration" || statement.type === "ExportNamedDeclaration")
+        && typeof statement.source?.value === "string" && statement.source.value.startsWith(".") ? [statement.source.value] : []);
+
+/**
+ * The package's `dist` code by path within it, built from the sources as `tsc` emits each module on its own: the
+ * modules the entries reach at runtime, so no test reads a previous build. Built once per test file.
+ */
+const distFromSources = (): Promise<ReadonlyMap<string, string>> => builtDist ??= (async () => {
+    const sources = join(own, "src");
+    const files = new Map<string, string>();
+    const visit = async (file: string): Promise<void> => {
+        const path = relative(sources, file).replace(/\.ts$/, ".js");
+        if (files.has(path)) return;
+        files.set(path, "");
+        const { code } = await transformWithOxc(readFileSync(file, "utf8"), file, { lang: "ts" });
+        files.set(path, code);
+        await Promise.all(relativeImports(code).map(specifier => visit(resolve(dirname(file), specifier.replace(/\.js$/, ".ts")))));
+    };
+    await Promise.all(copyEntries.map(entry => visit(join(sources, `${entry}.ts`))));
+    return files;
+})();
+
+/** Installs a built copy of the package in a project's `node_modules`, a directory of its own as an install makes. */
+const installCopy = async (project: string): Promise<string> => {
+    const copy = join(project, "node_modules/@adobe/ecs");
+    mkdirSync(copy, { recursive: true });
+    writeFileSync(join(copy, "package.json"), readFileSync(join(own, "package.json")));
+    for (const [path, code] of await distFromSources()) {
+        mkdirSync(dirname(join(copy, "dist", path)), { recursive: true });
+        writeFileSync(join(copy, "dist", path), code);
+    }
+    return copy;
+};
 
 /** Runs a one-column kernel writing a function of the entity, for entities 3 and 4. */
 const runs = (module: KernelModule, description: KernelDescription): readonly number[] => {
@@ -291,9 +317,26 @@ test("serve compiles kernels again when a list they import changes", async () =>
 });
 
 test("an application's build compiles the kernels a library ships uncompiled", async () => {
-    const outDir = join(directory, "dist-application");
+    // An application importing a kernel a library ships uncompiled, from its `dist`, with the package installed.
+    const project = join(directory, "shipped");
+    const copy = await installCopy(project);
+    writeFileSync(join(project, "package.json"), JSON.stringify({ name: "shipped-app", type: "module" }));
+    mkdirSync(join(project, "node_modules/kernel-library/dist"), { recursive: true });
+    writeFileSync(join(project, "node_modules/kernel-library/package.json"), JSON.stringify({ name: "kernel-library", type: "module", exports: "./dist/index.js" }));
+    writeFileSync(join(project, "node_modules/kernel-library/dist/index.js"), `import { Component, System } from "@adobe/ecs";
+const score = Symbol("score");
+Component.register(score, { type: { type: "number" } });
+export const kernel = System.create({ name: "library", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+`);
+    // The test hook comes from the installed copy, which the library's compiled kernel attaches to.
+    const application = join(project, "application.js");
+    writeFileSync(application, `import { kernelOf } from ${JSON.stringify(join(copy, "dist/implementation/world/attach-kernel.js"))};
+import { kernel } from "kernel-library";
+export const description = kernelOf(kernel);
+`);
+    const outDir = join(project, "dist");
     const output = await build({
-        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        configFile: false, logLevel: "silent", root: project, plugins: [kernelPlugin()],
         build: { outDir, minify: false, lib: { entry: application, formats: ["es"], fileName: "main" } },
     });
     const main = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
@@ -389,11 +432,7 @@ test("a build takes a name from a package external to it as one key, and registr
 test("compiled code imports the runtime from the copy of the package its module imports, not the plugin's own", async () => {
     // A project whose installed copy of the package is a directory of its own, as a lockfile's copy is beside a linked one.
     const project = join(directory, "copied");
-    const copy = join(project, "node_modules/@adobe/ecs");
-    const own = fileURLToPath(new URL("../../..", import.meta.url));
-    mkdirSync(copy, { recursive: true });
-    cpSync(join(own, "package.json"), join(copy, "package.json"));
-    cpSync(join(own, "dist"), join(copy, "dist"), { recursive: true, filter: file => !/\.(map|d\.ts)$|\.test\./.test(file) });
+    await installCopy(project);
     writeFileSync(join(project, "package.json"), JSON.stringify({ name: "copy-app", type: "module" }));
     const module = join(project, "copied.js");
     writeFileSync(module, `import { System, Component } from "@adobe/ecs";

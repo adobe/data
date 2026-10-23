@@ -7,7 +7,8 @@ import { blockShift, chunkShift, type Kernel, type KernelCommands, type KernelMo
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../interface/registry/layout.js';
 import { emptyViews } from './arrays.js';
 import { claimPiece } from './claims.js';
-import { controlWords, done, epoch, idleKernel, lineWords, posted, ringBase, ringCapacity, ringCursor, ringNeeded, ringSize, signal, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
+import { controlWords, idleKernel, lineWords, ringBase, ringCapacity, ringCursor, ringNeeded, ringSize, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
+import { runWindow } from './worker-window.js';
 import { beginCommand, createRingWriter, encoderOf, endSegment, noExtent, objectStart, putComponent, putStart, putValue, startSegment, type Encoder, type Extent } from './command-ring.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { indexParameterCount, instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
@@ -429,59 +430,30 @@ const runBuildTask = (payloads: Float64Array, base: number, buffer: ArrayBufferL
  * Runs tasks from this worker's ring in shared memory, blocking between them, until the main thread asks it to leave;
  * then it returns to handling messages.
  */
-const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
+const openWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
     const buffer = required(memory, "memory").buffer;
     // The pool's control state never moves, so these views last the window.
     const control = new Int32Array(buffer, message.control + message.worker * controlWords * 4, controlWords);
     const statuses = new Int32Array(buffer, message.statuses + message.worker * ringSize * 4, ringSize);
     const payloads = new Float64Array(buffer, message.payloads + message.worker * ringSize * taskWords * 8, ringSize * taskWords);
-    let next = Atomics.load(control, done);
-    for (;;) {
-        const seen = Atomics.load(control, signal);
-        if (next < Atomics.load(control, posted)) {
-            const ring = next % ringSize;
-            const base = ring * taskWords;
-            // A task from a later window waits until this worker has handled the messages sent before it.
-            if (payloads[base + 6] !== message.epoch) return;
-            let status = next + 1;
-            try {
-                refreshMemory();
-                const kernel = payloads[base];
-                if (kernel === buildKernel) runBuildTask(payloads, base, buffer, message);
-                else if (kernel !== idleKernel) {
-                    const loaded = kernels.get(kernel);
-                    if (loaded === undefined) throw new Error("Worker can't run this task.");
-                    const line = payloads[base + 8];
-                    const participants = payloads[base + 11];
-                    const scalarCount = payloads[base + 7];
-                    const partials = loaded.setup.reduces ? payloads[base + taskFields + scalarCount] : -1;
-                    const partialBytes = loaded.setup.reduces ? payloads[base + taskFields + scalarCount + 1] : 0;
-                    runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5],
-                        Array.from(payloads.subarray(base + taskFields, base + taskFields + scalarCount)),
-                        line < 0 ? null : { words: new Int32Array(buffer, message.claims + line * lineWords * 4, participants * lineWords), self: payloads[base + 10], participants },
-                        payloads[base + 9], partials ?? -1, partialBytes ?? 0);
-                }
-            }
-            catch {
-                status = -status;
-            }
-            Atomics.store(statuses, ring, status);
-            next++;
-            Atomics.store(control, done, next);
-            Atomics.notify(control, done);
-            continue;
+    runWindow(control, statuses, payloads, message.epoch, base => {
+        refreshMemory();
+        const kernel = payloads[base];
+        if (kernel === buildKernel) runBuildTask(payloads, base, buffer, message);
+        else if (kernel !== idleKernel) {
+            const loaded = kernels.get(kernel);
+            if (loaded === undefined) throw new Error("Worker can't run this task.");
+            const line = payloads[base + 8];
+            const participants = payloads[base + 11];
+            const scalarCount = payloads[base + 7];
+            const partials = loaded.setup.reduces ? payloads[base + taskFields + scalarCount] : -1;
+            const partialBytes = loaded.setup.reduces ? payloads[base + taskFields + scalarCount + 1] : 0;
+            runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5],
+                Array.from(payloads.subarray(base + taskFields, base + taskFields + scalarCount)),
+                line < 0 ? null : { words: new Int32Array(buffer, message.claims + line * lineWords * 4, participants * lineWords), self: payloads[base + 10], participants },
+                payloads[base + 9], partials ?? -1, partialBytes ?? 0);
         }
-        // Closed, it leaves once it ran this window's tasks: the pool posts a task before it closes the window, so a task
-        // posted since the check above is seen now, and runs above if it's this window's.
-        if (Atomics.load(control, epoch) !== message.epoch) {
-            if (next < Atomics.load(control, posted)) continue;
-            return;
-        }
-        // Tiers follow each other closely, so spin briefly before paying for a blocking wait's wake-up.
-        const deadline = performance.now() + 0.05;
-        while (Atomics.load(control, signal) === seen && performance.now() < deadline);
-        if (Atomics.load(control, signal) === seen) Atomics.wait(control, signal, seen);
-    }
+    });
 };
 
 /** Where messages come from and replies go: this worker's own scope, until a lent worker's owner gives it a port. */
@@ -503,7 +475,7 @@ const handle = async (message: ToWorker): Promise<void> => {
         return;
     }
     if (message.kind === "window") {
-        runWindow(message);
+        openWindow(message);
         return;
     }
     if (message.kind === "layout") {

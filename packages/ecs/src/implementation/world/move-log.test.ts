@@ -394,15 +394,18 @@ describe("the move log", () => {
         expect(done()).toBe(true);
     });
     it("runs a thread's task once the sync point its rebuild found applying is applied", async () => {
-        const { state, mirror, entity, commands, queue, systems, post, done } = lapped();
+        const { state, mirror, entity, commands, queue, systems, post, done, refreshes } = lapped();
         commands.add(entity, amount, 9);
         queue();
         expect(prepareSync(state)).toBe(true);
         expect(rebuild(mirror)).toBe("moved");
         post(false);
         expect(systems.process()).toBe(false);
+        const tried = refreshes();
         await new Promise(resolve => setTimeout(resolve, 5));
         expect(done()).toBe(false);
+        // It waits on the structure epoch, trying nothing until the sync point is applied.
+        expect(refreshes()).toBe(tried);
         applySync(state);
         await new Promise(resolve => setTimeout(resolve, 5));
         expect(done()).toBe(true);

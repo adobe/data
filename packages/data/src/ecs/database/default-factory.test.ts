@@ -12,6 +12,7 @@ import { Database } from "./database.js";
 import type { Schema } from "../../schema/index.js";
 import type { Store } from "../store/index.js";
 import { applyOperations } from "./transactional-store/apply-operations.js";
+import type { TransactionResult, TransactionWriteOperation } from "./transactional-store/transactional-store.js";
 import type { Assert } from "../../types/assert.js";
 import type { Equal } from "../../types/equal.js";
 
@@ -37,10 +38,20 @@ const nodePlugin = Database.Plugin.create({
     },
 });
 
+// Replays recorded ops through a transaction body, the way undo/redo does.
+const replayPlugin = Database.Plugin.create({
+    extends: nodePlugin,
+    transactions: {
+        replay(t, operations: TransactionWriteOperation<any>[]) {
+            applyOperations(t, operations);
+        },
+    },
+});
+
 const withRegistry = (start = 1000) => {
     let next = start;
     return {
-        db: Database.create(nodePlugin, { defaultFactories: { guid: () => next++ } }),
+        db: Database.create(replayPlugin, { defaultFactories: { guid: () => next++ } }),
         minted: () => next,
     };
 };
@@ -72,6 +83,27 @@ describe("insert-time default-factory (full plugin chain)", () => {
             const db = Database.create(nodePlugin);
             db.transactions.addNode({ value: 1 });
         }).toThrow(/defaultFactory "guid"/);
+    });
+});
+
+// Undo/redo replay of an insert must restore the minted value, not mint again.
+describe("redo of an insert with a default-factory component", () => {
+    it("records the minted value so replaying the redo insert keeps the original identity", () => {
+        const { db } = withRegistry(1000);
+        const results: TransactionResult<any>[] = [];
+        db.observe.transactions(result => results.push(result));
+
+        const e = db.transactions.addNode({ value: 1 });
+        const { undo, redo } = results[results.length - 1];
+        expect(db.read(e)?.guid).toBe(1000);
+
+        const redoInsert = redo.find(op => op.type === "insert");
+        expect(redoInsert?.type === "insert" && redoInsert.values).toEqual({ value: 1, guid: 1000 });
+
+        db.transactions.replay(undo);
+        db.transactions.replay(redo);
+        const guids = db.select(["guid"]).map(entity => db.read(entity)?.guid);
+        expect(guids).toEqual([1000]);
     });
 });
 

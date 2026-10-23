@@ -842,6 +842,38 @@ describe("createTransactionalStore", () => {
         });
     });
 
+    describe("undo of an added column", () => {
+        const nameSchema = { type: "string" } as const satisfies Schema;
+
+        it("removes the column on undo and restores a user value equal to the old removal sentinel", () => {
+            const baseStore = Store.create({
+                components: { position: positionSchema, name: nameSchema },
+                resources: {},
+                archetypes: {}
+            });
+            const store = createTransactionalStore(baseStore);
+            const sentinel = "_$_DELETE_$_";
+
+            let entity: Entity = 0 as Entity;
+            store.execute(t => {
+                entity = t.ensureArchetype(["position"]).insert({ position: { x: 0, y: 0, z: 0 } });
+            });
+
+            // Add the column: undo must remove it.
+            const added = store.execute(t => { t.update(entity, { name: sentinel }); });
+            expect(baseStore.read(entity)?.name).toBe(sentinel);
+            applyOperations(baseStore, added.undo);
+            expect(baseStore.read(entity)?.name).toBeUndefined();
+            applyOperations(baseStore, added.redo);
+            expect(baseStore.read(entity)?.name).toBe(sentinel);
+
+            // Edit a column whose value is the sentinel: undo must restore it, not drop it.
+            const edited = store.execute(t => { t.update(entity, { name: "renamed" }); });
+            applyOperations(baseStore, edited.undo);
+            expect(baseStore.read(entity)?.name).toBe(sentinel);
+        });
+    });
+
     describe("relocatedEntities (swap-move / migration signal)", () => {
         const make = () => createTransactionalStore(Store.create({
             components: { value: F32.schema, tag: F32.schema },

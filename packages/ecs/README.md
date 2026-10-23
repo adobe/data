@@ -32,7 +32,7 @@ A data-oriented entity component system. Systems run on the main thread, on work
   - Worlds shared with other threads through a `MessagePort` or worker
   - Joined threads run their own systems and observers, and lend their workers to the pool
 - **Runtime**
-  - No allocation per row or per frame
+  - Kernels allocate nothing per row; commands, lookups and reports reuse their buffers
   - Errors reported as data, in each run's report
 
 ## Guide

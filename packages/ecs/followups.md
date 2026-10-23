@@ -103,6 +103,9 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 
 ## Performance
 
+- **A run allocates about 3.6 KB even for an empty system,** in node: the run path's async functions (`executeTiers`,
+  `perform`, `execute`, `runWith`), their promises and a few small objects. Make the path allocate nothing when nothing
+  waits, and measure with a sampling heap profile.
 - **`transfer`, chromium:** three runs on a quiet machine gave 19.9, 22.5 and 16.1 ms, so its spread of about 20% is
   its own, not the machine's. Find what varies (likely the time a worker takes to wake) before treating its changes
   as signal.

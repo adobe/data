@@ -85,29 +85,26 @@ const blocksFor = (capacity: number): number => chunksFor(capacity) << (chunkShi
 /** What stamping a row's ticks writes: a storage's, or a joined thread's view of one. */
 export type Stamped = Pick<Storage, "ticked" | "added" | "changed" | "chunkAdded" | "chunkChanged" | "blockAdded" | "blockChanged">;
 
-/** Stamps a row's `changed` tick, its chunk's and its block's. Ticks only increase, so theirs are the newest. */
+/**
+ * Stamps a row's `changed` tick, its block's and its chunk's. Ticks only increase, so theirs are the newest. Every
+ * writer stores the row, then the block, then the chunk, the reverse of the order filters read them, so a filter on
+ * another thread that finds a chunk newer finds its block and row newer too.
+ */
 export const stampChanged = (storage: Stamped, row: number, tick: number): void => {
     if (!storage.ticked) return;
     storage.changed[row] = tick;
-    storage.chunkChanged[row >> chunkShift] = tick;
     storage.blockChanged[row >> blockShift] = tick;
-};
-
-export const stampAdded = (storage: Stamped, row: number, tick: number): void => {
-    if (!storage.ticked) return;
-    storage.added[row] = tick;
-    storage.chunkAdded[row >> chunkShift] = tick;
-    storage.blockAdded[row >> blockShift] = tick;
+    storage.chunkChanged[row >> chunkShift] = tick;
 };
 
 /**
- * Raises the chunk and block ticks over rows `start` to `end - 1` to at least `tick`: for ticks written to those rows
+ * Raises the block and chunk ticks over rows `start` to `end - 1` to at least `tick`: for ticks written to those rows
  * in bulk, or copied in from rows of other chunks.
  */
 export const raiseRange = (chunks: Float64Array, blocks: Float64Array, start: number, end: number, tick: number): void => {
     if (start >= end) return;
-    for (let chunk = start >> chunkShift, last = (end - 1) >> chunkShift; chunk <= last; chunk++) if (chunks[chunk] < tick) chunks[chunk] = tick;
     for (let block = start >> blockShift, last = (end - 1) >> blockShift; block <= last; block++) if (blocks[block] < tick) blocks[block] = tick;
+    for (let chunk = start >> chunkShift, last = (end - 1) >> chunkShift; chunk <= last; chunk++) if (chunks[chunk] < tick) chunks[chunk] = tick;
 };
 
 /** A table of the entities that have exactly `components`. Rows are dense: `0` to `count`. */
@@ -358,13 +355,13 @@ export const copyCell = (from: Storage, fromRow: number, to: Storage, toRow: num
     const changed = from.changed[fromRow];
     to.added[toRow] = added;
     to.changed[toRow] = changed;
-    // A chunk's and a block's tick are the newest of their rows, so a row moving in can raise them.
-    const chunk = toRow >> chunkShift;
-    if (added > to.chunkAdded[chunk]) to.chunkAdded[chunk] = added;
-    if (changed > to.chunkChanged[chunk]) to.chunkChanged[chunk] = changed;
+    // A block's and a chunk's tick are the newest of their rows, so a row moving in can raise them.
     const block = toRow >> blockShift;
     if (added > to.blockAdded[block]) to.blockAdded[block] = added;
     if (changed > to.blockChanged[block]) to.blockChanged[block] = changed;
+    const chunk = toRow >> chunkShift;
+    if (added > to.chunkAdded[chunk]) to.chunkAdded[chunk] = added;
+    if (changed > to.chunkChanged[chunk]) to.chunkChanged[chunk] = changed;
 };
 
 /** Removes a row by moving the last row into it. Returns the moved entity, or -1 if the removed row was last. */

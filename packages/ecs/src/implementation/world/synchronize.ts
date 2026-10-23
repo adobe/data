@@ -281,13 +281,13 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
         // A constant's `changed` ticks are its `added` ticks, and its value can't change: only a new start stamps it.
         if (storage.changed !== storage.added || starts) {
             storage.changed[toRow] = tick;
-            storage.chunkChanged[toRow >> chunkShift] = tick;
             storage.blockChanged[toRow >> blockShift] = tick;
+            storage.chunkChanged[toRow >> chunkShift] = tick;
         }
         if (starts) {
             storage.added[toRow] = tick;
-            storage.chunkAdded[toRow >> chunkShift] = tick;
             storage.blockAdded[toRow >> blockShift] = tick;
+            storage.chunkAdded[toRow >> chunkShift] = tick;
         }
     }
 };
@@ -299,8 +299,8 @@ export const writeDefault = (state: State, storage: Storage, row: number, tick: 
     else storage.tags[row] = startTag;
     if (!storage.ticked) return;
     storage.added[row] = storage.changed[row] = tick;
-    storage.chunkAdded[row >> chunkShift] = storage.chunkChanged[row >> chunkShift] = tick;
     storage.blockAdded[row >> blockShift] = storage.blockChanged[row >> blockShift] = tick;
+    storage.chunkAdded[row >> chunkShift] = storage.chunkChanged[row >> chunkShift] = tick;
 };
 
 /** Writes the values an entry's commands give into its row, in issue order. */
@@ -419,13 +419,13 @@ const copyColumn = (from: Storage, to: Storage, plan: Plan, order: Int32Array, f
         const changed = from.changed[fromRow];
         to.added[toRow] = added;
         to.changed[toRow] = changed;
-        // A chunk's and a block's tick are the newest of their rows, so a row moving in can raise them.
-        const chunk = toRow >> chunkShift;
-        if (added > to.chunkAdded[chunk]) to.chunkAdded[chunk] = added;
-        if (changed > to.chunkChanged[chunk]) to.chunkChanged[chunk] = changed;
+        // A block's and a chunk's tick are the newest of their rows, so a row moving in can raise them.
         const block = toRow >> blockShift;
         if (added > to.blockAdded[block]) to.blockAdded[block] = added;
         if (changed > to.blockChanged[block]) to.blockChanged[block] = changed;
+        const chunk = toRow >> chunkShift;
+        if (added > to.chunkAdded[chunk]) to.chunkAdded[chunk] = added;
+        if (changed > to.chunkChanged[chunk]) to.chunkChanged[chunk] = changed;
     }
 };
 

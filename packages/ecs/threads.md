@@ -182,8 +182,9 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   record is allocated once, since an archetype's storages are fixed, and never moves; only the table grows. A record
   holds `capacity`, the `entities` offset, a version, its flags and its count, and per storage its component number, its
   flags (`ticked`, linear, remote with the joined thread's number), its column, tick and chunk-tick offsets, its
-  chunk count and its block-tick offsets, sixteen blocks a chunk; a remote storage's column is its tags. Offsets are `Uint32`, since memory reaches 4 GiB. The resource
-  archetype has a record too, flagged, and the header holds the resource entity's index.
+  chunk count and its block-tick offsets, sixteen blocks a chunk; a remote storage's column is its tags. Offsets are
+  `Uint32`, since memory reaches 4 GiB. The resource archetype has a record too, flagged, and the header holds the
+  resource entity's index.
 - **Entity-table record:** the `cursor` offset, which never moves, the free list's offset and capacity, the
   `archetype`, `row` and `generation` offsets and capacity, and a version. The table's length is `cursor[2]`. Its
   arrays move whenever they grow, even without memory growing, since a grown array's old block is reused.

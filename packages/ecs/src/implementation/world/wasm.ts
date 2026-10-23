@@ -367,6 +367,8 @@ export const generateWasm = (
     const lookupParameter = (index: number): number => beforeLookups + index;
     /** For `up`: the rows' and their parents' rows' addresses, whether there's a parent, then each parent column's address. */
     const upMode = program.up === true;
+    // Its runner passes an `up` kernel only the rows that pass, and the filter loops step the row, not its list slot.
+    if (upMode && filters > 0) throw new Error("A WASM kernel reading `up` takes no change filters: its runner lists only the rows that pass.");
     const upParameters = upMode ? 3 + upColumns.length : 0;
     /** Each lookup through an index's parameters, after the lookup parameters: `indexParameterCount` of them, as f64. */
     const indexOffsets: number[] = [];
@@ -627,8 +629,8 @@ export const generateWasm = (
         for (const statement of program.body) {
             if (ends(statement)) break;
             if (statement.kind !== "stamp") continue;
-            if (columns[statement.chunks].muted !== true) everyRow.set(statement.chunks, chunkShift);
             if (columns[statement.blocks].muted !== true) everyRow.set(statement.blocks, blockShift);
+            if (columns[statement.chunks].muted !== true) everyRow.set(statement.chunks, chunkShift);
         }
     }
     /** Stamps every chunk or block from `start`'s to `end - 1`'s, for the chunk and block columns every row stamps. */
@@ -1259,8 +1261,8 @@ export const generateWasm = (
             // A chunk column stays when its row column is muted, for a component held on the GPU.
             case "stamp":
                 if (columns[current.column].muted !== true) store(current.column, "tick");
-                stampDense(current.chunks, chunkShift, 0);
                 stampDense(current.blocks, blockShift, 0);
+                stampDense(current.chunks, chunkShift, 0);
                 return;
             case "if":
                 emit(current.test);
@@ -1480,10 +1482,10 @@ export const generateWasm = (
                     }
                 }
                 // The group may straddle two chunks or blocks. Under a mask this can stamp one no lane changed, which only costs a scan.
-                stampDense(current.chunks, chunkShift, 0);
-                stampDense(current.chunks, chunkShift, 3);
                 stampDense(current.blocks, blockShift, 0);
                 stampDense(current.blocks, blockShift, 3);
+                stampDense(current.chunks, chunkShift, 0);
+                stampDense(current.chunks, chunkShift, 3);
                 return;
             }
             case "if": {

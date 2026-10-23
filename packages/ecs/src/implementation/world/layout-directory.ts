@@ -39,8 +39,9 @@ export const structureWaitersWord = 13;
 /**
  * An archetype record: its capacity, `entities` offset, storage count, version, flags and row count, then per storage
  * its component number, flags, column, `added`, `changed`, `chunkAdded` and `chunkChanged` offsets, chunk count, and
- * `blockAdded` and `blockChanged` offsets, of `chunks << (chunkShift - blockShift)` blocks. Offsets a storage doesn't have are 0. A record is allocated once, since an archetype's storages are fixed, and never
- * moves. Its count is written at flushes while a joined thread may read it, for archetypes whose count changed.
+ * `blockAdded` and `blockChanged` offsets, of `chunks << (chunkShift - blockShift)` blocks. Offsets a storage doesn't
+ * have are 0. A record is allocated once, since an archetype's storages are fixed, and never moves. Its count is
+ * written at flushes while a joined thread may read it, for archetypes whose count changed.
  */
 export const recordCapacity = 0;
 export const recordEntities = 1;

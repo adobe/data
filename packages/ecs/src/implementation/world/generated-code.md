@@ -114,7 +114,7 @@ Calls nest as builtins do: `Vec3.scale(Vec3.normalize(Vec3.cross(p, v)), Vec3.do
 
 ### WASM (557 bytes, excerpts from `wasm2wat`)
 
-Four loops: chunk stamps, block stamps, four rows at a time, then one row at a time for the rest.
+Four loops: block stamps, chunk stamps, four rows at a time, then one row at a time for the rest.
 
 ```wat
 ;; Four rows: 48 bytes per component, three v128 loads each.

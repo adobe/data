@@ -125,13 +125,13 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             ...locals,
             preludeCode,
             ...accumulators.map((local, k) => `let ${localName(unit, local)} = partials[partial + ${k}];`),
-            // A kernel that runs a list of rows, which needn't be consecutive, stamps each row's own chunk.
+            // A kernel that runs a list of rows, which needn't be consecutive, stamps each row's own block and chunk.
             ...listed ? [] : [...unit.stampedPerCall].flatMap(([chunks, blocks]) => [
-                `if (start < end) for (let k = start >> ${chunkShift}, last = (end - 1) >> ${chunkShift}; k <= last; k++) c${chunks}[k] = tick;`,
                 `if (start < end) for (let k = start >> ${blockShift}, last = (end - 1) >> ${blockShift}; k <= last; k++) c${blocks}[k] = tick;`,
+                `if (start < end) for (let k = start >> ${chunkShift}, last = (end - 1) >> ${chunkShift}; k <= last; k++) c${chunks}[k] = tick;`,
             ]),
             listed
-                ? `${rowLabel}: for (let n = start; n < end; n++) { const i = rows[n], p = parents[n]; ${[...strided.map(index => `const x${index} = i * s${index} + o${index};`), ...[...unit.stampedPerCall].map(([chunks, blocks]) => `c${chunks}[i >> ${chunkShift}] = tick; c${blocks}[i >> ${blockShift}] = tick;`)].join(" ")}`
+                ? `${rowLabel}: for (let n = start; n < end; n++) { const i = rows[n], p = parents[n]; ${[...strided.map(index => `const x${index} = i * s${index} + o${index};`), ...[...unit.stampedPerCall].map(([chunks, blocks]) => `c${blocks}[i >> ${blockShift}] = tick; c${chunks}[i >> ${chunkShift}] = tick;`)].join(" ")}`
                 : `${rowLabel}: for (let ${["i = start", ...strided.map(index => `x${index} = start * s${index} + o${index}`)].join(", ")}; i < end; ${["i++", ...strided.map(index => `x${index} += s${index}`)].join(", ")}) {`,
             kernel,
             "}",

@@ -23,6 +23,8 @@ const group = Symbol("changeBlocksTest/group");
 const tagged = Symbol("changeBlocksTest/tagged");
 const note = Symbol("changeBlocksTest/note");
 const parent = Symbol("changeBlocksTest/parent");
+const extra = Symbol("changeBlocksTest/extra");
+const height = Symbol("changeBlocksTest/height");
 
 declare module "@adobe/ecs" {
     interface Threads {
@@ -36,6 +38,8 @@ declare module "@adobe/ecs" {
         [tagged]: { type: true };
         [note]: { type: { readonly text: string } | null; thread: "changeBlocksTest" };
         [parent]: { type: Entity; reference: "owner" };
+        [extra]: { type: number };
+        [height]: { type: number };
     }
 }
 Component.register(value, { type: { type: "number" } });
@@ -46,6 +50,8 @@ Component.register(tagged, { type: { const: true } });
 const text = { type: "object", properties: { text: { type: "string" } } } as const;
 Component.register(note, { type: { anyOf: [text, { type: "null" }], default: { text: "none" } }, thread: "changeBlocksTest" });
 Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(extra, { type: { type: "number" } });
+Component.register(height, { type: { type: "number" } });
 
 /** Rows in the archetype: five chunks, the last partial. */
 const rows = 4500;
@@ -235,4 +241,40 @@ describe("chunk and block ticks", () => {
         await world.run(inGroup);
         expect(grouped).toEqual([entities[spread[1]]]);
     });
+
+    it("let an added filter find a component a command added, and that row once swapped into an old block", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(seedExtra);
+        await world.run(addedExtra);
+        // Rows `rows` and `rows + 1` gain the component and land after the archetype's rows, in its last block.
+        await world.run(addExtra, { entity: entities[rows] });
+        expect(await ranOn(world, addedExtra)).toEqual([rows]);
+        // Its last row, just added, moves into the first block's despawned row.
+        await world.run(addExtra, { entity: entities[rows + 1] });
+        await world.run(despawn, { entities: [entities[3]] });
+        expect(await ranOn(world, addedExtra)).toEqual([rows + 1]);
+    });
+
+    it("let filters find what a JS kernel reading up wrote on every row", async () => {
+        await using world = createWorld({ [workers]: 0 }, { wasm: false });
+        await world.run(seedExtra);
+        await world.run(heights);
+        await world.run(raiseHeights);
+        expect((await ranOn(world, heights)).length).toBe(rows + 2);
+    });
 });
+
+// Rows that have `extra` from the start, then two that gain it; and a JS `up` kernel writing every row's height.
+const seedExtra = System.create({ name: "changeBlocksTest/seedExtra" }, ({ commands }) => {
+    entities = [];
+    for (let i = 0; i < rows; i++) entities.push(commands.spawn([at, extra, height])({ [at]: i, [extra]: 0, [height]: 0 }));
+    for (let i = rows; i < rows + 2; i++) entities.push(commands.spawn([at, height])({ [at]: i, [height]: 0 }));
+});
+const addExtra = System.create({ name: "changeBlocksTest/addExtra" }, ({ commands }, input: { readonly entity: Entity }) => {
+    commands.add(input.entity, extra, 1);
+});
+const addedExtra = System.create({ name: "changeBlocksTest/addedExtra", components: { read: [at], added: [extra] } }, row => { found.push(row[at]); });
+const raiseHeights = System.create({ name: "changeBlocksTest/raiseHeights", kernel: "cpu", components: { write: [height] }, up: { through: parent, read: [height] } }, (row, { up }) => {
+    row[height] = up === null ? 1 : up[height] + 1;
+});
+const heights = System.create({ name: "changeBlocksTest/heights", components: { read: [at], changed: [height] } }, row => { found.push(row[at]); });

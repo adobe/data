@@ -250,6 +250,31 @@ describe("generateWasm with SIMD", () => {
         expect(blocks[0]).toBe(7);
     });
 
+    /** Runs `out = in` with its stamps where `in > 0`, rows `start` to `end` of 2048, four at a time; the blocks then stamped. */
+    const stampedFourAtATime = (start: number, end: number, positive: readonly number[]): number[] => {
+        const test: Expression = { kind: "binary", operator: ">", left: read(0), right: { kind: "number", value: 0 } };
+        const program: Program = { locals: 0, body: [{ kind: "if", test, consequent: [{ kind: "store", column: 1, value: read(0) }, { kind: "stamp", column: 2, chunks: 3, blocks: 4 }], alternate: [] }] };
+        const dense = (component: number): WasmColumn => ({ view: "f64", stride: 8, offset: 0, boolean: false, component });
+        const kernel = generateWasm(program, [column(0, 4, 0), column(1, 4, 0), dense(-1), dense(-2), dense(-3)], () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        expect(kernel.vectorized).toBe(true);
+        const memory = new WebAssembly.Memory({ initial: 2, maximum: 65536, shared: true });
+        const input = new Float32Array(memory.buffer, 0, 2048).fill(-1);
+        for (const row of positive) input[row] = 1;
+        const blocks = new Float64Array(memory.buffer, 65536 + 1024, 32);
+        const runKernel = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof runKernel !== "function") throw new Error("no run export");
+        runKernel(start, end, 7, -1, 0, 8192, 16384, 65536, 65536 + 1024);
+        return [...blocks].flatMap((tick, block) => tick === 7 ? [block] : []);
+    };
+
+    it("stamps the blocks of rows a conditional write reaches four rows at a time", () => {
+        // 300 rows are 75 whole groups, so no row runs one at a time.
+        expect(stampedFourAtATime(0, 300, [200])).toContain(200 >> 6);
+        // From row 1 the last group, rows 61 to 64, straddles blocks 0 and 1, and only its last row writes.
+        expect(stampedFourAtATime(1, 65, [64])).toEqual([0, 1]);
+    });
+
     it("stays scalar for operations without an exact f32x4 equivalent", () => {
         const remainder: Expression = { kind: "binary", operator: "%", left: read(0), right: { kind: "number", value: 2 } };
         const kernel = generateWasm({ locals: 0, body: [{ kind: "store", column: 1, value: remainder }] }, [column(0, 4, 0), column(1, 4, 0)], () => "number");
@@ -297,6 +322,15 @@ describe("generateWasm with change filters", () => {
             run(0, rows, 10, -1, 0, 16384, 32768, 65536, 66560);
             expect(output.every((value, row) => value === row)).toBe(true);
         }
+    });
+});
+
+describe("generateWasm with up", () => {
+    it("refuses change filters, which its runner applies by listing only passing rows", () => {
+        const columns: WasmColumn[] = [{ view: "f32", stride: 4, offset: 0, boolean: false, component: 0 }];
+        const program: Program = { locals: 0, up: true, body: [{ kind: "store", column: 0, value: { kind: "number", value: 1 } }] };
+        expect(() => generateWasm(program, columns, () => "number", true, 1)).toThrow("takes no change filters");
+        expect(generateWasm(program, columns, () => "number", true, 0)).not.toBeNull();
     });
 });
 

@@ -2,7 +2,7 @@
 import type { MessagePort as NodeMessagePort } from "node:worker_threads";
 import { join } from "./create.js";
 import { scopeChannel } from "./port.js";
-import { entitled, released, type Released } from "./remote-finalizers.test-helper.js";
+import { entitled, headlined, released, type Released } from "./remote-finalizers.test-helper.js";
 
 /**
  * A thread joining a world through the port it's sent, claiming "remoteFinalizersTest", whose finalizer it imports: it
@@ -14,12 +14,14 @@ export type ToRemoteFinalizersWorker =
     | { readonly kind: "join"; readonly port: Port }
     | { readonly kind: "released" }
     | { readonly kind: "entitled" }
+    | { readonly kind: "headlined" }
     | { readonly kind: "pause"; readonly milliseconds: number }
     | { readonly kind: "spin" };
 export type FromRemoteFinalizersWorker =
     | { readonly kind: "joined" }
     | { readonly kind: "released"; readonly released: readonly Released[] }
     | { readonly kind: "entitled"; readonly entitled: readonly { readonly serial: number; readonly title: string }[] }
+    | { readonly kind: "headlined"; readonly headlined: readonly { readonly serial: number; readonly heading: string }[] }
     | { readonly kind: "spinning" };
 
 const channel = scopeChannel<FromRemoteFinalizersWorker, ToRemoteFinalizersWorker>();
@@ -31,6 +33,7 @@ channel.onMessage(message => {
     }
     else if (message.kind === "released") channel.post({ kind: "released", released });
     else if (message.kind === "entitled") channel.post({ kind: "entitled", entitled });
+    else if (message.kind === "headlined") channel.post({ kind: "headlined", headlined });
     else if (message.kind === "pause") {
         channel.post({ kind: "spinning" });
         // Runs nothing meanwhile, finalizers included, then goes on.

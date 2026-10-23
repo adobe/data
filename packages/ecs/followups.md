@@ -87,11 +87,6 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 6. **Nothing awaits the next tick.** Tests watch `clock` with an observer system. Proposal: a test helper in
    `src/observe`.
 
-## Findings from joined finalizers' resources
-
-- **A joined finalizer reads a string resource from its live record,** not a copy, where the strings of its stops are
-  copied into the stop list.
-
 ## Findings from the joined-thread stress run
 
 - **A lent worker's death has two reports that race on the side it's lent to:** its port's `close` and its owner's

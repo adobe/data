@@ -18,6 +18,8 @@ export const widget = Symbol("remoteFinalizersTest/widget");
 export const label = Symbol("remoteFinalizersTest/label");
 export const tone = Symbol("remoteFinalizersTest/tone");
 export const title = Symbol("remoteFinalizersTest/title");
+export const headed = Symbol("remoteFinalizersTest/headed");
+export const heading = Symbol("remoteFinalizersTest/heading");
 declare module "@adobe/ecs" {
     export interface Threads {
         remoteFinalizersTest: true;
@@ -30,9 +32,11 @@ declare module "@adobe/ecs" {
         [widget]: { type: Widget | null; thread: "remoteFinalizersTest" };
         [label]: { type: { readonly text: string } | null; thread: "remoteFinalizersTest" };
         [title]: { type: string };
+        [headed]: { type: true };
     }
     export interface Resources {
         [tone]: { type: { readonly text: string }; thread: "remoteFinalizersTest" };
+        [heading]: { type: string };
     }
 }
 /** A value that isn't data, which only its thread holds. */
@@ -47,6 +51,9 @@ Component.register(label, { type: { anyOf: [text, { type: "null" }], default: { 
 Resource.register(tone, { type: { ...text, default: { text: "quiet" } }, thread: "remoteFinalizersTest" });
 /** A string, in shared memory, which the world's thread writes and the finalizer on the thread reads. */
 Component.register(title, { type: { type: "string" } });
+Component.register(headed, { type: { const: true } });
+/** A string resource, which the world's thread writes and the finalizer on the thread reads. */
+Resource.register(heading, { type: { type: "string", default: "h" } });
 
 /** A stop as the finalizer saw it, on the thread it ran on. */
 export type Released = { readonly serial: number; readonly place: readonly number[]; readonly marked: boolean; readonly widget: string | null; readonly label: string | null; readonly tone: string };
@@ -70,6 +77,23 @@ export const entitled: { readonly serial: number; readonly title: string }[] = [
 /** On the finalizers' thread: what each titled stop's title was before its sync point applied. */
 export const entitle = Finalizer.create({ name: "remoteFinalizersTest/entitle", components: { read: [serial, title, widget] } }, row => {
     entitled.push({ serial: row[serial], title: row[title] });
+});
+
+/** Every headed stop finalized on this thread, in order, with the heading it read. */
+export const headlined: { readonly serial: number; readonly heading: string }[] = [];
+
+/** On the finalizers' thread: the heading as it was before each headed stop's sync point applied. */
+export const headline = Finalizer.create({ name: "remoteFinalizersTest/headline", components: { read: [serial, widget], has: [headed] }, resources: { read: [heading] } }, (row, { resources }) => {
+    headlined.push({ serial: row[serial], heading: resources[heading] });
+});
+
+/** Spawns headed rows from the world's thread, with the thread's widget at null. */
+export const spawnHeaded = System.create({ name: "remoteFinalizersTest/spawnHeaded" }, ({ commands }, input: { readonly from: number; readonly count: number }) => {
+    for (let k = input.from; k < input.from + input.count; k++) commands.spawn([serial, headed, widget])({ [serial]: k, [widget]: null });
+});
+/** From the world's thread: the heading. */
+export const rehead = System.create({ name: "remoteFinalizersTest/rehead", resources: { write: [heading] } }, ({ resources }, input: { readonly heading: string }) => {
+    resources[heading] = input.heading;
 });
 
 /** Spawns titled rows from the world's thread, with the thread's widget at null. */

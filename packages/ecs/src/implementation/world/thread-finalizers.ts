@@ -63,8 +63,13 @@ type ThreadFinalizer = {
     readonly constantLayouts: readonly Layout[];
     readonly bind: (archetype: RowArchetype) => Row;
     readonly context: object;
-    /** Resolves its resources: its thread's objects as it holds them, any other's cell as of now. */
-    readonly cells: () => void;
+    /**
+     * Resolves its resources: its thread's objects as it holds them, its strings from the copies a group holds at byte
+     * `strings`, or with -1 as of now, and any other's cell as of now.
+     */
+    readonly cells: (strings: number) => void;
+    /** How many string resources it reads, whose copies each group holds after its columns. */
+    readonly stringResources: number;
     readonly body: (row: object, context: object) => void;
 };
 
@@ -133,6 +138,16 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         const resourceStarts = numbers.map(number => mirror.starts.get(number) ?? null);
         const ownValues: unknown[] = keys.map(() => undefined);
         const shared = own.includes(false);
+        // By key: its layout as a string resource, and its slot among a group's copies of them, -1 for any other.
+        const stringLayouts: (Layout | undefined)[] = [];
+        const stringSlots: number[] = [];
+        let stringResources = 0;
+        for (const key of keys) {
+            const layout = host.layoutOf(key);
+            const string = layout?.kind === "string";
+            stringLayouts.push(string ? layout : undefined);
+            stringSlots.push(string ? stringResources++ : -1);
+        }
         if (keys.length > 0) {
             const values: object = Object.create({});
             keys.forEach((key, k) => {
@@ -156,11 +171,19 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
             excluded: (components.not ?? []).map(host.numberOf),
             bind: rowBinderOf<RowArchetype>(host.rows, host.numberOf, reads, []),
             context: value,
-            cells: () => {
+            stringResources,
+            cells: strings => {
                 const found = shared ? host.resourceRow() : null;
                 for (let k = 0; k < keys.length; k++) {
                     // Before a rebuild too, its old rows are the mirror's, which hold what the rebuild keeps.
                     if (own[k]) ownValues[k] = resourceValueOf(mirror, numbers[k], resourceStarts[k]);
+                    else if (strings >= 0 && stringSlots[k] >= 0) {
+                        const layout = stringLayouts[k];
+                        if (layout === undefined) continue;
+                        // As before its stops' sync point applied, from the group's copy of its record.
+                        resolved[k].storage = columnStorage(numbers[k], layout, viewsOf(buffer, strings + 4 * stringSlots[k], 4), [], host.strings);
+                        resolved[k].row = 0;
+                    }
                     else {
                         resolved[k].storage = found?.archetype.storageById[numbers[k]];
                         resolved[k].row = found?.row ?? 0;
@@ -246,7 +269,7 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
             }
             for (let k = 0; k < finalizer.constants.length; k++) storageById[finalizer.constants[k]] = columnStorage(finalizer.constants[k], finalizer.constantLayouts[k], emptyViews, [], null);
             const row = finalizer.bind({ id: -1, entities: new Float64Array(buffer, entitiesAt(group), count), storageById });
-            finalizer.cells();
+            finalizer.cells(finalizer.stringResources > 0 ? column : -1);
             for (let i = 0; i < count; i++) {
                 row.index = i;
                 guarded(index, finalizer, row);
@@ -307,7 +330,7 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         for (let index = 0; index < finalizers.length; index++) {
             const finalizer = finalizers[index];
             if (finalizer === null || finalizer === undefined) continue;
-            finalizer.cells();
+            finalizer.cells(-1);
             for (let id = 0; id < host.tableCount(); id++) {
                 const archetype = host.archetypeAt(id);
                 if (archetype === undefined || archetype.resource || (archetype.meta && finalizer.required.length === 0)) continue;

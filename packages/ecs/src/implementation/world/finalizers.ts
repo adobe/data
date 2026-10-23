@@ -112,8 +112,14 @@ export const placeFinalizer = (state: State, runner: FinalizerRunner, channel: T
             copies.push(layout.kind === "string");
         }
     }
+    // In the order the thread's context reads them.
+    const stringResources: number[] = [];
+    for (const key of new Set<Key>(finalizer.declaration.resources?.read ?? [])) {
+        const id = idOf(state, key);
+        if (state.layouts[id].kind === "string") stringResources.push(id);
+    }
     const index = channel.placeFinalizer(state, finalizer);
-    runner.remote = { finalizer, index, objects, linear, strides, copies, entries: [], channel };
+    runner.remote = { finalizer, index, objects, linear, strides, copies, stringResources, entries: [], channel };
 };
 
 const matches = (runner: FinalizerRunner, archetype: Archetype): boolean => {
@@ -382,7 +388,11 @@ export const runFinalizers = (state: State, queued: readonly Queued[], born: Map
         }
         if (state.claimed && staged(state)) {
             const { plan } = state;
-            const source = { entity: plan.entity, from: plan.from, despawned: plan.despawned, archetypes: state.archetypes, row: state.entities.row, holds: state.holds };
+            const resource = state.resourceEntity < 0 ? -1 : indexOf(state.resourceEntity);
+            const source = {
+                entity: plan.entity, from: plan.from, despawned: plan.despawned, archetypes: state.archetypes, row: state.entities.row, holds: state.holds,
+                resourceArchetype: resource < 0 ? -1 : state.entities.archetype[resource], resourceRow: resource < 0 ? 0 : state.entities.row[resource],
+            };
             for (const channel of state.channels) writeStops(channel.stops, tick, source);
         }
     }

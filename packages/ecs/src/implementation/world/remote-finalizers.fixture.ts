@@ -6,7 +6,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import type { FromRemoteFinalizersWorker, ToRemoteFinalizersWorker } from "./remote-finalizers-worker.fixture.js";
-import { despawn, released, retitle, scenario, serial, sorted, spawn, spawnTitled, type Released } from "./remote-finalizers.test-helper.js";
+import { despawn, rehead, released, retitle, scenario, serial, sorted, spawn, spawnHeaded, spawnTitled, type Released } from "./remote-finalizers.test-helper.js";
 import { fillReports, runReported } from "./reports.test-helper.js";
 
 /**
@@ -134,6 +134,30 @@ export const titledStops = async () => {
     for (let k = 0; k < 200 && seen.length < 50; k++) {
         const reply = await worker.ask({ kind: "entitled" });
         seen = reply.kind === "entitled" ? reply.entitled : [];
+    }
+    await worker.terminate();
+    await world.dispose();
+    return [...seen].sort((a, b) => a.serial - b.serial);
+};
+
+/**
+ * Headed rows despawned with the heading "h0" while the worker runs nothing, then the world's thread writing the
+ * heading six times, so the record "h0" was in is freed and reused before the worker finalizes them, and the rest
+ * despawned: the headings its finalizer read.
+ */
+export const headedStops = async () => {
+    const world = createWorld({ [workers]: 0 });
+    const { worker } = await joined(world);
+    await world.run(rehead, { heading: "h0" });
+    await world.run(spawnHeaded, { from: 0, count: 20 });
+    await worker.ask({ kind: "pause", milliseconds: 300 });
+    await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => k) });
+    for (let round = 1; round <= 6; round++) await world.run(rehead, { heading: `h${round}` });
+    await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => 10 + k) });
+    let seen: readonly { readonly serial: number; readonly heading: string }[] = [];
+    for (let k = 0; k < 200 && seen.length < 20; k++) {
+        const reply = await worker.ask({ kind: "headlined" });
+        seen = reply.kind === "headlined" ? reply.headlined : [];
     }
     await worker.terminate();
     await world.dispose();

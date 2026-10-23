@@ -456,8 +456,9 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
 - **Stop lists** (`stop-lists.ts`): before apply, the world's thread writes one block per sync point with stops for that
   thread: per finalizer, in the world's finalizer order, a group of its stops as columns: each entity, its pre-apply
   archetype and row, the tag of each object it reads, and a copy of each linear struct it reads, in that component's
-  layout, and of each string's record, by its handle, let go once the thread acknowledged the block: it may finalize
-  sync points after the row's own record was let go and freed. The world copies a column at a time, finding each column's storage once per run of an archetype. Blocks are
+  layout, and of each string's record, by its handle; then, once per group, a copy of the record of each string
+  resource it reads, as it was before apply. The copies are let go once the thread acknowledged the block: it may
+  finalize sync points after the row's or resource's own record was let go and freed. The world copies a column at a time, finding each column's storage once per run of an archetype. Blocks are
   linked in sync order, the first from the log header's stops word, each block's next offset stored once that block is
   whole, so a thread reads only whole blocks of published syncs. A block is freed once the thread acknowledged a later
   one, since the thread reads the next offset from the newest block it ran. The world wakes the thread after each sync
@@ -470,7 +471,8 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   object resources are read as it holds them: at the resource entity's row in its mirror as replayed so far, which may
   be behind the entity table, its old rows before a rebuild, and the start where no row holds it, as before its first
   rebuild. That's what the rebuild keeps: only its systems write those values, and the world gives them only their start,
-  when they're added or claimed. Other resources are read where they are. Then it stores "finalized through sync N" in the log header. A stop list naming a finalizer
+  when they're added or claimed. String resources are read from the group's copies, so as before apply; other resources
+  where they are. Then it stores "finalized through sync N" in the log header. A stop list naming a finalizer
   whose setup hasn't arrived holds replay before its sync, as a component without a key does; one this thread never
   imported fails each of its groups. What its finalizers throw is posted, and a later run's report lists it as a
   `"finalizer"` failure.

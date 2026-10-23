@@ -152,3 +152,10 @@ check<Equal<IsData<Tree>, true>>();
 // Neither is a struct: neither lives in shared memory.
 check<Equal<IsStruct<ReadonlySet<number>>, false>>();
 check<Equal<IsStruct<ReadonlyMap<number, number>>, false>>();
+
+// Schema.Type is the plain type a schema describes, so a type named by it is that type: a number or a tuple, unbranded.
+type Level = Schema.Type<{ type: "integer"; minimum: 0; maximum: 9 }>;
+check<Equal<Level, number>>();
+check<Equal<Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }>, readonly [number, number, number]>>();
+// @ts-expect-error its argument is a schema
+type NotSchema = Schema.Type<{ type: "integer"; minimum: "zero" }>;

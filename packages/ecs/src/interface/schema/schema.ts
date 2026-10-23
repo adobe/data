@@ -140,6 +140,13 @@ export namespace Schema {
         T extends NullSchema ? null :
         never;
 
+    /**
+     * The type schema `S` describes, as a plain type: `type Level = Schema.Type<{ type: "integer"; minimum: 0; maximum: 9 }>`
+     * is a `number`. Declarations naming such a type, directly or through aliases, get `S` as their schema from the
+     * build, so a named type carries its precision, width and bounds.
+     */
+    export type Type<S extends Schema> = ToType<S>;
+
     /** The schemas whose `ToType` is `T`; constrains a schema to describe a known type. */
     export type ForType<T> = Schema &
     (

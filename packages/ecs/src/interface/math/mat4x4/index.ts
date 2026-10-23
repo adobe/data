@@ -1,6 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import type { Schema } from "../../schema/schema.js";
+import type { schema } from "./schema.js";
 
-export type Mat4x4 = readonly [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
+export type Mat4x4 = Schema.Type<typeof schema>;
 
 /**
  * 4x4 Matrix operations using column-major order (WebGPU standard).

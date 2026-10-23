@@ -127,10 +127,11 @@ export const serveLent = (worker: Pick<Port<unknown, unknown>, "onDeath" | "term
         control.post({ kind: "death", message: error.message });
     });
     const end = async (): Promise<void> => {
-        await worker.terminate();
-        if (gone) return;
+        // Gone before it's ended, so the death reported is this, not the worker's end it causes, which may come first.
+        const reported = gone;
         gone = true;
-        control.post({ kind: "death", message: "A world worker was terminated by its owner." });
+        await worker.terminate();
+        if (!reported) control.post({ kind: "death", message: "A world worker was terminated by its owner." });
     };
     control.onMessage(async () => {
         gone = true;

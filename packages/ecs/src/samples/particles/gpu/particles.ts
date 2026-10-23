@@ -49,8 +49,7 @@ const random = (seed: number): (() => number) => {
 /** The particle count, and the field's width and height in pixels. Entity i goes to archetype i % 4. */
 export const spawn = System.create({
     name: "gpuParticles/spawn",
-    input: { type: "object", properties: { count: { type: "integer" }, width: { type: "number" }, height: { type: "number" } } },
-}, ({ input: { count, width, height }, commands }) => {
+}, ({ commands }, { count, width, height }: { readonly count: number; readonly width: number; readonly height: number }) => {
     const next = random(7);
     for (let i = 0; i < count; i++) {
         const p = [next() * width, next() * height, 0] as const;

@@ -73,7 +73,7 @@ export const freshKernel = (system: System): System => {
     const description = kernelOf(system);
     if (leaf === undefined || leaf.kind === "composite" || description === undefined) throw new Error("Not a kernel system.");
     // What `System.create` makes of the same declaration and body, without the id a top-level binding takes.
-    const copy: Leaf & System = { kind: leaf.kind, name: leaf.name, declaration: leaf.declaration, body: leaf.body };
+    const copy: Leaf & System = { kind: leaf.kind, name: leaf.name, declaration: leaf.declaration, input: leaf.input, body: leaf.body };
     claimSystem(copy, undefined);
     return attachKernel(copy, description);
 };

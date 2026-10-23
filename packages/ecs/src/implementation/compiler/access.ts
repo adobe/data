@@ -50,9 +50,8 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
             if (name === "lookup") return { kind: "lookups" };
             if (name === "reduce") return { kind: "reducers" };
             if (name === "commands") return { kind: "commands" };
-            if (name === "input" && signature.input) return { kind: "dynamic", expression: { kind: "args", path: [] } };
             if (name === "up" && scope.unit.up !== null) return { kind: "found", lookup: signature.lookups.length, expression: local(scope.unit.up) };
-            return fail(node, "the context holds the declared resources, lookup, reduce, input and up, and commands");
+            return fail(node, "the context holds the declared resources, lookup, reduce and up, and commands");
         case "resources": {
             const index = key.kind === "binding" ? signature.resources.indexOf(key.name) : -1;
             if (key.kind !== "binding" || index < 0) return fail(node, `${key.kind === "binding" ? key.name : "resources"} is not in resources read`);

@@ -52,13 +52,13 @@ Component.register(kept, { type: { type: "string" } });
 Resource.register(total, { type: { type: "number", default: 0 } });
 Resource.register(names, { type: { type: "array", items: { type: "string" }, default: [] } });
 
-const add = System.create({ name: "observeJoinedTest/add", input: { type: "object", properties: { amount: { type: "number" } } }, resources: { write: [total] } }, ({ input, resources }) => {
+const add = System.create({ name: "observeJoinedTest/add", resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
-const spawn = System.create({ name: "observeJoinedTest/spawn", input: { type: "object", properties: { x: { type: "number" } } } }, ({ input, commands }) => {
+const spawn = System.create({ name: "observeJoinedTest/spawn" }, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, label, marked])({ [point]: [input.x, -input.x], [label]: `p${input.x}` });
 });
-const spawnPlaced = System.create({ name: "observeJoinedTest/spawnPlaced", input: { type: "object", properties: { x: { type: "number" } } } }, ({ input, commands }) => {
+const spawnPlaced = System.create({ name: "observeJoinedTest/spawnPlaced" }, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([place, caption, widget, kept])({ [place]: input.x, [widget]: null, [kept]: `k${input.x}` });
 });
 const nullCaptions = System.create({ name: "observeJoinedTest/nullCaptions", components: { has: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, null); });

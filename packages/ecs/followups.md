@@ -130,13 +130,14 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
   record.
 - **`joined observer 10K`:** checking archetype versions once per post instead of per row would save some of the
   thread's run (see perf.md "Next").
+- **`loop tick add remove` fails its leak check:** the world holds 3 schedules and 38,080 arena bytes after, against 4
+  and 16,192 before, so `pnpm perf` stops there. It fails the same before the change to input types.
 
 ## Earlier open work
 
 - Index step 5 items.
 - Starting the pool for large index builds.
 - `order` on workers.
-- Typed transfers (Phase 7).
 - The `Finalizer` namespace.
 - Chromium timer clamps.
 - The `transfer` cost.

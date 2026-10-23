@@ -50,8 +50,7 @@ export const propagateChanged = System.create({
 /** `roots` chains of `depth` rows each. */
 export const forest = System.create({
     name: "hierarchy/forest",
-    input: { type: "object", properties: { roots: { type: "integer" }, depth: { type: "integer" } } },
-}, ({ input, commands }) => {
+}, ({ commands }, input: { readonly roots: number; readonly depth: number }) => {
     for (let r = 0; r < input.roots; r++) {
         let previous = commands.spawn(root)({ [local]: 1, [world]: 0 });
         for (let d = 1; d < input.depth; d++) previous = commands.spawn(child)({ [local]: 1, [world]: 0, [parent]: previous });
@@ -61,12 +60,12 @@ export const forest = System.create({
 const target = { type: "object", properties: { entity: Entity.schema } } as const;
 
 /** Changes one row's own value. */
-export const nudge = System.create({ name: "hierarchy/nudge", input: target, components: { write: [local] } }, (row, { input }) => {
+export const nudge = System.create({ name: "hierarchy/nudge", components: { write: [local] } }, (row, _context, input: { readonly entity: Entity }) => {
     if (row.entity === input.entity) row[local] += 1;
 });
 
 /** Adds one leaf under a row. */
-export const sprout = System.create({ name: "hierarchy/sprout", input: target }, ({ input, commands }) => {
+export const sprout = System.create({ name: "hierarchy/sprout" }, ({ commands }, input: { readonly entity: Entity }) => {
     commands.spawn(child)({ [local]: 1, [world]: 0, [parent]: input.entity });
 });
 
@@ -77,8 +76,7 @@ const leaves: Entity[] = [];
 /** Despawns the leaves it spawned last time and spawns `count` new ones, one under each of `under`'s first rows; `tagged` puts them in an archetype of their own. */
 export const turnover = System.create({
     name: "hierarchy/turnover",
-    input: { type: "object", properties: { count: { type: "integer" }, tagged: { type: "boolean" } } },
-}, ({ input, commands }) => {
+}, ({ commands }, input: { readonly count: number; readonly tagged: boolean }) => {
     for (const entity of leaves.splice(0)) commands.despawn(entity);
     for (let i = 0; i < input.count; i++) {
         leaves.push(input.tagged
@@ -90,8 +88,7 @@ export const turnover = System.create({
 /** Moves a row, and the subtree under it, to another parent. */
 export const reparent = System.create({
     name: "hierarchy/reparent",
-    input: { type: "object", properties: { entity: Entity.schema, to: Entity.schema } },
-}, ({ input, commands }) => {
+}, ({ commands }, input: { readonly entity: Entity; readonly to: Entity }) => {
     commands.add(input.entity, parent, input.to);
 });
 
@@ -124,8 +121,7 @@ export const place = System.create({
 /** `forest` in 4-byte values. */
 export const gpuForest = System.create({
     name: "hierarchy/gpuForest",
-    input: { type: "object", properties: { roots: { type: "integer" }, depth: { type: "integer" } } },
-}, ({ input, commands }) => {
+}, ({ commands }, input: { readonly roots: number; readonly depth: number }) => {
     for (let r = 0; r < input.roots; r++) {
         let previous = commands.spawn(gpuRoot)({ [offset]: 1, [placed]: 0 });
         for (let d = 1; d < input.depth; d++) previous = commands.spawn(gpuChild)({ [offset]: 1, [placed]: 0, [parent]: previous });

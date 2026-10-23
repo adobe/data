@@ -133,7 +133,7 @@ describe("reports", () => {
         await using world = inline();
         logged.length = 0;
         world.add(logger);
-        const failWith = System.create({ name: "reportsTest/failWith", input: { type: "object", properties: { k: { type: "integer" } } } }, ({ input }) => { throw new Error(`run ${input.k}`); });
+        const failWith = System.create({ name: "reportsTest/failWith" }, (_context, input: { readonly k: number }) => { throw new Error(`run ${input.k}`); });
         for (let k = 0; k < retainedRuns; k++) await world.run(failWith, { k });
         logged.length = 0;
         const reused = await world.run(failWith, { k: retainedRuns });

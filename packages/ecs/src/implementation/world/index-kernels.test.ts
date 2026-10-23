@@ -127,11 +127,11 @@ const watch = System.create({
     if (lookup.near([row[cell][0], row[cell][1]]).changed) row[changes] = row[changes] + 1;
 });
 
-const spawnGrid = System.create({ name: "indexKernelsTest/spawnGrid", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const spawnGrid = System.create({ name: "indexKernelsTest/spawnGrid" }, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) commands.spawn([cell, weight, total, count, changes, serial])({ [cell]: [(k * 7) % 5, (k * 3) % 4], [weight]: k % 9, [total]: 0, [count]: 0, [changes]: 0, [serial]: k });
 });
 
-const spawnLanes = System.create({ name: "indexKernelsTest/spawnLanes", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const spawnLanes = System.create({ name: "indexKernelsTest/spawnLanes" }, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) commands.spawn([lane, rank, ranked, count, seen])({ [lane]: k % 3, [rank]: (k * 37) % 101, [ranked]: true, [count]: 0, [seen]: Entity.none });
 });
 

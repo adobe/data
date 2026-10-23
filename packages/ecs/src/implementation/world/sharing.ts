@@ -240,7 +240,7 @@ export const createSharing = (host: SharingHost) => {
                 released(holder, thread, sequence);
                 continue;
             }
-            const layout = bytes >= 0 && definition.kind !== "composite" ? inputLayoutOf(definition, definition.declaration.input) : null;
+            const layout = bytes >= 0 && definition.kind !== "composite" ? inputLayoutOf(definition, definition.input) : null;
             const held = holder !== null && holder.tasks !== null ? heldInput(thread.number, sequence, holder.tasks) : null;
             const value = own ? joinedRun(sequence) : held ?? (layout !== null && layout.kind === "linear" ? layout.read(thread.views[slot], 0) : input);
             let ran: Promise<number>;

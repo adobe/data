@@ -67,7 +67,7 @@ Rule.create({ name: "rulesTest/sprites", components: { has: [sprite] }, derive: 
 Rule.create({ name: "rulesTest/tag", components: { has: [tagged] }, derive: [tag] });
 
 /** Runs `edit` with commands once, as its own run. */
-const edit = System.create({ name: "rulesTest/edit", input: { type: "object", properties: { step: { type: "integer" } } } }, ({ input, commands }) => {
+const edit = System.create({ name: "rulesTest/edit" }, ({ commands }, input: { readonly step: number }) => {
     for (const step of steps[input.step] ?? []) step(commands);
 });
 let steps: ((commands: System.Commands) => void)[][] = [];

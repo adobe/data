@@ -27,7 +27,7 @@ const widen = System.create({ name: "observerContainedTest/widen", resources: { 
     resources[wide] = [base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7, base + 8, base + 9, base + 10, base + 11];
 });
 const step = System.create({ name: "observerContainedTest/step", resources: { write: [steps] } }, ({ resources }) => { resources[steps] += 1; });
-const pause = System.create({ name: "observerContainedTest/pause", input: { type: "object", properties: { paused: { type: "boolean" } } }, resources: { write: [paused] } }, ({ input, resources }) => {
+const pause = System.create({ name: "observerContainedTest/pause", resources: { write: [paused] } }, ({ resources }, input: { readonly paused: boolean }) => {
     resources[paused] = input.paused;
 });
 

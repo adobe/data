@@ -31,7 +31,6 @@ export type Signature = {
     readonly up: Up | null;
     /** Whether its rows run in an index's order, as a list, as `up`'s do. */
     readonly ordered: boolean;
-    readonly input: boolean;
     /** Whether it filters on `added` or `changed` components, or on changed resources. */
     readonly filtered: boolean;
 };
@@ -94,7 +93,6 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
     let resources: readonly string[] = [];
     let reduced: readonly Reduced[] = [];
     let changedResources: readonly string[] = [];
-    let input = false;
     let up: Up | null = null;
     let ordered = false;
     const lookups: Lookup[] = [];
@@ -145,9 +143,6 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
                 up = { through: through ?? fail(property, "up needs through"), read };
                 break;
             }
-            case "input":
-                input = true;
-                break;
             // The index is a value the world resolves; only that rows run as a list changes how it compiles.
             case "order":
                 ordered = true;
@@ -167,5 +162,5 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
     if (both !== undefined) fail(declaration, `${both} is in both components read and write; write already makes it readable`);
     const rowFiltered = (components.get("added")?.length ?? 0) + (components.get("changed")?.length ?? 0) > 0;
     if (up !== null && ordered) fail(declaration, "a kernel can't use both up and order, which both decide the order of its rows");
-    return { read: new Set(components.get("read")), write: new Set(write), resources, reduced, lookups, up, ordered, input, filtered: changedResources.length > 0 || rowFiltered };
+    return { read: new Set(components.get("read")), write: new Set(write), resources, reduced, lookups, up, ordered, filtered: changedResources.length > 0 || rowFiltered };
 };

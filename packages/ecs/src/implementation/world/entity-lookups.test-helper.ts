@@ -114,8 +114,7 @@ export const touch = System.create({ name: "entityLookupsTest/touch", components
 /** Changes the subject by command: `action` names how. */
 export const edit = System.create({
     name: "entityLookupsTest/edit",
-    input: { type: "object", properties: { action: { type: "string" } } },
-}, ({ input, commands }) => {
+}, ({ commands }, input: { readonly action: string }) => {
     const { subject } = scene;
     switch (input.action) {
         case "spawn":

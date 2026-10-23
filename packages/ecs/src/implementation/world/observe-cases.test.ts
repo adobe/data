@@ -36,7 +36,7 @@ Resource.register(other, { type: { type: "number", default: 0 } });
 Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
 Component.register(weight, { type: { type: "number" } });
 
-const raise = System.create({ name: "observeCasesTest/raise", input: { type: "object", properties: { by: { type: "number" } } }, resources: { write: [level] } }, ({ input, resources }) => {
+const raise = System.create({ name: "observeCasesTest/raise", resources: { write: [level] } }, ({ resources }, input: { readonly by: number }) => {
     resources[level] += input.by;
     resources[level] += input.by;
 });

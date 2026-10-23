@@ -31,13 +31,13 @@ Resource.register(total, { type: { type: "number", default: 0 } });
 Resource.register(names, { type: { type: "array", items: { type: "string" }, default: [] } });
 
 /** Appends a digit to `total`, so the order of runs shows in it. */
-export const add = System.create({ name: "joiningTest/add", input: { type: "object", properties: { amount: { type: "number" } } }, resources: { write: [total] } }, ({ input, resources }) => {
+export const add = System.create({ name: "joiningTest/add", resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
-export const append = System.create({ name: "joiningTest/append", input: { type: "object", properties: { name: { type: "string" } } }, resources: { write: [names] } }, ({ input, resources }) => {
+export const append = System.create({ name: "joiningTest/append", resources: { write: [names] } }, ({ resources }, input: { readonly name: string }) => {
     resources[names] = [...resources[names], input.name];
 });
-export const spawn = System.create({ name: "joiningTest/spawn", input: { type: "object", properties: { x: { type: "number" } } } }, ({ input, commands }) => {
+export const spawn = System.create({ name: "joiningTest/spawn" }, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, label, marked])({ [point]: [input.x, -input.x], [label]: `p${input.x}` });
 });
 export const fail = System.create({ name: "joiningTest/fail" }, () => { throw new Error("joiningTest failure"); });

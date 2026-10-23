@@ -40,7 +40,7 @@ Component.register(position, { type: { type: "array", items: { type: "number", p
 
 const spawned = Archetype.create([value, made]);
 
-const seed = System.create({ name: "kernelSpawnsTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({ name: "kernelSpawnsTest/seed" }, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([index])({ [index]: i });
 });
 

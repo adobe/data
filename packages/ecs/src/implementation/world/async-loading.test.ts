@@ -67,9 +67,8 @@ const request = System.create({
 // 3. A completed load arrives as a run of its own. A slot whose token still matches gets the mesh; a stale one releases it.
 const apply = System.create({
     name: "asyncLoading/apply",
-    input: { type: "object", properties: { entity: Entity.schema, token: { type: "integer" }, handle: { type: "integer" } } },
     lookup: { slots: { read: [meshSlot] } },
-}, ({ input, lookup, commands }) => {
+}, ({ lookup, commands }, input: { readonly entity: Entity; readonly token: number; readonly handle: number }) => {
     if (lookup.slots(input.entity)?.[meshSlot] === input.token) commands.add(input.entity, meshReady, input.handle);
     else loaded.delete(input.handle);
 });
@@ -81,7 +80,7 @@ const spawn = System.create({ name: "asyncLoading/spawn" }, ({ commands }) => {
     commands.spawn([meshSource])({ [meshSource]: "ship.glb" });
     commands.spawn([meshSource])({ [meshSource]: "rock.glb" });
 });
-const hide = System.create({ name: "asyncLoading/hide", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
+const hide = System.create({ name: "asyncLoading/hide" }, ({ commands }, input: { readonly entity: Entity }) => {
     commands.add(input.entity, hidden);
 });
 

@@ -67,15 +67,14 @@ const counted = { type: "object", properties: { count: { type: "integer" } } } a
 /** `count` entities of one archetype, or with `sources: 4`, interleaved over four by two source tags. */
 export const seed = System.create({
     name: "structural/seed",
-    input: { type: "object", properties: { count: { type: "integer" }, sources: { type: "integer" } } },
-}, ({ input, commands }) => {
+}, ({ commands }, input: { readonly count: number; readonly sources: number }) => {
     for (let i = 0; i < input.count; i++) {
         commands.spawn(seeded[input.sources === 1 ? 0 : i % 4])({ [index]: i, [value]: i });
     }
 });
 
 /** `count` spawns of one archetype. */
-export const spawnBulk = System.create({ name: "structural/spawnBulk", input: counted }, ({ input, commands }) => {
+export const spawnBulk = System.create({ name: "structural/spawnBulk" }, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn(made)({ [index]: i, [value]: i });
 });
 
@@ -88,7 +87,7 @@ export const spawnSingles = System.create({ name: "structural/spawnSingles" }, (
 });
 
 /** `count` spawns over sixteen archetypes, entity i into archetype i % 16: more component sets than spawns cache. */
-export const spawnSixteen = System.create({ name: "structural/spawnSixteen", input: counted }, ({ input, commands }) => {
+export const spawnSixteen = System.create({ name: "structural/spawnSixteen" }, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) {
         commands.spawn(sixteen[i % 16])({ [index]: i, [value]: i });
     }

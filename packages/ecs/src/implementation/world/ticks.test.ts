@@ -18,7 +18,7 @@ const count = System.create({ name: "ticksTest/count", resources: { write: [fram
 describe("ticks", () => {
     it("reject a system that conflicts with one added with no order between them, and one with input", async () => {
         const other = System.create({ name: "ticksTest/other", resources: { write: [frames] } }, ({ resources }) => { resources[frames] = 0; });
-        const withInput = System.create({ name: "ticksTest/withInput", input: { type: "object", properties: { by: { type: "number" } } } }, () => {});
+        const withInput = System.create({ name: "ticksTest/withInput" }, (_context, input: { readonly by: number }) => {});
         await using world = createWorld({ [workers]: 0 });
         world.add(count);
         expect(() => world.add(other)).toThrow('both access "ticksTest/frames"');

@@ -43,7 +43,7 @@ Component.register(amount, { type: { type: "number" } });
 export const empty = System.create({ name: "remote/empty" }, () => {});
 /** Changes the observed resource every tick. */
 export const count = System.create({ name: "remote/count", resources: { write: [counter] } }, ({ resources }) => { resources[counter] += 1; });
-export const seedRanks = System.create({ name: "remote/seedRanks", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+export const seedRanks = System.create({ name: "remote/seedRanks" }, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([rank, order])({ [rank]: i, [order]: i });
 });
 const flip = System.create({ name: "remote/flip", resources: { write: [sign] } }, ({ resources }) => { resources[sign] = -resources[sign]; });
@@ -92,7 +92,7 @@ export const observerSelect = System.create({ name: "remote/observerSelect", obs
 });
 
 /** Rows with a caption and an amount, a todo's label and a number, which `retext` and `reamount` rewrite 1% of a tick. */
-export const seedCaptions = System.create({ name: "remote/seedCaptions", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+export const seedCaptions = System.create({ name: "remote/seedCaptions" }, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([rank, caption, amount])({ [rank]: i, [caption]: `Buy milk and bread #${i}`, [amount]: i });
 });
 const recaption = System.create({ name: "remote/recaption", components: { read: [rank], write: [caption] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {

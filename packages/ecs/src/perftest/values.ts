@@ -36,7 +36,7 @@ const Node = Archetype.create([pose, shown, extent, order]);
 
 const rows = 100_000;
 
-const seed = System.create({ name: "values/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({ name: "values/seed" }, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn(Node)({ [pose]: { tx: i, ty: 0, rotation: 0, sx: 1, sy: 1 }, [shown]: { tx: 0, ty: 0, rotation: 0, sx: 1, sy: 1 }, [extent]: [1, 1], [order]: i });
 });
 

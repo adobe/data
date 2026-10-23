@@ -35,7 +35,7 @@ Component.register(marked, { type: { const: true } });
 Component.register(unmatched, { type: { const: true } });
 
 /** `count` entities with a value and a rank, the first of them marked. */
-const seed = System.create({ name: "observed/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({ name: "observed/seed" }, ({ commands }, input: { readonly count: number }) => {
     commands.spawn([value, rank, marked])({ [value]: 0, [rank]: 0, [marked]: true });
     for (let i = 1; i < input.count; i++) commands.spawn([value, rank])({ [value]: (i * 7919) % input.count, [rank]: i });
 });

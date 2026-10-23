@@ -219,7 +219,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         upCache.set(archetype, { version: archetype.version, columns });
         return columns;
     };
-    const argsLayout = leaf.declaration.input === undefined ? null : layoutOf(leaf.declaration.input);
+    const argsLayout = leaf.input === undefined ? null : layoutOf(leaf.input);
     const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;

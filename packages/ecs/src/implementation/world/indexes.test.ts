@@ -47,7 +47,7 @@ const byServerId = Index.create({ name: "indexesTest/byServerId", key: [serverId
 const byLabel = Index.create({ name: "indexesTest/byLabel", key: [label] });
 const children = Index.create({ name: "indexesTest/children", key: [owner] });
 
-const spawnCells = System.create({ name: "indexesTest/spawnCells", input: { type: "object", properties: { cells: { type: "array", items: { type: "array", items: { type: "integer" } } } } } }, ({ input, commands }) => {
+const spawnCells = System.create({ name: "indexesTest/spawnCells" }, ({ commands }, input: { readonly cells: readonly (readonly number[])[] }) => {
     input.cells.forEach(([x, y], k) => commands.spawn([cell, weight])({ [cell]: [x ?? 0, y ?? 0], [weight]: k }));
 });
 
@@ -56,9 +56,8 @@ let seen: { readonly entities: readonly Entity[]; readonly weights: readonly num
 
 const look = System.create({
     name: "indexesTest/look",
-    input: { type: "object", properties: { x: { type: "integer" }, y: { type: "integer" } } },
     lookup: { near: { index: grid, read: [weight] } },
-}, ({ input, lookup }) => {
+}, ({ lookup }, input: { readonly x: number; readonly y: number }) => {
     const near = lookup.near([input.x, input.y]);
     const entities: Entity[] = [];
     const weights: number[] = [];
@@ -141,7 +140,7 @@ describe("hash indexes on the main thread", () => {
     it("key strings by value, and entities by their generation too", async () => {
         await using world = createWorld({ [workers]: 0 });
         let found: readonly number[] = [];
-        const named = System.create({ input: { type: "object", properties: { name: { type: "string" } } }, lookup: { named: { index: byLabel } } }, ({ input, lookup }) => {
+        const named = System.create({ lookup: { named: { index: byLabel } } }, ({ lookup }, input: { readonly name: string }) => {
             const list = lookup.named(input.name);
             found = Array.from({ length: list.length }, (_, i) => list.at(i).entity);
         });
@@ -157,7 +156,7 @@ describe("hash indexes on the main thread", () => {
         expect(found).toEqual([]);
         const parent = labeled[1];
         let held: readonly Entity[] = [];
-        const kids = System.create({ input: { type: "object", properties: { of: { type: "number" } } }, lookup: { of: { index: children } } }, ({ input, lookup }) => {
+        const kids = System.create({ lookup: { of: { index: children } } }, ({ lookup }, input: { readonly of: number }) => {
             const list = lookup.of(Entity.none);
             void list;
             const of = lookup.of(input.of === 0 ? parent : Entity.none);
@@ -177,7 +176,7 @@ describe("hash indexes on the main thread", () => {
 
 describe("unique indexes", () => {
     let known: Entity | null = null;
-    const find = System.create({ input: { type: "object", properties: { id: { type: "integer" } } }, lookup: { known: { index: byServerId } } }, ({ input, lookup }) => {
+    const find = System.create({ lookup: { known: { index: byServerId } } }, ({ lookup }, input: { readonly id: number }) => {
         known = lookup.known(input.id)?.entity ?? null;
     });
     it("give the row of a key or null, and report two entities with one key as an index failure, keeping the lower", async () => {
@@ -346,9 +345,8 @@ const foldNear = System.create({
 
 /** Moves each row whose weight is below `share` of 1000 to the cell `cell` gives it, so keys change during runs. */
 const rekey = System.create({
-    name: "indexesTest/rekey", input: { type: "object", properties: { share: { type: "number" }, seed: { type: "integer" } } },
-    components: { read: [weight], write: [cell] }, before: [probe],
-}, (row, { input }) => {
+    name: "indexesTest/rekey", components: { read: [weight], write: [cell] }, before: [probe],
+}, (row, _context, input: { readonly share: number; readonly seed: number }) => {
     if ((row[weight] * 7919 + input.seed) % 1000 < input.share * 1000) row[cell] = cells[(row[weight] + input.seed) % cells.length];
 });
 
@@ -423,13 +421,12 @@ const ranksOf = (list: { readonly length: number; readonly changed: boolean; at(
 });
 
 describe("sorted indexes on the main thread", () => {
-    const spawnRanks = System.create({ input: { type: "object", properties: { ranks: { type: "array", items: { type: "number" } } } } }, ({ input, commands }) => {
+    const spawnRanks = System.create({  }, ({ commands }, input: { readonly ranks: readonly number[] }) => {
         for (const value of input.ranks) commands.spawn([rank])({ [rank]: value });
     });
     const query = System.create({
-        input: { type: "object", properties: { kind: { type: "string" }, value: { type: "number" }, other: { type: "number" } } },
         lookup: { ranks: { index: byRank, read: [rank] } },
-    }, ({ input, lookup }) => {
+    }, ({ lookup }, input: { readonly kind: string; readonly value: number; readonly other: number }) => {
         const { value, other } = input;
         switch (input.kind) {
             case "all": ranked = ranksOf(lookup.ranks()); break;
@@ -572,9 +569,8 @@ const probeSorted = System.create({ name: "indexesTest/probeSorted", lookup: { l
     });
 });
 const rerank = System.create({
-    name: "indexesTest/rerank", input: { type: "object", properties: { share: { type: "number" }, seed: { type: "integer" } } },
-    components: { read: [weight], write: [rank] }, before: [probeSorted],
-}, (row, { input }) => {
+    name: "indexesTest/rerank", components: { read: [weight], write: [rank] }, before: [probeSorted],
+}, (row, _context, input: { readonly share: number; readonly seed: number }) => {
     if ((row[weight] * 7919 + input.seed) % 1000 < input.share * 1000) row[rank] = (row[weight] * 31 + input.seed * 17) % 1000;
 });
 

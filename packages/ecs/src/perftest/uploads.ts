@@ -26,9 +26,8 @@ const spawn = System.create({ name: "uploads/spawn" }, ({ commands }) => {
 const drag = System.create({
     name: "uploads/drag",
     components: { write: [place] },
-    input: { type: "object", properties: { shape: Entity.schema, x: { type: "number" } } },
     target: "shape",
-}, (row, { input }) => {
+}, (row, _context, input: { readonly shape: Entity; readonly x: number }) => {
     row[place] = [input.x, 1, 0];
 });
 /** Draws nothing: its run uploads what it reads. */

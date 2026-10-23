@@ -3,7 +3,7 @@ import { Component, Resource, System, Vec2, clock } from '../../index.js';
 
 // The transfers sample's keys and systems, which every thread imports: the world, on a worker, draws sprites into the
 // canvas main moved to it, each with a texture a loader worker decoded and moved to it. Values move through runs whose
-// input holds them; an input field's schema `{ allOf: [] }` takes any value, typed `unknown`, which bodies narrow.
+// input holds them.
 
 export const texture = Symbol("transferSprites/texture");
 export const position = Symbol("transferSprites/position");
@@ -34,11 +34,9 @@ Resource.register(stats, {
     type: { type: "object", properties: { sprites: { type: "integer" }, frames: { type: "integer" } }, default: { sprites: 0, frames: 0 } },
 });
 
-const any = { allOf: [] } as const;
-
 /** From main: the canvas the world draws into. */
-export const attachSurface = System.create({ name: "transferSprites/attachSurface", input: { type: "object", properties: { canvas: any } }, resources: { write: [surface] } }, ({ input, resources }) => {
-    if (typeof OffscreenCanvas === "function" && input.canvas instanceof OffscreenCanvas) resources[surface] = input.canvas;
+export const attachSurface = System.create({ name: "transferSprites/attachSurface", resources: { write: [surface] } }, ({ resources }, input: { readonly canvas: OffscreenCanvas }) => {
+    resources[surface] = input.canvas;
 });
 
 /** A deterministic number in [0, 1) for each seed. */
@@ -49,10 +47,10 @@ const random = (seed: number): number => {
 
 /** From the loader: a sprite with the texture it decoded, somewhere on the canvas, moving. */
 export const addSprite = System.create({
-    name: "transferSprites/addSprite", input: { type: "object", properties: { bitmap: any, seed: { type: "integer" } } }, resources: { read: [surface], write: [stats] },
-}, ({ input, resources, commands }) => {
+    name: "transferSprites/addSprite", resources: { read: [surface], write: [stats] },
+}, ({ resources, commands }, input: { readonly bitmap: ImageBitmap; readonly seed: number }) => {
     const canvas = resources[surface];
-    if (canvas === null || typeof ImageBitmap !== "function" || !(input.bitmap instanceof ImageBitmap)) return;
+    if (canvas === null) return;
     const angle = random(input.seed) * Math.PI * 2;
     const speed = 60 + random(input.seed + 1) * 120;
     commands.spawn([texture, position, velocity])({

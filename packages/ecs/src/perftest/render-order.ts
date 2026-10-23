@@ -39,9 +39,8 @@ const spawn = System.create({ name: "renderOrder/spawn" }, ({ commands }) => {
 const restack = System.create({
     name: "renderOrder/restack",
     components: { write: [paintDepth] },
-    input: { type: "object", properties: { item: Entity.schema, depth: { type: "number" } } },
     target: "item",
-}, (row, { input }) => {
+}, (row, _context, input: { readonly item: Entity; readonly depth: number }) => {
     row[paintDepth] = input.depth;
 });
 /** Draws nothing: its run uploads what it reads and its order. */

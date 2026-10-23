@@ -116,8 +116,8 @@ declare module "@adobe/ecs" {
 }
 Component.register(health, { type: { type: "number" } });
 export const both = System.create({ components: { read: [health], write: [health] } }, () => {});
-const near = System.create({ input: { type: "object", properties: { distance: { type: "number" } } } }, () => {});
-const far = System.create({ input: { type: "object", properties: { distance: { type: "string" } } } }, () => {});
+const near = System.create({}, (_context, input: { readonly distance: number }) => { void input; });
+const far = System.create({}, (_context, input: { readonly distance: string }) => { void input; });
 export const listed = System.create([near, far]);
 export const declared = System.create({ systems: [near, far], after: [both] });
 `;

@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Index } from '../indexes/index-type.js';
 import type { Resource } from '../resource/resource.js';
-import type { Schema } from '../schema/schema.js';
 import type { ComponentAccess, ResourceAccess, SystemLookup, Up } from './access.js';
 import type { Name } from './name.js';
 import type { Shader } from './render.js';
@@ -42,12 +41,10 @@ export type Declaration = {
     readonly resources?: ResourceAccess;
     /** The resources its body contributes to, each with the operator its `reduce` trait declares. */
     readonly reduce?: { readonly [K in Reduced]?: OperatorOf<K> };
-    /** The object of named fields passed to each run. A system with input can't use `added` or `changed`. */
-    readonly input?: Extract<Schema, { readonly type: "object" }>;
     /**
-     * The input field naming the one entity it runs on: its body runs once, on that entity's row, when the entity is
-     * alive and matches `components`, and not at all otherwise. Needs `components`; not with `kernel`, `up`, `order`
-     * or `reduce`.
+     * The field of its body's input naming the one entity it runs on: its body runs once, on that entity's row, when
+     * the entity is alive and matches `components`, and not at all otherwise. Needs `components`; not with `kernel`,
+     * `up`, `order` or `reduce`.
      */
     readonly target?: string;
     /** Makes this a render system (see `render`): its body records GPU work over the GPU copy of the components it names. */

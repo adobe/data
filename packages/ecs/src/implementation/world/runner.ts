@@ -186,7 +186,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const leafNumber = numberOf(leaf);
     const label = labelOfItem(leaf);
     // Method parameters are bivariant, so the runtime can see any leaf's body with erased parameter types.
-    const system: { body(subject: unknown, context?: unknown): void } = leaf;
+    const system: { body(subject: unknown, context?: unknown, input?: unknown): void } = leaf;
     const { components: query, resources } = declaration;
     const required = [...new Set([...query?.read ?? [], ...query?.write ?? [], ...query?.has ?? [], ...query?.added ?? [], ...query?.changed ?? []])].map(key => idOf(state, key));
     const excluded = (query?.not ?? []).map(key => idOf(state, key));
@@ -313,10 +313,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     // A kernel's reductions fold in its partials, so only a body that runs as written gets reducer functions. Render
     // bodies, GPU kernels and observer systems issue no commands.
     const ownInput = inputFor(leaf);
+    /** The current run's input, which the body takes after its context; kept until the next run, as its context is. */
+    let runInput: unknown;
     const context = createContext(state, declaration, {
         targets: kernel === null ? targets : [],
         commands: leaf.kind === "render" || declaration.kernel === "gpu" || declaration.observer === true ? undefined : commands,
-        input: declaration.input !== undefined,
         indexes: indexLookups.byName,
         since: lookupSince,
     });
@@ -415,27 +416,28 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         if (archetype === undefined || !matches.includes(archetype)) return;
         const row = bindRow(archetype);
         row.index = state.entities.row[index];
-        system.body(row.value, context.value);
+        system.body(row.value, context.value, runInput);
     };
 
     const runBody = (archetype: Archetype, since: number): void => {
         const row = bindRow(archetype);
         const { value } = row;
         const values = context.value;
+        const input = runInput;
         const filters = filtersOf(archetype);
         // Every row passes, so nothing is filtered.
         // A body may remove its own system, after which no row of it runs.
         if (since < 0 || filters.length === 0) {
             for (let index = 0, count = archetype.count; index < count && !holdings.removed; index++) {
                 row.index = index;
-                system.body(value, values);
+                system.body(value, values, input);
             }
             return;
         }
         forEachPassingRange(filters, since, 0, archetype.count, (start, end) => {
             for (let index = start; index < end && !holdings.removed; index++) {
                 row.index = index;
-                system.body(value, values);
+                system.body(value, values, input);
             }
         });
     };
@@ -515,11 +517,12 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         // The parent's row is bound after the system's own, for the archetype both may share.
         const parentRow = parentArchetype < 0 ? null : bindParent(state.archetypes[parentArchetype]);
         const upContext = context.value;
+        const input = runInput;
         upContext.up = parentRow === null ? null : parentRow.value;
         for (let n = start; n < end && !holdings.removed; n++) {
             row.index = rows[n];
             if (parentRow !== null) parentRow.index = parents[n];
-            system.body(row.value, upContext);
+            system.body(row.value, upContext, input);
         }
     };
 
@@ -539,6 +542,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const runs = order.runs(sorted, matches, since < 0 ? null : orderPassing);
         const slot = partialCount === 0 ? 0 : takeSlots(1);
         const contextValue = context.value;
+        const input = runInput;
         for (let k = 0; k < runs.length && !holdings.removed; k++) {
             const run = runs[k];
             const archetype = matches[run.owner];
@@ -550,7 +554,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             const { value } = row;
             for (let n = run.start; n < run.end && !holdings.removed; n++) {
                 row.index = run.rows[n];
-                system.body(value, contextValue);
+                system.body(value, contextValue, input);
             }
         }
     };
@@ -560,6 +564,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const owners = order.owners(matches);
         const { entries, stride, words, lengths, blocks } = sorted;
         const contextValue = context.value;
+        const input = runInput;
         let current = -1;
         let row: ReturnType<typeof bindRow> | null = null;
         let value: object | null = null;
@@ -579,7 +584,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                     current = owner;
                 }
                 row.index = entries[at + 2];
-                system.body(value, contextValue);
+                system.body(value, contextValue, input);
             }
         }
     };
@@ -926,7 +931,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             /** -1 passes every row. */
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             context.bind();
-            if (declaration.input !== undefined) context.value.input = args;
+            runInput = args;
             if (indexed && kernel !== null) indexParameters = kernel.refreshIndexes(lastRun);
             if (placement === "render") {
                 refreshMatches();
@@ -935,7 +940,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             }
             if (query === undefined) {
                 ran = since < 0;
-                if (ran) system.body(context.value);
+                if (ran) system.body(context.value, args);
                 return chunks;
             }
             // Only resource and index filters, none of which changed: no row passes, unless its parent changed.

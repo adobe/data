@@ -15,20 +15,18 @@ Component.register(health, { type: { type: "number" } });
 let player = Entity.none;
 const spawn = System.create(({ commands }) => { player = commands.spawn([health])({ [health]: 10 }); });
 
-// input is an object schema of named fields; each run passes a value of it.
+// A body's input is its parameter after its context, an object of named fields; each run passes a value of it.
 const hit = System.create({
     components: { write: [health] },
-    input: { type: "object", properties: { amount: { type: "number" } } },
-}, (row, { input }) => {
+}, (row, _context, input: { readonly amount: number }) => {
     row[health] -= input.amount;
 });
 
 // target names an input field holding an entity: the system runs on that entity's row alone, or on none once it's gone.
 const heal = System.create({
     components: { write: [health] },
-    input: { type: "object", properties: { entity: Entity.schema, amount: { type: "number" } } },
     target: "entity",
-}, (row, { input }) => {
+}, (row, _context, input: { readonly entity: Entity; readonly amount: number }) => {
     row[health] += input.amount;
 });
 

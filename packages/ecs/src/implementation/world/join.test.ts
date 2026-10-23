@@ -41,17 +41,17 @@ Component.register(words, { type: { type: "set", items: { type: "string" } } });
 Resource.register(counts, { type: { type: "map", keys: { type: "string" }, values: { type: "number" } }, default: new Map() });
 
 /** Adds its struct input to `total`, and its object input's names to `names`. */
-const add = System.create({ name: "joinTest/add", input: { type: "object", properties: { amount: { type: "number" } } }, resources: { write: [total] } }, ({ input, resources }) => {
+const add = System.create({ name: "joinTest/add", resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
-const append = System.create({ name: "joinTest/append", input: { type: "object", properties: { name: { type: "string" } } }, resources: { write: [names] } }, ({ input, resources }) => {
+const append = System.create({ name: "joinTest/append", resources: { write: [names] } }, ({ resources }, input: { readonly name: string }) => {
     resources[names] = [...resources[names], input.name];
 });
-const spawn = System.create({ name: "joinTest/spawn", input: { type: "object", properties: { x: { type: "number" } } } }, ({ input, commands }) => {
+const spawn = System.create({ name: "joinTest/spawn" }, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, label, marked])({ [point]: [input.x, -input.x], [label]: `p${input.x}` });
 });
 /** Counts each word of its input's set in `counts`, and spawns an entity holding the set. */
-const tally = System.create({ name: "joinTest/tally", input: { type: "object", properties: { words: { type: "set", items: { type: "string" } } } }, resources: { write: [counts] } }, ({ input, resources, commands }) => {
+const tally = System.create({ name: "joinTest/tally", resources: { write: [counts] } }, ({ resources, commands }, input: { readonly words: ReadonlySet<string> }) => {
     const next = new Map(resources[counts]);
     for (const word of input.words) next.set(word, (next.get(word) ?? 0) + 1);
     resources[counts] = next;

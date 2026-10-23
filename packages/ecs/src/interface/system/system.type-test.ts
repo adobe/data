@@ -112,16 +112,25 @@ System.create({
     lookup: { targets: { read: [position], changed: [velocity] } },
 }, () => {});
 
-// Input: typed from its schema.
+// Input: the type of the body's parameter after its context.
 export const move = System.create({
     name: "test/move",
-    input: { type: "object", properties: { distance: { type: "number" } } },
     components: { has: [player], write: [position] },
-}, (row, { input }) => {
+}, (row, _context, input: { readonly distance: number }) => {
     row[position] += input.distance;
-    // @ts-expect-error input has its schema's type
+    // @ts-expect-error input has the type the body gives it
     void input.missing;
 });
+// The row and the context are still typed by the declaration.
+System.create({ components: { read: [velocity], write: [position] }, resources: { read: [time] } }, (row, { resources }, input: { readonly by: number }) => {
+    row[position] += row[velocity] * resources[time] * input.by;
+    // @ts-expect-error a read component is read-only
+    row[velocity] = input.by;
+    // @ts-expect-error score isn't a declared resource
+    void resources[score];
+});
+// @ts-expect-error input is the body's parameter, not part of its declaration
+System.create({ input: { type: "object", properties: {} } }, () => {});
 
 // A system without components takes only its context; resource writes are writable, and written ones readable.
 export const tally = System.create({
@@ -145,13 +154,14 @@ System.create({ name: "test/tally" }, context => {
     void context.lookup;
     // @ts-expect-error no reductions declared
     void context.reduce;
-    // @ts-expect-error no input declared
+    // @ts-expect-error input isn't in the context
     void context.input;
     void context.commands;
 });
 
-// @ts-expect-error a system without components has no row
-System.create({ name: "test/tally" }, (row: object, context: object) => { void [row, context]; });
+// A system without components has no row: its second parameter is its input.
+check<Equal<typeof alone, System<{ readonly count: number }>>>();
+const alone = System.create({ name: "test/tally" }, (_context, input: { readonly count: number }) => { void input.count; });
 
 System.create({
     name: "test/tally",
@@ -165,12 +175,11 @@ System.create({
     after: ["test/unregistered"],
 }, () => {});
 
-System.create({
-    name: "test/move",
-    input: { type: "object", properties: { distance: { type: "number" } } },
-    // @ts-expect-error a system with input can't use change filters
-    components: { changed: [position] },
-}, () => {});
+// @ts-expect-error a system with input can't use change filters
+System.create({ name: "test/move", components: { changed: [position] } }, (_row, _context, input: { readonly distance: number }) => { void input; });
+// @ts-expect-error a system with input can't use change filters
+System.create({ name: "test/move", components: { added: [position] } }, (_row, _context, input: { readonly distance: number }) => { void input; });
+System.create({ name: "test/move", components: { changed: [position] } }, row => { void row; });
 
 export const main = System.create({ name: "test/main", systems: [integrate, follow, tally] });
 const moving = System.create({ name: "test/moving", systems: [move] });
@@ -419,7 +428,7 @@ export const unnamed = System.create({ components: { write: [position] }, resour
     row[position] += resources[time];
 });
 check<Equal<typeof unnamed, System>>();
-export const unnamedInput = System.create({ input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input }) => {
+export const unnamedInput = System.create({}, (_context, input: { readonly count: number }) => {
     const count: number = input.count;
     void count;
 });
@@ -465,7 +474,7 @@ System.create({ observer: true, resources: { write: [score] } }, () => {});
 // @ts-expect-error an observer system reduces into nothing
 System.create({ observer: true, components: { read: [velocity] }, reduce: { [total]: "+" } }, () => {});
 // @ts-expect-error an observer system takes no input
-System.create({ observer: true, input: { type: "object", properties: { count: { type: "integer" } } } }, () => {});
+System.create({ observer: true, resources: { read: [time] } }, (_context, input: { readonly count: number }) => { void input; });
 // @ts-expect-error an observer system isn't a kernel
 System.create({ observer: true, kernel: "cpu", components: { read: [position] } }, () => {});
 // @ts-expect-error an observer system is ordered with nothing
@@ -476,13 +485,16 @@ System.create({ observer: true, resources: { read: [time] }, before: [integrate]
 System.create({ observer: true, resources: { read: [time] }, during: [integrate] }, () => {});
 
 // A system on one entity: its input names the entity, and its body runs on that entity's row.
-const onOne = { type: "object", properties: { entity: Entity.schema, by: { type: "number" } } } as const;
-export const nudge = System.create({ input: onOne, target: "entity", components: { write: [position] } }, (row, { input }) => {
+type OnOne = { readonly entity: Entity; readonly by: number };
+export const nudge = System.create({ target: "entity", components: { write: [position] } }, (row, _context, input: OnOne) => {
     row[position] += input.by;
 });
+check<Equal<typeof nudge, System<OnOne>>>();
 // @ts-expect-error its target is an entity field of its input
-System.create({ input: onOne, target: "by", components: { write: [position] } }, () => {});
+System.create({ target: "by", components: { write: [position] } }, (_row, _context, input: OnOne) => { void input; });
+// @ts-expect-error it takes its target from its input, so it takes input
+System.create({ target: "entity", components: { write: [position] } }, row => { void row; });
 // @ts-expect-error it runs on a row, so it needs components
-System.create({ input: onOne, target: "entity" }, () => {});
+System.create({ target: "entity" }, (_context, input: OnOne) => { void input; });
 // @ts-expect-error not a kernel
-System.create({ input: onOne, target: "entity", kernel: "cpu", components: { write: [position] } }, () => {});
+System.create({ target: "entity", kernel: "cpu", components: { write: [position] } }, (_row, _context, input: OnOne) => { void input; });

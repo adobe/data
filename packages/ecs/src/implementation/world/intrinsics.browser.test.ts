@@ -189,9 +189,7 @@ const spawn = System.create({ name: "intrinsicsTest/spawn" }, ({ commands }) => 
     }
 });
 
-const operation = { type: "object", properties: { op: { type: "number" } } } as const;
-
-const vec2f = System.create({ name: "intrinsicsTest/vec2f", kernel: "gpu", input: operation, components: { read: [f2a, f2b, f2p], write: [f2o] } }, (row, { input: { op } }) => {
+const vec2f = System.create({ name: "intrinsicsTest/vec2f", kernel: "gpu", components: { read: [f2a, f2b, f2p], write: [f2o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f2a];
     const b = row[f2b];
     const p = row[f2p];
@@ -236,7 +234,7 @@ const vec2f = System.create({ name: "intrinsicsTest/vec2f", kernel: "gpu", input
     else if (op === 38) row[f2o] = Vec2.faceforward(a, b, p);
 });
 
-const vec2fScalar = System.create({ name: "intrinsicsTest/vec2fScalar", kernel: "gpu", input: operation, components: { read: [f2a, f2b], write: [fo] } }, (row, { input: { op } }) => {
+const vec2fScalar = System.create({ name: "intrinsicsTest/vec2fScalar", kernel: "gpu", components: { read: [f2a, f2b], write: [fo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f2a];
     const b = row[f2b];
     if (op === 0) row[fo] = Vec2.dot(a, b);
@@ -244,7 +242,7 @@ const vec2fScalar = System.create({ name: "intrinsicsTest/vec2fScalar", kernel: 
     else if (op === 2) row[fo] = Vec2.length(a);
 });
 
-const vec2i = System.create({ name: "intrinsicsTest/vec2i", kernel: "gpu", input: operation, components: { read: [i2a, i2b], write: [i2o] } }, (row, { input: { op } }) => {
+const vec2i = System.create({ name: "intrinsicsTest/vec2i", kernel: "gpu", components: { read: [i2a, i2b], write: [i2o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[i2a];
     const b = row[i2b];
     if (op === 0) row[i2o] = Vec2.I32.add(a, b);
@@ -265,7 +263,7 @@ const vec2i = System.create({ name: "intrinsicsTest/vec2i", kernel: "gpu", input
     else if (op === 15) row[i2o] = Vec2.I32.clamp(a, [-1000, -1000], [1000, 1000]);
 });
 
-const vec2u = System.create({ name: "intrinsicsTest/vec2u", kernel: "gpu", input: operation, components: { read: [u2a, u2b], write: [u2o] } }, (row, { input: { op } }) => {
+const vec2u = System.create({ name: "intrinsicsTest/vec2u", kernel: "gpu", components: { read: [u2a, u2b], write: [u2o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[u2a];
     const b = row[u2b];
     if (op === 0) row[u2o] = Vec2.U32.add(a, b);
@@ -284,7 +282,7 @@ const vec2u = System.create({ name: "intrinsicsTest/vec2u", kernel: "gpu", input
     else if (op === 13) row[u2o] = Vec2.U32.clamp(a, [1000, 1000], [100000, 100000]);
 });
 
-const vec3f = System.create({ name: "intrinsicsTest/vec3f", kernel: "gpu", input: operation, components: { read: [f3a, f3b, f3p], write: [f3o] } }, (row, { input: { op } }) => {
+const vec3f = System.create({ name: "intrinsicsTest/vec3f", kernel: "gpu", components: { read: [f3a, f3b, f3p], write: [f3o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f3a];
     const b = row[f3b];
     const p = row[f3p];
@@ -331,7 +329,7 @@ const vec3f = System.create({ name: "intrinsicsTest/vec3f", kernel: "gpu", input
     else if (op === 40) row[f3o] = Vec3.faceforward(a, b, p);
 });
 
-const vec3fScalar = System.create({ name: "intrinsicsTest/vec3fScalar", kernel: "gpu", input: operation, components: { read: [f3a, f3b], write: [fo] } }, (row, { input: { op } }) => {
+const vec3fScalar = System.create({ name: "intrinsicsTest/vec3fScalar", kernel: "gpu", components: { read: [f3a, f3b], write: [fo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f3a];
     const b = row[f3b];
     if (op === 0) row[fo] = Vec3.dot(a, b);
@@ -339,7 +337,7 @@ const vec3fScalar = System.create({ name: "intrinsicsTest/vec3fScalar", kernel: 
     else if (op === 2) row[fo] = Vec3.length(a);
 });
 
-const vec3i = System.create({ name: "intrinsicsTest/vec3i", kernel: "gpu", input: operation, components: { read: [i3a, i3b], write: [i3o] } }, (row, { input: { op } }) => {
+const vec3i = System.create({ name: "intrinsicsTest/vec3i", kernel: "gpu", components: { read: [i3a, i3b], write: [i3o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[i3a];
     const b = row[i3b];
     if (op === 0) row[i3o] = Vec3.I32.add(a, b);
@@ -361,7 +359,7 @@ const vec3i = System.create({ name: "intrinsicsTest/vec3i", kernel: "gpu", input
     else if (op === 16) row[i3o] = Vec3.I32.clamp(a, [-1000, -1000, -1000], [1000, 1000, 1000]);
 });
 
-const vec3u = System.create({ name: "intrinsicsTest/vec3u", kernel: "gpu", input: operation, components: { read: [u3a, u3b], write: [u3o] } }, (row, { input: { op } }) => {
+const vec3u = System.create({ name: "intrinsicsTest/vec3u", kernel: "gpu", components: { read: [u3a, u3b], write: [u3o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[u3a];
     const b = row[u3b];
     if (op === 0) row[u3o] = Vec3.U32.add(a, b);
@@ -381,7 +379,7 @@ const vec3u = System.create({ name: "intrinsicsTest/vec3u", kernel: "gpu", input
     else if (op === 14) row[u3o] = Vec3.U32.clamp(a, [1000, 1000, 1000], [100000, 100000, 100000]);
 });
 
-const vec4f = System.create({ name: "intrinsicsTest/vec4f", kernel: "gpu", input: operation, components: { read: [f4a, f4b, f4p], write: [f4o] } }, (row, { input: { op } }) => {
+const vec4f = System.create({ name: "intrinsicsTest/vec4f", kernel: "gpu", components: { read: [f4a, f4b, f4p], write: [f4o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f4a];
     const b = row[f4b];
     const p = row[f4p];
@@ -427,7 +425,7 @@ const vec4f = System.create({ name: "intrinsicsTest/vec4f", kernel: "gpu", input
     else if (op === 39) row[f4o] = Vec4.faceforward(a, b, p);
 });
 
-const vec4fScalar = System.create({ name: "intrinsicsTest/vec4fScalar", kernel: "gpu", input: operation, components: { read: [f4a, f4b], write: [fo] } }, (row, { input: { op } }) => {
+const vec4fScalar = System.create({ name: "intrinsicsTest/vec4fScalar", kernel: "gpu", components: { read: [f4a, f4b], write: [fo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f4a];
     const b = row[f4b];
     if (op === 0) row[fo] = Vec4.dot(a, b);
@@ -435,7 +433,7 @@ const vec4fScalar = System.create({ name: "intrinsicsTest/vec4fScalar", kernel: 
     else if (op === 2) row[fo] = Vec4.length(a);
 });
 
-const vec4i = System.create({ name: "intrinsicsTest/vec4i", kernel: "gpu", input: operation, components: { read: [i4a, i4b], write: [i4o] } }, (row, { input: { op } }) => {
+const vec4i = System.create({ name: "intrinsicsTest/vec4i", kernel: "gpu", components: { read: [i4a, i4b], write: [i4o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[i4a];
     const b = row[i4b];
     if (op === 0) row[i4o] = Vec4.I32.add(a, b);
@@ -457,7 +455,7 @@ const vec4i = System.create({ name: "intrinsicsTest/vec4i", kernel: "gpu", input
     else if (op === 16) row[i4o] = Vec4.I32.clamp(a, [-1000, -1000, -1000, -1000], [1000, 1000, 1000, 1000]);
 });
 
-const vec4u = System.create({ name: "intrinsicsTest/vec4u", kernel: "gpu", input: operation, components: { read: [u4a, u4b], write: [u4o] } }, (row, { input: { op } }) => {
+const vec4u = System.create({ name: "intrinsicsTest/vec4u", kernel: "gpu", components: { read: [u4a, u4b], write: [u4o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[u4a];
     const b = row[u4b];
     if (op === 0) row[u4o] = Vec4.U32.add(a, b);
@@ -477,7 +475,7 @@ const vec4u = System.create({ name: "intrinsicsTest/vec4u", kernel: "gpu", input
     else if (op === 14) row[u4o] = Vec4.U32.clamp(a, [1000, 1000, 1000, 1000], [100000, 100000, 100000, 100000]);
 });
 
-const mat4x4 = System.create({ name: "intrinsicsTest/mat4x4", kernel: "gpu", input: operation, components: { read: [ma, mb], write: [mo] } }, (row, { input: { op } }) => {
+const mat4x4 = System.create({ name: "intrinsicsTest/mat4x4", kernel: "gpu", components: { read: [ma, mb], write: [mo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[ma];
     const b = row[mb];
     if (op === 0) row[mo] = Mat4x4.multiply(a, b);
@@ -487,18 +485,18 @@ const mat4x4 = System.create({ name: "intrinsicsTest/mat4x4", kernel: "gpu", inp
     else if (op === 4) row[mo] = Mat4x4.scale(a, 0.5);
 });
 
-const mat4x4Vector = System.create({ name: "intrinsicsTest/mat4x4Vector", kernel: "gpu", input: operation, components: { read: [ma, f4a], write: [f4o] } }, (row, { input: { op } }) => {
+const mat4x4Vector = System.create({ name: "intrinsicsTest/mat4x4Vector", kernel: "gpu", components: { read: [ma, f4a], write: [f4o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[ma];
     const b = row[f4a];
     if (op === 0) row[f4o] = Mat4x4.multiplyVec4(a, b);
 });
 
-const mat4x4Scalar = System.create({ name: "intrinsicsTest/mat4x4Scalar", kernel: "gpu", input: operation, components: { read: [ma], write: [fo] } }, (row, { input: { op } }) => {
+const mat4x4Scalar = System.create({ name: "intrinsicsTest/mat4x4Scalar", kernel: "gpu", components: { read: [ma], write: [fo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[ma];
     if (op === 0) row[fo] = Mat4x4.determinant(a);
 });
 
-const quat = System.create({ name: "intrinsicsTest/quat", kernel: "gpu", input: operation, components: { read: [qa, qb], write: [qo] } }, (row, { input: { op } }) => {
+const quat = System.create({ name: "intrinsicsTest/quat", kernel: "gpu", components: { read: [qa, qb], write: [qo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[qa];
     const b = row[qb];
     if (op === 0) row[qo] = Quat.add(a, b);
@@ -507,14 +505,14 @@ const quat = System.create({ name: "intrinsicsTest/quat", kernel: "gpu", input: 
     else if (op === 3) row[qo] = Quat.negate(a);
 });
 
-const quatScalar = System.create({ name: "intrinsicsTest/quatScalar", kernel: "gpu", input: operation, components: { read: [qa, qb], write: [fo] } }, (row, { input: { op } }) => {
+const quatScalar = System.create({ name: "intrinsicsTest/quatScalar", kernel: "gpu", components: { read: [qa, qb], write: [fo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[qa];
     const b = row[qb];
     if (op === 0) row[fo] = Quat.dot(a, b);
     else if (op === 1) row[fo] = Quat.length(a);
 });
 
-const u32 = System.create({ name: "intrinsicsTest/u32", kernel: "gpu", input: operation, components: { read: [ua], write: [uo] } }, (row, { input: { op } }) => {
+const u32 = System.create({ name: "intrinsicsTest/u32", kernel: "gpu", components: { read: [ua], write: [uo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[ua];
     if (op === 0) row[uo] = U32.countLeadingZeros(a);
     else if (op === 1) row[uo] = U32.countOneBits(a);

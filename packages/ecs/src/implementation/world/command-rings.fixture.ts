@@ -49,7 +49,7 @@ Component.register(name, { type: { anyOf: [{ type: "string" }, { type: "null" }]
 Component.register(maybe, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
 Component.register(tally, { type: { anyOf: [{ type: "number" }, { type: "null" }] } });
 
-const seed = System.create({ name: "commandRingsTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({ name: "commandRingsTest/seed" }, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([index])({ [index]: i });
 });
 
@@ -60,9 +60,8 @@ const seed = System.create({ name: "commandRingsTest/seed", input: { type: "obje
 const burst = System.create({
     name: "commandRingsTest/burst",
     kernel: "cpu",
-    input: { type: "object", properties: { shift: { type: "number" } } },
     components: { read: [index] },
-}, (row, { input, commands }) => {
+}, (row, { commands }, input: { readonly shift: number }) => {
     const i = row[index];
     commands.add(row.entity, weight, -1);
     commands.add(row.entity, weight, i + input.shift);
@@ -106,7 +105,7 @@ export const overflow = (count: number): Promise<{ readonly rows: readonly strin
 };
 
 /** Rows targeting a live entity, but for the last, whose target never lived. */
-const targets = System.create({ name: "commandRingsTest/targets", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const targets = System.create({ name: "commandRingsTest/targets" }, ({ commands }, input: { readonly count: number }) => {
     const first = commands.spawn([index])({ [index]: 0 });
     for (let i = 1; i < input.count; i++) commands.spawn([index, target])({ [index]: i, [target]: i === input.count - 1 ? Entity.none : first });
 });

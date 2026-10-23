@@ -77,7 +77,7 @@ export const advance = System.create({ name: "tailsTest/advance", components: { 
     row[word] = wordOf(value);
 });
 /** On the world's thread: every row's word as another, of the size of the first ticks', so their records are reused. */
-export const reword = System.create({ name: "tailsTest/reword", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [word] } }, (row, { input }) => {
+export const reword = System.create({ name: "tailsTest/reword", components: { write: [word] } }, (row, _context, input: { readonly round: number }) => {
     row[word] = `r${input.round}`;
 });
 /** On the world's thread: spawns rows stamped with this tick's counter, `spawning` of them, then no more. */
@@ -87,16 +87,16 @@ export const grow = System.create({ name: "tailsTest/grow", resources: { read: [
     resources[spawning] = 0;
 });
 /** Spawns `count` rows. */
-export const seed = System.create({ name: "tailsTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+export const seed = System.create({ name: "tailsTest/seed" }, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) commands.spawn([stamp, spot, label, word])({ [stamp]: 0, [spot]: [0, 0, 0], [word]: wordOf(0) });
 });
-export const setStall = System.create({ name: "tailsTest/setStall", input: { type: "object", properties: { mode: { type: "integer" }, pause: { type: "number" } } }, resources: { write: [stall] } }, ({ input, resources }) => {
+export const setStall = System.create({ name: "tailsTest/setStall", resources: { write: [stall] } }, ({ resources }, input: { readonly mode: number; readonly pause: number }) => {
     resources[stall] = { mode: input.mode, pause: input.pause };
 });
-export const setSpawning = System.create({ name: "tailsTest/setSpawning", input: { type: "object", properties: { count: { type: "integer" } } }, resources: { write: [spawning] } }, ({ input, resources }) => {
+export const setSpawning = System.create({ name: "tailsTest/setSpawning", resources: { write: [spawning] } }, ({ resources }, input: { readonly count: number }) => {
     resources[spawning] = input.count;
 });
-export const setFailAt = System.create({ name: "tailsTest/setFailAt", input: { type: "object", properties: { at: { type: "integer" } } }, resources: { write: [failAt] } }, ({ input, resources }) => {
+export const setFailAt = System.create({ name: "tailsTest/setFailAt", resources: { write: [failAt] } }, ({ resources }, input: { readonly at: number }) => {
     resources[failAt] = input.at;
 });
 

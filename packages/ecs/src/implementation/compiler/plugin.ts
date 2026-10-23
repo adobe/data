@@ -9,7 +9,8 @@ import { describeFailure } from './failure.js';
 import { identify as identifyModule, moduleIdOf, type PackageNameOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
-import { copyForImporter, namespaceCopyOf } from './paths.js';
+import { passInputSchemas, type InputHost } from './input-schemas.js';
+import { copyForImporter, isInterfaceModule, namespaceCopyOf } from './paths.js';
 import { locateThroughMap } from './source-map.js';
 import { transformKernels } from './transform.js';
 
@@ -93,7 +94,81 @@ const inlineKernels = (code: string, kernels: readonly string[], hashes: readonl
         JSON.stringify(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`),
     ), code);
 
-export const kernelPlugin = (): Plugin => {
+const typed = /\.[cm]?tsx?$/;
+
+/**
+ * Passes each system's `create` the schema of its body's input, from the type of the body's parameter after its
+ * context (`input-schemas.ts`). It runs before TypeScript is stripped, which the type needs.
+ */
+const inputPlugin = (): Plugin => {
+    let repeated = false;
+    let server: ViteDevServer | undefined;
+    /** Modules whose input types each file declares, and the files each module's input types were read from. */
+    const dependents = new Map<string, Set<string>>();
+    const dependencies = new Map<string, readonly string[]>();
+    const depend = (parent: string, files: readonly string[]): void => {
+        for (const file of dependencies.get(parent) ?? []) dependents.get(file)?.delete(parent);
+        dependencies.set(parent, files);
+        for (const file of files) {
+            const parents = dependents.get(file) ?? new Set<string>();
+            parents.add(parent);
+            dependents.set(file, parents);
+        }
+    };
+    const plugin: Plugin = {
+        name: `${packageName}/input`,
+        enforce: "pre",
+        configResolved: config => {
+            repeated = config.plugins.find(other => other.name === plugin.name) !== plugin;
+        },
+        configureServer: devServer => {
+            server = devServer;
+        },
+        // A module whose input types come from a changed file is transformed again, for its schemas.
+        watchChange(id) {
+            for (const parent of dependents.get(id) ?? []) {
+                for (const module of server?.moduleGraph.getModulesByFile(parent) ?? []) server?.moduleGraph.invalidateModule(module);
+            }
+        },
+        async transform(code, id) {
+            const file = id.split("?")[0] ?? id;
+            if (repeated || id.includes("\0") || !typed.test(file)) return null;
+            const { parseAst } = await import("vite");
+            const resolved = async (specifier: string, importer: string) => await this.resolve(specifier, importer, { skipSelf: true });
+            const host: InputHost = {
+                parse: (source, path) => parseAst(source, { lang: path.endsWith("x") ? "tsx" : "ts" }, path),
+                resolve: async (specifier, importer) => {
+                    const found = await resolved(specifier, importer);
+                    if (found === null || found.external) return null;
+                    const path = found.id.split("?")[0] ?? found.id;
+                    return path.includes("\0") || !isAbsolute(path) ? null : path;
+                },
+                load: file => readFile(file, "utf8"),
+                isPackage: async (specifier, importer) => {
+                    const found = await resolved(specifier, importer);
+                    return found !== null && (found.external ? specifier === packageName : isInterfaceModule(found.id));
+                },
+                isSystem: async (specifier, importer) => {
+                    const found = await resolved(specifier, importer);
+                    return found !== null && (found.external ? specifier === packageName : namespaceCopyOf(found.id, "System") !== null);
+                },
+            };
+            const result = await passInputSchemas(code, file, host);
+            const read = result === null ? [] : result.dependencies.filter(dependency => dependency !== file);
+            for (const dependency of read) this.addWatchFile(dependency);
+            depend(file, read);
+            if (result === null) return null;
+            if ("failure" in result) return this.error(describeFailure(result.failure), result.failure.position);
+            return { code: result.code, map: result.map };
+        },
+    };
+    return plugin;
+};
+
+/** The kernel plugin's two parts: input schemas, before TypeScript is stripped, and kernels and ids, after. */
+export const kernelPlugin = (): Plugin[] => [inputPlugin(), compilePlugin()];
+
+const compilePlugin = (): Plugin => {
     let serve = true;
     let root = process.cwd();
     /** Whether an earlier instance of the plugin is in the same bundle. */
@@ -144,7 +219,7 @@ export const kernelPlugin = (): Plugin => {
         name: `${packageName}/kernel`,
         enforce: "post",
         // Dep pre-bundling breaks the runtime's `new Worker(new URL("./worker.js", import.meta.url))`.
-        config: () => ({ optimizeDeps: { exclude: [packageName] }, worker: { plugins: () => [kernelPlugin()] } }),
+        config: () => ({ optimizeDeps: { exclude: [packageName] }, worker: { plugins: () => kernelPlugin() } }),
         configResolved: config => {
             serve = config.command === "serve";
             root = config.root;

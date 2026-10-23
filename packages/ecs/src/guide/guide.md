@@ -35,7 +35,8 @@ How to use the ECS. Each excerpt comes from a test in this folder; the link unde
 ## Setup
 
 ```ts
-// vite.config.ts: compiles kernels, checks each system's declaration against its body, and gives keys and systems ids.
+// vite.config.ts: compiles kernels, checks each system's declaration against its body, reads the schema of each
+// body's input from its type, and gives keys and systems ids.
 import { kernelPlugin } from "@adobe/ecs/compiler";
 export default defineConfig({ plugins: [kernelPlugin()] });
 ```
@@ -337,20 +338,18 @@ const step = System.create({ resources: { is: [map], not: [paused], write: [step
 ### 8. Input
 
 ```ts
-// input is an object schema of named fields; each run passes a value of it.
+// A body's input is its parameter after its context, an object of named fields; each run passes a value of it.
 const hit = System.create({
     components: { write: [health] },
-    input: { type: "object", properties: { amount: { type: "number" } } },
-}, (row, { input }) => {
+}, (row, _context, input: { readonly amount: number }) => {
     row[health] -= input.amount;
 });
 
 // target names an input field holding an entity: the system runs on that entity's row alone, or on none once it's gone.
 const heal = System.create({
     components: { write: [health] },
-    input: { type: "object", properties: { entity: Entity.schema, amount: { type: "number" } } },
     target: "entity",
-}, (row, { input }) => {
+}, (row, _context, input: { readonly entity: Entity; readonly amount: number }) => {
     row[health] += input.amount;
 });
 
@@ -359,7 +358,7 @@ await world.run(hit, { amount: 3 });
 await world.run(heal, { entity: player, amount: 1 });
 ```
 
-[`08-input.test.ts`](08-input.test.ts#L19-L49)
+[`08-input.test.ts`](08-input.test.ts#L18-L43)
 
 ### 9. Rules
 
@@ -503,7 +502,7 @@ const list = System.create({ observer: true, components: { read: [player] }, ord
 // A unique index gives one row, or null.
 const byServerId = Index.create({ key: [serverId], unique: true });
 let found: number | null = null;
-const find = System.create({ input: { type: "object", properties: { id: { type: "integer" } } }, lookup: { byId: { index: byServerId } } }, ({ input, lookup }) => {
+const find = System.create({ lookup: { byId: { index: byServerId } } }, ({ lookup }, input: { readonly id: number }) => {
     found = lookup.byId(input.id)?.entity ?? null;
 });
 ```

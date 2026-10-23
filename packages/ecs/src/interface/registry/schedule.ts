@@ -9,18 +9,14 @@ import { lookupKeysOf, orderKeysOf } from './indexes.js';
 
 type Key = symbol;
 
-/** Throws unless each leaf's input is an object schema of named fields, and a field several declare has one schema. */
+/** Throws unless a field of the input several leaves take has one schema. */
 const checkInputs = (leaves: readonly Leaf[]): void => {
     const fields = new Map<string, { readonly schema: Schema; readonly system: string }>();
     for (const leaf of leaves) {
-        const { input } = leaf.declaration;
+        const { input } = leaf;
         const name = labelOfItem(leaf);
         if (input === undefined) continue;
-        const schema: Schema = input;
-        if (!("type" in schema) || schema.type !== "object" || typeof schema.properties !== "object" || schema.properties === null) {
-            throw new Error(`System "${name}": input is an object schema of named fields.`);
-        }
-        for (const [field, property] of Object.entries(schema.properties)) {
+        for (const [field, property] of Object.entries(input.properties)) {
             const seen = fields.get(field);
             if (seen === undefined) fields.set(field, { schema: property, system: name });
             else if (!sameDeclaration(seen.schema, property)) {

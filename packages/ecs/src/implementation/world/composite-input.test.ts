@@ -7,17 +7,14 @@ import { workers } from "../../interface/resources/workers.js";
 const seen: { readonly system: string; readonly input: unknown }[] = [];
 const move = System.create({
     name: "compositeInputTest/move",
-    input: { type: "object", properties: { distance: { type: "number" } } },
-}, ({ input }) => { seen.push({ system: "move", input: { ...input } }); });
+}, (_context, input: { readonly distance: number }) => { seen.push({ system: "move", input: { ...input } }); });
 const step = System.create({
     name: "compositeInputTest/step",
-    input: { type: "object", properties: { distance: { type: "number" }, dt: { type: "number" } } },
-}, ({ input }) => { seen.push({ system: "step", input: { ...input } }); });
+}, (_context, input: { readonly distance: number; readonly dt: number }) => { seen.push({ system: "step", input: { ...input } }); });
 const idle = System.create({ name: "compositeInputTest/idle" }, () => {});
 const label = System.create({
     name: "compositeInputTest/label",
-    input: { type: "object", properties: { distance: { type: "string" } } },
-}, ({ input }) => { void input.distance; });
+}, (_context, input: { readonly distance: string }) => { void input.distance; });
 
 describe("composite input", () => {
     it("passes each member the fields of the run's input that it declares", async () => {
@@ -31,8 +28,13 @@ describe("composite input", () => {
         expect(() => System.create({ name: "compositeInputTest/conflict", systems: [move, label] })).toThrow('Systems "compositeInputTest/move" and "compositeInputTest/label" declare input field "distance" with different schemas.');
     });
 
-    it("rejects an input that isn't an object of named fields, for untyped declarations", () => {
-        // @ts-expect-error input is an object schema
-        expect(() => System.create({ name: "compositeInputTest/scalar", input: { type: "number" } }, () => {})).toThrow('System "compositeInputTest/scalar": input is an object schema of named fields.');
+    it("rejects a body taking input without the schema the plugin gives from its type, as one not written in place has", () => {
+        const counting = (_context: unknown, input: { readonly count: number }): void => { void input.count; };
+        expect(() => System.create({ name: "compositeInputTest/unbuilt" }, counting)).toThrow('System "compositeInputTest/unbuilt" takes input, whose schema the plugin gives from the type of its body\'s parameter: write its body in place and build it with the kernel plugin.');
+    });
+
+    it("rejects an input schema that isn't an object of named fields", () => {
+        const create: (...parameters: unknown[]) => unknown = System.create;
+        expect(() => create({ name: "compositeInputTest/scalar" }, (_context: unknown, _input: unknown) => {}, { type: "number" })).toThrow('System "compositeInputTest/scalar": input is an object schema of named fields.');
     });
 });

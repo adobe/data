@@ -575,7 +575,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         watched: entityWatchesOf(declaration.lookup).map(key => idOf(state, key)),
         archetypes: state.archetypes,
         writes,
-        declaresInput: declaration.input !== undefined,
+        declaresInput: leaf.input !== undefined,
         lastRun: since,
         result: { flags: 0, segment: undefined, error: undefined },
         tail: null,

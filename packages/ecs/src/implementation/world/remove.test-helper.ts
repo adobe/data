@@ -80,6 +80,6 @@ export const secondTail = System.create({ name: "removeTest/secondTail", resourc
 export const ticking = System.create({ name: "removeTest/ticking", after: [second] }, () => {});
 
 /** Sets how long `first` and `firstTail` spin. */
-export const setPause = System.create({ name: "removeTest/setPause", input: { type: "object", properties: { milliseconds: { type: "number" } } }, resources: { write: [pause] } }, ({ input, resources }) => {
+export const setPause = System.create({ name: "removeTest/setPause", resources: { write: [pause] } }, ({ resources }, input: { readonly milliseconds: number }) => {
     resources[pause] = input.milliseconds;
 });

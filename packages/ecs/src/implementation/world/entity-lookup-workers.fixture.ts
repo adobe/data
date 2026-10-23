@@ -73,7 +73,7 @@ const seed = System.create({ name: "entityLookupWorkersTest/seed" }, ({ commands
 });
 
 /** Writes some weights, marks and unmarks some targets, despawns some and spawns others: a different change each round. */
-const stir = System.create({ name: "entityLookupWorkersTest/stir", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [weight] } }, (row, { input, commands }) => {
+const stir = System.create({ name: "entityLookupWorkersTest/stir", components: { write: [weight] } }, (row, { commands }, input: { readonly round: number }) => {
     const w = row[weight];
     if ((w + input.round) % 5 === 0) row[weight] = w + 1000;
     if ((w + input.round) % 11 === 0) commands.add(row.entity, mark, 2);

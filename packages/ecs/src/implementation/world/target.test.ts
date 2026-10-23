@@ -14,16 +14,14 @@ declare module "@adobe/ecs" {
 Component.register(amount, { type: { type: "number" } });
 Component.register(tagged, { type: { const: true } });
 
-const one = { type: "object", properties: { entity: Entity.schema } } as const;
-
 let spawned: Entity[] = [];
 const spawn = System.create({ name: "targetTest/spawn" }, ({ commands }) => {
     spawned = [commands.spawn([amount, tagged])({ [amount]: 1 }), commands.spawn([amount, tagged])({ [amount]: 2 }), commands.spawn([amount])({ [amount]: 3 })];
 });
-const bump = System.create({ name: "targetTest/bump", input: one, target: "entity", components: { write: [amount], has: [tagged] } }, row => {
+const bump = System.create({ name: "targetTest/bump", target: "entity", components: { write: [amount], has: [tagged] } }, (row, _context, input: { readonly entity: Entity }) => {
     row[amount] += 10;
 });
-const remove = System.create({ name: "targetTest/remove", input: one, target: "entity", components: { has: [tagged] } }, (row, { commands }) => {
+const remove = System.create({ name: "targetTest/remove", target: "entity", components: { has: [tagged] } }, (row, { commands }, _input: { readonly entity: Entity }) => {
     commands.despawn(row.entity);
 });
 let amounts: number[] = [];
@@ -66,9 +64,9 @@ describe("systems on one entity", () => {
 
     it("take their entity from an entity field of their input, and have components, no kernel, up, order or reduce", () => {
         // @ts-expect-error its target isn't an entity field
-        expect(() => System.create({ name: "targetTest/notEntity", input: { type: "object", properties: { count: { type: "number" } } }, target: "count", components: { has: [amount] } }, () => {}))
+        expect(() => System.create({ name: "targetTest/notEntity", target: "count", components: { has: [amount] } }, (_row, _context, input: { readonly count: number }) => {}))
             .toThrow('System "targetTest/notEntity" runs on one entity, so it takes it from an input field "count" holding an entity.');
         // @ts-expect-error it needs components
-        expect(() => System.create({ name: "targetTest/noComponents", input: one, target: "entity" }, () => {})).toThrow('System "targetTest/noComponents" runs on one entity, so it needs components.');
+        expect(() => System.create({ name: "targetTest/noComponents", target: "entity" }, (_context, input: { readonly entity: Entity }) => {})).toThrow('System "targetTest/noComponents" runs on one entity, so it needs components.');
     });
 });

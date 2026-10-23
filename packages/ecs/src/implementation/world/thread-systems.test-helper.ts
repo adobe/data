@@ -67,7 +67,7 @@ Resource.register(nextUid, { type: { type: "integer", default: 1 } });
 const makeNote = (text: string): Note => ({ text, read: () => text });
 
 /** Spawns from the world's thread: structs and its own object, the thread's objects at their starts. */
-export const seed = System.create({ name: "threadSystemsTest/seed", input: { type: "object", properties: { count: { type: "integer" } } }, resources: { write: [nextUid] } }, ({ input, resources, commands }) => {
+export const seed = System.create({ name: "threadSystemsTest/seed", resources: { write: [nextUid] } }, ({ resources, commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) {
         const id = resources[nextUid]++;
         commands.spawn([uid, position, velocity, caption, kept])({ [uid]: id, [position]: [id, -id], [velocity]: id % 3, [kept]: `k${id}` });
@@ -145,7 +145,7 @@ export const failing = System.create({ name: "threadSystemsTest/failing", system
 export const tick = System.create({ name: "threadSystemsTest/tick", systems: [move, describe, relabel, breed, tally, keep, watchCaptions, repaint, peek] });
 
 /** On the thread, with input, which comes to it by message. */
-export const stamp = System.create({ name: "threadSystemsTest/stamp", input: { type: "object", properties: { text: { type: "string" } } }, components: { read: [uid], write: [caption] } }, (row, { input }) => {
+export const stamp = System.create({ name: "threadSystemsTest/stamp", components: { read: [uid], write: [caption] } }, (row, _context, input: { readonly text: string }) => {
     if (row[uid] === 1) row[caption] = { text: input.text };
 });
 
@@ -256,7 +256,7 @@ export const scenario = async (world: World, objects: Objects = objectsThere(wor
 };
 
 /** Spawns entities with captions, from the world's thread. */
-export const crowd = System.create({ name: "threadSystemsTest/crowd", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+export const crowd = System.create({ name: "threadSystemsTest/crowd" }, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) commands.spawn([uid, caption])({ [uid]: 1000 + k });
 });
 /** On the world's thread: every crowd entity but uid 1000 moves archetype, flagged on one run and not on the next. */

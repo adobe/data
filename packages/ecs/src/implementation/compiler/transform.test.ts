@@ -579,7 +579,7 @@ describe("context", () => {
     });
 
     test("optional lookup access, destructured context groups and input", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", input: { type: "number" }, components: { read: [target], write: [score] }, resources: { read: [delta] }, lookup: { targets: { read: [mass] } } }, (row, { resources: { [delta]: d }, lookup: { targets }, input }) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [target], write: [score] }, resources: { read: [delta] }, lookup: { targets: { read: [mass] } } }, (row, { resources: { [delta]: d }, lookup: { targets } }, input) => {
             row[score] = (targets(row[target])?.[mass] ?? 0) + d + input;
         });`);
         const found = (entity: number) => entity === 1 ? [3] : null;
@@ -587,9 +587,9 @@ describe("context", () => {
     });
 
     test("context groups reached through the context parameter", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", input: { type: "number" }, components: { read: [target], write: [score] }, resources: { read: [delta] }, lookup: { targets: { read: [mass] } } }, (row, context) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [target], write: [score] }, resources: { read: [delta] }, lookup: { targets: { read: [mass] } } }, (row, context, input) => {
             const { resources } = context;
-            row[score] = (context.lookup.targets(row[target])?.[mass] ?? 0) + resources[delta] + context.input;
+            row[score] = (context.lookup.targets(row[target])?.[mass] ?? 0) + resources[delta] + input;
         });`);
         const found = (entity: number) => entity === 1 ? [3] : null;
         expect(run(kernel, 2, { target: { "[]": [1, 2] } }, { lookups: [found], resources: [10], args: 100, program: false }).field("score")).toEqual([113, 110]);
@@ -700,7 +700,7 @@ describe("context", () => {
 
 describe("program", () => {
     test("input and resource paths are scalars in the program", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", input: { type: "object" }, components: { write: [score] }, resources: { read: [delta] } }, (row, { resources: { [delta]: d }, input }) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { write: [score] }, resources: { read: [delta] } }, (row, { resources: { [delta]: d } }, input) => {
             const [, y] = d;
             row[score] = y * input.scale + Math.max(input.scale, Math.PI) + (input.flag ? 1 : 0);
         });`);
@@ -849,7 +849,7 @@ describe("terminal bodies", () => {
     test.each([
         ["no context", "(row)", "console.log(row);", `{ name: "a", components: { has: [mass] } }`],
         ["a context destructured without commands", "({ resources })", "console.log(resources);", `{ name: "a" }`],
-        ["a context used only through its other properties", "(context)", "console.log(context.input);", `{ name: "a", input: { type: "number" } }`],
+        ["a context used only through its other properties", "(context)", "console.log(context.resources);", `{ name: "a", resources: { read: [delta] } }`],
         ["a context reaching resources and lookups", "(row, context)", "console.log(context.resources, context.lookup, row);", `{ name: "a", components: { has: [mass] } }`],
         ["nested destructuring", "({ resources: { [delta]: d } })", "console.log(d);", `{ name: "a", resources: { read: [delta] } }`],
     ])("mark a body with %s", async (_, parameters, body, declaration) => {
@@ -1335,7 +1335,7 @@ describe("declared access", () => {
         expect(await failure(system("resources: { read: [delta], write: [score] }", "(context) => { context.resources[score] = 1; }"))).toBe(unread);
         expect(await failure(system("resources: { read: [delta], write: [score] }", "({ resources }) => { resources[score] = 1; }"))).toBe(unread);
         expect(await failure(system("resources: { read: [delta], write: [score] }", "(context) => { const { resources } = context; resources[score] = 1; }"))).toBe(unread);
-        expect(await failure(system("resources: { read: [delta] }, input: { type: \"number\" }", "({ input }) => { console.log(input); }"))).toBe(unread);
+        expect(await failure(system("resources: { read: [delta] }", "(_context, input) => { console.log(input); }"))).toBe(unread);
         expect(await failure(system("resources: { write: [score, mass] }", "({ resources }) => { resources[score] = 1; }"))).toBe("mass is in resources write but never written; remove it, or move it to resources read if it's only read");
         expect(await failure(system("components: { has: [mass] }, resources: { read: [delta], write: [score] }",
             "(_, context) => { context.resources[score] = context.resources[delta]; }"))).toBe("compiled");

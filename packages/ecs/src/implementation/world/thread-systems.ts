@@ -607,7 +607,7 @@ type ThreadCell = { storage: ThreadStorage | undefined; row: number };
 export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<string, number> = noRecords): ThreadRunner => {
     const { declaration } = leaf;
     // Method parameters are bivariant, so the runtime can see any leaf's body with erased parameter types.
-    const system: { body(subject: unknown, context?: unknown): void } = leaf;
+    const system: { body(subject: unknown, context?: unknown, input?: unknown): void } = leaf;
     const { components: query, resources } = declaration;
     const numberOf = host.numberOf;
     const required = [...new Set([...query?.read ?? [], ...query?.write ?? [], ...query?.has ?? [], ...query?.added ?? [], ...query?.changed ?? []])].map(numberOf);
@@ -712,14 +712,14 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         });
         Object.defineProperty(value, "reduce", { value: reducers, enumerable: true });
     }
-    if (declaration.input !== undefined) value.input = undefined;
     // A tail is terminal, so its context has no commands.
-    const tailValue: { input?: unknown } = own();
+    const tailValue: object = own();
     for (const name of Object.getOwnPropertyNames(value)) {
         const descriptor = Object.getOwnPropertyDescriptor(value, name);
-        if (descriptor !== undefined && name !== "input") Object.defineProperty(tailValue, name, descriptor);
+        if (descriptor !== undefined) Object.defineProperty(tailValue, name, descriptor);
     }
-    if (declaration.input !== undefined) tailValue.input = undefined;
+    /** The current run's input, which the body takes after its context; kept until the next run, as its context is. */
+    let runInput: unknown;
     Object.defineProperty(value, "commands", { value: host.commands, enumerable: true });
 
     /** Resolves resource cells for a run: they move only at sync points. */
@@ -777,18 +777,19 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
     const runBody = (archetype: ThreadArchetype, count: number, since: number): void => {
         const row = bindRow(archetype);
         const subject = row.value;
+        const input = runInput;
         const filters = filtersOf(archetype);
         if (since < 0 || filters.length === 0) {
             for (let index = 0; index < count; index++) {
                 row.index = index;
-                system.body(subject, value);
+                system.body(subject, value, input);
             }
             return;
         }
         forEachPassingRange(filters, since, 0, count, (start, end) => {
             for (let index = start; index < end; index++) {
                 row.index = index;
-                system.body(subject, value);
+                system.body(subject, value, input);
             }
         });
     };
@@ -812,10 +813,10 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
                 const buffer = host.refresh();
                 for (let k = 0; k < threadIndexes.length; k++) threadIndexes[k].refresh(buffer);
             }
-            if (declaration.input !== undefined) value.input = ownInput(input);
+            runInput = ownInput(input);
             if (query === undefined) {
                 outcome.ran = since < 0;
-                if (outcome.ran) system.body(value);
+                if (outcome.ran) system.body(value, runInput);
                 return outcome;
             }
             if (since >= 0 && addedIds.length + changedIds.length === 0) return outcome;
@@ -867,18 +868,19 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
     const runRows = (archetype: ThreadArchetype, start: number, end: number, since: number): void => {
         const row = bindRow(archetype);
         const subject = row.value;
+        const input = runInput;
         const filters = filtersOf(archetype);
         if (since < 0 || filters.length === 0) {
             for (let index = start; index < end && !halted; index++) {
                 row.index = index;
-                system.body(subject, tailValue);
+                system.body(subject, tailValue, input);
             }
             return;
         }
         forEachPassingRange(filters, since, start, end, (first, last) => {
             for (let index = first; index < last && !halted; index++) {
                 row.index = index;
-                system.body(subject, tailValue);
+                system.body(subject, tailValue, input);
             }
         });
     };
@@ -954,10 +956,10 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
             if ((flags & headExecuted) === 0) return;
             outcome.executed = true;
             outcome.ran = (flags & headRan) !== 0;
-            if (declaration.input !== undefined) tailValue.input = ownInput(input);
+            runInput = ownInput(input);
             if (!outcome.ran) return;
             if (query === undefined) {
-                system.body(tailValue);
+                system.body(tailValue, runInput);
                 writeBackResources(ownResources, resourceArchetype, resourceRow, tick, at, stamps);
                 return;
             }
@@ -990,10 +992,11 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         while (first < rows && positions[first] < position) first++;
         const row = bindRow({ id: -1, entities, storageById, record: -1, version: -1, mirrored: null, components: [], resource: false, meta: false });
         const subject = row.value;
+        const ownedInput = runInput;
         try {
             for (let index = first; index < rows && !halted; index++) {
                 row.index = index;
-                system.body(subject, tailValue);
+                system.body(subject, tailValue, ownedInput);
             }
         }
         finally {
@@ -1052,10 +1055,10 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
             const resourcesChanged = resourceChanged.length > 0 && resourcesChangedSince(lastRun);
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             bind();
-            if (declaration.input !== undefined) tailValue.input = ownInput(input);
+            runInput = ownInput(input);
             if (query === undefined) {
                 outcome.ran = since < 0;
-                if (outcome.ran) system.body(tailValue);
+                if (outcome.ran) system.body(tailValue, runInput);
                 return outcome;
             }
             if (since >= 0 && addedIds.length + changedIds.length === 0) return outcome;

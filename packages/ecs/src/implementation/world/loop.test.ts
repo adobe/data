@@ -20,7 +20,7 @@ Component.register(count, { type: { type: "number" } });
 const increment = requireDefinition(System.create({ name: "loopTest/increment", components: { write: [count] } }, row => { row[count] += 1; }));
 const reader = requireDefinition(System.create({ name: "loopTest/reader", components: { read: [count] } }, row => { void row[count]; }));
 const ordered = requireDefinition(System.create({ name: "loopTest/ordered", components: { read: [count] }, after: [System.create({ name: "loopTest/phase" }, () => {})] }, row => { void row[count]; }));
-const takesInput = requireDefinition(System.create({ name: "loopTest/input", input: { type: "object", properties: { by: { type: "number" } } } }, () => {}));
+const takesInput = requireDefinition(System.create({ name: "loopTest/input" }, (_context, input: { readonly by: number }) => {}));
 
 /** A host whose frames and timers run only when the test says, at the times it gives. */
 const createHost = (settings: { cadence: Cadence; always: boolean; wake: number }) => {

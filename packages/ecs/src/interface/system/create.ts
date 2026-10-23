@@ -6,10 +6,9 @@ import { takeIdOfDeclaration } from '../registry/ids.js';
 import { nameOf } from '../registry/items.js';
 import { claimSystem } from '../registry/program.js';
 import type { Resource } from '../resource/resource.js';
-import type { Schema } from '../schema/schema.js';
 import type { Body } from './body.js';
 import type { Commands } from './commands.js';
-import { checkComposite, checkLeaf } from './check.js';
+import { checkComposite, checkLeaf, inputSchemaOf } from './check.js';
 import type { Composite } from './composite.js';
 import type { CompositeDeclaration } from './composite-declaration.js';
 import type { Declaration } from './declaration.js';
@@ -82,27 +81,22 @@ type GpuKernel = {
 };
 
 /**
- * An observer system only reads, after a sync point: it writes and reduces into nothing, takes no input, isn't a
- * kernel, has no `up`, and is ordered with nothing.
+ * An observer system only reads, after a sync point: it writes and reduces into nothing, isn't a kernel, has no `up`,
+ * and is ordered with nothing. That it takes no input is checked at its body.
  */
 type Observer = {
     readonly kernel?: never;
     readonly components?: { readonly write?: never };
     readonly resources?: { readonly write?: never };
     readonly reduce?: never;
-    readonly input?: never;
     readonly up?: never;
     readonly before?: never;
     readonly after?: never;
     readonly during?: never;
 };
 
-/** The fields of input `I` that hold an entity. */
-type EntityFields<I> = { [K in keyof I]-?: [Exclude<I[K], undefined>] extends [Entity] ? K : never }[keyof I] & string;
-
-/** A system on one entity takes it from an entity field of its input, and runs on its row, in no order. */
-type Targeted<D extends Declaration> = {
-    readonly target?: EntityFields<InputOf<D>>;
+/** A system on one entity runs on its row, in no order; that its target is an entity field of its input is checked at its body. */
+type Targeted = {
     readonly kernel?: never;
     readonly up?: never;
     readonly order?: never;
@@ -113,16 +107,34 @@ type Validate<D extends Declaration> =
     Lists<D>
     & IndexLookups<D>
     & Order<D>
-    & (D extends { readonly input: Schema } ? { readonly components?: { readonly added?: never; readonly changed?: never } } : {})
     & (D extends { readonly kernel: "cpu" | "gpu" } ? Kernel : {})
     & (D extends { readonly kernel: "gpu" } ? GpuKernel : {})
     // `up` and `order` order rows, so a system without them has neither, and one has at most one of them.
     & (Property<D, "components"> extends undefined ? { readonly up?: { readonly [key: string]: never }; readonly order?: { readonly "error: a system without components runs once, in no order": true } } : {})
     & (D extends { readonly up: object } ? { readonly order?: { readonly "error: up and order both decide the order of its rows": true } } : {})
     & (D extends { readonly observer: true } ? Observer : {})
-    & (D extends { readonly target: string } ? Targeted<D> : {})
+    & (D extends { readonly target: string } ? Targeted : {})
     & (D extends { readonly target: string } ? Property<D, "components"> extends undefined ? { readonly target?: { readonly "error: a system on one entity runs on its row, so it needs components": true } } : {} : {})
-    & { readonly shader?: never };
+    // A body's input is the type of its parameter after its context, not part of its declaration.
+    & { readonly shader?: never; readonly input?: never };
+
+/** The fields of input `I` that hold an entity. */
+type EntityFields<I> = { [K in keyof I]-?: [Exclude<I[K], undefined>] extends [Entity] ? K : never }[keyof I] & string;
+
+/**
+ * What a declaration requires of the input its body takes, checked at the body, since the input is known only once the
+ * body is: a target names an entity field of it, and a system with input doesn't filter on added or changed, as its
+ * runs pass different input, nor is it an observer. Every check passes for `never`, the input before the body is
+ * inferred.
+ */
+type Checks<D, I> = [I] extends [never] ? unknown :
+    (D extends { readonly target: infer T extends string }
+        ? [I] extends [undefined] ? { readonly "error: a system with a target takes its input after its context": T }
+        : T extends EntityFields<I> ? unknown : { readonly "error: its target is no entity field of its input": T }
+        : unknown)
+    & ([I] extends [undefined] ? unknown
+        : (D extends { readonly components: { readonly added: object } | { readonly changed: object } } ? { readonly "error: a system with input can't filter on added or changed, as its runs pass different input; pass it through a resource": true } : unknown)
+        & (D extends { readonly observer: true } ? { readonly "error: an observer system takes no input": true } : unknown));
 
 /** The body of a system that declares nothing, which runs once per run with its commands. */
 type Alone = (context: { readonly commands: Commands }) => void;
@@ -155,9 +167,10 @@ type Checked<C> = C extends Alone ? unknown : C extends CompositeDeclaration ? {
  * One argument, a body or a composite, is one overload, so a mistake in it is reported where it is rather than as no
  * overload matching.
  */
-export function create<const D extends Declaration>(declaration: D & Validate<D> & OneThread<ThreadsOf<D>, ThreadedBy<D>>, body: Body<D>): System<InputOf<D>>;
+export function create<const D extends Declaration, B extends Body<D, never>>(declaration: D & Validate<D> & OneThread<ThreadsOf<D>, ThreadedBy<D>>, body: B & Checks<D, InputOf<D, B>>): System<InputOf<D, B>>;
 export function create<const C extends Alone | Composition>(only: C & Checked<C>): C extends Alone ? System : System<CompositeInputOf<MembersOf<C>>>;
-export function create(first: Declaration | Leaf["body"] | readonly System<unknown>[] | CompositeDeclaration, second?: Leaf["body"]): System<unknown> {
+// The plugin passes the schema of the body's input as a third argument.
+export function create(first: Declaration | Leaf["body"] | readonly System<unknown>[] | CompositeDeclaration, second?: Leaf["body"], input?: unknown): System<unknown> {
     // The plugin gives its id to the call's first argument: the declaration, the members, or the body made into a
     // system alone.
     const id = takeIdOfDeclaration(first);
@@ -166,7 +179,9 @@ export function create(first: Declaration | Leaf["body"] | readonly System<unkno
     const declaration: Declaration = typeof first === "function" ? {} : first;
     const body = typeof first === "function" ? first : second;
     if (body === undefined) throw new Error("A system needs a body, and a composite its systems.");
-    const system: Leaf & System<unknown> = { kind: "system", name: nameOf(declaration.name, id, "system"), declaration, body };
+    const name = nameOf(declaration.name, id, "system");
+    const schema = inputSchemaOf(name, body, declaration.components === undefined ? 1 : 2, input);
+    const system: Leaf & System<unknown> = { kind: "system", name, declaration, input: schema, body };
     checkLeaf(system);
     claimSystem(system, id);
     return system;

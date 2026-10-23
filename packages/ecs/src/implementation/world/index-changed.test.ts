@@ -36,24 +36,23 @@ const inOrder = Index.create({ name: "indexChangedTest/inOrder", key: [group], s
 const weighted = Index.create({ name: "indexChangedTest/weighted", key: [], components: { has: [weight] } });
 
 const one = { type: "object", properties: { entity: Entity.schema, value: { type: "number" } } } as const;
-const entityOnly = { type: "object", properties: { entity: Entity.schema } } as const;
 let spawned: Entity[] = [];
-const spawn = System.create({ name: "indexChangedTest/spawn", input: { type: "object", properties: { groups: { type: "array", items: { type: "integer" } } } } }, ({ input, commands }) => {
+const spawn = System.create({ name: "indexChangedTest/spawn" }, ({ commands }, input: { readonly groups: readonly number[] }) => {
     for (const value of input.groups) spawned.push(commands.spawn([group, weight, total])({ [group]: value, [weight]: 1, [total]: 0 }));
 });
-const setGroup = System.create({ name: "indexChangedTest/setGroup", input: one, target: "entity", components: { write: [group] } }, (row, { input }) => {
+const setGroup = System.create({ name: "indexChangedTest/setGroup", target: "entity", components: { write: [group] } }, (row, _context, input: { readonly entity: Entity; readonly value: number }) => {
     row[group] = input.value;
 });
-const setWeight = System.create({ name: "indexChangedTest/setWeight", input: one, target: "entity", components: { write: [weight] } }, (row, { input }) => {
+const setWeight = System.create({ name: "indexChangedTest/setWeight", target: "entity", components: { write: [weight] } }, (row, _context, input: { readonly entity: Entity; readonly value: number }) => {
     row[weight] = input.value;
 });
-const despawn = System.create({ name: "indexChangedTest/despawn", input: entityOnly, target: "entity", components: { has: [group] } }, (row, { commands }) => {
+const despawn = System.create({ name: "indexChangedTest/despawn", target: "entity", components: { has: [group] } }, (row, { commands }, _input: { readonly entity: Entity }) => {
     commands.despawn(row.entity);
 });
-const dropWeight = System.create({ name: "indexChangedTest/dropWeight", input: entityOnly, target: "entity", components: { has: [weight] } }, (row, { commands }) => {
+const dropWeight = System.create({ name: "indexChangedTest/dropWeight", target: "entity", components: { has: [weight] } }, (row, { commands }, _input: { readonly entity: Entity }) => {
     commands.remove(row.entity, weight);
 });
-const pause = System.create({ name: "indexChangedTest/pause", input: { type: "object", properties: { paused: { type: "boolean" } } }, resources: { write: [paused] } }, ({ input, resources }) => {
+const pause = System.create({ name: "indexChangedTest/pause", resources: { write: [paused] } }, ({ resources }, input: { readonly paused: boolean }) => {
     resources[paused] = input.paused;
 });
 

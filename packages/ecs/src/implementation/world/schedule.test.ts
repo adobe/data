@@ -21,7 +21,7 @@ Component.register(value, { type: { type: "number" } });
 Component.register(other, { type: { type: "number" } });
 
 /** Systems built as values, not registered, so each test's are its own. */
-const leaf = (declaration: Declaration & { readonly name: string }): Leaf => ({ kind: "system", name: declaration.name, declaration, body: () => {} });
+const leaf = (declaration: Declaration & { readonly name: string }): Leaf => ({ kind: "system", name: declaration.name, declaration, input: undefined, body: () => {} });
 const composite = (declaration: Composite["declaration"] & { readonly name: string }): Composite => ({ kind: "composite", name: declaration.name, declaration });
 
 const names = (system: Definition): string[][] => scheduleOf(system).tiers.map(tier => tier.map(leaf => leaf.name));

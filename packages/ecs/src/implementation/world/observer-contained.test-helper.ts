@@ -29,7 +29,7 @@ export const tallies: number[] = [];
 
 export const bump = System.create({ name: "observerContainedTest/bump", resources: { write: [tally] } }, ({ resources }) => { resources[tally] += 1; });
 export const nothing = System.create({ name: "observerContainedTest/nothing" }, () => {});
-export const setHolding = System.create({ name: "observerContainedTest/setHolding", input: { type: "object", properties: { holding: { type: "number" } } }, resources: { write: [holding] } }, ({ input, resources }) => {
+export const setHolding = System.create({ name: "observerContainedTest/setHolding", resources: { write: [holding] } }, ({ resources }, input: { readonly holding: number }) => {
     resources[holding] = input.holding;
 });
 

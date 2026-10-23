@@ -5,22 +5,10 @@ import { System } from './system.js';
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
 
-const move = System.create({
-    name: "compositeInputTest/move",
-    input: { type: "object", properties: { distance: { type: "number" } } },
-}, ({ input }) => { void input.distance; });
-const step = System.create({
-    name: "compositeInputTest/step",
-    input: { type: "object", properties: { distance: { type: "number" }, dt: { type: "number" } } },
-}, ({ input }) => { void input.dt; });
-const pause = System.create({
-    name: "compositeInputTest/pause",
-    input: { type: "object", properties: { dt: { type: "number" } }, required: [] },
-}, ({ input }) => { void input.dt; });
-const label = System.create({
-    name: "compositeInputTest/label",
-    input: { type: "object", properties: { distance: { type: "string" } } },
-}, ({ input }) => { void input.distance; });
+const move = System.create({ name: "compositeInputTest/move" }, (_context, input: { readonly distance: number }) => { void input.distance; });
+const step = System.create({ name: "compositeInputTest/step" }, (_context, input: { readonly distance: number; readonly dt: number }) => { void input.dt; });
+const pause = System.create({ name: "compositeInputTest/pause" }, (_context, input: { readonly dt?: number }) => { void input.dt; });
+const label = System.create({ name: "compositeInputTest/label" }, (_context, input: { readonly distance: string }) => { void input.distance; });
 const idle = System.create({ name: "compositeInputTest/idle" }, () => {});
 
 // A composite takes every field its members' inputs have; a field in several is one value for all of them.
@@ -57,8 +45,3 @@ void world.run(frame, { distance: 1, dt: 0.5 });
 // @ts-expect-error run takes every field
 void world.run(frame, { distance: 1 });
 
-System.create({
-    name: "compositeInputTest/scalar",
-    // @ts-expect-error input is an object of named fields
-    input: { type: "number" },
-}, () => {});

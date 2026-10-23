@@ -50,7 +50,7 @@ Component.register(target, { type: Entity.schema });
 Resource.register(seconds, { type: { type: "number", default: 1 / 60 } });
 Resource.register(floor, { type: { type: "number", precision: 1, default: -2.5 } });
 
-const seed = System.create({ name: "wasmTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({ name: "wasmTest/seed" }, ({ commands }, input: { readonly count: number }) => {
     let previous = Entity.none;
     for (let i = 0; i < input.count; i++) {
         previous = commands.spawn([position, velocity, bounces, flipped, score, target])({ [position]: [i * 0.37, (i % 13) * 0.71], [velocity]: [Math.sin(i) * 3, Math.cos(i) * 5], [bounces]: 0, [flipped]: false, [score]: 0, [target]: previous });
@@ -58,7 +58,7 @@ const seed = System.create({ name: "wasmTest/seed", input: { type: "object", pro
 });
 
 /** Despawns every seventh entity and spawns replacements, so some targets go stale and their indexes are reused. */
-const cull = System.create({ name: "wasmTest/cull", input: { type: "object", properties: { frame: { type: "integer" } } }, components: { read: [position], has: [bounces] } }, (row, { input, commands }) => {
+const cull = System.create({ name: "wasmTest/cull", components: { read: [position], has: [bounces] } }, (row, { commands }, input: { readonly frame: number }) => {
     if ((row.entity >>> 0) % 7 !== input.frame % 7) return;
     commands.despawn(row.entity);
     commands.spawn([position, velocity, bounces, flipped, score, target])({ [position]: row[position], [velocity]: [1, 1], [bounces]: 0, [flipped]: true, [score]: 0, [target]: row.entity });
@@ -118,9 +118,8 @@ const tally = System.create({
 const scale = System.create({
     name: "wasmTest/scale",
     kernel: "cpu",
-    input: { type: "object", properties: { factor: { type: "number" } } },
     components: { write: [score] },
-}, (row, { input }) => {
+}, (row, _context, input: { readonly factor: number }) => {
     row[score] = row[score] * input.factor;
 });
 

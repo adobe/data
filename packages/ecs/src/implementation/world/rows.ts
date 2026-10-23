@@ -412,11 +412,11 @@ const createPlainArrayLookup = (state: State, lookup: SystemLookup) => {
 };
 
 /**
- * A body's context: its resources, lookups, reductions, input and commands, each under its own key and present only
+ * A body's context: its resources, lookups, reductions and commands, each under its own key and present only
  * when declared. `bind` resolves the resources' cells for a run; `reduced[t]` holds the leaves of the fold into its
  * `t`th reduction target so far this run.
  */
-export type Context = { readonly value: { input?: unknown; up?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
+export type Context = { readonly value: { up?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
 
 /**
  * What a context holds beyond the declaration's resources and lookups, and for lookups through indexes, the index of
@@ -425,7 +425,6 @@ export type Context = { readonly value: { input?: unknown; up?: unknown }; reado
 type Extras = {
     readonly targets?: readonly ReductionTarget[];
     readonly commands?: Commands;
-    readonly input?: boolean;
     readonly indexes?: ReadonlyMap<string, WorldIndex>;
     readonly since?: Since;
 };
@@ -437,8 +436,8 @@ const never: Since = { value: -1 };
 const own = (): object => Object.create({});
 
 /** Resource cells are resolved once per run: they move only at sync points. An unresolved resource throws on access. */
-export const createContext = (state: State, declaration: Pick<Declaration, "lookup" | "resources">, { targets = [], commands, input = false, indexes, since = never }: Extras = {}): Context => {
-    const value: { input?: unknown; up?: unknown } = own();
+export const createContext = (state: State, declaration: Pick<Declaration, "lookup" | "resources">, { targets = [], commands, indexes, since = never }: Extras = {}): Context => {
+    const value: { up?: unknown } = own();
     const { lookup, resources } = declaration;
     const names = Object.keys(lookup ?? {});
     if (names.length > 0) {
@@ -501,7 +500,6 @@ export const createContext = (state: State, declaration: Pick<Declaration, "look
         });
         Object.defineProperty(value, "reduce", { value: reducers, enumerable: true });
     }
-    if (input) value.input = undefined;
     if (commands !== undefined) Object.defineProperty(value, "commands", { value: commands, enumerable: true });
     const bind = (): void => {
         if (keys.length > 0) {

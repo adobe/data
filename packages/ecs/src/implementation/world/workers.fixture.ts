@@ -81,7 +81,7 @@ const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) =>
 Resource.register(seconds, { type: { type: "number", default: 0.25 } });
 
 /** Spawns `count` moving entities, each following the one before it. */
-const seed = System.create({ name: "workersTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({ name: "workersTest/seed" }, ({ commands }, input: { readonly count: number }) => {
     let previous = commands.spawn([position, velocity])({ [position]: [0, 0], [velocity]: [1, 0] });
     for (let i = 1; i < input.count; i++) {
         previous = commands.spawn([position, velocity, target])({ [position]: [i, 0], [velocity]: [1, i % 7], [target]: previous });
@@ -132,9 +132,8 @@ const main = System.create({ name: "workersTest/main", systems: [integrate, spli
 const stamp = System.create({
     name: "workersTest/stamp",
     kernel: "cpu",
-    input: { type: "object", properties: { entity: Entity.schema } },
     components: { read: [position] },
-}, (row, { input, commands }) => {
+}, (row, { commands }, input: { readonly entity: Entity }) => {
     const [x, y] = row[position];
     commands.add(input.entity, offset, x * 1000 + y);
 });
@@ -160,9 +159,8 @@ const sources = System.create({ name: "workersTest/sources" }, ({ commands }) =>
 const emit = System.create({
     name: "workersTest/emit",
     kernel: "cpu",
-    input: { type: "object", properties: { edit: { type: "boolean" } } },
     components: { read: [offset], not: [spawned] },
-}, (row, { input, commands }) => {
+}, (row, { commands }, input: { readonly edit: boolean }) => {
     const entity = commands.spawn([position, spawned, tagC])({ [position]: [row[offset], -row[offset]] });
     if (input.edit) {
         commands.add(entity, velocity, [row[offset], 1]);

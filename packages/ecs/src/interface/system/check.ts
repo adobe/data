@@ -11,7 +11,7 @@ import { labelOfItem } from '../registry/items.js';
 import type { Schema } from '../schema/schema.js';
 import type { Composite } from './composite.js';
 import type { Definition } from './definition.js';
-import type { Leaf } from './leaf.js';
+import type { InputSchema, Leaf } from './leaf.js';
 
 type Key = symbol;
 
@@ -136,20 +136,19 @@ const checkObserver = (leaf: Leaf): void => {
     if (declaration.kernel !== undefined) fail("isn't a kernel");
     if ((declaration.components?.write?.length ?? 0) + (declaration.resources?.write?.length ?? 0) > 0) fail("writes nothing");
     if (reducedBy(leaf).length > 0) fail("reduces into nothing");
-    if (declaration.input !== undefined) fail("takes no input");
+    if (leaf.input !== undefined) fail("takes no input");
     if (declaration.up !== undefined) fail("has no up");
     if ((declaration.before?.length ?? 0) + (declaration.after?.length ?? 0) + (declaration.during?.length ?? 0) > 0) fail("is ordered with nothing");
 };
 
 /**
  * Throws for a leaf that names a component or resource that isn't registered as one, lists a key in both `read` and
- * `write`, writes a reference, has a lookup reading a component it writes, takes input that isn't an object schema,
- * uses object components and resources of different threads, declares what an observer system can't, or whose
+ * `write`, writes a reference, has a lookup reading a component it writes, uses object components and resources of different threads, declares what an observer system can't, or whose
  * reductions, conditions, `up` or placement can't hold.
  */
 export const checkLeaf = (leaf: Leaf): void => {
     const { name, declaration } = leaf;
-    const { components, resources, lookup, input } = declaration;
+    const { components, resources, lookup } = declaration;
     checkLists(name, "components", components);
     checkLists(name, "resources", resources);
     checkWorldWritten(`System "${name}"`, resources?.write);
@@ -165,12 +164,6 @@ export const checkLeaf = (leaf: Leaf): void => {
     }
     for (const key of orderKeysOf(declaration)) {
         if (writes.has(key)) throw new Error(`System "${name}": its rows are ordered by an index keyed by "${labelOf(key)}", which the system writes.`);
-    }
-    if (input !== undefined) {
-        const schema: Schema = input;
-        if (!("type" in schema) || schema.type !== "object" || typeof schema.properties !== "object" || schema.properties === null) {
-            throw new Error(`System "${name}": input is an object schema of named fields.`);
-        }
     }
     checkTarget(leaf);
     threadOf(declaration, "System", name);
@@ -190,13 +183,31 @@ export const checkLeaf = (leaf: Leaf): void => {
     checkPlacement(leaf);
 };
 
+const isInputSchema = (value: unknown): value is InputSchema =>
+    typeof value === "object" && value !== null && Reflect.get(value, "type") === "object"
+    && typeof Reflect.get(value, "properties") === "object" && Reflect.get(value, "properties") !== null;
+
+/**
+ * The schema of a body's input, which the plugin passes from the type of its parameter after the `before` before it.
+ * Throws for a body taking input without one, as one not built with the plugin does, and for a schema that isn't an
+ * object of named fields.
+ */
+export const inputSchemaOf = (name: string, body: (...parameters: never[]) => void, before: number, input: unknown): InputSchema | undefined => {
+    if (input === undefined) {
+        if (body.length > before) throw new Error(`System "${name}" takes input, whose schema the plugin gives from the type of its body's parameter: write its body in place and build it with the kernel plugin.`);
+        return undefined;
+    }
+    if (!isInputSchema(input)) throw new Error(`System "${name}": input is an object schema of named fields.`);
+    return input;
+};
+
 /**
  * Throws if a system on one entity takes it from what isn't an entity field of its input, has no components, or is a
  * kernel, has `up` or `order`, or reduces.
  */
 const checkTarget = (leaf: Leaf): void => {
-    const { name, declaration } = leaf;
-    const { target, input, components, kernel, up, order, reduce } = declaration;
+    const { name, declaration, input } = leaf;
+    const { target, components, kernel, up, order, reduce } = declaration;
     if (target === undefined) return;
     const fail = (message: string): never => { throw new Error(`System "${name}" runs on one entity, so it ${message}.`); };
     const field: Schema | undefined = input !== undefined && "properties" in input ? Reflect.get(input.properties, target) : undefined;

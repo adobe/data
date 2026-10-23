@@ -44,7 +44,7 @@ Component.register(kept, { type: { type: "string" } });
 Component.register(handle, { thread: "remoteTest" });
 Component.register(guarded, { thread: "remoteTestFinalized" });
 
-const spawn = System.create({ name: "remoteTest/spawn", input: { type: "object", properties: { x: { type: "number" } } } }, ({ input, commands }) => {
+const spawn = System.create({ name: "remoteTest/spawn" }, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, caption, widget, kept])({ [point]: input.x, [kept]: `k${input.x}`, [widget]: null });
 });
 const nullCaptions = System.create({ name: "remoteTest/nullCaptions", components: { has: [caption, point] } }, (row, { commands }) => {

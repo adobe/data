@@ -110,7 +110,7 @@ describe("World.create", () => {
     it("applies the net structural change of a sync point", async () => {
         let first = Entity.none;
         let second = Entity.none;
-        const edit = System.create({ name: "createTest/edit/net", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
+        const edit = System.create({ name: "createTest/edit/net" }, ({ commands }, input: { readonly action: string }) => {
             if (input.action === "spawn") {
                 first = commands.spawn([velocity])({ [velocity]: 1 });
                 second = commands.spawn([velocity])({ [velocity]: 2 });
@@ -134,7 +134,7 @@ describe("World.create", () => {
 
     it("reuses a despawned index only after a sync point, with a new generation", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "createTest/edit/reuse", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
+        const edit = System.create({ name: "createTest/edit/reuse" }, ({ commands }, input: { readonly action: string }) => {
             if (input.action === "spawn") spawned.push(commands.spawn([velocity])({ [velocity]: spawned.length }));
             else for (const entity of spawned) commands.despawn(entity);
         });
@@ -153,7 +153,7 @@ describe("World.create", () => {
 
     it("keeps rows consistent across swap-removes and archetype growth", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "createTest/edit/rows", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
+        const edit = System.create({ name: "createTest/edit/rows" }, ({ commands }, input: { readonly action: string }) => {
             if (input.action === "spawn") for (let i = 0; i < 100; i++) spawned.push(commands.spawn([velocity, label])({ [velocity]: i, [label]: `${i}` }));
             else for (let i = 0; i < 100; i += 3) commands.remove(spawned[i], label);
         });
@@ -173,7 +173,7 @@ describe("World.create", () => {
         await world.run(spawnPlain);
         const [entity] = await select(world, { required: [velocity] });
         expect(await read(world, entity, frozen)).toBe(null);
-        const freeze = System.create({ name: "createTest/freeze", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
+        const freeze = System.create({ name: "createTest/freeze" }, ({ commands }, input: { readonly entity: Entity }) => {
             commands.add(input.entity, frozen, true);
         });
         await world.run(freeze, { entity });
@@ -297,7 +297,7 @@ describe("World.create", () => {
 
     it("sees a change moved into an older chunk by a swap-remove", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "createTest/edit/swap", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
+        const edit = System.create({ name: "createTest/edit/swap" }, ({ commands }, input: { readonly action: string }) => {
             if (input.action === "spawn") for (let i = 0; i < 2100; i++) spawned.push(commands.spawn([velocity])({ [velocity]: i }));
             else commands.despawn(spawned[5]);
         });

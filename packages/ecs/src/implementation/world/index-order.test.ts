@@ -57,7 +57,7 @@ const nudge = System.create({ name: "indexOrderTest/nudge", components: { write:
 });
 
 /** Entities in two archetypes, interleaved in the index's order, some without the weight the index requires. */
-const seed = System.create({ name: "indexOrderTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({ name: "indexOrderTest/seed" }, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) {
         const values = { [lane]: k % 3, [rank]: (k * 37) % 101, [weight]: k };
         if (k % 5 === 4) commands.spawn([lane, rank])({ [lane]: k % 3, [rank]: (k * 37) % 101 });

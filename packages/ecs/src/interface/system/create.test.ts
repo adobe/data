@@ -51,6 +51,8 @@ Component.register(height, { type: { type: "number", precision: 1 } });
 
 /** Creates as an untyped caller would, bypassing the types' checks. */
 const create = (declaration: object): unknown => Reflect.apply(System.create, undefined, [declaration, () => {}]);
+/** As the plugin calls it for a body taking input: with the schema of its input after the body. */
+const createTaking = (declaration: object, input: unknown): unknown => Reflect.apply(System.create, undefined, [declaration, (_context: unknown, _input: unknown) => {}, input]);
 
 describe("System.create", () => {
     it("records the system, its value holding its declaration and body", () => {
@@ -106,7 +108,7 @@ describe("System.create", () => {
         expect(() => create({ name: "typesSystemTest/both", components: { read: [position], write: [position] } })).toThrow("in both components read and write");
         expect(() => create({ name: "typesSystemTest/bothResources", resources: { read: [time], write: [time] } })).toThrow("in both resources read and write");
         expect(() => create({ name: "typesSystemTest/lookup", components: { write: [position] }, lookup: { others: { read: [position] } } })).toThrow('lookup "others" reads "typesSystemTest/position", which the system writes');
-        expect(() => create({ name: "typesSystemTest/input", input: { type: "number" } })).toThrow("input is an object schema of named fields");
+        expect(() => createTaking({ name: "typesSystemTest/input" }, { type: "number" })).toThrow("input is an object schema of named fields");
         expect(labelOfItem(System.create({ name: "typesSystemTest/both" }, () => {}))).toBe("typesSystemTest/both");
     });
     it("rejects at creation what the registry rules out, for untyped callers", () => {
@@ -132,13 +134,13 @@ describe("System.create", () => {
             [{ observer: true, components: { write: [position] } }, "is an observer, so it writes nothing"],
             [{ observer: true, resources: { write: [time] } }, "is an observer, so it writes nothing"],
             [{ observer: true, components: { has: [position] }, reduce: { [total]: "+" } }, "is an observer, so it reduces into nothing"],
-            [{ observer: true, input: { type: "object", properties: {} } }, "is an observer, so it takes no input"],
             [{ observer: true, kernel: "cpu", components: { read: [position] } }, "is an observer, so it isn't a kernel"],
             [{ observer: true, components: { read: [position] }, up: { through: parent } }, "is an observer, so it has no up"],
             [{ observer: true, resources: { read: [time] }, after: [System.create(() => {})] }, "is an observer, so it is ordered with nothing"],
             [{ observer: true, resources: { read: [time] }, before: [System.create(() => {})] }, "is an observer, so it is ordered with nothing"],
             [{ observer: true, resources: { read: [time] }, during: [System.create(() => {})] }, "is an observer, so it is ordered with nothing"],
         ];
+        expect(() => createTaking({ name: "typesSystemTest/observing", observer: true }, { type: "object", properties: {} })).toThrow("is an observer, so it takes no input");
         rejected.forEach(([declaration, message], index) => {
             expect(() => create({ name: `typesSystemTest/rejected/${index}`, ...declaration })).toThrow(message);
             // A rejected system records nothing, so its name labels only the next.
@@ -203,8 +205,8 @@ describe("System.create of a composite", () => {
     });
     it("rejects a member no constructor returned, and an input field two members declare differently", () => {
         expect(() => System.create({ name: "typesSystemTest/forged", systems: [{ name: "typesSystemTest/showMember" }] })).toThrow('member "typesSystemTest/showMember" isn\'t a system a System constructor returned');
-        const move = System.create({ name: "typesSystemTest/moveBy", input: { type: "object", properties: { distance: { type: "number" } } } }, () => {});
-        const tag = System.create({ name: "typesSystemTest/tagBy", input: { type: "object", properties: { distance: { type: "string" } } } }, () => {});
+        const move = System.create({ name: "typesSystemTest/moveBy" }, (_context, input: { readonly distance: number }) => {});
+        const tag = System.create({ name: "typesSystemTest/tagBy" }, (_context, input: { readonly distance: string }) => {});
         const nested = System.create({ name: "typesSystemTest/nested", systems: [tag] });
         const untyped: (...parameters: never[]) => unknown = System.create;
         const composite = (declaration: object): unknown => Reflect.apply(untyped, undefined, [declaration]);

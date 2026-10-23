@@ -1,11 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System } from "../../../../index.js";
-import { filter, filterSchema } from "./data.js";
+import { filter, type Filter } from "./data.js";
 
 export const setFilter = System.create({
     name: "filter/set",
-    input: { type: "object", properties: { filter: filterSchema } },
     resources: { write: [filter] },
-}, ({ input, resources }) => {
+}, ({ resources }, input: { readonly filter: Filter }) => {
     resources[filter] = input.filter;
 });

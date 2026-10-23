@@ -19,7 +19,8 @@ import { rowLabel, statement } from './statement.js';
 import { createUnit } from './unit.js';
 import type { Value } from './value.js';
 
-const parameterValues: readonly Value[] = [{ kind: "row" }, { kind: "context" }];
+/** A kernel body takes its row, its context and its input, the run's arguments. */
+const parameterValues: readonly Value[] = [{ kind: "row" }, { kind: "context" }, { kind: "dynamic", expression: { kind: "args", path: [] } }];
 
 /**
  * One compiled kernel: `description(url)` is the source of its `KernelDescription`, with keys as the declaration's
@@ -46,7 +47,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         return fail(body, "a kernel body must be an inline function");
     }
     if (body.async || body.generator) return fail(body, "a kernel body can't be async or a generator");
-    if (body.params.length > 2) return fail(body, "a kernel body takes row and context");
+    if (body.params.length > 3) return fail(body, "a kernel body takes its row, context and input");
     const lists = createLists(module, link, [declaration, body]);
     const unit = createUnit(signature(declaration, module.bindings, lists), module, lists, expression, statement, link, target);
     const scope = rootScope(unit, false);

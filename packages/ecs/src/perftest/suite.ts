@@ -3,6 +3,7 @@ import { Archetype } from "../interface/archetype/archetype.js";
 import { Component } from "../interface/component/component.js";
 import { Resource } from "../interface/resource/resource.js";
 import { Entity } from "../interface/entity/entity.js";
+import type { I32 } from "../interface/math/i32/index.js";
 import type { Schema } from "../interface/schema/schema.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
@@ -56,7 +57,7 @@ const moving = Archetype.create([position, velocity, index]);
 const following = Archetype.create([position, velocity, index, target]);
 
 /** `count` entities, each targeting the one spawned before it. */
-export const seed = System.create({ name: "suite/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+export const seed = System.create({ name: "suite/seed" }, ({ commands }, input: { readonly count: number }) => {
     let previous = commands.spawn(moving)({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
     for (let i = 1; i < input.count; i++) {
         previous = commands.spawn(following)({ [position]: [i, i * 0.5, -i], [velocity]: [1, 0, 0], [index]: i, [target]: previous });
@@ -64,14 +65,14 @@ export const seed = System.create({ name: "suite/seed", input: { type: "object",
 });
 
 /** Despawns a tenth of the entities and spawns as many replacements. */
-export const churn = System.create({ name: "suite/churn", input: { type: "object", properties: { group: { type: "integer" } } }, components: { read: [index, position] } }, (row, { input, commands }) => {
+export const churn = System.create({ name: "suite/churn", components: { read: [index, position] } }, (row, { commands }, input: { readonly group: number }) => {
     if (row[index] % 10 !== input.group) return;
     commands.despawn(row.entity);
     commands.spawn(moving)({ [position]: row[position], [velocity]: [0, 0, 0], [index]: row[index] });
 });
 
 /** Adds the tag to one tenth and removes it from another: a fifth of the entities move archetype. */
-export const retag = System.create({ name: "suite/retag", input: { type: "object", properties: { group: { type: "integer" } } }, components: { read: [index] } }, (row, { input, commands }) => {
+export const retag = System.create({ name: "suite/retag", components: { read: [index] } }, (row, { commands }, input: { readonly group: number }) => {
     const group = row[index] % 10;
     if (group === input.group) commands.add(row.entity, tag);
     else if (group === (input.group + 5) % 10) commands.remove(row.entity, tag);
@@ -81,9 +82,8 @@ export const retag = System.create({ name: "suite/retag", input: { type: "object
 export const poke = System.create({
     name: "suite/poke",
     kernel: "cpu",
-    input: { type: "object", properties: { group: { type: "integer" } } },
     components: { read: [index], write: [position] },
-}, (row, { input }) => {
+}, (row, _context, input: { readonly group: I32 }) => {
     if (row[index] % 100 === input.group) {
         const [x, y, z] = row[position];
         row[position] = [x + 1, y, z];
@@ -94,9 +94,8 @@ export const poke = System.create({
 export const pokeCluster = System.create({
     name: "suite/pokeCluster",
     kernel: "cpu",
-    input: { type: "object", properties: { group: { type: "integer" } } },
     components: { read: [index], write: [position] },
-}, (row, { input }) => {
+}, (row, _context, input: { readonly group: I32 }) => {
     const group = row[index] - input.group * 10_000;
     if (group >= 0 && group < 10_000) {
         const [x, y, z] = row[position];

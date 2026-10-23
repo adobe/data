@@ -107,9 +107,8 @@ export const separate = System.create({
 
 // A unique lookup gives the row or null.
 export const applyDelta = System.create({
-    input: { type: "object", properties: { id: { type: "number" }, hp: { type: "number" } } },
     lookup: { known: { index: byServerId, read: [health] } },
-}, ({ input, lookup, commands }) => {
+}, ({ lookup, commands }, input: { readonly id: number; readonly hp: number }) => {
     const known = lookup.known(input.id);
     check<Equal<typeof known, ({ readonly entity: Entity } & { readonly [health]: number }) | null>>();
     if (known === null) commands.spawn([serverId, health])({ [serverId]: input.id, [health]: input.hp });

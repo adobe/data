@@ -220,7 +220,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         const base = slotsWord + slot * slotWords;
         control[base + slotStatus] = pending;
         control[base + slotNumber] = number;
-        const schema = definition.kind === "composite" ? undefined : definition.declaration.input;
+        const schema = definition.kind === "composite" ? undefined : definition.input;
         const layout = fitsInline(schema, input) ? inputLayoutOf(definition, schema) : null;
         if (layout !== null && layout.kind === "linear") {
             layout.write(views[slot], 0, input);

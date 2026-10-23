@@ -137,15 +137,15 @@ const seed = System.create({ name: "indexWorkersTest/seed" }, ({ commands }) => 
 });
 
 /** Moves some cells, changes some weights and ranks, despawns some serials and spawns more: a different input each time. */
-const stir = System.create({ name: "indexWorkersTest/stir", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [cell, weight] } }, (row, { input }) => {
+const stir = System.create({ name: "indexWorkersTest/stir", components: { write: [cell, weight] } }, (row, _context, input: { readonly round: number }) => {
     const [x, y] = row[cell];
     if ((x + y + input.round) % 11 === 0) row[cell] = [(x + 1) % 31, y];
     if ((x * y + input.round) % 13 === 0) row[weight] = row[weight] + 1;
 });
-const rerank = System.create({ name: "indexWorkersTest/rerank", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [rank] } }, (row, { input }) => {
+const rerank = System.create({ name: "indexWorkersTest/rerank", components: { write: [rank] } }, (row, _context, input: { readonly round: number }) => {
     if ((row[rank] + input.round) % 7 === 0) row[rank] = (row[rank] * 3 + 1) % 1009;
 });
-const churn = System.create({ name: "indexWorkersTest/churn", input: { type: "object", properties: { round: { type: "integer" } } }, components: { read: [serial] } }, (row, { input, commands }) => {
+const churn = System.create({ name: "indexWorkersTest/churn", components: { read: [serial] } }, (row, { commands }, input: { readonly round: number }) => {
     if ((row[serial] + input.round) % 17 === 0) commands.despawn(row.entity);
     if (row[serial] % 101 === input.round) {
         commands.spawn([cell, weight, total, count, changes, serial])({ [cell]: [input.round, row[serial] % 29], [weight]: 4, [total]: 0, [count]: 0, [changes]: 0, [serial]: 3000 + row[serial] + input.round });

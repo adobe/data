@@ -116,14 +116,14 @@ const seed = System.create({ name: "indexJoinedTest/seed" }, ({ commands }) => {
 });
 
 /** Moves cells, changes weights and ranks, despawns some and spawns others. */
-const stir = System.create({ name: "indexJoinedTest/stir", input: { type: "object", properties: { round: { type: "integer" } } }, components: { read: [serial], write: [cell, weight] } }, (row, { input, commands }) => {
+const stir = System.create({ name: "indexJoinedTest/stir", components: { read: [serial], write: [cell, weight] } }, (row, { commands }, input: { readonly round: number }) => {
     const [x, y] = row[cell];
     if ((row[serial] + input.round) % 9 === 0) row[cell] = [(x + 1) % 13, y];
     if ((row[serial] + input.round) % 11 === 0) row[weight] = row[weight] + 1;
     if ((row[serial] + input.round) % 23 === 0) commands.despawn(row.entity);
     if (row[serial] % 50 === input.round) commands.spawn([cell, weight, serial, target, label])({ [cell]: [input.round, 3], [weight]: 2, [serial]: 1000 + row[serial], [target]: row[serial], [label]: blank });
 });
-const rerank = System.create({ name: "indexJoinedTest/rerank", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [rank] } }, (row, { input }) => {
+const rerank = System.create({ name: "indexJoinedTest/rerank", components: { write: [rank] } }, (row, _context, input: { readonly round: number }) => {
     if ((row[rank] + input.round) % 5 === 0) row[rank] = (row[rank] * 3 + 1) % 97;
 });
 

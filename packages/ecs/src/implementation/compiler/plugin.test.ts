@@ -44,6 +44,17 @@ import { score } from "./linked-keys.js";
 const kernel = System.create({ name: "linked", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
 export const description = kernelOf(kernel);
 `);
+/** Systems taking input, of a type another TypeScript module declares, which the test edits. */
+const inputs = join(directory, "inputs.ts");
+const inputTypes = join(directory, "input-types.ts");
+const writeInputTypes = (field: string) => writeFileSync(inputTypes, `import type { Entity } from ${source("../../interface/entity/entity.ts")};\nexport type Push = { readonly entity: Entity; readonly ${field}: number };\n`);
+writeInputTypes("by");
+writeFileSync(inputs, `import { System } from ${source("../../interface/system/system.ts")};
+import type { Push } from "./input-types.ts";
+const push = System.create({ name: "inputs/push" }, (_context, input: Push) => { void input; });
+const label = System.create({ name: "inputs/label" }, (_context, input: { readonly text?: string }) => { void input; });
+export const schemas = [push, label].map(system => Reflect.get(system, "input"));
+`);
 /** A kernel spawning through a list another module declares, which the test edits. */
 const listing = join(directory, "listing.js");
 const listed = join(directory, "listed.js");
@@ -409,4 +420,30 @@ export const spawner = System.create({ name: "copiedSpawner", components: { read
     } finally {
         await server.close();
     }
+});
+
+test("serve passes each system the schema of its body's input, from types other modules declare, and again when they change", async () => {
+    try {
+        await serve(async server => {
+            expect((await server.ssrLoadModule(inputs)).schemas).toEqual([
+                { type: "object", properties: { entity: { type: "integer", format: "entity" }, by: { type: "number" } } },
+                { type: "object", properties: { text: { type: "string" } }, required: [] },
+            ]);
+            writeInputTypes("to");
+            server.watcher.emit("change", inputTypes);
+            const [push] = (await server.ssrLoadModule(inputs)).schemas;
+            expect(push).toEqual({ type: "object", properties: { entity: { type: "integer", format: "entity" }, to: { type: "number" } } });
+        });
+    } finally {
+        writeInputTypes("by");
+    }
+});
+
+test("a build fails at a system's input whose type can't be one", async () => {
+    const entry = join(directory, "bad-input.ts");
+    writeFileSync(entry, `import { System } from ${source("../../interface/system/system.ts")};\nexport const bad = System.create({}, (_context, input: { readonly when: Date }) => { void input; });\n`);
+    await expect(build({
+        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        build: { outDir: join(directory, "dist-bad-input"), minify: false, lib: { entry, formats: ["es"], fileName: "main" } },
+    })).rejects.toThrow("Date isn't a type an input can hold");
 });

@@ -45,7 +45,7 @@ const allTagged = Index.create({ name: "observerJoinedTest/allTagged", key: [], 
 
 const raise = System.create({ name: "observerJoinedTest/raise", resources: { write: [level] } }, ({ resources }) => { resources[level] += 1; });
 const nothing = System.create({ name: "observerJoinedTest/nothing" }, () => {});
-const spawn = System.create({ name: "observerJoinedTest/spawn", input: { type: "object", properties: { at: { type: "number" } } } }, ({ input, commands }) => {
+const spawn = System.create({ name: "observerJoinedTest/spawn" }, ({ commands }, input: { readonly at: number }) => {
     commands.spawn([amount, cell, tagged])({ [amount]: input.at, [cell]: input.at });
 });
 const spawnLabelled = System.create({ name: "observerJoinedTest/spawnLabelled" }, ({ commands }) => { commands.spawn([amount, label])({ [amount]: 4, [label]: blank }); });

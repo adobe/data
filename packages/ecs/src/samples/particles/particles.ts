@@ -59,9 +59,8 @@ export const integrate = System.create({
 // Transaction carrying frame time into the ECS.
 export const setDelta = System.create({
     name: "particles/setDelta",
-    input: { type: "object", properties: { seconds: { type: "number" } } },
     resources: { write: [delta] },
-}, ({ resources, input }) => {
+}, ({ resources }, input: { readonly seconds: number }) => {
     resources[delta] = input.seconds;
 });
 

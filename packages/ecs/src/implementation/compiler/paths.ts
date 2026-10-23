@@ -162,3 +162,9 @@ export const namespaceCopyOf = (id: string, namespace: string): PackageCopy | nu
     const found = pathInCopy(file);
     return found !== null && modules.has(found.path) ? copyIn(found.root, found.path, extname(file)) : null;
 };
+
+/** Whether a resolved module id is one of the package's public modules, in any copy: its root or its interface. */
+export const isInterfaceModule = (id: string): boolean => {
+    const found = pathInCopy(fileOf(id));
+    return found !== null && (found.path.startsWith("src/interface/") || found.path.startsWith("dist/interface/") || rootModules.includes(found.path));
+};

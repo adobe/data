@@ -32,7 +32,7 @@ Component.register(other, { type: { type: "number" } });
 Resource.register(level, { type: { type: "number", default: 0 } });
 
 let spawned: Entity[] = [];
-const seed = System.create({ name: "observeFactoriesTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({ name: "observeFactoriesTest/seed" }, ({ commands }, input: { readonly count: number }) => {
     spawned = [];
     for (let i = 0; i < input.count; i++) spawned.push(commands.spawn([amount])({ [amount]: i }));
 });

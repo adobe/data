@@ -86,6 +86,7 @@ export const render = <const D extends RenderDeclaration>(
             components: { ...declaration.components, read: [...new Set(Object.values(declaration.shader.accessors))] },
             resources: { ...declaration.resources, is: [...new Set<Condition>([...declaration.resources?.is ?? [], gpuDevice])] },
         },
+        input: undefined,
         body,
     };
     checkLeaf(system);

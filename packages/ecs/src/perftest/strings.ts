@@ -26,7 +26,7 @@ const rows = 10_000;
 /** A todo's label, of a typical length, different per row and round. */
 const labelOf = (row: number, round: number): string => `Buy milk and bread #${row}.${round}`;
 
-const seed = System.create({ name: "strings/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({ name: "strings/seed" }, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([text, boxed])({ [text]: labelOf(i, 0), [boxed]: { text: labelOf(i, 0) } });
 });
 

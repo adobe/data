@@ -89,7 +89,7 @@ describe("finalizers on a joined thread", () => {
         let reusedEarly = 0;
         let reused = 0;
         // Spawns check each entity they reserve: an index whose last entity stopped is reused only once it was finalized.
-        const check = System.create(identify({ name: "remoteFinalizersTest/check", input: { type: "object", properties: { serial: { type: "integer" } } } }, "remoteFinalizersTest#check"), ({ input, commands }) => {
+        const check = System.create(identify({ name: "remoteFinalizersTest/check" }, "remoteFinalizersTest#check"), ({ commands }, input: { readonly serial: number }) => {
             const entity = commands.spawn([serial, place, marked, widget])({ [serial]: input.serial, [place]: [0, 0], [widget]: null });
             const before = stopped.get(indexOf(entity));
             if (before === undefined) return;

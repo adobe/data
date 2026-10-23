@@ -73,16 +73,16 @@ export const entitle = Finalizer.create({ name: "remoteFinalizersTest/entitle", 
 });
 
 /** Spawns titled rows from the world's thread, with the thread's widget at null. */
-export const spawnTitled = System.create({ name: "remoteFinalizersTest/spawnTitled", input: { type: "object", properties: { from: { type: "integer" }, count: { type: "integer" } } } }, ({ input, commands }) => {
+export const spawnTitled = System.create({ name: "remoteFinalizersTest/spawnTitled" }, ({ commands }, input: { readonly from: number; readonly count: number }) => {
     for (let k = input.from; k < input.from + input.count; k++) commands.spawn([serial, title, widget])({ [serial]: k, [title]: `t${k}`, [widget]: null });
 });
 /** From the world's thread: every title as another of the same size, so the records of titles let go are reused. */
-export const retitle = System.create({ name: "remoteFinalizersTest/retitle", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [title] } }, (row, { input }) => {
+export const retitle = System.create({ name: "remoteFinalizersTest/retitle", components: { write: [title] } }, (row, _context, input: { readonly round: number }) => {
     row[title] = `r${input.round}`;
 });
 
 /** Spawns from the world's thread: structs, the thread's objects at null and their start. */
-export const spawn = System.create({ name: "remoteFinalizersTest/spawn", input: { type: "object", properties: { from: { type: "integer" }, count: { type: "integer" } } } }, ({ input, commands }) => {
+export const spawn = System.create({ name: "remoteFinalizersTest/spawn" }, ({ commands }, input: { readonly from: number; readonly count: number }) => {
     for (let k = input.from; k < input.from + input.count; k++) commands.spawn([serial, place, marked, widget, label])({ [serial]: k, [place]: [k, -k], [widget]: null });
 });
 /** On the thread: widgets written in place. */
@@ -96,7 +96,7 @@ export const relabel = System.create({ name: "remoteFinalizersTest/relabel", com
     if (row[serial] % 2 === 1) commands.add(row.entity, label, relabelled);
 });
 /** On the thread: its object resource. */
-export const retone = System.create({ name: "remoteFinalizersTest/retone", input: { type: "object", properties: { tone: { type: "string" } } }, resources: { write: [tone] } }, ({ input, resources }) => {
+export const retone = System.create({ name: "remoteFinalizersTest/retone", resources: { write: [tone] } }, ({ resources }, input: { readonly tone: string }) => {
     resources[tone] = { text: input.tone };
 });
 /** From the world's thread: places move, so a stop's values are those before the sync point applies. */
@@ -104,11 +104,11 @@ export const shift = System.create({ name: "remoteFinalizersTest/shift", compone
     row[place] = [row[place][0] + 100, row[place][1]];
 });
 /** From the world's thread: despawns these serials. */
-export const despawn = System.create({ name: "remoteFinalizersTest/despawn", input: { type: "object", properties: { serials: { type: "array", items: { type: "integer" } } } }, components: { read: [serial] } }, (row, { input, commands }) => {
+export const despawn = System.create({ name: "remoteFinalizersTest/despawn", components: { read: [serial] } }, (row, { commands }, input: { readonly serials: readonly number[] }) => {
     if (input.serials.includes(row[serial])) commands.despawn(row.entity);
 });
 /** From the world's thread: removes widgets of these serials, a stop that despawns nothing. */
-export const strip = System.create({ name: "remoteFinalizersTest/strip", input: { type: "object", properties: { serials: { type: "array", items: { type: "integer" } } } }, components: { read: [serial], has: [widget] } }, (row, { input, commands }) => {
+export const strip = System.create({ name: "remoteFinalizersTest/strip", components: { read: [serial], has: [widget] } }, (row, { commands }, input: { readonly serials: readonly number[] }) => {
     if (input.serials.includes(row[serial])) commands.remove(row.entity, widget);
 });
 /** From the world's thread: every row moves archetype, flagged on one run and not on the next. */

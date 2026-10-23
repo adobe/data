@@ -76,7 +76,7 @@ Component.register(reloaded, { type: { type: "number" } });
 Rule.create({ name: "finalizersTest/slots", components: { has: [source] }, derive: [slot] });
 
 let steps: ((commands: System.Commands) => void)[] = [];
-const edit = System.create({ name: "finalizersTest/edit", input: { type: "object", properties: { step: { type: "integer" } } } }, ({ input, commands }) => {
+const edit = System.create({ name: "finalizersTest/edit" }, ({ commands }, input: { readonly step: number }) => {
     steps[input.step]?.(commands);
 });
 const step = (world: ReturnType<typeof createWorld>) => (run: (commands: System.Commands) => void) => {

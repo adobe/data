@@ -101,10 +101,10 @@ export const advance = System.create({ name: "observerJoinedWorkerTest/advance",
     row[word] = wordOf(value);
 });
 export const ticked = System.create({ name: "observerJoinedWorkerTest/ticked", systems: [count, advance] });
-export const seed = System.create({ name: "observerJoinedWorkerTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+export const seed = System.create({ name: "observerJoinedWorkerTest/seed" }, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) commands.spawn([stamp, spot, word])({ [stamp]: 0, [spot]: [0, 0, 0], [word]: wordOf(0) });
 });
-export const setStall = System.create({ name: "observerJoinedWorkerTest/setStall", input: { type: "object", properties: { pause: { type: "number" } } }, resources: { write: [stall] } }, ({ input, resources }) => {
+export const setStall = System.create({ name: "observerJoinedWorkerTest/setStall", resources: { write: [stall] } }, ({ resources }, input: { readonly pause: number }) => {
     resources[stall] = input.pause;
 });
 
@@ -162,7 +162,7 @@ export const countHot = System.create({ name: "observerJoinedWorkerTest/countHot
 
 /** On the world's thread: the motto of a round, and the round, every motto of one size. */
 export const mottoOf = (round: number): string => `motto ${round % 10}`;
-export const setMotto = System.create({ name: "observerJoinedWorkerTest/setMotto", input: { type: "object", properties: { round: { type: "integer" } } }, resources: { write: [motto, mottoRound] } }, ({ input, resources }) => {
+export const setMotto = System.create({ name: "observerJoinedWorkerTest/setMotto", resources: { write: [motto, mottoRound] } }, ({ resources }, input: { readonly round: number }) => {
     resources[motto] = mottoOf(input.round);
     resources[mottoRound] = input.round;
 });

@@ -1,12 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Schema } from '../schema/schema.js';
 import type { System } from './system.js';
 
-/**
- * The input a system declares: a value of its `input` schema, or `undefined` without one; `unknown` for `any`, as an
- * overload's declaration erases to, since every schema's value type is too deep to compute.
- */
-export type InputOf<D> = 0 extends 1 & D ? unknown : D extends { readonly input: infer A extends Schema } ? Schema.ToType<A> : undefined;
+/** How many parameters come before a body's input: the row and the context, or the context alone. */
+type Before<D> = D extends { readonly components: object } ? 2 : 1;
+
+/** The input body `B` of declaration `D` takes: the type of its parameter after the context, or `undefined` without one. */
+export type InputOf<D, B> = B extends (...parameters: infer P) => void ? P["length"] extends Before<D> ? undefined : P[Before<D>] : undefined;
 
 /** What `run` takes after a system: nothing, or one value. */
 export type Input<I> = [I] extends [undefined] ? [] : [input: I];

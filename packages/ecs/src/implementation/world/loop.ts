@@ -105,7 +105,7 @@ const checkNoInput = (system: Definition, seen: Set<Definition> = new Set()): vo
     if (seen.has(system)) return;
     seen.add(system);
     if (isLeaf(system)) {
-        if (system.declaration.input !== undefined) throw new Error(`System "${labelOfItem(system)}" takes input, which ticks don't pass; run it instead.`);
+        if (system.input !== undefined) throw new Error(`System "${labelOfItem(system)}" takes input, which ticks don't pass; run it instead.`);
         return;
     }
     for (const member of system.declaration.systems) checkNoInput(requireDefinition(member), seen);

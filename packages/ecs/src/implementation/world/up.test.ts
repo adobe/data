@@ -90,7 +90,7 @@ const spawn = System.create({ name: "upTest/spawn" }, ({ commands }) => {
     entities.other = commands.spawn([label, local, world])({ [label]: "other", [local]: 1000, [world]: 0 });
 });
 const nest = System.create({ name: "upTest/nest" }, ({ commands }) => { commands.add(entities.grandchild, parent, entities.child); });
-const bump = System.create({ name: "upTest/bump", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
+const bump = System.create({ name: "upTest/bump" }, ({ commands }, input: { readonly entity: Entity }) => {
     commands.add(input.entity, local, 2);
 });
 const loop = System.create({ name: "upTest/loop" }, ({ commands }) => {
@@ -103,7 +103,7 @@ const open = System.create({ name: "upTest/open" }, ({ commands }) => { commands
 const orphan = System.create({ name: "upTest/orphan" }, ({ commands }) => { commands.remove(entities.grandchild, parent); });
 /** Spawns `count` leaves under the grandchild, more than the journal keeps for a world this small. */
 const bulk: Entity[] = [];
-const bulkUnder = System.create({ name: "upTest/bulkUnder", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const bulkUnder = System.create({ name: "upTest/bulkUnder" }, ({ commands }, input: { readonly count: number }) => {
     bulk.length = 0;
     for (let i = 0; i < input.count; i++) bulk.push(commands.spawn([label, local, world, parent])({ [label]: "bulk", [local]: 1, [world]: 0, [parent]: entities.grandchild }));
 });

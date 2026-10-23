@@ -43,7 +43,7 @@ const million = 1_000_000;
 const keys = million / 10;
 const byKey = Index.create({ name: "indexes/byKey", key: [key] });
 
-const seedKeys = System.create({ name: "indexes/seedKeys", input: { type: "object", properties: { count: { type: "integer" }, marked: { type: "integer" } } } }, ({ input, commands }) => {
+const seedKeys = System.create({ name: "indexes/seedKeys" }, ({ commands }, input: { readonly count: number; readonly marked: number }) => {
     for (let i = 0; i < input.count; i++) {
         if (i < input.marked) commands.spawn([key, amount, marked])({ [key]: (i * 7919) % keys, [amount]: i, [marked]: true });
         else commands.spawn([key, amount])({ [key]: (i * 7919) % keys, [amount]: i });

@@ -51,7 +51,7 @@ const list = System.create({ observer: true, components: { read: [player] }, ord
 // A unique index gives one row, or null.
 const byServerId = Index.create({ key: [serverId], unique: true });
 let found: number | null = null;
-const find = System.create({ input: { type: "object", properties: { id: { type: "integer" } } }, lookup: { byId: { index: byServerId } } }, ({ input, lookup }) => {
+const find = System.create({ lookup: { byId: { index: byServerId } } }, ({ lookup }, input: { readonly id: number }) => {
     found = lookup.byId(input.id)?.entity ?? null;
 });
 

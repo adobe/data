@@ -629,8 +629,8 @@ is in the input, and the system, which writes the component, runs on that thread
   point, and a staged slot of a joined thread's once it replays that sync point, which the world wakes it for.
   Releasing closes an `ImageBitmap`, `VideoFrame`, `AudioData`, `MessagePort` or `RTCDataChannel`, cancels or aborts
   a stream, and leaves an `ArrayBuffer`'s or an `OffscreenCanvas`'s memory to the collector.
-- **Types:** an input schema can't name a Transferable type yet; a field declared `{ allOf: [] }` takes any value,
-  typed `unknown`, which the body narrows.
+- **Types:** an input field is typed as its class, `{ readonly canvas: OffscreenCanvas }`, whose schema the plugin
+  gives as one taking any value.
 
 ### Without cross-origin isolation
 
@@ -910,8 +910,7 @@ that's gone rejects; an input no task took is released once its run finishes; a 
 its thread. The sample (`src/samples/transfers`) runs the world on a worker drawing into the OffscreenCanvas main moved
 to it, main showing its state in the DOM, and a loader worker moving each texture it decoded to the world's thread.
 
-- Interface: none. An input schema can't name a Transferable type, so a run's input can't be typed with one; proposed
-  for review, and meanwhile a field `{ allOf: [] }` takes one as `unknown`.
+- Interface: none; an input field is typed as its Transferable class.
 - Contract: a run's Transferable input moves, never copied, to the thread its system runs on, and the run lands once
   it arrived, in call order with that thread's other runs; a run whose input moved to a thread that's gone rejects; a
   value whose command drops is released on its thread.

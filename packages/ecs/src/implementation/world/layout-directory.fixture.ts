@@ -55,7 +55,7 @@ Component.register(tag6, { type: { const: true } });
 const lists = Array.from({ length: 100 }, (_, i): (typeof value | (typeof tags)[number])[] => [value, ...tags.filter((_, bit) => (i & (1 << bit)) !== 0)]);
 
 /** Spawns `count` entities into each of the 100 archetypes. */
-const fill = System.create({ name: "layoutDirectoryTest/fill", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const fill = System.create({ name: "layoutDirectoryTest/fill" }, ({ commands }, input: { readonly count: number }) => {
     for (const list of lists) for (let i = 0; i < input.count; i++) commands.spawn(list)({ [value]: 0 });
 });
 
@@ -76,7 +76,7 @@ const make = System.create({ name: "layoutDirectoryTest/make" }, ({ commands }) 
     for (let i = 0; i < 64; i++) commands.spawn([target, seen])({ [target]: Entity.none, [seen]: 0 });
     commands.spawn([value])({ [value]: -1 });
 });
-const spawnMany = System.create({ name: "layoutDirectoryTest/spawnMany", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const spawnMany = System.create({ name: "layoutDirectoryTest/spawnMany" }, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) spawned.push(commands.spawn([value])({ [value]: i }));
 });
 /** Aims each looker at one of the last spawned entities. */

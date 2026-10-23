@@ -76,7 +76,7 @@ const expected = async (world: CreatedWorld): Promise<{ readonly entities: reado
     all: [...await select(world, {})].sort(byIndex),
 });
 
-const spawn = System.create({ name: "indexKeylessTest/spawn", input: { type: "object", properties: { weights: { type: "array", items: { type: "number" } } } } }, ({ input, commands }) => {
+const spawn = System.create({ name: "indexKeylessTest/spawn" }, ({ commands }, input: { readonly weights: readonly number[] }) => {
     for (const value of input.weights) commands.spawn([weight, color])({ [weight]: value, [color]: 0 });
 });
 

@@ -3,7 +3,6 @@ import type { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import type { Resource } from '../resource/resource.js';
 import type { Holding } from '../resource/condition.js';
-import type { Schema } from '../schema/schema.js';
 import type { Commands } from './commands.js';
 import type { Declaration } from './declaration.js';
 import type { Listed, Property } from './property.js';
@@ -36,15 +35,18 @@ export type Context<D extends Declaration> =
         /** Each resource it reduces into, as a function contributing a value to the run's fold. */
         readonly reduce: { readonly [K in Reduced<D>]: (value: Resource.Value<K>) => void };
     })
-    & (Property<D, "input"> extends Schema ? { readonly input: Schema.ToType<Property<D, "input">> } : {})
     & (Property<D, "up"> extends object ? {
         /** The parent's `up.read` values, or null for a row without a parent. */
         readonly up: { readonly [K in Listed<Property<D, "up">, "read"> & Component.Key]: Component.Value<K> } | null;
     } : {})
     & (D extends { readonly kernel: "gpu" } | { readonly shader: object } | { readonly observer: true } ? {} : { readonly commands: Commands });
 
-/** `(row, context)` for a system with `components`, `(context)` for one without, and `(gpu, context)` for a render system. */
-export type Body<D extends Declaration> =
+/**
+ * `(row, context, input)` for a system with `components`, `(context, input)` for one without, and `(gpu, context)` for
+ * a render system. `input` is the value each run passes, of the type the body gives its parameter; a body without one
+ * takes none.
+ */
+export type Body<D extends Declaration, I = undefined> =
     D extends { readonly shader: object } ? (gpu: RenderContext, context: Context<D>) => void :
-    Property<D, "components"> extends undefined ? (context: Context<D>) => void :
-    (row: Row<D>, context: Context<D>) => void;
+    D extends { readonly components: object } ? (row: Row<D>, context: Context<D>, input: I) => void :
+    (context: Context<D>, input: I) => void;

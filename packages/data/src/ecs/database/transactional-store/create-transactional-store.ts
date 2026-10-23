@@ -11,7 +11,7 @@ import { Components } from "../../store/components.js";
 import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { patchEntityValues } from "./patch-entity-values.js";
 import { coalesceWriteOperations } from "./coalesce-actions.js";
-import { applyOperations, DELETE } from "./apply-operations.js";
+import { applyOperations } from "./apply-operations.js";
 
 interface Transaction<
     C extends Components = never,
@@ -59,14 +59,20 @@ export function createTransactionalStore<
             insert: <T extends EntityInsertValues<C>>(values: T) => {
                 const entity = archetype.insert(values as never);
                 trackEntity(entity);
+                // Record the values that actually landed — defaults and default
+                // factories included — so replaying the redo insert restores the
+                // same row rather than re-running a factory (e.g. a guid).
+                // `store.read` excludes the identity column and the entity was
+                // just inserted, so it is present.
+                const storedValues = store.read(entity) as unknown as EntityInsertValues<C>;
                 redoOperations.push({
                     type: "insert",
-                    values: values,
+                    values: storedValues,
                 });
                 undoOperationsInReverseOrder.push({ type: "delete", entity });
-                changed.entities.set(entity, values);
+                changed.entities.set(entity, storedValues);
                 changed.archetypes.add(id);
-                for (const key in values) {
+                for (const key in storedValues) {
                     changed.components.add(key);
                 }
                 return entity;
@@ -94,11 +100,10 @@ export function createTransactionalStore<
         const replacedValues: any = {};
         for (const name in values) {
             const newValue = (values as any)[name];
-            let oldValue = (oldValues as any)[name];
+            const oldValue = (oldValues as any)[name];
             if (newValue !== oldValue) {
-                if (oldValue === undefined) {
-                    oldValue = DELETE;
-                }
+                // An added column has no pre-image: record `undefined`, which
+                // removes it on replay and cannot collide with a user value.
                 replacedValues[name] = oldValue;
                 changed.components.add(name);
             }

@@ -89,6 +89,11 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 6. **Nothing awaits the next tick.** Tests watch `clock` with an observer system. Proposal: a test helper in
    `src/observe`.
 
+## Findings from joined finalizers' resources
+
+- **A joined finalizer reads a string resource from its live record,** not a copy, where the strings of its stops are
+  copied into the stop list.
+
 ## Features to discuss
 
 - **Computed index keys:** an index keyed on a value computed from a component, such as a struct field

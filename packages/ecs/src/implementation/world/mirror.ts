@@ -2,7 +2,7 @@
 import { indexOf } from './entities.js';
 import {
     cursorField, entitiesWord, recordCount, recordEntities, recordStorages, recordWords,
-    remoteFlag, storageAdded, storageChanged, storageColumn, storageComponent, storageFlags, storageWords, structureWaitersWord,
+    remoteFlag, resourceEntityWord, storageAdded, storageChanged, storageColumn, storageComponent, storageFlags, storageWords, structureWaitersWord,
     structureWord, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
 } from './layout-directory.js';
 import {
@@ -580,9 +580,13 @@ const storageOf = (words: Uint32Array, record: number, component: number): numbe
 
 /**
  * The value this thread holds for its object resource `component`, as replayed so far, which may be behind the entity
- * table: the resource entity, at `index`, is alone in its archetype, so at row 0. Its start while no row holds it.
+ * table; its start while no row holds it. The resource entity is alone in its archetype, so at row 0, and never
+ * despawned, so its index, which the directory's header holds, names no other entity.
  */
-export const resourceValueOf = (mirror: Mirror, index: number, component: number, start: unknown): unknown => {
+export const resourceValueOf = (mirror: Mirror, component: number, start: unknown): unknown => {
+    const word = Atomics.load(mirror.words, resourceEntityWord);
+    if (word === 0) return start;
+    const index = word - 1;
     const { archetypes } = mirror;
     let archetype = mirror.resourceArchetype < 0 ? undefined : archetypes[mirror.resourceArchetype];
     if (archetype === null || archetype === undefined || archetype.count === 0 || indexOf(archetype.entities[0]) !== index) {

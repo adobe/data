@@ -13,16 +13,28 @@ import { indexOf } from "./entities.js";
 import { attach, despawn, eventually, finalized, marked, place, released, retone, scenario, serial, sorted, spawn, throwing, tone, widget } from "./remote-finalizers.test-helper.js";
 import { runReported } from "./reports.test-helper.js";
 
-/** A resource of the world's thread, added once the thread joined, so the resource entity moves to another archetype. */
+/** Resources of the world's thread, each added once the thread joined, so the resource entity moves to another archetype. */
 const later = Symbol("remoteFinalizersTest/later");
+const second = Symbol("remoteFinalizersTest/second");
+const third = Symbol("remoteFinalizersTest/third");
 declare module "@adobe/ecs" {
     export interface Resources {
         [later]: { type: number };
+        [second]: { type: number };
+        [third]: { type: number };
     }
 }
 Resource.register(later, { type: { type: "number", default: 0 } });
+Resource.register(second, { type: { type: "number", default: 0 } });
+Resource.register(third, { type: { type: "number", default: 0 } });
 const bump = System.create({ name: "remoteFinalizersTest/bump", resources: { write: [later] } }, ({ resources }) => {
     resources[later] += 1;
+});
+const bumpSecond = System.create({ name: "remoteFinalizersTest/bumpSecond", resources: { write: [second] } }, ({ resources }) => {
+    resources[second] += 1;
+});
+const bumpThird = System.create({ name: "remoteFinalizersTest/bumpThird", resources: { write: [third] } }, ({ resources }) => {
+    resources[third] += 1;
 });
 
 // Finalizers on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
@@ -179,6 +191,37 @@ describe("finalizers on a joined thread", () => {
         await world.run(retone, { tone: "soft" });
         // Not awaited: the resource entity moves to another archetype before the thread replays the stop's sync.
         await Promise.all([world.run(despawn, { serials: [1] }), world.run(bump)]);
+        expect(await eventually(() => released.length === 2)).toBe(true);
+        expect(released.map(stop => [stop.serial, stop.tone])).toEqual([[0, "quiet"], [1, "soft"]]);
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("read their thread's object resource where the resource entity moved since it was last found, before a later write applies", async () => {
+        reset();
+        const { world, remote } = await joined();
+        await world.run(spawn, { from: 0, count: 3 });
+        await world.run(despawn, { serials: [0] });
+        expect(await eventually(() => released.length === 1)).toBe(true);
+        // Replayed, not rebuilt: the resource entity is found in the mirror.
+        await world.run(despawn, { serials: [1] });
+        expect(await eventually(() => released.length === 2)).toBe(true);
+        await world.run(bump);
+        await world.run(retone, { tone: "soft" });
+        // The write after the stop's sync is a task the thread runs once it replayed that sync.
+        await Promise.all([world.run(despawn, { serials: [2] }), world.run(retone, { tone: "loud" })]);
+        expect(await eventually(() => released.length === 3)).toBe(true);
+        expect(released.map(stop => [stop.serial, stop.tone])).toEqual([[0, "quiet"], [1, "quiet"], [2, "soft"]]);
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("read their thread's object resource once the resource entity moved twice before the thread replayed", async () => {
+        reset();
+        const { world, remote } = await joined();
+        await world.run(spawn, { from: 0, count: 2 });
+        await world.run(despawn, { serials: [0] });
+        expect(await eventually(() => released.length === 1)).toBe(true);
+        await world.run(retone, { tone: "soft" });
+        await Promise.all([world.run(despawn, { serials: [1] }), world.run(bumpSecond), world.run(bumpThird)]);
         expect(await eventually(() => released.length === 2)).toBe(true);
         expect(released.map(stop => [stop.serial, stop.tone])).toEqual([[0, "quiet"], [1, "soft"]]);
         await remote.dispose();

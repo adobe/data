@@ -5,7 +5,6 @@ import { objectLayout, viewsOf, type Layout } from '../../interface/registry/lay
 import { writeOf } from './archetype.js';
 import { emptyViews } from './arrays.js';
 import { readCell } from './cells.js';
-import { indexOf } from './entities.js';
 import { logFinalizedWord, logStopsWord, nullTag, ownTag, slotTags, startTag } from './move-log.js';
 import { resourceValueOf, stagedValue, type Mirror, type Previously } from './mirror.js';
 import type { WorkerError } from './protocol.js';
@@ -64,8 +63,8 @@ type ThreadFinalizer = {
     readonly constantLayouts: readonly Layout[];
     readonly bind: (archetype: RowArchetype) => Row;
     readonly context: object;
-    /** Resolves its resources: its thread's objects as it holds them, with `old` as they were before a rebuild. */
-    readonly cells: (old: Previously | null) => void;
+    /** Resolves its resources: its thread's objects as it holds them, any other's cell as of now. */
+    readonly cells: () => void;
     readonly body: (row: object, context: object) => void;
 };
 
@@ -131,15 +130,18 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         const resolved: { storage: FinalizedStorage | undefined; row: number }[] = keys.map(() => ({ storage: undefined, row: 0 }));
         // Its thread's object resources are read from the mirror, which may be behind the entity table as it replays.
         const own = keys.map(key => host.layoutOf(key)?.kind === "object");
+        const resourceStarts = numbers.map(number => mirror.starts.get(number) ?? null);
         const ownValues: unknown[] = keys.map(() => undefined);
+        const shared = own.includes(false);
         if (keys.length > 0) {
             const values: object = Object.create({});
             keys.forEach((key, k) => {
                 Object.defineProperty(values, key, {
                     get: () => {
+                        if (own[k]) return ownValues[k];
                         const { storage, row } = resolved[k];
                         if (storage === undefined) throw new Error(`Resource "${labelOf(key)}" isn't in this world.`);
-                        return own[k] ? ownValues[k] : readCell(storage, row);
+                        return readCell(storage, row);
                     },
                     enumerable: true,
                 });
@@ -154,19 +156,15 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
             excluded: (components.not ?? []).map(host.numberOf),
             bind: rowBinderOf<RowArchetype>(host.rows, host.numberOf, reads, []),
             context: value,
-            cells: old => {
-                const found = keys.length === 0 ? null : host.resourceRow();
+            cells: () => {
+                const found = shared ? host.resourceRow() : null;
                 for (let k = 0; k < keys.length; k++) {
-                    const storage = found?.archetype.storageById[numbers[k]];
-                    resolved[k].storage = storage;
-                    resolved[k].row = found?.row ?? 0;
-                    if (!own[k] || found === null || storage === undefined) continue;
-                    const start = mirror.starts.get(numbers[k]) ?? null;
-                    const entity = found.archetype.entities[found.row];
-                    // Before a rebuild, by its tag as the rebuild reads it; else at its row in the mirror.
-                    ownValues[k] = old === null
-                        ? resourceValueOf(mirror, indexOf(entity), numbers[k], start)
-                        : objectOf(storage.tags[found.row], start, entity, -1, -1, numbers[k], old);
+                    // Before a rebuild too, its old rows are the mirror's, which hold what the rebuild keeps.
+                    if (own[k]) ownValues[k] = resourceValueOf(mirror, numbers[k], resourceStarts[k]);
+                    else {
+                        resolved[k].storage = found?.archetype.storageById[numbers[k]];
+                        resolved[k].row = found?.row ?? 0;
+                    }
                 }
             },
             body: (row, context) => untyped.body(row, context),
@@ -248,7 +246,7 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
             }
             for (let k = 0; k < finalizer.constants.length; k++) storageById[finalizer.constants[k]] = columnStorage(finalizer.constants[k], finalizer.constantLayouts[k], emptyViews, [], null);
             const row = finalizer.bind({ id: -1, entities: new Float64Array(buffer, entitiesAt(group), count), storageById });
-            finalizer.cells(old);
+            finalizer.cells();
             for (let i = 0; i < count; i++) {
                 row.index = i;
                 guarded(index, finalizer, row);
@@ -309,7 +307,7 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         for (let index = 0; index < finalizers.length; index++) {
             const finalizer = finalizers[index];
             if (finalizer === null || finalizer === undefined) continue;
-            finalizer.cells(null);
+            finalizer.cells();
             for (let id = 0; id < host.tableCount(); id++) {
                 const archetype = host.archetypeAt(id);
                 if (archetype === undefined || archetype.resource || (archetype.meta && finalizer.required.length === 0)) continue;

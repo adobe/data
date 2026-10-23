@@ -465,8 +465,9 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   tagged, any other at the stop's row in its mirror. After its log lapped, it runs them before it rebuilds, reading a
   value it wrote or a settled slot's by entity in its old rows, and a live slot's from its staging array. Its thread's
   object resources are read as it holds them: at the resource entity's row in its mirror as replayed so far, which may
-  be behind the entity table, and before a rebuild, its first included, by the resource row's tag, as the rebuild reads
-  it. Other resources are read where they are. Then it stores "finalized through sync N" in the log header. A stop list naming a finalizer
+  be behind the entity table, its old rows before a rebuild, and the start where no row holds it, as before its first
+  rebuild. That's what the rebuild keeps: only its systems write those values, and the world gives them only their start,
+  when they're added or claimed. Other resources are read where they are. Then it stores "finalized through sync N" in the log header. A stop list naming a finalizer
   whose setup hasn't arrived holds replay before its sync, as a component without a key does; one this thread never
   imported fails each of its groups. What its finalizers throw is posted, and a later run's report lists it as a
   `"finalizer"` failure.
@@ -598,8 +599,9 @@ its tails before it resolves, with their failures in its report.
 - **The tail's own objects** are read where they are: while a tail is in flight, the thread's replay stops at the sync
   it names, which the world stores in the log header as it posts it, so the next sync point's moves wait in the log
   until the tail finishes. Rows read from the copy take their objects from the mirror at the copy's rows, or, once its
-  log lapped and it rebuilt past that sync, by entity. Objects it writes from the copy go back to the mirror after its
-  body; the world marks their tags the thread's own when it copies, and stamps them changed at the tail's tick, as the
+  log lapped and it rebuilt past that sync, by entity. Its object resources stay at the copy's resource row, rebuilt or
+  not, since the resource entity moves only when resources are added, which waits for tails. Objects it writes from the
+  copy go back to the mirror after its body; the world marks their tags the thread's own when it copies, and stamps them changed at the tail's tick, as the
   task's completion names them by entity, before the thread's next task.
 - **What waits for a tail to finish:** the next task on its thread, and what moves rows a tail may still read outside
   a sync point: registration, resources added between runs, a GPU device change, and joined threads joining or leaving.

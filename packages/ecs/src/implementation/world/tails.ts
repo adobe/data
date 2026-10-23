@@ -399,7 +399,7 @@ const markOwn = (state: State, tail: Copied, claimed: number): void => {
 
 /**
  * Before a writer of what a tail reads: unless it read everything, copies the rest from the position it reached,
- * exchanges its progress for `snapshotted`, and waits for the chunk it claimed. Null when nothing is left to wait for.
+ * adds `snapshotted` to its progress, and waits for the chunk it claimed. Null when nothing is left to wait for.
  */
 const resolve = (state: State, tail: Tail): Promise<void> | null => {
     settledTail(state, tail);
@@ -407,8 +407,8 @@ const resolve = (state: State, tail: Tail): Promise<void> | null => {
 };
 
 /**
- * Unless the reader read everything, copies the rest of what it reads from the position it reached, exchanges its
- * progress for `snapshotted`, and waits for the chunk it claimed. Null when nothing is left to wait for.
+ * Unless the reader read everything, copies the rest of what it reads from the position it reached, adds `snapshotted`
+ * to its progress, and waits for the chunk it claimed. Null when nothing is left to wait for.
  */
 export const copyRest = (state: State, tail: Copied): Promise<void> | null => {
     const { control, end } = tail;
@@ -417,7 +417,9 @@ export const copyRest = (state: State, tail: Copied): Promise<void> | null => {
     const from = Atomics.load(control, progressWord);
     runs.length = 0;
     if (from < end) writeSnapshot(state, tail, from);
-    const claimed = Atomics.exchange(control, progressWord, snapshotted);
+    // Added rather than exchanged, so a claim before the copy stays in the word: a post a claim reached is never taken
+    // for one none did (`cancel` in joined-observer.ts).
+    const claimed = Atomics.add(control, progressWord, snapshotted);
     tailWriters.copies++;
     // Rows the tail claimed while this copied it reads where they are.
     if (claimed < end) markOwn(state, tail, claimed);

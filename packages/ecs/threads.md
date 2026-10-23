@@ -587,9 +587,9 @@ its tails before it resolves, with their failures in its report.
 - **Fallback snapshot.** Sometimes a conflicting writer is ready before the tail has finished its reads, as when main
   is late. The world's thread then evaluates the tail's head as the tail would, copies the declared linear struct reads
   of the passing rows from the position the tail reached, with their position, archetype, row and entity, and its
-  linear resources, a string's handles among them, into a tail buffer, a column at a time; exchanges the progress word for a sentinel; and waits until
-  the tail is done through what it had claimed, at most one chunk, spinning briefly before it waits. A claim that
-  returns the sentinel reads the rest from the copy, rows from its own position on. The values are the same either
+  linear resources, a string's handles among them, into a tail buffer, a column at a time; adds a sentinel to the progress word, which so still says
+  whether a claim came first; and waits until the tail is done through what it had claimed, at most one chunk, spinning
+  briefly before it waits. A claim that returns the sentinel or more reads the rest from the copy, rows from its own position on. The values are the same either
   way, so this stays deterministic. A prompt main never copies. A string's handle in the copy names its record as of
   the copy, which outlives the tail: a tick posts its tails once the last tick's are done, and a run waits for them, so
   a tail ends before the second sync point after the one it reads, and a record let go is freed only then. The copy lets the world's work after its writer

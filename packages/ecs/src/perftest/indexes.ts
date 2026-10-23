@@ -343,6 +343,82 @@ const restingCounts = async (filtered: boolean): Promise<number> => {
     return best;
 };
 
+/** Entities toggled between `byFlag`'s two buckets, one a run, each a different one spread through entity order. */
+let flaggedEntities: Entity[] = [];
+const seedFlagged = System.create({ name: "indexes/seedFlagged" }, ({ commands }, input: { readonly count: number }) => {
+    flaggedEntities = [];
+    for (let i = 0; i < input.count; i++) flaggedEntities.push(commands.spawn([flag])({ [flag]: i % 2 === 0 }));
+});
+const toggleFlag = System.create({ name: "indexes/toggleFlag", target: "entity", components: { write: [flag] } }, (row, _context, _input: { readonly entity: Entity }) => {
+    row[flag] = !row[flag];
+});
+/** Both buckets' lengths, as a count of done and not done todos. */
+const readFlagLengths = System.create({ name: "indexes/readFlagLengths", lookup: { byFlag: { index: byFlag } } }, ({ lookup }) => {
+    found = lookup.byFlag(false).length + lookup.byFlag(true).length;
+});
+/** Both buckets' first ten rows, in entity order. */
+const readFlagRows = System.create({ name: "indexes/readFlagRows", lookup: { byFlag: { index: byFlag } } }, ({ lookup }) => {
+    let sum = 0;
+    for (const value of [false, true]) {
+        const rows = lookup.byFlag(value);
+        let last = 0;
+        for (let i = 0; i < 10 && i < rows.length; i++) {
+            const entity = rows.at(i).entity;
+            check(entity > last, "bucket move: rows out of entity order");
+            last = entity;
+            sum += entity;
+        }
+    }
+    found = sum;
+});
+/** Moves a round of `bucketMove` takes. */
+const movesPerRound = 200;
+/**
+ * The fastest round's mean time of moving one entity between `byFlag`'s two buckets of `count` entities between them,
+ * then running `reader`, which refreshes the index and reads it.
+ */
+const bucketMove = async (count: number, reader: System): Promise<number> => {
+    const world = inline();
+    await world.run(seedFlagged, { count });
+    await world.run(reader);
+    let best = Infinity;
+    let next = 0;
+    for (let round = 0; round < 8; round++) {
+        const start = performance.now();
+        for (let k = 0; k < movesPerRound; k++) {
+            await world.run(toggleFlag, { entity: flaggedEntities[(next++ * 7919) % count] });
+            await world.run(reader);
+        }
+        if (round >= 2) best = Math.min(best, (performance.now() - start) / movesPerRound);
+    }
+    check(found > 0, "bucket move: nothing found");
+    await world.dispose();
+    return best;
+};
+const bucketMoveBenchmarks = [1_000, 10_000, 100_000].flatMap((count): Benchmark[] => {
+    const label = `${count / 1000}K`;
+    return [
+        {
+            name: `bucket move ${label} length`,
+            operation: `A run moving one entity between the two buckets of a hash index on a boolean over ${label} entities, then a system reading both buckets' lengths: toggling a todo while counts of done and not done ones are shown.`,
+            per: "moves",
+            n: 1,
+            typical: [1, 100],
+            best: { bytes: 48, basis: "The move reads its 8-byte key and tick, and writes one 12-byte entry out of one bucket and one into the other; each length reads 4 bytes." },
+            run: () => bucketMove(count, readFlagLengths),
+        },
+        {
+            name: `bucket move ${label} in order`,
+            operation: `As \`bucket move ${label} length\`, the system reading each bucket's first ten rows in entity order: a list of done todos shown after a toggle.`,
+            per: "moves",
+            n: 1,
+            typical: [1, 100],
+            best: { bytes: 288, basis: "As the length's, and twenty 12-byte entries read." },
+            run: () => bucketMove(count, readFlagRows),
+        },
+    ];
+});
+
 export const indexBenchmarks: readonly Benchmark[] = [
     {
         name: "observer index unchanged 100",
@@ -689,4 +765,5 @@ export const indexBenchmarks: readonly Benchmark[] = [
             return best;
         },
     },
+    ...bucketMoveBenchmarks,
 ];

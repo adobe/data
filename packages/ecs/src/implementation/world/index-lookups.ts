@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Scalar } from '../../interface/registry/layout.js';
 import { encodeScalar, encodeValue, hashWords, orderF32, orderF64, partWords, type KeyPart } from './index-keys.js';
-import { entryWords, findBucket, lengthOf, recordKey, recordLength, recordStart, startOf, type HashView } from './index-hash.js';
+import { entryWords, findBucket, isHashTable, lengthOf, recordKey, recordLength, recordStart, sortBucket, startOf, type HashView } from './index-hash.js';
 import { blockAt, blockBase, bound, firstPosition, treeMaximum, type SortedView } from './index-sorted.js';
 import { sharedRows, type Row, type RowArchetype, type RowHost } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
@@ -192,7 +192,9 @@ const hashAt = function (this: HashList, position: number): object | undefined {
     const { bucket, hash } = found;
     const record = bucket * hash.stride;
     if (bucket < 0 || !(position >= 0 && position < hash.records[record + recordLength])) return undefined;
-    const at = (hash.records[record + recordStart] + position) * entryWords;
+    // On the world's thread, a bucket a change left unsorted is sorted by the first read by position.
+    if (hash.unsorted !== 0 && isHashTable(hash) && hash.tails[bucket] >= 0) sortBucket(hash, bucket);
+    const at =(hash.records[record + recordStart] + position) * entryWords;
     return rowAt(found.lookup, found.pool, position, hash.entries[at + 1], hash.entries[at + 2]);
 };
 

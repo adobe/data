@@ -25,6 +25,8 @@ const rank = Symbol("indexJoinedTest/rank");
 const label = Symbol("indexJoinedTest/label");
 const name = Symbol("indexJoinedTest/name");
 const title = Symbol("indexJoinedTest/title");
+const band = Symbol("indexJoinedTest/band");
+const bandReader = Symbol("indexJoinedTest/bandReader");
 
 declare module "@adobe/ecs" {
     export interface Threads {
@@ -40,6 +42,8 @@ declare module "@adobe/ecs" {
         [label]: { type: { readonly text: string }; thread: "indexJoinedTest" };
         [name]: { type: { readonly text: string }; thread: "indexJoinedTest" };
         [title]: { type: string };
+        [band]: { type: number };
+        [bandReader]: { type: true };
     }
 }
 Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
@@ -54,6 +58,8 @@ const blank = { text: "" };
 Component.register(label, { type: { ...text, default: blank }, thread: "indexJoinedTest" });
 Component.register(name, { type: text, thread: "indexJoinedTest" });
 Component.register(title, { type: { type: "string" } });
+Component.register(band, { type: { type: "integer", minimum: 0, maximum: 1 } });
+Component.register(bandReader, { type: { const: true } });
 
 const grid = Index.create({ name: "indexJoinedTest/grid", key: [cell], components: { has: [weight] } });
 const serials = Index.create({ name: "indexJoinedTest/serials", key: [serial], unique: true, components: { has: [weight] } });
@@ -61,6 +67,41 @@ const lanes = Index.create({ name: "indexJoinedTest/lanes", key: [lane, rank], s
 const names = Index.create({ name: "indexJoinedTest/names", key: [name] });
 const titles = Index.create({ name: "indexJoinedTest/titles", key: [title] });
 const weighted = Index.create({ name: "indexJoinedTest/weighted", key: [], components: { has: [weight] } });
+/** Two long buckets, which changes leave unsorted until a list is read by position. */
+const bands = Index.create({ name: "indexJoinedTest/bands", key: [band], components: { has: [serial] } });
+
+/** On the joined thread: the serials of a band's rows, in entity order. */
+const describeBand = System.create({
+    name: "indexJoinedTest/describeBand",
+    components: { read: [target], write: [label], has: [bandReader] },
+    lookup: { inBand: { index: bands, read: [serial] } },
+}, (row, { lookup }) => {
+    const list = lookup.inBand(row[target]);
+    const serials: number[] = [];
+    for (let i = 0; i < list.length; i++) serials.push(list.at(i)[serial]);
+    row[label] = { text: `${row[target]}:${serials.join(",")}` };
+});
+const seedBands = System.create({ name: "indexJoinedTest/seedBands" }, ({ commands }) => {
+    for (let k = 0; k < 300; k++) commands.spawn([band, serial])({ [band]: k % 2, [serial]: k });
+    for (let k = 0; k < 2; k++) commands.spawn([target, label, bandReader])({ [target]: k, [label]: blank });
+});
+/** Moves some entities to the other band, despawns some and spawns others. */
+const stirBands = System.create({ name: "indexJoinedTest/stirBands", components: { read: [serial], write: [band] } }, (row, { commands }, input: { readonly round: number }) => {
+    if ((row[serial] + input.round) % 7 === 0) row[band] = 1 - row[band];
+    if ((row[serial] + input.round) % 29 === 0) commands.despawn(row.entity);
+    if (row[serial] % 31 === input.round) commands.spawn([band, serial])({ [band]: row[serial] % 2, [serial]: 1000 + row[serial] * 10 + input.round });
+});
+/** Seeds the bands, then reads them on the thread around changes; every label after each read. */
+const bandScenario = async (world: CreatedWorld, holder: World): Promise<readonly (readonly string[])[]> => {
+    const seen: (readonly string[])[] = [];
+    await world.run(seedBands);
+    for (let round = 0; round < 6; round++) {
+        await world.run(describeBand);
+        seen.push(await labels(holder, world));
+        await world.run(stirBands, { round });
+    }
+    return seen;
+};
 
 /** On the joined thread, in the tier before the lookups, so a task of consecutive tiers there would see the index before it: moves some cells. */
 const shift = System.create({ name: "indexJoinedTest/shift", components: { read: [serial], write: [cell, label] } }, row => {
@@ -227,6 +268,20 @@ describe("systems on a joined thread looking up through indexes", () => {
         // The systems ran there, their tiers waiting for the thread.
         expect(there.warnings.every(names => names.includes("indexJoinedTest/describeCells"))).toBe(true);
         expect(alone.warnings.flat()).toEqual([]);
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("read a hash index's long buckets in entity order after changes left them unsorted, as the world's own systems do", async () => {
+        const inline = createWorld({ [workers]: 0 });
+        const alone = await bandScenario(inline, inline);
+        await inline.dispose();
+        const world = createWorld({ [workers]: 0 });
+        const channel = new MessageChannel();
+        world.share(channel.port1);
+        const remote = join(channel.port2, { threads: ["indexJoinedTest"] });
+        await joinedStatus(world);
+        expect(await bandScenario(world, remote)).toEqual(alone);
+        expect(alone.every(round => round.length === 2 && round.every(text => text.split(",").length > 100))).toBe(true);
         await remote.dispose();
         await world.dispose();
     });

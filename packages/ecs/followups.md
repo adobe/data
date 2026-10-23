@@ -84,9 +84,6 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 2. **Observer systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities
    don't work as bindings. Proposal: allow `up` in observer systems, since it only reads; let `order` take an index over
    the entity a reference names.
-4. **Low-cardinality hash indexes cost O(bucket) per change.** Buckets are kept in entity order and shifted on removal:
-   one toggle costs 26, 62 and 400 µs at 1K, 10K and 100K. Proposal: unordered buckets with swap-remove and a position
-   map, or a count-only index.
 5. **Change filters scan the whole dirty chunk** (1,024 row ticks), once per system that filters on `changed`.
    Proposal: a second level of change ticks, one per 32–64 rows.
 6. **Nothing awaits the next tick.** Tests watch `clock` with an observer system. Proposal: a test helper in

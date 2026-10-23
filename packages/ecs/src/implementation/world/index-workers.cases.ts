@@ -15,4 +15,13 @@ export const indexWorkersCases = (load: () => Promise<typeof Fixture>) => descri
         // Targets' tallies through the index without a key: its length in millions, then a stride of its weights.
         expect(three.rows.filter(row => /^\[\d+,-?\d+,\d{7,}\]$/.test(row)).length).toBeGreaterThan(900);
     });
+    it.each([[true], [false]])("read a hash index's long buckets in entity order after changes left them unsorted, WASM %s", async wasm => {
+        const fixture = await load();
+        for (const threads of [0, 3]) {
+            const orders = await fixture.bandOrders(threads, wasm);
+            expect(orders.kernel).toEqual(orders.byHand);
+            expect(orders.kernel.every(round => round[0] > 0)).toBe(true);
+            if (threads > 0) expect(orders.tasks).toBeGreaterThan(0);
+        }
+    });
 });

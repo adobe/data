@@ -44,7 +44,8 @@ export const createThreadIndex = (rows: RowHost, archetypeAt: (id: number) => Lo
     const watchedPositions = Array.from({ length: setup.watched }, (_, k) => k);
     const hashWatched = new Map<number, Float64Array>();
     const sortedWatched = new Map<number, { tree: Float64Array }>();
-    const hash: HashView | null = setup.sorted ? null : { words, stride: recordKey + words, slots: none32, records: none32, ticks: none64, cleared: 0, entries: noneI32, watched: hashWatched };
+    // The world sorts a hash index's buckets before writing its record, so this view has none unsorted.
+    const hash: HashView | null = setup.sorted ? null : { words, stride: recordKey + words, slots: none32, records: none32, ticks: none64, cleared: 0, entries: noneI32, unsorted: 0, watched: hashWatched };
     const sorted: SortedView | null = !setup.sorted ? null : {
         words, stride: sortedStride(words), parts, objects: false, entries: none32, lengths: noneI32, order: noneI32, blocks: 0, counts: noneI32, tree: none64, leaves: 1,
         fences: none32, size: 0, cleared: 0, watched: sortedWatched,

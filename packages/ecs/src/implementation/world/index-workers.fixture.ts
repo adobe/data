@@ -21,6 +21,9 @@ const seen = Symbol("indexWorkersTest/seen");
 const serial = Symbol("indexWorkersTest/serial");
 const target = Symbol("indexWorkersTest/target");
 const tally = Symbol("indexWorkersTest/tally");
+const band = Symbol("indexWorkersTest/band");
+const bandSum = Symbol("indexWorkersTest/bandSum");
+const bandSumByHand = Symbol("indexWorkersTest/bandSumByHand");
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -35,6 +38,9 @@ declare module "@adobe/ecs" {
         [serial]: { type: number };
         [target]: { type: number };
         [tally]: { type: number };
+        [band]: { type: number };
+        [bandSum]: { type: number };
+        [bandSumByHand]: { type: number };
     }
 }
 Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
@@ -48,6 +54,9 @@ Component.register(seen, { type: Entity.schema });
 Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
 Component.register(target, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
 Component.register(tally, { type: { type: "number" } });
+Component.register(band, { type: { type: "integer", minimum: 0, maximum: 1 } });
+Component.register(bandSum, { type: { type: "number" } });
+Component.register(bandSumByHand, { type: { type: "number" } });
 
 const grid = Index.create({ name: "indexWorkersTest/grid", key: [cell], components: { has: [weight] } });
 const lanes = Index.create({ name: "indexWorkersTest/lanes", key: [lane, rank], sorted: true });
@@ -185,6 +194,69 @@ export const simulate = async (threads: number, wasm: boolean): Promise<{ readon
         }));
         const rows = [...cells, ...ranked, ...targets].map(row => JSON.stringify(row));
         return { rows: rows.sort(), tasks };
+    }
+    finally {
+        await ecs.dispose();
+    }
+};
+
+/** Two long buckets, which changes leave unsorted until something reads them by position. */
+const bands = Index.create({ name: "indexWorkersTest/bands", key: [band], components: { has: [serial] } });
+
+/** Each row's band's serials, each times its position plus one: a sum that tells the order. */
+const bandOrder = System.create({
+    name: "indexWorkersTest/bandOrder", kernel: "cpu",
+    components: { read: [target], write: [bandSum] },
+    lookup: { inBand: { index: bands, read: [serial] } },
+}, (row, { lookup }) => {
+    const list = lookup.inBand(row[target] % 2);
+    let sum = 0;
+    for (let i = 0; i < list.length; i++) sum += (i + 1) * list.at(i)[serial];
+    row[bandSum] = sum;
+});
+const bandOrderByHand = System.create({
+    name: "indexWorkersTest/bandOrderByHand",
+    components: { read: [target], write: [bandSumByHand] },
+    lookup: { inBand: { index: bands, read: [serial] } },
+}, (row, { lookup }) => {
+    const list = lookup.inBand(row[target] % 2);
+    let sum = 0;
+    for (let i = 0; i < list.length; i++) sum += (i + 1) * list.at(i)[serial];
+    row[bandSumByHand] = sum;
+});
+const seedBands = System.create({ name: "indexWorkersTest/seedBands" }, ({ commands }) => {
+    for (let k = 0; k < 600; k++) commands.spawn([band, serial])({ [band]: k % 2, [serial]: k });
+    for (let k = 0; k < 512; k++) commands.spawn([target, bandSum, bandSumByHand])({ [target]: k, [bandSum]: 0, [bandSumByHand]: 0 });
+});
+/** Moves some entities to the other band, despawns some and spawns others. */
+const stirBands = System.create({ name: "indexWorkersTest/stirBands", components: { read: [serial], write: [band] } }, (row, { commands }, input: { readonly round: number }) => {
+    if ((row[serial] + input.round) % 7 === 0) row[band] = 1 - row[band];
+    if ((row[serial] + input.round) % 29 === 0) commands.despawn(row.entity);
+    if (row[serial] % 31 === input.round) commands.spawn([band, serial])({ [band]: row[serial] % 2, [serial]: 1000 + row[serial] * 10 + input.round });
+});
+
+/**
+ * Over rounds of changes, what a kernel reading the bands in order wrote, and what a main-thread system reading them
+ * after it wrote, each round's sorted; and the run tasks posted to workers.
+ */
+export const bandOrders = async (threads: number, wasm: boolean): Promise<{ readonly kernel: readonly (readonly number[])[]; readonly byHand: readonly (readonly number[])[]; readonly tasks: number }> => {
+    const counting = countingWorkers();
+    const ecs = createWorld({ [workers]: threads }, { minimumChunk: 64, wasm, pool: counting.platform });
+    try {
+        await ecs.run(seedBands);
+        const posted = (): number => counting.posted("run") + counting.posted("window");
+        const before = posted();
+        const kernel: number[][] = [];
+        const byHand: number[][] = [];
+        for (let round = 0; round < 6; round++) {
+            await ecs.run(stirBands, { round });
+            await ecs.run(bandOrder);
+            await ecs.run(bandOrderByHand);
+            const values = await Promise.all((await select(ecs, { required: [target] })).map(entity => readEntity(ecs, entity, [bandSum, bandSumByHand])));
+            kernel.push(values.map(found => found?.[bandSum] ?? -1).sort((a, b) => a - b));
+            byHand.push(values.map(found => found?.[bandSumByHand] ?? -1).sort((a, b) => a - b));
+        }
+        return { kernel, byHand, tasks: posted() - before };
     }
     finally {
         await ecs.dispose();

@@ -4,7 +4,7 @@ import { labelOf, watchedBy } from '../../interface/registry/index.js';
 import type { KernelDescription } from './kernel.js';
 import { partWords } from './index-keys.js';
 import { sortedStride } from './index-sorted.js';
-import { recordKey } from './index-hash.js';
+import { recordKey, sortHashTable } from './index-hash.js';
 import type { WorldIndex } from './indexes.js';
 import type { IndexReaderSetup, IndexSource, RowLeaf } from './index-readers.js';
 import { idOf, type Key, type State } from './state.js';
@@ -102,11 +102,16 @@ export const kernelIndexesOf = (state: State, description: KernelDescription, lo
         };
     });
 
-/** Writes a lookup through an index's WASM parameters into `out` from `at`, as of now: its arrays' addresses, counts and ticks. */
+/**
+ * Writes a lookup through an index's WASM parameters into `out` from `at`, as of now: its arrays' addresses, counts and
+ * ticks. A hash index's unsorted buckets are sorted first, since its reader reads entries by position where it can't
+ * sort them.
+ */
 export const writeIndexParameters = (bound: Pick<KernelIndex, "index" | "watched">, since: number, out: number[], at: number): number => {
     const { hash, sorted } = bound.index;
     let next = at;
     if (hash !== null) {
+        if (hash.unsorted !== 0) sortHashTable(hash);
         out[next++] = hash.slots.byteOffset;
         out[next++] = (hash.slots.length >> 1) - 1;
         out[next++] = hash.records.byteOffset;
@@ -133,11 +138,12 @@ export const writeIndexParameters = (bound: Pick<KernelIndex, "index" | "watched
     return next;
 };
 
-/** Points a JS reader's source at the world's index on its own thread, as of now. */
+/** Points a JS reader's source at the world's index on its own thread, as of now, its unsorted buckets sorted. */
 export const refreshSource = (source: IndexSource, bound: KernelIndex, since: number): void => {
     const { hash, sorted } = bound.index;
     source.since = since;
     if (hash !== null) {
+        if (hash.unsorted !== 0) sortHashTable(hash);
         source.slots = hash.slots; source.slotsBase = 0; source.mask = (hash.slots.length >> 1) - 1;
         source.records = hash.records; source.recordsBase = 0;
         source.hashEntries = hash.entries; source.hashEntriesBase = 0;

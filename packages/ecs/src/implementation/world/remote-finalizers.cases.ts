@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import type * as Fixture from "./remote-finalizers.fixture.js";
+import { surveyOf } from "./remote-finalizers.test-helper.js";
 
 /** Finalizers on a joined worker: the cases, over the fixture built for node or from source. */
 export const remoteFinalizersCases = (load: () => Promise<typeof Fixture>) => describe("finalizers on a joined worker", () => {
@@ -30,9 +31,12 @@ export const remoteFinalizersCases = (load: () => Promise<typeof Fixture>) => de
             two: Array.from({ length: 20 }, (_, k) => ({ serial: k, heading: heading(k), subheading: `s${heading(k)}` })),
         });
     }, 30000);
-    it("read a number and a struct resource as they were before their stops' sync point applied, after the world wrote them again", async () => {
+    it("read linear resources of every width, and strings beside them, as they were before their stops' sync point applied, after the world wrote them again", async () => {
         const fixture = await load();
         const level = (k: number): number => k < 10 ? 0 : 6;
-        expect(await fixture.gaugedStops()).toEqual(Array.from({ length: 20 }, (_, k) => ({ serial: k, level: level(k), origin: [level(k), level(k) + 10] })));
+        expect(await fixture.gaugedStops()).toEqual({
+            linear: Array.from({ length: 20 }, (_, k) => ({ serial: k, level: level(k), origin: [level(k), level(k) + 10] })),
+            mixed: Array.from({ length: 20 }, (_, k) => ({ serial: k, ...surveyOf(level(k)) })),
+        });
     }, 30000);
 });

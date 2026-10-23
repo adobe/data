@@ -15,6 +15,7 @@ import type { Queued } from './synchronize.js';
 import type { Essential, ReadonlyValue } from '../../interface/component/value.js';
 import type { Leaf } from '../../interface/finalizer/created.js';
 import { newestKeyOf, threadOf } from '../../interface/registry/index.js';
+import type { Layout } from '../../interface/registry/layout.js';
 import type { TaskChannel } from './remote-systems.js';
 import { resourceOffsetsOf, writeStops, type StopsOf } from './stop-lists.js';
 import { acquireLookups, refreshUses, type IndexLookups } from './indexes.js';
@@ -116,18 +117,26 @@ export const placeFinalizer = (state: State, runner: FinalizerRunner, channel: T
     const stringResources: number[] = [];
     const linearResources: number[] = [];
     const resourceStrides: number[] = [];
+    const stringStarts: unknown[] = [];
+    const linearStarts: unknown[] = [];
+    const resourceLayouts: Layout[] = [];
     for (const key of new Set<Key>(finalizer.declaration.resources?.read ?? [])) {
         const id = idOf(state, key);
         const layout = state.layouts[id];
-        if (layout.kind === "string") stringResources.push(id);
+        if (layout.kind === "string") {
+            stringResources.push(id);
+            stringStarts.push(state.starts[id]);
+        }
         else if (layout.kind === "linear") {
             linearResources.push(id);
             resourceStrides.push(layout.stride);
+            linearStarts.push(state.starts[id]);
+            resourceLayouts.push(layout);
         }
     }
     const resourceOffsets = resourceOffsetsOf(stringResources.length, resourceStrides);
     const index = channel.placeFinalizer(state, finalizer);
-    runner.remote = { finalizer, index, objects, linear, strides, copies, stringResources, linearResources, resourceStrides, resourceOffsets, entries: [], channel };
+    runner.remote = { finalizer, index, objects, linear, strides, copies, stringResources, linearResources, resourceStrides, resourceOffsets, stringStarts, linearStarts, resourceLayouts, entries: [], channel };
 };
 
 const matches = (runner: FinalizerRunner, archetype: Archetype): boolean => {

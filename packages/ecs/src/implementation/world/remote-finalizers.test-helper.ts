@@ -23,6 +23,11 @@ export const heading = Symbol("remoteFinalizersTest/heading");
 export const subheading = Symbol("remoteFinalizersTest/subheading");
 export const level = Symbol("remoteFinalizersTest/level");
 export const origin = Symbol("remoteFinalizersTest/origin");
+export const caption = Symbol("remoteFinalizersTest/caption");
+export const lit = Symbol("remoteFinalizersTest/lit");
+export const tint = Symbol("remoteFinalizersTest/tint");
+export const sample = Symbol("remoteFinalizersTest/sample");
+export const material = Symbol("remoteFinalizersTest/material");
 declare module "@adobe/ecs" {
     export interface Threads {
         remoteFinalizersTest: true;
@@ -43,6 +48,11 @@ declare module "@adobe/ecs" {
         [subheading]: { type: string };
         [level]: { type: number };
         [origin]: { type: readonly [number, number] };
+        [caption]: { type: string };
+        [lit]: { type: boolean };
+        [tint]: { type: readonly [number, number, number] };
+        [sample]: { type: Sample };
+        [material]: { type: Material };
     }
 }
 /** A value that isn't data, which only its thread holds. */
@@ -64,6 +74,31 @@ Resource.register(subheading, { type: { type: "string", default: "s" } });
 /** Linear resources, a number and a struct, which the world's thread writes and the finalizer on the thread reads. */
 Resource.register(level, { type: { type: "number", default: -1 } });
 Resource.register(origin, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2, default: [-1, -1] } });
+/** Resources of mixed widths: a string, a boolean (1 byte), an f32 vec3 (12), a padded CPU struct (24) and a storage struct (32). */
+type Sample = { readonly on: boolean; readonly count: number; readonly weight: number; readonly ratio: number };
+type Material = { readonly alpha: number; readonly color: readonly [number, number, number]; readonly glossy: boolean };
+const f32 = { type: "number", precision: 1 } as const;
+const vec3 = { type: "array", items: f32, minItems: 3, maxItems: 3 } as const;
+Resource.register(caption, { type: { type: "string", default: "c" } });
+Resource.register(lit, { type: { type: "boolean", default: false } });
+Resource.register(tint, { type: { ...vec3, default: [-1, -1, -1] } });
+Resource.register(sample, {
+    type: {
+        type: "object",
+        properties: { on: { type: "boolean" }, count: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF }, weight: { type: "number" }, ratio: f32 },
+        required: ["on", "count", "weight", "ratio"],
+        default: { on: false, count: 0, weight: -1, ratio: -1 },
+    },
+});
+Resource.register(material, {
+    type: {
+        type: "object",
+        properties: { alpha: f32, color: vec3, glossy: { type: "boolean" } },
+        required: ["alpha", "color", "glossy"],
+        layout: "storage",
+        default: { alpha: -1, color: [-1, -1, -1], glossy: false },
+    },
+});
 
 /** A stop as the finalizer saw it, on the thread it ran on. */
 export type Released = { readonly serial: number; readonly place: readonly number[]; readonly marked: boolean; readonly widget: string | null; readonly label: string | null; readonly tone: string };
@@ -113,10 +148,36 @@ export const gauge = Finalizer.create({ name: "remoteFinalizersTest/gauge", comp
     gauged.push({ serial: row[serial], level: resources[level], origin: [...resources[origin]] });
 });
 
-/** From the world's thread: the level, and the origin at it. */
-export const regauge = System.create({ name: "remoteFinalizersTest/regauge", resources: { write: [level, origin] } }, ({ resources }, input: { readonly level: number }) => {
+/** Every headed stop finalized on this thread, in order, with the resources of mixed widths it read. */
+export type Surveyed = { readonly serial: number; readonly caption: string; readonly lit: boolean; readonly tint: readonly number[]; readonly sample: Sample; readonly material: Material };
+export const surveyed: Surveyed[] = [];
+
+/** On the finalizers' thread: resources of mixed widths as they were before each headed stop's sync point applied. */
+export const survey = Finalizer.create({ name: "remoteFinalizersTest/survey", components: { read: [serial, widget], has: [headed] }, resources: { read: [material, caption, sample, lit, tint] } }, (row, { resources }) => {
+    const { alpha, color, glossy } = resources[material];
+    surveyed.push({
+        serial: row[serial], caption: resources[caption], lit: resources[lit], tint: [...resources[tint]],
+        sample: { ...resources[sample] }, material: { alpha, color: [...color], glossy },
+    });
+});
+
+/** What `regauge` writes to the resources of mixed widths at a level. */
+export const surveyOf = (at: number): Omit<Surveyed, "serial"> => ({
+    caption: `c${at}`, lit: at > 3, tint: [at, at + 0.5, at * 2],
+    sample: { on: at > 3, count: at * 1000 + 1, weight: at + 0.25, ratio: at * 0.5 + 1 },
+    material: { alpha: at * 0.25 + 1, color: [at + 1, at + 2, at + 3], glossy: at > 3 },
+});
+
+/** From the world's thread: the level, the origin at it, and the resources of mixed widths at it. */
+export const regauge = System.create({ name: "remoteFinalizersTest/regauge", resources: { write: [level, origin, caption, lit, tint, sample, material] } }, ({ resources }, input: { readonly level: number }) => {
     resources[level] = input.level;
     resources[origin] = [input.level, input.level + 10];
+    const values = surveyOf(input.level);
+    resources[caption] = values.caption;
+    resources[lit] = values.lit;
+    resources[tint] = [values.tint[0], values.tint[1], values.tint[2]];
+    resources[sample] = values.sample;
+    resources[material] = values.material;
 });
 
 /** Spawns headed rows from the world's thread, with the thread's widget at null. */

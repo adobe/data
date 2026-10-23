@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Finalizer } from '../../interface/finalizer/created.js';
+import { viewsOf, type Layout } from '../../interface/registry/layout.js';
 import type { Memory } from './memory.js';
 import type { StringStore } from './strings.js';
 import { logFinalizedWord, logStopsWord, type MoveLog } from './move-log.js';
@@ -83,6 +84,10 @@ export type StopsOf = {
     readonly linearResources: readonly number[];
     readonly resourceStrides: readonly number[];
     readonly resourceOffsets: readonly number[];
+    /** What its string and linear resources start at, with the linear ones' layouts, for one the world doesn't hold. */
+    readonly stringStarts: readonly unknown[];
+    readonly linearStarts: readonly unknown[];
+    readonly resourceLayouts: readonly Layout[];
     /** This sync point's stops, as plan entries, reused by every sync point. */
     readonly entries: number[];
 };
@@ -269,7 +274,9 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
             const storageById = source.resourceArchetype < 0 ? undefined : archetypes[source.resourceArchetype].storageById;
             for (let k = 0; k < stringResources.length; k++) {
                 const handles = storageById?.[stringResources[k]]?.views.u32;
-                const copy = handles === undefined || strings === null ? 0 : strings.copy(handles[resourceRow]);
+                // Without the resource, unreachable while a finalizer activates only once its resources exist: its start.
+                const start = stops.stringStarts[k];
+                const copy = strings === null ? 0 : handles !== undefined ? strings.copy(handles[resourceRow]) : typeof start === "string" ? strings.write(start) : 0;
                 if (copy !== 0) copied.push(copy);
                 u32[(column >> 2) + k] = copy;
             }
@@ -278,7 +285,9 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
                 const stride = resourceStrides[k];
                 const target = column + resourceOffsets[k];
                 if (values === undefined) {
-                    u8.fill(0, target, target + stride);
+                    // Unreachable while a finalizer activates only once its resources exist: its start.
+                    const layout = stops.resourceLayouts[k];
+                    if (layout.kind === "linear") layout.write(viewsOf(buffer, target, stride), 0, stops.linearStarts[k]);
                     continue;
                 }
                 if ((stride & 3) === 0) {

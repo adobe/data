@@ -6,7 +6,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import type { FromRemoteFinalizersWorker, ToRemoteFinalizersWorker } from "./remote-finalizers-worker.fixture.js";
-import { despawn, regauge, rehead, released, retitle, scenario, serial, sorted, spawn, spawnHeaded, spawnTitled, type Released } from "./remote-finalizers.test-helper.js";
+import { despawn, regauge, rehead, released, retitle, scenario, serial, sorted, spawn, spawnHeaded, spawnTitled, type Released, type Surveyed } from "./remote-finalizers.test-helper.js";
 import { fillReports, runReported } from "./reports.test-helper.js";
 
 /**
@@ -137,10 +137,14 @@ export const titledStops = async () => {
     const { worker } = await joined(world);
     await world.run(spawnTitled, { from: 0, count: 50 });
     const release = await hold(worker);
-    await world.run(despawn, { serials: Array.from({ length: 50 }, (_, k) => k) });
-    await world.run(spawnTitled, { from: 100, count: 50 });
-    for (let round = 0; round < 6; round++) await world.run(retitle, { round });
-    release();
+    try {
+        await world.run(despawn, { serials: Array.from({ length: 50 }, (_, k) => k) });
+        await world.run(spawnTitled, { from: 100, count: 50 });
+        for (let round = 0; round < 6; round++) await world.run(retitle, { round });
+    }
+    finally {
+        release();
+    }
     let seen: readonly { readonly serial: number; readonly title: string }[] = [];
     for (let k = 0; k < 200 && seen.length < 50; k++) {
         const reply = await worker.ask({ kind: "entitled" });
@@ -162,9 +166,13 @@ export const headedStops = async () => {
     await world.run(rehead, { heading: "h0" });
     await world.run(spawnHeaded, { from: 0, count: 20 });
     const release = await hold(worker);
-    await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => k) });
-    for (let round = 1; round <= 6; round++) await world.run(rehead, { heading: `h${round}` });
-    release();
+    try {
+        await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => k) });
+        for (let round = 1; round <= 6; round++) await world.run(rehead, { heading: `h${round}` });
+    }
+    finally {
+        release();
+    }
     await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => 10 + k) });
     let seen: readonly { readonly serial: number; readonly heading: string }[] = [];
     let both: readonly { readonly serial: number; readonly heading: string; readonly subheading: string }[] = [];
@@ -180,7 +188,7 @@ export const headedStops = async () => {
 
 /**
  * Headed rows despawned at level 0 while the worker is held, then the world's thread writing the level and origin six
- * times, and the rest despawned once it goes on: the linear resources its finalizer read.
+ * times, with resources of mixed widths, and the rest despawned once it goes on: what its finalizers read.
  */
 export const gaugedStops = async () => {
     const world = createWorld({ [workers]: 0 });
@@ -188,16 +196,22 @@ export const gaugedStops = async () => {
     await world.run(regauge, { level: 0 });
     await world.run(spawnHeaded, { from: 0, count: 20 });
     const release = await hold(worker);
-    await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => k) });
-    for (let round = 1; round <= 6; round++) await world.run(regauge, { level: round });
-    release();
+    try {
+        await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => k) });
+        for (let round = 1; round <= 6; round++) await world.run(regauge, { level: round });
+    }
+    finally {
+        release();
+    }
     await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => 10 + k) });
     let seen: readonly { readonly serial: number; readonly level: number; readonly origin: readonly number[] }[] = [];
-    for (let k = 0; k < 200 && seen.length < 20; k++) {
+    let mixed: readonly Surveyed[] = [];
+    for (let k = 0; k < 200 && (seen.length < 20 || mixed.length < 20); k++) {
         const reply = await worker.ask({ kind: "gauged" });
         seen = reply.kind === "gauged" ? reply.gauged : [];
+        mixed = reply.kind === "gauged" ? reply.surveyed : [];
     }
     await worker.terminate();
     await world.dispose();
-    return [...seen].sort((a, b) => a.serial - b.serial);
+    return { linear: [...seen].sort((a, b) => a.serial - b.serial), mixed: [...mixed].sort((a, b) => a.serial - b.serial) };
 };

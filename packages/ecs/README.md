@@ -13,6 +13,9 @@ A high-performance, multithreaded Entity Component System for web-based applicat
     - Synced back to shared memory only when the CPU reads it
   - Strings in shared memory, readable on every thread
   - Objects and other variable-length values on the thread that owns them
+- **Declarations**
+  - Components and resources declared once, as TypeScript types; the build registers them
+  - Named types such as `F32`, `U32` and your own `Schema.Type`s give storage precision, width and bounds
 - **Systems**
   - Plain TypeScript bodies with declared reads and writes
   - Kernels compiled and checked at build time to optimized JavaScript, WASM and WGSL

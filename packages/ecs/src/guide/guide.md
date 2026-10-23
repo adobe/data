@@ -42,10 +42,9 @@ export default defineConfig({ plugins: [kernelPlugin()] });
 ```
 
 Each component and resource is declared once, by augmenting `Components` or `Resources` in `@adobe/ecs` with its
-traits, `type` among them, and registered once with the same traits. Registration's types check the two match.
-`type` is registered as a JSON Schema for the value, in which `{ type: "set", items }` and
-`{ type: "map", keys, values }` describe a `ReadonlySet` and a `ReadonlyMap`. Traits of your own augment `Traits`.
-The examples create worlds with `World.create()`.
+traits, `type` among them. The plugin registers each declaration: it reads the schema the value is stored by from
+`type`, so a type named by `Schema.Type`, such as `F32` or `U32`, gives its precision or width. Traits of your own
+augment `Traits`. The examples create worlds with `World.create()`.
 
 ## Basics
 
@@ -55,29 +54,25 @@ Systems change that data, once per run or on every tick.
 ### 1. Resources
 
 ```ts
-export const gravity = Symbol("gravity");
-export const names = Symbol("names");
-export const audio = Symbol("audio");
-export const focused = Symbol("focused");
+export const gravity = Symbol();
+export const names = Symbol();
+export const audio = Symbol();
+export const focused = Symbol();
+const noNames: ReadonlyMap<string, number> = new Map();
 
-// Its traits are declared; `type` is the value's type.
+// It's declared once, with its traits: `type` is the value's type, and `default` the value a world starts it at, which
+// a type allowing null may leave out. The build registers what's declared.
 declare module "@adobe/ecs" {
     interface Resources {
-        [gravity]: { type: number };
-        [names]: { type: ReadonlyMap<string, number> };
+        [gravity]: { type: number; default: -9.8 };
+        // A default that isn't a literal names a value with typeof.
+        [names]: { type: ReadonlyMap<string, number>; default: typeof noNames };
+        // A value that isn't data, such as a class, is stored as it is.
         [audio]: { type: AudioContext | null };
-        [focused]: { type: Entity };
+        // No entity is Entity.none rather than null, so an entity stays data every thread reads.
+        [focused]: { type: Entity; default: typeof Entity.none };
     }
 }
-
-// Registration gives the same traits, with a schema that describes exactly the declared type. A resource always has a
-// value: its schema's default, or one beside it.
-Resource.register(gravity, { type: { type: "number", default: -9.8 } });
-Resource.register(names, { type: { type: "map", keys: { type: "string" }, values: { type: "number" } }, default: new Map() });
-// A value that isn't data has no schema and is stored as it is. A type that allows null starts there.
-Resource.register(audio, {});
-// No entity is Entity.none rather than null, so an entity stays data every thread reads.
-Resource.register(focused, { type: { ...Entity.schema, default: Entity.none } });
 
 // Systems read a world: an observer only reads, after the world's changes apply.
 let values: readonly unknown[] = [];
@@ -91,14 +86,14 @@ await moon.run(read);
 expect(values[0]).toBe(-1.6);
 ```
 
-[`01-resources.test.ts`](01-resources.test.ts#L6-L46)
+[`01-resources.test.ts`](01-resources.test.ts#L6-L40)
 
 ### 2. Entities, components and archetypes
 
 ```ts
-export const position = Symbol("position");
-export const velocity = Symbol("velocity");
-export const enemy = Symbol("enemy");
+export const position = Symbol();
+export const velocity = Symbol();
+export const enemy = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -108,10 +103,6 @@ declare module "@adobe/ecs" {
         [enemy]: { type: true };
     }
 }
-
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(enemy, { type: { const: true } });
 
 // An archetype names a list of components, once at module scope; it goes wherever a list of components does.
 export const Particle = Archetype.create([position, velocity]);
@@ -144,7 +135,7 @@ expect(foes).toEqual([[0, 10, 0]]);
 expect(particles).toBe(1);
 ```
 
-[`02-entities.test.ts`](02-entities.test.ts#L6-L59)
+[`02-entities.test.ts`](02-entities.test.ts#L6-L49)
 
 ### 3. Systems
 
@@ -180,7 +171,7 @@ await world.run(read);
 expect(moved).toEqual([[1, 0, 0]]);
 ```
 
-[`03-systems.test.ts`](03-systems.test.ts#L35-L69)
+[`03-systems.test.ts`](03-systems.test.ts#L28-L60)
 
 ```ts
 const fail = System.create({ name: "fail" }, () => {
@@ -201,7 +192,7 @@ expect(run).toBe(1);
 expect(logged).toEqual(["fail: broken"]);
 ```
 
-[`03-systems.test.ts`](03-systems.test.ts#L71-L87)
+[`03-systems.test.ts`](03-systems.test.ts#L64-L81)
 
 ### 4. Ticks and cadence
 
@@ -229,7 +220,7 @@ expect(await ticked).toBeGreaterThanOrEqual(30);
 world.remove(advance);
 ```
 
-[`04-ticks.test.ts`](04-ticks.test.ts#L18-L52)
+[`04-ticks.test.ts`](04-ticks.test.ts#L15-L43)
 
 ```ts
 // A system asks for another tick by contributing a time to wake: the first tick at or after it runs. Work that a tick's
@@ -245,7 +236,7 @@ world.add(step);
 await world.run(System.create(() => {}));
 ```
 
-[`04-ticks.test.ts`](04-ticks.test.ts#L54-L75)
+[`04-ticks.test.ts`](04-ticks.test.ts#L51-L69)
 
 ## Intermediate
 
@@ -264,7 +255,7 @@ const heal = System.create({ components: { write: [health] }, after: [hit] }, ro
 const frame = System.create([heal, hit]);
 ```
 
-[`05-scheduling.test.ts`](05-scheduling.test.ts#L19-L43)
+[`05-scheduling.test.ts`](05-scheduling.test.ts#L16-L25)
 
 ```ts
 // Phases are systems that do nothing; a system during one runs after what the phase follows and before what follows it.
@@ -279,7 +270,7 @@ const report = System.create({ components: { read: [health] }, during: [render] 
 const phased = System.create([report, poison, update, render]);
 ```
 
-[`05-scheduling.test.ts`](05-scheduling.test.ts#L45-L62)
+[`05-scheduling.test.ts`](05-scheduling.test.ts#L41-L51)
 
 ### 6. Sync points
 
@@ -299,7 +290,7 @@ const count = System.create({ components: { has: [health] }, resources: { write:
 const frame = System.create([spawn, count]);
 ```
 
-[`06-sync-points.test.ts`](06-sync-points.test.ts#L21-L53)
+[`06-sync-points.test.ts`](06-sync-points.test.ts#L17-L29)
 
 ```ts
 // An observer runs after the sync point of every run and tick it's added to, reading what it left; it writes nothing.
@@ -308,7 +299,7 @@ const watch = System.create({ observer: true, components: { read: [health] } }, 
 });
 ```
 
-[`06-sync-points.test.ts`](06-sync-points.test.ts#L36-L39)
+[`06-sync-points.test.ts`](06-sync-points.test.ts#L32-L35)
 
 ### 7. Change filters and conditions
 
@@ -324,7 +315,7 @@ const show = System.create({ components: { read: [score], write: [shown], change
 });
 ```
 
-[`07-change-filters.test.ts`](07-change-filters.test.ts#L36-L66)
+[`07-change-filters.test.ts`](07-change-filters.test.ts#L27-L35)
 
 ```ts
 // Runs only while each resource in is is neither null nor false, and each in not is; is reads it narrowed.
@@ -333,7 +324,7 @@ const step = System.create({ resources: { is: [map], not: [paused], write: [step
 });
 ```
 
-[`07-change-filters.test.ts`](07-change-filters.test.ts#L68-L89)
+[`07-change-filters.test.ts`](07-change-filters.test.ts#L59-L62)
 
 ### 8. Input
 
@@ -358,21 +349,18 @@ await world.run(hit, { amount: 3 });
 await world.run(heal, { entity: player, amount: 1 });
 ```
 
-[`08-input.test.ts`](08-input.test.ts#L18-L43)
+[`08-input.test.ts`](08-input.test.ts#L16-L41)
 
 ### 9. Rules
 
 ```ts
 declare module "@adobe/ecs" {
     interface Components {
-        // Only rules add derived components, starting at their schema's default.
+        // Only rules add derived components, starting at their default.
         [drawn]: { type: true; derived: true };
-        [layer]: { type: number; derived: true };
+        [layer]: { type: number; derived: true; default: 1 };
     }
 }
-
-Component.register(drawn, { type: { const: true }, derived: true });
-Component.register(layer, { type: { type: "number", default: 1 }, derived: true });
 
 // Entities matching a rule have what it derives, only while they match.
 Rule.create({ components: { has: [mesh], not: [hidden] }, derive: [drawn] });
@@ -382,7 +370,7 @@ Rule.create({ components: { has: [sprite], not: [hidden] }, derive: [drawn] });
 Rule.create({ components: { has: [drawn] }, derive: [layer] });
 ```
 
-[`09-rules.test.ts`](09-rules.test.ts#L11-L59)
+[`09-rules.test.ts`](09-rules.test.ts#L11-L27)
 
 ### 10. Finalizers and change sets
 
@@ -396,7 +384,7 @@ Finalizer.create({ components: { read: [handle] } }, row => {
 await world.dispose();
 ```
 
-[`10-finalizers.test.ts`](10-finalizers.test.ts#L16-L48)
+[`10-finalizers.test.ts`](10-finalizers.test.ts#L16-L43)
 
 ```ts
 // Sees each sync point's structural changes to the components it watches, grouped by how entities changed, with
@@ -408,12 +396,12 @@ Finalizer.changes({ watch: [handle] }, changes => {
 });
 ```
 
-[`10-finalizers.test.ts`](10-finalizers.test.ts#L50-L66)
+[`10-finalizers.test.ts`](10-finalizers.test.ts#L49-L55)
 
 ### 11. Traits, within and references
 
 ```ts
-// Traits are the fields of a key's declaration; type is one. Registration repeats them.
+// Traits are the fields of a key's declaration; type is one.
 declare module "@adobe/ecs" {
     interface Components {
         [ship]: { type: true };
@@ -427,12 +415,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(ship, { type: { const: true } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(target, { type: Entity.schema, reference: "weak" });
-Component.register(selected, { type: { const: true } });
-Component.register(outline, { type: { type: "number" }, within: selected });
-
 const spawn = System.create(({ commands }) => {
     const mothership = commands.spawn([ship, selected, outline])({ [outline]: 2 });
     commands.spawn([parent])({ [parent]: mothership });
@@ -440,23 +422,22 @@ const spawn = System.create(({ commands }) => {
 });
 ```
 
-[`11-traits.test.ts`](11-traits.test.ts#L12-L60)
+[`11-traits.test.ts`](11-traits.test.ts#L11-L29)
 
 ```ts
 // A trait of your own is a member of Traits<N>: the value it allows on key N, or never where it doesn't apply.
-export const instanced = Symbol("instanced");
+export const instanced = Symbol();
 declare module "@adobe/ecs" {
     interface Traits<N> {
         readonly [instanced]: N extends Component.Key ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
     }
 }
-Trait.register(instanced);
 
 // Types select components by trait.
 check<Equal<Extract<Component.With<typeof instanced>, typeof transform | typeof name>, typeof transform>>();
 ```
 
-[`11-traits.type-test.ts`](11-traits.type-test.ts#L7-L28)
+[`11-traits.type-test.ts`](11-traits.type-test.ts#L7-L25)
 
 ## Advanced
 
@@ -477,7 +458,7 @@ const count = System.create({ components: { read: [cell], write: [crowded] }, lo
 });
 ```
 
-[`13-indexes.test.ts`](13-indexes.test.ts#L28-L35)
+[`13-indexes.test.ts`](13-indexes.test.ts#L21-L28)
 
 ```ts
 // A sorted index keeps its key's order: lookups take a range, and `order` runs a system's rows in it.
@@ -496,7 +477,7 @@ const list = System.create({ observer: true, components: { read: [player] }, ord
 });
 ```
 
-[`13-indexes.test.ts`](13-indexes.test.ts#L37-L50)
+[`13-indexes.test.ts`](13-indexes.test.ts#L30-L43)
 
 ```ts
 // A unique index gives one row, or null.
@@ -507,7 +488,7 @@ const find = System.create({ lookup: { byId: { index: byServerId } } }, ({ looku
 });
 ```
 
-[`13-indexes.test.ts`](13-indexes.test.ts#L52-L57)
+[`13-indexes.test.ts`](13-indexes.test.ts#L45-L50)
 
 ```ts
 // An index without a key holds every entity with its components, in entity order. With changed: true, this observer
@@ -519,7 +500,7 @@ const countPlayers = System.create({ observer: true, lookup: { players: { index:
 });
 ```
 
-[`13-indexes.test.ts`](13-indexes.test.ts#L59-L65)
+[`13-indexes.test.ts`](13-indexes.test.ts#L52-L58)
 
 A list stays valid until its call site runs again. Lists and rows read only what the index holds and its lookup's
 `read` names, and `list.changed` tells whether an entity entered, left or moved in it since the system last ran. A

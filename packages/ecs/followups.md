@@ -83,19 +83,21 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 The plugin is required, so it can derive what consumers now restate. Each is a contract change, reviewed one at a
 time; inferred values are emitted as the same literals the runtime takes today, so none costs anything at runtime.
 
-1. **Declarations from the augmentation.** The pre-strip pass reads `interface Components`, `Resources` and `Traits`
-   and emits the `register` calls: the schema from the type (`F32`, `I32`, `U32` for precision and width), the traits
-   as declared, and defaults as a trait. About 200 calls in consumer code restate their augmentation.
-2. **Names from bindings.** `name` on systems, composites, indexes and finalizers defaults to the plugin's id
-   (`<module>#<binding>`), which 218 of 325 names restate; `Symbol` descriptions likewise.
-3. **Reductions declared once.** A system's `reduce` drops the operator, which is the resource's `reduce` trait, and
+1. **Names from bindings.** `name` on systems, composites, indexes and finalizers defaults to the plugin's id
+   (`<module>#<binding>`), which 218 of 325 names restate.
+2. **Reductions declared once.** A system's `reduce` drops the operator, which is the resource's `reduce` trait, and
    its keys come from the body's `reduce[key](…)` calls.
-4. **Kernels by default.** A body in the kernel subset compiles as a `"cpu"` kernel unflagged; `kernel: "cpu"`
+3. **Kernels by default.** A body in the kernel subset compiles as a `"cpu"` kernel unflagged; `kernel: "cpu"`
    asserts it, `"gpu"` chooses the backend, `false` runs it as written. Needs a measured rule for small runs, and
    accepts results that aren't bit-exact with plain JS.
-5. **Access inferred from bodies.** `components`, `resources`, `lookup` and `up` read and write lists come from the
+4. **Access inferred from bodies.** `components`, `resources`, `lookup` and `up` read and write lists come from the
    body where `usedBy` follows every use, explicit otherwise. Bodies' rows are then typed over every component, so
    it needs the planned ESLint rule to keep errors in the editor.
+
+- **What a trait of your own allows isn't checked.** `Traits<N>` gives the value each trait allows on a key, which
+  registration's types checked. The build registers declarations without a type checker, and registration checks only
+  the built-in traits. A check type over every declaration, surfaced where every program reaches, as `World.create`,
+  would restore it at the cost of evaluating every declaration once.
 
 ## Findings from the todo sample (`src/samples/todo/README.md`)
 

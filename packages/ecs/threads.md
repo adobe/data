@@ -32,13 +32,15 @@ Referenced from `design.md`.
   never wait on another thread.
 - **Objects default to `world`.** A declaration without `thread` is on `world`; one with it names a logical thread.
   Libraries declare threads on components; the application decides which joined thread fills each.
-- **The DOM rule:** a DOM `Node` lives on `main`, the window's thread, and its declaration says so: the types require
-  `thread: "main"` where the DOM library is loaded, and registration checks it on values it can see.
+- **The DOM rule:** a DOM `Node` lives on `main`, the window's thread, and its declaration says so: the build requires
+  `thread: "main"` for a type that's one of the DOM's classes or extends one, and registration checks it on values it
+  can see.
 - **Keys are symbols,** so components, resources and traits never collide, but a symbol is a different value on each
   thread. Threads agree on keys through the ids the plugin gives top-level `Symbol(...)` declarations, by which the
   registry already takes the symbols of one id as one key; a key without one can't cross, so a joined thread's observer
-  system naming one fails to register. Ids name packages, not directories, so threads bundled apart agree on them, and
-  the plugin adds itself to `worker.plugins`, so worker bundles' keys get them too.
+  system naming one fails to register. Ids name packages and their versions, not directories, so threads bundled apart
+  agree on them, and the plugin adds itself to `worker.plugins`, so worker bundles' keys get them too. Every declared
+  key has one, since a declaration names only a top-level `Symbol()` constant.
 - **Systems, rules and finalizers are their values,** and names are optional labels, so a value is different on each
   thread too. Threads agree on them through the ids the plugin gives top-level `System.create`, `System.render`,
   `Rule.create`, `Finalizer.create` and `Finalizer.changes` bindings, composites included, by which the registry
@@ -66,20 +68,17 @@ export interface Threads {
     main: true;    // the window's thread, where the DOM is
 }
 
-// `thread` only on objects: a struct with `thread` fails in types and at registration.
+// `thread` only on objects: a struct with `thread` fails at registration. The build registers each declaration, a
+// value that isn't data without a schema.
 declare module "@adobe/ecs" {
     interface Components {
-        // A DOM Node lives on "main", and says so; the check resolves to no requirement where the DOM library isn't
-        // loaded.
+        // A DOM Node lives on "main", and says so; the build requires it.
         [domNode]: { type: HTMLElement; thread: "main" };
         // `transfer: true` requires a Transferable type: ArrayBuffer, ImageBitmap, VideoFrame, OffscreenCanvas,
         // MessagePort. It lives on `world`, where the GPU uploads it; a loader thread sets it by moving the value there.
         [textureSource]: { type: ImageBitmap; transfer: true };
     }
 }
-// A value that isn't data is registered without a schema.
-Component.register(domNode, { thread: "main" });
-Component.register(textureSource, { transfer: true });
 
 // On the thread that holds the world:
 const world = World.create(resources?);
@@ -701,7 +700,7 @@ then green type tests, then runtime with red then green runtime tests. Each phas
 
 ### Built: threads in declarations, the loop, and the pool
 
-- `Threads`, `thread`, `transfer` and the DOM rule in types, with registration's checks; a system's and finalizer's
+- `Threads`, `thread`, `transfer` and the DOM rule, in the build and registration's checks; a system's and finalizer's
   thread derived, and two threads rejected, when it's created. With every thread filled by `world`, nothing changes at
   runtime.
 - Ids: the plugin gives top-level keys and `System.create`, `System.render`, `Rule.create`, `Finalizer.create` and

@@ -106,6 +106,20 @@ export const listed = System.create([near, far]);
 export const declared = System.create({ systems: [near, far], after: [both] });
 `;
 
+/** A consumer whose declarations give traits values their types don't allow, and a default not of its type. */
+const misdeclaredTraits = `
+import { World } from "@adobe/ecs";
+export const count = Symbol();
+export const mark = Symbol();
+export const label = Symbol();
+declare module "@adobe/ecs" {
+    interface Traits<N> { readonly [mark]: N extends Component.Key ? (Component.Value<N> extends string ? true : never) : never }
+    interface Components { [count]: { type: number; thread: "main"; [mark]: true } }
+    interface Resources { [label]: { type: string; default: typeof count; transfer: true } }
+}
+export const world: World = World.create();
+`;
+
 describe("package exports", () => {
     beforeAll(() => {
         install();
@@ -128,6 +142,15 @@ describe("package exports", () => {
     readonly sorted: true;
 }>;`);
         expect([...emitted.matchAll(/import\("([^"]+)"\)/g)].map(match => match[1]).filter(path => path !== "@adobe/ecs")).toEqual([]);
+    }, 60_000);
+    it("fail World.create to compile while a declaration gives a trait a value its type doesn't allow, naming it", () => {
+        const reported = compile(misdeclaredTraits.replace('import { World } from "@adobe/ecs";', 'import { World, type Component } from "@adobe/ecs";')).messages.join("\n");
+        expect(reported).toContain("declarations give traits values their types don't allow");
+        // Each declaration by its key, with the members that don't hold: a trait of your own's among them.
+        expect(reported).toContain(`[count]: unique symbol | "thread"`);
+        expect(reported).toContain("[label]:");
+        expect(reported).toContain(`"default"`);
+        expect(reported).toContain(`"transfer"`);
     }, 60_000);
     it("report a misdeclared system, and a composite of conflicting members, at the mistake rather than as no overload matching", () => {
         const reported = compile(misdeclared).messages;

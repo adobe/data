@@ -94,11 +94,6 @@ time; inferred values are emitted as the same literals the runtime takes today, 
    body where `usedBy` follows every use, explicit otherwise. Bodies' rows are then typed over every component, so
    it needs the planned ESLint rule to keep errors in the editor.
 
-- **What a trait of your own allows isn't checked.** `Traits<N>` gives the value each trait allows on a key, which
-  registration's types checked. The build registers declarations without a type checker, and registration checks only
-  the built-in traits. A check type over every declaration, surfaced where every program reaches, as `World.create`,
-  would restore it at the cost of evaluating every declaration once.
-
 ## Findings from the todo sample (`src/samples/todo/README.md`)
 
 2. **Observer systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities

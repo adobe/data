@@ -161,6 +161,15 @@ describe("moduleIdOf", () => {
         expect(moduleIdOf("/app/src/keys.ts?t=1712", none)).toBe(null);
         expect(moduleIdOf("/libraries/shared/keys.ts", packages({ "/libraries": null }))).toBe(null);
     });
+    test("stops at a drive's root, never reading the working directory's package", async () => {
+        const read: string[] = [];
+        const cwd = (directory: string) => {
+            read.push(directory);
+            return directory === "." ? { name: "cwd", version: "1.0.0" } : undefined;
+        };
+        expect(moduleIdOf("C:\\elsewhere\\keys.ts", cwd)).toBe(null);
+        expect(read).toEqual(["C:/elsewhere", "C:"]);
+    });
     test("uses forward slashes", async () => {
         expect(moduleIdOf("C:\\app\\src\\keys.ts", packages({ "C:/app": { name: "app", version: "1.0.0" } }))).toBe("app@1.0.0/src/keys.ts");
     });

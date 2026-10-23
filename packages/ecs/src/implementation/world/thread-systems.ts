@@ -147,7 +147,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
             return known;
         }
         const declaration = declarationOf(key);
-        if (declaration === undefined || kindOf(key) !== "component") throw new Error(kindOf(key) === "resource" ? `"${labelOf(key)}" is a resource, not a component.` : `"${labelOf(key)}" has no registered schema; import the module that registers it.`);
+        if (declaration === undefined || kindOf(key) !== "component") throw new Error(kindOf(key) === "resource" ? `"${labelOf(key)}" is a resource, not a component.` : `"${labelOf(key)}" has no registered schema: declare it beside its key, in a module the plugin builds.`);
         if (declaration.derived === true) throw new Error(`"${labelOf(key)}" is derived, so only rules add and remove it.`);
         const layout = layoutOf(declaration.type);
         const own = ownObject(key);
@@ -705,7 +705,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
                 const threadIndex = createThreadIndex(host.rows, host.archetypeAt, host.replaced, {
                     layouts: index.declaration.key.map(key => {
                         const layout = host.layoutOf(key);
-                        if (layout === undefined) throw new Error(`"${labelOf(key)}" has no registered schema; import the module that registers it.`);
+                        if (layout === undefined) throw new Error(`"${labelOf(key)}" has no registered schema: declare it beside its key, in a module the plugin builds.`);
                         return layout;
                     }),
                     sorted: keptSorted(index.declaration),

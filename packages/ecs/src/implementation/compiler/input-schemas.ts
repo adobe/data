@@ -1,17 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Failure } from './failure.js';
-import { insertInto, type Insertion, type SourceMap } from './source-map.js';
-import { createConverter, isThrown, moduleOf, type Module, type Node, type Statement, type TypeHost, type TypeNode } from './type-schemas.js';
+import type { Insertion } from './source-map.js';
+import { createConverter, isThrown, type Module, type Node, type Statement, type TypeHost, type TypeNode } from './type-schemas.js';
 
 /** Whether an import specifier, resolved from `importer`, is a module of the package exporting `System`. */
 export type IsSystem = (specifier: string, importer: string) => Promise<boolean>;
 
 export type InputHost = TypeHost & { readonly isSystem: IsSystem };
-
-/** Code with each system's input schema passed to its `create`, the files whose types it read, or why it failed. */
-export type InputResult =
-    | { readonly code: string; readonly map: SourceMap; readonly dependencies: readonly string[] }
-    | { readonly failure: Failure; readonly dependencies: readonly string[] };
 
 /** What a pass inserts into a module, and the files whose types it read; or why it failed. */
 export type PassResult =
@@ -56,13 +51,6 @@ const declaresComponents = (declaration: Call["arguments"][number]): boolean | n
  * and interfaces of the module and those it imports, so it needs no type checker. Returns null when no system here
  * takes input.
  */
-export const passInputSchemas = async (code: string, file: string, host: InputHost): Promise<InputResult | null> => {
-    const result = await inputInsertions(moduleOf(file, code, host.parse(code, file)), host);
-    if (result === null || "failure" in result) return result;
-    return { ...insertInto(code, result.insertions, file), dependencies: result.dependencies };
-};
-
-/** What `passInputSchemas` inserts into a module, as insertions into its code. */
 export const inputInsertions = async (module: Module, host: InputHost): Promise<PassResult | null> => {
     const { code, file, program } = module;
     if (!code.includes("System") || !code.includes(".create(")) return null;

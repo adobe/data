@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { type I32, type U32, Vec3 } from "../../interface/math/index.js";
-import { declareResource } from "../../interface/registry/declare.js";
+import { declareResource$ } from "../../interface/registry/declare.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { readResource } from "./reads.test-helper.js";
@@ -234,7 +234,7 @@ describe("reductions", () => {
 
     it("reject what can't be reduced", async () => {
         // Booleans reduce bitwise.
-        expect(() => declareResource(summed, { type: { type: "boolean", default: false }, reduce: "+" })).toThrow(`booleans reduce with "&", "|" or "^"`);
+        expect(() => declareResource$(summed, { type: { type: "boolean", default: false }, reduce: "+" })).toThrow(`booleans reduce with "&", "|" or "^"`);
         // @ts-expect-error a contributor repeats its resource's operator
         expect(() => System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); })).toThrow(`reduces "reductionsTest/total" with "max", but it's declared reduce: "+"`);
         // @ts-expect-error only a resource with a reduce trait is reduced

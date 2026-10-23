@@ -1,7 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, test } from 'vitest';
-import { passInputSchemas } from './input-schemas.js';
+import { inputInsertions, type InputHost } from './input-schemas.js';
+import { insertInto } from './source-map.js';
 import { hostOf } from './type-host.test-helper.js';
+import { moduleOf } from './type-schemas.js';
+
+/** The module as the pass leaves it, with the files whose types it read, or its failure; null when it inserts nothing. */
+const passInputSchemas = async (code: string, file: string, host: InputHost) => {
+    const result = await inputInsertions(moduleOf(file, code, host.parse(code, file)), host);
+    if (result === null || "failure" in result) return result;
+    return { ...insertInto(code, result.insertions, file), dependencies: result.dependencies };
+};
 
 const header = `import { System, type Entity, type Vec2, type F32, type I32 } from "@adobe/ecs";\n`;
 

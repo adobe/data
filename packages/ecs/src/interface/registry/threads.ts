@@ -28,7 +28,7 @@ export type Placed = {
 export const requireRegistered = (what: "System" | "Finalizer", name: string, kind: "component" | "resource", keys: readonly Key[] | undefined): void => {
     for (const key of keys ?? []) {
         if (declarationOf(key) === undefined || kindOf(key) !== kind) {
-            throw new Error(`${what} "${name}" uses ${kind} "${labelOf(key)}", which isn't a registered ${kind}; import the module that registers it.`);
+            throw new Error(`${what} "${name}" uses ${kind} "${labelOf(key)}", which isn't a registered ${kind}: declare it beside its key, in a module the plugin builds.`);
         }
     }
 };

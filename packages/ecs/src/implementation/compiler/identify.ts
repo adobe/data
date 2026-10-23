@@ -30,7 +30,9 @@ export const moduleIdOf = (file: string, packageOf: PackageOf): string | null =>
     for (let directory = posix.dirname(path); ; directory = posix.dirname(directory)) {
         const found = packageOf(directory);
         if (found !== null && found !== undefined) return `${found.name}${found.version === undefined ? "" : `@${found.version}`}/${posix.relative(directory, path)}`;
-        if (posix.dirname(directory) === directory) break;
+        // A filesystem's root, `/` or a drive's `C:`, whose parent posix paths give as itself or as `.`.
+        const parent = posix.dirname(directory);
+        if (parent === directory || parent === ".") break;
     }
     return dependency.exec(path)?.[1] ?? null;
 };

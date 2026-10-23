@@ -8,7 +8,7 @@ import { createWorld } from "./create.js";
 import { count, read } from "./reads.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
-import { declareComponent } from "../../interface/registry/declare.js";
+import { declareComponent$ } from "../../interface/registry/declare.js";
 import { labelOfItem, programRules } from "../../interface/registry/index.js";
 
 const source = Symbol("rulesTest/source");
@@ -21,6 +21,7 @@ const glow = Symbol("rulesTest/glow");
 const owned = Symbol("rulesTest/owned");
 const follows = Symbol("rulesTest/follows");
 const mark = Symbol("rulesTest/mark");
+// Within each other, so never declared: the second to register closes a cycle.
 const left = Symbol("rulesTest/left");
 const right = Symbol("rulesTest/right");
 const late = Symbol("rulesTest/late");
@@ -39,7 +40,6 @@ declare module "@adobe/ecs" {
         [owned]: { type: Entity; reference: "owner" };
         [follows]: { type: Entity; reference: "weak" };
         [mark]: { type: number };
-        [left]: { type: true; within: typeof right };
         [late]: { type: true; derived: true };
         [tagged]: { type: true };
         [tag]: { type: true; derived: true };
@@ -145,7 +145,8 @@ describe("rules", () => {
         // @ts-expect-error a reference changes only through commands
         expect(() => System.create({ name: "rulesTest/writeReference", components: { write: [owned] } }, row => { row[owned] = Entity.none; })).toThrow("a reference, which changes only through commands");
         // The component closing a cycle of within declarations is rejected when it's registered.
-        expect(() => declareComponent(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "rulesTest/right": components are within each other in a cycle: rulesTest/left, rulesTest/right.`);
+        declareComponent$(left, { type: { const: true }, within: right });
+        expect(() => declareComponent$(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "rulesTest/right": components are within each other in a cycle: rulesTest/left, rulesTest/right.`);
     });
 });
 

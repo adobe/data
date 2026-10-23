@@ -367,7 +367,7 @@ export const idOf = (state: State, key: Key): number => {
         return id;
     }
     const declaration = declarationOf(key);
-    if (declaration === undefined) throw new Error(`"${labelOf(key)}" has no registered schema; import the module that registers it.`);
+    if (declaration === undefined) throw new Error(`"${labelOf(key)}" has no registered schema: declare it beside its key, in a module the plugin builds.`);
     const { structure } = state;
     // A host gets its id first, so stratifying with the new edge can name it; a cycle throws before anything is
     // recorded.

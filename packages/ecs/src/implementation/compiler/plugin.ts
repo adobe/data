@@ -119,7 +119,7 @@ const inputPlugin = (): Plugin => {
             dependents.set(file, parents);
         }
     };
-    /** Each file's syntax as last parsed, which transforms of other modules reading its types share. */
+    /** The package's own files' syntax as last parsed, which every module reading the package's types shares. */
     const parsed = new Map<string, { readonly code: string; readonly program: TypedProgram }>();
     const plugin: Plugin = {
         name: `${packageName}/input`,
@@ -139,6 +139,8 @@ const inputPlugin = (): Plugin => {
         async transform(code, id) {
             const file = id.split("?")[0] ?? id;
             if (repeated || id.includes("\0") || !typed.test(file)) return null;
+            // Only a module declaring keys, or creating systems, has anything for either pass.
+            if (!(code.includes("declare module") && code.includes("@adobe/ecs")) && !(code.includes("System") && code.includes(".create("))) return null;
             const { parseAst } = await import("vite");
             const resolved = async (specifier: string, importer: string) => await this.resolve(specifier, importer, { skipSelf: true });
             const host: InputHost & AugmentationHost = {
@@ -146,7 +148,7 @@ const inputPlugin = (): Plugin => {
                     const known = parsed.get(path);
                     if (known !== undefined && known.code === source) return known.program;
                     const program = parseAst(source, { lang: path.endsWith("x") ? "tsx" : "ts" }, path);
-                    parsed.set(path, { code: source, program });
+                    if (packagePathOf(path) !== null) parsed.set(path, { code: source, program });
                     return program;
                 },
                 resolve: async (specifier, importer) => {
@@ -179,8 +181,13 @@ const inputPlugin = (): Plugin => {
     return plugin;
 };
 
-/** The kernel plugin's two parts: input schemas, before TypeScript is stripped, and kernels and ids, after. */
-export const kernelPlugin = (): Plugin[] => [inputPlugin(), compilePlugin()];
+/**
+ * The kernel plugin's two parts: registrations and input schemas, before TypeScript is stripped, and kernels and ids,
+ * after. A library's build takes `{ library: true }`, the first part alone: its build then ships the registrations and
+ * schemas its types give, which an application's build, reading only JavaScript there, can't make, and leaves its
+ * kernels as source and its keys without ids, which the application's plugin compiles and gives.
+ */
+export const kernelPlugin = (options: { readonly library?: boolean } = {}): Plugin[] => options.library === true ? [inputPlugin()] : [inputPlugin(), compilePlugin()];
 
 const compilePlugin = (): Plugin => {
     let serve = true;

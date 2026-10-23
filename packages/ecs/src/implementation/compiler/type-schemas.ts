@@ -11,6 +11,7 @@ type Interface = Extract<Statement, { readonly type: "TSInterfaceDeclaration" }>
 type Class = Extract<Statement, { readonly superClass: unknown }>;
 type Namespace = Extract<Statement, { readonly type: "TSModuleDeclaration"; readonly global: false }>;
 type Import = Extract<Statement, { readonly type: "ImportDeclaration" }>;
+type Enum = Extract<Statement, { readonly type: "TSEnumDeclaration" }>;
 export type Declarator = Extract<Statement, { readonly type: "VariableDeclaration" }>["declarations"][number];
 export type TypeNode = Alias["typeAnnotation"];
 type Member = Interface["body"]["body"][number];
@@ -64,7 +65,10 @@ export type Module = {
     readonly types: ReadonlyMap<string, Declared>;
     readonly namespaces: ReadonlyMap<string, Namespace>;
     readonly constants: ReadonlyMap<string, Declarator>;
+    readonly enums: ReadonlyMap<string, Enum>;
     readonly imports: ReadonlyMap<string, Imported>;
+    /** The types its `declare global` blocks declare. */
+    readonly globals: { readonly types: ReadonlyMap<string, Declared>; readonly enums: ReadonlyMap<string, Enum> };
     readonly exports: readonly Statement[];
 };
 
@@ -97,7 +101,10 @@ const scopeOf = (statements: readonly Statement[]) => {
     const types = new Map<string, Declared>();
     const namespaces = new Map<string, Namespace>();
     const constants = new Map<string, Declarator>();
+    const enums = new Map<string, Enum>();
     for (const statement of statements) {
+        const inner = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+        if (inner?.type === "TSEnumDeclaration") enums.set(inner.id.name, inner);
         const declared = declarationOf(statement);
         if (declared?.type === "TSModuleDeclaration") {
             if (declared.id.type === "Identifier") namespaces.set(declared.id.name, declared);
@@ -105,7 +112,7 @@ const scopeOf = (statements: readonly Statement[]) => {
         else if (declared !== null && declared.id !== null) types.set(declared.id.name, declared);
         for (const declarator of constantsOf(statement)) constants.set(nameOfDeclarator(declarator), declarator);
     }
-    return { types, namespaces, constants };
+    return { types, namespaces, constants, enums };
 };
 
 export const moduleOf = (file: string, code: string, program: TypedProgram): Module => {
@@ -113,8 +120,10 @@ export const moduleOf = (file: string, code: string, program: TypedProgram): Mod
     for (const statement of program.body) {
         if (statement.type === "ImportDeclaration") for (const [local, entry] of importsOf(statement)) imports.set(local, entry);
     }
+    // `declare global` blocks declare types every module names without importing them.
+    const globals = scopeOf(program.body.flatMap(statement => statement.type === "TSModuleDeclaration" && statement.global && statement.body !== null ? statement.body.body : []));
     return {
-        file, code, program, ...scopeOf(program.body), imports,
+        file, code, program, ...scopeOf(program.body), imports, globals,
         exports: program.body.filter(statement => statement.type === "ExportNamedDeclaration" || statement.type === "ExportAllDeclaration"),
     };
 };
@@ -129,8 +138,8 @@ const positionOf = (code: string, offset: number): { readonly line: number; read
 /** The module being transformed, and where in it the type being converted is. */
 type Site = { readonly root: string; at: number };
 
-/** A type found by name: where it's declared, and the namespaces it's declared in; or a global. */
-type Found = { readonly module: Module; readonly declaration: Declared; readonly within: readonly string[] } | "global";
+/** A type found by name: where it's declared, and the namespaces it's declared in; an enum; or a global. */
+type Found = { readonly module: Module; readonly declaration: Declared; readonly within: readonly string[] } | "enum" | "global";
 
 /** A namespace found by name: a module, or a TypeScript namespace declared in one. */
 type FoundNamespace = { readonly module: Module; readonly block: Namespace | null; readonly within: readonly string[] };
@@ -166,7 +175,8 @@ export const createConverter = (host: TypeHost, root: string) => {
     };
 
     const moduleAt = async (module: Module, source: string): Promise<Module | null> => {
-        const file = await host.resolve(source, module.file);
+        // A specifier the build can't resolve names a module this pass can't read.
+        const file = await host.resolve(source, module.file).catch(() => null);
         return file === null ? null : await load(file);
     };
 
@@ -289,12 +299,34 @@ export const createConverter = (host: TypeHost, root: string) => {
         if (path.length > 1) return await throughNamespaces(module, path, memberType);
         const local = module.types.get(first);
         if (local !== undefined) return { module, declaration: local, within: [] };
+        if (module.enums.has(first)) return "enum";
         const imported = module.imports.get(first);
-        if (imported === undefined) return "global";
+        if (imported === undefined) return await globalNamed(first, module, new Set()) ?? "global";
         if (imported.imported === null) return null;
         const found = await fromSource(module, imported.source, imported.imported, typesOf, new Set());
-        return found === null ? null : { module: found.module, declaration: found.declaration, within: [] };
+        if (found !== null) return { module: found.module, declaration: found.declaration, within: [] };
+        return await fromSource(module, imported.source, imported.imported, enumsOf, new Set()) === null ? null : "enum";
     };
+
+    /**
+     * A type `declare global` declares, in a module or the modules of the application it imports relatively; null
+     * where none does. Packages' globals, the platform's among them, are classes.
+     */
+    const globalNamed = async (name: string, module: Module, seen: Set<string>): Promise<Found | null> => {
+        if (seen.has(module.file)) return null;
+        seen.add(module.file);
+        const declaration = module.globals.types.get(name);
+        if (declaration !== undefined) return { module, declaration, within: [] };
+        if (module.globals.enums.has(name)) return "enum";
+        for (const statement of module.program.body) {
+            if (statement.type !== "ImportDeclaration" || !statement.source.value.startsWith(".")) continue;
+            const target = await moduleAt(module, statement.source.value);
+            const found = target === null || host.packagePath(target.file) !== null ? null : await globalNamed(name, target, seen);
+            if (found !== null) return found;
+        }
+        return null;
+    };
+    const enumsOf = (module: Module): ReadonlyMap<string, Enum> => module.enums;
 
     /** The constant `path` names in `module`, through namespaces it imports. */
     const constantNamed = async (path: readonly string[], module: Module): Promise<{ readonly module: Module; readonly declaration: Declarator } | null> => {
@@ -309,7 +341,7 @@ export const createConverter = (host: TypeHost, root: string) => {
 
     /** The package's own declaration a found type is, by its path in the package: `Schema.Type` and `Entity`. */
     const intrinsic = (found: Found): "schema" | "entity" | null => {
-        if (found === "global") return null;
+        if (typeof found === "string") return null;
         const path = host.packagePath(found.module.file);
         const { declaration, within } = found;
         if (declaration.id === null) return null;
@@ -341,7 +373,7 @@ export const createConverter = (host: TypeHost, root: string) => {
         seen.add(declaration);
         const found = await typeNamed([superClass.name], module);
         if (found === "global") return domNode.test(superClass.name);
-        if (found === null || found.declaration.type === "TSTypeAliasDeclaration" || found.declaration.type === "TSInterfaceDeclaration") return false;
+        if (found === null || found === "enum" || found.declaration.type === "TSTypeAliasDeclaration" || found.declaration.type === "TSInterfaceDeclaration") return false;
         return await isNode(found.declaration, found.module, seen);
     };
 
@@ -432,7 +464,7 @@ export const createConverter = (host: TypeHost, root: string) => {
         return optional ? { type: "object", properties, required } : { type: "object", properties };
     };
 
-    const declared = async (found: Exclude<Found, "global">, active: ReadonlySet<Declared>, at: Node, module: Module, use: Use): Promise<Schema> => {
+    const declared = async (found: Exclude<Found, string>, active: ReadonlySet<Declared>, at: Node, module: Module, use: Use): Promise<Schema> => {
         const { declaration } = found;
         const { a } = words(use);
         const name = declaration.id?.name ?? "default";
@@ -453,7 +485,8 @@ export const createConverter = (host: TypeHost, root: string) => {
     const named = async (path: readonly string[], module: Module, active: ReadonlySet<Declared>, at: Node, use: Use): Promise<Schema> => {
         const found = await typeNamed(path, module);
         if (found === null) return fail(module, at, `${use === "input" ? "input" : "declared"} type ${path.join(".")} isn't a type alias, interface or class its module declares or exports, which this pass can read`);
-        // Neither declared nor imported, it's a global, which TypeScript checked exists: a class, such as the platform's.
+        if (found === "enum") return fail(module, at, `${path.join(".")} is an enum, which isn't ${words(use).a}: use a union of literals, or the values of an \`as const\` object`);
+        // Declared nowhere, it's a global, which TypeScript checked exists: a class, such as the platform's.
         if (found === "global") return notData(use, path.length === 1 && domNode.test(path[0] ?? ""));
         if (intrinsic(found) === "entity") return { type: "integer", format: "entity" };
         return await declared(found, active, at, module, use);
@@ -510,7 +543,7 @@ export const createConverter = (host: TypeHost, root: string) => {
             case "TSTypeReference": {
                 if (type.typeArguments !== null) return unreadable();
                 const found = await typeNamed(nameParts(type.typeName), module);
-                if (found === null || found === "global" || found.declaration.type !== "TSTypeAliasDeclaration" || active.has(found.declaration)) return unreadable();
+                if (found === null || typeof found === "string" || found.declaration.type !== "TSTypeAliasDeclaration" || active.has(found.declaration)) return unreadable();
                 return await valueOfType(found.declaration.typeAnnotation, found.module, new Set(active).add(found.declaration));
             }
             case "TSTypeQuery": {
@@ -601,7 +634,7 @@ export const createConverter = (host: TypeHost, root: string) => {
         return { anyOf: values.map(value => ({ const: value })) };
     };
 
-    return { convert, read, site, fail, constantNamed, valueOfType };
+    return { convert, read, site, fail, typeNamed, constantNamed, valueOfType };
 };
 
 /** A name and the properties read from it, `Entity.none` as `["Entity", "none"]`; null for any other expression. */

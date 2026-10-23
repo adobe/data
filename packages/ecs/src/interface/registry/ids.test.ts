@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Finalizer } from "../finalizer/finalizer.js";
 import { Rule } from "../rule/rule.js";
 import { System } from "../system/system.js";
-import { declareComponent, declareResource, declareTrait } from "./declare.js";
+import { declareComponent$, declareResource$, declareTrait$ } from "./declare.js";
 import { identify } from "./ids.test-helper.js";
 import { declarationOf, kindOf, labelOf, programFinalizers, programRules, requireDefinition, sameItem, scheduleOf } from "./index.js";
 
@@ -36,82 +36,75 @@ identify(crossedAgain, "idsTest/keys.ts#crossed");
 identify(tagged, "idsTest/keys.ts#tagged");
 identify(taggedAgain, "idsTest/keys.ts#tagged");
 
-declare module "@adobe/ecs" {
-    export interface Components {
-        [score]: { type: number };
-        [scoreAgain]: { type: number };
-        [shown]: { type: true; derived: true };
-        [shownAgain]: { type: true; derived: true };
-        [changed]: { type: number };
-        [crossed]: { type: number };
-    }
-    export interface Resources {
-        [level]: { type: number; default: 0 };
-        [levelAgain]: { type: number; default: 0 };
-    }
-    export interface Traits<N> {
-        readonly [tagged]: true;
-        readonly [taggedAgain]: true;
-    }
-}
+// The keys' ids are given by hand, after the keys are made, so they're registered here rather than declared, which
+// registers a key as soon as it's made.
+declareComponent$(score, { type: { type: "number" } });
+declareComponent$(shown, { type: { const: true }, derived: true });
+declareResource$(level, { type: { type: "number", default: 0 } });
+declareComponent$(changed, { type: { type: "number" } });
+declareComponent$(crossed, { type: { type: "number" } });
+declareTrait$(tagged);
 
-// Keys registered late, or wrongly, aren't declared, so the build doesn't register them.
-/** Creates a system naming keys no declaration types. */
-const untypedSystem = (declaration: object, body: (row: { [key: symbol]: number }) => void): unknown => Reflect.apply(System.create, undefined, [declaration, body]);
+/** Calls a constructor as an untyped caller would, naming keys no declaration types. */
+const untyped = <F extends (...parameters: never[]) => unknown>(create: F) => (...parameters: unknown[]): ReturnType<F> => Reflect.apply(create, undefined, parameters);
+const system = untyped(System.create);
+const rule = untyped(Rule.create);
+const finalizer = untyped(Finalizer.create);
+type Row = { [key: symbol]: number };
 
 describe("keys with ids", () => {
     it("labels a key by its description, and by its id once another registered key has its description", () => {
         expect(labelOf(score)).toBe("score");
-        declareComponent(unnamed, { type: { type: "number" } });
+        declareComponent$(unnamed, { type: { type: "number" } });
         expect([labelOf(score), labelOf(unnamed)]).toEqual(["idsTest/keys.ts#score", "idsTest/other.ts#score"]);
         expect(labelOf(Symbol("score"))).toBe("score");
     });
     it("accepts another symbol under a registered key's id with the same declaration, as the same key", () => {
-        declareComponent(scoreAgain, { type: { type: "number" } });
-        declareComponent(shownAgain, { type: { const: true }, derived: true });
-        declareResource(levelAgain, { type: { type: "number", default: 0 } });
-        declareTrait(taggedAgain);
+        declareComponent$(scoreAgain, { type: { type: "number" } });
+        declareComponent$(shownAgain, { type: { const: true }, derived: true });
+        declareResource$(levelAgain, { type: { type: "number", default: 0 } });
+        declareTrait$(taggedAgain);
         expect([kindOf(scoreAgain), kindOf(levelAgain), kindOf(taggedAgain)]).toEqual(["component", "resource", "trait"]);
         expect(declarationOf(scoreAgain)).toBe(declarationOf(score));
         expect(labelOf(scoreAgain)).toBe("idsTest/keys.ts#score");
     });
     it("rejects another symbol under a registered key's id with another declaration, or as another kind", () => {
-        expect(() => declareComponent(changedAgain, { type: { type: "string" } })).toThrow(
+        expect(() => declareComponent$(changedAgain, { type: { type: "string" } })).toThrow(
             `Cannot register component "idsTest/keys.ts#changed": its id is another key's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.`);
-        expect(() => declareResource(crossedAgain, { type: { type: "number", default: 0 } })).toThrow(
+        expect(() => declareResource$(crossedAgain, { type: { type: "number", default: 0 } })).toThrow(
             `Cannot register resource "idsTest/keys.ts#crossed": its id is a component's.`);
         expect([kindOf(changedAgain), kindOf(crossedAgain)]).toEqual([undefined, undefined]);
     });
     it("keeps keys of different ids apart, though their descriptions match", () => {
-        declareComponent(unnamed, { type: { type: "number" } });
-        System.create(identify({ name: "idsTest/unnamed", components: { write: [score] } }, "idsTest/systems.ts#unnamed"), row => { row[score] = 1; });
-        expect(() => untypedSystem(identify({ name: "idsTest/unnamed", components: { write: [unnamed] } }, "idsTest/systems.ts#unnamed"), row => { row[unnamed] = 1; })).toThrow("reload the page");
+        declareComponent$(unnamed, { type: { type: "number" } });
+        system(identify({ name: "idsTest/unnamed", components: { write: [score] } }, "idsTest/systems.ts#unnamed"), (row: Row) => { row[score] = 1; });
+        expect(() => system(identify({ name: "idsTest/unnamed", components: { write: [unnamed] } }, "idsTest/systems.ts#unnamed"), (row: Row) => { row[unnamed] = 1; })).toThrow("reload the page");
     });
 });
 
 describe("declarations evaluated again", () => {
     it("accept a system whose keys match by id, as a new system", () => {
-        const first = System.create(identify({ name: "idsTest/system", components: { write: [score] }, resources: { read: [level] } }, "idsTest/systems.ts#system"), (row, { resources }) => { row[score] = resources[level]; });
-        const again = System.create(identify({ name: "idsTest/system", components: { write: [scoreAgain] }, resources: { read: [levelAgain] } }, "idsTest/systems.ts#system"), (row, { resources }) => { row[scoreAgain] = resources[levelAgain]; });
+        const first = system(identify({ name: "idsTest/system", components: { write: [score] }, resources: { read: [level] } }, "idsTest/systems.ts#system"), (row: Row, { resources }: { resources: Row }) => { row[score] = resources[level] ?? 0; });
+        const again = system(identify({ name: "idsTest/system", components: { write: [scoreAgain] }, resources: { read: [levelAgain] } }, "idsTest/systems.ts#system"), (row: Row, { resources }: { resources: Row }) => { row[scoreAgain] = resources[levelAgain] ?? 0; });
         expect(again).not.toBe(first);
         expect(sameItem(again, first)).toBe(true);
     });
     it("accept a rule whose keys match by id, which is already recorded", () => {
-        const rule = Rule.create(identify({ name: "idsTest/rule", components: { has: [score] }, derive: [shown] }, "idsTest/systems.ts#rule"));
+        const created = rule(identify({ name: "idsTest/rule", components: { has: [score] }, derive: [shown] }, "idsTest/systems.ts#rule"));
         const rules = programRules().length;
-        expect(Rule.create(identify({ name: "idsTest/rule", components: { has: [scoreAgain] }, derive: [shownAgain] }, "idsTest/systems.ts#rule"))).toBe(rule);
+        expect(rule(identify({ name: "idsTest/rule", components: { has: [scoreAgain] }, derive: [shownAgain] }, "idsTest/systems.ts#rule"))).toBe(created);
         expect(programRules()).toHaveLength(rules);
     });
     it("accept a finalizer whose keys match by id, keeping its place with the new body", () => {
-        const first = Finalizer.create(identify({ name: "idsTest/finalizer", components: { read: [score] } }, "idsTest/systems.ts#finalizer"), () => {});
+        const first = finalizer(identify({ name: "idsTest/finalizer", components: { read: [score] } }, "idsTest/systems.ts#finalizer"), () => {});
         const body = (): void => {};
-        expect(Finalizer.create(identify({ name: "idsTest/finalizer", components: { read: [scoreAgain] } }, "idsTest/systems.ts#finalizer"), body)).toBe(first);
+        expect(finalizer(identify({ name: "idsTest/finalizer", components: { read: [scoreAgain] } }, "idsTest/systems.ts#finalizer"), body)).toBe(first);
         const found = programFinalizers().find(finalizer => finalizer.name === "idsTest/finalizer");
         expect(found?.kind === "finalizer" ? found.body : null).toBe(body);
     });
     it("schedule symbols of one id as one key", () => {
-        const write = System.create({ name: "idsTest/write", components: { write: [score] } }, row => { row[score] = 1; });
-        const read = System.create({ name: "idsTest/read", components: { read: [scoreAgain] } }, row => { void row[scoreAgain]; });
-        expect(() => scheduleOf(requireDefinition(System.create({ name: "idsTest/unordered", systems: [write, read] })))).toThrow("both access");
+        const write = system({ name: "idsTest/write", components: { write: [score] } }, (row: Row) => { row[score] = 1; });
+        const read = system({ name: "idsTest/read", components: { read: [scoreAgain] } }, (row: Row) => { void row[scoreAgain]; });
+        expect(() => scheduleOf(requireDefinition(system({ name: "idsTest/unordered", systems: [write, read] })))).toThrow("both access");
     });
 });

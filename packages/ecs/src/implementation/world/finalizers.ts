@@ -16,7 +16,7 @@ import type { Essential, ReadonlyValue } from '../../interface/component/value.j
 import type { Leaf } from '../../interface/finalizer/created.js';
 import { newestKeyOf, threadOf } from '../../interface/registry/index.js';
 import type { TaskChannel } from './remote-systems.js';
-import { writeStops, type StopsOf } from './stop-lists.js';
+import { resourceOffsetsOf, writeStops, type StopsOf } from './stop-lists.js';
 import { acquireLookups, refreshUses, type IndexLookups } from './indexes.js';
 import { indexWatchesOf } from './lookup-keys.js';
 
@@ -112,14 +112,22 @@ export const placeFinalizer = (state: State, runner: FinalizerRunner, channel: T
             copies.push(layout.kind === "string");
         }
     }
-    // In the order the thread's context reads them.
+    // Its string and linear resources, in the order the thread's context reads them, copied as of before apply.
     const stringResources: number[] = [];
+    const linearResources: number[] = [];
+    const resourceStrides: number[] = [];
     for (const key of new Set<Key>(finalizer.declaration.resources?.read ?? [])) {
         const id = idOf(state, key);
-        if (state.layouts[id].kind === "string") stringResources.push(id);
+        const layout = state.layouts[id];
+        if (layout.kind === "string") stringResources.push(id);
+        else if (layout.kind === "linear") {
+            linearResources.push(id);
+            resourceStrides.push(layout.stride);
+        }
     }
+    const resourceOffsets = resourceOffsetsOf(stringResources.length, resourceStrides);
     const index = channel.placeFinalizer(state, finalizer);
-    runner.remote = { finalizer, index, objects, linear, strides, copies, stringResources, entries: [], channel };
+    runner.remote = { finalizer, index, objects, linear, strides, copies, stringResources, linearResources, resourceStrides, resourceOffsets, entries: [], channel };
 };
 
 const matches = (runner: FinalizerRunner, archetype: Archetype): boolean => {

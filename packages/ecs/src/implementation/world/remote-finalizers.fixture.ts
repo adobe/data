@@ -6,7 +6,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import type { FromRemoteFinalizersWorker, ToRemoteFinalizersWorker } from "./remote-finalizers-worker.fixture.js";
-import { despawn, rehead, released, retitle, scenario, serial, sorted, spawn, spawnHeaded, spawnTitled, type Released } from "./remote-finalizers.test-helper.js";
+import { despawn, regauge, rehead, released, retitle, scenario, serial, sorted, spawn, spawnHeaded, spawnTitled, type Released } from "./remote-finalizers.test-helper.js";
 import { fillReports, runReported } from "./reports.test-helper.js";
 
 /**
@@ -176,4 +176,28 @@ export const headedStops = async () => {
     await worker.terminate();
     await world.dispose();
     return { one: [...seen].sort((a, b) => a.serial - b.serial), two: [...both].sort((a, b) => a.serial - b.serial) };
+};
+
+/**
+ * Headed rows despawned at level 0 while the worker is held, then the world's thread writing the level and origin six
+ * times, and the rest despawned once it goes on: the linear resources its finalizer read.
+ */
+export const gaugedStops = async () => {
+    const world = createWorld({ [workers]: 0 });
+    const { worker } = await joined(world);
+    await world.run(regauge, { level: 0 });
+    await world.run(spawnHeaded, { from: 0, count: 20 });
+    const release = await hold(worker);
+    await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => k) });
+    for (let round = 1; round <= 6; round++) await world.run(regauge, { level: round });
+    release();
+    await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => 10 + k) });
+    let seen: readonly { readonly serial: number; readonly level: number; readonly origin: readonly number[] }[] = [];
+    for (let k = 0; k < 200 && seen.length < 20; k++) {
+        const reply = await worker.ask({ kind: "gauged" });
+        seen = reply.kind === "gauged" ? reply.gauged : [];
+    }
+    await worker.terminate();
+    await world.dispose();
+    return [...seen].sort((a, b) => a.serial - b.serial);
 };

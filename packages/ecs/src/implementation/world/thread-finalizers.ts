@@ -11,7 +11,7 @@ import type { WorkerError } from './protocol.js';
 import { rowBinderOf, type Row, type RowArchetype, type RowHost, type RowStorage } from './rows.js';
 import {
     archetypesAt, blockGroupsWord, blockHeaderBytes, blockNextWord, blockSyncWord, columnBytes, entitiesAt, groupBytesWord, groupCountWord,
-    groupIndexWord, rowsAt, tagsAt, valuesAt,
+    groupIndexWord, resourceOffsetsOf, rowsAt, tagsAt, valuesAt,
 } from './stop-lists.js';
 import type { Key } from './state.js';
 import type { StringStore } from './strings.js';
@@ -64,12 +64,10 @@ type ThreadFinalizer = {
     readonly bind: (archetype: RowArchetype) => Row;
     readonly context: object;
     /**
-     * Resolves its resources: its thread's objects as it holds them, its strings from the copies a group holds at byte
-     * `strings`, or with -1 as of now, and any other's cell as of now.
+     * Resolves its resources: its thread's objects as it holds them, and the rest from the copies a group holds from
+     * byte `copies`, as before its stops' sync point applied, or with -1, once the world is disposed, where they are.
      */
-    readonly cells: (strings: number) => void;
-    /** How many string resources it reads, whose copies each group holds after its columns. */
-    readonly stringResources: number;
+    readonly cells: (copies: number) => void;
     readonly body: (row: object, context: object) => void;
 };
 
@@ -138,18 +136,33 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         const resourceStarts = numbers.map(number => mirror.starts.get(number) ?? null);
         const ownValues: unknown[] = keys.map(() => undefined);
         const shared = own.includes(false);
-        // By slot among a group's copies of string resources: its key's index and layout.
+        // The world copies the rest for each group, in this order: by slot, its strings' handles, then its linear
+        // values, each with its key's index and layout. A constant needs no copy.
         const stringKeys: number[] = [];
         const stringLayouts: Layout[] = [];
+        const linearKeys: number[] = [];
+        const linearLayouts: Layout[] = [];
+        const linearStrides: number[] = [];
+        const constantKeys: number[] = [];
+        const constantStorages: FinalizedStorage[] = [];
         keys.forEach((key, k) => {
             const layout = host.layoutOf(key);
-            if (layout?.kind !== "string") return;
-            stringKeys.push(k);
-            stringLayouts.push(layout);
+            if (layout === undefined || layout.kind === "object") return;
+            if (layout.kind === "string") {
+                stringKeys.push(k);
+                stringLayouts.push(layout);
+            }
+            else if (layout.kind === "linear") {
+                linearKeys.push(k);
+                linearLayouts.push(layout);
+                linearStrides.push(layout.stride);
+            }
+            else {
+                constantKeys.push(k);
+                constantStorages.push(columnStorage(numbers[k], layout, emptyViews, [], null));
+            }
         });
-        const stringResources = stringKeys.length;
-        // Whether it reads a resource where it is even while a group holds copies of its strings.
-        const live = keys.some((key, k) => !own[k] && host.layoutOf(key)?.kind !== "string");
+        const resourceOffsets = resourceOffsetsOf(stringKeys.length, linearStrides);
         if (keys.length > 0) {
             const values: object = Object.create({});
             keys.forEach((key, k) => {
@@ -173,25 +186,36 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
             excluded: (components.not ?? []).map(host.numberOf),
             bind: rowBinderOf<RowArchetype>(host.rows, host.numberOf, reads, []),
             context: value,
-            stringResources,
-            cells: strings => {
-                const copied = strings >= 0 && stringResources > 0;
-                const found = (copied ? live : shared) ? host.resourceRow() : null;
-                for (let k = 0; k < keys.length; k++) {
-                    // Before a rebuild too, its old rows are the mirror's, which hold what the rebuild keeps.
-                    if (own[k]) ownValues[k] = resourceValueOf(mirror, numbers[k], resourceStarts[k]);
-                    else {
+            cells: copies => {
+                // Before a rebuild too, its old rows are the mirror's, which hold what the rebuild keeps.
+                for (let k = 0; k < keys.length; k++) if (own[k]) ownValues[k] = resourceValueOf(mirror, numbers[k], resourceStarts[k]);
+                if (!shared) return;
+                if (copies < 0) {
+                    const found = host.resourceRow();
+                    for (let k = 0; k < keys.length; k++) {
+                        if (own[k]) continue;
                         resolved[k].storage = found?.archetype.storageById[numbers[k]];
                         resolved[k].row = found?.row ?? 0;
                     }
+                    return;
                 }
-                if (!copied) return;
-                // As before its stops' sync point applied, from the group's copies of their records: a handle a slot.
-                const views = viewsOf(buffer, strings, 4 * stringResources);
-                for (let slot = 0; slot < stringResources; slot++) {
-                    const k = stringKeys[slot];
-                    resolved[k].storage = columnStorage(numbers[k], stringLayouts[slot], views, [], host.strings);
-                    resolved[k].row = slot;
+                if (stringKeys.length > 0) {
+                    // One view over every handle, a slot each.
+                    const views = viewsOf(buffer, copies, 4 * stringKeys.length);
+                    for (let slot = 0; slot < stringKeys.length; slot++) {
+                        const k = stringKeys[slot];
+                        resolved[k].storage = columnStorage(numbers[k], stringLayouts[slot], views, [], host.strings);
+                        resolved[k].row = slot;
+                    }
+                }
+                for (let slot = 0; slot < linearKeys.length; slot++) {
+                    const k = linearKeys[slot];
+                    resolved[k].storage = columnStorage(numbers[k], linearLayouts[slot], viewsOf(buffer, copies + resourceOffsets[slot], linearStrides[slot]), [], null);
+                    resolved[k].row = 0;
+                }
+                for (let slot = 0; slot < constantKeys.length; slot++) {
+                    resolved[constantKeys[slot]].storage = constantStorages[slot];
+                    resolved[constantKeys[slot]].row = 0;
                 }
             },
             body: (row, context) => untyped.body(row, context),
@@ -273,7 +297,7 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
             }
             for (let k = 0; k < finalizer.constants.length; k++) storageById[finalizer.constants[k]] = columnStorage(finalizer.constants[k], finalizer.constantLayouts[k], emptyViews, [], null);
             const row = finalizer.bind({ id: -1, entities: new Float64Array(buffer, entitiesAt(group), count), storageById });
-            finalizer.cells(finalizer.stringResources > 0 ? column : -1);
+            finalizer.cells(column);
             for (let i = 0; i < count; i++) {
                 row.index = i;
                 guarded(index, finalizer, row);

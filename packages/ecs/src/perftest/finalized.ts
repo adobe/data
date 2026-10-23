@@ -12,12 +12,15 @@ import { runReported } from "../implementation/world/reports.test-helper.js";
 // Despawning entities whose objects a joined thread fills, with a finalizer on that thread: the world's thread writes
 // each stop's declared struct reads into the thread's stop list and doesn't wait for it. The joined thread is
 // `joined.ts`, which imports this module, so it runs the finalizers. A second finalizer, over other entities, reads a
-// string resource too, which each sync point's stop list holds a copy of.
+// string resource too, and a third two linear resources, which each sync point's stop list holds copies of.
 
 const spot = Symbol("finalized/spot");
 const handle = Symbol("finalized/handle");
 const noted = Symbol("finalized/noted");
 const note = Symbol("finalized/note");
+const measured = Symbol("finalized/measured");
+const scale = Symbol("finalized/scale");
+const offset = Symbol("finalized/offset");
 declare module "@adobe/ecs" {
     export interface Threads {
         finalizedBenchmark: true;
@@ -26,9 +29,12 @@ declare module "@adobe/ecs" {
         [spot]: { type: readonly [number, number, number] };
         [handle]: { type: { readonly release: () => void } | null; thread: "finalizedBenchmark" };
         [noted]: { type: { readonly release: () => void } | null; thread: "finalizedBenchmark" };
+        [measured]: { type: { readonly release: () => void } | null; thread: "finalizedBenchmark" };
     }
     export interface Resources {
         [note]: { type: string };
+        [scale]: { type: number };
+        [offset]: { type: readonly [number, number, number] };
     }
 }
 Component.register(spot, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
@@ -36,6 +42,9 @@ Component.register(spot, { type: { type: "array", items: { type: "number", preci
 Component.register(handle, { thread: "finalizedBenchmark" });
 Component.register(noted, { thread: "finalizedBenchmark" });
 Resource.register(note, { type: { type: "string", default: "released" } });
+Component.register(measured, { thread: "finalizedBenchmark" });
+Resource.register(scale, { type: { type: "number", default: 1 } });
+Resource.register(offset, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3, default: [0, 0, 0] } });
 
 /** Entities each timed sync point despawns. */
 export const despawnedObjects = 10_000;
@@ -53,6 +62,12 @@ export const releaseNoted = Finalizer.create({ name: "finalized/releaseNoted", c
     if (row[spot][0] >= 0 && resources[note].length > 0) releases.count++;
 });
 
+/** On the joined thread: the same, reading two linear resources of the world's too. */
+export const releaseMeasured = Finalizer.create({ name: "finalized/releaseMeasured", components: { read: [measured, spot] }, resources: { read: [scale, offset] } }, (row, { resources }) => {
+    row[measured]?.release();
+    if (row[spot][0] * resources[scale] + resources[offset][0] >= 0) releases.count++;
+});
+
 const spawn = System.create({ name: "finalized/spawn" }, ({ commands }) => {
     for (let k = 0; k < despawnedObjects; k++) commands.spawn([spot, handle])({ [spot]: [k, 0, 0], [handle]: null });
 });
@@ -61,6 +76,12 @@ const despawn = System.create({ name: "finalized/despawn", components: { has: [h
 });
 const spawnNoted = System.create({ name: "finalized/spawnNoted" }, ({ commands }) => {
     for (let k = 0; k < despawnedObjects; k++) commands.spawn([spot, noted])({ [spot]: [k, 0, 0], [noted]: null });
+});
+const spawnMeasured = System.create({ name: "finalized/spawnMeasured" }, ({ commands }) => {
+    for (let k = 0; k < despawnedObjects; k++) commands.spawn([spot, measured])({ [spot]: [k, 0, 0], [measured]: null });
+});
+const despawnMeasured = System.create({ name: "finalized/despawnMeasured", components: { has: [measured, spot] } }, (row, { commands }) => {
+    commands.despawn(row.entity);
 });
 const despawnNoted = System.create({ name: "finalized/despawnNoted", components: { has: [noted, spot] } }, (row, { commands }) => {
     commands.despawn(row.entity);
@@ -150,5 +171,14 @@ export const finalizedBenchmarks: readonly Benchmark[] = [
         typical: [1, 10_000],
         best: { bytes: 56, basis: "As `despawn objects 10K`: the resource's copy is once per sync point." },
         run: () => despawnObjects(spawnNoted, despawnNoted),
+    },
+    {
+        name: "despawn objects 10K linear resource",
+        operation: "`despawn objects 10K` with the finalizer reading a number and a vec3 resource too, which the sync point's stop list holds copies of, so the thread reads them as they were before apply.",
+        per: "despawns",
+        n: despawnedObjects,
+        typical: [1, 10_000],
+        best: { bytes: 56, basis: "As `despawn objects 10K`: the resources' copies are once per sync point." },
+        run: () => despawnObjects(spawnMeasured, despawnMeasured),
     },
 ];

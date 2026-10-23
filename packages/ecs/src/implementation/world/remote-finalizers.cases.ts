@@ -30,4 +30,9 @@ export const remoteFinalizersCases = (load: () => Promise<typeof Fixture>) => de
             two: Array.from({ length: 20 }, (_, k) => ({ serial: k, heading: heading(k), subheading: `s${heading(k)}` })),
         });
     }, 30000);
+    it("read a number and a struct resource as they were before their stops' sync point applied, after the world wrote them again", async () => {
+        const fixture = await load();
+        const level = (k: number): number => k < 10 ? 0 : 6;
+        expect(await fixture.gaugedStops()).toEqual(Array.from({ length: 20 }, (_, k) => ({ serial: k, level: level(k), origin: [level(k), level(k) + 10] })));
+    }, 30000);
 });

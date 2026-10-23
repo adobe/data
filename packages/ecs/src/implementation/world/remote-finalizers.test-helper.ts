@@ -21,6 +21,8 @@ export const title = Symbol("remoteFinalizersTest/title");
 export const headed = Symbol("remoteFinalizersTest/headed");
 export const heading = Symbol("remoteFinalizersTest/heading");
 export const subheading = Symbol("remoteFinalizersTest/subheading");
+export const level = Symbol("remoteFinalizersTest/level");
+export const origin = Symbol("remoteFinalizersTest/origin");
 declare module "@adobe/ecs" {
     export interface Threads {
         remoteFinalizersTest: true;
@@ -39,6 +41,8 @@ declare module "@adobe/ecs" {
         [tone]: { type: { readonly text: string }; thread: "remoteFinalizersTest" };
         [heading]: { type: string };
         [subheading]: { type: string };
+        [level]: { type: number };
+        [origin]: { type: readonly [number, number] };
     }
 }
 /** A value that isn't data, which only its thread holds. */
@@ -57,6 +61,9 @@ Component.register(headed, { type: { const: true } });
 /** A string resource, which the world's thread writes and the finalizer on the thread reads. */
 Resource.register(heading, { type: { type: "string", default: "h" } });
 Resource.register(subheading, { type: { type: "string", default: "s" } });
+/** Linear resources, a number and a struct, which the world's thread writes and the finalizer on the thread reads. */
+Resource.register(level, { type: { type: "number", default: -1 } });
+Resource.register(origin, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2, default: [-1, -1] } });
 
 /** A stop as the finalizer saw it, on the thread it ran on. */
 export type Released = { readonly serial: number; readonly place: readonly number[]; readonly marked: boolean; readonly widget: string | null; readonly label: string | null; readonly tone: string };
@@ -96,6 +103,20 @@ export const headlinedBoth: { readonly serial: number; readonly heading: string;
 /** On the finalizers' thread: two string resources as they were before each headed stop's sync point applied. */
 export const headlines = Finalizer.create({ name: "remoteFinalizersTest/headlines", components: { read: [serial, widget], has: [headed] }, resources: { read: [subheading, heading] } }, (row, { resources }) => {
     headlinedBoth.push({ serial: row[serial], heading: resources[heading], subheading: resources[subheading] });
+});
+
+/** Every headed stop finalized on this thread, in order, with the linear resources it read. */
+export const gauged: { readonly serial: number; readonly level: number; readonly origin: readonly number[] }[] = [];
+
+/** On the finalizers' thread: a number and a struct resource as they were before each headed stop's sync point applied. */
+export const gauge = Finalizer.create({ name: "remoteFinalizersTest/gauge", components: { read: [serial, widget], has: [headed] }, resources: { read: [origin, level] } }, (row, { resources }) => {
+    gauged.push({ serial: row[serial], level: resources[level], origin: [...resources[origin]] });
+});
+
+/** From the world's thread: the level, and the origin at it. */
+export const regauge = System.create({ name: "remoteFinalizersTest/regauge", resources: { write: [level, origin] } }, ({ resources }, input: { readonly level: number }) => {
+    resources[level] = input.level;
+    resources[origin] = [input.level, input.level + 10];
 });
 
 /** Spawns headed rows from the world's thread, with the thread's widget at null. */

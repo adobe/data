@@ -10,8 +10,7 @@ export const portsCases = (load: () => Promise<typeof Fixture>) => describe("thr
         it(`fail the run whose ${wasm ? "WASM" : "JS"} task's worker is killed from outside mid-task, by ${by === "exit" ? "ending it" : "its owner"}, and every later task on it`, async () => {
             const fixture = await load();
             const { first, second, disposed } = await fixture.killedMidTask(by, wasm);
-            // A lent worker's death is what its owner reports, or its port's close where the platform has it, whichever comes first.
-            const death = by === "exit" ? /exited/ : /terminated by its owner|port closed/;
+            const death = by === "exit" ? /exited/ : /terminated by its owner/;
             expect(first.length).toBeGreaterThan(0);
             for (const message of first) expect(message).toMatch(death);
             expect(second.length).toBeGreaterThan(0);

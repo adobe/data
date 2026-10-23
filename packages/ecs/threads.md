@@ -258,7 +258,9 @@ only on node, so browser bundles never load them, and the node worker's url isn'
 so a browser build bundles one worker (`worker-platform.ts`). Death is a `Worker`'s `error` or `messageerror`, a node
 worker's `error`, `messageerror` or `exit`, or, for a lent worker, what its owner reports or either `MessagePort`'s
 `close` where the platform has it, whichever comes first; nothing polls, so a quiet world does no work. A browser
-`Worker` ended from outside its port reports nothing, so a lent worker's owner reports the end of one it ends.
+`Worker` ended from outside its port reports nothing, so a lent worker's owner reports the end of one it ends, before
+ending it. The worker's port closing is reported only once the owner answers a `closed` on its channel, which comes
+after anything it reported first, so an owner's report wins over the close its ending causes.
 
 - **Platforms:** a world's pool comes from a platform, `{ count, start }`: `count` is what the `workers` resource's
   `null` resolves to, its hardware threads, `navigator.hardwareConcurrency` or `os.availableParallelism()`, minus the

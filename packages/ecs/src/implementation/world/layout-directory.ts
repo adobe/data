@@ -12,8 +12,9 @@ import type { Memory } from './memory.js';
  *
  * Header words: the memory's length in pages (`memory.ts`), the table's offset and length, the structure epoch, then
  * the entity-table record: its `cursor` offset, which never moves, `free` offset and capacity, `archetype`, `row` and
- * `generation` offsets and their capacity, and its version; then the resource entity's index plus one, 0 for none. The
- * table's length is `cursor[2]`.
+ * `generation` offsets and their capacity, and its version; then the resource entity's index plus one, 0 for none; the
+ * structure epoch's waiters; and how many flushes replaced an existing archetype's arrays. The table's length is
+ * `cursor[2]`.
  *
  * The structure epoch is odd from the start of each sync point that applies anything until its directory writes at the
  * end, and even otherwise. A thread reading entity locations outside a task reads while it's even and checks it again
@@ -35,6 +36,11 @@ export const entitiesVersionField = 7;
 export const resourceEntityWord = 12;
 /** Readers waiting on the structure epoch, so the world notifies only when one is. */
 export const structureWaitersWord = 13;
+/**
+ * Flushes that wrote an existing archetype's record again, its arrays replaced, so a joined thread checks this word
+ * once a run rather than each record's version for every row it reads.
+ */
+export const replacedWord = 14;
 
 /**
  * An archetype record: its capacity, `entities` offset, storage count, version, flags and row count, then per storage
@@ -175,13 +181,16 @@ export const flushDirectory = (directory: LayoutDirectory | null, bumped: Archet
         directory.entities = entities.version;
     }
     if (bumped.length === 0) return;
+    let replaced = false;
     for (let k = 0; k < bumped.length; k++) {
         const archetype = bumped[k];
         archetype.listed = false;
+        if (directory.records[archetype.id] !== undefined) replaced = true;
         writeArchetype(directory, archetype);
     }
     bumped.length = 0;
     Atomics.store(directory.header, tableLengthWord, archetypes.length);
+    if (replaced) Atomics.add(directory.header, replacedWord, 1);
 };
 
 /**

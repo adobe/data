@@ -184,6 +184,10 @@ In chromium: `sparse changed main` 295 → 260 µs, `sparse changed workers` 70 
 - **WASM kernels find runs of passing blocks in an outer loop and run their rows in an inner one,** a chunk's passing blocks read into a mask once and each run found with `ctz`, a chunk with more than half its blocks passing taken as one run; every row pays one comparison against the run's end, where it paid a test of whether it started a chunk: `changed all 100K kernels` 504 → 420 µs.
 - **Index refreshes and `up` find changed key-part and filter rows by blocks too.**
 
+Joined threads' index lookups checking archetypes once a run, alternating against `13eb6d6f`, node, on a machine loaded by other work, medians of 9 and 11 rounds:
+- **A row a lookup gave stays bound while one count stays the same,** as on the world's thread: each flush that writes an existing archetype's record again adds one to a header word, and a joined thread's directory moves its count on once a run when the word, its mirror's archetypes (a rebuild) or its views (memory grown, keys named) changed. Before, every row read loaded its archetype's view, the mirror's entry and the record's version. `joined observer 10K` 485 → 438 µs and 480 → 417 µs a tick; `joined select 10K factory` 524 → 498 µs. Within noise: `joined observer numbers 10K`, `joined observer strings 10K` (their rows bind once per archetype a run either way), `joined observer resource` 4.7 against 4.6 µs, `unique lookup 1M` 79 against 71 ns (its generated site now checks the count, not the archetype's version), `grid neighbors 100K main` 5.94 against 5.99 µs a row.
+- **A rebuilt mirror's rows are bound again:** rows compare the view they were bound to, not only its version, so a row a lookup gave before the thread's log lapped no longer reads the objects of the mirror's old columns.
+
 ## Where the gains came from
 
 Step figures marked (vitest) are from the node vitest lane: read them as relative.
@@ -405,6 +409,6 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - Kernels taking `%` of an f64: a conditional on `resources[clock].tick % 2` costs about 33 ns a row in node, 10K rows 333 µs against 8.5 µs without it.
 - Replaying the move log: `log replay` takes 24 ns a move in node and 36.5 ns in chromium, two entries each, against about 1 ns to move the bytes; the cost is the per-entry dispatch and the scattered rows a swap reads.
 - Ordered selections recomputed every tick: `joined observer 10K` spends most of its 0.4–0.5 ms a tick sorting 10K entities.
-- `joined observer 10K`, back to back: lookups read the rows in place, so the world's writer waits for each run the thread claimed, about 1.07 ms, in 1,451 of 3,000 ticks; the thread's run is about 60% the benchmark's own sort, and of the rest `at` through the index without a key (14%) and a load of the archetype's version per row (12%), which a check of versions once a post would save.
+- `joined observer 10K`, back to back: lookups read the rows in place, so the world's writer waits for each run the thread claimed, about 1.07 ms, in 1,451 of 3,000 ticks; the thread's run is mostly the benchmark's own sort, and of the rest `at` through the index without a key.
 - A tail's body reading from a snapshot ran slower in one case: a loop counted down from an unbounded integer resource (an f64) took 13.6 ms against 11.2 in place over 10,000 rows of 200 steps, in node, while counted as an i32 it took 10.8 against 11.2; deopts didn't account for it.
 - Main-thread spawns reserving in blocks too: `spawn bulk` still takes one atomic add per spawn. Finalizers spawn during the sync point, after it materializes the run's reservations, so a world's block would have to end before each materialization.

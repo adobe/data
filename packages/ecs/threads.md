@@ -184,7 +184,7 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   flags (`ticked`, linear, remote with the joined thread's number), its column, tick and chunk-tick offsets, its
   chunk count and its block-tick offsets, sixteen blocks a chunk; a remote storage's column is its tags. Offsets are
   `Uint32`, since memory reaches 4 GiB. The resource archetype has a record too, flagged, and the header holds the
-  resource entity's index.
+  resource entity's index, and a count of flushes that wrote an existing archetype's record again.
 - **Entity-table record:** the `cursor` offset, which never moves, the free list's offset and capacity, the
   `archetype`, `row` and `generation` offsets and capacity, and a version. The table's length is `cursor[2]`. Its
   arrays move whenever they grow, even without memory growing, since a grown array's old block is reused.
@@ -196,7 +196,9 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 - **Reads:** a thread checks a record's version, one load, before using what it cached for that archetype, and keeps
   per-archetype column views and kernel columns, rebuilt only when that version moves. The whole-buffer view serves the
   header and records; columns stay views of their own, as kernels and layouts take them. On an entity-table version
-  change, a worker updates the `entities` object its spawners hold in place.
+  change, a worker updates the `entities` object its spawners hold in place. A joined thread's index lookups check
+  that count once a run instead, with its mirror's archetypes and its own views (memory grown, keys named): rows they
+  gave stay bound while none moved, and are bound again to the views they find otherwise, a rebuilt mirror's included.
 - **Messages:** only new components' schemas are posted, none for a value that isn't data, since a message closes the
   pool's windows. A new archetype is found in the table, its record naming its component numbers, the first time a
   task names it.

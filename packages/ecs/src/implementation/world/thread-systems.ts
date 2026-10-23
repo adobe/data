@@ -286,7 +286,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
 
     const runnerHost: RunnerHost = {
         rows: rowHost, archetypeAt, countOf, tableCount, resourceRow, refreshEntities, commands, mirror,
-        refresh: directory.refresh,
+        refresh: directory.refresh, replaced: directory.replaced,
         numberOf: directory.numberOf,
         layoutOf: directory.layoutOf,
         strings: directory.strings,
@@ -596,8 +596,10 @@ export type RunnerHost = {
     readonly layoutOf: (key: Key) => Layout | undefined;
     /** This thread's objects, null where it fills none. */
     readonly mirror: Mirror | null;
-    /** Views of the memory again, once it grew: its buffer. */
+    /** Views of the memory again, once it grew, and `replaced` moved on if a view may have: its buffer. */
     readonly refresh: () => ArrayBufferLike;
+    /** Moved on by `refresh` once any archetype's view may have changed, which index lookups' rows check (`thread-directory.ts`). */
+    readonly replaced: { readonly count: number };
     /** The records strings' columns name. */
     readonly strings: StringStore;
 };
@@ -700,7 +702,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
             if (index === undefined || record === undefined) found = entityLookupOf(host, declared, lookupSince);
             else {
                 const reads = declared.read ?? [];
-                const threadIndex = createThreadIndex(host.rows, host.archetypeAt, {
+                const threadIndex = createThreadIndex(host.rows, host.archetypeAt, host.replaced, {
                     layouts: index.declaration.key.map(key => {
                         const layout = host.layoutOf(key);
                         if (layout === undefined) throw new Error(`"${labelOf(key)}" has no registered schema; import the module that registers it.`);

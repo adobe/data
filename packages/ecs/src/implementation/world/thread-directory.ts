@@ -6,7 +6,7 @@ import { emptyViews } from './arrays.js';
 import { tableLength } from './entities.js';
 import {
     archetypeField, capacityField, cursorField, entitiesVersionField, entitiesWord, freeCapacityField, freeField, generationField, linearFlag,
-    recordCapacity, recordCount, recordEntities, recordFlags, recordStorages, recordVersion, recordWords, metaFlag, remoteFlag, resourceEntityWord, resourceFlag,
+    recordCapacity, recordCount, recordEntities, recordFlags, recordStorages, recordVersion, recordWords, metaFlag, remoteFlag, replacedWord, resourceEntityWord, resourceFlag,
     rowField, storageAdded, storageBlockAdded, storageBlockChanged, storageChanged, storageChunkAdded, storageChunkChanged, storageChunks, storageColumn,
     storageComponent, storageFlags, storageWords, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
 } from './layout-directory.js';
@@ -67,12 +67,38 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
     const thread = mirror?.thread ?? -1;
     /** The records strings' columns name, which this thread reads. */
     const strings = createStringReader(memory);
+    /**
+     * Moved on whenever a view `archetypeAt` gave a row may have been made again: the world replaced an archetype's
+     * arrays, the views were dropped, or the mirror rebuilt. Index lookups' rows stay bound while it stays the same, so
+     * they check it rather than each archetype for every row. A mirror that begins holding an archetype needs no move:
+     * it does from the first entry naming it, replayed before any run reads a row there.
+     */
+    const replaced = { count: 0 };
+    /** The directory's `replacedWord`, and the mirror's archetypes, as this thread last saw them. */
+    let replacedSeen = 0;
+    let mirroredSeen: readonly (Mirrored | null | undefined)[] = noMirrored;
 
-    /** Views of the memory again, once it grew; every archetype's views with them. Returns its buffer. */
+    /**
+     * Moves `replaced` on if any archetype's view may have changed since it last looked: once a run, before it reads
+     * rows, since the world replaces arrays only at a sync point or a move outside one, which wait for a run in progress.
+     */
+    const settle = (): void => {
+        const word = Atomics.load(viewed.words, replacedWord);
+        const mirrored = mirror?.archetypes ?? noMirrored;
+        if (word === replacedSeen && mirrored === mirroredSeen) return;
+        replacedSeen = word;
+        mirroredSeen = mirrored;
+        replaced.count++;
+    };
+
+    /** Views of the memory again, once it grew, every archetype's with them, and `replaced` settled. Returns its buffer. */
     const refresh = (): ArrayBufferLike => {
         if (viewed.words.length === 0) viewed.words = new Uint32Array(memory.buffer);
         const current = Atomics.load(viewed.words, pagesWord);
-        if (current === pages) return viewed.buffer;
+        if (current === pages) {
+            settle();
+            return viewed.buffer;
+        }
         const latest = coveringBuffer(memory, current * pageBytes);
         if (latest.byteLength < current * pageBytes) throw new Error(`This thread's memory is ${latest.byteLength} bytes, short of the ${current * pageBytes} the world stored.`);
         viewed.buffer = latest;
@@ -80,7 +106,9 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
         viewed.views = viewsOf(latest, 0, latest.byteLength);
         pages = current;
         archetypes.length = 0;
+        replaced.count++;
         entitiesVersion = -1;
+        settle();
         return latest;
     };
 
@@ -194,6 +222,7 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
                 layouts[number] = layoutOf(declarationOf(key)?.type);
                 // Views hold storages only of components with layouts here, so they're made again.
                 archetypes.length = 0;
+                replaced.count++;
             }
         }
     };
@@ -205,7 +234,7 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
     };
 
     return {
-        viewed, rows, keys, layouts, numbers, mirror, strings,
+        viewed, rows, keys, layouts, numbers, mirror, strings, replaced,
         refresh, refreshEntities, archetypeAt, countOf, resourceRow, tableCount, name, numberOf,
         layoutOf: (key: Key): Layout | undefined => layouts[numbers.get(firstKeyOf(key)) ?? -1],
     };

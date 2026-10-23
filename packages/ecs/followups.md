@@ -117,8 +117,6 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 
 - **`transfer`, chromium:** its median varied with machine load. Check it alone on a quiet machine before the next
   record.
-- **`joined observer 10K`:** checking archetype versions once per post instead of per row would save some of the
-  thread's run (see perf.md "Next").
 
 ## Earlier open work
 

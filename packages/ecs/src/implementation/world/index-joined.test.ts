@@ -27,6 +27,7 @@ const name = Symbol("indexJoinedTest/name");
 const title = Symbol("indexJoinedTest/title");
 const band = Symbol("indexJoinedTest/band");
 const bandReader = Symbol("indexJoinedTest/bandReader");
+const marked = Symbol("indexJoinedTest/marked");
 
 declare module "@adobe/ecs" {
     export interface Threads {
@@ -44,6 +45,7 @@ declare module "@adobe/ecs" {
         [title]: { type: string };
         [band]: { type: number };
         [bandReader]: { type: true };
+        [marked]: { type: true };
     }
 }
 Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
@@ -60,6 +62,7 @@ Component.register(name, { type: text, thread: "indexJoinedTest" });
 Component.register(title, { type: { type: "string" } });
 Component.register(band, { type: { type: "integer", minimum: 0, maximum: 1 } });
 Component.register(bandReader, { type: { const: true } });
+Component.register(marked, { type: { const: true } });
 
 const grid = Index.create({ name: "indexJoinedTest/grid", key: [cell], components: { has: [weight] } });
 const serials = Index.create({ name: "indexJoinedTest/serials", key: [serial], unique: true, components: { has: [weight] } });
@@ -276,6 +279,81 @@ const joinedStatus = (world: CreatedWorld): Promise<void> => new Promise(resolve
     });
 });
 
+/** Entities a keyless and a unique index hold, each with this thread's label and a string title. */
+const seedHeld = System.create({ name: "indexJoinedTest/seedHeld" }, ({ commands }, input: { readonly from: number; readonly count: number }) => {
+    for (let k = input.from; k < input.from + input.count; k++) commands.spawn([serial, weight, label, title])({ [serial]: k, [weight]: k % 5, [label]: blank, [title]: `t${k}` });
+});
+/** On the joined thread: every label, by serial and round. */
+const relabelHeld = System.create({ name: "indexJoinedTest/relabelHeld", components: { read: [serial], write: [label], has: [title] } }, (row, _context, input: { readonly round: number }) => {
+    row[label] = { text: `${row[serial]}.${input.round}` };
+});
+/** On the world's thread: every weight and title, by round. */
+const rewriteHeld = System.create({ name: "indexJoinedTest/rewriteHeld", components: { read: [serial], write: [weight, title] } }, (row, _context, input: { readonly round: number }) => {
+    row[weight] = row[serial] * 10 + input.round;
+    row[title] = `t${row[serial]}.${input.round}`;
+});
+/** Moves every held entity to the other archetype, marked on one run and not on the next. */
+const markHeld = System.create({ name: "indexJoinedTest/markHeld", components: { has: [title], not: [marked] } }, (row, { commands }) => {
+    commands.add(row.entity, marked);
+});
+const unmarkHeld = System.create({ name: "indexJoinedTest/unmarkHeld", components: { has: [title, marked] } }, (row, { commands }) => {
+    commands.remove(row.entity, marked);
+});
+const held = Index.create({ name: "indexJoinedTest/held", key: [], components: { has: [serial, weight, label, title] } });
+const heldSerials = Index.create({ name: "indexJoinedTest/heldSerials", key: [serial], unique: true, components: { has: [weight, label, title] } });
+/** What `observeHeld` read last. */
+let observedHeld = "";
+/** An observer system reading every held row through the keyless index, and serial 3's through the unique one. */
+const observeHeld = System.create({
+    name: "indexJoinedTest/observeHeld", observer: true,
+    lookup: { all: { index: held, read: [serial, weight, label, title] }, bySerial: { index: heldSerials, read: [weight, label, title] } },
+}, ({ lookup }) => {
+    const all = lookup.all();
+    const read: string[] = [];
+    for (let i = 0; i < all.length; i++) {
+        const row = all.at(i);
+        read.push(`${row[serial]}:${row[weight]}:${row[label].text}:${row[title]}`);
+    }
+    const one = lookup.bySerial(3);
+    observedHeld = `${read.sort().join(",")}|${one === null ? "none" : `${one[weight]}:${one[label].text}:${one[title]}`}`;
+});
+/**
+ * Observes the held rows where `holder` runs observer systems, around what makes the rows a lookup gave stale: arrays
+ * grown, values and strings rewritten, the thread's labels rewritten, and every row moved past what its log holds.
+ */
+const heldScenario = async (world: CreatedWorld, holder: World): Promise<readonly string[]> => {
+    const seen: string[] = [];
+    const observe = async (): Promise<void> => {
+        await holder.run(observeHeld);
+        seen.push(observedHeld);
+    };
+    await world.run(seedHeld, { from: 0, count: 8 });
+    await world.run(relabelHeld, { round: 0 });
+    await observe();
+    // Past the archetype's capacity, without growing the memory.
+    await world.run(seedHeld, { from: 8, count: 12 });
+    await observe();
+    await world.run(rewriteHeld, { round: 1 });
+    await world.run(relabelHeld, { round: 1 });
+    await observe();
+    await world.run(seedHeld, { from: 20, count: 600 });
+    await observe();
+    // Both archetypes and the reports' grown, so lapping the log again replaces no arrays: only the mirror's rebuild
+    // makes views again.
+    const lap = async (): Promise<void> => {
+        for (let k = 0; k < 30; k++) await world.run(k % 2 === 0 ? markHeld : unmarkHeld);
+        await world.run(dropReports);
+    };
+    await lap();
+    await observe();
+    await lap();
+    await observe();
+    await world.run(relabelHeld, { round: 2 });
+    await world.run(rewriteHeld, { round: 2 });
+    await observe();
+    return seen;
+};
+
 describe("systems on a joined thread looking up through indexes", () => {
     it("find what the world's own systems find: hash buckets, unique rows, sorted ranges and changes", async () => {
         const inline = createWorld({ [workers]: 0 });
@@ -320,6 +398,20 @@ describe("systems on a joined thread looking up through indexes", () => {
         await joinedStatus(world);
         expect(await observedBandScenario(world, remote)).toEqual(alone);
         expect(alone.every(round => round.length === 2 && round.every(text => text.split(",").length > 100))).toBe(true);
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("read rows as of each run's sync point once arrays grew, values, strings and the thread's objects changed, and its log lapped", async () => {
+        const inline = createWorld({ [workers]: 0 });
+        const alone = await heldScenario(inline, inline);
+        await inline.dispose();
+        const world = createWorld({ [workers]: 0 });
+        const channel = new MessageChannel();
+        world.share(channel.port1);
+        const remote = join(channel.port2, { threads: ["indexJoinedTest"] });
+        await joinedStatus(world);
+        expect(await heldScenario(world, remote)).toEqual(alone);
+        expect(alone.at(-1)).toContain("|32:3.2:t3.2");
         await remote.dispose();
         await world.dispose();
     });

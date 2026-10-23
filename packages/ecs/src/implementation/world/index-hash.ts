@@ -58,10 +58,11 @@ export type HashTable = {
     size: number;
     /** By component a lookup watches: by bucket, the newest tick its value may have changed in a row there. */
     readonly watched: Map<number, Float64Array>;
-    /** How many buckets are unsorted, and a list holding each of them, and some sorted since. */
+    /** How many buckets are unsorted, and a list holding each of them once, and some sorted since; by bucket, 1 when listed. */
     unsorted: number;
     unsortedBuckets: Int32Array;
     unsortedListed: number;
+    listed: Uint8Array;
     /**
      * By bucket id: where its tail starts, or -1 when it's sorted; the slots its entries and holes take; and a position
      * no hole is before.
@@ -116,6 +117,7 @@ export const createHashTable = (memory: Memory, words: number): HashTable => ({
     unsorted: 0,
     unsortedBuckets: new Int32Array(8),
     unsortedListed: 0,
+    listed: new Uint8Array(8),
     tails: new Int32Array(8).fill(-1),
     extents: new Int32Array(8),
     holes: new Int32Array(8),
@@ -169,6 +171,9 @@ export const coverBuckets = (table: HashTable, count: number): void => {
     table.tails = grown(table.tails, length, -1);
     table.extents = grown(table.extents, length, 0);
     table.holes = grown(table.holes, length, 0);
+    const listed = new Uint8Array(length);
+    listed.set(table.listed);
+    table.listed = listed;
 };
 
 /** A bucket's segment's first entry, length and capacity. */
@@ -302,9 +307,17 @@ const scratchOf = (table: HashTable, words: number): Float64Array => {
 };
 
 /**
+ * Words a move by an odd number of words takes at least before it goes through the scratch, which costs two views of
+ * it; a shorter one copies a word at a time, allocating nothing. A move this long takes about a microsecond, the views
+ * tens of nanoseconds.
+ */
+const oddWideMinimum = 1024;
+
+/**
  * Moves `words` of entries from `from` to `to` in a table's buffer. Shared memory copies an element at a time, so a
  * long move copies 8-byte words, 8 times faster than 4-byte ones: directly when both ends have the same parity, an
- * edge word by hand; else through a scratch, which shifts them by a word, the target's edge words kept.
+ * edge word by hand; else, past `oddWideMinimum`, through a scratch, which shifts them by a word, the target's edge
+ * words kept.
  */
 const moveWide = (table: HashTable, to: number, from: number, words: number): void => {
     const { entries } = table;
@@ -327,6 +340,11 @@ const moveWide = (table: HashTable, to: number, from: number, words: number): vo
             wide.copyWithin((to + odd) >> 1, (from + odd) >> 1, (from + odd + even) >> 1);
             if (odd === 1) entries[to] = entries[from];
         }
+        return;
+    }
+    if (words < oddWideMinimum) {
+        if (to < from) for (let k = 0; k < words; k++) entries[to + k] = entries[from + k];
+        else for (let k = words - 1; k >= 0; k--) entries[to + k] = entries[from + k];
         return;
     }
     const sourceFirst = from & ~1;
@@ -415,30 +433,43 @@ const countEmpty = (table: HashTable, before: number, after: number): void => {
     else if (before > 0 && after === 0) table.empty++;
 };
 
-/** Marks a sorted bucket unsorted, with an empty tail and no holes, listing it. */
+/** Empties the list of unsorted buckets, each one listed no longer. */
+const clearList = (table: HashTable): void => {
+    const list = table.unsortedBuckets;
+    for (let k = 0; k < table.unsortedListed; k++) table.listed[list[k]] = 0;
+    table.unsortedListed = 0;
+};
+
+/** Marks a sorted bucket unsorted, with an empty tail and no holes, listing it unless it's listed still. */
 const unsort = (table: HashTable, bucket: number): void => {
     const length = lengthOf(table, bucket);
     table.tails[bucket] = length;
     table.extents[bucket] = length;
     table.holes[bucket] = length;
     table.unsorted++;
+    if (table.listed[bucket] === 1) return;
     let listed = table.unsortedListed;
-    // The list drops the buckets sorted since they were listed once they're most of it.
+    const list = table.unsortedBuckets;
+    // The list drops the buckets sorted since they were listed once they're most of it, so each listing costs O(1)
+    // amortized.
     if (listed >= 2 * table.unsorted + 8) {
-        const list = table.unsortedBuckets;
         let kept = 0;
-        for (let k = 0; k < listed; k++) if (table.tails[list[k]] >= 0) list[kept++] = list[k];
+        for (let k = 0; k < listed; k++) {
+            if (table.tails[list[k]] >= 0) list[kept++] = list[k];
+            else table.listed[list[k]] = 0;
+        }
         listed = kept;
     }
-    if (listed === table.unsortedBuckets.length) table.unsortedBuckets = grown(table.unsortedBuckets, 2 * listed, 0);
+    if (listed === list.length) table.unsortedBuckets = grown(list, 2 * listed, 0);
     table.unsortedBuckets[listed] = bucket;
     table.unsortedListed = listed + 1;
+    table.listed[bucket] = 1;
 };
 
 /** Marks an unsorted bucket sorted. */
 const sorted = (table: HashTable, bucket: number): void => {
     table.tails[bucket] = -1;
-    if (--table.unsorted === 0) table.unsortedListed = 0;
+    if (--table.unsorted === 0) clearList(table);
 };
 
 /**
@@ -685,8 +716,8 @@ export const sortBucket = (table: HashTable, bucket: number): void => {
 /** Sorts every unsorted bucket, before the table's arrays are handed to a reader that reads entries by position. */
 export const sortHashTable = (table: HashTable): void => {
     const list = table.unsortedBuckets;
-    for (let k = 0; k < table.unsortedListed && table.unsorted > 0; k++) if (table.tails[list[k]] >= 0) sortBucket(table, list[k]);
-    table.unsortedListed = 0;
+    // Sorting the last unsorted one empties the list.
+    for (let k = 0; k < table.unsortedListed; k++) if (table.tails[list[k]] >= 0) sortBucket(table, list[k]);
 };
 
 /** Forgets every unsorted bucket, before the table is built again. */
@@ -694,7 +725,7 @@ export const forgetUnsorted = (table: HashTable): void => {
     const list = table.unsortedBuckets;
     for (let k = 0; k < table.unsortedListed; k++) table.tails[list[k]] = -1;
     table.unsorted = 0;
-    table.unsortedListed = 0;
+    clearList(table);
 };
 
 /**

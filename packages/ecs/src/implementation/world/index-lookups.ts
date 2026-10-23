@@ -101,9 +101,10 @@ const madeAhead = 256;
  * body inlines.
  */
 const growPool = (lookup: IndexLookup, pool: Pool, length: number, archetypeId: number): void => {
-    pool.ahead = length;
+    // A first entry that's an unsorted bucket's hole, archetype -1, names none: a later lookup makes them.
     const archetype = lookup.archetypeAt(archetypeId);
     if (archetype === undefined) return;
+    pool.ahead = length;
     const end = Math.min(length, madeAhead);
     for (let n = pool.rows.length; n < end; n++) bindRow(pool, n, archetypeId, archetype);
 };
@@ -194,7 +195,7 @@ const hashAt = function (this: HashList, position: number): object | undefined {
     if (bucket < 0 || !(position >= 0 && position < hash.records[record + recordLength])) return undefined;
     // On the world's thread, a bucket a change left unsorted is sorted by the first read by position.
     if (hash.unsorted !== 0 && isHashTable(hash) && hash.tails[bucket] >= 0) sortBucket(hash, bucket);
-    const at =(hash.records[record + recordStart] + position) * entryWords;
+    const at = (hash.records[record + recordStart] + position) * entryWords;
     return rowAt(found.lookup, found.pool, position, hash.entries[at + 1], hash.entries[at + 2]);
 };
 

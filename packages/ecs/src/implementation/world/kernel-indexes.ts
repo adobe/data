@@ -138,12 +138,14 @@ export const writeIndexParameters = (bound: Pick<KernelIndex, "index" | "watched
     return next;
 };
 
-/** Points a JS reader's source at the world's index on its own thread, as of now, its unsorted buckets sorted. */
+/**
+ * Points a JS reader's source at the world's index on its own thread, as of now. `writeIndexParameters`, which each run
+ * calls with it, sorts the index's unsorted buckets in place.
+ */
 export const refreshSource = (source: IndexSource, bound: KernelIndex, since: number): void => {
     const { hash, sorted } = bound.index;
     source.since = since;
     if (hash !== null) {
-        if (hash.unsorted !== 0) sortHashTable(hash);
         source.slots = hash.slots; source.slotsBase = 0; source.mask = (hash.slots.length >> 1) - 1;
         source.records = hash.records; source.recordsBase = 0;
         source.hashEntries = hash.entries; source.hashEntriesBase = 0;

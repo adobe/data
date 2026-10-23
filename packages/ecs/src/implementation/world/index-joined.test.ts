@@ -91,6 +91,30 @@ const stirBands = System.create({ name: "indexJoinedTest/stirBands", components:
     if ((row[serial] + input.round) % 29 === 0) commands.despawn(row.entity);
     if (row[serial] % 31 === input.round) commands.spawn([band, serial])({ [band]: row[serial] % 2, [serial]: 1000 + row[serial] * 10 + input.round });
 });
+/** An observer system of the joined thread's labels: the serials of each reader's band, in entity order, by reader. */
+let observedBands: string[] = [];
+const observeBands = System.create({
+    name: "indexJoinedTest/observeBands", observer: true,
+    components: { read: [target], has: [bandReader, label] },
+    lookup: { inBand: { index: bands, read: [serial] } },
+}, (row, { lookup }) => {
+    const list = lookup.inBand(row[target]);
+    const serials: number[] = [];
+    for (let i = 0; i < list.length; i++) serials.push(list.at(i)[serial]);
+    observedBands[row[target]] = serials.join(",");
+});
+/** Seeds the bands, then observes them where `holder` runs observer systems, around changes; what it saw each time. */
+const observedBandScenario = async (world: CreatedWorld, holder: World): Promise<readonly (readonly string[])[]> => {
+    const seen: (readonly string[])[] = [];
+    await world.run(seedBands);
+    for (let round = 0; round < 6; round++) {
+        await world.run(stirBands, { round });
+        observedBands = [];
+        await holder.run(observeBands);
+        seen.push([...observedBands]);
+    }
+    return seen;
+};
 /** Seeds the bands, then reads them on the thread around changes; every label after each read. */
 const bandScenario = async (world: CreatedWorld, holder: World): Promise<readonly (readonly string[])[]> => {
     const seen: (readonly string[])[] = [];
@@ -281,6 +305,20 @@ describe("systems on a joined thread looking up through indexes", () => {
         const remote = join(channel.port2, { threads: ["indexJoinedTest"] });
         await joinedStatus(world);
         expect(await bandScenario(world, remote)).toEqual(alone);
+        expect(alone.every(round => round.length === 2 && round.every(text => text.split(",").length > 100))).toBe(true);
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("observe a hash index's long buckets in entity order after changes left them unsorted, as the world's own observer systems do", async () => {
+        const inline = createWorld({ [workers]: 0 });
+        const alone = await observedBandScenario(inline, inline);
+        await inline.dispose();
+        const world = createWorld({ [workers]: 0 });
+        const channel = new MessageChannel();
+        world.share(channel.port1);
+        const remote = join(channel.port2, { threads: ["indexJoinedTest"] });
+        await joinedStatus(world);
+        expect(await observedBandScenario(world, remote)).toEqual(alone);
         expect(alone.every(round => round.length === 2 && round.every(text => text.split(",").length > 100))).toBe(true);
         await remote.dispose();
         await world.dispose();

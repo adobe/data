@@ -49,6 +49,7 @@ empties, and avoid closures, spreads and awaits there. Measure changes with `pnp
 
 Each PR costs a review, a merge and a publish, so keep one open PR at a time. Add new work and fixes to it as more
 commits; never open stacked or parallel PRs. Keep it rebased on main, with this package's version one above main's.
+Bump it by hand in `package.json`; never run the workspace `bump` script, which bumps packages this PR didn't change.
 
 ## Memory
 

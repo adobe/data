@@ -103,8 +103,9 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 
 ## Performance
 
-- **`transfer`, chromium:** its median varied with machine load. Check it alone on a quiet machine before the next
-  record.
+- **`transfer`, chromium:** three runs on a quiet machine gave 19.9, 22.5 and 16.1 ms, so its spread of about 20% is
+  its own, not the machine's. Find what varies (likely the time a worker takes to wake) before treating its changes
+  as signal.
 
 ## Earlier open work
 

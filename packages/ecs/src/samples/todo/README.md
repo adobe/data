@@ -3,7 +3,7 @@
 A todo app whose world drives every change to the DOM through systems, while its elements know nothing about the ECS.
 It's the experiment for `ecs-dom.md`: vanilla custom elements, no framework, no persistence.
 
-`pnpm sample`, then open `/todo/`. Add, toggle, edit (double-click), delete, move (drag, or Alt+↑ and Alt+↓), mark all
+`pnpm dev`, then the Todos tab. Add, toggle, edit (double-click), delete, move (drag, or Alt+↑ and Alt+↓), mark all
 done or none, clear those done, filter, and generate 10 or 1,000 todos.
 
 ## How the DOM is driven

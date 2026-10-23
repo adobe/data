@@ -4,7 +4,7 @@ Shows how values that can't be copied between threads reach the thread that uses
 are moved, not copied, to the world's worker, which draws sprites with them every frame. Components and resources
 holding such values are registered with `transfer: true`, and a run's input carries them to the world's thread.
 
-`pnpm sample`, then open `/transfers/`. Numbered discs appear one at a time, 48 in all, and bounce around the canvas;
+`pnpm dev`, then the Transferred Sprites tab. Numbered discs appear one at a time, 48 in all, and bounce around the canvas;
 the overlay counts the sprites and frames.
 
 ## Threads

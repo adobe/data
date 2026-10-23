@@ -224,7 +224,7 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 
 ## GPU particles
 
-The sample (`pnpm sample`, which opens `/particles/`) draws the visible and enabled quarter of the perf particles as points, wrapping positions in the vertex shader, and moves them with the perf `move` kernel: on the GPU (`?mode=gpu`, positions never come back), on workers with the positions uploaded for drawing each frame (`?mode=cpu`), or not at all (`?mode=static`). Headless chromium on Apple silicon at 60 fps, 10 s per sample after warmup, CPU time per frame by process from `ps`, main-thread task time from the DevTools protocol. Four rounds at 1M (250K drawn), two at 4M (1M drawn):
+The sample (`pnpm dev`, the GPU Particles tab, or `/particles/` alone) draws the visible and enabled quarter of the perf particles as points, wrapping positions in the vertex shader, and moves them with the perf `move` kernel: on the GPU (`?mode=gpu`, positions never come back), on workers with the positions uploaded for drawing each frame (`?mode=cpu`), or not at all (`?mode=static`). Headless chromium on Apple silicon at 60 fps, 10 s per sample after warmup, CPU time per frame by process from `ps`, main-thread task time from the DevTools protocol. Four rounds at 1M (250K drawn), two at 4M (1M drawn):
 
 | Per frame, ms | draw only | CPU move + upload | GPU move |
 |---|---|---|---|

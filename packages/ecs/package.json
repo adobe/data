@@ -30,7 +30,7 @@
   ],
   "scripts": {
     "build": "cp ../../LICENSE . && tsc -b",
-    "dev": "tsc -b -w --preserveWatchOutput",
+    "dev": "tsc -b -w --preserveWatchOutput & vite --config vite.sample.config.ts",
     "typecheck": "tsc -b",
     "test": "pnpm exec playwright install chromium && vitest --run",
     "test:perf": "pnpm exec playwright install chromium && vitest --run --config vitest.perf.config.ts",

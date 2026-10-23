@@ -25,7 +25,8 @@ Humans own the interface and agents own the implementation: agents don't add to 
   It's a project of its own: nothing in it imports from outside it. Each type exists once, there.
 - **`src/implementation`** holds `createWorld` and everything behind it, the kernel compiler included. It imports
   types and the registry's read side from `src/interface`.
-- **`src/samples`** holds one folder per sample, its page included; `pnpm sample` serves them.
+- **`src/samples`** holds one folder per sample, its page included. `pnpm dev` (or `pnpm sample`, without
+  the type-check watch) serves them, with a sample browser at the root that has a tab for each.
 - `src/index.ts` exports `src/interface`, and `World` as a value too, whose `create` and `join` are the
   implementation's, so `import { World } from "@adobe/ecs"` gives consumers the type, `World.create` and `World.join`,
   the only entry points. Samples and the guide use them; tests and benchmarks may take `createWorld` from

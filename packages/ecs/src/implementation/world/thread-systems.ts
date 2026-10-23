@@ -99,6 +99,9 @@ type CommandKey = {
 /** The system that ran a task's commands, for their checks' errors. */
 type Running = { error: unknown };
 
+/** Whether a task's mirror is current, or why not (`bringCurrent`). */
+type Readiness = "current" | "moved" | "held";
+
 /**
  * Runs the systems the world places on this thread, as tasks it posts in the task block: each task's systems in order,
  * after replaying the mirror through the task's sync, writing each system's commands and spawns as a segment of the
@@ -359,24 +362,25 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         }));
     };
 
-    /** Whether the last rebuild found a sync point applying before or during it, so it can rebuild once that's applied. */
-    let moved = false;
-    /** Brings the mirror up to the last published sync, which runs the finalizers of its stops; false while it can't. */
-    const current = (): boolean => {
-        moved = false;
+    /**
+     * Brings the mirror up to the last published sync, which runs the finalizers of its stops: `"moved"` when its
+     * rebuild found a sync point applying before or during it, so it can rebuild once that's applied, and `"held"`
+     * while it waits for something else.
+     */
+    const bringCurrent = (): Readiness => {
         const replayed = replay(mirror);
-        if (replayed === "held") return false;
-        if (replayed !== "lapped") return true;
+        if (replayed === "held") return "held";
+        if (replayed !== "lapped") return "current";
         const rebuilt = rebuild(mirror);
-        moved = rebuilt === "moved";
-        return rebuilt === "rebuilt";
+        return rebuilt === "rebuilt" ? "current" : rebuilt;
     };
+    const current = (): boolean => bringCurrent() === "current";
 
     /** Whether a task can run: its systems known here, its input arrived, and the mirror through its sync. */
-    const ready = (payload: Float64Array, count: number): boolean => {
-        for (let k = 0; k < count; k++) if (runners[payload[payloadSystems + k * systemFields + systemIndex]] === undefined) return false;
-        if (payload[payloadInput] !== 0 && !inputs.has(payload[payloadSequence])) return false;
-        return current();
+    const ready = (payload: Float64Array, count: number): Readiness => {
+        for (let k = 0; k < count; k++) if (runners[payload[payloadSystems + k * systemFields + systemIndex]] === undefined) return "held";
+        if (payload[payloadInput] !== 0 && !inputs.has(payload[payloadSequence])) return "held";
+        return bringCurrent();
     };
 
     /** Views of the payload and completion, kept while the world keeps them where they are. */
@@ -435,17 +439,25 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
     };
 
     /**
-     * A task waiting for a sync point to finish applying, to rebuild its mirror, runs once it has: at once when the
-     * sync point applied during the rebuild, as nothing else may wake this thread before the task is done.
+     * A task waiting for a sync point to finish applying, to rebuild its mirror, runs once it has. One whose rebuild
+     * found a sync point applied during it runs again after a turn of the event loop: nothing else may wake this thread
+     * before the task is done, and sync points overlapping every rebuild mustn't keep it from its event loop.
      */
     let structureWaited = false;
-    const retryAfterStructure = (): void => {
-        if (structureWaited || (!moved && !applying(mirror))) return;
-        structureWaited = true;
-        void waitStructure(mirror).then(() => {
-            structureWaited = false;
-            process();
-        });
+    const retried = (): void => {
+        structureWaited = false;
+        process();
+    };
+    const retryAfterStructure = (moved: boolean): void => {
+        if (structureWaited) return;
+        if (applying(mirror)) {
+            structureWaited = true;
+            void waitStructure(mirror).then(retried);
+        }
+        else if (moved) {
+            structureWaited = true;
+            setTimeout(retried, 0);
+        }
     };
 
     const runTask = (posted: number): void => {
@@ -454,8 +466,9 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         const count = payload[payloadCount];
         const sequence = payload[payloadSequence];
         pending = sequence;
-        if (!ready(payload, count)) {
-            retryAfterStructure();
+        const readiness = ready(payload, count);
+        if (readiness !== "current") {
+            retryAfterStructure(readiness === "moved");
             return;
         }
         pending = -1;

@@ -92,6 +92,12 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 - **A joined finalizer reads a string resource from its live record,** not a copy, where the strings of its stops are
   copied into the stop list.
 
+## Findings from the joined-thread stress run
+
+- **A lent worker's death has two reports that race on the side it's lent to:** its port's `close` and its owner's
+  message, so which message a run's failure carries varies (`ports.cases.ts` accepts either). Worth deciding whether
+  the owner's report should win, for one message per way a worker ends.
+
 ## Features to discuss
 
 - **Computed index keys:** an index keyed on a value computed from a component, such as a struct field

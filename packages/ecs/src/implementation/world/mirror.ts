@@ -486,7 +486,8 @@ const previousValue = (old: readonly (Mirrored | null | undefined)[], entity: nu
 /**
  * Rebuilds every column from the layout directory, as of the last published sync, under the structure epoch: rows
  * from each archetype's `entities` and count, values by the tag each row's storage holds, a staged slot's taken, any
- * other the thread's own kept by entity, and ticks from the world's. Changes nothing unless it's `"rebuilt"`.
+ * other the thread's own kept by entity, and ticks from the world's. Short of `"rebuilt"`, its columns are as they
+ * were, though the finalizers of stops through the sync it read may have run first.
  */
 export const rebuild = (mirror: Mirror): Rebuilt => {
     refresh(mirror);

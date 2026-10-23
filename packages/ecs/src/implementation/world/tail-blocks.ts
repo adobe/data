@@ -10,7 +10,7 @@ import { lineWords } from './protocol.js';
 // read, so a claim that returns `snapshotted` or more reads the rest from the copy, and the word still says whether a
 // claim came before the copy.
 
-/** The positions the tail claimed, which it adds to and the world exchanges; and the end of its work, 1 plus its rows. */
+/** The positions the tail claimed, which it and the world add to; and the end of its work, 1 plus its rows. */
 export const progressWord = 0;
 export const endWord = 1;
 /** The position the tail finished reading through, which it stores after each chunk; whether the world waits for it. */

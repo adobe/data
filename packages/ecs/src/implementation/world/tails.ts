@@ -418,7 +418,8 @@ export const copyRest = (state: State, tail: Copied): Promise<void> | null => {
     runs.length = 0;
     if (from < end) writeSnapshot(state, tail, from);
     // Added rather than exchanged, so a claim before the copy stays in the word: a post a claim reached is never taken
-    // for one none did (`cancel` in joined-observer.ts).
+    // for one none did (`cancel` in joined-observer.ts). Claims past it, a chunk at a time, keep the word below
+    // `cancelled` there, `snapshotted` plus at most the end and a chunk, as ends are far below their difference.
     const claimed = Atomics.add(control, progressWord, snapshotted);
     tailWriters.copies++;
     // Rows the tail claimed while this copied it reads where they are.

@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { Component } from "../interface/component/component.js";
 import { Index } from "../interface/indexes/index-type.js";
-import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
 import { eachTick } from "./observer.js";
 import { workers } from "../interface/resources/workers.js";
@@ -28,16 +26,10 @@ declare module "@adobe/ecs" {
         [amount]: { type: number };
     }
     export interface Resources {
-        [counter]: { type: number };
-        [sign]: { type: number };
+        [counter]: { type: number; default: 0 };
+        [sign]: { type: number; default: 1 };
     }
 }
-Resource.register(counter, { type: { type: "number", default: 0 } });
-Resource.register(sign, { type: { type: "number", default: 1 } });
-Component.register(rank, { type: { type: "number" } });
-Component.register(order, { type: { type: "number" } });
-Component.register(caption, { type: { type: "string" } });
-Component.register(amount, { type: { type: "number" } });
 
 /** An empty transaction. */
 export const empty = System.create({ name: "remote/empty" }, () => {});

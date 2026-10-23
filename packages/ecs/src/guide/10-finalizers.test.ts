@@ -1,16 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Finalizer, System, World } from "../index.js";
+import { Finalizer, System, World } from "../index.js";
 
-const handle = Symbol("handle");
+const handle = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
         [handle]: { type: number };
     }
 }
-
-Component.register(handle, { type: { type: "number" } });
 
 /** What handles name outside the world, as GPU buffers and DOM nodes are. */
 const open = new Set<number>();

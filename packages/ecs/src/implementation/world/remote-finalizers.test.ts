@@ -4,7 +4,6 @@ import type { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Observe } from "../../observe/index.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -19,14 +18,11 @@ const second = Symbol("remoteFinalizersTest/second");
 const third = Symbol("remoteFinalizersTest/third");
 declare module "@adobe/ecs" {
     export interface Resources {
-        [later]: { type: number };
-        [second]: { type: number };
-        [third]: { type: number };
+        [later]: { type: number; default: 0 };
+        [second]: { type: number; default: 0 };
+        [third]: { type: number; default: 0 };
     }
 }
-Resource.register(later, { type: { type: "number", default: 0 } });
-Resource.register(second, { type: { type: "number", default: 0 } });
-Resource.register(third, { type: { type: "number", default: 0 } });
 const bump = System.create({ name: "remoteFinalizersTest/bump", resources: { write: [later] } }, ({ resources }) => {
     resources[later] += 1;
 });

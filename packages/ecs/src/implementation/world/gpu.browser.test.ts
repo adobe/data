@@ -1,9 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Gpu } from "../../interface/gpu/gpu.js";
-import { Mat4x4, Quat, Vec3 } from "../../interface/math/index.js";
+import { type F32, Mat4x4, Quat, type U32, Vec3 } from "../../interface/math/index.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { System } from "../../interface/system/system.js";
@@ -30,12 +29,12 @@ const ownedBy = Symbol("gpuTest/ownedBy");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number, number] };
-        [velocity]: { type: readonly [number, number, number] };
-        [score]: { type: number };
+        [position]: { type: Vec3 };
+        [velocity]: { type: Vec3 };
+        [score]: { type: F32 };
         [tag]: { type: true };
-        [code]: { type: number };
-        [amount]: { type: number };
+        [code]: { type: U32 };
+        [amount]: { type: F32 };
         [flag]: { type: boolean };
         [followed]: { type: Entity };
         [bits]: { type: Vec3.U32 };
@@ -44,15 +43,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(position, { type: vec3 });
-Component.register(velocity, { type: vec3 });
-Component.register(score, { type: { type: "number", precision: 1 } });
-Component.register(tag, { type: { const: true } });
-Component.register(code, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(amount, { type: { type: "number", precision: 1 } });
-Component.register(flag, { type: { type: "boolean" } });
-Component.register(followed, { type: Entity.schema });
-Component.register(ownedBy, { type: Entity.schema, reference: "owner" });
 
 const count = 5000;
 
@@ -166,8 +156,6 @@ const transform = System.create({ name: "gpuTest/transform", kernel: "gpu", comp
     row[position] = Vec3.add(Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, row[position])), Vec3.normalize(row[velocity]));
 });
 
-Component.register(bits, { type: Vec3.U32.schema });
-Component.register(sums, { type: Vec3.I32.schema });
 
 const spawnIntegers = System.create({ name: "gpuTest/spawnIntegers" }, ({ commands }) => {
     for (let i = 0; i < 100; i++) {

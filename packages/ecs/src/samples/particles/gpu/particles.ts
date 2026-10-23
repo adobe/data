@@ -1,33 +1,26 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype, Component, Gpu, System, Vec3 } from '../../../index.js';
+import { Archetype, type F32, Gpu, System, type U32, Vec3 } from '../../../index.js';
 
 // The perf particles (src/perftest/particles.ts) on screen: 1M particles over four archetypes by visible and
 // enabled, with screen-space positions and velocities in pixels per frame. `move` is the perf move kernel, on the GPU.
 
-export const position = Symbol("gpuParticles/position");
-export const velocity = Symbol("gpuParticles/velocity");
-export const color = Symbol("gpuParticles/color");
-export const mass = Symbol("gpuParticles/mass");
-export const visible = Symbol("gpuParticles/visible");
-export const enabled = Symbol("gpuParticles/enabled");
+export const position = Symbol();
+export const velocity = Symbol();
+export const color = Symbol();
+export const mass = Symbol();
+export const visible = Symbol();
+export const enabled = Symbol();
 
 declare module '@adobe/ecs' {
     interface Components {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
-        [color]: { type: number };
-        [mass]: { type: number };
+        [color]: { type: U32 };
+        [mass]: { type: F32 };
         [visible]: { type: true };
         [enabled]: { type: true };
     }
 }
-
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(mass, { type: { type: "number", precision: 1 } });
-Component.register(visible, { type: { const: true } });
-Component.register(enabled, { type: { const: true } });
 
 /** Entity i goes to archetype i % 4. */
 const archetypes = [

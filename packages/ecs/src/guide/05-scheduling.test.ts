@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, System, World } from "../index.js";
+import { System, World } from "../index.js";
 
-const health = Symbol("health");
-const damage = Symbol("damage");
+const health = Symbol();
+const damage = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -11,9 +11,6 @@ declare module "@adobe/ecs" {
         [damage]: { type: number };
     }
 }
-
-Component.register(health, { type: { type: "number" } });
-Component.register(damage, { type: { type: "number" } });
 
 const spawn = System.create(({ commands }) => { commands.spawn([health, damage])({ [health]: 10, [damage]: 4 }); });
 const hit = System.create({ components: { read: [damage], write: [health] } }, row => {

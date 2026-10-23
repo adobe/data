@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Archetype } from "../interface/archetype/archetype.js";
-import { Component } from "../interface/component/component.js";
 import type { Entity } from "../interface/entity/entity.js";
 import { System } from "../interface/system/system.js";
+import type { F32, U32 } from "../interface/math/index.js";
 
 // Structural changes one kind at a time: spawns, despawns, adds and removes, through main-thread systems and kernels,
 // each applied by the sync point that ends its run.
@@ -22,11 +22,11 @@ const t3 = Symbol("structural/t3");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [index]: { type: number };
-        [value]: { type: number };
+        [index]: { type: U32 };
+        [value]: { type: F32 };
         [flag]: { type: true };
-        [amount]: { type: number };
-        [extra]: { type: number };
+        [amount]: { type: F32 };
+        [extra]: { type: F32 };
         [spawned]: { type: true };
         [source1]: { type: true };
         [source2]: { type: true };
@@ -37,18 +37,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(amount, { type: { type: "number", precision: 1 } });
-Component.register(extra, { type: { type: "number", precision: 1 } });
-Component.register(flag, { type: { const: true } });
-Component.register(spawned, { type: { const: true } });
-Component.register(source1, { type: { const: true } });
-Component.register(source2, { type: { const: true } });
-Component.register(t0, { type: { const: true } });
-Component.register(t1, { type: { const: true } });
-Component.register(t2, { type: { const: true } });
-Component.register(t3, { type: { const: true } });
 
 const seeded = [
     Archetype.create([index, value]),

@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
 import { eachTick } from "./observer.js";
 import { workers } from "../interface/resources/workers.js";
@@ -23,7 +22,6 @@ declare module "@adobe/ecs" {
     }
 }
 /** An object of the joined thread, which places the systems reading it there. */
-Resource.register(token, { thread: "handoffBenchmark" });
 
 const here0 = System.create({ name: "handoff/here0" }, () => {});
 const there0 = System.create({ name: "handoff/there0", resources: { read: [token] }, after: [here0] }, ({ resources, commands }) => { void resources[token]; void commands; });

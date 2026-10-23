@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../component/component.js";
 import { Entity } from "../entity/entity.js";
 import { Finalizer } from "../finalizer/finalizer.js";
 import { identify } from "../registry/ids.test-helper.js";
@@ -9,6 +8,7 @@ import { accessOf } from "../registry/schedule.js";
 import { threadOf } from "../registry/threads.js";
 import { System } from "../system/system.js";
 import { Index } from "./index-type.js";
+import type { Vec2 } from "../math/index.js";
 
 const cell = Symbol("indexCreateTest/cell");
 const point = Symbol("indexCreateTest/point");
@@ -24,7 +24,7 @@ const view = Symbol("indexCreateTest/view");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [cell]: { type: readonly [number, number] };
+        [cell]: { type: Vec2.I32 };
         [point]: { type: { readonly x: number; readonly y: number } };
         [amount]: { type: number };
         [name]: { type: string };
@@ -36,16 +36,6 @@ declare module "@adobe/ecs" {
         [view]: { type: { readonly label: string }; thread: "main" };
     }
 }
-Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
-Component.register(point, { type: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"] } });
-Component.register(amount, { type: { type: "number" } });
-Component.register(name, { type: { type: "string" } });
-Component.register(node, { type: { type: "object", properties: { label: { type: "string" } } } });
-Component.register(tags, { type: { type: "set", items: { type: "string" } } });
-Component.register(shown, { type: { const: true } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(handle, {});
-Component.register(view, { type: { type: "object", properties: { label: { type: "string" } } }, thread: "main" });
 
 /** Declares as an untyped caller would, bypassing the types' checks. */
 const untyped = (declaration: object): unknown => Reflect.apply(Index.create, undefined, [declaration]);

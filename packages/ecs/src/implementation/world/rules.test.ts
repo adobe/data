@@ -8,6 +8,7 @@ import { createWorld } from "./create.js";
 import { count, read } from "./reads.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
+import { declareComponent } from "../../interface/registry/declare.js";
 import { labelOfItem, programRules } from "../../interface/registry/index.js";
 
 const source = Symbol("rulesTest/source");
@@ -31,7 +32,7 @@ declare module "@adobe/ecs" {
         [source]: { type: number };
         [hidden]: { type: true };
         [sprite]: { type: true };
-        [slot]: { type: number; derived: true };
+        [slot]: { type: number; derived: true; default: 7 };
         [visible]: { type: true; derived: true };
         [ready]: { type: number; within: typeof slot };
         [glow]: { type: true; within: typeof ready };
@@ -39,27 +40,12 @@ declare module "@adobe/ecs" {
         [follows]: { type: Entity; reference: "weak" };
         [mark]: { type: number };
         [left]: { type: true; within: typeof right };
-        [right]: { type: true; within: typeof left };
         [late]: { type: true; derived: true };
         [tagged]: { type: true };
         [tag]: { type: true; derived: true };
     }
 }
 
-Component.register(source, { type: { type: "number" } });
-Component.register(hidden, { type: { const: true } });
-Component.register(sprite, { type: { const: true } });
-Component.register(slot, { type: { type: "number", default: 7 }, derived: true });
-Component.register(visible, { type: { const: true }, derived: true });
-Component.register(ready, { type: { type: "number" }, within: slot });
-Component.register(glow, { type: { const: true }, within: ready });
-Component.register(owned, { type: Entity.schema, reference: "owner" });
-Component.register(follows, { type: Entity.schema, reference: "weak" });
-Component.register(mark, { type: { type: "number" } });
-Component.register(left, { type: { const: true }, within: right });
-Component.register(late, { type: { const: true }, derived: true });
-Component.register(tagged, { type: { const: true } });
-Component.register(tag, { type: { const: true }, derived: true });
 
 Rule.create(identify({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
 Rule.create({ name: "rulesTest/visible", components: { has: [slot] }, derive: [visible] });
@@ -159,7 +145,7 @@ describe("rules", () => {
         // @ts-expect-error a reference changes only through commands
         expect(() => System.create({ name: "rulesTest/writeReference", components: { write: [owned] } }, row => { row[owned] = Entity.none; })).toThrow("a reference, which changes only through commands");
         // The component closing a cycle of within declarations is rejected when it's registered.
-        expect(() => Component.register(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "rulesTest/right": components are within each other in a cycle: rulesTest/left, rulesTest/right.`);
+        expect(() => declareComponent(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "rulesTest/right": components are within each other in a cycle: rulesTest/left, rulesTest/right.`);
     });
 });
 

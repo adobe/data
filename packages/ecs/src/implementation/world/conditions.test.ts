@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import { read, readResource, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
@@ -18,27 +16,19 @@ const value = Symbol("conditionsTest/value");
 
 declare module "@adobe/ecs" {
     interface Resources {
-        [paused]: { type: boolean };
+        [paused]: { type: boolean; default: false };
         [level]: { type: { readonly size: number } | null };
-        [ticks]: { type: number };
-        [after]: { type: number };
-        [sizes]: { type: number };
-        [total]: { type: number; reduce: "+" };
-        [count]: { type: number };
+        [ticks]: { type: number; default: 0 };
+        [after]: { type: number; default: 0 };
+        [sizes]: { type: number; default: 0 };
+        [total]: { type: number; reduce: "+"; default: 0 };
+        [count]: { type: number; default: 0 };
     }
     interface Components {
         [value]: { type: number };
     }
 }
 
-Resource.register(paused, { type: { type: "boolean", default: false } });
-Resource.register(level, { type: { anyOf: [{ type: "object", properties: { size: { type: "number" } } }, { type: "null" }] } });
-Resource.register(ticks, { type: { type: "number", default: 0 } });
-Resource.register(after, { type: { type: "number", default: 0 } });
-Resource.register(sizes, { type: { type: "number", default: 0 } });
-Resource.register(count, { type: { type: "number", default: 0 } });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-Component.register(value, { type: { type: "number" } });
 
 const pause = System.create({ name: "conditionsTest/pause", resources: { write: [paused] } }, ({ resources }) => { resources[paused] = true; });
 const tick = System.create({ name: "conditionsTest/tick", resources: { not: [paused], write: [ticks] } }, ({ resources }) => { resources[ticks] += 1; });

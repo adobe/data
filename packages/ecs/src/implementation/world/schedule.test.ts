@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import type { Composite } from "../../interface/system/composite.js";
 import type { Declaration } from "../../interface/system/declaration.js";
 import type { Definition } from "../../interface/registry/index.js";
@@ -17,8 +16,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(value, { type: { type: "number" } });
-Component.register(other, { type: { type: "number" } });
 
 /** Systems built as values, not registered, so each test's are its own. */
 const leaf = (declaration: Declaration & { readonly name: string }): Leaf => ({ kind: "system", name: declaration.name, declaration, input: undefined, body: () => {} });

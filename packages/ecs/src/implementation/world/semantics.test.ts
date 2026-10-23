@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
@@ -17,16 +16,12 @@ const score = Symbol("semanticsTest/score");
 const tag = Symbol("semanticsTest/tag");
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number] };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2 }> };
         [target]: { type: Entity };
         [score]: { type: number };
         [tag]: { type: true };
     }
 }
-Component.register(position, { type: vec2 });
-Component.register(target, { type: Entity.schema });
-Component.register(score, { type: { type: "number" } });
-Component.register(tag, { type: { const: true } });
 
 const seed = System.create({ name: "semanticsTest/seed" }, ({ commands }) => {
     // @ts-expect-error untyped callers can store any number as an entity

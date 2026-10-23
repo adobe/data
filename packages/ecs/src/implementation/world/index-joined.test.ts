@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { Observe } from "../../observe/index.js";
@@ -12,6 +11,7 @@ import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
 import { dropReports, runReported } from "./reports.test-helper.js";
+import type { U32, Vec2 } from "../../interface/math/index.js";
 
 // Systems on a joined thread looking up through the world's indexes, the world and the thread on this one, against a
 // world running them itself.
@@ -34,35 +34,23 @@ declare module "@adobe/ecs" {
         indexJoinedTest: true;
     }
     interface Components {
-        [cell]: { type: readonly [number, number] };
+        [cell]: { type: Vec2.I32 };
         [weight]: { type: number };
-        [serial]: { type: number };
-        [target]: { type: number };
-        [lane]: { type: number };
+        [serial]: { type: U32 };
+        [target]: { type: U32 };
+        [lane]: { type: U32 };
         [rank]: { type: number };
-        [label]: { type: { readonly text: string }; thread: "indexJoinedTest" };
+        [label]: { type: { readonly text: string }; thread: "indexJoinedTest"; default: typeof blank };
         [name]: { type: { readonly text: string }; thread: "indexJoinedTest" };
         [title]: { type: string };
-        [band]: { type: number };
+        [band]: { type: U32 };
         [bandReader]: { type: true };
         [marked]: { type: true };
     }
 }
-Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
-Component.register(weight, { type: { type: "number" } });
-Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
-Component.register(target, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
-Component.register(lane, { type: { type: "integer", minimum: 0, maximum: 1000 } });
-Component.register(rank, { type: { type: "number" } });
 const text = { type: "object", properties: { text: { type: "string" } } } as const;
 /** A label's start, which a command here gives it by this value. */
 const blank = { text: "" };
-Component.register(label, { type: { ...text, default: blank }, thread: "indexJoinedTest" });
-Component.register(name, { type: text, thread: "indexJoinedTest" });
-Component.register(title, { type: { type: "string" } });
-Component.register(band, { type: { type: "integer", minimum: 0, maximum: 1 } });
-Component.register(bandReader, { type: { const: true } });
-Component.register(marked, { type: { const: true } });
 
 const grid = Index.create({ name: "indexJoinedTest/grid", key: [cell], components: { has: [weight] } });
 const serials = Index.create({ name: "indexJoinedTest/serials", key: [serial], unique: true, components: { has: [weight] } });

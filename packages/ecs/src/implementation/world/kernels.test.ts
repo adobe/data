@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import { World } from "../../interface/world/world.js";
 import { definitionOf } from "../../interface/registry/index.js";
@@ -21,15 +19,11 @@ declare module "@adobe/ecs" {
         [label]: { type: string | null };
     }
     export interface Resources {
-        [scale]: { type: number };
+        [scale]: { type: number; default: 1 };
     }
 }
 
 const label = Symbol("kernelsTest/label");
-Component.register(value, { type: { type: "number" } });
-Component.register(other, { type: { type: "number" } });
-Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Resource.register(scale, { type: { type: "number", default: 1 } });
 
 /** Reads `value` and `other`, writes nothing, reads no resources. */
 const system = System.create({ name: "kernelsTest/read", kernel: "cpu", components: { read: [value, other] } }, row => {

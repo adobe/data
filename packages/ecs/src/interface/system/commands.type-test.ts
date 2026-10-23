@@ -26,12 +26,6 @@ declare module '@adobe/ecs' {
         [time]: { type: number };
     }
 }
-Component.register(position, { type: { type: "number" } });
-Component.register(velocity, { type: { type: "number" } });
-Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Component.register(player, { type: { const: true } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Resource.register(time, { type: { type: "number", default: 0 } });
 
 const particle = Archetype.create([position, velocity, label, player]);
 

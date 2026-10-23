@@ -1,9 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { identify } from "../../interface/registry/ids.test-helper.js";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { System } from "../../interface/system/system.js";
 import { count, read, readEach, readEntity, readResource, select } from "./reads.test-helper.js";
@@ -12,6 +10,7 @@ import { attachKernel } from "./attach-kernel.js";
 import { createWorld } from "../index.js";
 import { fillReports, reportOf, runReported } from "./reports.test-helper.js";
 import { Report } from "../../interface/report/report.js";
+import type { Schema } from "../../interface/schema/schema.js";
 
 type Vec2 = readonly [number, number];
 
@@ -32,18 +31,11 @@ declare module "@adobe/ecs" {
         [marker]: { type: number };
     }
     export interface Resources {
-        [spawnCount]: { type: number };
-        [seen]: { type: number };
+        [spawnCount]: { type: Schema.Type<{ type: "integer" }>; default: 3 };
+        [seen]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
     }
 }
 
-Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-Component.register(velocity, { type: { type: "number" } });
-Component.register(label, { type: { type: "string" } });
-Component.register(frozen, { type: { const: true } });
-Component.register(marker, { type: { type: "number" } });
-Resource.register(spawnCount, { type: { type: "integer", default: 3 } });
-Resource.register(seen, { type: { type: "integer", default: 0 } });
 
 const spawn = System.create({
     name: "createTest/spawn",

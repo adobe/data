@@ -1,24 +1,22 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
+import type { Vec2 } from "../../interface/math/index.js";
+import type { Schema } from "../../interface/schema/schema.js";
 
 const spot = Symbol("indexBuildCspTest/spot");
 const size = Symbol("indexBuildCspTest/size");
 const bulk = Symbol("indexBuildCspTest/bulk");
 declare module "@adobe/ecs" {
     interface Components {
-        [spot]: { type: readonly [number, number] };
+        [spot]: { type: Vec2.I32 };
         [size]: { type: number };
-        [bulk]: { type: number };
+        [bulk]: { type: Schema.Type<{ type: "number"; precision: 2 }> };
     }
 }
-Component.register(spot, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
-Component.register(size, { type: { type: "number" } });
-Component.register(bulk, { type: { type: "number", precision: 2 } });
 
 /** A key of a pair of i32s and an f64, so the steps encode three kinds of leaf. */
 const bySpot = Index.create({ key: [spot, bulk], components: { has: [size] } });

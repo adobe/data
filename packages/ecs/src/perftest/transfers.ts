@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Resource } from "../interface/resource/resource.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "../implementation/index.js";
@@ -18,7 +17,6 @@ declare module "@adobe/ecs" {
     }
 }
 /** An object of the claimed thread, which places the system reading it there. */
-Resource.register(sink, { thread: "transfersBenchmark" });
 
 /** Bytes `take` took, on the claimed thread. */
 export const taken = { bytes: 0 };

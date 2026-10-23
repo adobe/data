@@ -40,6 +40,13 @@ const qualifiedParts = (name: QueryName | Extract<QueryName, { readonly type: "T
     return left === null ? null : [...left, name.right.name];
 };
 
+/** Tests and their helpers in the package, which declare keys as consumers do. */
+const testModule = /\.(test|type-test|fixture|test-helper|cases)\.tsx?$/;
+
+/** Whether a file is one of the package's own modules, whose built-in keys register themselves. */
+const isLibraryModule = (path: string | null, file: string): boolean =>
+    path !== null && (path.startsWith("interface/") || path.startsWith("implementation/")) && !testModule.test(file);
+
 /** The top-level statement holding a node of the module, by position. */
 const statementAt = (module: Module, node: Node): Statement | undefined =>
     module.program.body.find(statement => statement.start <= node.start && node.end <= statement.end);
@@ -82,7 +89,7 @@ const allowsNullSchema = (schema: Schema): boolean =>
  */
 export const augmentationInsertions = async (module: Module, host: AugmentationHost): Promise<PassResult | null> => {
     const { code, file } = module;
-    if (!code.includes("@adobe/ecs") || !code.includes("declare module")) return null;
+    if (!code.includes("@adobe/ecs") || !code.includes("declare module") || isLibraryModule(host.packagePath(file), file)) return null;
     const augmentations = augmentationsOf(module);
     if (augmentations.length === 0) return null;
     const converter = createConverter(host, file);
@@ -127,71 +134,72 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
     };
 
     try {
-        for (const { block, interfaces } of augmentations) {
-            for (const declared of interfaces) {
-                const interfaceName = declared.id.name;
-                if (!isKind(interfaceName)) continue;
-                const kind = kinds[interfaceName];
-                for (const member of declared.body.body) {
-                    if (member.type !== "TSPropertySignature") {
-                        if (member.type === "TSIndexSignature" || member.type === "TSMethodSignature") fail(module, member, `${interfaceName}'s members are keys and their declarations`);
-                        continue;
-                    }
-                    const { key } = member;
-                    if (kind === "trait") {
-                        // String-named traits are the package's own.
-                        if (!member.computed || key.type !== "Identifier") return fail(module, member, "a trait of your own is keyed by a `Symbol()` constant: `[layer]: ...`");
-                        await requireSymbol(key.name, member, "a trait's key");
-                        used.add("trait");
-                        insertions.push({ at: Math.max(block.end, endOfLocal(key.name)), text: `\n${names.trait}(${key.name});` });
-                        continue;
-                    }
-                    if (!member.computed || key.type !== "Identifier") return fail(module, member, `a ${kind}'s key is a \`Symbol()\` constant, declared as \`[key]: { type: ... }\``);
-                    await requireSymbol(key.name, member, `a ${kind}'s key`);
-                    const declaration = member.typeAnnotation?.typeAnnotation;
-                    if (declaration?.type !== "TSTypeLiteral") return fail(module, member, `${key.name}'s declaration is a type literal of its traits: \`{ type: ... }\``);
-                    converter.site.at = member.start;
-                    let at = Math.max(block.end, endOfLocal(key.name));
-                    let typeNode: TypeNode | undefined;
-                    let defaultNode: TypeNode | undefined;
-                    const traits: string[] = [];
-                    let thread = false;
-                    for (const trait of declaration.members) {
-                        if (trait.type !== "TSPropertySignature" || trait.typeAnnotation === null) return fail(module, trait, `${key.name}'s traits are properties with values`);
-                        const property: Property = trait;
-                        const value = trait.typeAnnotation.typeAnnotation;
-                        const name = !property.computed && property.key.type === "Identifier" ? property.key.name
-                            : property.computed && property.key.type === "Identifier" ? null
-                            : fail(module, trait, `${key.name}'s traits are named, or keyed by a trait's \`Symbol()\` constant`);
-                        if (name === "type") typeNode = value;
-                        else if (name === "default") defaultNode = value;
-                        else {
-                            const text = await valueText(value, `${key.name}'s trait`);
-                            if (text.local !== undefined) at = Math.max(at, endOfLocal(text.local));
-                            if (name === "thread") thread = true;
-                            traits.push(name === null ? `[${property.key.type === "Identifier" ? property.key.name : ""}]: ${text.text}` : `${name}: ${text.text}`);
-                        }
-                    }
-                    if (typeNode === undefined) return fail(module, member, `${key.name} declares its type: \`{ type: ... }\``);
-                    let schema: Schema | undefined;
-                    try {
-                        schema = await converter.convert(typeNode, module, new Set(), "declaration");
-                    }
-                    catch (error) {
-                        if (!isNotData(error)) throw error;
-                        if (error.notData.node && !thread) fail(module, member, `${key.name} is a DOM Node, which lives on "main": declare \`thread: "main"\``);
-                    }
-                    const start = defaultNode === undefined ? undefined : await valueText(defaultNode, `${key.name}'s default`);
-                    if (start?.local !== undefined) at = Math.max(at, endOfLocal(start.local));
-                    if (schema !== undefined && start?.value !== undefined && !matches(schema, start.value)) fail(module, defaultNode ?? member, `${key.name}'s default isn't of its declared type`);
-                    const allowsNull = schema === undefined ? allowsNullType(typeNode) : allowsNullSchema(schema) || "default" in schema;
-                    if (kind === "resource" && start === undefined && !allowsNull) fail(module, member, `resource ${key.name} declares the value it starts at: \`default: ...\`, which a type allowing null may leave out`);
-                    const parts = schema === undefined ? [] : [`type: ${start === undefined ? JSON.stringify(schema) : `${JSON.stringify(schema).slice(0, -1)},"default":${start.text}}`}`];
-                    if (schema === undefined && start !== undefined) parts.push(`default: ${start.text}`);
-                    parts.push(...traits);
-                    used.add(kind);
-                    insertions.push({ at, text: `\n${names[kind]}(${key.name}, ${parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`});` });
+        // Traits first, so a component declaring one registers after it.
+        const ordered = augmentations.flatMap(({ block, interfaces }) => interfaces.map(declared => ({ block, declared })))
+            .sort((a, b) => Number(b.declared.id.name === "Traits") - Number(a.declared.id.name === "Traits"));
+        for (const { block, declared } of ordered) {
+            const interfaceName = declared.id.name;
+            if (!isKind(interfaceName)) continue;
+            const kind = kinds[interfaceName];
+            for (const member of declared.body.body) {
+                if (member.type !== "TSPropertySignature") {
+                    if (member.type === "TSIndexSignature" || member.type === "TSMethodSignature") fail(module, member, `${interfaceName}'s members are keys and their declarations`);
+                    continue;
                 }
+                const { key } = member;
+                if (kind === "trait") {
+                    // String-named traits are the package's own.
+                    if (!member.computed || key.type !== "Identifier") return fail(module, member, "a trait of your own is keyed by a `Symbol()` constant: `[layer]: ...`");
+                    await requireSymbol(key.name, member, "a trait's key");
+                    used.add("trait");
+                    insertions.push({ at: Math.max(block.end, endOfLocal(key.name)), text: `\n${names.trait}(${key.name});` });
+                    continue;
+                }
+                if (!member.computed || key.type !== "Identifier") return fail(module, member, `a ${kind}'s key is a \`Symbol()\` constant, declared as \`[key]: { type: ... }\``);
+                await requireSymbol(key.name, member, `a ${kind}'s key`);
+                const declaration = member.typeAnnotation?.typeAnnotation;
+                if (declaration?.type !== "TSTypeLiteral") return fail(module, member, `${key.name}'s declaration is a type literal of its traits: \`{ type: ... }\``);
+                converter.site.at = member.start;
+                let at = Math.max(block.end, endOfLocal(key.name));
+                let typeNode: TypeNode | undefined;
+                let defaultNode: TypeNode | undefined;
+                const traits: string[] = [];
+                let thread = false;
+                for (const trait of declaration.members) {
+                    if (trait.type !== "TSPropertySignature" || trait.typeAnnotation === null) return fail(module, trait, `${key.name}'s traits are properties with values`);
+                    const property: Property = trait;
+                    const value = trait.typeAnnotation.typeAnnotation;
+                    const name = !property.computed && property.key.type === "Identifier" ? property.key.name
+                        : property.computed && property.key.type === "Identifier" ? null
+                        : fail(module, trait, `${key.name}'s traits are named, or keyed by a trait's \`Symbol()\` constant`);
+                    if (name === "type") typeNode = value;
+                    else if (name === "default") defaultNode = value;
+                    else {
+                        const text = await valueText(value, `${key.name}'s trait`);
+                        if (text.local !== undefined) at = Math.max(at, endOfLocal(text.local));
+                        if (name === "thread") thread = true;
+                        traits.push(name === null ? `[${property.key.type === "Identifier" ? property.key.name : ""}]: ${text.text}` : `${name}: ${text.text}`);
+                    }
+                }
+                if (typeNode === undefined) return fail(module, member, `${key.name} declares its type: \`{ type: ... }\``);
+                let schema: Schema | undefined;
+                try {
+                    schema = await converter.convert(typeNode, module, new Set(), "declaration");
+                }
+                catch (error) {
+                    if (!isNotData(error)) throw error;
+                    if (error.notData.node && !thread) fail(module, member, `${key.name} is a DOM Node, which lives on "main": declare \`thread: "main"\``);
+                }
+                const start = defaultNode === undefined ? undefined : await valueText(defaultNode, `${key.name}'s default`);
+                if (start?.local !== undefined) at = Math.max(at, endOfLocal(start.local));
+                if (schema !== undefined && start?.value !== undefined && !matches(schema, start.value)) fail(module, defaultNode ?? member, `${key.name}'s default isn't of its declared type`);
+                const allowsNull = schema === undefined ? allowsNullType(typeNode) : allowsNullSchema(schema) || "default" in schema;
+                if (kind === "resource" && start === undefined && !allowsNull) fail(module, member, `resource ${key.name} declares the value it starts at: \`default: ...\`, which a type allowing null may leave out`);
+                const parts = schema === undefined ? [] : [`type: ${start === undefined ? JSON.stringify(schema) : `${JSON.stringify(schema).slice(0, -1)},"default":${start.text}}`}`];
+                if (schema === undefined && start !== undefined) parts.push(`default: ${start.text}`);
+                parts.push(...traits);
+                used.add(kind);
+                insertions.push({ at, text: `\n${names[kind]}(${key.name}, ${parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`});` });
             }
         }
     }

@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -21,9 +20,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(local, { type: { type: "number" } });
-Component.register(world, { type: { type: "number" } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
 
 const propagate = System.create({
     name: "upWorkersTest/propagate",

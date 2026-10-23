@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../interface/component/component.js";
 import type { Entity } from "../interface/entity/entity.js";
-import { Resource } from "../interface/resource/resource.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
@@ -25,14 +23,9 @@ declare module "@adobe/ecs" {
         [unmatched]: { type: true };
     }
     export interface Resources {
-        [level]: { type: number };
+        [level]: { type: number; default: 3 };
     }
 }
-Resource.register(level, { type: { type: "number", default: 3 } });
-Component.register(value, { type: { type: "number" } });
-Component.register(rank, { type: { type: "number" } });
-Component.register(marked, { type: { const: true } });
-Component.register(unmatched, { type: { const: true } });
 
 /** `count` entities with a value and a rank, the first of them marked. */
 const seed = System.create({ name: "observed/seed" }, ({ commands }, input: { readonly count: number }) => {

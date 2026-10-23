@@ -2,7 +2,6 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -13,6 +12,7 @@ import { createWorld } from "./create.js";
 import { bindKernel } from "./kernels.js";
 import { createState } from "./state.js";
 import { workers } from "../../interface/resources/workers.js";
+import type { F32, I32 } from "../../interface/math/index.js";
 
 type Vec2 = readonly [number, number];
 const vec2 = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } as const satisfies Schema;
@@ -28,27 +28,20 @@ const target = Symbol("wasmTest/target");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number] };
-        [velocity]: { type: readonly [number, number] };
-        [bounces]: { type: number };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2; layout: "storage" }> };
+        [velocity]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2 }> };
+        [bounces]: { type: I32 };
         [flipped]: { type: boolean };
         [score]: { type: number };
         [target]: { type: Entity };
     }
     export interface Resources {
-        [seconds]: { type: number };
-        [floor]: { type: number };
+        [seconds]: { type: number; default: typeof secondsStart };
+        [floor]: { type: F32; default: -2.5 };
     }
 }
 
-Component.register(position, { type: { ...vec2, layout: "storage" } });
-Component.register(velocity, { type: vec2 });
-Component.register(bounces, { type: { type: "integer", minimum: -2147483648, maximum: 2147483647 } });
-Component.register(flipped, { type: { type: "boolean" } });
-Component.register(score, { type: { type: "number" } });
-Component.register(target, { type: Entity.schema });
-Resource.register(seconds, { type: { type: "number", default: 1 / 60 } });
-Resource.register(floor, { type: { type: "number", precision: 1, default: -2.5 } });
+const secondsStart = 1 / 60;
 
 const seed = System.create({ name: "wasmTest/seed" }, ({ commands }, input: { readonly count: number }) => {
     let previous = Entity.none;

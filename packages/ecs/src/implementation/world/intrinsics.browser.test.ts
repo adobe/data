@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { F32, Mat4x4, Quat, U32, Vec2, Vec3, Vec4 } from "../../interface/math/index.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
@@ -92,45 +91,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(f2a, { type: Vec2.schema });
-Component.register(f2b, { type: Vec2.schema });
-Component.register(f2p, { type: Vec2.schema });
-Component.register(f2o, { type: Vec2.schema });
-Component.register(i2a, { type: Vec2.I32.schema });
-Component.register(u2a, { type: Vec2.U32.schema });
-Component.register(i2b, { type: Vec2.I32.schema });
-Component.register(u2b, { type: Vec2.U32.schema });
-Component.register(i2o, { type: Vec2.I32.schema });
-Component.register(u2o, { type: Vec2.U32.schema });
-Component.register(f3a, { type: Vec3.schema });
-Component.register(f3b, { type: Vec3.schema });
-Component.register(f3p, { type: Vec3.schema });
-Component.register(f3o, { type: Vec3.schema });
-Component.register(i3a, { type: Vec3.I32.schema });
-Component.register(u3a, { type: Vec3.U32.schema });
-Component.register(i3b, { type: Vec3.I32.schema });
-Component.register(u3b, { type: Vec3.U32.schema });
-Component.register(i3o, { type: Vec3.I32.schema });
-Component.register(u3o, { type: Vec3.U32.schema });
-Component.register(f4a, { type: Vec4.schema });
-Component.register(f4b, { type: Vec4.schema });
-Component.register(f4p, { type: Vec4.schema });
-Component.register(f4o, { type: Vec4.schema });
-Component.register(i4a, { type: Vec4.I32.schema });
-Component.register(u4a, { type: Vec4.U32.schema });
-Component.register(i4b, { type: Vec4.I32.schema });
-Component.register(u4b, { type: Vec4.U32.schema });
-Component.register(i4o, { type: Vec4.I32.schema });
-Component.register(u4o, { type: Vec4.U32.schema });
-Component.register(fo, { type: F32.schema });
-Component.register(ma, { type: Mat4x4.schema });
-Component.register(mb, { type: Mat4x4.schema });
-Component.register(mo, { type: Mat4x4.schema });
-Component.register(qa, { type: Quat.schema });
-Component.register(qb, { type: Quat.schema });
-Component.register(qo, { type: Quat.schema });
-Component.register(ua, { type: U32.schema });
-Component.register(uo, { type: U32.schema });
 
 /** A value in [-1, 1) that differs per row and lane. */
 const unit = (row: number, lane: number): number => ((Math.imul(row * 31 + lane * 7 + 1, 0x9E3779B9) >>> 0) / 2 ** 32) * 2 - 1;

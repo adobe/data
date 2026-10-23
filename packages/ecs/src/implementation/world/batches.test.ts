@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
@@ -12,6 +11,7 @@ import { createBuffer } from "./buffer.js";
 import { createCommands } from "./commands.js";
 import { createState } from "./state.js";
 import { runReported } from "./reports.test-helper.js";
+import type { F32 } from "../../interface/math/index.js";
 
 type Vec3 = readonly [number, number, number];
 const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
@@ -21,16 +21,12 @@ const name = Symbol("batchesTest/name");
 const tag = Symbol("batchesTest/tag");
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number, number] };
-        [score]: { type: number };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }> };
+        [score]: { type: F32 };
         [name]: { type: string };
         [tag]: { type: true };
     }
 }
-Component.register(position, { type: vec3 });
-Component.register(score, { type: { type: "number", precision: 1 } });
-Component.register(name, { type: { type: "string" } });
-Component.register(tag, { type: { const: true } });
 
 describe("staged spawns", () => {
     it("are seen once by `added` observers in earlier, the same and later tiers, and not before the sync point", async () => {

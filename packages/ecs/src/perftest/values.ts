@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Archetype } from "../interface/archetype/archetype.js";
-import { Component } from "../interface/component/component.js";
 import { Finalizer } from "../interface/finalizer/finalizer.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
@@ -8,6 +7,7 @@ import type { World } from "../interface/world/world.js";
 import { createWorld } from "../implementation/index.js";
 import type { Benchmark, Best } from "./benchmark.js";
 import { fastest } from "./suite.js";
+import type { Vec2 } from "../interface/math/index.js";
 
 // Benchmarks of struct values, which a row reads into an object and writes back field by field: a 2D transform's five
 // numbers, as an editor's nodes hold, beside a vec2 size.
@@ -21,16 +21,12 @@ declare module "@adobe/ecs" {
     export interface Components {
         [pose]: { type: Pose };
         [shown]: { type: Pose };
-        [extent]: { type: readonly [number, number] };
+        [extent]: { type: Vec2 };
         [order]: { type: number };
     }
 }
 const number = { type: "number" } as const;
 const poseSchema = { type: "object", properties: { tx: number, ty: number, rotation: number, sx: number, sy: number }, required: ["tx", "ty", "rotation", "sx", "sy"] } as const;
-Component.register(pose, { type: poseSchema });
-Component.register(shown, { type: poseSchema });
-Component.register(extent, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } });
-Component.register(order, { type: number });
 
 const Node = Archetype.create([pose, shown, extent, order]);
 

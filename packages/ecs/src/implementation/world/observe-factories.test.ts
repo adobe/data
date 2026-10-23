@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it, vi } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { Observe } from "../../observe/index.js";
@@ -24,12 +22,9 @@ declare module "@adobe/ecs" {
         [other]: { type: number };
     }
     interface Resources {
-        [level]: { type: number };
+        [level]: { type: number; default: 0 };
     }
 }
-Component.register(amount, { type: { type: "number" } });
-Component.register(other, { type: { type: "number" } });
-Resource.register(level, { type: { type: "number", default: 0 } });
 
 let spawned: Entity[] = [];
 const seed = System.create({ name: "observeFactoriesTest/seed" }, ({ commands }, input: { readonly count: number }) => {

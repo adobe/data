@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it, vi } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -31,26 +29,17 @@ declare module "@adobe/ecs" {
         [label]: { type: string };
         [marked]: { type: true };
         [place]: { type: number };
-        [caption]: { type: { readonly text: string } | null; thread: "observeJoinedTest" };
+        [caption]: { type: { readonly text: string } | null; thread: "observeJoinedTest"; default: typeof none };
         [widget]: { type: { readonly draw: () => string } | null; thread: "observeJoinedTest" };
         [kept]: { type: string };
     }
     export interface Resources {
-        [total]: { type: number };
-        [names]: { type: readonly string[] };
+        [total]: { type: number; default: 0 };
+        [names]: { type: readonly string[]; default: [] };
     }
 }
-Component.register(point, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-Component.register(label, { type: { type: "string" } });
-Component.register(marked, { type: { const: true } });
-Component.register(place, { type: { type: "number" } });
 /** The caption's start, which a command here gives it by this value. */
 const none = { text: "none" };
-Component.register(caption, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: none }, thread: "observeJoinedTest" });
-Component.register(widget, { thread: "observeJoinedTest" });
-Component.register(kept, { type: { type: "string" } });
-Resource.register(total, { type: { type: "number", default: 0 } });
-Resource.register(names, { type: { type: "array", items: { type: "string" }, default: [] } });
 
 const add = System.create({ name: "observeJoinedTest/add", resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;

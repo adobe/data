@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Observe } from "../../observe/index.js";
@@ -25,7 +24,7 @@ declare module "@adobe/ecs" {
     }
     export interface Components {
         [point]: { type: number };
-        [caption]: { type: { readonly text: string } | null; thread: "remoteTest" };
+        [caption]: { type: { readonly text: string } | null; thread: "remoteTest"; default: typeof none };
         [widget]: { type: Widget | null; thread: "remoteTest" };
         [kept]: { type: string };
         [guarded]: { type: Widget | null; thread: "remoteTestFinalized" };
@@ -34,15 +33,9 @@ declare module "@adobe/ecs" {
 }
 /** A value that isn't data. */
 type Widget = { readonly draw: () => string };
-Component.register(point, { type: { type: "number" } });
 /** The caption's start, which a command here gives it by this value. */
 const none = { text: "none" };
-Component.register(caption, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: none }, thread: "remoteTest" });
-Component.register(widget, { thread: "remoteTest" });
-Component.register(kept, { type: { type: "string" } });
 /** A widget, or the number a kernel gives one, which only the world's thread could hold. */
-Component.register(handle, { thread: "remoteTest" });
-Component.register(guarded, { thread: "remoteTestFinalized" });
 
 const spawn = System.create({ name: "remoteTest/spawn" }, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, caption, widget, kept])({ [point]: input.x, [kept]: `k${input.x}`, [widget]: null });

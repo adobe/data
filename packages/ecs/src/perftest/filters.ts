@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Archetype } from "../interface/archetype/archetype.js";
-import { Component } from "../interface/component/component.js";
 import type { I32 } from "../interface/math/i32/index.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
@@ -8,6 +7,7 @@ import type { World } from "../interface/world/world.js";
 import { createWorld } from "../implementation/index.js";
 import { retainedRuns } from "../implementation/world/reports.js";
 import type { Benchmark } from "./benchmark.js";
+import type { U32 } from "../interface/math/index.js";
 
 // Change filters over one archetype of 100K rows after a writer changed one row, a few, or every one: what finding the
 // rows that pass costs each system that filters, apart from running them.
@@ -23,20 +23,13 @@ declare module "@adobe/ecs" {
     export interface Components {
         [value]: { type: number };
         [other]: { type: number };
-        [at]: { type: number };
+        [at]: { type: U32 };
         [out0]: { type: number };
         [out1]: { type: number };
         [out2]: { type: number };
         [out3]: { type: number };
     }
 }
-Component.register(value, { type: { type: "number" } });
-Component.register(other, { type: { type: "number" } });
-Component.register(at, { type: { type: "integer", minimum: 0, maximum: 0x7FFFFFFF } });
-Component.register(out0, { type: { type: "number" } });
-Component.register(out1, { type: { type: "number" } });
-Component.register(out2, { type: { type: "number" } });
-Component.register(out3, { type: { type: "number" } });
 
 const rows = 100_000;
 const filtered = Archetype.create([value, other, at, out0, out1, out2, out3]);

@@ -19,10 +19,6 @@ declare module '@adobe/ecs' {
         [name]: { type: string };
     }
 }
-Component.register(local, { type: { type: "number" } });
-Component.register(world, { type: { type: "number" } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(name, { type: { type: "string" } });
 
 // `up` reads what `read` lists of the entity `through` names, or null for a row without one; it may read what the
 // system writes.

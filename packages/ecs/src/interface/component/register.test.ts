@@ -1,9 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Entity } from "../entity/entity.js";
+import { declareComponent, declareTrait } from "../registry/declare.js";
 import { declarationOf, kindOf, threadOfDeclaration } from "../registry/index.js";
-import { Trait } from "../trait/trait.js";
-import { Component } from "./component.js";
 
 const parent = Symbol("typesComponentTest/parent");
 const count = Symbol("typesComponentTest/count");
@@ -28,32 +27,17 @@ declare module "@adobe/ecs" {
         [position]: { type: readonly [number, number] };
         [bitmap]: { type: ImageBitmap; transfer: true };
         [marked]: { type: true; [mark]: true };
-        [slot]: { type: number; derived: true };
+        [slot]: { type: number; derived: true; default: 0 };
     }
     export interface Traits<N> {
         readonly [mark]: true;
-        readonly [late]: true;
     }
 }
 
-Trait.register(mark);
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(count, { type: { type: "number" } });
-Component.register(label, { type: { type: "string" } });
-Component.register(placed, { type: { type: "array", items: { type: "string" } }, thread: "typesComponentTest" });
-Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-Component.register(bitmap, { transfer: true });
-Component.register(marked, { type: { const: true }, [mark]: true });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
+/** Registers a declaration as the build does, which a test may write wrong. */
+const register = (key: unknown, declaration: object): void => declareComponent(key, declaration);
 
-const untyped: (...parameters: never[]) => unknown = Component.register;
-
-/** Registers as an untyped caller would, bypassing the types' checks. */
-const register = (key: unknown, declaration: object): void => {
-    Reflect.apply(untyped, undefined, [key, declaration]);
-};
-
-describe("Component.register", () => {
+describe("registering a component", () => {
     it("records the declaration, and its thread: none for a struct or a string, else its own or \"world\"", () => {
         expect(declarationOf(parent)).toEqual({ type: Entity.schema, reference: "owner" });
         expect(kindOf(parent)).toBe("component");
@@ -68,26 +52,27 @@ describe("Component.register", () => {
         expect(threadOfDeclaration({ type: { anyOf: [{ type: "string" }, { type: "number" }] } })).toBe("world");
     });
     it("accepts the same declaration again, as a module evaluated again makes it, and rejects a different one or a key of another kind", () => {
-        expect(() => Component.register(count, { type: { type: "number" } })).not.toThrow();
+        expect(() => register(count, { type: { type: "number" } })).not.toThrow();
         expect(() => register(count, { type: { type: "integer" } })).toThrow(`Cannot register component "typesComponentTest/count": already registered as a component, with another declaration.`);
         expect(declarationOf(count)).toEqual({ type: { type: "number" } });
         const claimed = Symbol("typesComponentTest/claimed");
         register(claimed, { type: { const: true } });
-        expect(() => Reflect.apply(Trait.register, undefined, [claimed])).toThrow(`Cannot register trait "typesComponentTest/claimed": already registered as a component.`);
+        expect(() => declareTrait(claimed)).toThrow(`Cannot register trait "typesComponentTest/claimed": already registered as a component.`);
         expect(kindOf(count)).toBe("component");
     });
     it("takes only plain symbols as keys, so built-in traits' string names are no component's", () => {
-        // @ts-expect-error a key is a symbol, and derived is a built-in trait's name
-        expect(() => Component.register("derived", { type: { const: true } })).toThrow(`Cannot register component "derived": a key is a plain Symbol(...), not a string.`);
+        expect(() => register("derived", { type: { const: true } })).toThrow(`Cannot register component "derived": a key is a plain Symbol(...), not a string.`);
         expect(() => register(Symbol.for("typesComponentTest/shared"), { type: { const: true } })).toThrow("a Symbol.for key is shared across the program");
         expect(() => register(Symbol.asyncIterator, { type: { const: true } })).toThrow("Symbol.asyncIterator is a well-known symbol.");
         expect(kindOf("derived")).toBe(undefined);
     });
-    it("rejects what types reject, for untyped callers, recording nothing", () => {
+    it("rejects a declaration whose traits can't hold, recording nothing", () => {
         expect(() => register(Symbol("typesComponentTest/strayTrait"), { type: { type: "number" }, unknown: true })).toThrow("unknown isn't a registered trait");
         expect(() => register(Symbol("typesComponentTest/badReference"), { type: { type: "number" }, reference: "weak" })).toThrow("a reference's type is Entity.schema");
         expect(() => register(Symbol("typesComponentTest/badSlot"), { type: { type: "number" }, derived: true })).toThrow("a derived component's type has a default");
         expect(() => register(Symbol("typesComponentTest/reduced"), { type: { type: "number" }, reduce: "+" })).toThrow("only a resource is reduced");
+        expect(() => register(Symbol("typesComponentTest/derivedWithin"), { type: { type: "number", default: 0 }, derived: true, within: count })).toThrow("a derived component's rule covers within");
+        expect(() => register(Symbol("typesComponentTest/derivedReference"), { type: { ...Entity.schema, default: Entity.none }, derived: true, reference: "owner" })).toThrow("a rule can't set a derived component's target");
         const badReference = Symbol("typesComponentTest/badReference");
         expect(() => register(badReference, { type: { type: "number" }, reference: "weak" })).toThrow("a reference's type is Entity.schema");
         expect(declarationOf(badReference)).toBe(undefined);
@@ -108,7 +93,7 @@ describe("Component.register", () => {
     it("records no type for a value that isn't data", () => {
         expect(declarationOf(bitmap)).toEqual({ transfer: true });
         expect(Reflect.has(declarationOf(bitmap) ?? {}, "type")).toBe(false);
-        expect(() => Component.register(bitmap, { transfer: true })).not.toThrow();
+        expect(() => register(bitmap, { transfer: true })).not.toThrow();
     });
     it("rejects a default beside a component's schema, which holds it", () => {
         expect(() => register(Symbol("typesComponentTest/defaulted"), { type: { type: "number" }, default: 0 })).toThrow("its schema holds its default");
@@ -116,10 +101,10 @@ describe("Component.register", () => {
     it("takes traits other packages register, in the namespace components share", () => {
         const early = Symbol("typesComponentTest/early");
         expect(() => register(early, { type: { const: true }, [late]: true })).toThrow(`typesComponentTest/late isn't a registered trait`);
-        Trait.register(late);
+        declareTrait(late);
         expect(() => register(early, { type: { const: true }, [late]: true })).not.toThrow();
         expect(declarationOf(marked)).toEqual({ type: { const: true }, [mark]: true });
-        expect(() => Trait.register(mark)).not.toThrow();
+        expect(() => declareTrait(mark)).not.toThrow();
         expect(declarationOf(slot)).toEqual({ type: { type: "number", default: 0 }, derived: true });
     });
 });

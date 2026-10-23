@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Archetype } from "../interface/archetype/archetype.js";
-import { Component } from "../interface/component/component.js";
 import { Entity } from "../interface/entity/entity.js";
 import { Index } from "../interface/indexes/index-type.js";
 import { workers } from "../interface/resources/workers.js";
@@ -37,17 +36,6 @@ declare module "@adobe/ecs" {
         [image]: { type: true };
     }
 }
-Component.register(localX, { type: { type: "number" } });
-Component.register(localY, { type: { type: "number" } });
-Component.register(worldX, { type: { type: "number" } });
-Component.register(worldY, { type: { type: "number" } });
-Component.register(opacity, { type: { type: "number" } });
-Component.register(worldOpacity, { type: { type: "number" } });
-Component.register(paintDepth, { type: { type: "number" } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(group, { type: { const: true } });
-Component.register(shape, { type: { const: true } });
-Component.register(image, { type: { const: true } });
 
 const node = [localX, localY, worldX, worldY, opacity, worldOpacity, paintDepth] as const;
 const Document = Archetype.create([...node, group]);

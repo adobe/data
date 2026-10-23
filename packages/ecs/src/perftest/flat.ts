@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../interface/component/component.js";
 import { System } from "../interface/system/system.js";
 import { Archetype } from '../interface/archetype/archetype.js';
+import type { F32, U32 } from '../interface/math/index.js';
 
 // Mirrors adobe/data's ecs2 `create` perftest (packages/data/src/perftest/ecs2-perf.ts): 1M particles of eight scalar
 // components, interleaved over four archetypes by visible/enabled, each with its own values.
@@ -19,29 +19,19 @@ export const enabled = Symbol("flat/enabled");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [color]: { type: number };
-        [mass]: { type: number };
-        [positionX]: { type: number };
-        [positionY]: { type: number };
-        [positionZ]: { type: number };
-        [velocityX]: { type: number };
-        [velocityY]: { type: number };
-        [velocityZ]: { type: number };
+        [color]: { type: U32 };
+        [mass]: { type: F32 };
+        [positionX]: { type: F32 };
+        [positionY]: { type: F32 };
+        [positionZ]: { type: F32 };
+        [velocityX]: { type: F32 };
+        [velocityY]: { type: F32 };
+        [velocityZ]: { type: F32 };
         [visible]: { type: true };
         [enabled]: { type: true };
     }
 }
 
-Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(mass, { type: { type: "number", precision: 1 } });
-Component.register(positionX, { type: { type: "number", precision: 1 } });
-Component.register(positionY, { type: { type: "number", precision: 1 } });
-Component.register(positionZ, { type: { type: "number", precision: 1 } });
-Component.register(velocityX, { type: { type: "number", precision: 1 } });
-Component.register(velocityY, { type: { type: "number", precision: 1 } });
-Component.register(velocityZ, { type: { type: "number", precision: 1 } });
-Component.register(visible, { type: { const: true } });
-Component.register(enabled, { type: { const: true } });
 
 const scalars = [color, mass, positionX, positionY, positionZ, velocityX, velocityY, velocityZ] as const;
 /** Entity i goes to archetype i % 4, like ecs2's seedSingle. */

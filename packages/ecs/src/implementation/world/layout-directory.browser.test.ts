@@ -1,12 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { workers } from "../../interface/resources/workers.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import type { F32 } from "../../interface/math/index.js";
 
 const value = Symbol("layoutDirectoryTest/value");
 const target = Symbol("layoutDirectoryTest/target");
@@ -23,9 +23,9 @@ const tags = [tag0, tag1, tag2, tag3, tag4, tag5, tag6] as const;
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [value]: { type: number };
+        [value]: { type: F32 };
         [target]: { type: Entity };
-        [seen]: { type: number };
+        [seen]: { type: F32 };
         [child]: { type: true };
         [tag0]: { type: true };
         [tag1]: { type: true };
@@ -37,17 +37,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(target, { type: Entity.schema });
-Component.register(seen, { type: { type: "number", precision: 1 } });
-Component.register(child, { type: { const: true } });
-Component.register(tag0, { type: { const: true } });
-Component.register(tag1, { type: { const: true } });
-Component.register(tag2, { type: { const: true } });
-Component.register(tag3, { type: { const: true } });
-Component.register(tag4, { type: { const: true } });
-Component.register(tag5, { type: { const: true } });
-Component.register(tag6, { type: { const: true } });
 
 /** The component lists of 100 archetypes: `value` with each of the first 100 combinations of the tags. */
 const lists = Array.from({ length: 100 }, (_, i): (typeof value | (typeof tags)[number])[] => [value, ...tags.filter((_, bit) => (i & (1 << bit)) !== 0)]);

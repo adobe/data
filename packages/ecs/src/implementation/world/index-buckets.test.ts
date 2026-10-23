@@ -1,11 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "./create.js";
+import type { U32 } from "../../interface/math/index.js";
 
 // Long buckets of a hash index, which a change may leave unsorted until a list is read by position: every reader still
 // gets each bucket's rows in entity order.
@@ -20,22 +20,15 @@ const sumByHand = Symbol("indexBucketsTest/sumByHand");
 
 declare module "@adobe/ecs" {
     interface Components {
-        [group]: { type: number };
-        [serial]: { type: number };
+        [group]: { type: U32 };
+        [serial]: { type: U32 };
         [hidden]: { type: true };
         [extra]: { type: true };
-        [reads]: { type: number };
+        [reads]: { type: U32 };
         [sum]: { type: number };
         [sumByHand]: { type: number };
     }
 }
-Component.register(group, { type: { type: "integer", minimum: 0, maximum: 2 } });
-Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 10000000 } });
-Component.register(hidden, { type: { const: true } });
-Component.register(extra, { type: { const: true } });
-Component.register(reads, { type: { type: "integer", minimum: 0, maximum: 2 } });
-Component.register(sum, { type: { type: "number" } });
-Component.register(sumByHand, { type: { type: "number" } });
 
 const groups = [0, 1, 2];
 const byGroup = Index.create({ name: "indexBucketsTest/byGroup", key: [group], components: { has: [serial], not: [hidden] } });

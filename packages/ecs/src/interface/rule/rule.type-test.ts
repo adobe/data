@@ -30,11 +30,6 @@ declare module '@adobe/ecs' {
         [time]: { type: number };
     }
 }
-Component.register(source, { type: { type: "number" } });
-Component.register(hidden, { type: { const: true } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Resource.register(time, { type: { type: "number", default: 0 } });
 
 // Rules derive only derived components.
 const slots = Rule.create({ name: "ruleTypeTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] });

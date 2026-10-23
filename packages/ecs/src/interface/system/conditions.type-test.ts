@@ -25,12 +25,6 @@ declare module '@adobe/ecs' {
         [position]: { type: number };
     }
 }
-Resource.register(handle, { default: new Map() });
-Resource.register(level, { type: { anyOf: [{ type: "object", properties: { size: { type: "number" } } }, { type: "null" }], default: null } });
-Resource.register(paused, { type: { type: "boolean", default: false } });
-Resource.register(cache, {});
-Resource.register(count, { type: { type: "number", default: 0 } });
-Component.register(position, { type: { type: "number" } });
 
 // `is`: runs while each is neither null nor false, and reads it narrowed so.
 System.create({ name: "conditionsTypeTest/loaded", resources: { is: [level, cache] } }, ({ resources }) => {

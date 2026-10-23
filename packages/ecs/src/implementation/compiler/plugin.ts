@@ -11,7 +11,7 @@ import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
 import { augmentationInsertions, type AugmentationHost } from './augmentations.js';
 import { inputInsertions, type InputHost } from './input-schemas.js';
-import { copyForImporter, namespaceCopyOf, packagePathOf, typesFileOf } from './paths.js';
+import { copyForImporter, isInPackageCopy, namespaceCopyOf, packagePathOf, typesFileOf } from './paths.js';
 import { moduleOf, type TypedProgram } from './type-schemas.js';
 import { insertInto, locateThroughMap } from './source-map.js';
 import { transformKernels } from './transform.js';
@@ -158,7 +158,9 @@ const inputPlugin = (): Plugin => {
                 },
                 load: file => readFile(file, "utf8"),
                 packagePath: packagePathOf,
-                declareModule: importer => copyForImporter(importer).declare,
+                // The package's own modules share the registry of the copy they're in; any other module's registrations,
+                // a library's shipped among them, import the copy it resolves.
+                declareModule: importer => isInPackageCopy(importer) ? copyForImporter(importer).declare : `${packageName}/declare`,
                 isSystem: async (specifier, importer) => {
                     const found = await resolved(specifier, importer);
                     return found !== null && (found.external ? specifier === packageName : namespaceCopyOf(found.id, "System") !== null);

@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { definitionOf } from "../../interface/registry/index.js";
 import { isLeaf } from "../../interface/registry/schedule.js";
 import { System } from "../../interface/system/system.js";
@@ -20,7 +19,6 @@ declare module "@adobe/ecs" {
         [amount]: { type: number };
     }
 }
-Component.register(amount, { type: { type: "number" } });
 
 /** What the observer system read, were it run: this test stands for the thread, so it never runs. */
 const seen: number[] = [];

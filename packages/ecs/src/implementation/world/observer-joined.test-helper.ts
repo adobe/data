@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Index } from "../../interface/indexes/index-type.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import type { Entity } from "../../interface/entity/entity.js";
+import type { Schema } from "../../interface/schema/schema.js";
+import type { F32, Vec3 } from "../../interface/math/index.js";
 
 // Keys and systems both threads of the observer-joined fixtures import: world systems writing every row's stamp each
 // tick, and observer systems a joined thread adds, reading those rows as of one sync point.
@@ -20,38 +20,28 @@ export const motto = Symbol("observerJoinedWorkerTest/motto");
 export const mottoRound = Symbol("observerJoinedWorkerTest/mottoRound");
 declare module "@adobe/ecs" {
     export interface Components {
-        [stamp]: { type: number };
-        [spot]: { type: readonly [number, number, number] };
-        [heat]: { type: number };
-        [rate]: { type: number };
+        [stamp]: { type: Schema.Type<{ type: "integer" }> };
+        [spot]: { type: Vec3 };
+        [heat]: { type: F32 };
+        [rate]: { type: F32 };
         [word]: { type: string };
     }
     export interface Resources {
-        [counter]: { type: number };
-        [stall]: { type: number };
-        [phase]: { type: number };
-        [motto]: { type: string };
-        [mottoRound]: { type: number };
+        [counter]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
+        [stall]: { type: number; default: 0 };
+        [phase]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
+        [motto]: { type: string; default: "motto 0" };
+        [mottoRound]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
     }
 }
-Component.register(stamp, { type: { type: "integer" } });
-Component.register(spot, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
-Component.register(heat, { type: { type: "number", precision: 1 } });
-Component.register(rate, { type: { type: "number", precision: 1 } });
 /** A string the world writes each tick, which lives in shared memory where the observer system reads it. */
-Component.register(word, { type: { type: "string" } });
-Resource.register(counter, { type: { type: "integer", default: 0 } });
 /** A string resource the world writes with the round it's of, which an observer system on the thread reads alone. */
-Resource.register(motto, { type: { type: "string", default: "motto 0" } });
-Resource.register(mottoRound, { type: { type: "integer", default: 0 } });
 /** Moves on once a joined thread asked the world to run its observer system, so the world's thread knows it did. */
-Resource.register(phase, { type: { type: "integer", default: 0 } });
 /**
  * Milliseconds the observer systems spin partway through each run, so the world's next writer is likely ready before
  * they finish; negative, they wait there on the gate instead, until the world's thread releases them once a writer
  * copied.
  */
-Resource.register(stall, { type: { type: "number", default: 0 } });
 
 const spin = (milliseconds: number): void => {
     const until = performance.now() + milliseconds;

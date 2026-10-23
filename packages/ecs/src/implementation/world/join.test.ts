@@ -1,9 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { labelOfItem } from "../../interface/registry/index.js";
 import { Observe } from "../../observe/index.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -27,18 +25,12 @@ declare module "@adobe/ecs" {
         [words]: { type: ReadonlySet<string> };
     }
     export interface Resources {
-        [total]: { type: number };
-        [names]: { type: readonly string[] };
-        [counts]: { type: ReadonlyMap<string, number> };
+        [total]: { type: number; default: 0 };
+        [names]: { type: readonly string[]; default: [] };
+        [counts]: { type: ReadonlyMap<string, number>; default: typeof countsStart };
     }
 }
-Component.register(point, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-Component.register(label, { type: { type: "string" } });
-Component.register(marked, { type: { const: true } });
-Resource.register(total, { type: { type: "number", default: 0 } });
-Resource.register(names, { type: { type: "array", items: { type: "string" }, default: [] } });
-Component.register(words, { type: { type: "set", items: { type: "string" } } });
-Resource.register(counts, { type: { type: "map", keys: { type: "string" }, values: { type: "number" } }, default: new Map() });
+const countsStart = new Map();
 
 /** Adds its struct input to `total`, and its object input's names to `names`. */
 const add = System.create({ name: "joinTest/add", resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {

@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../interface/component/component.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
@@ -18,8 +17,6 @@ declare module "@adobe/ecs" {
         [boxed]: { type: { readonly text: string } };
     }
 }
-Component.register(text, { type: { type: "string" } });
-Component.register(boxed, { type: { type: "object", properties: { text: { type: "string" } } } });
 
 const rows = 10_000;
 

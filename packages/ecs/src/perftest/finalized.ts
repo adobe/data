@@ -1,13 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { Component } from "../interface/component/component.js";
 import { Finalizer } from "../interface/finalizer/finalizer.js";
-import { Resource } from "../interface/resource/resource.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
 import { runReported } from "../implementation/world/reports.test-helper.js";
+import type { Vec3 } from "../interface/math/index.js";
 
 // Despawning entities whose objects a joined thread fills, with a finalizer on that thread: the world's thread writes
 // each stop's declared struct reads into the thread's stop list and doesn't wait for it. The joined thread is
@@ -26,25 +25,18 @@ declare module "@adobe/ecs" {
         finalizedBenchmark: true;
     }
     export interface Components {
-        [spot]: { type: readonly [number, number, number] };
+        [spot]: { type: Vec3 };
         [handle]: { type: { readonly release: () => void } | null; thread: "finalizedBenchmark" };
         [noted]: { type: { readonly release: () => void } | null; thread: "finalizedBenchmark" };
         [measured]: { type: { readonly release: () => void } | null; thread: "finalizedBenchmark" };
     }
     export interface Resources {
-        [note]: { type: string };
-        [scale]: { type: number };
-        [offset]: { type: readonly [number, number, number] };
+        [note]: { type: string; default: "released" };
+        [scale]: { type: number; default: 1 };
+        [offset]: { type: Vec3; default: [0, 0, 0] };
     }
 }
-Component.register(spot, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
 /** An object of the joined thread, as a DOM node or a GPU handle is. */
-Component.register(handle, { thread: "finalizedBenchmark" });
-Component.register(noted, { thread: "finalizedBenchmark" });
-Resource.register(note, { type: { type: "string", default: "released" } });
-Component.register(measured, { thread: "finalizedBenchmark" });
-Resource.register(scale, { type: { type: "number", default: 1 } });
-Resource.register(offset, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3, default: [0, 0, 0] } });
 
 /** Entities each timed sync point despawns. */
 export const despawnedObjects = 10_000;

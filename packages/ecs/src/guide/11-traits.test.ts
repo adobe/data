@@ -1,14 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Entity, System, World } from "../index.js";
+import { Entity, System, World } from "../index.js";
 
-const ship = Symbol("ship");
-const parent = Symbol("parent");
-const target = Symbol("target");
-const selected = Symbol("selected");
-const outline = Symbol("outline");
+const ship = Symbol();
+const parent = Symbol();
+const target = Symbol();
+const selected = Symbol();
+const outline = Symbol();
 
-// Traits are the fields of a key's declaration; type is one. Registration repeats them.
+// Traits are the fields of a key's declaration; type is one.
 declare module "@adobe/ecs" {
     interface Components {
         [ship]: { type: true };
@@ -21,12 +21,6 @@ declare module "@adobe/ecs" {
         [outline]: { type: number; within: typeof selected };
     }
 }
-
-Component.register(ship, { type: { const: true } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(target, { type: Entity.schema, reference: "weak" });
-Component.register(selected, { type: { const: true } });
-Component.register(outline, { type: { type: "number" }, within: selected });
 
 const spawn = System.create(({ commands }) => {
     const mothership = commands.spawn([ship, selected, outline])({ [outline]: 2 });

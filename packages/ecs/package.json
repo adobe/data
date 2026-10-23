@@ -65,6 +65,10 @@
     "./compiler": {
       "import": "./dist/implementation/compiler/index.js",
       "types": "./dist/implementation/compiler/index.d.ts"
+    },
+    "./declare": {
+      "import": "./dist/interface/registry/declare.js",
+      "types": "./dist/interface/registry/declare.d.ts"
     }
   }
 }

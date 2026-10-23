@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import { count, read } from "./reads.test-helper.js";
@@ -15,16 +14,12 @@ const parent = Symbol("traitsTest/parent");
 declare module "@adobe/ecs" {
     export interface Components {
         [score]: { type: number };
-        [slot]: { type: number; derived: true };
+        [slot]: { type: number; derived: true; default: 0 };
         [ready]: { type: true; within: typeof slot };
         [parent]: { type: Entity; reference: "owner" };
     }
 }
 
-Component.register(score, { type: { type: "number" } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Component.register(ready, { type: { const: true }, within: slot });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
 
 describe("traits", () => {
     it("keep derived components out of commands, for untyped callers too", async () => {

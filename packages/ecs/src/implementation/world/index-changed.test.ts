@@ -1,13 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Index } from "../../interface/indexes/index-type.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
+import type { U32 } from "../../interface/math/index.js";
 
 // An index lookup's `changed: true`: the index's entries changing is a change filter of its system.
 
@@ -18,18 +17,14 @@ const paused = Symbol("indexChangedTest/paused");
 
 declare module "@adobe/ecs" {
     interface Components {
-        [group]: { type: number };
+        [group]: { type: U32 };
         [weight]: { type: number };
         [total]: { type: number };
     }
     interface Resources {
-        [paused]: { type: boolean };
+        [paused]: { type: boolean; default: false };
     }
 }
-Component.register(group, { type: { type: "integer", minimum: 0, maximum: 1000 } });
-Component.register(weight, { type: { type: "number" } });
-Component.register(total, { type: { type: "number" } });
-Resource.register(paused, { type: { type: "boolean", default: false } });
 
 const byGroup = Index.create({ name: "indexChangedTest/byGroup", key: [group], components: { has: [weight] } });
 const inOrder = Index.create({ name: "indexChangedTest/inOrder", key: [group], sorted: true });

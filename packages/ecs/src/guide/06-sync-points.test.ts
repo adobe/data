@@ -1,21 +1,18 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Resource, System, World } from "../index.js";
+import { System, World } from "../index.js";
 
-const health = Symbol("health");
-const seen = Symbol("seen");
+const health = Symbol();
+const seen = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
         [health]: { type: number };
     }
     interface Resources {
-        [seen]: { type: number };
+        [seen]: { type: number; default: 0 };
     }
 }
-
-Component.register(health, { type: { type: "number" } });
-Resource.register(seen, { type: { type: "number", default: 0 } });
 
 // Value writes apply at once; commands wait for the sync point that ends each run, then apply in the order issued.
 const spawn = System.create(({ commands }) => {

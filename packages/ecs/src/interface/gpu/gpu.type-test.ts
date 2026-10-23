@@ -12,7 +12,6 @@ declare module '@adobe/ecs' {
         [tint]: { type: number };
     }
 }
-Component.register(tint, { type: { type: "number" } });
 
 declare const wgsl: typeof Gpu.wgsl;
 declare const layout: typeof Gpu.layout;

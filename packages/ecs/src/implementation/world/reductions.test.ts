@@ -1,8 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
-import { Vec3 } from "../../interface/math/index.js";
-import { Resource } from "../../interface/resource/resource.js";
+import { type I32, type U32, Vec3 } from "../../interface/math/index.js";
+import { declareResource } from "../../interface/registry/declare.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { readResource } from "./reads.test-helper.js";
@@ -29,33 +28,20 @@ const summed = Symbol("reductionsTest/summed");
 declare module "@adobe/ecs" {
     export interface Components {
         [position]: { type: Vec3 };
-        [mass]: { type: number };
+        [mass]: { type: U32 };
         [heavy]: { type: true };
     }
     export interface Resources {
-        [total]: { type: number; reduce: "+" };
-        [low]: { type: readonly [number, number, number]; reduce: "min" };
-        [bits]: { type: number; reduce: "|" };
-        [least]: { type: number; reduce: "min" };
-        [any]: { type: boolean; reduce: "|" };
-        [level]: { type: number };
-        [seen]: { type: number };
-        [wrapped]: { type: number; reduce: "+" };
-        [summed]: { type: boolean; reduce: "|" };
+        [total]: { type: number; reduce: "+"; default: 0 };
+        [low]: { type: Vec3; reduce: "min"; default: [0, 0, 0] };
+        [bits]: { type: U32; reduce: "|"; default: 0 };
+        [least]: { type: U32; reduce: "min"; default: 0 };
+        [any]: { type: boolean; reduce: "|"; default: false };
+        [level]: { type: number; default: 0 };
+        [seen]: { type: number; default: 0 };
+        [wrapped]: { type: I32; default: 5; reduce: "+" };
     }
 }
-
-Component.register(position, { type: Vec3.schema });
-Component.register(mass, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(heavy, { type: { const: true } });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(low, { type: { ...Vec3.schema, default: [0, 0, 0] }, reduce: "min" });
-Resource.register(bits, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 }, reduce: "|" });
-Resource.register(least, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 }, reduce: "min" });
-Resource.register(any, { type: { type: "boolean", default: false }, reduce: "|" });
-Resource.register(level, { type: { type: "number", default: 0 } });
-Resource.register(seen, { type: { type: "number", default: 0 } });
-Resource.register(wrapped, { type: { type: "integer", minimum: -(2 ** 31), maximum: 2 ** 31 - 1, default: 5 }, reduce: "+" });
 
 const rows = 3000;
 const positionAt = (i: number): Vec3 => [Math.sin(i) * 100, (i % 97) - 50, i / 7];
@@ -247,8 +233,8 @@ describe("reductions", () => {
     });
 
     it("reject what can't be reduced", async () => {
-        // @ts-expect-error booleans reduce bitwise
-        expect(() => Resource.register(summed, { type: { type: "boolean", default: false }, reduce: "+" })).toThrow(`booleans reduce with "&", "|" or "^"`);
+        // Booleans reduce bitwise.
+        expect(() => declareResource(summed, { type: { type: "boolean", default: false }, reduce: "+" })).toThrow(`booleans reduce with "&", "|" or "^"`);
         // @ts-expect-error a contributor repeats its resource's operator
         expect(() => System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); })).toThrow(`reduces "reductionsTest/total" with "max", but it's declared reduce: "+"`);
         // @ts-expect-error only a resource with a reduce trait is reduced

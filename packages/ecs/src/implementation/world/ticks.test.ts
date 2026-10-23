@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Resource, System, clock, workers } from "../../index.js";
+import { System, clock, workers } from "../../index.js";
 import { createWorld } from "./create.js";
 
 // The cases of ticks that read through observers are in `observe-ticks-cases.test.ts`.
@@ -8,10 +8,9 @@ import { createWorld } from "./create.js";
 const frames = Symbol("ticksTest/frames");
 declare module "@adobe/ecs" {
     interface Resources {
-        [frames]: { type: number };
+        [frames]: { type: number; default: 0 };
     }
 }
-Resource.register(frames, { type: { type: "number", default: 0 } });
 
 const count = System.create({ name: "ticksTest/count", resources: { write: [frames] } }, ({ resources }) => { resources[frames] += 1; });
 

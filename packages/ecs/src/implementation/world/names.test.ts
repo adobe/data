@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -24,10 +23,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(value, { type: { type: "number" } });
-Component.register(other, { type: { type: "number" } });
-Component.register(first, { type: { const: true }, derived: true });
-Component.register(second, { type: { const: true }, derived: true });
 
 // Two libraries, written apart, both name a rule, a finalizer and a system "linked".
 Rule.create({ name: "namesTest/linked", components: { has: [value] }, derive: [first] });

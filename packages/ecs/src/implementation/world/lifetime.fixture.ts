@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type Tables } from "./create.js";
@@ -9,6 +7,7 @@ import { collector, freshKernel, tablesAfterCollecting } from "./lifetime.test-h
 import { readResource } from "./reads.test-helper.js";
 import { fillReports, runOf } from "./reports.test-helper.js";
 import { Report } from "../../interface/report/report.js";
+import type { F32 } from "../../interface/math/index.js";
 
 /** Scenarios of what kernels hold across the pool, run built in node and from source in chromium. */
 
@@ -19,19 +18,15 @@ const total = Symbol("lifetimeFixture/total");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [value]: { type: number };
+        [value]: { type: F32 };
         [target]: { type: Entity };
-        [out]: { type: number };
+        [out]: { type: F32 };
     }
     export interface Resources {
-        [total]: { type: number; reduce: "+" };
+        [total]: { type: number; reduce: "+"; default: 0 };
     }
 }
 
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(target, { type: Entity.schema });
-Component.register(out, { type: { type: "number", precision: 1 } });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
 
 export const rows = 4_096;
 

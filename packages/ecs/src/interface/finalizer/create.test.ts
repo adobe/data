@@ -1,9 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../component/component.js";
 import { identify } from "../registry/ids.test-helper.js";
 import { labelOfItem, programFinalizers, programRules } from "../registry/index.js";
-import { Resource } from "../resource/resource.js";
 import { Rule } from "../rule/rule.js";
 import { clock } from "../resources/index.js";
 import { Finalizer } from "./finalizer.js";
@@ -22,27 +20,18 @@ declare module "@adobe/ecs" {
     export interface Components {
         [node]: { type: HTMLElement; thread: "main" };
         [label]: { type: string };
-        [slot]: { type: number; derived: true };
+        [slot]: { type: number; derived: true; default: 0 };
         [mark]: { type: true; derived: true };
         [other]: { type: true; derived: true };
         [tags]: { type: readonly string[] };
     }
     export interface Resources {
-        [total]: { type: number; reduce: "+" };
-        [time]: { type: number };
+        [total]: { type: number; reduce: "+"; default: 0 };
+        [time]: { type: number; default: 0 };
         [page]: { type: Document | null; thread: "main" };
     }
 }
 
-Component.register(node, { thread: "main" });
-Component.register(label, { type: { type: "string" } });
-Component.register(tags, { type: { type: "array", items: { type: "string" } } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(time, { type: { type: "number", default: 0 } });
-Resource.register(page, { thread: "main" });
-Component.register(mark, { type: { const: true }, derived: true });
-Component.register(other, { type: { const: true }, derived: true });
 
 /** Declares as an untyped caller would, bypassing the types' checks. */
 const untyped = (constructor: (...parameters: never[]) => unknown, declaration: object): unknown => Reflect.apply(constructor, undefined, [declaration, () => {}]);

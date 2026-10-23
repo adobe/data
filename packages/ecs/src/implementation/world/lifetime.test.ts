@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -20,13 +18,10 @@ declare module "@adobe/ecs" {
         [parent]: { type: Entity; reference: "owner" };
     }
     interface Resources {
-        [score]: { type: number };
+        [score]: { type: number; default: 7 };
     }
 }
 
-Component.register(count, { type: { type: "number" } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Resource.register(score, { type: { type: "number", default: 7 } });
 
 const seed = System.create({ name: "lifetimeTest/seed" }, ({ commands }) => {
     const root = commands.spawn([count])({ [count]: 1 });

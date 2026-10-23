@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../interface/component/component.js";
 import { Entity } from "../interface/entity/entity.js";
 import { Index } from "../interface/indexes/index-type.js";
 import { gpuDevice } from "../interface/resources/gpu-device.js";
@@ -7,6 +6,7 @@ import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import { createWorld } from "../implementation/world/create.js";
 import type { Benchmark } from "./benchmark.js";
+import type { F32 } from "../interface/math/index.js";
 
 // A 2D editor's paint order: shapes and images, two archetypes, interleaved in depth, drawn as one table in a sorted
 // index's order.
@@ -16,14 +16,11 @@ const shape = Symbol("renderOrder/shape");
 const image = Symbol("renderOrder/image");
 declare module "@adobe/ecs" {
     export interface Components {
-        [paintDepth]: { type: number };
+        [paintDepth]: { type: F32 };
         [shape]: { type: true };
         [image]: { type: true };
     }
 }
-Component.register(paintDepth, { type: { type: "number", precision: 1 } });
-Component.register(shape, { type: { const: true } });
-Component.register(image, { type: { const: true } });
 
 const byDepth = Index.create({ name: "renderOrder/byDepth", key: [paintDepth], sorted: true });
 

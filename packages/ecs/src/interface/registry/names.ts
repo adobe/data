@@ -33,8 +33,13 @@ const labels = new Set<string>();
 /** How many registered keys have each description. */
 const described = new Map<string, number>();
 
-/** A symbol's description, `Symbol()` without one. */
-const descriptionOf = (key: symbol): string => key.description === undefined || key.description === "" ? "Symbol()" : key.description;
+/** A symbol's description; without one, its binding, which the plugin's id names, or `Symbol()` without an id. */
+const descriptionOf = (key: symbol): string => {
+    if (key.description !== undefined && key.description !== "") return key.description;
+    const id = idOfKey(key);
+    const binding = id === undefined ? "" : id.slice(id.lastIndexOf("#") + 1);
+    return binding === "" ? "Symbol()" : binding;
+};
 
 /** `Symbol.iterator` and the rest, which the platform shares, so they can't be keys. */
 const wellKnown: ReadonlyMap<symbol, string> = new Map(Reflect.ownKeys(Symbol).flatMap((name): [symbol, string][] => {
@@ -63,9 +68,9 @@ export const firstKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? e
 export const newestKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entries.get(key)?.newest ?? key : key;
 
 /**
- * How errors and reports name a key: its description, `Symbol()` without one, while no other registered key has it;
- * else its id when the plugin gave it one, and without one, for a registered key, its description numbered by
- * registration order. Any other value is named as text.
+ * How errors and reports name a key: its description, or without one its binding from its id, while no other
+ * registered key has it; else its id when the plugin gave it one, and without one, for a registered key, its
+ * description numbered by registration order. Any other value is named as text.
  */
 export const labelOf = (key: unknown): string => {
     if (typeof key !== "symbol") return String(key);

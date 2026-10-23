@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component, Index, Report, Resource, System, clock, workers } from "../../index.js";
+import { Index, Report, System, clock, workers } from "../../index.js";
 import { createWorld } from "./create.js";
 import { retainedRuns } from "./reports.js";
 import { reportOf, runOf } from "./reports.test-helper.js";
@@ -12,11 +12,9 @@ declare module "@adobe/ecs" {
         [amount]: { type: number };
     }
     interface Resources {
-        [level]: { type: number };
+        [level]: { type: number; default: 0 };
     }
 }
-Component.register(amount, { type: { type: "number" } });
-Resource.register(level, { type: { type: "number", default: 0 } });
 
 const nothing = System.create({ name: "reportsTest/nothing" }, () => {});
 const fail = System.create({ name: "reportsTest/fail" }, () => { throw new Error("run failed"); });

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component, Resource, System, always, cadence, clock, wake, workers } from "../../index.js";
+import { always, cadence, clock, type F32, System, wake, workers } from "../../index.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld } from "./create.js";
 import { Observe } from "../../observe/index.js";
@@ -15,20 +15,15 @@ const watched = Symbol("observeTicksCasesTest/watched");
 const flag = Symbol("observeTicksCasesTest/flag");
 declare module "@adobe/ecs" {
     interface Resources {
-        [frames]: { type: number };
-        [seen]: { type: number };
+        [frames]: { type: number; default: 0 };
+        [seen]: { type: number; default: -1 };
     }
     interface Components {
-        [value]: { type: number };
-        [watched]: { type: number };
+        [value]: { type: F32 };
+        [watched]: { type: F32 };
         [flag]: { type: true };
     }
 }
-Resource.register(frames, { type: { type: "number", default: 0 } });
-Resource.register(seen, { type: { type: "number", default: -1 } });
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(watched, { type: { type: "number", precision: 1 } });
-Component.register(flag, { type: { const: true } });
 
 const count = System.create({ name: "observeTicksCasesTest/count", resources: { write: [frames] } }, ({ resources }) => { resources[frames] += 1; });
 const watch = System.create({ name: "observeTicksCasesTest/watch", resources: { read: [clock], write: [seen] } }, ({ resources }) => { resources[seen] = resources[clock].tick; });

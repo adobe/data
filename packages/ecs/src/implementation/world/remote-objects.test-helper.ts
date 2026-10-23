@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -20,15 +19,11 @@ declare module "@adobe/ecs" {
         [serial]: { type: number };
         [phase]: { type: number };
         [flag]: { type: true };
-        [caption]: { type: { readonly text: string } | null; thread: "remoteObjects" };
+        [caption]: { type: { readonly text: string } | null; thread: "remoteObjects"; default: typeof none };
     }
 }
-Component.register(serial, { type: { type: "number" } });
-Component.register(phase, { type: { type: "number" } });
-Component.register(flag, { type: { const: true } });
 /** The caption's start, which a command here gives it by this value. */
 const none = { text: "none" };
-Component.register(caption, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: none }, thread: "remoteObjects" });
 
 /** A caption's text, null for none, as the watchers record it. */
 const textOf = (value: { readonly text: string } | null): string | null => value === null ? null : value.text;

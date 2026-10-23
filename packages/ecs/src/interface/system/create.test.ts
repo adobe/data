@@ -1,18 +1,18 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../component/component.js";
 import { Entity } from "../entity/entity.js";
 import { definitionOf, firstItemOf, labelOfItem, requireDefinition, sameItem, scheduleOf, threadOf } from "../registry/index.js";
 import { identify } from "../registry/ids.test-helper.js";
-import { Resource } from "../resource/resource.js";
 import { clock, gpuDevice } from "../resources/index.js";
 import { System } from "./system.js";
+import type { F32 } from "../math/index.js";
 
 const position = Symbol("typesSystemTest/position");
 const label = Symbol("typesSystemTest/label");
 const node = Symbol("typesSystemTest/node");
 const document = Symbol("typesSystemTest/document");
 const time = Symbol("typesSystemTest/time");
+// Never declared, so never registered.
 const unregistered = Symbol("typesSystemTest/unregistered");
 const parent = Symbol("typesSystemTest/parent");
 const total = Symbol("typesSystemTest/total");
@@ -25,29 +25,18 @@ declare module "@adobe/ecs" {
         [position]: { type: number };
         [label]: { type: string };
         [node]: { type: HTMLElement; thread: "main" };
-        [unregistered]: { type: number };
         [parent]: { type: Entity; reference: "weak" };
-        [height]: { type: number };
+        [height]: { type: F32 };
         [tags]: { type: readonly string[] };
     }
     export interface Resources {
         [document]: { type: Document | null; thread: "main" };
-        [time]: { type: number };
-        [total]: { type: number; reduce: "+" };
-        [paused]: { type: boolean };
+        [time]: { type: number; default: 0 };
+        [total]: { type: number; reduce: "+"; default: 0 };
+        [paused]: { type: boolean; default: false };
     }
 }
 
-Component.register(position, { type: { type: "number" } });
-Component.register(label, { type: { type: "string" } });
-Component.register(node, { thread: "main" });
-Component.register(tags, { type: { type: "array", items: { type: "string" } } });
-Resource.register(document, { thread: "main" });
-Resource.register(time, { type: { type: "number", default: 0 } });
-Component.register(parent, { type: Entity.schema, reference: "weak" });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(paused, { type: { type: "boolean", default: false } });
-Component.register(height, { type: { type: "number", precision: 1 } });
 
 /** Creates as an untyped caller would, bypassing the types' checks. */
 const create = (declaration: object): unknown => Reflect.apply(System.create, undefined, [declaration, () => {}]);

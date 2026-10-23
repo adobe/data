@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import type { I32 } from "../../interface/math/i32/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import type { U32 } from "../../interface/math/index.js";
 
 /** Scenarios of chunk and block ticks on workers, run built in node and from source in chromium. */
 
@@ -15,14 +15,11 @@ const seen = Symbol("changeBlocksWorkersTest/seen");
 declare module "@adobe/ecs" {
     export interface Components {
         [value]: { type: number };
-        [at]: { type: number };
+        [at]: { type: U32 };
         [seen]: { type: number };
     }
 }
 
-Component.register(value, { type: { type: "number" } });
-Component.register(at, { type: { type: "integer", minimum: 0, maximum: 0x7FFFFFFF } });
-Component.register(seen, { type: { type: "number" } });
 
 const rows = 4500;
 

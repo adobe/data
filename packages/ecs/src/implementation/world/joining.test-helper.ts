@@ -1,6 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import { Observe } from "../../observe/index.js";
 import type { World } from "../../interface/world/world.js";
@@ -20,15 +18,10 @@ declare module "@adobe/ecs" {
         [marked]: { type: true };
     }
     export interface Resources {
-        [total]: { type: number };
-        [names]: { type: readonly string[] };
+        [total]: { type: number; default: 0 };
+        [names]: { type: readonly string[]; default: [] };
     }
 }
-Component.register(point, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-Component.register(label, { type: { type: "string" } });
-Component.register(marked, { type: { const: true } });
-Resource.register(total, { type: { type: "number", default: 0 } });
-Resource.register(names, { type: { type: "array", items: { type: "string" }, default: [] } });
 
 /** Appends a digit to `total`, so the order of runs shows in it. */
 export const add = System.create({ name: "joiningTest/add", resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {

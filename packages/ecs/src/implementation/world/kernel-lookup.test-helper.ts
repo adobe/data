@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from '../../interface/component/component.js';
 import { Entity } from '../../interface/entity/entity.js';
 import { System } from '../../interface/system/system.js';
+import type { F32 } from '../../interface/math/index.js';
 
 /** A kernel whose lookup reads a value outside linear memory, which `System.create` rejects as this module runs. */
 
@@ -12,12 +12,9 @@ declare module "@adobe/ecs" {
     export interface Components {
         [target]: { type: Entity };
         [label]: { type: string };
-        [offset]: { type: number };
+        [offset]: { type: F32 };
     }
 }
-Component.register(target, { type: Entity.schema });
-Component.register(label, { type: { type: "string" } });
-Component.register(offset, { type: { type: "number", precision: 1 } });
 
 export const labels = System.create({
     name: "kernelLookupTest/labels",

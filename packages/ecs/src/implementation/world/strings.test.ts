@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, join } from "./create.js";
@@ -24,17 +22,11 @@ declare module "@adobe/ecs" {
         [note]: { type: string | null };
     }
     export interface Resources {
-        [mode]: { type: "edit" | "view" };
-        [title]: { type: string };
+        [mode]: { type: "edit" | "view"; default: "view" };
+        [title]: { type: string; default: "" };
     }
 }
 
-Component.register(label, { type: { type: "string" } });
-Component.register(order, { type: { type: "number" } });
-Component.register(tagged, { type: { const: true } });
-Component.register(note, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Resource.register(mode, { type: { anyOf: [{ const: "edit" }, { const: "view" }], default: "view" } });
-Resource.register(title, { type: { type: "string", default: "" } });
 
 /** Text of every kind a string holds: none, letters, astral characters as surrogate pairs, and a long run. */
 const textOf = (n: number): string => n % 4 === 0 ? "" : n % 4 === 1 ? `item ${n}` : n % 4 === 2 ? `✓ ${n} 😀 naïve` : `${"long ".repeat(40)}${n}`;

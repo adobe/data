@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component, Resource, System, Vec3, type World } from '../../index.js';
+import { type F32, System, type U32, Vec3, type World } from '../../index.js';
 
-export const position = Symbol("particles/position");
-export const velocity = Symbol("particles/velocity");
-export const delta = Symbol("particles/delta");
-export const count = Symbol("particles/count");
+export const position = Symbol();
+export const velocity = Symbol();
+export const delta = Symbol();
+export const count = Symbol();
 
 declare module '@adobe/ecs' {
     interface Components {
@@ -12,15 +12,10 @@ declare module '@adobe/ecs' {
         [velocity]: { type: Vec3 };
     }
     interface Resources {
-        [delta]: { type: number };
-        [count]: { type: number };
+        [delta]: { type: F32; default: 0 };
+        [count]: { type: U32; default: 100 };
     }
 }
-
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Resource.register(delta, { type: { type: "number", precision: 1, default: 0 } });
-Resource.register(count, { type: { type: "integer", minimum: 0, default: 100 } });
 
 // Main thread: resource-only, runs when `count` changes, including the first run.
 export const spawn = System.create({

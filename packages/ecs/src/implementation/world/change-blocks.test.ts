@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Archetype } from "../../interface/archetype/archetype.js";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import type { I32 } from "../../interface/math/i32/index.js";
@@ -11,6 +10,7 @@ import type { World } from "../../interface/world/world.js";
 import { createWorld, join } from "./create.js";
 import { blockShift, chunkShift } from "./kernel.js";
 import { readEach, select } from "./reads.test-helper.js";
+import type { U32 } from "../../interface/math/index.js";
 
 // Change filters skip chunks and blocks whose ticks aren't newer than their `lastRun`, so every writer of a row's tick
 // raises its chunk's and block's. Each case writes a few rows far apart in an archetype of many chunks, through one
@@ -32,26 +32,17 @@ declare module "@adobe/ecs" {
     }
     interface Components {
         [value]: { type: number };
-        [at]: { type: number };
+        [at]: { type: U32 };
         [seen]: { type: number };
-        [group]: { type: number };
+        [group]: { type: U32 };
         [tagged]: { type: true };
-        [note]: { type: { readonly text: string } | null; thread: "changeBlocksTest" };
+        [note]: { type: { readonly text: string } | null; thread: "changeBlocksTest"; default: { text: "none" } };
         [parent]: { type: Entity; reference: "owner" };
         [extra]: { type: number };
         [height]: { type: number };
     }
 }
-Component.register(value, { type: { type: "number" } });
-Component.register(at, { type: { type: "integer", minimum: 0, maximum: 0x7FFFFFFF } });
-Component.register(seen, { type: { type: "number" } });
-Component.register(group, { type: { type: "integer", minimum: 0, maximum: 1000 } });
-Component.register(tagged, { type: { const: true } });
 const text = { type: "object", properties: { text: { type: "string" } } } as const;
-Component.register(note, { type: { anyOf: [text, { type: "null" }], default: { text: "none" } }, thread: "changeBlocksTest" });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(extra, { type: { type: "number" } });
-Component.register(height, { type: { type: "number" } });
 
 /** Rows in the archetype: five chunks, the last partial. */
 const rows = 4500;

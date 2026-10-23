@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Archetype } from "../interface/archetype/archetype.js";
-import { Component } from "../interface/component/component.js";
 import { Entity } from "../interface/entity/entity.js";
 import { System } from "../interface/system/system.js";
+import type { F32 } from "../interface/math/index.js";
 
 export const local = Symbol("hierarchy/local");
 export const world = Symbol("hierarchy/world");
@@ -18,10 +18,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(local, { type: { type: "number" } });
-Component.register(world, { type: { type: "number" } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(leaf, { type: { const: true } });
 
 const root = Archetype.create([local, world]);
 const child = Archetype.create([local, world, parent]);
@@ -97,13 +93,11 @@ export const placed = Symbol("hierarchy/placed");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [offset]: { type: number };
-        [placed]: { type: number };
+        [offset]: { type: F32 };
+        [placed]: { type: F32 };
     }
 }
 
-Component.register(offset, { type: { type: "number", precision: 1 } });
-Component.register(placed, { type: { type: "number", precision: 1 } });
 
 const gpuRoot = Archetype.create([offset, placed]);
 const gpuChild = Archetype.create([offset, placed, parent]);

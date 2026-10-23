@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Finalizer, Resource, System, World } from "../../index.js";
+import { Finalizer, System, World } from "../../index.js";
 import { Observe } from "../../observe/index.js";
 import { createWorld } from "../index.js";
 
@@ -14,13 +14,10 @@ declare module "@adobe/ecs" {
         [score]: { type: number };
     }
     interface Resources {
-        [journal]: { type: readonly string[] };
+        [journal]: { type: readonly string[]; default: [] };
     }
 }
 
-Component.register(name, { type: { type: "string" } });
-Component.register(score, { type: { type: "number" } });
-Resource.register(journal, { type: { type: "array", items: { type: "string" }, default: [] } });
 
 // A changes finalizer sees each sync point's structural changes to the components it watches, grouped by how
 // they changed, with values before and after: for persistence, replication and undo.

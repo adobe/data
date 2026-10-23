@@ -1,8 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
+import type { Schema } from "../../interface/schema/schema.js";
 
 // Keys and systems every thread of the transfer tests imports: systems on thread "transfersTest", which a joined thread
 // fills, and on the world's, taking Transferable values in their input, and `transfer` components holding them.
@@ -29,20 +28,12 @@ declare module "@adobe/ecs" {
         [depth]: { type: number };
     }
     export interface Resources {
-        [anchor]: { type: { readonly text: string }; thread: "transfersTest" };
-        [order]: { type: number };
+        [anchor]: { type: { readonly text: string }; thread: "transfersTest"; default: { text: "anchor" } };
+        [order]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
     }
 }
 /** An object resource of "transfersTest", which places the systems reading it there. */
-Resource.register(anchor, { type: { type: "object", properties: { text: { type: "string" } }, default: { text: "anchor" } }, thread: "transfersTest" });
 /** Counts the runs that read it, in the order they ran. */
-Resource.register(order, { type: { type: "integer", default: 0 } });
-Component.register(port, { thread: "transfersTest", transfer: true });
-Component.register(bitmap, { thread: "transfersTest", transfer: true });
-Component.register(portHere, { transfer: true });
-Component.register(bitmapHere, { transfer: true });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(depth, { type: { type: "number" } });
 
 const any = { allOf: [] } as const;
 

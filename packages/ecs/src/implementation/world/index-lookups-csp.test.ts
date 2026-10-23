@@ -1,21 +1,19 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
+import type { Vec2 } from "../../interface/math/index.js";
 
 const spot = Symbol("indexLookupsCspTest/spot");
 const size = Symbol("indexLookupsCspTest/size");
 declare module "@adobe/ecs" {
     interface Components {
-        [spot]: { type: readonly [number, number] };
+        [spot]: { type: Vec2.I32 };
         [size]: { type: number };
     }
 }
-Component.register(spot, { type: { type: "array", items: { type: "integer", minimum: -100, maximum: 100 }, minItems: 2, maxItems: 2 } });
-Component.register(size, { type: { type: "number" } });
 
 const bySpot = Index.create({ key: [spot], components: { has: [size] } });
 const bySize = Index.create({ key: [size], sorted: true, unique: true });

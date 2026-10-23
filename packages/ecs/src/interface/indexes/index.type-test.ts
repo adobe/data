@@ -38,18 +38,6 @@ declare module '@adobe/ecs' {
         [label]: { type: string };
     }
 }
-Component.register(cell, { type: Vec3.I32.schema });
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(serverId, { type: { type: "number" } });
-Component.register(health, { type: { type: "number" } });
-Component.register(track, { type: Entity.schema });
-Component.register(start, { type: { type: "number" } });
-Component.register(clip, { type: { type: "number" } });
-Component.register(playhead, { type: { type: "number" } });
-Component.register(owner, { type: Entity.schema, reference: "owner" });
-Component.register(archived, { type: { const: true } });
-Component.register(label, { type: { type: "string" } });
 
 // An index is typed by its declaration, as written.
 const grid = Index.create({ name: "indexTest/grid", key: [cell], components: { has: [position] } });

@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../component/component.js";
 import { archetypeIndexOf } from "../registry/index.js";
 import { Archetype } from "./archetype.js";
 
@@ -12,8 +11,6 @@ declare module "@adobe/ecs" {
         [velocity]: { type: number };
     }
 }
-Component.register(position, { type: { type: "number" } });
-Component.register(velocity, { type: { type: "number" } });
 
 describe("Archetype.create", () => {
     it("returns its argument, with a program-wide index of its own", () => {

@@ -1,12 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Archetype } from "../interface/archetype/archetype.js";
-import { Component } from "../interface/component/component.js";
-import { Resource } from "../interface/resource/resource.js";
 import { Entity } from "../interface/entity/entity.js";
 import type { I32 } from "../interface/math/i32/index.js";
 import type { Schema } from "../interface/schema/schema.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
+import type { F32, U32 } from "../interface/math/index.js";
 
 // One fixture per optimization area: structural changes, change filters, lookups, commands, dispatch and main-thread
 // paths.
@@ -24,13 +23,13 @@ export const hits = Symbol("suite/hits");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number, number] };
-        [velocity]: { type: readonly [number, number, number] };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }> };
+        [velocity]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }> };
         [target]: { type: Entity };
-        [index]: { type: number };
+        [index]: { type: U32 };
         [tag]: { type: true };
         [unused]: { type: true };
-        [hits]: { type: number };
+        [hits]: { type: F32 };
     }
 }
 
@@ -38,20 +37,11 @@ export const indexSum = Symbol("suite/indexSum");
 export const highest = Symbol("suite/highest");
 declare module "@adobe/ecs" {
     export interface Resources {
-        [indexSum]: { type: number; reduce: "+" };
-        [highest]: { type: number; reduce: "max" };
+        [indexSum]: { type: number; reduce: "+"; default: 0 };
+        [highest]: { type: number; reduce: "max"; default: 0 };
     }
 }
-Resource.register(indexSum, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(highest, { type: { type: "number", default: 0 }, reduce: "max" });
 
-Component.register(position, { type: vec3 });
-Component.register(velocity, { type: vec3 });
-Component.register(target, { type: Entity.schema });
-Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(tag, { type: { const: true } });
-Component.register(unused, { type: { const: true } });
-Component.register(hits, { type: { type: "number", precision: 1 } });
 
 const moving = Archetype.create([position, velocity, index]);
 const following = Archetype.create([position, velocity, index, target]);

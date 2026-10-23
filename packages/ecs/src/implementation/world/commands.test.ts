@@ -2,10 +2,8 @@
 import { describe, expect, it } from "vitest";
 import { Archetype } from "../../interface/archetype/archetype.js";
 import { Report } from "../../interface/report/report.js";
-import { Component } from "../../interface/component/component.js";
 import type { Essential } from "../../interface/component/value.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { Rule } from "../../interface/rule/rule.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import type { Commands } from "../../interface/system/commands.js";
@@ -16,6 +14,7 @@ import { Observe } from "../../observe/index.js";
 import { count, read, readEntity, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { runReported } from "./reports.test-helper.js";
+import type { F32 } from "../../interface/math/index.js";
 
 type Vec3 = readonly [number, number, number];
 const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
@@ -26,6 +25,7 @@ const label = Symbol("commandsTest/label");
 const tag = Symbol("commandsTest/tag");
 const other = Symbol("commandsTest/other");
 const slot = Symbol("commandsTest/slot");
+// Never declared, so never registered.
 const unregistered = Symbol("commandsTest/unregistered");
 const level = Symbol("commandsTest/level");
 const bit0 = Symbol("commandsTest/bit0");
@@ -35,35 +35,22 @@ const bit3 = Symbol("commandsTest/bit3");
 const bits = [bit0, bit1, bit2, bit3] as const;
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number, number] };
-        [score]: { type: number };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }> };
+        [score]: { type: F32 };
         [health]: { type: number };
         [label]: { type: string | null };
         [tag]: { type: true };
         [other]: { type: true };
-        [slot]: { type: number; derived: true };
-        [unregistered]: { type: number };
+        [slot]: { type: number; derived: true; default: 0 };
         [bit0]: { type: true };
         [bit1]: { type: true };
         [bit2]: { type: true };
         [bit3]: { type: true };
     }
     export interface Resources {
-        [level]: { type: number };
+        [level]: { type: number; default: 0 };
     }
 }
-Component.register(position, { type: vec3 });
-Component.register(score, { type: { type: "number", precision: 1 } });
-Component.register(health, { type: { type: "number" } });
-Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Component.register(tag, { type: { const: true } });
-Component.register(other, { type: { const: true } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Component.register(bit0, { type: { const: true } });
-Component.register(bit1, { type: { const: true } });
-Component.register(bit2, { type: { const: true } });
-Component.register(bit3, { type: { const: true } });
-Resource.register(level, { type: { type: "number", default: 0 } });
 Rule.create({ name: "commandsTest/slots", components: { has: [other, score] }, derive: [slot] });
 
 const unit = Archetype.create([position, score, tag]);

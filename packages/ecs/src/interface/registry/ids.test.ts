@@ -1,11 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../component/component.js";
 import { Finalizer } from "../finalizer/finalizer.js";
-import { Resource } from "../resource/resource.js";
 import { Rule } from "../rule/rule.js";
 import { System } from "../system/system.js";
-import { Trait } from "../trait/trait.js";
+import { declareComponent, declareResource, declareTrait } from "./declare.js";
 import { identify } from "./ids.test-helper.js";
 import { declarationOf, kindOf, labelOf, programFinalizers, programRules, requireDefinition, sameItem, scheduleOf } from "./index.js";
 
@@ -45,14 +43,11 @@ declare module "@adobe/ecs" {
         [shown]: { type: true; derived: true };
         [shownAgain]: { type: true; derived: true };
         [changed]: { type: number };
-        [changedAgain]: { type: string };
         [crossed]: { type: number };
-        [unnamed]: { type: number };
     }
     export interface Resources {
-        [level]: { type: number };
-        [levelAgain]: { type: number };
-        [crossedAgain]: { type: number };
+        [level]: { type: number; default: 0 };
+        [levelAgain]: { type: number; default: 0 };
     }
     export interface Traits<N> {
         readonly [tagged]: true;
@@ -60,40 +55,37 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(score, { type: { type: "number" } });
-Component.register(shown, { type: { const: true }, derived: true });
-Resource.register(level, { type: { type: "number", default: 0 } });
-Component.register(changed, { type: { type: "number" } });
-Component.register(crossed, { type: { type: "number" } });
-Trait.register(tagged);
+// Keys registered late, or wrongly, aren't declared, so the build doesn't register them.
+/** Creates a system naming keys no declaration types. */
+const untypedSystem = (declaration: object, body: (row: { [key: symbol]: number }) => void): unknown => Reflect.apply(System.create, undefined, [declaration, body]);
 
 describe("keys with ids", () => {
     it("labels a key by its description, and by its id once another registered key has its description", () => {
         expect(labelOf(score)).toBe("score");
-        Component.register(unnamed, { type: { type: "number" } });
+        declareComponent(unnamed, { type: { type: "number" } });
         expect([labelOf(score), labelOf(unnamed)]).toEqual(["idsTest/keys.ts#score", "idsTest/other.ts#score"]);
         expect(labelOf(Symbol("score"))).toBe("score");
     });
     it("accepts another symbol under a registered key's id with the same declaration, as the same key", () => {
-        Component.register(scoreAgain, { type: { type: "number" } });
-        Component.register(shownAgain, { type: { const: true }, derived: true });
-        Resource.register(levelAgain, { type: { type: "number", default: 0 } });
-        Trait.register(taggedAgain);
+        declareComponent(scoreAgain, { type: { type: "number" } });
+        declareComponent(shownAgain, { type: { const: true }, derived: true });
+        declareResource(levelAgain, { type: { type: "number", default: 0 } });
+        declareTrait(taggedAgain);
         expect([kindOf(scoreAgain), kindOf(levelAgain), kindOf(taggedAgain)]).toEqual(["component", "resource", "trait"]);
         expect(declarationOf(scoreAgain)).toBe(declarationOf(score));
         expect(labelOf(scoreAgain)).toBe("idsTest/keys.ts#score");
     });
     it("rejects another symbol under a registered key's id with another declaration, or as another kind", () => {
-        expect(() => Component.register(changedAgain, { type: { type: "string" } })).toThrow(
+        expect(() => declareComponent(changedAgain, { type: { type: "string" } })).toThrow(
             `Cannot register component "idsTest/keys.ts#changed": its id is another key's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.`);
-        expect(() => Resource.register(crossedAgain, { type: { type: "number", default: 0 } })).toThrow(
+        expect(() => declareResource(crossedAgain, { type: { type: "number", default: 0 } })).toThrow(
             `Cannot register resource "idsTest/keys.ts#crossed": its id is a component's.`);
         expect([kindOf(changedAgain), kindOf(crossedAgain)]).toEqual([undefined, undefined]);
     });
     it("keeps keys of different ids apart, though their descriptions match", () => {
-        Component.register(unnamed, { type: { type: "number" } });
+        declareComponent(unnamed, { type: { type: "number" } });
         System.create(identify({ name: "idsTest/unnamed", components: { write: [score] } }, "idsTest/systems.ts#unnamed"), row => { row[score] = 1; });
-        expect(() => System.create(identify({ name: "idsTest/unnamed", components: { write: [unnamed] } }, "idsTest/systems.ts#unnamed"), row => { row[unnamed] = 1; })).toThrow("reload the page");
+        expect(() => untypedSystem(identify({ name: "idsTest/unnamed", components: { write: [unnamed] } }, "idsTest/systems.ts#unnamed"), row => { row[unnamed] = 1; })).toThrow("reload the page");
     });
 });
 

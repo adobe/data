@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
@@ -9,6 +8,7 @@ import { createWorld } from "./create.js";
 import { countingWorkers } from "./platforms.test-helper.js";
 import { read, readEach, select } from "./reads.test-helper.js";
 import { runReported } from "./reports.test-helper.js";
+import type { U32, Vec4 } from "../../interface/math/index.js";
 
 /** Scenarios of workers' command rings against the main thread alone, run built in node and from source in chromium. */
 
@@ -26,28 +26,19 @@ const tally = Symbol("commandRingsTest/tally");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [index]: { type: number };
+        [index]: { type: U32 };
         [weight]: { type: number };
-        [extent]: { type: readonly [number, number, number, number] };
-        [made]: { type: number };
+        [extent]: { type: Vec4 };
+        [made]: { type: U32 };
         [doomed]: { type: true };
         [target]: { type: Entity };
-        [name]: { type: string | null };
+        [name]: { type: string | null; default: "unnamed" };
         [maybe]: { type: string | null };
         [tally]: { type: number | null };
     }
 }
 
-Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(weight, { type: { type: "number" } });
-Component.register(extent, { type: vec4 });
-Component.register(made, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(doomed, { type: { const: true } });
-Component.register(target, { type: Entity.schema });
 /** Objects: a nullable string starting at "unnamed", a nullable string, and a nullable number. */
-Component.register(name, { type: { anyOf: [{ type: "string" }, { type: "null" }], default: "unnamed" } });
-Component.register(maybe, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Component.register(tally, { type: { anyOf: [{ type: "number" }, { type: "null" }] } });
 
 const seed = System.create({ name: "commandRingsTest/seed" }, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([index])({ [index]: i });

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component, Index, Resource, System, workers } from "../../index.js";
+import { Index, System, workers } from "../../index.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
@@ -24,21 +24,15 @@ declare module "@adobe/ecs" {
         [amount]: { type: number };
         [cell]: { type: number };
         [tagged]: { type: true };
-        [label]: { type: { readonly text: string }; thread: "observerJoinedTest" };
-        [name]: { type: string };
+        [label]: { type: { readonly text: string }; thread: "observerJoinedTest"; default: typeof blank };
+        [name]: { type: string; default: "" };
     }
     interface Resources {
-        [level]: { type: number };
+        [level]: { type: number; default: 0 };
     }
 }
-Component.register(amount, { type: { type: "number" } });
-Component.register(cell, { type: { type: "number" } });
-Component.register(tagged, { type: { const: true } });
 /** The label's start, which a command here gives it by this value. */
 const blank = { text: "" };
-Component.register(label, { type: { type: "object", properties: { text: { type: "string" } }, default: blank }, thread: "observerJoinedTest" });
-Component.register(name, { type: { type: "string", default: "" } });
-Resource.register(level, { type: { type: "number", default: 0 } });
 
 const byCell = Index.create({ name: "observerJoinedTest/byCell", key: [cell], components: { has: [amount] } });
 const allTagged = Index.create({ name: "observerJoinedTest/allTagged", key: [], components: { has: [tagged] } });

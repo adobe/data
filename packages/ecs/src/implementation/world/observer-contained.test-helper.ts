@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
+import type { Schema } from "../../interface/schema/schema.js";
 
 // Keys and systems both threads of the observer-contained fixtures import: a counter the world bumps, and an observer
 // system reading only resources that a joined thread adds, which can hold its run until the world's thread releases it.
@@ -9,13 +9,11 @@ export const tally = Symbol("observerContainedTest/tally");
 export const holding = Symbol("observerContainedTest/holding");
 declare module "@adobe/ecs" {
     export interface Resources {
-        [tally]: { type: number };
-        [holding]: { type: number };
+        [tally]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
+        [holding]: { type: number; default: 0 };
     }
 }
-Resource.register(tally, { type: { type: "integer", default: 0 } });
 /** While negative, each run of the watcher says it reached its value and waits until the world's thread releases it. */
-Resource.register(holding, { type: { type: "number", default: 0 } });
 
 /** Shared words: the value a held run reached, and the value the world's thread released runs through. */
 export const reachedWord = 0;

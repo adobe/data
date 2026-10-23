@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
+import type { F32 } from "../../interface/math/index.js";
 
 /** Scenarios of tick stamps on workers, run built in node and from source in chromium. */
 
@@ -12,13 +12,11 @@ const seen = Symbol("observedWorkersTest/seen");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [value]: { type: number };
-        [seen]: { type: number };
+        [value]: { type: F32 };
+        [seen]: { type: F32 };
     }
 }
 
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(seen, { type: { type: "number", precision: 1 } });
 
 const seed = System.create({ name: "observedWorkersTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn([value, seen])({ [value]: i, [seen]: 0 });

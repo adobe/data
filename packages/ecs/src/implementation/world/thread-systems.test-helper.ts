@@ -1,11 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Observe } from "../../observe/index.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { runReported, type Reported } from "./reports.test-helper.js";
+import type { Schema } from "../../interface/schema/schema.js";
 
 // Keys and systems both threads of the thread systems fixtures import: systems on thread "threadSystemsTest", which a
 // joined thread fills, beside systems on the world's thread, and what each world holds after the same runs.
@@ -28,41 +27,28 @@ declare module "@adobe/ecs" {
         threadSystemsTest: true;
     }
     export interface Components {
-        [uid]: { type: number };
+        [uid]: { type: Schema.Type<{ type: "integer" }> };
         [position]: { type: readonly [number, number] };
         [velocity]: { type: number };
         [flagged]: { type: true };
-        [caption]: { type: { readonly text: string } | null; thread: "threadSystemsTest" };
+        [caption]: { type: { readonly text: string } | null; thread: "threadSystemsTest"; default: { text: "none" } };
         [note]: { type: Note | null; thread: "threadSystemsTest" };
         [kept]: { type: string };
     }
     export interface Resources {
-        [total]: { type: number; reduce: "+" };
-        [changes]: { type: number };
-        [paint]: { type: { readonly text: string }; thread: "threadSystemsTest" };
-        [painted]: { type: number };
-        [enabled]: { type: boolean };
-        [nextUid]: { type: number };
+        [total]: { type: number; reduce: "+"; default: 0 };
+        [changes]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
+        [paint]: { type: { readonly text: string }; thread: "threadSystemsTest"; default: { text: "plain" } };
+        [painted]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
+        [enabled]: { type: boolean; default: true };
+        [nextUid]: { type: Schema.Type<{ type: "integer" }>; default: 1 };
     }
 }
 /** A value that isn't data, which only its thread holds. */
 type Note = { readonly text: string; readonly read: () => string };
-Component.register(uid, { type: { type: "integer" } });
-Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-Component.register(velocity, { type: { type: "number" } });
-Component.register(flagged, { type: { const: true } });
 const text = { type: "object", properties: { text: { type: "string" } } } as const;
-Component.register(caption, { type: { anyOf: [text, { type: "null" }], default: { text: "none" } }, thread: "threadSystemsTest" });
-Component.register(note, { thread: "threadSystemsTest" });
 /** An object of the world's thread. */
-Component.register(kept, { type: { type: "string" } });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(changes, { type: { type: "integer", default: 0 } });
 /** An object resource of the thread, which only systems there read and write. */
-Resource.register(paint, { type: { ...text, default: { text: "plain" } }, thread: "threadSystemsTest" });
-Resource.register(painted, { type: { type: "integer", default: 0 } });
-Resource.register(enabled, { type: { type: "boolean", default: true } });
-Resource.register(nextUid, { type: { type: "integer", default: 1 } });
 
 const makeNote = (text: string): Note => ({ text, read: () => text });
 

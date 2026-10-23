@@ -1,12 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype, Component, Index } from "../../../../index.js";
+import { Archetype, Index } from "../../../../index.js";
 
 /** A todo's text. */
-export const label = Symbol("label");
-export const done = Symbol("done");
+export const label = Symbol();
+export const done = Symbol();
 /** Where a todo sits in the list: todos are listed by ascending order. */
-export const order = Symbol("order");
-export const todo = Symbol("todo");
+export const order = Symbol();
+export const todo = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -16,11 +16,6 @@ declare module "@adobe/ecs" {
         [todo]: { type: true };
     }
 }
-
-Component.register(label, { type: { type: "string" } });
-Component.register(done, { type: { type: "boolean" } });
-Component.register(order, { type: { type: "number" } });
-Component.register(todo, { type: { const: true } });
 
 export const Todo = Archetype.create([todo, label, done, order]);
 

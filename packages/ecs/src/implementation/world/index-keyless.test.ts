@@ -29,13 +29,6 @@ declare module "@adobe/ecs" {
         [visited]: { type: number };
     }
 }
-Component.register(weight, { type: { type: "number" } });
-Component.register(hidden, { type: { const: true } });
-Component.register(color, { type: { type: "number" } });
-Component.register(spin, { type: { type: "number" } });
-Component.register(total, { type: { type: "number" } });
-Component.register(count, { type: { type: "number" } });
-Component.register(visited, { type: { type: "number" } });
 
 const shown = Index.create({ name: "indexKeylessTest/shown", key: [], components: { has: [weight], not: [hidden] } });
 const everything = Index.create({ name: "indexKeylessTest/everything", key: [] });

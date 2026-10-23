@@ -7,6 +7,7 @@ import { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "./create.js";
+import type { F32, U32, Vec2 } from "../../interface/math/index.js";
 
 const cell = Symbol("indexKernelsTest/cell");
 const weight = Symbol("indexKernelsTest/weight");
@@ -22,30 +23,19 @@ const ranked = Symbol("indexKernelsTest/ranked");
 
 declare module "@adobe/ecs" {
     interface Components {
-        [cell]: { type: readonly [number, number] };
-        [weight]: { type: number };
+        [cell]: { type: Vec2.I32 };
+        [weight]: { type: F32 };
         [total]: { type: number };
         [count]: { type: number };
-        [lane]: { type: number };
+        [lane]: { type: U32 };
         [rank]: { type: number };
-        [serial]: { type: number };
-        [target]: { type: number };
+        [serial]: { type: U32 };
+        [target]: { type: U32 };
         [seen]: { type: Entity };
         [changes]: { type: number };
         [ranked]: { type: true };
     }
 }
-Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
-Component.register(weight, { type: { type: "number", precision: 1 } });
-Component.register(total, { type: { type: "number" } });
-Component.register(count, { type: { type: "number" } });
-Component.register(lane, { type: { type: "integer", minimum: 0, maximum: 1000 } });
-Component.register(rank, { type: { type: "number" } });
-Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
-Component.register(target, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
-Component.register(seen, { type: Entity.schema });
-Component.register(changes, { type: { type: "number" } });
-Component.register(ranked, { type: { const: true } });
 
 const grid = Index.create({ name: "indexKernelsTest/grid", key: [cell], components: { has: [weight] } });
 const lanes = Index.create({ name: "indexKernelsTest/lanes", key: [lane, rank], sorted: true, components: { has: [ranked] } });

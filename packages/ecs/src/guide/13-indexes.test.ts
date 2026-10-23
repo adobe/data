@@ -1,28 +1,22 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Index, System, World } from "../index.js";
+import { type I32, Index, System, type Vec2, World } from "../index.js";
 
-const cell = Symbol("cell");
-const crowded = Symbol("crowded");
-const score = Symbol("score");
-const player = Symbol("player");
-const serverId = Symbol("serverId");
+const cell = Symbol();
+const crowded = Symbol();
+const score = Symbol();
+const player = Symbol();
+const serverId = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
-        [cell]: { type: readonly [number, number] };
+        [cell]: { type: Vec2.I32 };
         [crowded]: { type: number };
         [score]: { type: number };
         [player]: { type: string };
-        [serverId]: { type: number };
+        [serverId]: { type: I32 };
     }
 }
-
-Component.register(cell, { type: { type: "array", items: { type: "integer" }, minItems: 2, maxItems: 2 } });
-Component.register(crowded, { type: { type: "number" } });
-Component.register(score, { type: { type: "number" } });
-Component.register(player, { type: { type: "string" } });
-Component.register(serverId, { type: { type: "integer" } });
 
 // An index finds entities by their components' values: here, those with a crowded count, by their cell.
 const grid = Index.create({ key: [cell], components: { has: [crowded] } });

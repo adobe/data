@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component, Entity, System, workers } from "../../index.js";
+import { Entity, System, workers } from "../../index.js";
 import { createWorld } from "./create.js";
 
 const amount = Symbol("targetTest/amount");
@@ -11,8 +11,6 @@ declare module "@adobe/ecs" {
         [tagged]: { type: true };
     }
 }
-Component.register(amount, { type: { type: "number" } });
-Component.register(tagged, { type: { const: true } });
 
 let spawned: Entity[] = [];
 const spawn = System.create({ name: "targetTest/spawn" }, ({ commands }) => {

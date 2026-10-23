@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { Component } from "../interface/component/component.js";
-import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
 import { eachTick, ticksAfter } from "./observer.js";
 import { workers } from "../interface/resources/workers.js";
@@ -11,6 +9,8 @@ import { backToBack, createWorld, type CreatedWorld } from "../implementation/in
 import { tailWriters } from "../implementation/world/tails.js";
 import type { Benchmark } from "./benchmark.js";
 import { reportOf, runReported } from "../implementation/world/reports.test-helper.js";
+import type { Mat4x4, U32, Vec3 } from "../interface/math/index.js";
+import type { Schema } from "../interface/schema/schema.js";
 
 // Tails: terminal systems on a joined worker, which claims "tailsBenchmark", running after their tick's sync point
 // while the world goes on. The joined thread is `joined.ts`.
@@ -26,24 +26,18 @@ declare module "@adobe/ecs" {
         tailsBenchmark: true;
     }
     export interface Components {
-        [place]: { type: readonly [number, number, number] };
-        [pose]: { type: readonly [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number] };
+        [place]: { type: Vec3 };
+        [pose]: { type: Mat4x4 };
     }
     export interface Resources {
-        [surface]: { type: { readonly name: string }; thread: "tailsBenchmark" };
-        [poked]: { type: number };
-        [rowWork]: { type: number };
-        [worldWork]: { type: number };
+        [surface]: { type: { readonly name: string }; thread: "tailsBenchmark"; default: typeof surfaceStart };
+        [poked]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
+        [rowWork]: { type: U32; default: 0 };
+        [worldWork]: { type: number; default: 0 };
     }
 }
-Component.register(place, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
-Component.register(pose, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 16, maxItems: 16 } });
 /** An object of the joined thread, as a canvas or the DOM is, which places the systems reading it there. */
 const surfaceStart = { name: "surface" };
-Resource.register(surface, { type: { type: "object", properties: { name: { type: "string" } }, default: surfaceStart }, thread: "tailsBenchmark" });
-Resource.register(poked, { type: { type: "integer", default: 0 } });
-Resource.register(rowWork, { type: { type: "integer", minimum: 0, maximum: 1_000_000, default: 0 } });
-Resource.register(worldWork, { type: { type: "number", default: 0 } });
 
 /** What the tails read, so their reads aren't dead. */
 export const drawn = { sum: 0 };

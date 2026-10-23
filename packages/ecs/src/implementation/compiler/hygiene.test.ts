@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, System } from "../../index.js";
+import { System } from "../../index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld } from "../index.js";
 
@@ -25,14 +25,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-const number = { type: { type: "number" } } as const;
-Component.register(p, number);
-Component.register(c, number);
-Component.register(l, number);
-Component.register(s, number);
-Component.register(e, number);
-Component.register(v0, number);
-Component.register(v1, number);
 
 const spawn = System.create(({ commands }) => {
     const spawned = commands.spawn([p, c, l, s])({ [p]: 1, [c]: 2, [l]: 3, [s]: 4 });

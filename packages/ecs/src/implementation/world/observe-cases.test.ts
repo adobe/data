@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "../index.js";
@@ -11,6 +9,7 @@ import { settle } from "./observe.test-helper.js";
 import { fillReports, runReported, runThenNext } from "./reports.test-helper.js";
 import { retainedRuns } from "./reports.js";
 import { Report } from "../../interface/report/report.js";
+import type { F32 } from "../../interface/math/index.js";
 
 // The observer factories of `src/observe`. Each case subscribes, settles, then expects, so it holds whenever a first
 // value comes.
@@ -22,19 +21,15 @@ const weight = Symbol("observeCasesTest/weight");
 
 declare module "@adobe/ecs" {
     interface Resources {
-        [level]: { type: number };
-        [other]: { type: number };
-        [total]: { type: number; reduce: "+" };
+        [level]: { type: number; default: 0 };
+        [other]: { type: number; default: 0 };
+        [total]: { type: number; reduce: "+"; default: 0 };
     }
     interface Components {
         [weight]: { type: number };
     }
 }
 
-Resource.register(level, { type: { type: "number", default: 0 } });
-Resource.register(other, { type: { type: "number", default: 0 } });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-Component.register(weight, { type: { type: "number" } });
 
 const raise = System.create({ name: "observeCasesTest/raise", resources: { write: [level] } }, ({ resources }, input: { readonly by: number }) => {
     resources[level] += input.by;
@@ -82,10 +77,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(heat, { type: { type: "number" } });
-Component.register(tag, { type: { const: true } });
-Component.register(flag, { type: { const: true } });
-Component.register(filler, { type: { type: "number" } });
 
 /** The entity the systems below act on, set by `create`. */
 let target = Entity.none;
@@ -114,9 +105,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(score, { type: { type: "number" } });
-Component.register(benched, { type: { const: true } });
-Component.register(marker, { type: { const: true } });
 
 /** Players the systems below act on, in spawn order, set by `players`. */
 let roster: Entity[] = [];
@@ -157,17 +145,14 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(rank, { type: { type: "number" } });
-Component.register(second, { type: { type: "number" } });
 
 const coarse = Symbol("observeCasesTest/coarse");
 declare module "@adobe/ecs" {
     interface Components {
-        [coarse]: { type: number };
+        [coarse]: { type: F32 };
     }
 }
 // Kept at 32 bits, so a 64-bit bound may fall between two values it keeps.
-Component.register(coarse, { type: { type: "number", precision: 1 } });
 let coarseValues: readonly number[] = [];
 const spawnCoarse = System.create({ name: "observeCasesTest/spawnCoarse" }, ({ commands }) => {
     for (const each of coarseValues) commands.spawn([coarse])({ [coarse]: each });

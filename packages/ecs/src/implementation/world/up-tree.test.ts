@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -24,11 +23,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(local, { type: { type: "number" } });
-Component.register(full, { type: { type: "number" } });
-Component.register(filtered, { type: { type: "number" } });
-Component.register(parent, { type: Entity.schema, reference: "weak" });
-Component.register(hidden, { type: { const: true } });
 
 const propagateFull = System.create({
     name: "upTreeTest/propagateFull",

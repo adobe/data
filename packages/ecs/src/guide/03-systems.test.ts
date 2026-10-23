@@ -1,12 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Report, Resource, System, Vec3, World } from "../index.js";
+import { Report, System, Vec3, World } from "../index.js";
 
-const position = Symbol("position");
-const velocity = Symbol("velocity");
-const frozen = Symbol("frozen");
-const delta = Symbol("delta");
-const frames = Symbol("frames");
+const position = Symbol();
+const velocity = Symbol();
+const frozen = Symbol();
+const delta = Symbol();
+const frames = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -15,16 +15,10 @@ declare module "@adobe/ecs" {
         [frozen]: { type: true };
     }
     interface Resources {
-        [delta]: { type: number };
-        [frames]: { type: number };
+        [delta]: { type: number; default: 0.5 };
+        [frames]: { type: number; default: 0 };
     }
 }
-
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(frozen, { type: { const: true } });
-Resource.register(delta, { type: { type: "number", default: 0.5 } });
-Resource.register(frames, { type: { type: "number", default: 0 } });
 
 const spawn = System.create(({ commands }) => {
     commands.spawn([position, velocity])({ [position]: [0, 0, 0], [velocity]: [2, 0, 0] });

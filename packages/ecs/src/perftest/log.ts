@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../interface/component/component.js";
 import { createBuffer } from "../implementation/world/buffer.js";
 import { createCommands } from "../implementation/world/commands.js";
 import { asEntity } from "../implementation/world/entities.js";
@@ -22,14 +21,11 @@ declare module "@adobe/ecs" {
     }
     export interface Components {
         [serial]: { type: number };
-        [label]: { type: { readonly text: string } | null; thread: "logBenchmark" };
+        [label]: { type: { readonly text: string } | null; thread: "logBenchmark"; default: typeof none };
         [moved]: { type: true };
     }
 }
-Component.register(serial, { type: { type: "number" } });
 const none = { text: "none" };
-Component.register(label, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: none }, thread: "logBenchmark" });
-Component.register(moved, { type: { const: true } });
 
 /** Entities moved, and swapped out of the rows they leave, per sync point of `log replay`. */
 export const replayMoves = 10_000;

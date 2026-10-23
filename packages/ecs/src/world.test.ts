@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component, Resource, System, World, workers } from "./index.js";
+import { System, World, workers } from "./index.js";
 
 const count = Symbol("worldTest/count");
 const total = Symbol("worldTest/total");
@@ -9,11 +9,9 @@ declare module "@adobe/ecs" {
         [count]: { type: number };
     }
     export interface Resources {
-        [total]: { type: number };
+        [total]: { type: number; default: 0 };
     }
 }
-Component.register(count, { type: { type: "number" } });
-Resource.register(total, { type: { type: "number", default: 0 } });
 
 const spawn = System.create({ name: "worldTest/spawn" }, ({ commands }) => { commands.spawn([count])({ [count]: 1 }); });
 const raise = System.create({ name: "worldTest/raise", resources: { write: [total] } }, ({ resources }) => { resources[total] = 7; });

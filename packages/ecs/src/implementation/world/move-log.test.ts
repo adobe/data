@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { createBuffer, addCommand, pushCommand, pushComponent, removeCommand, type CommandBuffer } from "./buffer.js";
 import { readCell } from "./cells.js";
 import { createCommands } from "./commands.js";
@@ -35,21 +34,15 @@ declare module "@adobe/ecs" {
         [uid]: { type: number };
         [amount]: { type: number };
         [flag]: { type: true };
-        [label]: { type: { readonly text: string } | null; thread: "moveLogTest" };
+        [label]: { type: { readonly text: string } | null; thread: "moveLogTest"; default: typeof none };
         [note]: { type: Note | null; thread: "moveLogTest" };
         [own]: { type: string };
     }
 }
-Component.register(uid, { type: { type: "number" } });
-Component.register(amount, { type: { type: "number" } });
-Component.register(flag, { type: { const: true } });
 /** A value that isn't data. */
 type Note = { readonly text: string; readonly read: () => string };
 /** The label's start, which a command on another thread than its own gives it by this value. */
 const none = { text: "none" };
-Component.register(label, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: none }, thread: "moveLogTest" });
-Component.register(note, { thread: "moveLogTest" });
-Component.register(own, { type: { type: "string" } });
 
 const remoteKeys = [label, note] as const;
 

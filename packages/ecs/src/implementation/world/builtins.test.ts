@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Mat4x4, Quat, Vec3 } from "../../interface/math/index.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
@@ -23,11 +22,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(bits, { type: Vec3.U32.schema });
-Component.register(counts, { type: Vec3.U32.schema });
-Component.register(sums, { type: Vec3.I32.schema });
 
 const spawn = System.create({ name: "builtinsTest/spawn" }, ({ commands }) => {
     for (let i = 0; i < 64; i++) commands.spawn([position, velocity])({ [position]: [i, i % 5, -i], [velocity]: [1, 0.5 * (i % 3), 0.25] });

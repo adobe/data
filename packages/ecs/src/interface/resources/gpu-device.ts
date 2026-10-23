@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { register } from '../resource/register.js';
+import { declareResource } from '../registry/declare.js';
 
 /**
  * The device the world's GPU storage lives on, for both `kernel: "gpu"` kernels and render systems, or null for a world
@@ -8,10 +8,10 @@ import { register } from '../resource/register.js';
  */
 export const gpuDevice = Symbol("gpuDevice");
 
-declare module '../resource/types.js' {
+declare module '@adobe/ecs' {
     export interface Resources {
         [gpuDevice]: { type: GPUDevice | null };
     }
 }
 
-register(gpuDevice, {});
+declareResource(gpuDevice, {});

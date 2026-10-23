@@ -1,19 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { always, cadence, clock, Resource, System, wake, World } from "../index.js";
+import { always, cadence, clock, System, wake, World } from "../index.js";
 
-const elapsed = Symbol("elapsed");
-const steps = Symbol("steps");
+const elapsed = Symbol();
+const steps = Symbol();
 
 declare module "@adobe/ecs" {
     interface Resources {
-        [elapsed]: { type: number };
-        [steps]: { type: number };
+        [elapsed]: { type: number; default: 0 };
+        [steps]: { type: number; default: 0 };
     }
 }
-
-Resource.register(elapsed, { type: { type: "number", default: 0 } });
-Resource.register(steps, { type: { type: "number", default: 0 } });
 
 // clock is the current tick's: delta is the milliseconds since the last one.
 const advance = System.create({ resources: { read: [clock], write: [elapsed] } }, ({ resources }) => {

@@ -1,31 +1,27 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Entity, Resource, System, World } from "../index.js";
+import { Entity, System, World } from "../index.js";
 
 // A resource is a key whose value a world holds once.
-export const gravity = Symbol("gravity");
-export const names = Symbol("names");
-export const audio = Symbol("audio");
-export const focused = Symbol("focused");
+export const gravity = Symbol();
+export const names = Symbol();
+export const audio = Symbol();
+export const focused = Symbol();
+const noNames: ReadonlyMap<string, number> = new Map();
 
-// Its traits are declared; `type` is the value's type.
+// It's declared once, with its traits: `type` is the value's type, and `default` the value a world starts it at, which
+// a type allowing null may leave out. The build registers what's declared.
 declare module "@adobe/ecs" {
     interface Resources {
-        [gravity]: { type: number };
-        [names]: { type: ReadonlyMap<string, number> };
+        [gravity]: { type: number; default: -9.8 };
+        // A default that isn't a literal names a value with typeof.
+        [names]: { type: ReadonlyMap<string, number>; default: typeof noNames };
+        // A value that isn't data, such as a class, is stored as it is.
         [audio]: { type: AudioContext | null };
-        [focused]: { type: Entity };
+        // No entity is Entity.none rather than null, so an entity stays data every thread reads.
+        [focused]: { type: Entity; default: typeof Entity.none };
     }
 }
-
-// Registration gives the same traits, with a schema that describes exactly the declared type. A resource always has a
-// value: its schema's default, or one beside it.
-Resource.register(gravity, { type: { type: "number", default: -9.8 } });
-Resource.register(names, { type: { type: "map", keys: { type: "string" }, values: { type: "number" } }, default: new Map() });
-// A value that isn't data has no schema and is stored as it is. A type that allows null starts there.
-Resource.register(audio, {});
-// No entity is Entity.none rather than null, so an entity stays data every thread reads.
-Resource.register(focused, { type: { ...Entity.schema, default: Entity.none } });
 
 // Systems read a world: an observer only reads, after the world's changes apply.
 let values: readonly unknown[] = [];

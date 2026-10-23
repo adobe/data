@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
@@ -8,6 +7,7 @@ import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";
 import { Observe } from "../../observe/index.js";
 import { settle } from "./observe.test-helper.js";
+import type { F32 } from "../../interface/math/index.js";
 
 // The observer factories of `src/observe` over values GPU kernels wrote.
 
@@ -18,13 +18,11 @@ const rate = Symbol("observeCasesGpuTest/rate");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [heat]: { type: number };
-        [rate]: { type: number };
+        [heat]: { type: F32 };
+        [rate]: { type: F32 };
     }
 }
 
-Component.register(heat, { type: { type: "number", precision: 1 } });
-Component.register(rate, { type: { type: "number", precision: 1 } });
 
 let spawned: Entity[] = [];
 const spawn = System.create({ name: "observeCasesGpuTest/spawn" }, ({ commands }) => {

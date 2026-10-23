@@ -23,10 +23,6 @@ declare module '@adobe/ecs' {
         [player]: { type: true };
     }
 }
-Component.register(position, { type: { type: "number" } });
-Component.register(velocity, { type: { type: "number" } });
-Component.register(target, { type: Entity.schema });
-Component.register(player, { type: { const: true } });
 const flagged = Symbol("systemTest/flagged");
 const bounds = Symbol("systemTest/bounds");
 export const total = Symbol("systemTest/total");
@@ -39,11 +35,6 @@ declare module '@adobe/ecs' {
         [total]: { type: number; reduce: "+" };
     }
 }
-Resource.register(bounds, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3, default: [Infinity, Infinity, Infinity] }, reduce: "min" });
-Resource.register(time, { type: { type: "number", default: 0 } });
-Resource.register(score, { type: { type: "number", default: 0 } });
-Resource.register(flagged, { type: { type: "boolean", default: false }, reduce: "|" });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
 
 // Row: read values are read-only, write values writable, others absent.
 export const integrate = System.create({
@@ -204,10 +195,6 @@ declare module '@adobe/ecs' {
         [marks]: { type: ReadonlySet<number> };
     }
 }
-Component.register(label, { type: { type: "string" } });
-Component.register(marks, { type: { type: "set", items: { type: "number" } } });
-Component.register(path, { type: { type: "array", items: { type: "number" } } });
-Component.register(vector, { type: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 } });
 
 // Kernels: linear values (numbers, booleans, entities, fixed tuples), read-only resources.
 System.create({

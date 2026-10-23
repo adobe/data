@@ -1,11 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
+import type { F32 } from "../../interface/math/index.js";
 
 /** Scenarios of dispatching tasks to workers, run built in node and from source in chromium. */
 
@@ -24,23 +24,13 @@ const tagG = Symbol("dispatchTest/g");
 const tags = [tagA, tagB, tagC, tagD, tagE, tagF, tagG] as const;
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number] };
-        [velocity]: { type: readonly [number, number] };
-        [offset]: { type: number };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2 }> };
+        [velocity]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2 }> };
+        [offset]: { type: F32 };
         [tagA]: { type: true }; [tagB]: { type: true }; [tagC]: { type: true }; [tagD]: { type: true };
         [tagE]: { type: true }; [tagF]: { type: true }; [tagG]: { type: true };
     }
 }
-Component.register(position, { type: vec2 });
-Component.register(velocity, { type: vec2 });
-Component.register(offset, { type: { type: "number", precision: 1 } });
-Component.register(tagA, { type: { const: true } });
-Component.register(tagB, { type: { const: true } });
-Component.register(tagC, { type: { const: true } });
-Component.register(tagD, { type: { const: true } });
-Component.register(tagE, { type: { const: true } });
-Component.register(tagF, { type: { const: true } });
-Component.register(tagG, { type: { const: true } });
 
 const scatter = System.create({ name: "dispatchTest/scatter" }, ({ commands }) => {
     for (let i = 0; i < 128 * 64; i++) {

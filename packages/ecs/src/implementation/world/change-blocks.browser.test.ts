@@ -1,11 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, join } from "./create.js";
+import type { F32, U32 } from "../../interface/math/index.js";
 
 // A GPU kernel stamps a whole column once; before a joined thread's systems filter on it, its rows, chunks and blocks
 // take the stamp, so the thread's change filters find every row, and then only rows written after.
@@ -19,15 +19,12 @@ declare module "@adobe/ecs" {
         changeBlocksGpuTest: true;
     }
     interface Components {
-        [value]: { type: number };
-        [at]: { type: number };
-        [note]: { type: { readonly text: string } | null; thread: "changeBlocksGpuTest" };
+        [value]: { type: F32 };
+        [at]: { type: U32 };
+        [note]: { type: { readonly text: string } | null; thread: "changeBlocksGpuTest"; default: { text: "none" } };
     }
 }
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(at, { type: { type: "integer", minimum: 0, maximum: 0x7FFFFFFF } });
 const text = { type: "object", properties: { text: { type: "string" } } } as const;
-Component.register(note, { type: { anyOf: [text, { type: "null" }], default: { text: "none" } }, thread: "changeBlocksGpuTest" });
 
 const rows = 4500;
 let entities: Entity[] = [];

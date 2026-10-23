@@ -94,6 +94,12 @@ declare module "@adobe/ecs" {
             `declareResource$(total, { type: {"type":"number","precision":1,"default":0}, reduce: "+" });`,
         ]);
     });
+    test("registers a block's traits before the components declaring them", async () => {
+        expect(await registrations(`${keys("marked", "mark")}declare module "@adobe/ecs" {
+    interface Components { [marked]: { type: true; [mark]: true } }
+    interface Traits<N> { readonly [mark]: true }
+}`)).toEqual([`declareTrait$(mark);`, `declareComponent$(marked, { type: {"const":true}, [mark]: true });`]);
+    });
     test("follows a type named by Schema.Type and imported keys", async () => {
         const files = { "/src/units.ts": `import type { Schema } from "@adobe/ecs";\nexport type Level = Schema.Type<{ type: "integer"; minimum: 0; maximum: 9 }>;\nexport const level = Symbol();` };
         expect(await registrations(`import { level, type Level } from "./units.js";\ndeclare module "@adobe/ecs" { interface Components { [level]: { type: Level } } }`, files)).toEqual([
@@ -117,5 +123,7 @@ declare module "@adobe/ecs" {
         expect(await passed(`${keys("key")}${block(`interface Components { [key]: { type: Pick<{ a: number }, "a"> } }`)}`)).toContain("type arguments");
         expect(await passed(`${keys("key")}${block(`interface Components { [key]: { derived: true } }`)}`)).toContain("declares its type");
         expect(await passed(block(`interface Traits<N> { readonly layer: true }`))).toContain("keyed by a `Symbol()` constant");
+        expect(await passed(block(`interface Components { "named": { type: number } }`))).toContain("a component's key is a `Symbol()` constant");
+        expect(await passed(block(`interface Resources { "time": { type: number; default: 0 } }`))).toContain("a resource's key is a `Symbol()` constant");
     });
 });

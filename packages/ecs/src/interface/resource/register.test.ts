@@ -1,57 +1,40 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../component/component.js";
+import { declareComponent, declareResource } from "../registry/declare.js";
 import { declarationOf, kindOf, threadOfDeclaration } from "../registry/index.js";
 import { always, cadence, clock, gpuDevice, wake, workers } from "../resources/index.js";
-import { Resource } from "./resource.js";
 
 const time = Symbol("typesResourceTest/time");
 const symbol = Symbol("typesResourceTest/symbol");
-const shared = Symbol("typesResourceTest/shared");
 const cache = Symbol("typesResourceTest/cache");
 const port = Symbol("typesResourceTest/port");
 const total = Symbol("typesResourceTest/total");
 const flags = Symbol("typesResourceTest/flags");
 const names = Symbol("typesResourceTest/names");
 const tags = Symbol("typesResourceTest/tags");
+const cacheStart = new Map<string, number>();
+const namesStart = new Map([["a", 1]]);
+const tagsStart = new Set(["x"]);
 
 declare module "@adobe/ecs" {
     export interface Resources {
-        [time]: { type: number };
-        [symbol]: { type: boolean };
-        [shared]: { type: true };
-        [cache]: { type: Map<string, number>; thread: "main" };
+        [time]: { type: number; default: 0 };
+        [symbol]: { type: boolean; default: false };
+        [cache]: { type: Map<string, number>; thread: "main"; default: typeof cacheStart };
         [port]: { type: MessagePort | null; transfer: true };
-        [total]: { type: number; reduce: "+" };
-        [flags]: { type: boolean; reduce: "|" };
-        [names]: { type: ReadonlyMap<string, number> };
-        [tags]: { type: ReadonlySet<string> };
-    }
-    export interface Components {
-        [shared]: { type: true };
+        [total]: { type: number; default: 0; reduce: "+" };
+        [flags]: { type: boolean; default: false; reduce: "|" };
+        [names]: { type: ReadonlyMap<string, number>; default: typeof namesStart };
+        [tags]: { type: ReadonlySet<string>; default: typeof tagsStart };
     }
 }
 
-Resource.register(time, { type: { type: "number", default: 0 } });
-Resource.register(symbol, { type: { type: "boolean", default: false } });
-// @ts-expect-error a key declared as both a component and a resource can't be registered as either
-Component.register(shared, { type: { const: true } });
-Resource.register(cache, { default: new Map(), thread: "main" });
-Resource.register(port, { transfer: true });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(flags, { type: { type: "boolean", default: false }, reduce: "|" });
+/** Registers a declaration as the build does, which a test may write wrong. */
+const register = (key: unknown, declaration: object): void => declareResource(key, declaration);
+
 const namesSchema = { type: "map", keys: { type: "string" }, values: { type: "number" } } as const;
-Resource.register(names, { type: namesSchema, default: new Map([["a", 1]]) });
-Resource.register(tags, { type: { type: "set", items: { type: "string" }, default: new Set(["x"]) } });
 
-const untyped: (...parameters: never[]) => unknown = Resource.register;
-
-/** Registers as an untyped caller would, bypassing the types' checks. */
-const register = (key: unknown, declaration: object): void => {
-    Reflect.apply(untyped, undefined, [key, declaration]);
-};
-
-describe("Resource.register", () => {
+describe("registering a resource", () => {
     it("records the declaration by its symbol, which needs no description", () => {
         expect(declarationOf(time)).toEqual({ type: { type: "number", default: 0 } });
         expect(declarationOf(symbol)).toEqual({ type: { type: "boolean", default: false } });
@@ -64,17 +47,18 @@ describe("Resource.register", () => {
         expect(() => register("typesResourceTest/text", { type: { type: "number", default: 0 } })).toThrow("a key is a plain Symbol(...), not a string.");
     });
     it("accepts the same declaration again, and rejects a different one or one also declared as a component", () => {
-        expect(() => Resource.register(time, { type: { type: "number", default: 0 } })).not.toThrow();
-        expect(() => Resource.register(time, { type: { type: "number", default: 1 } })).toThrow(`Cannot register resource "typesResourceTest/time": already registered as a resource, with another declaration.`);
-        // @ts-expect-error a key declared as both a component and a resource can't be registered as either
-        expect(() => Resource.register(shared, { type: { const: true, default: true } })).toThrow("already registered as a component");
+        expect(() => register(time, { type: { type: "number", default: 0 } })).not.toThrow();
+        expect(() => register(time, { type: { type: "number", default: 1 } })).toThrow(`Cannot register resource "typesResourceTest/time": already registered as a resource, with another declaration.`);
+        const shared = Symbol("typesResourceTest/shared");
+        declareComponent(shared, { type: { const: true } });
+        expect(() => register(shared, { type: { const: true, default: true } })).toThrow("already registered as a component");
     });
     it("takes a resource's default from its declaration or its schema, never both, and compares sets and maps by their entries", () => {
-        expect(declarationOf(names)).toEqual({ type: namesSchema, default: new Map([["a", 1]]) });
-        expect(() => Resource.register(names, { type: namesSchema, default: new Map([["a", 1]]) })).not.toThrow();
-        expect(() => Resource.register(names, { type: namesSchema, default: new Map([["a", 2]]) })).toThrow("with another declaration");
-        expect(() => Resource.register(tags, { type: { type: "set", items: { type: "string" }, default: new Set(["x"]) } })).not.toThrow();
-        expect(() => Resource.register(tags, { type: { type: "set", items: { type: "string" }, default: new Set(["y"]) } })).toThrow("with another declaration");
+        expect(declarationOf(names)).toEqual({ type: { ...namesSchema, default: new Map([["a", 1]]) } });
+        expect(() => register(names, { type: { ...namesSchema, default: new Map([["a", 1]]) } })).not.toThrow();
+        expect(() => register(names, { type: { ...namesSchema, default: new Map([["a", 2]]) } })).toThrow("with another declaration");
+        expect(() => register(tags, { type: { type: "set", items: { type: "string" }, default: new Set(["x"]) } })).not.toThrow();
+        expect(() => register(tags, { type: { type: "set", items: { type: "string" }, default: new Set(["y"]) } })).toThrow("with another declaration");
         expect(() => register(Symbol("typesResourceTest/twice"), { type: { type: "number", default: 0 }, default: 1 })).toThrow("its default is given twice");
         expect(threadOfDeclaration(declarationOf(names) ?? {})).toBe("world");
     });

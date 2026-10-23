@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { System } from "../../interface/system/system.js";
 import { count, read, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
@@ -14,7 +13,6 @@ declare module "@adobe/ecs" {
         [heat]: { type: number };
     }
 }
-Component.register(heat, { type: { type: "number" } });
 
 const seed = System.create({ name: "importedListsTest/seed" }, ({ commands }) => {
     commands.spawn([heat])({ [heat]: 2 });

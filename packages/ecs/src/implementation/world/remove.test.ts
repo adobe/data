@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
@@ -24,9 +23,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(value, { type: { type: "number" } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(shared, { type: { type: "number" } });
 
 /** How many times each system's body was called. */
 const calls = { kept: 0, held: 0, alone: 0, other: 0, late: 0, self: 0, writer: 0, reader: 0 };

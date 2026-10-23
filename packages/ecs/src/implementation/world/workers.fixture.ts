@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -10,6 +8,7 @@ import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
 import { countingWorkers } from "./platforms.test-helper.js";
 import type { WorkerPlatform } from "./worker-platform.js";
+import type { F32 } from "../../interface/math/index.js";
 
 /** Scenarios of kernels on workers against the main thread alone, run built in node and from source in chromium. */
 
@@ -35,10 +34,10 @@ const seconds = Symbol("workersTest/seconds");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number] };
-        [velocity]: { type: readonly [number, number] };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2 }> };
+        [velocity]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2 }> };
         [target]: { type: Entity };
-        [offset]: { type: number };
+        [offset]: { type: F32 };
         [spawned]: { type: true };
         [tagA]: { type: true };
         [tagB]: { type: true };
@@ -51,24 +50,10 @@ declare module "@adobe/ecs" {
         [tagI]: { type: true };
     }
     export interface Resources {
-        [seconds]: { type: number };
+        [seconds]: { type: number; default: 0.25 };
     }
 }
 
-Component.register(position, { type: vec2 });
-Component.register(velocity, { type: vec2 });
-Component.register(target, { type: Entity.schema });
-Component.register(offset, { type: { type: "number", precision: 1 } });
-Component.register(spawned, { type: { const: true } });
-Component.register(tagA, { type: { const: true } });
-Component.register(tagB, { type: { const: true } });
-Component.register(tagC, { type: { const: true } });
-Component.register(tagD, { type: { const: true } });
-Component.register(tagE, { type: { const: true } });
-Component.register(tagF, { type: { const: true } });
-Component.register(tagG, { type: { const: true } });
-Component.register(tagH, { type: { const: true } });
-Component.register(tagI, { type: { const: true } });
 
 /** 64 entities in each of the 512 archetypes the tags combine into. */
 const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) => {
@@ -78,7 +63,6 @@ const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) =>
         commands.spawn(components)({ [position]: [i, 0], [velocity]: [1, i % 5] });
     }
 });
-Resource.register(seconds, { type: { type: "number", default: 0.25 } });
 
 /** Spawns `count` moving entities, each following the one before it. */
 const seed = System.create({ name: "workersTest/seed" }, ({ commands }, input: { readonly count: number }) => {

@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -15,18 +14,15 @@ const marked = Symbol("upBrowserTest/marked");
 declare module "@adobe/ecs" {
     interface Components {
         [parent]: { type: Entity; reference: "owner" };
-        [offset]: { type: number };
-        [placed]: { type: number };
+        [offset]: { type: F32 };
+        [placed]: { type: F32 };
         [marked]: { type: true };
     }
 }
 
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(offset, { type: { type: "number", precision: 1 } });
-Component.register(placed, { type: { type: "number", precision: 1 } });
-Component.register(marked, { type: { const: true } });
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";
+import type { F32 } from "../../interface/math/index.js";
 
 const place = System.create({
     name: "upBrowserTest/place",

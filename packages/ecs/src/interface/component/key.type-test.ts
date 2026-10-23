@@ -16,8 +16,6 @@ declare module "@adobe/ecs" {
         readonly [mark]: true;
     }
 }
-Component.register(position, { type: { type: "number" } });
-Resource.register(scale, { type: { type: "number", default: 0 } });
 
 // Components, resources and traits are named by keys; systems, rules and finalizers by names.
 export const component: Component.Key = position;

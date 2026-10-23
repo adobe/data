@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Index } from "../../interface/indexes/index-type.js";
@@ -13,6 +12,7 @@ import { createWorld, type CreatedWorld } from "./create.js";
 import { tablesAfterCollecting } from "./lifetime.test-helper.js";
 import { backToBack } from "./loop.js";
 import { runReported } from "./reports.test-helper.js";
+import type { I32, U32, Vec2 } from "../../interface/math/index.js";
 
 const cell = Symbol("indexesTest/cell");
 const weight = Symbol("indexesTest/weight");
@@ -24,23 +24,16 @@ const order = Symbol("indexesTest/order");
 
 declare module "@adobe/ecs" {
     interface Components {
-        [cell]: { type: readonly [number, number] };
+        [cell]: { type: Vec2.I32 };
         [weight]: { type: number };
         [label]: { type: string };
-        [serverId]: { type: number };
+        [serverId]: { type: U32 };
         [owner]: { type: Entity; reference: "weak" };
         [hidden]: { type: true };
         [order]: { type: number };
     }
 }
 
-Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
-Component.register(weight, { type: { type: "number" } });
-Component.register(label, { type: { type: "string" } });
-Component.register(serverId, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
-Component.register(owner, { type: Entity.schema, reference: "weak" });
-Component.register(hidden, { type: { const: true } });
-Component.register(order, { type: { type: "number" } });
 
 const grid = Index.create({ name: "indexesTest/grid", key: [cell], components: { has: [weight], not: [hidden] } });
 const byServerId = Index.create({ name: "indexesTest/byServerId", key: [serverId], unique: true });
@@ -325,7 +318,6 @@ declare module "@adobe/ecs" {
         [folded]: { type: number };
     }
 }
-Component.register(folded, { type: { type: "number" } });
 
 /** A list's entities folded into one number, by position: what `foldNear` writes. */
 const foldOf = (bucket: readonly number[]): number => bucket.reduce((sum, entity, i) => sum + (entity % 997) * (i + 1), 0);
@@ -398,15 +390,11 @@ const pair = Symbol("indexesTest/pair");
 declare module "@adobe/ecs" {
     interface Components {
         [rank]: { type: number };
-        [lane]: { type: number };
+        [lane]: { type: I32 };
         [flag]: { type: boolean };
-        [pair]: { type: readonly [number, number] };
+        [pair]: { type: Vec2 };
     }
 }
-Component.register(rank, { type: { type: "number" } });
-Component.register(lane, { type: { type: "integer", minimum: -100, maximum: 100 } });
-Component.register(flag, { type: { type: "boolean" } });
-Component.register(pair, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } });
 
 const byRank = Index.create({ name: "indexesTest/byRank", key: [rank], sorted: true });
 const byLaneRank = Index.create({ name: "indexesTest/byLaneRank", key: [lane, rank], sorted: true, components: { has: [weight] } });

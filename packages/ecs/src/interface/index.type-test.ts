@@ -18,10 +18,6 @@ declare module "@adobe/ecs" {
         [scale]: { type: number };
     }
 }
-Component.register(position, { type: { type: "number" } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Component.register(element, { thread: "main" });
-Resource.register(scale, { type: { type: "number", default: 1 } });
 export const move = System.create({ name: "indexTypeTest/move", components: { write: [position] }, resources: { read: [scale] } }, (row, { resources }) => { row[position] += resources[scale]; });
 export const show = System.create({ name: "indexTypeTest/show", components: { read: [position], write: [element] } }, row => { row[element].textContent = String(row[position]); });
 export const all = System.create({ name: "indexTypeTest/all", systems: [move, show] });

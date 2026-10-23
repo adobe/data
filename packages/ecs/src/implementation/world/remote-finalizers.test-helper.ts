@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
+import type { Schema } from "../../interface/schema/schema.js";
+import type { Vec3 } from "../../interface/math/index.js";
 
 // Keys, systems and a finalizer both threads of the remote finalizers tests import: a finalizer on thread
 // "remoteFinalizersTest", which a joined thread fills, reading structs, a constant, that thread's objects and its
@@ -33,72 +33,39 @@ declare module "@adobe/ecs" {
         remoteFinalizersTest: true;
     }
     export interface Components {
-        [serial]: { type: number };
+        [serial]: { type: Schema.Type<{ type: "integer" }> };
         [place]: { type: readonly [number, number] };
         [marked]: { type: true };
         [flagged]: { type: true };
         [widget]: { type: Widget | null; thread: "remoteFinalizersTest" };
-        [label]: { type: { readonly text: string } | null; thread: "remoteFinalizersTest" };
+        [label]: { type: { readonly text: string } | null; thread: "remoteFinalizersTest"; default: { text: "none" } };
         [title]: { type: string };
         [headed]: { type: true };
     }
     export interface Resources {
-        [tone]: { type: { readonly text: string }; thread: "remoteFinalizersTest" };
-        [heading]: { type: string };
-        [subheading]: { type: string };
-        [level]: { type: number };
-        [origin]: { type: readonly [number, number] };
-        [caption]: { type: string };
-        [lit]: { type: boolean };
-        [tint]: { type: readonly [number, number, number] };
-        [sample]: { type: Sample };
-        [material]: { type: Material };
+        [tone]: { type: { readonly text: string }; thread: "remoteFinalizersTest"; default: { text: "quiet" } };
+        [heading]: { type: string; default: "h" };
+        [subheading]: { type: string; default: "s" };
+        [level]: { type: number; default: -1 };
+        [origin]: { type: readonly [number, number]; default: [-1, -1] };
+        [caption]: { type: string; default: "c" };
+        [lit]: { type: boolean; default: false };
+        [tint]: { type: Vec3; default: [-1, -1, -1] };
+        [sample]: { type: Schema.Type<{ type: "object"; properties: { on: { type: "boolean" }; count: { type: "integer"; minimum: 0; maximum: 4294967295 }; weight: { type: "number" }; ratio: { type: "number"; precision: 1 } } }>; default: { on: false; count: 0; weight: -1; ratio: -1 } };
+        [material]: { type: Schema.Type<{ type: "object"; properties: { alpha: { type: "number"; precision: 1 }; color: { type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }; glossy: { type: "boolean" } }; layout: "storage" }>; default: { alpha: -1; color: [-1, -1, -1]; glossy: false } };
     }
 }
 /** A value that isn't data, which only its thread holds. */
 type Widget = { readonly tag: string; readonly draw: () => string };
-Component.register(serial, { type: { type: "integer" } });
-Component.register(place, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-Component.register(marked, { type: { const: true } });
-Component.register(flagged, { type: { const: true } });
-Component.register(widget, { thread: "remoteFinalizersTest" });
 const text = { type: "object", properties: { text: { type: "string" } } } as const;
-Component.register(label, { type: { anyOf: [text, { type: "null" }], default: { text: "none" } }, thread: "remoteFinalizersTest" });
-Resource.register(tone, { type: { ...text, default: { text: "quiet" } }, thread: "remoteFinalizersTest" });
 /** A string, in shared memory, which the world's thread writes and the finalizer on the thread reads. */
-Component.register(title, { type: { type: "string" } });
-Component.register(headed, { type: { const: true } });
 /** A string resource, which the world's thread writes and the finalizer on the thread reads. */
-Resource.register(heading, { type: { type: "string", default: "h" } });
-Resource.register(subheading, { type: { type: "string", default: "s" } });
 /** Linear resources, a number and a struct, which the world's thread writes and the finalizer on the thread reads. */
-Resource.register(level, { type: { type: "number", default: -1 } });
-Resource.register(origin, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2, default: [-1, -1] } });
 /** Resources of mixed widths: a string, a boolean (1 byte), an f32 vec3 (12), a padded CPU struct (24) and a storage struct (32). */
 type Sample = { readonly on: boolean; readonly count: number; readonly weight: number; readonly ratio: number };
 type Material = { readonly alpha: number; readonly color: readonly [number, number, number]; readonly glossy: boolean };
 const f32 = { type: "number", precision: 1 } as const;
 const vec3 = { type: "array", items: f32, minItems: 3, maxItems: 3 } as const;
-Resource.register(caption, { type: { type: "string", default: "c" } });
-Resource.register(lit, { type: { type: "boolean", default: false } });
-Resource.register(tint, { type: { ...vec3, default: [-1, -1, -1] } });
-Resource.register(sample, {
-    type: {
-        type: "object",
-        properties: { on: { type: "boolean" }, count: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF }, weight: { type: "number" }, ratio: f32 },
-        required: ["on", "count", "weight", "ratio"],
-        default: { on: false, count: 0, weight: -1, ratio: -1 },
-    },
-});
-Resource.register(material, {
-    type: {
-        type: "object",
-        properties: { alpha: f32, color: vec3, glossy: { type: "boolean" } },
-        required: ["alpha", "color", "glossy"],
-        layout: "storage",
-        default: { alpha: -1, color: [-1, -1, -1], glossy: false },
-    },
-});
 
 /** A stop as the finalizer saw it, on the thread it ran on. */
 export type Released = { readonly serial: number; readonly place: readonly number[]; readonly marked: boolean; readonly widget: string | null; readonly label: string | null; readonly tone: string };

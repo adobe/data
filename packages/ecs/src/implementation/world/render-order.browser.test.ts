@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Gpu } from "../../interface/gpu/gpu.js";
 import { Index } from "../../interface/indexes/index-type.js";
@@ -8,6 +7,7 @@ import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { runReported } from "./reports.test-helper.js";
+import type { F32, U32, Vec3 } from "../../interface/math/index.js";
 
 const depth = Symbol("renderOrderTest/depth");
 const code = Symbol("renderOrderTest/code");
@@ -19,23 +19,16 @@ const hidden = Symbol("renderOrderTest/hidden");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [depth]: { type: number };
-        [code]: { type: number };
+        [depth]: { type: F32 };
+        [code]: { type: U32 };
         [shape]: { type: true };
         [image]: { type: true };
-        [size]: { type: readonly [number, number, number] };
+        [size]: { type: Vec3 };
         [visible]: { type: true };
         [hidden]: { type: true };
     }
 }
 
-Component.register(depth, { type: { type: "number", precision: 1 } });
-Component.register(code, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(shape, { type: { const: true } });
-Component.register(image, { type: { const: true } });
-Component.register(size, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
-Component.register(visible, { type: { const: true } });
-Component.register(hidden, { type: { const: true } });
 
 const byDepth = Index.create({ name: "renderOrderTest/byDepth", key: [depth], sorted: true });
 

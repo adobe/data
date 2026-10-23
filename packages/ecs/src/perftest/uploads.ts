@@ -1,21 +1,20 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../interface/component/component.js";
 import { Entity } from "../interface/entity/entity.js";
 import { gpuDevice } from "../interface/resources/gpu-device.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import { createWorld } from "../implementation/world/create.js";
 import type { Benchmark } from "./benchmark.js";
+import type { Vec3 } from "../interface/math/index.js";
 
 // A drag: the CPU writes one row of a column a render system holds on the GPU, which uploads what changed.
 
 const place = Symbol("uploads/place");
 declare module "@adobe/ecs" {
     export interface Components {
-        [place]: { type: readonly [number, number, number] };
+        [place]: { type: Vec3 };
     }
 }
-Component.register(place, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
 
 const shapes = 100_000;
 let spawned: Entity[] = [];

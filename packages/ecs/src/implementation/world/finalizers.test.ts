@@ -1,10 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { identify } from "../../interface/registry/ids.test-helper.js";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { Rule } from "../../interface/rule/rule.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
@@ -37,7 +35,7 @@ declare module "@adobe/ecs" {
         [handle]: { type: number };
         [hidden]: { type: true };
         [source]: { type: number };
-        [slot]: { type: number; derived: true };
+        [slot]: { type: number; derived: true; default: 0 };
         [parent]: { type: Entity; reference: "owner" };
         [label]: { type: string };
         [late]: { type: number };
@@ -49,29 +47,12 @@ declare module "@adobe/ecs" {
         [disposing]: { type: number };
     }
     export interface Resources {
-        [released]: { type: number };
-        [level]: { type: number };
-        [written]: { type: number };
+        [released]: { type: number; default: 0 };
+        [level]: { type: number; default: 0 };
+        [written]: { type: number; default: 0 };
     }
 }
 
-Component.register(handle, { type: { type: "number" } });
-Component.register(hidden, { type: { const: true } });
-Component.register(source, { type: { type: "number" } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(label, { type: { type: "string" } });
-Component.register(late, { type: { type: "number" } });
-Resource.register(released, { type: { type: "number", default: 0 } });
-Resource.register(level, { type: { type: "number", default: 0 } });
-Resource.register(written, { type: { type: "number", default: 0 } });
-Component.register(counted, { type: { type: "number" } });
-Component.register(pendingHandle, { type: { type: "number" } });
-Component.register(respawned, { type: { type: "number" } });
-Component.register(ordered, { type: { type: "number" } });
-Component.register(writing, { type: { type: "number" } });
-Component.register(disposing, { type: { type: "number" } });
-Component.register(reloaded, { type: { type: "number" } });
 
 Rule.create({ name: "finalizersTest/slots", components: { has: [source] }, derive: [slot] });
 

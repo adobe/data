@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
+import type { Schema } from "../../interface/schema/schema.js";
+import type { Vec3 } from "../../interface/math/index.js";
 
 // Keys and systems both threads of the tails fixtures import: a world system writing every row's stamp each tick, and
 // terminal systems on thread "tailsTest", which a joined thread fills, running there as tails.
@@ -20,38 +20,27 @@ declare module "@adobe/ecs" {
         tailsTest: true;
     }
     export interface Components {
-        [stamp]: { type: number };
-        [spot]: { type: readonly [number, number, number] };
-        [label]: { type: { readonly text: string } | null; thread: "tailsTest" };
+        [stamp]: { type: Schema.Type<{ type: "integer" }> };
+        [spot]: { type: Vec3 };
+        [label]: { type: { readonly text: string } | null; thread: "tailsTest"; default: null };
         [word]: { type: string };
     }
     export interface Resources {
-        [counter]: { type: number };
-        [stall]: { type: { readonly mode: number; readonly pause: number } };
-        [spawning]: { type: number };
-        [failAt]: { type: number };
-        [canvas]: { type: { readonly text: string }; thread: "tailsTest" };
+        [counter]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
+        [stall]: { type: Schema.Type<{ type: "object"; properties: { mode: { type: "integer" }; pause: { type: "number" } } }>; default: { mode: 0; pause: 0 } };
+        [spawning]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
+        [failAt]: { type: Schema.Type<{ type: "integer" }>; default: -1 };
+        [canvas]: { type: { readonly text: string }; thread: "tailsTest"; default: { text: "canvas" } };
     }
 }
-Component.register(stamp, { type: { type: "integer" } });
-Component.register(spot, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
 /** An object of the tail's thread, which the tail writes. */
 const text = { type: "object", properties: { text: { type: "string" } } } as const;
-Component.register(label, { type: { anyOf: [text, { type: "null" }], default: null }, thread: "tailsTest" });
 /** A string the world writes each tick, which lives in shared memory where the tail reads it. */
-Component.register(word, { type: { type: "string" } });
-Resource.register(counter, { type: { type: "integer", default: 0 } });
 /**
  * How the tails stall, for milliseconds `pause`: `"none"`, `"chunk"` in the watcher at the end of its first chunk, so
  * a writer is ready mid-way, or `"before"` in a tail ahead of it, so the watcher is late.
  */
-Resource.register(stall, {
-    type: { type: "object", properties: { mode: { type: "integer" }, pause: { type: "number" } }, required: ["mode", "pause"], default: { mode: 0, pause: 0 } },
-});
-Resource.register(spawning, { type: { type: "integer", default: 0 } });
-Resource.register(failAt, { type: { type: "integer", default: -1 } });
 /** An object resource of the tail's thread, which places the systems reading it there. */
-Resource.register(canvas, { type: { ...text, default: { text: "canvas" } }, thread: "tailsTest" });
 
 export const noStall = 0;
 export const stallAtChunk = 1;

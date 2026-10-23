@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component, System } from "../../index.js";
+import { System } from "../../index.js";
 import { requireDefinition, type Composite } from "../../interface/registry/index.js";
 import type { Cadence } from "../../interface/resources/cadence.js";
 import { backToBack, createLoop, type Clock, type LoopSettings } from "./loop.js";
@@ -15,7 +15,6 @@ declare module "@adobe/ecs" {
         [count]: { type: number };
     }
 }
-Component.register(count, { type: { type: "number" } });
 
 const increment = requireDefinition(System.create({ name: "loopTest/increment", components: { write: [count] } }, row => { row[count] += 1; }));
 const reader = requireDefinition(System.create({ name: "loopTest/reader", components: { read: [count] } }, row => { void row[count]; }));

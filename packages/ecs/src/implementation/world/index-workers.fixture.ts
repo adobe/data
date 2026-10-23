@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -7,6 +6,7 @@ import { System } from "../../interface/system/system.js";
 import { readEntity, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { countingWorkers } from "./platforms.test-helper.js";
+import type { U32, Vec2 } from "../../interface/math/index.js";
 
 /** Scenarios of kernels looking up through indexes across workers, run built in node and from source in chromium. */
 
@@ -27,36 +27,22 @@ const bandSumByHand = Symbol("indexWorkersTest/bandSumByHand");
 
 declare module "@adobe/ecs" {
     interface Components {
-        [cell]: { type: readonly [number, number] };
+        [cell]: { type: Vec2.I32 };
         [weight]: { type: number };
         [total]: { type: number };
         [count]: { type: number };
         [changes]: { type: number };
-        [lane]: { type: number };
+        [lane]: { type: U32 };
         [rank]: { type: number };
         [seen]: { type: Entity };
-        [serial]: { type: number };
-        [target]: { type: number };
+        [serial]: { type: U32 };
+        [target]: { type: U32 };
         [tally]: { type: number };
-        [band]: { type: number };
+        [band]: { type: U32 };
         [bandSum]: { type: number };
         [bandSumByHand]: { type: number };
     }
 }
-Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
-Component.register(weight, { type: { type: "number" } });
-Component.register(total, { type: { type: "number" } });
-Component.register(count, { type: { type: "number" } });
-Component.register(changes, { type: { type: "number" } });
-Component.register(lane, { type: { type: "integer", minimum: 0, maximum: 1000 } });
-Component.register(rank, { type: { type: "number" } });
-Component.register(seen, { type: Entity.schema });
-Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
-Component.register(target, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
-Component.register(tally, { type: { type: "number" } });
-Component.register(band, { type: { type: "integer", minimum: 0, maximum: 1 } });
-Component.register(bandSum, { type: { type: "number" } });
-Component.register(bandSumByHand, { type: { type: "number" } });
 
 const grid = Index.create({ name: "indexWorkersTest/grid", key: [cell], components: { has: [weight] } });
 const lanes = Index.create({ name: "indexWorkersTest/lanes", key: [lane, rank], sorted: true });

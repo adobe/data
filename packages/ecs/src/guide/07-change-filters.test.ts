@@ -1,14 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Resource, System, World } from "../index.js";
+import { System, World } from "../index.js";
 
-const score = Symbol("score");
-const shown = Symbol("shown");
-const boss = Symbol("boss");
-const level = Symbol("level");
-const paused = Symbol("paused");
-const map = Symbol("map");
-const steps = Symbol("steps");
+const score = Symbol();
+const shown = Symbol();
+const boss = Symbol();
+const level = Symbol();
+const paused = Symbol();
+const map = Symbol();
+const steps = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -17,20 +17,12 @@ declare module "@adobe/ecs" {
         [boss]: { type: true };
     }
     interface Resources {
-        [level]: { type: number };
-        [paused]: { type: boolean };
+        [level]: { type: number; default: 1 };
+        [paused]: { type: boolean; default: false };
         [map]: { type: { readonly width: number } | null };
-        [steps]: { type: number };
+        [steps]: { type: number; default: 0 };
     }
 }
-
-Component.register(score, { type: { type: "number" } });
-Component.register(shown, { type: { type: "number" } });
-Component.register(boss, { type: { const: true } });
-Resource.register(level, { type: { type: "number", default: 1 } });
-Resource.register(paused, { type: { type: "boolean", default: false } });
-Resource.register(map, { type: { anyOf: [{ type: "object", properties: { width: { type: "number" } } }, { type: "null" }] } });
-Resource.register(steps, { type: { type: "number", default: 0 } });
 
 // A resource in changed passes the first run and each run after it changes: no run-once flag needed.
 const load = System.create({ resources: { read: [level], changed: [level] } }, ({ resources, commands }) => {

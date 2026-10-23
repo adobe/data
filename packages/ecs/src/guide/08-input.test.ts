@@ -1,16 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Entity, System, World } from "../index.js";
+import { Entity, System, World } from "../index.js";
 
-const health = Symbol("health");
+const health = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
         [health]: { type: number };
     }
 }
-
-Component.register(health, { type: { type: "number" } });
 
 let player = Entity.none;
 const spawn = System.create(({ commands }) => { player = commands.spawn([health])({ [health]: 10 }); });

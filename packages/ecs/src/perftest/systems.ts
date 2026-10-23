@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../interface/component/component.js";
 import { always } from "../interface/resources/always.js";
 import { eachTick, ticksAfter } from "./observer.js";
 import { System } from "../interface/system/system.js";
@@ -16,7 +15,6 @@ declare module "@adobe/ecs" {
         [level]: { type: number };
     }
 }
-Component.register(level, { type: { type: "number" } });
 
 /** Entities the added systems read. */
 const entities = 100;

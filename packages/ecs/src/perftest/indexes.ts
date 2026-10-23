@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../interface/component/component.js";
 import { Entity } from "../interface/entity/entity.js";
 import { Index } from "../interface/indexes/index-type.js";
 import { workers } from "../interface/resources/workers.js";
@@ -8,6 +7,7 @@ import type { World } from "../interface/world/world.js";
 import { createWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
 import { fastest } from "./suite.js";
+import type { U32, Vec3 } from "../interface/math/index.js";
 
 // Benchmarks of indexes: keeping them current, and looking up through them.
 
@@ -20,22 +20,15 @@ const place = Symbol("indexes/place");
 const cell = Symbol("indexes/cell");
 declare module "@adobe/ecs" {
     export interface Components {
-        [key]: { type: number };
+        [key]: { type: U32 };
         [amount]: { type: number };
         [marked]: { type: true };
-        [serial]: { type: number };
+        [serial]: { type: U32 };
         [parent]: { type: Entity };
-        [place]: { type: readonly [number, number, number] };
-        [cell]: { type: readonly [number, number, number] };
+        [place]: { type: Vec3 };
+        [cell]: { type: Vec3.I32 };
     }
 }
-Component.register(key, { type: { type: "integer", minimum: 0, maximum: 0x7FFFFFFF } });
-Component.register(amount, { type: { type: "number" } });
-Component.register(marked, { type: { const: true } });
-Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 0x7FFFFFFF } });
-Component.register(parent, { type: Entity.schema });
-Component.register(place, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
-Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -0x80000000, maximum: 0x7FFFFFFF }, minItems: 3, maxItems: 3 } });
 
 const million = 1_000_000;
 
@@ -92,7 +85,6 @@ declare module "@adobe/ecs" {
         [idleKey]: { type: number };
     }
 }
-Component.register(idleKey, { type: { type: "number" } });
 
 /** Unique serials among `unique lookup 1M`'s entities. */
 const bySerial = Index.create({ name: "indexes/bySerial", key: [serial], unique: true, components: { has: [amount] } });
@@ -266,7 +258,6 @@ declare module "@adobe/ecs" {
         [tagged]: { type: true };
     }
 }
-Component.register(tagged, { type: { const: true } });
 const untagged = Index.create({ name: "indexes/untagged", key: [], components: { has: [amount], not: [tagged] } });
 const seedAmounts = System.create({ name: "indexes/seedAmounts" }, ({ commands }) => {
     for (let i = 0; i < million; i++) {
@@ -311,7 +302,6 @@ declare module "@adobe/ecs" {
         [flag]: { type: boolean };
     }
 }
-Component.register(flag, { type: { type: "boolean" } });
 const byFlag = Index.create({ name: "indexes/byFlag", key: [flag] });
 const seedFlags = System.create({ name: "indexes/seedFlags" }, ({ commands }) => {
     for (let i = 0; i < flagged; i++) commands.spawn([flag])({ [flag]: i % 2 === 0 });

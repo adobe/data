@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
@@ -9,6 +8,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
+import type { U32 } from "../../interface/math/index.js";
 
 const rank = Symbol("indexOrderTest/rank");
 const lane = Symbol("indexOrderTest/lane");
@@ -19,17 +19,12 @@ const marker = Symbol("indexOrderTest/marker");
 declare module "@adobe/ecs" {
     interface Components {
         [rank]: { type: number };
-        [lane]: { type: number };
+        [lane]: { type: U32 };
         [weight]: { type: number };
         [extra]: { type: true };
         [marker]: { type: number };
     }
 }
-Component.register(rank, { type: { type: "number" } });
-Component.register(lane, { type: { type: "integer", minimum: 0, maximum: 100 } });
-Component.register(weight, { type: { type: "number" } });
-Component.register(extra, { type: { const: true } });
-Component.register(marker, { type: { type: "number" } });
 
 /** By lane, then rank, of the entities that have a weight. */
 const ranked = Index.create({ name: "indexOrderTest/ranked", key: [lane, rank], sorted: true, components: { has: [weight] } });

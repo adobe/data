@@ -194,3 +194,6 @@ export const typesFileOf = (file: string): string => {
     const declarations = path.replace(/\.([cm]?)js$/, ".d.$1ts");
     return declarations !== path && existsSync(declarations) ? declarations : path;
 };
+
+/** Whether a file is part of a copy of the package: its own sources and builds. */
+export const isInPackageCopy = (file: string): boolean => pathInCopy(fileOf(file)) !== null;

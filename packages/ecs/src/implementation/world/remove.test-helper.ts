@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
+import type { Schema } from "../../interface/schema/schema.js";
 
 // Keys and systems both threads of the removal tests import: systems on thread "removeTest", which a joined thread
 // fills, the first of each pair removing the second from the task they run in.
@@ -14,17 +14,14 @@ declare module "@adobe/ecs" {
         removeTest: true;
     }
     export interface Resources {
-        [mark]: { type: { readonly text: string }; thread: "removeTest" };
-        [pause]: { type: number };
-        [secondRuns]: { type: number };
+        [mark]: { type: { readonly text: string }; thread: "removeTest"; default: { text: "m" } };
+        [pause]: { type: number; default: 0 };
+        [secondRuns]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
     }
 }
 /** An object resource of the thread, which places the systems reading it there. */
-Resource.register(mark, { type: { type: "object", properties: { text: { type: "string" } }, default: { text: "m" } }, thread: "removeTest" });
 /** How long, in milliseconds, `first` and `firstTail` spin before they return. */
-Resource.register(pause, { type: { type: "number", default: 0 } });
 /** How many times `second` ran, wherever it ran. */
-Resource.register(secondRuns, { type: { type: "integer", default: 0 } });
 
 /** How many times each system's body was called on this thread. */
 export const calls = { first: 0, second: 0, firstTail: 0, secondTail: 0 };

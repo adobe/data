@@ -1,14 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component, Finalizer, Index, Resource, System } from "../../../../index.js";
+import { Finalizer, Index, System } from "../../../../index.js";
 import { attach } from "../../shared/attach.js";
 import { done, label, order, todo } from "./data.js";
 import { TodoList } from "./elements/todo-list.js";
 import { TodoRow } from "./elements/todo-row.js";
 
 /** The row showing a todo. */
-export const row = Symbol("row");
+export const row = Symbol();
 /** The page's list, which rows are placed in; null until the page provides it. */
-export const list = Symbol("list");
+export const list = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -18,9 +18,6 @@ declare module "@adobe/ecs" {
         [list]: { type: TodoList | null; thread: "main" };
     }
 }
-
-Component.register(row, { thread: "main" });
-Resource.register(list, { thread: "main" });
 
 /** Todos with rows, in list order. */
 const placed = Index.create({ name: "todos/placed", key: [order], sorted: true, components: { has: [todo, row] } });

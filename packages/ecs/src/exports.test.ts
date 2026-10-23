@@ -29,16 +29,13 @@ const install = (): void => {
 };
 
 const consumer = `
-import { Archetype, Component, Index, Rule, System, World, gpuDevice, workers } from "@adobe/ecs";
+import { Archetype, Index, Rule, System, World, gpuDevice, workers } from "@adobe/ecs";
 export const position = Symbol("exportsTest/position");
 export const element = Symbol("exportsTest/element");
 export const shown = Symbol("exportsTest/shown");
 declare module "@adobe/ecs" {
     interface Components { [position]: { type: number }; [element]: { type: HTMLElement; thread: "main" }; [shown]: { type: true; derived: true } }
 }
-Component.register(position, { type: { type: "number" } });
-Component.register(element, { thread: "main" });
-Component.register(shown, { type: { const: true }, derived: true });
 export const Placed = Archetype.create([position, element]);
 export const showing = Rule.create({ components: { has: [element] }, derive: [shown] });
 export const move = System.create({ name: "exportsTest/move", components: { write: [position] } }, row => { row[position] += 1; });
@@ -95,26 +92,13 @@ const compile = (source: string): { readonly messages: string[] } => {
     return { messages: messages([...ts.getPreEmitDiagnostics(program), ...result.diagnostics]) };
 };
 
-/** A consumer that registers a symbol-keyed component beside the augmentation given. */
-const stringKeyed = (augmentation: string, registration = ""): string => `
-import { Component, Trait } from "@adobe/ecs";
-export const keyed = Symbol("exportsTest/keyed");
-declare module "@adobe/ecs" {
-    interface Components { [keyed]: { type: number } }
-    ${augmentation}
-}
-Component.register(keyed, { type: { type: "number" } });
-${registration}
-`;
-
 /** A consumer with a system whose declaration lists a key in both read and write, and composites of conflicting inputs. */
 const misdeclared = `
-import { Component, System } from "@adobe/ecs";
+import { System } from "@adobe/ecs";
 export const health = Symbol("exportsTest/health");
 declare module "@adobe/ecs" {
     interface Components { [health]: { type: number } }
 }
-Component.register(health, { type: { type: "number" } });
 export const both = System.create({ components: { read: [health], write: [health] } }, () => {});
 const near = System.create({}, (_context, input: { readonly distance: number }) => { void input; });
 const far = System.create({}, (_context, input: { readonly distance: string }) => { void input; });
@@ -150,16 +134,6 @@ describe("package exports", () => {
         expect(reported.some(message => message.includes("No overload matches"))).toBe(false);
         expect(reported.filter(message => message.includes(`has a different type in another member of this composite.`))).toHaveLength(4);
         expect(reported.some(message => message.startsWith("Type '[unique symbol]' is not assignable"))).toBe(true);
-    }, 60_000);
-    it("fail every registration to compile while a component, resource or trait is keyed by a string, naming the keys", () => {
-        expect(compile(stringKeyed(`interface Components { "exportsTest/named": { type: number } }`)).messages.join("\n"))
-            .toContain(`'{ readonly "component keys must be symbols": "exportsTest/named"; }'`);
-        expect(compile(stringKeyed(`interface Resources { "exportsTest/time": { type: number } }`)).messages.join("\n"))
-            .toContain(`'{ readonly "resource keys must be symbols": "exportsTest/time"; }'`);
-        const trait = compile(stringKeyed(`interface Traits<N> { readonly persisted: true }`, `Trait.register("persisted");`)).messages.join("\n");
-        expect(trait).toContain(`'{ readonly "trait keys must be symbols": "persisted"; }'`);
-        // Registration takes only symbol keys, so a string-keyed trait can't be registered either.
-        expect(trait).toContain(`Argument of type '"persisted"' is not assignable`);
     }, 60_000);
 });
 

@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
@@ -26,12 +25,6 @@ declare module "@adobe/ecs" {
         [banned]: { type: true };
     }
 }
-Component.register(weight, { type: { type: "number" } });
-Component.register(mark, { type: { type: "number" } });
-Component.register(follows, { type: Entity.schema });
-Component.register(kernelSeen, { type: { type: "number" } });
-Component.register(plainSeen, { type: { type: "number" } });
-Component.register(banned, { type: { const: true } });
 
 /**
  * Counts, in base 4 by run, what the lookups gave the entity a row follows: 0 not found, 1 unchanged, 2 changed, and

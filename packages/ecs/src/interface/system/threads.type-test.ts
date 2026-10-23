@@ -34,14 +34,6 @@ declare module '@adobe/ecs' {
         [time]: { type: number };
     }
 }
-Resource.register(settings, { type: { anyOf: [{ type: "object", properties: { name: { type: "string" } } }, { type: "null" }], default: null } });
-Component.register(node, { thread: "main" });
-Component.register(label, { type: { type: "string" } });
-Component.register(audio, { thread: "threadsTypeTest" });
-Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-Component.register(tags, { type: { type: "array", items: { type: "string" } } });
-Resource.register(document, { thread: "main" });
-Resource.register(time, { type: { type: "number", default: 0 } });
 
 // A system runs on the thread of the object components and resources it uses; strings and structs go with any.
 System.create({ name: "threadsTypeTest/render", components: { read: [position], write: [node] }, resources: { read: [time, document] } }, () => {});

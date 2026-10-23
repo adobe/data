@@ -23,9 +23,6 @@ declare module '@adobe/ecs' {
         [shared]: { type: true };
     }
 }
-Component.register(point, { type: { type: "object", properties: { x: { type: "number" } } } });
-Component.register(persistent, { type: { const: true } });
-Component.register(shared, { type: { const: true } });
 // Reading goes through observer systems: a world has no observers, and no synchronous reads.
 // @ts-expect-error no observe: observer systems read a world
 void world.observe;

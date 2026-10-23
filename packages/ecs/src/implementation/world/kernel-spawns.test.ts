@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Archetype } from "../../interface/archetype/archetype.js";
-import { Component } from "../../interface/component/component.js";
 import { System } from "../../interface/system/system.js";
 import { workers } from "../../interface/resources/workers.js";
 import { count, read, readEach, select } from "./reads.test-helper.js";
@@ -9,6 +8,7 @@ import { createWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import { retainedRuns } from "./reports.js";
 import { fillReports } from "./reports.test-helper.js";
+import type { F32, U32, Vec2 } from "../../interface/math/index.js";
 
 const index = Symbol("kernelSpawnsTest/index");
 const value = Symbol("kernelSpawnsTest/value");
@@ -20,23 +20,16 @@ const position = Symbol("kernelSpawnsTest/position");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [index]: { type: number };
-        [value]: { type: number };
-        [extra]: { type: number };
+        [index]: { type: U32 };
+        [value]: { type: F32 };
+        [extra]: { type: F32 };
         [flag]: { type: true };
         [made]: { type: true };
         [name]: { type: string | null };
-        [position]: { type: readonly [number, number] };
+        [position]: { type: Vec2 };
     }
 }
 
-Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(extra, { type: { type: "number", precision: 1 } });
-Component.register(flag, { type: { const: true } });
-Component.register(made, { type: { const: true } });
-Component.register(name, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Component.register(position, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } });
 
 const spawned = Archetype.create([value, made]);
 

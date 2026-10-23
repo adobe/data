@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Entity, Finalizer, Resource, Rule, System, World } from "../../index.js";
+import { Entity, Finalizer, Rule, type Schema, System, World } from "../../index.js";
 import { Observe } from "../../observe/index.js";
 import { createWorld } from "../index.js";
 
@@ -18,28 +18,16 @@ declare module "@adobe/ecs" {
         [meshSource]: { type: string };
         [hidden]: { type: true };
         /** The token of the slot's load; a new one each time the slot starts over. */
-        [meshSlot]: { type: number; derived: true };
+        [meshSlot]: { type: Schema.Type<{ type: "integer" }>; derived: true; default: 0 };
         /** The loaded mesh's handle, which exists only while its slot does. */
-        [meshReady]: { type: number; within: typeof meshSlot };
+        [meshReady]: { type: Schema.Type<{ type: "integer" }>; within: typeof meshSlot };
     }
     interface Resources {
-        [nextToken]: { type: number };
-        [requests]: { type: readonly { readonly entity: Entity; readonly token: number; readonly path: string }[] };
+        [nextToken]: { type: Schema.Type<{ type: "integer" }>; default: 1 };
+        [requests]: { type: Schema.Type<{ type: "array"; items: { type: "object"; properties: { entity: { type: "integer"; format: "entity" }; token: { type: "integer" }; path: { type: "string" } } } }>; default: [] };
     }
 }
 
-Component.register(meshSource, { type: { type: "string" } });
-Component.register(hidden, { type: { const: true } });
-Component.register(meshSlot, { type: { type: "integer", default: 0 }, derived: true });
-Component.register(meshReady, { type: { type: "integer" }, within: meshSlot });
-Resource.register(nextToken, { type: { type: "integer", default: 1 } });
-Resource.register(requests, {
-    type: {
-        type: "array",
-        items: { type: "object", properties: { entity: Entity.schema, token: { type: "integer" }, path: { type: "string" } } },
-        default: [],
-    },
-});
 
 /** Meshes loaded outside the world, by handle: as GPU buffers are. */
 const loaded = new Map<number, string>();

@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import { definitionOf } from "../../interface/registry/index.js";
@@ -31,13 +30,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(local, { type: { type: "number" } });
-Component.register(world, { type: { type: "number" } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(label, { type: { type: "string" } });
-Component.register(visible, { type: { type: "boolean" } });
-Component.register(shown, { type: { type: "boolean" } });
-Component.register(anchor, { type: { const: true } });
 
 const ran: string[] = [];
 const propagate = System.create({

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Resource, System, workers } from "../../index.js";
+import { System, workers } from "../../index.js";
 import { createWorld, join } from "./create.js";
 
 // Observer systems reading only resources on a joined thread, whose posts hold copies of what they read, with the world
@@ -11,15 +11,12 @@ const paused = Symbol("observerContainedTest/paused");
 const steps = Symbol("observerContainedTest/steps");
 declare module "@adobe/ecs" {
     interface Resources {
-        [wide]: { type: readonly [number, number, number, number, number, number, number, number, number, number, number, number] };
-        [paused]: { type: boolean };
-        [steps]: { type: number };
+        [wide]: { type: readonly [number, number, number, number, number, number, number, number, number, number, number, number]; default: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
+        [paused]: { type: boolean; default: false };
+        [steps]: { type: number; default: 0 };
     }
 }
 /** Twelve f64s: more than a post's block holds, so its posts copy them into a snapshot of their own. */
-Resource.register(wide, { type: { type: "array", items: { type: "number" }, minItems: 12, maxItems: 12, default: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] } });
-Resource.register(paused, { type: { type: "boolean", default: false } });
-Resource.register(steps, { type: { type: "number", default: 0 } });
 
 const widen = System.create({ name: "observerContainedTest/widen", resources: { write: [wide] } }, ({ resources }) => {
     const first = resources[wide][0] + 1;

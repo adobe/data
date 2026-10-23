@@ -601,7 +601,7 @@ export const createConverter = (host: TypeHost, root: string) => {
         return { anyOf: values.map(value => ({ const: value })) };
     };
 
-    return { convert, read, site, fail, typeNamed, constantNamed, valueOfType, valueOf, load };
+    return { convert, read, site, fail, constantNamed, valueOfType };
 };
 
 /** A name and the properties read from it, `Entity.none` as `["Entity", "none"]`; null for any other expression. */

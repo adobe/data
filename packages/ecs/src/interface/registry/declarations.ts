@@ -12,7 +12,7 @@ import { isTrait } from './traits.js';
  * Without `type`, the value isn't data. A resource's `default`, or a derived object's, is what it starts at, when its
  * schema has none.
  */
-export type AnyDeclaration = { readonly type?: Schema; readonly default?: unknown } & { readonly [T in TraitKey]?: unknown };
+export type AnyDeclaration = { readonly type?: Schema & { readonly default?: unknown }; readonly default?: unknown } & { readonly [T in TraitKey]?: unknown };
 
 /** The value schema of any registered component or resource, or undefined for a value that isn't data. */
 export const schemaOf = (key: unknown): Schema | undefined => declarationOf(key)?.type;
@@ -64,6 +64,8 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
         cycle.push(first);
     }
     if (declaration.derived !== undefined && kind !== "component") fail("only a component is derived.");
+    if (declaration.derived === true && declaration.within !== undefined) fail("a derived component's rule covers within.");
+    if (declaration.derived === true && declaration.reference !== undefined) fail("a rule can't set a derived component's target, so it's no reference.");
     if (declaration.derived === true && type !== undefined && !("default" in type || "const" in type || allowsNull(type))) {
         fail("a derived component's type has a default, which it starts at.");
     }

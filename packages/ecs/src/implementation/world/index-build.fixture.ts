@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { runReported } from "./reports.test-helper.js";
+import type { U32, Vec2 } from "../../interface/math/index.js";
 
 /** Scenarios of indexes built again across the pool, run built in node and from source in chromium. */
 
@@ -14,14 +14,11 @@ const weight = Symbol("indexBuildTest/weight");
 
 declare module "@adobe/ecs" {
     interface Components {
-        [cell]: { type: readonly [number, number] };
-        [serial]: { type: number };
+        [cell]: { type: Vec2.I32 };
+        [serial]: { type: U32 };
         [weight]: { type: number };
     }
 }
-Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
-Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 10000000 } });
-Component.register(weight, { type: { type: "number" } });
 
 const grid = Index.create({ name: "indexBuildTest/grid", key: [cell], components: { has: [weight] } });
 const serials = Index.create({ name: "indexBuildTest/serials", key: [serial], unique: true });

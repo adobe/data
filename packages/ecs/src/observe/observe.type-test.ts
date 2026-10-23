@@ -22,10 +22,6 @@ declare module '@adobe/ecs' {
         [time]: { type: number };
     }
 }
-Component.register(point, { type: { type: "object", properties: { x: { type: "number" } } } });
-Component.register(persistent, { type: { const: true } });
-Component.register(shared, { type: { const: true } });
-Resource.register(time, { type: { type: "number", default: 0 } });
 
 // The module's `Observe` has the shape of the package root's.
 check<Equal<Observe<number>, (notify: (value: number) => void) => () => void>>();

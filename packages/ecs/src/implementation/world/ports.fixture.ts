@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { Component } from "../../interface/component/component.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
@@ -17,7 +16,6 @@ declare module "@adobe/ecs" {
         [value]: { type: number };
     }
 }
-Component.register(value, { type: { type: "number" } });
 
 const seed = System.create({ name: "portsTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 100_000; i++) commands.spawn([value])({ [value]: i });

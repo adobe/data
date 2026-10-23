@@ -15,9 +15,6 @@ declare module "@adobe/ecs" {
         [scale]: { type: number };
     }
 }
-Component.register(position, { type: { type: "number" } });
-Component.register(velocity, { type: { type: "number" } });
-Resource.register(scale, { type: { type: "number", default: 0 } });
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 const expectType = <T extends true>(): T | undefined => undefined;

@@ -12,7 +12,6 @@ export { Resource } from './resource/resource.js';
 export { Rule } from './rule/rule.js';
 export type { Schema } from './schema/schema.js';
 export { System } from './system/system.js';
-export { Trait } from './trait/trait.js';
 export type { World } from './world/world.js';
 export type { Components } from './component/types.js';
 export type { Resources } from './resource/types.js';

@@ -1,15 +1,15 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component, Resource, System, Vec2, clock } from '../../index.js';
+import { clock, System, type U32, Vec2 } from '../../index.js';
 
 // The transfers sample's keys and systems, which every thread imports: the world, on a worker, draws sprites into the
 // canvas main moved to it, each with a texture a loader worker decoded and moved to it. Values move through runs whose
 // input holds them.
 
-export const texture = Symbol("transferSprites/texture");
-export const position = Symbol("transferSprites/position");
-export const velocity = Symbol("transferSprites/velocity");
-export const surface = Symbol("transferSprites/surface");
-export const stats = Symbol("transferSprites/stats");
+export const texture = Symbol();
+export const position = Symbol();
+export const velocity = Symbol();
+export const surface = Symbol();
+export const stats = Symbol();
 
 declare module '@adobe/ecs' {
     interface Components {
@@ -19,20 +19,13 @@ declare module '@adobe/ecs' {
     }
     interface Resources {
         [surface]: { type: OffscreenCanvas | null; transfer: true };
-        [stats]: { type: { readonly sprites: number; readonly frames: number } };
+        [stats]: { type: { readonly sprites: U32; readonly frames: U32 }; default: { sprites: 0; frames: 0 } };
     }
 }
 
 /** A decoded texture, moved to the world's thread, where sprites are drawn. */
-Component.register(texture, { transfer: true });
 /** In pixels, and pixels per second. */
-Component.register(position, { type: Vec2.schema });
-Component.register(velocity, { type: Vec2.schema });
 /** The canvas main moved to the world's thread. */
-Resource.register(surface, { transfer: true });
-Resource.register(stats, {
-    type: { type: "object", properties: { sprites: { type: "integer" }, frames: { type: "integer" } }, default: { sprites: 0, frames: 0 } },
-});
 
 /** From main: the canvas the world draws into. */
 export const attachSurface = System.create({ name: "transferSprites/attachSurface", resources: { write: [surface] } }, ({ resources }, input: { readonly canvas: OffscreenCanvas }) => {

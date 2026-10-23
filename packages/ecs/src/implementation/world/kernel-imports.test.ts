@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Entity, System, Vec3, World } from "../../index.js";
+import { Entity, System, Vec3, World } from "../../index.js";
 import { Observe } from "../../observe/index.js";
 import { position, spark, sparks } from "./kernel-imports-sparks.test-helper.js";
 import { steer } from "./kernel-imports-steer.test-helper.js";
@@ -17,8 +17,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(velocity, { type: Vec3.schema });
-Component.register(target, { type: Entity.schema });
 
 const spawn = System.create({ name: "kernelImports/spawn" }, ({ commands }) => {
     const leader = commands.spawn([position, velocity])({ [position]: [10, 0, 0], [velocity]: [0, 0, 0] });

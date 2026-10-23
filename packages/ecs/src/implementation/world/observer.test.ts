@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component, Index, Report, Resource, System, workers } from "../../index.js";
+import { Index, Report, System, workers } from "../../index.js";
 import { isObserver, requireDefinition } from "../../interface/registry/index.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld } from "./create.js";
@@ -18,12 +18,9 @@ declare module "@adobe/ecs" {
         [cell]: { type: number };
     }
     interface Resources {
-        [level]: { type: number };
+        [level]: { type: number; default: 0 };
     }
 }
-Component.register(amount, { type: { type: "number" } });
-Component.register(cell, { type: { type: "number" } });
-Resource.register(level, { type: { type: "number", default: 0 } });
 
 const byCell = Index.create({ name: "observerTest/byCell", key: [cell] });
 

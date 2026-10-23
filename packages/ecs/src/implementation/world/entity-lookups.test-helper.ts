@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { fillReports } from "./reports.test-helper.js";
+import type { F32 } from "../../interface/math/index.js";
 
 // Lookups by entity with `changed`, where systems run: probes on the world's thread, and on thread
 // "entityLookupsTest", which a joined thread fills, as they read a probe's object there.
@@ -19,20 +19,14 @@ declare module "@adobe/ecs" {
         entityLookupsTest: true;
     }
     export interface Components {
-        [value]: { type: number };
+        [value]: { type: F32 };
         [other]: { type: number };
         [tag]: { type: true };
         [extra]: { type: number };
         [target]: { type: Entity };
-        [label]: { type: { readonly text: string } | null; thread: "entityLookupsTest" };
+        [label]: { type: { readonly text: string } | null; thread: "entityLookupsTest"; default: { text: "probe" } };
     }
 }
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(other, { type: { type: "number" } });
-Component.register(tag, { type: { const: true } });
-Component.register(extra, { type: { type: "number" } });
-Component.register(target, { type: Entity.schema });
-Component.register(label, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: { text: "probe" } }, thread: "entityLookupsTest" });
 
 /**
  * What a probe saw of its target in one run: each lookup's `changed`, or null where it found nothing; the value it

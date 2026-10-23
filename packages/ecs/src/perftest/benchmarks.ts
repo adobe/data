@@ -9,6 +9,7 @@ import * as structural from "./structural.js";
 import { chain, churn, emit, failing, fastest, follow, highest, hits, idle, idles, idleObserver, index, indexSum, observe, poke, pokeCluster, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
 
 import type { Benchmark } from "./benchmark.js";
+import { retainedRuns } from "../implementation/world/reports.js";
 import { loopTickIdle, loopTicks, observerIdles } from "./loop.js";
 import { main, placed, pooled } from "./placed.js";
 import { wake } from "./wake.js";
@@ -51,14 +52,19 @@ const observed = async (world: World, writer: typeof poke | typeof pokeCluster):
     return best;
 };
 
-/** The fastest run of `measured` right after `before` runs, over `rounds` rounds after `warmup`. */
+/**
+ * The fastest run of `measured` right after `before` runs, over `rounds - warmup` rounds after a warmup of at least
+ * `warmup` rounds, and enough for the world to keep its full count of reports: until then each run spawns its own,
+ * which its sync point costs.
+ */
 const after = async (before: () => Promise<unknown>, measured: () => Promise<unknown>, rounds = 100, warmup = 20): Promise<number> => {
     let best = Infinity;
-    for (let i = 0; i < rounds; i++) {
+    const warm = Math.max(warmup, Math.ceil(retainedRuns / 2));
+    for (let i = 0; i < warm + rounds - warmup; i++) {
         await before();
         const start = performance.now();
         await measured();
-        if (i >= warmup) best = Math.min(best, performance.now() - start);
+        if (i >= warm) best = Math.min(best, performance.now() - start);
     }
     return best;
 };

@@ -471,7 +471,12 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
             Atomics.notify(control, done);
             continue;
         }
-        if (Atomics.load(control, epoch) !== message.epoch) return;
+        // Closed, it leaves once it ran this window's tasks: the pool posts a task before it closes the window, so a task
+        // posted since the check above is seen now, and runs above if it's this window's.
+        if (Atomics.load(control, epoch) !== message.epoch) {
+            if (next < Atomics.load(control, posted)) continue;
+            return;
+        }
         // Tiers follow each other closely, so spin briefly before paying for a blocking wait's wake-up.
         const deadline = performance.now() + 0.05;
         while (Atomics.load(control, signal) === seen && performance.now() < deadline);

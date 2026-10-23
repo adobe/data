@@ -44,6 +44,11 @@ when a measured win conflicts with a style or design preference, take the win an
 row as low as it can be, and allocate nothing on those paths: reuse arrays, buffers and objects, share read-only
 empties, and avoid closures, spreads and awaits there. Measure changes with `pnpm perf` against the recorded baseline.
 
+## Pull requests
+
+Each PR costs a review, a merge and a publish, so keep one open PR at a time. Add new work and fixes to it as more
+commits; never open stacked or parallel PRs. Keep it rebased on main, with this package's version one above main's.
+
 ## Memory
 
 Decisions about working on this package live in `memory.md`; add new ones there.

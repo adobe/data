@@ -1,6 +1,6 @@
 # @adobe/ecs
 
-A data-oriented entity component system. Systems run on the main thread, on worker threads, as WASM kernels or on the GPU.
+A high-performance entity component system for real-time TypeScript apps on the web.
 
 ## Features
 

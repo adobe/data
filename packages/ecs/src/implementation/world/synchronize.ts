@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Views } from '../../interface/registry/layout.js';
 import { copyValue, ensureCapacity, swapRemove, writeF32, writeF32Lanes, writeF64, writeI32, writeU32, type Archetype, type Storage } from './archetype.js';
-import { chunkShift } from './kernel.js';
+import { blockShift, chunkShift } from './kernel.js';
 import { addCommand, clearBuffer, despawnCommand, endOf, referenceAt, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { readCell, writeCell } from './cells.js';
 import { commitBatches, commitStaged } from './batches.js';
@@ -282,10 +282,12 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
         if (storage.changed !== storage.added || starts) {
             storage.changed[toRow] = tick;
             storage.chunkChanged[toRow >> chunkShift] = tick;
+            storage.blockChanged[toRow >> blockShift] = tick;
         }
         if (starts) {
             storage.added[toRow] = tick;
             storage.chunkAdded[toRow >> chunkShift] = tick;
+            storage.blockAdded[toRow >> blockShift] = tick;
         }
     }
 };
@@ -298,6 +300,7 @@ export const writeDefault = (state: State, storage: Storage, row: number, tick: 
     if (!storage.ticked) return;
     storage.added[row] = storage.changed[row] = tick;
     storage.chunkAdded[row >> chunkShift] = storage.chunkChanged[row >> chunkShift] = tick;
+    storage.blockAdded[row >> blockShift] = storage.blockChanged[row >> blockShift] = tick;
 };
 
 /** Writes the values an entry's commands give into its row, in issue order. */
@@ -416,10 +419,13 @@ const copyColumn = (from: Storage, to: Storage, plan: Plan, order: Int32Array, f
         const changed = from.changed[fromRow];
         to.added[toRow] = added;
         to.changed[toRow] = changed;
-        // A chunk's tick is the newest of its rows, so a row moving in can raise it.
+        // A chunk's and a block's tick are the newest of their rows, so a row moving in can raise them.
         const chunk = toRow >> chunkShift;
         if (added > to.chunkAdded[chunk]) to.chunkAdded[chunk] = added;
         if (changed > to.chunkChanged[chunk]) to.chunkChanged[chunk] = changed;
+        const block = toRow >> blockShift;
+        if (added > to.blockAdded[block]) to.blockAdded[block] = added;
+        if (changed > to.blockChanged[block]) to.blockChanged[block] = changed;
     }
 };
 

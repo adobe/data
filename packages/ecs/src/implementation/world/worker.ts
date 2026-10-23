@@ -3,7 +3,7 @@ import { buildKernel, buildViews, phases, readPlan, runBuildStep } from './index
 import type { Entity } from '../../interface/entity/entity.js';
 import { createBlock, endBlock, locate, reserveFrom, tableLength, type Block } from './entities.js';
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
-import type { Kernel, KernelCommands, KernelModule } from './kernel.js';
+import { blockShift, chunkShift, type Kernel, type KernelCommands, type KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../interface/registry/layout.js';
 import { emptyViews } from './arrays.js';
 import { claimPiece } from './claims.js';
@@ -16,7 +16,7 @@ import { coveringBuffer, pageBytes, pagesWord } from './memory.js';
 import { endpointChannel, scopeChannel } from './port.js';
 import {
     archetypeField, capacityField, cursorField, entitiesVersionField, entitiesWord, freeCapacityField, freeField, generationField, linearFlag,
-    recordCapacity, recordEntities, recordStorages, recordVersion, recordWords, rowField, storageAdded, storageChanged, storageChunkAdded,
+    recordCapacity, recordEntities, recordStorages, recordVersion, recordWords, rowField, storageAdded, storageBlockAdded, storageBlockChanged, storageChanged, storageChunkAdded,
     storageChunkChanged, storageChunks, storageColumn, storageComponent, storageFlags, storageWords, tableLengthWord, tableOffsetWord, tickedFlag,
 } from './layout-directory.js';
 
@@ -27,6 +27,8 @@ type StorageViews = {
     readonly changed: Float64Array;
     readonly chunkAdded: Float64Array;
     readonly chunkChanged: Float64Array;
+    readonly blockAdded: Float64Array;
+    readonly blockChanged: Float64Array;
 };
 
 /** A worker's views of one archetype's columns, as of its record's `version`. */
@@ -161,6 +163,8 @@ const viewArchetype = (record: number, version: number): ArchetypeViews => {
             changed: ticked ? new Float64Array(memoryBuffer, words[base + storageChanged], capacity) : noTicks,
             chunkAdded: ticked ? new Float64Array(memoryBuffer, words[base + storageChunkAdded], words[base + storageChunks]) : noTicks,
             chunkChanged: ticked ? new Float64Array(memoryBuffer, words[base + storageChunkChanged], words[base + storageChunks]) : noTicks,
+            blockAdded: ticked ? new Float64Array(memoryBuffer, words[base + storageBlockAdded], words[base + storageChunks] << (chunkShift - blockShift)) : noTicks,
+            blockChanged: ticked ? new Float64Array(memoryBuffer, words[base + storageBlockChanged], words[base + storageChunks] << (chunkShift - blockShift)) : noTicks,
         });
     }
     return { version, entities: new Float64Array(memoryBuffer, words[record + recordEntities], capacity), storages };
@@ -248,15 +252,15 @@ const readerArchetype = (id: number) => {
 /** The one element a muted tick column's stores land on. */
 const mutedColumn = new Float64Array(1);
 
-/** A kernel's change filters in an archetype: `added` then `changed`, rows and chunks. */
+/** A kernel's change filters in an archetype: `added` then `changed`, rows, chunks and blocks. */
 const filtersOf = (loaded: LoadedKernel, archetype: ArchetypeViews): Filter[] => [
     ...loaded.setup.added.flatMap(id => {
         const storage = archetype.storages.get(id);
-        return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded }];
+        return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded, blocks: storage.blockAdded }];
     }),
     ...loaded.setup.changed.flatMap(id => {
         const storage = archetype.storages.get(id);
-        return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged }];
+        return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged, blocks: storage.blockChanged }];
     }),
 ];
 
@@ -268,12 +272,13 @@ const bind = (loaded: LoadedKernel, archetypeId: number, archetype: ArchetypeVie
         if (storage === undefined) throw new Error(`Archetype ${archetypeId} lacks component ${source.id}.`);
         if (source.kind === "changed") return storage.changed;
         if (source.kind === "chunks") return storage.chunkChanged;
+        if (source.kind === "blocks") return storage.blockChanged;
         const layout = layouts[source.id];
         if (layout.kind !== "linear") throw new Error(`Component ${source.id} isn't linear.`);
         return storage.views[layout.leaves[source.leaf].view];
     });
     const filters = filtersOf(loaded, archetype);
-    const addresses = [...columns.map(column => column.byteOffset), ...filters.map(filter => filter.ticks.byteOffset), ...filters.map(filter => filter.chunks.byteOffset)];
+    const addresses = [...columns.map(column => column.byteOffset), ...filters.map(filter => filter.ticks.byteOffset), ...filters.map(filter => filter.chunks.byteOffset), ...filters.map(filter => filter.blocks.byteOffset)];
     return { views: archetype, columns, filters, addresses };
 };
 

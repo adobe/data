@@ -70,7 +70,7 @@ type ThreadFinalizer = {
 
 /** A storage a stop list's column holds, for a row over its stops. */
 const columnStorage = (component: number, layout: Layout, views: RowStorage["views"], values: unknown[], strings: StringStore | null): FinalizedStorage => ({
-    component, layout, views, strings: layout.kind === "string" ? strings : null, values, ...writeOf(layout), ticked: false, added: noTicks, changed: noTicks, chunkAdded: noTicks, chunkChanged: noTicks, tags: noTags,
+    component, layout, views, strings: layout.kind === "string" ? strings : null, values, ...writeOf(layout), ticked: false, added: noTicks, changed: noTicks, chunkAdded: noTicks, chunkChanged: noTicks, blockAdded: noTicks, blockChanged: noTicks, tags: noTags,
 });
 
 /**

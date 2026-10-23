@@ -138,12 +138,14 @@ describe("generateWasm with SIMD", () => {
         const floats = columns.map((_, k) => new Float32Array(memory.buffer, bases[k], 512));
         const ticks = new Float64Array(memory.buffer, 4096 * 8, 64);
         const chunks = new Float64Array(memory.buffer, 4096 * 9, 4);
+        const blocks = new Float64Array(memory.buffer, 4096 * 10, 4);
         fill(floats, ticks);
         const runKernel: unknown = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
         if (typeof runKernel !== "function") throw new Error("no run export");
-        // f64 columns are ticks, then their chunks.
-        runKernel(0, rows, tick, -1, ...bases.map((base, k) => columns[k].view !== "f64" ? base : columns[k].component === -2 ? 4096 * 9 : 4096 * 8));
-        return { kernel, floats, ticks, chunks };
+        // f64 columns are ticks, then their chunks, then their blocks.
+        const tickBase = (component: number): number => component === -3 ? 4096 * 10 : component === -2 ? 4096 * 9 : 4096 * 8;
+        runKernel(0, rows, tick, -1, ...bases.map((base, k) => columns[k].view !== "f64" ? base : tickBase(columns[k].component)));
+        return { kernel, floats, ticks, chunks, blocks };
     };
     const column = (component: number, stride: number, offset: number): WasmColumn => ({ view: "f32", stride, offset, boolean: false, component });
     const read = (k: number): Expression => ({ kind: "column", column: k });
@@ -201,7 +203,7 @@ describe("generateWasm with SIMD", () => {
                         column: leaf,
                         value: add(add(local(leaf), { kind: "binary", operator: "*", left: local(leaves + leaf), right: { kind: "args", path: [] } }), { kind: "number", value: leaf + 1 }),
                     })),
-                    { kind: "stamp", column: 2 * leaves, chunks: 2 * leaves + 1 },
+                    { kind: "stamp", column: 2 * leaves, chunks: 2 * leaves + 1, blocks: 2 * leaves + 2 },
                 ],
             };
             const columns: WasmColumn[] = [
@@ -209,6 +211,7 @@ describe("generateWasm with SIMD", () => {
                 ...Array.from({ length: leaves }, (_, leaf) => column(1, stride, 4 * leaf)),
                 { view: "f64", stride: 8, offset: 0, boolean: false, component: -1 },
                 { view: "f64", stride: 8, offset: 0, boolean: false, component: -2 },
+                { view: "f64", stride: 8, offset: 0, boolean: false, component: -3 },
             ];
             const kernel = generateWasm(program, columns, () => "number");
             if (kernel === null) throw new Error("expected a kernel");
@@ -221,7 +224,7 @@ describe("generateWasm with SIMD", () => {
             const runKernel: unknown = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
             if (typeof runKernel !== "function") throw new Error("no run export");
             const [start, end] = [3, 22];
-            runKernel(start, end, 7, -1, ...columns.slice(0, leaves).map(() => 4096), ...columns.slice(0, leaves).map(() => 8192), 16384, 20480, 0.5);
+            runKernel(start, end, 7, -1, ...columns.slice(0, leaves).map(() => 4096), ...columns.slice(0, leaves).map(() => 8192), 16384, 20480, 24576, 0.5);
             const row = (index: number): number => Math.floor(index / leaves);
             expect([...p]).toEqual([...p].map((_, i) => row(i) >= start && row(i) < end ? i + (2 * i + 100) * 0.5 + (i % leaves) + 1 : i));
             expect([...ticks]).toEqual([...ticks].map((_, i) => i >= start && i < end ? 7 : 1));
@@ -230,11 +233,12 @@ describe("generateWasm with SIMD", () => {
 
     it("blends stores and tick stamps under an if, per lane", () => {
         const positive: Expression = { kind: "binary", operator: ">", left: read(0), right: { kind: "number", value: 0 } };
-        const program: Program = { locals: 0, body: [{ kind: "if", test: positive, consequent: [{ kind: "store", column: 1, value: read(0) }, { kind: "stamp", column: 2, chunks: 3 }], alternate: [] }] };
+        const program: Program = { locals: 0, body: [{ kind: "if", test: positive, consequent: [{ kind: "store", column: 1, value: read(0) }, { kind: "stamp", column: 2, chunks: 3, blocks: 4 }], alternate: [] }] };
         const ticksColumn: WasmColumn = { view: "f64", stride: 8, offset: 0, boolean: false, component: -1 };
         const chunksColumn: WasmColumn = { view: "f64", stride: 8, offset: 0, boolean: false, component: -2 };
+        const blocksColumn: WasmColumn = { view: "f64", stride: 8, offset: 0, boolean: false, component: -3 };
         const inputs = [1, -1, 2, -2, 0, 3, NaN, 4, -5, 6];
-        const { kernel, floats, ticks, chunks } = runVector(program, [column(0, 4, 0), column(1, 4, 0), ticksColumn, chunksColumn], ([input, out], tickValues) => {
+        const { kernel, floats, ticks, chunks, blocks } = runVector(program, [column(0, 4, 0), column(1, 4, 0), ticksColumn, chunksColumn, blocksColumn], ([input, out], tickValues) => {
             input.set(inputs);
             out.fill(-7);
             tickValues.fill(1);
@@ -243,6 +247,7 @@ describe("generateWasm with SIMD", () => {
         expect([...floats[1].subarray(0, 10)]).toEqual(inputs.map(x => x > 0 ? x : -7));
         expect([...ticks.subarray(0, 10)]).toEqual(inputs.map(x => x > 0 ? 7 : 1));
         expect(chunks[0]).toBe(7);
+        expect(blocks[0]).toBe(7);
     });
 
     it("stays scalar for operations without an exact f32x4 equivalent", () => {
@@ -253,7 +258,7 @@ describe("generateWasm with SIMD", () => {
 });
 
 describe("generateWasm with change filters", () => {
-    it("runs only rows with a newer tick, skipping chunks whose tick isn't newer", () => {
+    it("runs only rows with a newer tick, skipping chunks and blocks whose tick isn't newer", () => {
         for (const simd of [false, true]) {
             // out = in, for rows whose filter tick is newer than lastRun 5.
             const columns: WasmColumn[] = [{ view: "f32", stride: 4, offset: 0, boolean: false, component: 0 }, { view: "f32", stride: 4, offset: 0, boolean: false, component: 1 }];
@@ -266,46 +271,98 @@ describe("generateWasm with change filters", () => {
             const output = new Float32Array(memory.buffer, 16384, rows).fill(-1);
             const ticks = new Float64Array(memory.buffer, 32768, rows);
             const chunks = new Float64Array(memory.buffer, 65536, 3);
-            // Chunk 0's chunk tick is stale-new (8) but its rows are old; chunk 1 has three new rows; chunk 2 is old throughout.
+            const blocks = new Float64Array(memory.buffer, 66560, 48);
+            // Chunk 0's chunk and block ticks are stale-new (8) but its rows are old; chunk 1 has three new rows in
+            // blocks marked new; chunk 2 is old throughout.
             chunks.set([8, 9, 3]);
-            for (const row of [1030, 1500, 2047]) ticks[row] = 9;
+            blocks.fill(8, 0, 16).fill(3, 16);
+            for (const row of [1030, 1500, 2047]) {
+                ticks[row] = 9;
+                blocks[row >> 6] = 9;
+            }
+            ticks[1100] = 9;
             ticks[2050] = 9;
             const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
             if (typeof run !== "function") throw new Error("no run export");
-            run(0, rows, 10, 5, 0, 16384, 32768, 65536);
+            run(0, rows, 10, 5, 0, 16384, 32768, 65536, 66560);
             const written = [...output].flatMap((value, row) => value === -1 ? [] : [row]);
-            // Row 2050 has a new tick, but its chunk says nothing in it changed, so it's skipped by design.
+            // Rows 1100 and 2050 have new ticks, but their block or chunk says nothing in it changed, so they're skipped by design.
             expect([simd, kernel.vectorized, written]).toEqual([simd, false, [1030, 1500, 2047]]);
+            // From a start inside a block, that block's tick is still checked.
+            output.fill(-1);
+            run(1029, 1040, 10, 5, 0, 16384, 32768, 65536, 66560);
+            expect([...output].flatMap((value, row) => value === -1 ? [] : [row])).toEqual([1030]);
             // lastRun below 0 passes everything.
             output.fill(-1);
-            run(0, rows, 10, -1, 0, 16384, 32768, 65536);
+            run(0, rows, 10, -1, 0, 16384, 32768, 65536, 66560);
             expect(output.every((value, row) => value === row)).toBe(true);
         }
     });
 });
 
-describe("generateWasm chunk stamps", () => {
+describe("generateWasm with several change filters", () => {
+    it("runs rows either filter passes, a chunk with most blocks passing as one run", () => {
+        for (const simd of [false, true]) {
+            const columns: WasmColumn[] = [{ view: "f32", stride: 4, offset: 0, boolean: false, component: 0 }, { view: "f32", stride: 4, offset: 0, boolean: false, component: 1 }];
+            const kernel = generateWasm({ locals: 0, body: [{ kind: "store", column: 1, value: { kind: "column", column: 0 } }] }, columns, () => "number", simd, 2);
+            if (kernel === null) throw new Error("expected a kernel");
+            const rows = 2100;
+            const memory = new WebAssembly.Memory({ initial: 4, maximum: 65536, shared: true });
+            const input = new Float32Array(memory.buffer, 0, rows);
+            for (let row = 0; row < rows; row++) input[row] = row;
+            const output = new Float32Array(memory.buffer, 16384, rows).fill(-1);
+            // Each filter's rows, chunks and blocks.
+            const ticks = [new Float64Array(memory.buffer, 32768, rows).fill(1), new Float64Array(memory.buffer, 65536 + 4096, rows).fill(1)];
+            const chunks = [new Float64Array(memory.buffer, 65536, 3).fill(1), new Float64Array(memory.buffer, 65536 + 64, 3).fill(1)];
+            const blocks = [new Float64Array(memory.buffer, 65536 + 1024, 48).fill(1), new Float64Array(memory.buffer, 65536 + 2048, 48).fill(1)];
+            const mark = (filter: number, row: number): void => {
+                ticks[filter][row] = chunks[filter][row >> 10] = blocks[filter][row >> 6] = 9;
+            };
+            // Chunk 0: the first filter marks ten blocks of sixteen, so the chunk runs whole, and a row in an
+            // unmarked block with a new tick runs too. Chunk 1: each filter marks a row; a new tick in an unmarked
+            // block is skipped.
+            for (let block = 0; block < 10; block++) mark(0, block * 64 + 1);
+            ticks[1][900] = 9;
+            chunks[1][0] = 9;
+            mark(0, 1030);
+            mark(1, 1500);
+            ticks[1][1700] = 9;
+            const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+            if (typeof run !== "function") throw new Error("no run export");
+            run(0, rows, 10, 5, 0, 16384, 32768, 65536 + 4096, 65536, 65536 + 64, 65536 + 1024, 65536 + 2048);
+            const written = [...output].flatMap((value, row) => value === -1 ? [] : [row]);
+            expect([simd, written]).toEqual([simd, [...Array.from({ length: 10 }, (_, block) => block * 64 + 1), 900, 1030, 1500]]);
+        }
+    });
+});
+
+describe("generateWasm chunk and block stamps", () => {
     const columns: WasmColumn[] = [
         { view: "f32", stride: 4, offset: 0, boolean: false, component: 0 },
         { view: "f64", stride: 8, offset: 0, boolean: false, component: -1 },
         { view: "f64", stride: 8, offset: 0, boolean: false, component: -2 },
+        { view: "f64", stride: 8, offset: 0, boolean: false, component: -3 },
     ];
-    const run = (program: Program, start: number, end: number): number[] => {
+    /** The blocks whose tick is 7. */
+    const stampedBlocks = (blocks: Float64Array): number[] => [...blocks].flatMap((tick, block) => tick === 7 ? [block] : []);
+    const run = (program: Program, start: number, end: number): { readonly chunks: number[]; readonly blocks: number[] } => {
         const kernel = generateWasm(program, columns, () => "number");
         if (kernel === null) throw new Error("expected a kernel");
         const memory = new WebAssembly.Memory({ initial: 4, maximum: 65536, shared: true });
         new Float32Array(memory.buffer, 0, 4096).fill(1);
         const chunks = new Float64Array(memory.buffer, 65536, 4);
+        const blocks = new Float64Array(memory.buffer, 66560, 64);
         const runKernel = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
         if (typeof runKernel !== "function") throw new Error("no run export");
-        runKernel(start, end, 7, -1, 0, 32768, 65536);
-        return [...chunks];
+        runKernel(start, end, 7, -1, 0, 32768, 65536, 66560);
+        return { chunks: [...chunks], blocks: stampedBlocks(blocks) };
     };
-    const stamp: Program.Statement = { kind: "stamp", column: 1, chunks: 2 };
+    const stamp: Program.Statement = { kind: "stamp", column: 1, chunks: 2, blocks: 3 };
+    const range = (first: number, last: number): number[] => Array.from({ length: last - first + 1 }, (_, k) => first + k);
 
-    it("stamps every chunk of the range once when every row stamps", () => {
-        expect(run({ locals: 0, body: [stamp] }, 1000, 2100)).toEqual([7, 7, 7, 0]);
-        expect(run({ locals: 0, body: [stamp] }, 5, 5)).toEqual([0, 0, 0, 0]);
+    it("stamps every chunk and block of the range once when every row stamps", () => {
+        expect(run({ locals: 0, body: [stamp] }, 1000, 2100)).toEqual({ chunks: [7, 7, 7, 0], blocks: range(1000 >> 6, 2099 >> 6) });
+        expect(run({ locals: 0, body: [stamp] }, 5, 5)).toEqual({ chunks: [0, 0, 0, 0], blocks: [] });
     });
 
     it("stamps per row when a row can end before its stamp", () => {
@@ -323,10 +380,12 @@ describe("generateWasm chunk stamps", () => {
         const values = new Float32Array(memory.buffer, 0, 4096).fill(1);
         values.fill(2, 1024, 2048);
         const chunks = new Float64Array(memory.buffer, 65536, 4);
+        const blocks = new Float64Array(memory.buffer, 66560, 64);
         const runKernel = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
         if (typeof runKernel !== "function") throw new Error("no run export");
-        runKernel(0, 3000, 7, -1, 0, 32768, 65536);
+        runKernel(0, 3000, 7, -1, 0, 32768, 65536, 66560);
         expect([...chunks]).toEqual([7, 0, 7, 0]);
+        expect(stampedBlocks(blocks)).toEqual([...range(0, 15), ...range(32, 2999 >> 6)]);
     });
 });
 

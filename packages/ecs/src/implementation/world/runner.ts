@@ -379,7 +379,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     };
 
     /**
-     * By archetype: its change filters, `added` then `changed`, rows and chunks, kept until its arrays are replaced;
+     * By archetype: its change filters, `added` then `changed`, rows, chunks and blocks, kept until its arrays are replaced;
      * and the WASM addresses of its columns and filters, for the WASM kernel `addressed` they were taken for, since a
      * kernel loaded again may stamp a tick column the last one muted.
      */
@@ -392,11 +392,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const filters = addedIds.length + changedIds.length === 0 ? noFilters : [
             ...addedIds.flatMap(id => {
                 const storage = archetype.storageById[id];
-                return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded }];
+                return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded, blocks: storage.blockAdded }];
             }),
             ...changedIds.flatMap(id => {
                 const storage = archetype.storageById[id];
-                return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged }];
+                return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged, blocks: storage.blockChanged }];
             }),
         ];
         const entry: Filtered = { version: archetype.version, filters, addresses: noAddresses, addressed: null };
@@ -456,6 +456,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 ...bound.columnsOf(archetype).map(column => column.byteOffset),
                 ...entry.filters.map(filter => filter.ticks.byteOffset),
                 ...entry.filters.map(filter => filter.chunks.byteOffset),
+                ...entry.filters.map(filter => filter.blocks.byteOffset),
             ];
             entry.addressed = bound.wasm;
         }

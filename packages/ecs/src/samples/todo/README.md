@@ -144,16 +144,19 @@ What the current API does and doesn't offer the DOM path, each with the change i
   0.02–0.10 ms, which is the CPU coming back from idle, not the ECS. Toggling one todo of 10K took 62 µs, of which
   the profile gave 64% to keeping `completion/byDone`'s two buckets of 5K entries in entity order, which the next
   finding removes, and 16% to `forEachPassingRange` (`ranges.ts`), the change filters scanning the 1024 row ticks of
-  the one chunk that changed, for each observer system with `changed`. The rest is the sync point, the observer pass
-  and the DOM writes, about 13 µs.
+  the one chunk that changed, for each observer system with `changed`, which the finding after it removes. The rest is
+  the sync point, the observer pass and the DOM writes, about 13 µs.
 - **A low-cardinality hash index costs O(1) amortized per change:** toggling one todo moves it between `byDone`'s
   buckets, which are left unsorted, its entry leaving a hole in one and joining a tail of the other, until a list is
   read by position (`index-hash.ts`). In node, a toggle and a run reading both buckets' lengths, as the summary does,
   take 5.5, 5.3 and 5.5 µs at 1K, 10K and 100K todos (`bucket move … length`), against 9.1, 64 and 423 µs with every
   bucket kept in entity order; reading each bucket's first rows after it, as `clearCompleted` reads the done ones,
   sorts both buckets first: 6.2, 12.7 and 69 µs (`bucket move … in order`), against 9.4, 65 and 418.
-- **A change filter scans a whole chunk for one changed row,** 1024 ticks for each system with `changed`. *Proposal:*
-  a second level of ticks per 32 or 64 rows, or a list of the rows changed per chunk.
+- **A change filter finds one changed row by its block:** it reads the chunk's sixteen block ticks and the 64 row ticks
+  of the block that changed, not the chunk's 1024. In a profile of 40,000 toggles of one todo of 10K, the change
+  filters take 5.0% of samples, against 6.9% scanning the chunk, most of it the chunk checks of observer systems
+  filtering on two or three components; in node, eight systems filtering on one changed row of 100K take 5.0 µs a
+  run, against 34.9 µs scanning the chunk (`changed one 100K`). *No change needed.*
 - **Nothing awaits the next tick.** Tests watch `clock` changes through an observer, after a first run that passes it
   regardless, and a world ticks only while a system that isn't an observer is added. *Proposal:* none for consumers; a
   test helper in `src/observe` would do.

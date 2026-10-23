@@ -30,7 +30,7 @@ import { createThreadFinalizers } from './thread-finalizers.js';
 import { createThreadIndex, type ThreadIndex } from './thread-indexes.js';
 import type { EntityViews, ThreadArchetype, ThreadDirectory, ThreadStorage } from './thread-directory.js';
 import { keptSorted } from './index-keys.js';
-import { chunkShift } from './kernel.js';
+import { blockShift, chunkShift } from './kernel.js';
 import {
     doneWord, endWord, headExecuted, headRan, progressWord, snapshotFlagsWord, snapshotLayout, snapshotOffsetWord, snapshotResourceArchetypeWord,
     snapshotResourceRowWord, snapshotRowsWord, snapshotCapacityWord, snapshotted, tailBlockWords, tailChunk, waitingWord,
@@ -764,11 +764,11 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         const filters: Filter[] = [];
         for (const id of addedIds) {
             const storage = archetype.storageById[id];
-            if (storage !== undefined) filters.push({ ticks: storage.added, chunks: storage.chunkAdded });
+            if (storage !== undefined) filters.push({ ticks: storage.added, chunks: storage.chunkAdded, blocks: storage.blockAdded });
         }
         for (const id of changedIds) {
             const storage = archetype.storageById[id];
-            if (storage !== undefined) filters.push({ ticks: storage.changed, chunks: storage.chunkChanged });
+            if (storage !== undefined) filters.push({ ticks: storage.changed, chunks: storage.chunkChanged, blocks: storage.blockChanged });
         }
         filterCache.set(archetype.id, { archetype, filters });
         return filters;
@@ -1109,10 +1109,12 @@ type Columned = Extract<Layout, { readonly stride: number }>;
 /** A storage over a snapshot's column, or of values only this thread holds, with ticks of its own for `ticked` rows. */
 const localStorage = (component: number, layout: Layout, views: Views, values: unknown[], ticked: number, strings: StringStore): ThreadStorage => {
     const chunks = ticked === 0 ? 0 : (ticked >> chunkShift) + 1;
+    const blocks = ticked === 0 ? 0 : (ticked >> blockShift) + 1;
     return {
         component, layout, views, strings: layout.kind === "string" ? strings : null, values, ...writeOf(layout), tags: noTags, ticked: ticked > 0,
         added: ticked === 0 ? noTicks : new Float64Array(ticked), changed: ticked === 0 ? noTicks : new Float64Array(ticked),
         chunkAdded: chunks === 0 ? noTicks : new Float64Array(chunks), chunkChanged: chunks === 0 ? noTicks : new Float64Array(chunks),
+        blockAdded: blocks === 0 ? noTicks : new Float64Array(blocks), blockChanged: blocks === 0 ? noTicks : new Float64Array(blocks),
     };
 };
 

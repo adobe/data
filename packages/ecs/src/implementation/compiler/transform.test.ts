@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { parseAst } from 'vite';
-import { chunkShift, type KernelDescription, type KernelModule, type Program } from '../world/kernel.js';
+import { blockShift, chunkShift, type KernelDescription, type KernelModule, type Program } from '../world/kernel.js';
 import { transformKernels } from './transform.js';
 import { createLinker, type LinkHost } from './link.js';
 import { ownCopy } from './paths.js';
@@ -196,8 +196,10 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                 case "stamp": {
                     const column = columns[statement.column];
                     const chunks = columns[statement.chunks];
+                    const blocks = columns[statement.blocks];
                     if (column) column[at(statement.column, row)] = tick;
                     if (chunks) chunks[row >> chunkShift] = tick;
+                    if (blocks) blocks[row >> blockShift] = tick;
                     return normal;
                 }
                 case "if": return execute(evaluate(statement.test) ? statement.consequent : statement.alternate);
@@ -248,6 +250,7 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
             if (column.kind === "entity") return Float64Array.from({ length: rows }, (_, row) => 100 + row);
             if (column.kind === "changed") return new Uint32Array(rows);
             if (column.kind === "chunks") return new Float64Array(Math.ceil(rows / 2 ** chunkShift));
+            if (column.kind === "blocks") return new Float64Array(Math.ceil(rows / 2 ** blockShift));
             const component = String(column.component);
             const values = fields[component]?.[JSON.stringify(column.path)] ?? new Array<number>(rows).fill(0);
             const stride = interleaved[component]?.stride;

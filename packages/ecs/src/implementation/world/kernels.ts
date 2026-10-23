@@ -105,7 +105,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             return column;
         }
         const id = idOf(state, column.component);
-        if (column.kind === "changed" || column.kind === "chunks") {
+        if (column.kind === "changed" || column.kind === "chunks" || column.kind === "blocks") {
             dense();
             return { kind: column.kind, id, leaf: 0 };
         }
@@ -187,6 +187,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             if (storage === undefined) return fail(`column of "${labelOf(state.keys[source.id])}" isn't in its components.`);
             if (source.kind === "changed") return storage.changed;
             if (source.kind === "chunks") return storage.chunkChanged;
+            if (source.kind === "blocks") return storage.blockChanged;
             const layout = state.layouts[source.id];
             return layout.kind === "linear" ? storage.views[layout.leaves[source.leaf].view] : fail("a field column isn't linear.");
         });
@@ -238,12 +239,12 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         },
     }));
     /**
-     * Changed and chunk columns of components no registered system filters on are muted: nothing reads those ticks,
-     * so the WASM drops their stamps and the JS kernel stamps one dummy element. Chunk columns of components held on
-     * the GPU stay, since uploads read them.
+     * Changed, chunk and block columns of components no registered system filters on are muted: nothing reads those
+     * ticks, so the WASM drops their stamps and the JS kernel stamps one dummy element. Chunk columns of components
+     * held on the GPU stay, since uploads read them; block columns, which only filters read, go with the row ticks.
      */
     const stamped = (source: Extract<Source, { readonly id: number }>): boolean => state.observed.has(source.id) || (source.kind === "chunks" && state.resident.has(source.id));
-    const mutedNow = (): boolean[] => sources.map(source => (source.kind === "changed" || source.kind === "chunks") && !stamped(source));
+    const mutedNow = (): boolean[] => sources.map(source => (source.kind === "changed" || source.kind === "chunks" || source.kind === "blocks") && !stamped(source));
     const upWasmColumns: WasmColumn[] = upSources.map(source => {
         const layout = state.layouts[source.id];
         return { view: source.leaf.view, stride: layout.kind === "linear" ? layout.stride : 0, offset: source.leaf.offset, boolean: source.leaf.scalar === "boolean", component: source.id };

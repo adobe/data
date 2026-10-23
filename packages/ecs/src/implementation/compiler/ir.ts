@@ -55,8 +55,8 @@ export type Statement =
     /** Declares `let` locals that every path assigns before reading. */
     | { readonly kind: "declare"; readonly locals: readonly number[] }
     | { readonly kind: "store"; readonly column: number; readonly value: Expression }
-    /** Stamps a changed column at the row and its chunk column at the row's chunk. */
-    | { readonly kind: "stamp"; readonly column: number; readonly chunks: number }
+    /** Stamps a changed column at the row, and its chunk and block columns at the row's chunk and block. */
+    | { readonly kind: "stamp"; readonly column: number; readonly chunks: number; readonly blocks: number }
     | { readonly kind: "if"; readonly test: Expression; readonly consequent: Out; readonly alternate: Out }
     | { readonly kind: "block"; readonly label: number; readonly body: Out }
     | { readonly kind: "loop"; readonly label: number; readonly body: Out }

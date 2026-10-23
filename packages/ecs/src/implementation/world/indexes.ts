@@ -5,7 +5,8 @@ import type { Failure } from '../../interface/report/failure.js';
 import type { SystemLookup } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
 import { readCell } from './cells.js';
-import { chunkShift } from './kernel.js';
+import { blockShift, chunkShift } from './kernel.js';
+import { forEachNewerRow } from './ranges.js';
 import { journalEnd } from './journal.js';
 import { encodeStored, hashWords, keyPartsOf, missing, release as releaseInterned, retain, type KeyPart } from './index-keys.js';
 import {
@@ -352,14 +353,11 @@ const pend = (index: WorldIndex, entity: number, archetype: number, row: number,
 
 /** Calls `each` with every row of a storage whose `changed` tick is after `since`, a whole column a GPU kernel wrote included. */
 const changedRows = (archetype: Archetype, storage: Storage, since: number, each: (row: number) => void): void => {
-    const whole = storage.columnChanged > since;
-    const { changed, chunkChanged } = storage;
-    for (let chunk = 0, count = Math.ceil(archetype.count / 2 ** chunkShift); chunk < count; chunk++) {
-        if (!whole && !(chunkChanged[chunk] > since)) continue;
-        for (let row = chunk << chunkShift, end = Math.min(archetype.count, (chunk + 1) << chunkShift); row < end; row++) {
-            if (whole || changed[row] > since) each(row);
-        }
+    if (storage.columnChanged > since) {
+        for (let row = 0; row < archetype.count; row++) each(row);
+        return;
     }
+    forEachNewerRow(storage.changed, storage.chunkChanged, storage.blockChanged, archetype.count, since, each);
 };
 
 /** Whether a component may have been written since `since`: by a system, or by a command's value at a sync point. */
@@ -469,10 +467,15 @@ const refresh = (state: State, index: WorldIndex, end: number, keyed: boolean, t
                 const storage = archetype.storageById[part];
                 if (storage === undefined || !storage.ticked || !writtenSince(state, part, since)) continue;
                 const whole = storage.columnChanged > since;
-                const { changed, chunkChanged } = storage;
+                const { changed, chunkChanged, blockChanged } = storage;
                 for (let chunk = 0, chunks = Math.ceil(archetype.count / 2 ** chunkShift); chunk < chunks; chunk++) {
                     if (!whole && !(chunkChanged[chunk] > since)) continue;
                     for (let row = chunk << chunkShift, end = Math.min(archetype.count, (chunk + 1) << chunkShift); row < end; row++) {
+                        // A block no row of which changed is passed over whole.
+                        if (!whole && (row & (2 ** blockShift - 1)) === 0 && !(blockChanged[row >> blockShift] > since)) {
+                            row += 2 ** blockShift - 1;
+                            continue;
+                        }
                         if (!whole && !(changed[row] > since)) continue;
                         count = marking ? pend(index, rows[row] >>> 0, id, row, count) : list(index, rows[row] >>> 0, id, row, count);
                         if (count > most) return rebuildAny(state, index, tick, failures, pool);

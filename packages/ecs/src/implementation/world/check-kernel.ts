@@ -42,7 +42,7 @@ export const checkKernel = (leaf: Leaf, description: KernelDescription): void =>
     for (const column of description.columns) {
         if (column.kind === "entity") continue;
         if (!queried.has(column.component)) fail(`"${labelOf(column.component)}" isn't in its components' read or write.`);
-        if (column.kind === "changed" || column.kind === "chunks") {
+        if (column.kind === "changed" || column.kind === "chunks" || column.kind === "blocks") {
             if (!written.has(column.component)) fail(`writes "${labelOf(column.component)}", which isn't in its components' write.`);
             continue;
         }

@@ -6,8 +6,7 @@ import type { Warning } from '../../interface/report/failure.js';
 import { declarationOf, idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import { unsharedKeyOf } from './index-keys.js';
 import { layoutOf } from '../../interface/registry/layout.js';
-import type { Archetype } from './archetype.js';
-import { chunkShift } from './kernel.js';
+import { raiseRange, type Archetype } from './archetype.js';
 import type { LocalIds, Segment } from './command-ring.js';
 import type { ToJoined } from './joining.js';
 import { lineWords, type WorkerError } from './protocol.js';
@@ -623,6 +622,6 @@ export const liftColumns = (archetype: Archetype, ids: readonly number[], since:
         if (storage === undefined || !storage.ticked || storage.columnChanged <= since) continue;
         const stamp = storage.columnChanged;
         for (let row = 0; row < archetype.count; row++) if (storage.changed[row] < stamp) storage.changed[row] = stamp;
-        for (let chunk = 0; chunk <= (archetype.count - 1) >> chunkShift; chunk++) if (storage.chunkChanged[chunk] < stamp) storage.chunkChanged[chunk] = stamp;
+        raiseRange(storage.chunkChanged, storage.blockChanged, 0, archetype.count, stamp);
     }
 };

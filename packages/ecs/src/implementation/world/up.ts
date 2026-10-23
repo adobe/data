@@ -3,7 +3,7 @@ import type { Up } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
 import { generationOf, indexOf } from './entities.js';
 import { journalEnd } from './journal.js';
-import { chunkShift } from './kernel.js';
+import { forEachNewerRow } from './ranges.js';
 import { idOf, type Key, type State } from './state.js';
 import { allocateArray, freeArray } from './arrays.js';
 import type { Memory } from './memory.js';
@@ -603,15 +603,12 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
     const changedRows = (archetype: Archetype, id: number, added: boolean, since: number, each: (row: number) => void): void => {
         const storage = archetype.storageById[id];
         if (storage === undefined) return;
-        const whole = storage.columnChanged > since;
-        const ticks = added ? storage.added : storage.changed;
-        const chunks = added ? storage.chunkAdded : storage.chunkChanged;
-        for (let chunk = 0, count = Math.ceil(archetype.count / 2 ** chunkShift); chunk < count; chunk++) {
-            if (!whole && !(chunks[chunk] > since)) continue;
-            for (let row = chunk << chunkShift, end = Math.min(archetype.count, (chunk + 1) << chunkShift); row < end; row++) {
-                if (whole || ticks[row] > since) each(row);
-            }
+        if (storage.columnChanged > since) {
+            for (let row = 0; row < archetype.count; row++) each(row);
+            return;
         }
+        if (added) forEachNewerRow(storage.added, storage.chunkAdded, storage.blockAdded, archetype.count, since, each);
+        else forEachNewerRow(storage.changed, storage.chunkChanged, storage.blockChanged, archetype.count, since, each);
     };
 
     /**

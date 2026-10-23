@@ -31,8 +31,13 @@ export type Unit = {
     readonly columnIndex: Map<string, number>;
     /** Chunk columns: dense, indexed by `i >> chunkShift` rather than a strided row index. */
     readonly chunks: Set<number>;
-    /** Chunk columns stamped once per call before the row loop, so their per-row stamps are dropped. */
-    readonly stampedPerCall: Set<number>;
+    /** Block columns: dense, indexed by `i >> blockShift`. */
+    readonly blocks: Set<number>;
+    /**
+     * Chunk columns stamped once per call before the row loop, with their block columns, so their per-row stamps are
+     * dropped.
+     */
+    readonly stampedPerCall: Map<number, number>;
     /** Columns read where a boolean's identity is observable, so they need conversion. */
     readonly booleans: Set<number>;
     /** Every value assigned to each local, to propagate observation. */
@@ -80,7 +85,7 @@ export const createUnit = (signature: Signature, module: Module, lists: Lists, e
     const up = signature.up === null ? null : counter++;
     if (up !== null) names.set(up, "up");
     return {
-        signature, module, lists, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
+        signature, module, lists, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), blocks: new Set(), stampedPerCall: new Map(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
         used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map(), up: new Set() },
         up, upColumns: [], upColumnIndex: new Map(), upBooleans: new Set(), probes: [], rowLeaves: [], handles: new Set(),
         next: () => counter++, expression, statement,

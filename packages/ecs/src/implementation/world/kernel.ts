@@ -20,13 +20,20 @@ export type Column =
     /** Float64Array of the component's changed ticks, stamped with `tick` on each write. */
     | { readonly kind: "changed"; readonly component: Key }
     /**
-     * Float64Array of the component's newest changed tick per chunk of `chunkRows` rows, so change filters can skip
-     * unchanged chunks. Every `changed` column is followed by one, and each stamp sets both: `chunks[row >> chunkShift] = tick`.
+     * Float64Array of the component's newest changed tick per chunk of `2 ** chunkShift` rows, so change filters can
+     * skip unchanged chunks. Every `changed` column is followed by one, then by its `blocks` column.
      */
-    | { readonly kind: "chunks"; readonly component: Key };
+    | { readonly kind: "chunks"; readonly component: Key }
+    /**
+     * Float64Array of the component's newest changed tick per block of `2 ** blockShift` rows, so change filters skip
+     * the unchanged blocks of a chunk that changed. A stamp sets all three: the row's tick, its chunk's and its block's.
+     */
+    | { readonly kind: "blocks"; readonly component: Key };
 
 /** Rows per chunk of change ticks is `2 ** chunkShift`. */
 export const chunkShift = 10;
+/** Rows per block of change ticks is `2 ** blockShift`: a chunk holds `2 ** (chunkShift - blockShift)` blocks. */
+export const blockShift = 6;
 
 /** A leaf of a resource a kernel reduces into, folded with `operator`. */
 export type Reduced = { readonly resource: Key; readonly operator: Reduction; readonly path: Path };
@@ -146,8 +153,11 @@ export namespace Program {
         | { readonly kind: "set"; readonly local: number; readonly value: Expression }
         /** `columns[column][row] = value`, with typed-array conversion. */
         | { readonly kind: "store"; readonly column: number; readonly value: Expression }
-        /** `columns[column][row] = tick` and `columns[chunks][row >> chunkShift] = tick`, for a changed column and its chunk column. */
-        | { readonly kind: "stamp"; readonly column: number; readonly chunks: number }
+        /**
+         * `columns[column][row] = tick`, `columns[chunks][row >> chunkShift] = tick` and
+         * `columns[blocks][row >> blockShift] = tick`, for a changed column and its chunk and block columns.
+         */
+        | { readonly kind: "stamp"; readonly column: number; readonly chunks: number; readonly blocks: number }
         | { readonly kind: "if"; readonly test: Expression; readonly consequent: readonly Statement[]; readonly alternate: readonly Statement[] }
         /** WASM `block`: a branch to it exits it. */
         | { readonly kind: "block"; readonly body: readonly Statement[] }

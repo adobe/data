@@ -163,6 +163,27 @@ Long hash buckets left unsorted until read by position, against `1ff6c206`, node
 - **A sort moves 8-byte words:** shared memory copies an element at a time, a 150K-word `copyWithin` 193 µs as `Int32Array` against 25 as `Float64Array`; a shift by an odd number of words goes through a scratch, 58 µs, once it's at least 1,024 words, the two views of it it makes costing tens of nanoseconds against a microsecond's copy; a shorter one copies a word at a time and allocates nothing. `bucket move 100K in order` 222 → 68 µs; every odd shift a word at a time, 180 µs, and `bucket move 10K in order` 12.7 → 23 µs.
 - **A full unsorted bucket with holes sorts in place rather than moving its segment, and one that grows gets half its length more spare slots:** `rekey 1M` 15.5 → 14.4 ms, from relocated segments, buffer growth and compactions.
 
+Block ticks, alternating against `998738a3`, node, medians of five rounds for the filter benchmarks and three for the rest; chromium, medians of three. New benchmarks (`perftest/filters.ts`), 100K rows of one archetype after a write of one row, ten rows 10,000 apart, or every row, then eight main-thread systems or four WASM kernels filtering on `changed`, timed a run of them:
+
+| Benchmark | Before | Now |
+|---|---|---|
+| `changed one 100K`, eight systems | 34.9 µs | 5.04 µs |
+| `changed few 100K` | 421 µs | 11.5 µs |
+| `changed all 100K` | 8.49 ms | 4.69 ms |
+| `changed one 100K two filters`, the other component unwritten | 37.6 µs | 8.42 µs |
+| `changed one 100K kernels`, four WASM kernels | 5.21 µs | 4.42 µs |
+| `changed few 100K kernels` | 15.2 µs | 7.33 µs |
+| `changed all 100K kernels` | 504 µs | 420 µs |
+| `sparse changed`, 1M, 1% scattered | 354 µs | 317 µs |
+| `sparse changed clustered` | 29.3 µs | 28.0 µs |
+
+In chromium: `sparse changed main` 295 → 260 µs, `sparse changed workers` 70 → 60 µs, `changed few 100K` 115 → 5 µs, `changed one 100K two filters` 40 → 5 µs (timers step by 5 µs), `changed all 100K kernels` 485 → 395 µs. Readers of key and parent ticks: `up one root changed` 27.8 → 26.4 µs, `up filtered after churn` 54.5 → 51.4 µs, `rekey 1M` 13.6 → 12.4 ms, `read run changed` 14.5 → 13.3 µs. Writes within noise in node (`create`, `create flat`, `move`, `churn`, `retag`, `emit`, `emit main`, `reduce`, `chain`, `follow`, `spawn bulk`, `spawn bulk kernel`, `add tag`, `add value`, `add replace`, `despawn bulk`, `index refresh 1M 1%`, `sync point one spawn`, `move 1K`) and chromium (`move`, `chain`, `emit` and `spawn bulk kernel`, main and workers), and so are `run idle`, `run observer`, `index idle`, `observer idle 100`, `joined observer 10K` and `observe gpu entity factory`. Memory: a ticked storage's two block arrays, one for a constant, take 8 bytes per 64 rows each, 1.6% of its row ticks, and each storage's layout record two more words.
+
+- **Every row tick's writer raises its block's tick,** one store beside the chunk's: row writes on any thread, kernels (once per call for a block every row of the call reaches, in JS and WASM), the sync point's writes, spawns and moves, swaps into removed rows, a GPU kernel's column stamp lifted onto a joined thread's rows, and joined threads' own ticks. The arrays live in the arena beside the chunk ticks, and the layout directory gives workers and joined threads their offsets.
+- **Main-thread, worker JS and joined-thread filters skip chunks, then blocks, then rows, each in a loop over one array,** and a passing range runs on by row ticks alone until a row doesn't pass; the scan was about 5 ns a row, with a branch per row on the filter count, and is now under 1 ns: `changed all 100K` 8.49 → 4.69 ms.
+- **WASM kernels find runs of passing blocks in an outer loop and run their rows in an inner one,** a chunk's passing blocks read into a mask once and each run found with `ctz`, a chunk with more than half its blocks passing taken as one run; every row pays one comparison against the run's end, where it paid a test of whether it started a chunk: `changed all 100K kernels` 504 → 420 µs.
+- **Index refreshes and `up` find changed key-part and filter rows by blocks too.**
+
 ## Where the gains came from
 
 Step figures marked (vitest) are from the node vitest lane: read them as relative.
@@ -175,6 +196,7 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 
 **Change filters.**
 - Chunk ticks, the newest tick per 1024 rows, so filters skip unchanged chunks: clustered sparse to ~0.09 ms.
+- Block ticks, the newest tick per 64 rows, so filters skip a changed chunk's unchanged blocks: eight systems finding one changed row of 100K 34.9 → 5.04 µs (above).
 - Filters inside WASM kernels, one call per archetype instead of one per passing range: uniform sparse 3.5 → 1.15 ms, clustered to 0.02 ms.
 
 **Lookups.**
@@ -306,6 +328,10 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **Copying drained columns into fresh, exactly sized arrays:** planning 2.60 → 2.45 ms in chromium, but the copies cost more than that.
 - **The main thread claiming pieces too:** no gain; workers that wake late are slow at first, so the main thread does about what it would alone.
 - **A loop per main-thread system** (eval or emitted by the plugin): 5–10% on top of fast-property rows; a micro-benchmark of 50 systems with one loop literal each measured 16%. The tuple each `row[component]` read allocates stays, and it costs more than the shared call site. Worth revisiting with compiled main-thread bodies, where reads become column loads.
+- **A WASM kernel testing block starts in its one row loop,** a block's tick checked at each row that starts one, inside which a chunk's start checks the chunk's: `changed all 100K kernels` 504 → 576 µs, from a branch taken every 64 rows that the predictor misses, where the chunk test it replaced was taken every 1024. Checking blocks only at the eight-row SIMD checks, every eighth of them, still cost 7% in a microbenchmark of one kernel over 100K rows that all changed. The outer loop over runs of blocks takes it to 420 µs.
+- **Every run of passing blocks as its own run in WASM,** however many of a chunk's blocks pass: 1% of 100K rows changed, scattered, one filter, in a microbenchmark, 31 µs against 24 µs for chunks alone, since a run's end costs more than the eight-row checks spend on a block between two runs. Taking a chunk with more than half its blocks passing as one run measured 23.9 µs, more than a quarter 23.9 µs and more than three quarters 32 µs; one changed row 0.21–0.25 µs against 0.33 for chunks alone at each.
+- **Blocks of 32 rows:** against 64, eight systems finding one row of 100K 4.75 against 4.92 µs and ten rows 10.2 against 11.5 µs, but `sparse changed` 421 against 294 µs, a WASM kernel's chunk of 32 blocks with 1% of rows changed having fewer than half passing, so its many runs each pay their end; and twice the memory. Worth revisiting if one-row changes dominate real filters on main-thread systems and WASM finds runs another way.
+- **Several filters scanned filter by filter,** each array's next newer tick found in a loop of its own and the earliest taken, in a microbenchmark of three filters: one change of 10K rows 0.40 against 0.39 µs, 1% of 10K 32.3 against 28.8 µs, 100K rows with nothing changed 0.18 against 0.38 µs. Mixed, so the filters are tested together at each index. Worth revisiting if systems filtering on several components over large archetypes that rarely change show in a profile.
 - **Removing a sync point's rows after all its entries, each archetype's from the highest,** so every row that stays moves at most once: churn 1M +13%, retag +6%. Sorting, the map of rows and a second pass over scattered rows cost more than the copies saved, and copying cells is only about 12% of retag; planning, the system's body and per-entry work make up the rest. Worth revisiting only with column-major moves per pair of archetypes, where removals are batched too.
 - **Unrolled f32 lane writers for staged spawns:** create 1M −5% for 30 more lines. Profiles attribute the caller's tuple allocations to the writer, which inflates it. Worth revisiting if spawns stop allocating tuples.
 - **Faster value-object spawns** (`create flat dynamic`): `Object.keys` and the caller's own spreads dominate, on a path the plugin already avoids for literal keys. Worth revisiting only if spawns from data objects matter to real workloads.

@@ -12,14 +12,14 @@ const exits = (statement: Statement): boolean => {
 };
 
 /**
- * Chunk columns stamped on every row: by a top-level stamp that no earlier `next` can skip. Every row in
- * `[start, end)` runs the body, so these chunks can be stamped once per call instead of per row.
+ * Chunk columns stamped on every row, with their block columns: by a top-level stamp that no earlier `next` can skip.
+ * Every row in `[start, end)` runs the body, so these chunks and blocks can be stamped once per call instead of per row.
  */
-export const unconditionalChunks = (rows: readonly Statement[]): ReadonlySet<number> => {
-    const chunks = new Set<number>();
+export const unconditionalChunks = (rows: readonly Statement[]): ReadonlyMap<number, number> => {
+    const chunks = new Map<number, number>();
     for (const statement of rows) {
         if (exits(statement)) break;
-        if (statement.kind === "stamp") chunks.add(statement.chunks);
+        if (statement.kind === "stamp") chunks.set(statement.chunks, statement.blocks);
     }
     return chunks;
 };

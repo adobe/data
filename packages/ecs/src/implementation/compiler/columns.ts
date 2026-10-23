@@ -19,12 +19,14 @@ export const fieldColumn = (unit: Unit, component: string, path: Path): number =
 
 export const fieldRead = (unit: Unit, component: string, path: Path): Expression => ({ kind: "column", column: fieldColumn(unit, component, path) });
 
-/** A component's changed column, immediately followed by its dense chunk column. */
-export const changedColumns = (unit: Unit, component: string): { readonly column: number; readonly chunks: number } => {
+/** A component's changed column, immediately followed by its dense chunk and block columns. */
+export const changedColumns = (unit: Unit, component: string): { readonly column: number; readonly chunks: number; readonly blocks: number } => {
     const changed = column(unit, `changed ${component}`, `{ kind: "changed", component: ${component} }`);
     const chunks = column(unit, `chunks ${component}`, `{ kind: "chunks", component: ${component} }`);
+    const blocks = column(unit, `blocks ${component}`, `{ kind: "blocks", component: ${component} }`);
     unit.chunks.add(chunks);
-    return { column: changed, chunks };
+    unit.blocks.add(blocks);
+    return { column: changed, chunks, blocks };
 };
 
 /** A scalar leaf of a component of the row's parent, read through `up`. */

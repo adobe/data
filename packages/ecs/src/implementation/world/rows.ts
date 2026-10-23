@@ -19,7 +19,7 @@ import type { WorldIndex } from './indexes.js';
  * What an accessor row reads and writes: a storage, or a joined thread's view of one. A joined thread's own objects
  * have `tags`, the world's tags of their rows, which a write marks as the thread's own value.
  */
-export type RowStorage = Pick<Storage, "layout" | "views" | "strings" | "values" | "write" | "ticked" | "added" | "changed" | "chunkAdded" | "chunkChanged" | "tags">;
+export type RowStorage = Pick<Storage, "layout" | "views" | "strings" | "values" | "write" | "ticked" | "added" | "changed" | "chunkAdded" | "chunkChanged" | "blockAdded" | "blockChanged" | "tags">;
 
 /** What a row binds to: an archetype, or a joined thread's view of one. */
 export type RowArchetype = { readonly id: number; readonly entities: Float64Array; readonly storageById: readonly (RowStorage | undefined)[] };

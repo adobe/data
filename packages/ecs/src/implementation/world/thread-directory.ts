@@ -7,9 +7,10 @@ import { tableLength } from './entities.js';
 import {
     archetypeField, capacityField, cursorField, entitiesVersionField, entitiesWord, freeCapacityField, freeField, generationField, linearFlag,
     recordCapacity, recordCount, recordEntities, recordFlags, recordStorages, recordVersion, recordWords, metaFlag, remoteFlag, resourceEntityWord, resourceFlag,
-    rowField, storageAdded, storageChanged, storageChunkAdded, storageChunkChanged, storageChunks, storageColumn, storageComponent, storageFlags,
-    storageWords, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
+    rowField, storageAdded, storageBlockAdded, storageBlockChanged, storageChanged, storageChunkAdded, storageChunkChanged, storageChunks, storageColumn,
+    storageComponent, storageFlags, storageWords, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
 } from './layout-directory.js';
+import { blockShift, chunkShift } from './kernel.js';
 import { coveringBuffer, pageBytes, pagesWord } from './memory.js';
 import { createStringReader } from './strings.js';
 import type { Mirror, Mirrored } from './mirror.js';
@@ -133,6 +134,8 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
             changed: layout.kind === "constant" ? added : changed,
             chunkAdded: ticked ? new Float64Array(buffer, words[base + storageChunkAdded], chunks) : noTicks,
             chunkChanged: ticked ? new Float64Array(buffer, words[layout.kind === "constant" ? base + storageChunkAdded : base + storageChunkChanged], chunks) : noTicks,
+            blockAdded: ticked ? new Float64Array(buffer, words[base + storageBlockAdded], chunks << (chunkShift - blockShift)) : noTicks,
+            blockChanged: ticked ? new Float64Array(buffer, words[layout.kind === "constant" ? base + storageBlockAdded : base + storageBlockChanged], chunks << (chunkShift - blockShift)) : noTicks,
         };
     };
 

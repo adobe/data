@@ -12,7 +12,7 @@ import { localName, printStatements } from './print.js';
 import { toProgram } from './program.js';
 import { serialize } from './serialize.js';
 import { unconditionalChunks } from './stamps.js';
-import { chunkShift, type Program } from '../world/kernel.js';
+import { blockShift, chunkShift, type Program } from '../world/kernel.js';
 import { rootScope } from './scope.js';
 import { signature } from './signature.js';
 import { rowLabel, statement } from './statement.js';
@@ -60,7 +60,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         statement({ type: "ExpressionStatement", expression: body.body, start: body.body.start, end: body.body.end }, scope, rows);
     }
     const statements = [...resolve(prelude), ...resolve(rows)];
-    for (const chunks of unconditionalChunks(resolve(rows))) unit.stampedPerCall.add(chunks);
+    for (const [chunks, blocks] of unconditionalChunks(resolve(rows))) unit.stampedPerCall.set(chunks, blocks);
     const kernel = printStatements(unit, resolve(rows));
     const preludeCode = printStatements(unit, resolve(prelude));
     const accumulators = unit.accumulators.map(entry => entry.local);
@@ -77,7 +77,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     }
     const contributed = new Set(unit.accumulators.flatMap(entry => reduced[entry.reduced]?.resource ?? []));
     requireExact(declaration, { query: unit.used, resources: { read: unit.used.resources, write: new Set(), reduce: contributed }, lookups: unit.used.lookups, up: unit.used.up }, module.bindings, lists);
-    const strided = columns.flatMap((_, index) => unit.chunks.has(index) ? [] : [index]);
+    const strided = columns.flatMap((_, index) => unit.chunks.has(index) || unit.blocks.has(index) ? [] : [index]);
     const locals = [
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),
         ...resources.map((_, index) => `const r${index} = resources[${index}];`),
@@ -126,10 +126,12 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             preludeCode,
             ...accumulators.map((local, k) => `let ${localName(unit, local)} = partials[partial + ${k}];`),
             // A kernel that runs a list of rows, which needn't be consecutive, stamps each row's own chunk.
-            ...listed ? [] : [...unit.stampedPerCall].map(chunks =>
-                `if (start < end) for (let k = start >> ${chunkShift}, last = (end - 1) >> ${chunkShift}; k <= last; k++) c${chunks}[k] = tick;`),
+            ...listed ? [] : [...unit.stampedPerCall].flatMap(([chunks, blocks]) => [
+                `if (start < end) for (let k = start >> ${chunkShift}, last = (end - 1) >> ${chunkShift}; k <= last; k++) c${chunks}[k] = tick;`,
+                `if (start < end) for (let k = start >> ${blockShift}, last = (end - 1) >> ${blockShift}; k <= last; k++) c${blocks}[k] = tick;`,
+            ]),
             listed
-                ? `${rowLabel}: for (let n = start; n < end; n++) { const i = rows[n], p = parents[n]; ${[...strided.map(index => `const x${index} = i * s${index} + o${index};`), ...[...unit.stampedPerCall].map(chunks => `c${chunks}[i >> ${chunkShift}] = tick;`)].join(" ")}`
+                ? `${rowLabel}: for (let n = start; n < end; n++) { const i = rows[n], p = parents[n]; ${[...strided.map(index => `const x${index} = i * s${index} + o${index};`), ...[...unit.stampedPerCall].map(([chunks, blocks]) => `c${chunks}[i >> ${chunkShift}] = tick; c${blocks}[i >> ${blockShift}] = tick;`)].join(" ")}`
                 : `${rowLabel}: for (let ${["i = start", ...strided.map(index => `x${index} = start * s${index} + o${index}`)].join(", ")}; i < end; ${["i++", ...strided.map(index => `x${index} += s${index}`)].join(", ")}) {`,
             kernel,
             "}",

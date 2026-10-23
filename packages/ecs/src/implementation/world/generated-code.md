@@ -112,9 +112,9 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(num_workgroups) group
 Calls nest as builtins do: `Vec3.scale(Vec3.normalize(Vec3.cross(p, v)), Vec3.dot(p, v))` emits
 `cross_6 = cross(…)`, `normalize_19 = normalize(cross_6)`, `dot_26 = dot(…)` and `scale_31 = (normalize_19 * dot_26)`.
 
-### WASM (499 bytes, excerpts from `wasm2wat`)
+### WASM (557 bytes, excerpts from `wasm2wat`)
 
-Three loops: chunk stamps, four rows at a time, then one row at a time for the rest.
+Four loops: chunk stamps, block stamps, four rows at a time, then one row at a time for the rest.
 
 ```wat
 ;; Four rows: 48 bytes per component, three v128 loads each.

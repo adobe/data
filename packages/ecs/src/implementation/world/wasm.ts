@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { chunkShift, type Program } from './kernel.js';
+import { blockShift, chunkShift, type Program } from './kernel.js';
 import type { Reduction } from '../../interface/resource/reduction.js';
 import type { View } from '../../interface/registry/layout.js';
 import { withoutIntrinsics } from './intrinsics.js';
@@ -133,7 +133,7 @@ const op = {
     i32Const: 0x41, f64Const: 0x44, i32ReinterpretF32: 0xbc, i64ReinterpretF64: 0xbd, i32LtU: 0x49, i32GtU: 0x4b, i32LeU: 0x4d, i32GtS: 0x4a, f64Load2: 0x2b,
     i32Eqz: 0x45, i32GeS: 0x4e,
     f64Eq: 0x61, f64Ne: 0x62, f64Lt: 0x63, f64Gt: 0x64, f64Le: 0x65, f64Ge: 0x66,
-    i32Eq: 0x46, i32LtS: 0x48, i32LeS: 0x4c, i32Clz: 0x67, i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32And: 0x71, i32Or: 0x72, i32Xor: 0x73, i32Shl: 0x74, i32ShrS: 0x75, i32ShrU: 0x76,
+    i32Eq: 0x46, i32LtS: 0x48, i32LeS: 0x4c, i32Clz: 0x67, i32Ctz: 0x68, i32Popcnt: 0x69, i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32And: 0x71, i32Or: 0x72, i32Xor: 0x73, i32Shl: 0x74, i32ShrS: 0x75, i32ShrU: 0x76,
     f64Abs: 0x99, f64Neg: 0x9a, f64Ceil: 0x9b, f64Floor: 0x9c, f64Trunc: 0x9d, f64Sqrt: 0x9f,
     f64Add: 0xa0, f64Sub: 0xa1, f64Mul: 0xa2, f64Div: 0xa3, f64Min: 0xa4, f64Max: 0xa5,
     i32WrapI64: 0xa7, i32GeU: 0x4f, i32Ne: 0x47, i64Const: 0x42, i64ShrU: 0x88, i64RemS: 0x81, f64ConvertI64S: 0xb9, f64Copysign: 0xa6, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
@@ -352,16 +352,19 @@ export const generateWasm = (
     };
     while (inferIntegral(program.body));
 
-    // Parameters: start, end, tick, lastRun, column addresses, filter row tick addresses, filter chunk tick addresses, scalars, and with reductions the partials address.
+    // Parameters: start, end, tick, lastRun, column addresses, filter row, chunk and block tick addresses, scalars, and with reductions the partials address.
     const columnParameter = (column: number): number => 4 + column;
     const filterRowParameter = (filter: number): number => 4 + columns.length + filter;
     const filterChunkParameter = (filter: number): number => 4 + columns.length + filters + filter;
+    const filterBlockParameter = (filter: number): number => 4 + columns.length + 2 * filters + filter;
+    /** Parameters before the lookups': the fixed four, the columns' and the filters'. */
+    const beforeLookups = 4 + columns.length + 3 * filters;
     /**
      * With lookups: the entity table (archetype, row and generation addresses, then its length), then each lookup's
      * directory address and record count, all as f64 so workers pass them like scalars.
      */
     const lookupParameters = lookups.length === 0 ? 0 : 4 + 2 * lookups.length + (watching ? 1 : 0);
-    const lookupParameter = (index: number): number => 4 + columns.length + 2 * filters + index;
+    const lookupParameter = (index: number): number => beforeLookups + index;
     /** For `up`: the rows' and their parents' rows' addresses, whether there's a parent, then each parent column's address. */
     const upMode = program.up === true;
     const upParameters = upMode ? 3 + upColumns.length : 0;
@@ -373,9 +376,9 @@ export const generateWasm = (
         const index = indexLookups[lookup];
         if (index !== null && index !== undefined) indexParameters += indexParameterCount(index);
     }
-    const indexParameter = (lookup: number, index: number): number => 4 + columns.length + 2 * filters + lookupParameters + indexOffsets[lookup] + index;
-    const upParameter = (index: number): number => 4 + columns.length + 2 * filters + lookupParameters + indexParameters + index;
-    const scalarParameter = (index: number): number => 4 + columns.length + 2 * filters + lookupParameters + indexParameters + upParameters + index;
+    const indexParameter = (lookup: number, index: number): number => beforeLookups + lookupParameters + indexOffsets[lookup] + index;
+    const upParameter = (index: number): number => beforeLookups + lookupParameters + indexParameters + index;
+    const scalarParameter = (index: number): number => beforeLookups + lookupParameters + indexParameters + upParameters + index;
     const code: number[] = [];
     const extraLocals: number[] = [];
     let localBase = 0;
@@ -611,31 +614,34 @@ export const generateWasm = (
     };
 
     /**
-     * Chunk columns stamped by every row: top-level stamps with no `next` before them, in an unfiltered kernel.
-     * Their chunks are stamped once per call, for the whole range, instead of on each row.
+     * Chunk and block columns stamped by every row, by the shift from a row to its element: top-level stamps with no
+     * `next` before them, in an unfiltered kernel. Their chunks and blocks are stamped once per call, for the whole
+     * range, instead of on each row.
      */
-    const everyRow = new Set<number>();
-    // Listed rows needn't be consecutive, so each stamps its own chunk.
+    const everyRow = new Map<number, number>();
+    // Listed rows needn't be consecutive, so each stamps its own chunk and block.
     if (filters === 0 && !upMode) {
         const ends = (statement: Statement): boolean =>
             statement.kind === "next" || (statement.kind === "if" && (statement.consequent.some(ends) || statement.alternate.some(ends)))
             || ((statement.kind === "block" || statement.kind === "loop") && statement.body.some(ends));
         for (const statement of program.body) {
             if (ends(statement)) break;
-            if (statement.kind === "stamp" && columns[statement.chunks].muted !== true) everyRow.add(statement.chunks);
+            if (statement.kind !== "stamp") continue;
+            if (columns[statement.chunks].muted !== true) everyRow.set(statement.chunks, chunkShift);
+            if (columns[statement.blocks].muted !== true) everyRow.set(statement.blocks, blockShift);
         }
     }
-    /** Stamps every chunk from `start`'s to `end - 1`'s, for the chunk columns every row stamps. */
+    /** Stamps every chunk or block from `start`'s to `end - 1`'s, for the chunk and block columns every row stamps. */
     const stampRangeChunks = (): void => {
-        for (const chunks of everyRow) {
+        for (const [dense, shift] of everyRow) {
             const chunk = scratch(i32Type);
             const last = scratch(i32Type);
-            // if (start < end) for (chunk = start >> shift; chunk <= (end - 1) >> shift; chunk++) chunks[chunk] = tick
+            // if (start < end) for (chunk = start >> shift; chunk <= (end - 1) >> shift; chunk++) dense[chunk] = tick
             code.push(op.localGet, 0, op.localGet, 1, op.i32LtS, op.if, 0x40);
-            code.push(op.localGet, 0, op.i32Const, ...signed(chunkShift), op.i32ShrU, op.localSet, ...unsigned(chunk));
-            code.push(op.localGet, 1, op.i32Const, 1, op.i32Sub, op.i32Const, ...signed(chunkShift), op.i32ShrU, op.localSet, ...unsigned(last));
+            code.push(op.localGet, 0, op.i32Const, ...signed(shift), op.i32ShrU, op.localSet, ...unsigned(chunk));
+            code.push(op.localGet, 1, op.i32Const, 1, op.i32Sub, op.i32Const, ...signed(shift), op.i32ShrU, op.localSet, ...unsigned(last));
             code.push(op.loop, 0x40);
-            code.push(op.localGet, ...unsigned(columnParameter(chunks)), op.localGet, ...unsigned(chunk), op.i32Const, 3, op.i32Shl, op.i32Add, op.localGet, 2, op.f64Store, 3, 0);
+            code.push(op.localGet, ...unsigned(columnParameter(dense)), op.localGet, ...unsigned(chunk), op.i32Const, 3, op.i32Shl, op.i32Add, op.localGet, 2, op.f64Store, 3, 0);
             code.push(op.localGet, ...unsigned(chunk), op.i32Const, 1, op.i32Add, op.localTee, ...unsigned(chunk), op.localGet, ...unsigned(last), op.i32LeS, op.brIf, 0);
             code.push(op.end, op.end);
         }
@@ -1235,12 +1241,15 @@ export const generateWasm = (
         emitRecordLeaf(row, 1, { view: "f64", stride: 8, offset: 0, boolean: false });
     };
 
-    /** Sets the chunk tick of the row `rowOffset` rows past the current one, unless every row's chunk is stamped up front. */
-    const stampChunk = (chunks: number, rowOffset: number): void => {
-        if (everyRow.has(chunks)) return;
-        code.push(op.localGet, ...unsigned(columnParameter(chunks)), op.localGet, ...unsigned(rowLocal));
+    /**
+     * Sets the chunk or block tick, by `shift`, of the row `rowOffset` rows past the current one, unless it's muted
+     * or every row's is stamped up front.
+     */
+    const stampDense = (dense: number, shift: number, rowOffset: number): void => {
+        if (columns[dense].muted === true || everyRow.has(dense)) return;
+        code.push(op.localGet, ...unsigned(columnParameter(dense)), op.localGet, ...unsigned(rowLocal));
         if (rowOffset !== 0) code.push(op.i32Const, ...signed(rowOffset), op.i32Add);
-        code.push(op.i32Const, ...signed(chunkShift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add, op.localGet, 2, op.f64Store, 3, 0);
+        code.push(op.i32Const, ...signed(shift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add, op.localGet, 2, op.f64Store, 3, 0);
     };
 
     const statement = (current: Statement): void => {
@@ -1250,8 +1259,9 @@ export const generateWasm = (
             // A chunk column stays when its row column is muted, for a component held on the GPU.
             case "stamp":
                 if (columns[current.column].muted !== true) store(current.column, "tick");
-                if (columns[current.chunks].muted === true) return;
-                return stampChunk(current.chunks, 0);
+                stampDense(current.chunks, chunkShift, 0);
+                stampDense(current.blocks, blockShift, 0);
+                return;
             case "if":
                 emit(current.test);
                 emitTruthy(typeOf(current.test));
@@ -1469,10 +1479,11 @@ export const generateWasm = (
                         code.push(...simd(vop.store), 3, ...unsigned(16 * half));
                     }
                 }
-                if (columns[current.chunks].muted === true) return;
-                // The group may straddle two chunks. Under a mask this can stamp a chunk no lane changed, which only costs a scan.
-                stampChunk(current.chunks, 0);
-                stampChunk(current.chunks, 3);
+                // The group may straddle two chunks or blocks. Under a mask this can stamp one no lane changed, which only costs a scan.
+                stampDense(current.chunks, chunkShift, 0);
+                stampDense(current.chunks, chunkShift, 3);
+                stampDense(current.blocks, blockShift, 0);
+                stampDense(current.blocks, blockShift, 3);
                 return;
             }
             case "if": {
@@ -1911,7 +1922,7 @@ export const generateWasm = (
     };
 
     try {
-        const parameterCount = 4 + columns.length + 2 * filters + lookupParameters + indexParameters + upParameters;
+        const parameterCount = beforeLookups + lookupParameters + indexParameters + upParameters;
         collectFinds(program.body);
         /** Leaves 1 if any filter's tick at `(row >> shift) * 8` in its `parameter` array is newer than `lastRun`. */
         const anyNewer = (parameter: (filter: number) => number, shift: number): void => {
@@ -1922,36 +1933,88 @@ export const generateWasm = (
                 if (filter > 0) code.push(op.i32Or);
             }
         };
-        /** At a chunk's first row, skips the whole chunk unless a filter's chunk tick is newer. */
-        const skipChunks = (): void => {
-            const next = scratch(i32Type);
-            code.push(op.localGet, ...unsigned(rowLocal), op.localGet, 0, op.i32Eq, op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(2 ** chunkShift - 1), op.i32And, op.i32Eqz, op.i32Or);
-            code.push(op.if, 0x40);
-            anyNewer(filterChunkParameter, chunkShift);
-            code.push(op.i32Eqz, op.if, 0x40);
-            // row = min(end, start of the next chunk)
-            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(chunkShift), op.i32ShrU, op.i32Const, 1, op.i32Add, op.i32Const, ...signed(chunkShift), op.i32Shl, op.localSet, ...unsigned(next));
-            code.push(op.localGet, ...unsigned(next), op.localGet, 1, op.localGet, ...unsigned(next), op.localGet, 1, op.i32LtS, op.select, op.localSet, ...unsigned(rowLocal));
-            code.push(op.br, 2, op.end, op.end);
-        };
-        /** Rows a block skip checks at once: four f64x2 loads of each filter's row ticks. */
-        const blockRows = 8;
         /**
-         * With SIMD, at a row that's a multiple of `blockRows`, skips that many rows when none passes a filter, testing
-         * two ticks per comparison. Only aligned rows check, so rows that do pass pay one check per block.
+         * i32 locals: the row after the current chunk; the row after the current run of passing blocks, both `start`
+         * before the first; the current chunk's blocks that pass, a bit each; and two temporaries.
          */
-        const skipBlocks = (): void => {
-            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, blockRows - 1, op.i32And, op.i32Eqz);
-            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, blockRows, op.i32Add, op.localGet, 1, op.i32LeS, op.i32And, op.if, 0x40);
+        let chunkEnd = 0;
+        let blockEnd = 0;
+        let passingBlocks = 0;
+        let ahead = 0;
+        let skipped = 0;
+        const startChunksAndBlocks = (): void => {
+            chunkEnd = scratch(i32Type);
+            blockEnd = scratch(i32Type);
+            passingBlocks = scratch(i32Type);
+            ahead = scratch(i32Type);
+            skipped = scratch(i32Type);
+            code.push(op.localGet, 0, op.localTee, ...unsigned(chunkEnd), op.localSet, ...unsigned(blockEnd));
+        };
+        const get = (local: number): number[] => [op.localGet, ...unsigned(local)];
+        const set = (local: number): number[] => [op.localSet, ...unsigned(local)];
+        /** Leaves `min(end, ((row >> shift) + count) << shift)`, with `count` on the stack first. */
+        const runEnd = (shift: number, target: number): void => {
+            code.push(...get(rowLocal), op.i32Const, ...signed(shift), op.i32ShrU, op.i32Add, op.i32Const, ...signed(shift), op.i32Shl, ...set(target));
+            code.push(...get(target), op.localGet, 1, ...get(target), op.localGet, 1, op.i32LtS, op.select, ...set(target));
+        };
+        const blocksPerChunk = 2 ** (chunkShift - blockShift);
+        /**
+         * In the outer row loop, at `row`, the first row after the last run of passing blocks: past the current chunk,
+         * skips chunks no filter's chunk tick says changed, and notes which blocks of the next one pass, a bit each;
+         * then skips the blocks that don't pass, and sets `blockEnd` to the end of the run of blocks that do, which the
+         * inner loop runs. A chunk with more than half its blocks passing is one run: ending a run costs more than the
+         * eight-row checks spend on a block between runs.
+         */
+        const findRun = (): void => {
+            code.push(...get(rowLocal), ...get(chunkEnd), op.i32GeS, op.if, 0x40);
+            code.push(op.i32Const, 1);
+            runEnd(chunkShift, chunkEnd);
+            anyNewer(filterChunkParameter, chunkShift);
+            code.push(op.i32Eqz, op.if, 0x40, ...get(chunkEnd), ...set(rowLocal), op.br, 2, op.end);
+            // The chunk's blocks that pass, from its first block, `(row >> chunkShift) << (chunkShift - blockShift)`.
+            for (let block = 0; block < blocksPerChunk; block++) {
+                for (let filter = 0; filter < filters; filter++) {
+                    code.push(...get(filterBlockParameter(filter)), ...get(rowLocal), op.i32Const, ...signed(chunkShift), op.i32ShrU, op.i32Const, ...signed(chunkShift - blockShift), op.i32Shl);
+                    code.push(op.i32Const, ...signed(block), op.i32Add, op.i32Const, 3, op.i32Shl, op.i32Add, op.f64Load, 3, 0, op.localGet, 3, op.f64Gt);
+                    if (filter > 0) code.push(op.i32Or);
+                }
+                if (block > 0) code.push(op.i32Const, ...signed(block), op.i32Shl, ...get(passingBlocks), op.i32Or);
+                code.push(...set(passingBlocks));
+            }
+            code.push(...get(passingBlocks), op.i32Popcnt, op.i32Const, ...signed(blocksPerChunk / 2), op.i32GtS, op.if, 0x40);
+            code.push(op.i32Const, ...signed((2 ** blocksPerChunk - 1) | 0), ...set(passingBlocks), op.end);
+            code.push(op.end);
+            // ahead = passingBlocks >> (row's block in its chunk); none ahead skips the rest of the chunk.
+            code.push(...get(passingBlocks), ...get(rowLocal), op.i32Const, ...signed(blockShift), op.i32ShrU, op.i32Const, ...signed(blocksPerChunk - 1), op.i32And, op.i32ShrU, op.localTee, ...unsigned(ahead));
+            code.push(op.i32Eqz, op.if, 0x40, ...get(chunkEnd), ...set(rowLocal), op.br, 1, op.end);
+            // Skips to the next passing block, then runs to the end of the passing blocks after it.
+            code.push(...get(ahead), op.i32Ctz, op.localTee, ...unsigned(skipped), op.if, 0x40);
+            code.push(...get(skipped), ...get(rowLocal), op.i32Const, ...signed(blockShift), op.i32ShrU, op.i32Add, op.i32Const, ...signed(blockShift), op.i32Shl, ...set(rowLocal));
+            code.push(op.end);
+            code.push(...get(ahead), ...get(skipped), op.i32ShrU, op.i32Const, ...signed(-1), op.i32Xor, op.i32Ctz);
+            runEnd(blockShift, blockEnd);
+            code.push(...get(blockEnd), ...get(chunkEnd), ...get(blockEnd), ...get(chunkEnd), op.i32LtS, op.select, ...set(blockEnd));
+            // A row moved to a later block goes round the outer loop, which checks it against `end`.
+            code.push(...get(skipped), op.brIf, 0);
+        };
+        /** Rows an eight-row skip checks at once: four f64x2 loads of each filter's row ticks. */
+        const eightRows = 8;
+        /**
+         * With SIMD, at a row that's a multiple of `eightRows`, skips that many rows when none passes a filter, testing
+         * two ticks per comparison. Only aligned rows check, so rows that do pass pay one check per eight.
+         */
+        const skipEights = (): void => {
+            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, eightRows - 1, op.i32And, op.i32Eqz);
+            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, eightRows, op.i32Add, op.localGet, 1, op.i32LeS, op.i32And, op.if, 0x40);
             for (let filter = 0; filter < filters; filter++) {
-                for (let pair = 0; pair < blockRows / 2; pair++) {
+                for (let pair = 0; pair < eightRows / 2; pair++) {
                     code.push(op.localGet, ...unsigned(filterRowParameter(filter)), op.localGet, ...unsigned(rowLocal), op.i32Const, 3, op.i32Shl, op.i32Add);
                     code.push(...simd(vop.load), 3, ...unsigned(16 * pair), op.localGet, 3, ...simd(vop.f64Splat), ...simd(vop.f64Gt));
                     if (filter > 0 || pair > 0) code.push(...simd(vop.or));
                 }
             }
             code.push(...simd(vop.anyTrue), op.i32Eqz, op.if, 0x40);
-            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, blockRows, op.i32Add, op.localSet, ...unsigned(rowLocal));
+            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, eightRows, op.i32Add, op.localSet, ...unsigned(rowLocal));
             code.push(op.br, 2, op.end, op.end);
         };
         // Scalars are discovered while generating, so code is generated first with locals placed after a provisional scalar count.
@@ -1986,6 +2049,7 @@ export const generateWasm = (
             if (lookupParameters > 0) convertLookupParameters();
             if (indexParameters > 0) convertIndexParameters();
             stampRangeChunks();
+            if (filters > 0) startChunksAndBlocks();
             if (mode === "rows") rowsLoop();
             if (mode === "lanes") {
                 const plan = planLanes();
@@ -1999,12 +2063,16 @@ export const generateWasm = (
             }
             code.push(op.block, 0x40, op.loop, 0x40);
             code.push(op.localGet, ...unsigned(slot), op.localGet, 1, op.i32GeS, op.brIf, 1);
+            // With change filters, an outer loop finds each run of passing blocks and an inner one runs its rows.
+            if (filters > 0) {
+                findRun();
+                code.push(op.block, 0x40, op.loop, 0x40, ...get(rowLocal), ...get(blockEnd), op.i32GeS, op.brIf, 1);
+            }
             if (upMode) {
                 code.push(op.localGet, ...unsigned(upParameter(0)), op.localGet, ...unsigned(slot), op.i32Const, 2, op.i32Shl, op.i32Add, op.i32Load, 2, 0, op.localSet, ...unsigned(rowLocal));
                 code.push(op.localGet, ...unsigned(upParameter(1)), op.localGet, ...unsigned(slot), op.i32Const, 2, op.i32Shl, op.i32Add, op.i32Load, 2, 0, op.localSet, ...unsigned(parentLocal));
             }
-            if (filters > 0) skipChunks();
-            if (filters > 0 && simdEnabled && !upMode) skipBlocks();
+            if (filters > 0 && simdEnabled && !upMode) skipEights();
             code.push(op.block, 0x40);
             // A row that no filter passes goes to the next.
             if (filters > 0) {
@@ -2028,6 +2096,7 @@ export const generateWasm = (
             });
             code.push(op.localGet, ...unsigned(slot), op.i32Const, 1, op.i32Add, op.localSet, ...unsigned(slot), op.br, 0);
             code.push(op.end, op.end);
+            if (filters > 0) code.push(op.br, 0, op.end, op.end);
             rowLocal = slot;
             accumulators.forEach((accumulator, k) => {
                 const extra = lanes[k];
@@ -2064,7 +2133,7 @@ export const generateWasm = (
         if (scalars.length !== discovered) throw unsupported;
         const vectorized = mode !== "scalar";
 
-        const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(2 * filters).fill(i32Type), ...new Array<number>(lookupParameters).fill(f64Type), ...new Array<number>(indexParameters).fill(f64Type), ...new Array<number>(upParameters).fill(i32Type), ...scalars.map(() => f64Type), ...accumulators.length > 0 ? [i32Type] : []];
+        const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(3 * filters).fill(i32Type), ...new Array<number>(lookupParameters).fill(f64Type), ...new Array<number>(indexParameters).fill(f64Type), ...new Array<number>(upParameters).fill(i32Type), ...scalars.map(() => f64Type), ...accumulators.length > 0 ? [i32Type] : []];
         const localTypesList = [...new Array<number>(program.locals).fill(f64Type)];
         // Locals in order: program locals, then extras in creation order; the row index was the first extra.
         const declared = [...localTypesList.map(type => [1, type]), ...extraLocals.map(type => [1, type])];

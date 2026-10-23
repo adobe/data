@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { chunkShift, type Path } from '../world/kernel.js';
+import { blockShift, chunkShift, type Path } from '../world/kernel.js';
 import type { Expression, Statement } from './ir.js';
 import { resolve, type Out } from './out.js';
 import { rowLabel } from './statement.js';
@@ -69,7 +69,7 @@ const printStatement = (unit: Unit, statement: Statement, labels: Labels): strin
         case "store": return `c${statement.column}[x${statement.column}] = ${value(statement.value)};`;
         case "stamp": {
             const row = `c${statement.column}[x${statement.column}] = tick;`;
-            return unit.stampedPerCall.has(statement.chunks) ? row : `${row}\nc${statement.chunks}[i >> ${chunkShift}] = tick;`;
+            return unit.stampedPerCall.has(statement.chunks) ? row : `${row}\nc${statement.chunks}[i >> ${chunkShift}] = tick;\nc${statement.blocks}[i >> ${blockShift}] = tick;`;
         }
         case "if": {
             const alternate = printStatements(unit, statement.alternate, labels);

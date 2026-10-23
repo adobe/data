@@ -287,11 +287,11 @@ const filtersOf = (tail: Copied, archetype: Archetype): Filter[] => {
     const filters: Filter[] = [];
     for (const id of tail.added) {
         const storage = archetype.storageById[id];
-        if (storage !== undefined) filters.push({ ticks: storage.added, chunks: storage.chunkAdded });
+        if (storage !== undefined) filters.push({ ticks: storage.added, chunks: storage.chunkAdded, blocks: storage.blockAdded });
     }
     for (const id of tail.changed) {
         const storage = archetype.storageById[id];
-        if (storage !== undefined) filters.push({ ticks: storage.changed, chunks: storage.chunkChanged });
+        if (storage !== undefined) filters.push({ ticks: storage.changed, chunks: storage.chunkChanged, blocks: storage.blockChanged });
     }
     return filters;
 };

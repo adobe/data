@@ -441,9 +441,9 @@ test("serve passes each system the schema of its body's input, from types other 
 
 test("a build fails at a system's input whose type can't be one", async () => {
     const entry = join(directory, "bad-input.ts");
-    writeFileSync(entry, `import { System } from ${source("../../interface/system/system.ts")};\nexport const bad = System.create({}, (_context, input: { readonly when: Date }) => { void input; });\n`);
+    writeFileSync(entry, `import { System } from ${source("../../interface/system/system.ts")};\nexport const bad = System.create({}, (_context, input: { readonly when: Big["when"] }) => { void input; });\n`);
     await expect(build({
         configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
         build: { outDir: join(directory, "dist-bad-input"), minify: false, lib: { entry, formats: ["es"], fileName: "main" } },
-    })).rejects.toThrow("Date isn't a type an input can hold");
+    })).rejects.toThrow("(typeof X)[keyof typeof X]");
 });

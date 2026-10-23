@@ -82,10 +82,26 @@ describe("passInputSchemas", () => {
             },
         }]);
     });
-    test("takes any value for a platform class or unknown", async () => {
-        expect(await schemasOf(`System.create({}, (_c, input: { canvas: OffscreenCanvas; bitmap: ImageBitmap; anything: unknown }) => {});`)).toEqual([
-            { type: "object", properties: { canvas: { allOf: [] }, bitmap: { allOf: [] }, anything: { allOf: [] } } },
+    test("takes any value for a global class or unknown", async () => {
+        expect(await schemasOf(`System.create({}, (_c, input: { canvas: OffscreenCanvas; bitmap: ImageBitmap; element: HTMLCanvasElement; anything: unknown }) => {});`)).toEqual([
+            { type: "object", properties: { canvas: { allOf: [] }, bitmap: { allOf: [] }, element: { allOf: [] }, anything: { allOf: [] } } },
         ]);
+    });
+    test("reads the values of an `as const` object, here or imported, as a union of their literals", async () => {
+        const files = { "/src/align.ts": `export const Align = { start: "start", end: "end", again: "start" } as const;\nexport type Align = (typeof Align)[keyof typeof Align];` };
+        expect(await schemasOf([
+            `import { Align } from "./align.js";`,
+            `const Level = { low: 1, high: -1, on: true } as const satisfies Record<string, number | boolean>;`,
+            `type Level = (typeof Level)[keyof typeof Level];`,
+            `System.create({}, (_c, input: { align: Align; level: Level; inline: (typeof Level)[keyof typeof Level] }) => {});`,
+        ].join("\n"), files)).toEqual([{
+            type: "object",
+            properties: {
+                align: { anyOf: [{ const: "start" }, { const: "end" }] },
+                level: { anyOf: [{ const: 1 }, { const: -1 }, { const: true }] },
+                inline: { anyOf: [{ const: 1 }, { const: -1 }, { const: true }] },
+            },
+        }]);
     });
     test("follows aliases and interfaces, here and in modules imported", async () => {
         const files = {
@@ -122,7 +138,9 @@ describe("passInputSchemas", () => {
         expect(await failure(`type Box<T> = { readonly value: T };\nSystem.create({}, (_c, input: Box) => {});`)).toContain("generic");
         expect(await failure(`System.create({}, (_c, input: [number, string]) => {});`)).toContain("one type");
         expect(await failure(`System.create({}, (_c, input: number) => {});`)).toContain("object of named fields");
-        expect(await failure(`System.create({}, (_c, input: { when: Date }) => {});`)).toContain("isn't a type an input can hold");
+        expect(await failure(`const Loose = { a: "a" };\nSystem.create({}, (_c, input: { a: (typeof Loose)[keyof typeof Loose] }) => {});`)).toContain("as const");
+        expect(await failure(`const Nested = { a: { b: 1 } } as const;\nSystem.create({}, (_c, input: { a: (typeof Nested)[keyof typeof Nested] }) => {});`)).toContain("literals");
+        expect(await failure(`System.create({}, (_c, input: { a: Big["x"] }) => {});`)).toContain("keyof typeof");
         expect(await failure(`System.create({}, (_c, ...rest: [{ a: number }]) => {});`)).toContain("rest parameter");
     });
     test("inserts each schema after the body, mapping the rest of the line back", async () => {

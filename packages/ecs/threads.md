@@ -463,8 +463,10 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   entry, before the sync's entries apply, or at replay's end for a sync with no entries for it; its finalizers read the
   linear structs from the block, constants as they are, and its objects by each stop's tag: the start or `null` as
   tagged, any other at the stop's row in its mirror. After its log lapped, it runs them before it rebuilds, reading a
-  value it wrote or a settled slot's by entity in its old rows, and a live slot's from its staging array. Resources are
-  read where they are. Then it stores "finalized through sync N" in the log header. A stop list naming a finalizer
+  value it wrote or a settled slot's by entity in its old rows, and a live slot's from its staging array. Its thread's
+  object resources are read as it holds them: at the resource entity's row in its mirror as replayed so far, which may
+  be behind the entity table, and before a rebuild, its first included, by the resource row's tag, as the rebuild reads
+  it. Other resources are read where they are. Then it stores "finalized through sync N" in the log header. A stop list naming a finalizer
   whose setup hasn't arrived holds replay before its sync, as a component without a key does; one this thread never
   imported fails each of its groups. What its finalizers throw is posted, and a later run's report lists it as a
   `"finalizer"` failure.

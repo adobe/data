@@ -134,6 +134,8 @@ Strings in shared memory, alternating against `c6bb3c83`, node, five and six rou
 - **Records up to 512 bytes are carved from slabs** by power-of-two size class: `string write 10K joined` 142 → 127 ns against the arena's blocks, whose size class costs a `Math.log2` per record.
 - **A removed row lets go only of its archetype's string storages,** listed once per archetype: `despawn objects 10K` 104 → 97.7 ns against a check of every storage.
 
+A joined thread's finalizers reading its object resources from its mirror, alternating against `998738a3`, node, three rounds: `despawn objects 10K` 98.2–102 against 99.6–103 ns, within noise. The mirror's archetype holding the resource entity is found once per group of stops that reads one, kept and checked before it's searched for again.
+
 Sync points waiting only for tails that read the world's memory, against `c21e8e1e`, node: `tail late snapshot 10K` 474–484 → 9.0–9.5 ns a row copied, against 8.9 for `e3c30aa1` measured beside it (its record 8.2), and in chromium 450 → 6.0 ns (its record 5.0, one or two 5 µs timer steps); within noise in both: `tail prompt`, `tail overlap`, `tail overlap waiting`. Since every run spawns its report, until 256 are, almost every sync point has something to apply, and each one settled every tail, so the run waited out the whole body of the benchmark's 4 ms tail ahead of the late one, whose head it had claimed.
 - **A tail reading only its own thread's objects isn't settled at a sync point,** having nothing there a sync point writes: 474 → 12.8 ns.
 - **The benchmark times the run alone,** reading its report after: 12.8 → 9.0 ns. Reading it through `runReported` timed a second run as well.

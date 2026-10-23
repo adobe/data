@@ -89,14 +89,6 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 6. **Nothing awaits the next tick.** Tests watch `clock` with an observer system. Proposal: a test helper in
    `src/observe`.
 
-## Findings from strings in shared memory
-
-- **A joined finalizer read a resource of its thread as undefined:** in `remote-finalizers.test.ts`, "that throw are in
-  a later run's report", the finalizer's `resources[tone]`, an object of its thread, is undefined for the stops of a
-  sync point soon after the thread joined, where the same finalizer reads it in the other cases; the fixture reads it
-  optionally now. The test checks no tone, so whether it was undefined before, as a string, wasn't seen. Worth finding
-  out whether a remote finalizer can run before its thread's resources reach its mirror.
-
 ## Features to discuss
 
 - **Computed index keys:** an index keyed on a value computed from a component, such as a struct field

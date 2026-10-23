@@ -74,6 +74,8 @@ export type Mirror = {
     nextSlot: number;
     /** Times it rebuilt, for tests. */
     rebuilds: number;
+    /** The archetype last found holding the resource entity, or -1. */
+    resourceArchetype: number;
     /**
      * How many values of components declared `transfer` are staged and not yet settled, so the thread replays to
      * release those whose commands dropped once it's woken.
@@ -97,7 +99,7 @@ export const createMirror = (memory: WebAssembly.Memory, block: number, thread: 
         memory, thread, block, buffer: memory.buffer, words: new Uint32Array(0), signed: new Int32Array(0), header: new Int32Array(0),
         ring: new Uint32Array(0), ringEntities: new Float64Array(0), version: -1, mask: 0, position: 0, through: 0, tick: 0,
         keys: new Map(), starts: new Map(), archetypes: [], scratch: new Uint32Array(1024), scratchEntities: new Float64Array(0),
-        staged: [], head: 0, nextSlot: 0, rebuilds: 0, stagedTransfers: 0, finalize: null,
+        staged: [], head: 0, nextSlot: 0, rebuilds: 0, resourceArchetype: -1, stagedTransfers: 0, finalize: null,
     };
     refresh(mirror);
     return mirror;
@@ -574,6 +576,28 @@ const storageOf = (words: Uint32Array, record: number, component: number): numbe
         if (words[base + storageComponent] === component) return base;
     }
     return -1;
+};
+
+/**
+ * The value this thread holds for its object resource `component`, as replayed so far, which may be behind the entity
+ * table: the resource entity, at `index`, is alone in its archetype, so at row 0. Its start while no row holds it.
+ */
+export const resourceValueOf = (mirror: Mirror, index: number, component: number, start: unknown): unknown => {
+    const { archetypes } = mirror;
+    let archetype = mirror.resourceArchetype < 0 ? undefined : archetypes[mirror.resourceArchetype];
+    if (archetype === null || archetype === undefined || archetype.count === 0 || indexOf(archetype.entities[0]) !== index) {
+        archetype = undefined;
+        mirror.resourceArchetype = -1;
+        for (let id = 0; id < archetypes.length; id++) {
+            const candidate = archetypes[id];
+            if (candidate === null || candidate === undefined || candidate.count === 0 || indexOf(candidate.entities[0]) !== index) continue;
+            archetype = candidate;
+            mirror.resourceArchetype = id;
+            break;
+        }
+    }
+    const column = archetype?.byComponent[component];
+    return column === undefined ? start : column.values[0];
 };
 
 /** A staged slot's value while no sync applied it, else `settled`. */

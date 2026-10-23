@@ -4,6 +4,7 @@ import type { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Observe } from "../../observe/index.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
+import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -11,6 +12,18 @@ import { createWorld, join, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import { attach, despawn, eventually, finalized, marked, place, released, retone, scenario, serial, sorted, spawn, throwing, tone, widget } from "./remote-finalizers.test-helper.js";
 import { runReported } from "./reports.test-helper.js";
+
+/** A resource of the world's thread, added once the thread joined, so the resource entity moves to another archetype. */
+const later = Symbol("remoteFinalizersTest/later");
+declare module "@adobe/ecs" {
+    export interface Resources {
+        [later]: { type: number };
+    }
+}
+Resource.register(later, { type: { type: "number", default: 0 } });
+const bump = System.create({ name: "remoteFinalizersTest/bump", resources: { write: [later] } }, ({ resources }) => {
+    resources[later] += 1;
+});
 
 // Finalizers on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
 
@@ -155,6 +168,21 @@ describe("finalizers on a joined thread", () => {
         expect(released.map(stop => [stop.serial, stop.widget])).toEqual([[0, "w0"], [1, null]]);
         await world.dispose();
         expect(released.map(stop => stop.serial)).toEqual([0, 1, 2]);
+    });
+    it("read their thread's object resource as the thread holds it, from the first sync point after joining and once the resource entity moved before they ran", async () => {
+        reset();
+        const { world, remote } = await joined();
+        // Stops the thread runs as it first rebuilds, before it holds any row.
+        await world.run(spawn, { from: 0, count: 3 });
+        await world.run(despawn, { serials: [0] });
+        expect(await eventually(() => released.length === 1)).toBe(true);
+        await world.run(retone, { tone: "soft" });
+        // Not awaited: the resource entity moves to another archetype before the thread replays the stop's sync.
+        await Promise.all([world.run(despawn, { serials: [1] }), world.run(bump)]);
+        expect(await eventually(() => released.length === 2)).toBe(true);
+        expect(released.map(stop => [stop.serial, stop.tone])).toEqual([[0, "quiet"], [1, "soft"]]);
+        await remote.dispose();
+        await world.dispose();
     });
     // Last: the finalizers it creates stay in the program.
     it("created after the claim run there; one the thread can't name doesn't activate, reported once", async () => {

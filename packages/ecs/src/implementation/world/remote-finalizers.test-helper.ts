@@ -60,7 +60,7 @@ export const throwing = new Set<number>();
 /** On the finalizers' thread: what each stop held there, its structs before the sync point applied. */
 export const release = Finalizer.create({ name: "remoteFinalizersTest/release", components: { read: [serial, place, marked, widget, label] }, resources: { read: [tone] } }, (row, { resources }) => {
     finalized.push(row.entity);
-    released.push({ serial: row[serial], place: [...row[place]], marked: row[marked], widget: row[widget]?.tag ?? null, label: row[label]?.text ?? null, tone: resources[tone]?.text });
+    released.push({ serial: row[serial], place: [...row[place]], marked: row[marked], widget: row[widget]?.tag ?? null, label: row[label]?.text ?? null, tone: resources[tone].text });
     if (throwing.has(row[serial])) throw new Error(`remoteFinalizersTest: ${row[serial]} throws`);
 });
 

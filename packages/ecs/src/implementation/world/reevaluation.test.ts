@@ -16,7 +16,7 @@ const broken = System.create({ name: "reevaluation/bump" }, () => {
 it("labels systems that share a name by their ids", async () => {
     await using world = createWorld();
     const { failures } = await runReported(world, broken);
-    expect(failures.map(({ name }) => name)).toEqual(["reevaluation/bump (@adobe/ecs/src/implementation/world/reevaluation.test.ts#broken)"]);
+    expect(failures.map(({ name }) => name)).toEqual([expect.stringMatching(/^reevaluation\/bump \(@adobe\/ecs@[^/]+\/src\/implementation\/world\/reevaluation\.test\.ts#broken\)$/)]);
 });
 
 it("matches the keys and systems of a module evaluated again by id", async () => {

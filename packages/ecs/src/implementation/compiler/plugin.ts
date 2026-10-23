@@ -6,7 +6,7 @@ import { isAbsolute } from 'node:path';
 import type { Plugin, Rollup, ViteDevServer } from 'vite';
 import { estreeOf } from './estree.js';
 import { describeFailure } from './failure.js';
-import { identify as identifyModule, moduleIdOf, type PackageNameOf } from './identify.js';
+import { identify as identifyModule, moduleIdOf, type PackageOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
 import { passInputSchemas, type InputHost } from './input-schemas.js';
@@ -31,23 +31,24 @@ const loadFile = async (file: string): Promise<{ readonly code: string; readonly
     return { code: result.code, locate: result.map === undefined ? undefined : locateThroughMap(result.code, result.map.mappings) };
 };
 
-/** The name each directory's package.json gives, read once per directory. */
-const packageNames = (): PackageNameOf => {
-    const names = new Map<string, string | null | undefined>();
+/** The name and version each directory's package.json gives, read once per directory. */
+const packages = (): PackageOf => {
+    const found = new Map<string, ReturnType<PackageOf>>();
     return directory => {
-        if (names.has(directory)) return names.get(directory);
-        let name: string | null | undefined;
+        if (found.has(directory)) return found.get(directory);
+        let entry: ReturnType<PackageOf>;
         try {
             const json: unknown = JSON.parse(readFileSync(`${directory}/package.json`, "utf8"));
-            const named: unknown = typeof json === "object" && json !== null ? Reflect.get(json, "name") : undefined;
-            name = typeof named === "string" && named !== "" ? named : null;
+            const name: unknown = typeof json === "object" && json !== null ? Reflect.get(json, "name") : undefined;
+            const version: unknown = typeof json === "object" && json !== null ? Reflect.get(json, "version") : undefined;
+            entry = typeof name !== "string" || name === "" ? null : typeof version === "string" && version !== "" ? { name, version } : { name };
         }
         catch {
             // No package.json here, or none that parses.
-            name = undefined;
+            entry = undefined;
         }
-        names.set(directory, name);
-        return name;
+        found.set(directory, entry);
+        return entry;
     };
 };
 
@@ -170,11 +171,10 @@ export const kernelPlugin = (): Plugin[] => [inputPlugin(), compilePlugin()];
 
 const compilePlugin = (): Plugin => {
     let serve = true;
-    let root = process.cwd();
     /** Whether an earlier instance of the plugin is in the same bundle. */
     let repeated = false;
     let server: ViteDevServer | undefined;
-    const packageNameOf = packageNames();
+    const packageOf = packages();
     /**
      * A linker per environment, since client and SSR builds resolve imports under different conditions. Each resolves
      * through its environment's latest transform.
@@ -222,7 +222,6 @@ const compilePlugin = (): Plugin => {
         config: () => ({ optimizeDeps: { exclude: [packageName] }, worker: { plugins: () => kernelPlugin() } }),
         configResolved: config => {
             serve = config.command === "serve";
-            root = config.root;
             repeated = config.plugins.find(other => other.name === plugin.name) !== plugin;
         },
         configureServer: devServer => {
@@ -264,10 +263,13 @@ const compilePlugin = (): Plugin => {
         async transform(code, id, options) {
             if (repeated || id.includes("\0") || !scripts.test(id.split("?")[0] ?? id)) return null;
             const parse = (input: string) => estreeOf(this.parse(input));
-            const identify = (input: string) => identifyModule(input, moduleIdOf(id, root, packageNameOf), parse, async (source, namespace) => {
-                const resolved = await this.resolve(source, id);
-                return resolved !== null && (resolved.external ? source === packageName : namespaceCopyOf(resolved.id, namespace) !== null);
-            });
+            const identify = async (input: string) => {
+                const identified = await identifyModule(input, moduleIdOf(id, packageOf), parse, async (source, namespace) => {
+                    const resolved = await this.resolve(source, id);
+                    return resolved !== null && (resolved.external ? source === packageName : namespaceCopyOf(resolved.id, namespace) !== null);
+                });
+                return identified !== null && "failure" in identified ? this.error(identified.failure) : identified;
+            };
             const ssr = options?.ssr === true;
             const linker = linkerFor(ssr, this);
             const hashes: string[] = [];

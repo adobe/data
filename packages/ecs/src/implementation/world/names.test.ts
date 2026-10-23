@@ -76,6 +76,6 @@ describe("systems, rules and finalizers of one name", () => {
     });
     it("label a system without a name by its binding and the id the plugin gave it", async () => {
         await using world = createWorld({ [workers]: 0 });
-        expect((await runReported(world, failOnce)).failures.map(failure => failure.name)).toEqual(["failOnce (@adobe/ecs/src/implementation/world/names.test.ts#failOnce)"]);
+        expect((await runReported(world, failOnce)).failures.map(failure => failure.name)).toEqual([expect.stringMatching(/^failOnce \(@adobe\/ecs@[^/]+\/src\/implementation\/world\/names\.test\.ts#failOnce\)$/)]);
     });
 });

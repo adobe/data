@@ -16,25 +16,23 @@ export type Identified = { readonly code: string; readonly map: SourceMap };
 /** A dependency's path inside the last `node_modules`: its package name and subpath. */
 const dependency = /\/node_modules\/(?!.*\/node_modules\/)(.+)$/;
 
-/** The name a directory's package.json gives: undefined without one, null for one without a name. */
-export type PackageNameOf = (directory: string) => string | null | undefined;
+/** What a directory's package.json gives: undefined without one, null for one without a name. */
+export type PackageOf = (directory: string) => { readonly name: string; readonly version?: string } | null | undefined;
 
 /**
- * A module's id: the name of the nearest package.json above it that has one and its path in that package, else for a
- * dependency its package name and subpath, else its path from `root`. Without a query and with forward slashes, so it's
- * the same on every machine and names no directory outside its package.
+ * A module's id: the name and version of the nearest package.json above it that has a name, and its path in that
+ * package, else for a dependency its package name and subpath; null outside both. Without a query and with forward
+ * slashes, so it's the same on every machine and names no directory outside its package. Copies of one package at
+ * different versions have different ids.
  */
-export const moduleIdOf = (file: string, root: string, packageNameOf: PackageNameOf): string => {
+export const moduleIdOf = (file: string, packageOf: PackageOf): string | null => {
     const path = (file.split("?")[0] ?? file).replace(/\\/g, "/");
     for (let directory = posix.dirname(path); ; directory = posix.dirname(directory)) {
-        const name = packageNameOf(directory);
-        if (typeof name === "string") return `${name}/${posix.relative(directory, path)}`;
+        const found = packageOf(directory);
+        if (found !== null && found !== undefined) return `${found.name}${found.version === undefined ? "" : `@${found.version}`}/${posix.relative(directory, path)}`;
         if (posix.dirname(directory) === directory) break;
     }
-    const found = dependency.exec(path)?.[1];
-    if (found !== undefined) return found;
-    const relative = posix.relative(root.replace(/\\/g, "/"), path);
-    return posix.isAbsolute(relative) ? posix.basename(path) : relative;
+    return dependency.exec(path)?.[1] ?? null;
 };
 
 /** Whether a binding named `name` is declared in the module's scope: at top level, or as a `var` in any of its blocks. */
@@ -120,9 +118,10 @@ const mayDeclare = /\.(create|render|changes)\(/;
  *
  * The same bindings initialized by a constructor call of the package's `System`, `Rule`, `Finalizer` or `Index`, imported under
  * any local name, give the call's declaration their id, which the constructor takes from the map: a kernel's call as
- * the kernel transform wrapped it too. Returns null when nothing is identified.
+ * the kernel transform wrapped it too. Returns null when nothing is identified, and a failure when something is but the
+ * module has no id (`moduleIdOf`).
  */
-export const identify = async (code: string, id: string, parse: Parse, resolve: ResolveNamespace): Promise<Identified | null> => {
+export const identify = async (code: string, id: string | null, parse: Parse, resolve: ResolveNamespace): Promise<Identified | { readonly failure: string } | null> => {
     const symbols = code.includes("Symbol(");
     const items = mayDeclare.test(code);
     if (!symbols && !items) return null;
@@ -145,6 +144,7 @@ export const identify = async (code: string, id: string, parse: Parse, resolve: 
         }
     }
     if (found.length === 0 || declaresInModule(program, "Symbol") || declaresInModule(program, "globalThis")) return null;
+    if (id === null) return { failure: "this module's keys and systems need ids, which name its package, but no package.json above it gives a name: give its package one" };
     const identifier = uniqueName(code, "identify$");
     const insertions: Insertion[] = [];
     for (const { value, binding } of found) {

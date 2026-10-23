@@ -124,33 +124,40 @@ describe("identify, for systems, rules and finalizers", () => {
             `const computed = System["create"]({ name: "computed" });`,
         ].join("\n"))).toBe(null);
     });
+    test("fails for a module outside a named package, which has nothing to name its ids by", async () => {
+        const result = await identifyModule(`export const position = Symbol();`, null, parse, resolve);
+        expect(result !== null && "failure" in result ? result.failure : result).toContain("package.json");
+        expect(await identifyModule(`export const two = 2;`, null, parse, resolve)).toBe(null);
+    });
 });
 
 describe("moduleIdOf", () => {
-    /** Packages by directory, as their package.json files name them. */
-    const packages = (named: { readonly [directory: string]: string | null }) => (directory: string) => {
-        const name = named[directory];
-        return name === undefined ? undefined : name;
+    /** Packages by directory, as their package.json files name and version them. */
+    const packages = (named: { readonly [directory: string]: { readonly name: string; readonly version?: string } | null }) => (directory: string) => {
+        const found = named[directory];
+        return found === undefined ? undefined : found;
     };
     const none = packages({});
-    test("is the nearest package's name and the path in it, without a query", async () => {
-        const app = packages({ "/app": "app", "/repo/packages/shared": "@scope/shared", "/repo/packages/shared/src/nested": null });
-        expect(moduleIdOf("/app/src/keys.ts?t=1712", "/app", app)).toBe("app/src/keys.ts");
-        expect(moduleIdOf("/app/src/worker.ts?worker_file&type=module", "/app/", app)).toBe("app/src/worker.ts");
+    test("is the nearest package's name, its version and the path in it, without a query", async () => {
+        const app = packages({ "/app": { name: "app", version: "1.2.0" }, "/repo/packages/shared": { name: "@scope/shared", version: "0.3.1" }, "/repo/packages/shared/src/nested": null });
+        expect(moduleIdOf("/app/src/keys.ts?t=1712", app)).toBe("app@1.2.0/src/keys.ts");
+        expect(moduleIdOf("/app/src/worker.ts?worker_file&type=module", app)).toBe("app@1.2.0/src/worker.ts");
         // A workspace package linked from outside the root is named by its package, not its directories.
-        expect(moduleIdOf("/repo/packages/shared/src/nested/keys.ts", "/repo/apps/web", app)).toBe("@scope/shared/src/nested/keys.ts");
+        expect(moduleIdOf("/repo/packages/shared/src/nested/keys.ts", app)).toBe("@scope/shared@0.3.1/src/nested/keys.ts");
     });
-    test("is a dependency's package name and subpath", async () => {
-        const scoped = packages({ "/app/node_modules/.pnpm/@scope+keys@1.2.0/node_modules/@scope/keys": "@scope/keys" });
-        expect(moduleIdOf("/app/node_modules/.pnpm/@scope+keys@1.2.0/node_modules/@scope/keys/dist/keys.js?v=3f2a", "/app", scoped)).toBe("@scope/keys/dist/keys.js");
-        expect(moduleIdOf("/elsewhere/node_modules/keys/index.js", "/app", none)).toBe("keys/index.js");
+    test("leaves out a version the package doesn't give", async () => {
+        expect(moduleIdOf("/app/src/keys.ts", packages({ "/app": { name: "app" } }))).toBe("app/src/keys.ts");
     });
-    test("is the path from the root without a named package", async () => {
-        expect(moduleIdOf("/app/src/keys.ts?t=1712", "/app", none)).toBe("src/keys.ts");
-        expect(moduleIdOf("/libraries/shared/keys.ts?import", "/app", none)).toBe("../libraries/shared/keys.ts");
+    test("is a dependency's package name, version and subpath", async () => {
+        const scoped = packages({ "/app/node_modules/.pnpm/@scope+keys@1.2.0/node_modules/@scope/keys": { name: "@scope/keys", version: "1.2.0" } });
+        expect(moduleIdOf("/app/node_modules/.pnpm/@scope+keys@1.2.0/node_modules/@scope/keys/dist/keys.js?v=3f2a", scoped)).toBe("@scope/keys@1.2.0/dist/keys.js");
+        expect(moduleIdOf("/elsewhere/node_modules/keys/index.js", none)).toBe("keys/index.js");
+    });
+    test("is null outside a named package", async () => {
+        expect(moduleIdOf("/app/src/keys.ts?t=1712", none)).toBe(null);
+        expect(moduleIdOf("/libraries/shared/keys.ts", packages({ "/libraries": null }))).toBe(null);
     });
     test("uses forward slashes", async () => {
-        expect(moduleIdOf("C:\\app\\src\\keys.ts", "C:\\app", none)).toBe("src/keys.ts");
-        expect(moduleIdOf("C:\\app\\src\\keys.ts", "C:\\app", packages({ "C:/app": "app" }))).toBe("app/src/keys.ts");
+        expect(moduleIdOf("C:\\app\\src\\keys.ts", packages({ "C:/app": { name: "app", version: "1.0.0" } }))).toBe("app@1.0.0/src/keys.ts");
     });
 });

@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Resource } from '../resource/resource.js';
+import { register } from '../resource/register.js';
 
 /**
  * The earliest `clock.now`, in milliseconds, at which a system asked for the next tick, by contributing to it; Infinity
@@ -7,10 +7,10 @@ import { Resource } from '../resource/resource.js';
  */
 export const wake = Symbol("wake");
 
-declare module '@adobe/ecs' {
+declare module '../resource/types.js' {
     export interface Resources {
         [wake]: { type: number; reduce: "min" };
     }
 }
 
-Resource.register(wake, { type: { type: "number", default: Infinity }, reduce: "min" });
+register(wake, { type: { type: "number", default: Infinity }, reduce: "min" });

@@ -9,9 +9,11 @@ import { describeFailure } from './failure.js';
 import { identify as identifyModule, moduleIdOf, type PackageOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
-import { passInputSchemas, type InputHost } from './input-schemas.js';
-import { copyForImporter, isInterfaceModule, namespaceCopyOf } from './paths.js';
-import { locateThroughMap } from './source-map.js';
+import { augmentationInsertions, type AugmentationHost } from './augmentations.js';
+import { inputInsertions, type InputHost } from './input-schemas.js';
+import { copyForImporter, namespaceCopyOf, packagePathOf, typesFileOf } from './paths.js';
+import { moduleOf, type TypedProgram } from './type-schemas.js';
+import { insertInto, locateThroughMap } from './source-map.js';
 import { transformKernels } from './transform.js';
 
 const scripts = /\.[cm]?[jt]sx?$/;
@@ -98,8 +100,9 @@ const inlineKernels = (code: string, kernels: readonly string[], hashes: readonl
 const typed = /\.[cm]?tsx?$/;
 
 /**
- * Passes each system's `create` the schema of its body's input, from the type of the body's parameter after its
- * context (`input-schemas.ts`). It runs before TypeScript is stripped, which the type needs.
+ * Registers the keys `declare module "@adobe/ecs"` blocks declare (`augmentations.ts`), and passes each system's
+ * `create` the schema of its body's input, from the type of the body's parameter after its context
+ * (`input-schemas.ts`). It runs before TypeScript is stripped, which both read.
  */
 const inputPlugin = (): Plugin => {
     let repeated = false;
@@ -116,6 +119,8 @@ const inputPlugin = (): Plugin => {
             dependents.set(file, parents);
         }
     };
+    /** Each file's syntax as last parsed, which transforms of other modules reading its types share. */
+    const parsed = new Map<string, { readonly code: string; readonly program: TypedProgram }>();
     const plugin: Plugin = {
         name: `${packageName}/input`,
         enforce: "pre",
@@ -136,31 +141,37 @@ const inputPlugin = (): Plugin => {
             if (repeated || id.includes("\0") || !typed.test(file)) return null;
             const { parseAst } = await import("vite");
             const resolved = async (specifier: string, importer: string) => await this.resolve(specifier, importer, { skipSelf: true });
-            const host: InputHost = {
-                parse: (source, path) => parseAst(source, { lang: path.endsWith("x") ? "tsx" : "ts" }, path),
+            const host: InputHost & AugmentationHost = {
+                parse: (source, path) => {
+                    const known = parsed.get(path);
+                    if (known !== undefined && known.code === source) return known.program;
+                    const program = parseAst(source, { lang: path.endsWith("x") ? "tsx" : "ts" }, path);
+                    parsed.set(path, { code: source, program });
+                    return program;
+                },
                 resolve: async (specifier, importer) => {
                     const found = await resolved(specifier, importer);
-                    if (found === null || found.external) return null;
-                    const path = found.id.split("?")[0] ?? found.id;
-                    return path.includes("\0") || !isAbsolute(path) ? null : path;
+                    if (found === null) return null;
+                    // A build that treats the package as external still reads its types, from the importer's copy.
+                    const path = found.external ? (specifier === packageName ? copyForImporter(importer).index : null) : found.id.split("?")[0] ?? found.id;
+                    return path === null || path.includes("\0") || !isAbsolute(path) ? null : typesFileOf(path);
                 },
                 load: file => readFile(file, "utf8"),
-                isPackage: async (specifier, importer) => {
-                    const found = await resolved(specifier, importer);
-                    return found !== null && (found.external ? specifier === packageName : isInterfaceModule(found.id));
-                },
+                packagePath: packagePathOf,
+                declareModule: importer => copyForImporter(importer).declare,
                 isSystem: async (specifier, importer) => {
                     const found = await resolved(specifier, importer);
                     return found !== null && (found.external ? specifier === packageName : namespaceCopyOf(found.id, "System") !== null);
                 },
             };
-            const result = await passInputSchemas(code, file, host);
-            const read = result === null ? [] : result.dependencies.filter(dependency => dependency !== file);
+            const module = moduleOf(file, code, host.parse(code, file));
+            const results = [await augmentationInsertions(module, host), await inputInsertions(module, host)].filter(result => result !== null);
+            const read = [...new Set(results.flatMap(result => result.dependencies))].filter(dependency => dependency !== file);
             for (const dependency of read) this.addWatchFile(dependency);
             depend(file, read);
-            if (result === null) return null;
-            if ("failure" in result) return this.error(describeFailure(result.failure), result.failure.position);
-            return { code: result.code, map: result.map };
+            for (const result of results) if ("failure" in result) return this.error(describeFailure(result.failure), result.failure.position);
+            const insertions = results.flatMap(result => "insertions" in result ? result.insertions : []);
+            return insertions.length === 0 ? null : insertInto(code, insertions, file);
         },
     };
     return plugin;

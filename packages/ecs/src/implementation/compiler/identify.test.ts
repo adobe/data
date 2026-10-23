@@ -10,7 +10,11 @@ import { decodeMappings } from './source-map.js';
 const parse = (code: string) => estreeOf(parseAst(code));
 /** Imports from the package, and from `./system.js` for `System` alone, are the package's namespaces. */
 const resolve = async (source: string, namespace: string) => source === "@adobe/ecs" || (source === "./system.js" && namespace === "System");
-const identify = (code: string) => identifyModule(code, "src/keys.ts", parse, resolve);
+const identify = async (code: string) => {
+    const result = await identifyModule(code, "src/keys.ts", parse, resolve);
+    if (result !== null && "failure" in result) throw new Error(result.failure);
+    return result;
+};
 
 /** The calls the rewrite wraps around each identified `Symbol(...)`, as `[symbol source, id]`. */
 const wrapped = (code: string | undefined): readonly (readonly [string, string])[] =>

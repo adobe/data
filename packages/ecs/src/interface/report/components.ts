@@ -17,7 +17,7 @@ export const run = Symbol("Report/run");
  */
 export const errors = Symbol("Report/errors");
 
-declare module '@adobe/ecs' {
+declare module '../component/types.js' {
     export interface Components {
         [run]: {
             type: {

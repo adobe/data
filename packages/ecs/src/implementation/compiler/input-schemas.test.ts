@@ -1,16 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, test } from 'vitest';
-import { parseAst } from 'vite';
-import { passInputSchemas, type InputHost } from './input-schemas.js';
-
-/** Files by path; `@adobe/ecs` is the package, which also exports `System`. */
-const hostOf = (files: { readonly [path: string]: string }): InputHost => ({
-    parse: (code, file) => parseAst(code, { lang: "ts" }, file),
-    resolve: async specifier => specifier.startsWith("./") && `/src/${specifier.slice(2).replace(/\.js$/, ".ts")}` in files ? `/src/${specifier.slice(2).replace(/\.js$/, ".ts")}` : null,
-    load: async file => files[file] ?? "",
-    isPackage: async specifier => specifier === "@adobe/ecs",
-    isSystem: async specifier => specifier === "@adobe/ecs",
-});
+import { passInputSchemas } from './input-schemas.js';
+import { hostOf } from './type-host.test-helper.js';
 
 const header = `import { System, type Entity, type Vec2, type F32, type I32 } from "@adobe/ecs";\n`;
 
@@ -81,6 +72,34 @@ describe("passInputSchemas", () => {
                 steps: { type: "integer", minimum: -2147483648, maximum: 2147483647 },
             },
         }]);
+    });
+    test("follows a type named by Schema.Type to its schema, written as a literal type or `typeof` a constant", async () => {
+        const files = { "/src/units.ts": `import type { Schema } from "@adobe/ecs";\nexport type Level = Schema.Type<{ type: "integer"; minimum: 0; maximum: 9 }>;\nconst title = { type: "string", maxLength: 64 } as const;\nexport type Title = Schema.Type<typeof title>;` };
+        expect(await schemasOf([
+            `import type { Level, Title } from "./units.js";`,
+            `type Cell = readonly [Level, Level];`,
+            `System.create({}, (_c, input: { level: Level; title: Title; cell: Cell }) => {});`,
+        ].join("\n"), files)).toEqual([{
+            type: "object",
+            properties: {
+                level: { type: "integer", minimum: 0, maximum: 9 },
+                title: { type: "string", maxLength: 64 },
+                cell: { type: "array", items: { type: "integer", minimum: 0, maximum: 9 }, minItems: 2, maxItems: 2 },
+            },
+        }]);
+    });
+    test("reads the package's types through any namespace", async () => {
+        expect(await schemasOf(`import * as ecs from "@adobe/ecs";\nSystem.create({}, (_c, input: { at: ecs.Vec3; cell: ecs.Vec2.U32 }) => {});`)).toEqual([{
+            type: "object",
+            properties: {
+                at: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 },
+                cell: { type: "array", items: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF }, minItems: 2, maxItems: 2 },
+            },
+        }]);
+    });
+    test("takes any value for a class a module exports", async () => {
+        const files = { "/src/row.ts": `export class Row extends HTMLElement {}` };
+        expect(await schemasOf(`import { Row } from "./row.js";\nSystem.create({}, (_c, input: { row: Row }) => {});`, files)).toEqual([{ type: "object", properties: { row: { allOf: [] } } }]);
     });
     test("takes any value for a global class or unknown", async () => {
         expect(await schemasOf(`System.create({}, (_c, input: { canvas: OffscreenCanvas; bitmap: ImageBitmap; element: HTMLCanvasElement; anything: unknown }) => {});`)).toEqual([

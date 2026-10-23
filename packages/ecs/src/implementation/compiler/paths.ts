@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, extname, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,6 +21,8 @@ export type PackageCopy = {
     readonly preparedLookup: string;
     /** The package root's module, for kernels that import the package when a build treats it as external. */
     readonly index: string;
+    /** The registry's hook for the declarations the build reads from `Components`, `Resources` and `Traits`. */
+    readonly declare: string;
 };
 
 /** The root of the copy of the package containing each directory, or null; found once per directory. */
@@ -72,6 +74,7 @@ const copyAt = (root: string, source: boolean, extension: string): PackageCopy =
         preparedSpawn: `${prefix}/implementation/world/prepared-spawn${suffix}`,
         preparedLookup: `${prefix}/implementation/world/prepared-lookup${suffix}`,
         index: `${prefix}/index${suffix}`,
+        declare: `${prefix}/interface/registry/declare${suffix}`,
     };
     copies.set(key, copy);
     return copy;
@@ -167,4 +170,27 @@ export const namespaceCopyOf = (id: string, namespace: string): PackageCopy | nu
 export const isInterfaceModule = (id: string): boolean => {
     const found = pathInCopy(fileOf(id));
     return found !== null && (found.path.startsWith("src/interface/") || found.path.startsWith("dist/interface/") || rootModules.includes(found.path));
+};
+
+/** A file's path in a copy of the package, without `src/` or `dist/` and its extension; null outside every copy. */
+export const packagePathOf = (file: string): string | null => {
+    const found = pathInCopy(fileOf(file));
+    if (found === null) return null;
+    const path = found.path.replace(/^(src|dist)\//, "");
+    return path === found.path ? null : path.replace(/(\.d)?\.[cm]?[jt]sx?$/, "");
+};
+
+/**
+ * The file whose types a resolved module's are: a copy of the package's `dist` module's source, which the package
+ * ships, else a JavaScript module's declarations beside it, else the module itself.
+ */
+export const typesFileOf = (file: string): string => {
+    const path = fileOf(file);
+    const found = pathInCopy(path);
+    if (found !== null && found.path.startsWith("dist/") && path.endsWith(".js")) {
+        const source = `${found.root}/src/${found.path.slice("dist/".length, -".js".length)}.ts`;
+        if (existsSync(source)) return source;
+    }
+    const declarations = path.replace(/\.([cm]?)js$/, ".d.$1ts");
+    return declarations !== path && existsSync(declarations) ? declarations : path;
 };

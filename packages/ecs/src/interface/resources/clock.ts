@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Resource } from '../resource/resource.js';
+import { register } from '../resource/register.js';
 
 /**
  * The current tick, written only by the world before each tick: `now`, the beat's time in milliseconds, `delta`, the
@@ -7,12 +7,12 @@ import { Resource } from '../resource/resource.js';
  */
 export const clock = Symbol("clock");
 
-declare module '@adobe/ecs' {
+declare module '../resource/types.js' {
     export interface Resources {
         [clock]: { type: { readonly now: number; readonly delta: number; readonly tick: number } };
     }
 }
 
-Resource.register(clock, {
+register(clock, {
     type: { type: "object", properties: { now: { type: "number" }, delta: { type: "number" }, tick: { type: "number" } }, default: { now: 0, delta: 0, tick: 0 } },
 });

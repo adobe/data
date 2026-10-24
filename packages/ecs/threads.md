@@ -41,7 +41,7 @@ Referenced from `design.md`.
   system naming one fails to register. Ids name packages and their versions, not directories, so threads bundled apart
   agree on them, and the plugin adds itself to `worker.plugins`, so worker bundles' keys get them too. Every declared
   key has one, since a declaration names only a top-level `Symbol()` constant.
-- **Systems, rules and finalizers are their values,** and names are optional labels, so a value is different on each
+- **Systems, rules and finalizers are their values,** labeled by their bindings, so a value is different on each
   thread too. Threads agree on them through the ids the plugin gives top-level `System.create`, `System.render`,
   `Rule.create`, `Finalizer.create` and `Finalizer.changes` bindings, composites included, by which the registry
   already takes values of one id as one item. A threaded world rejects an item without one where it crosses threads:

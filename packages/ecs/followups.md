@@ -83,16 +83,13 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 The plugin is required, so it can derive what consumers now restate. Each is a contract change, reviewed one at a
 time; inferred values are emitted as the same literals the runtime takes today, so none costs anything at runtime.
 
-1. **Names from bindings.** `name` on systems, composites, indexes and finalizers defaults to the plugin's id
-   (`<module>#<binding>`), which 218 of 325 names restate.
-2. **Reductions declared once.** A system's `reduce` drops the operator, which is the resource's `reduce` trait, and
-   its keys come from the body's `reduce[key](…)` calls.
-3. **Kernels by default.** A body in the kernel subset compiles as a `"cpu"` kernel unflagged; `kernel: "cpu"`
-   asserts it, `"gpu"` chooses the backend, `false` runs it as written. Needs a measured rule for small runs, and
-   accepts results that aren't bit-exact with plain JS.
-4. **Access inferred from bodies.** `components`, `resources`, `lookup` and `up` read and write lists come from the
-   body where `usedBy` follows every use, explicit otherwise. Bodies' rows are then typed over every component, so
-   it needs the planned ESLint rule to keep errors in the editor.
+1. **Kernels by default.** `kernel?: boolean | "gpu"`: omitted compiles a row system whose body fits the subset,
+   `true` asserts it (a build error saying why, including for a per-run system), `false` never compiles, `"gpu"` as
+   today; per-run systems never compile automatically. Accepts results that aren't bit-exact with plain JS.
+2. **Access inferred from bodies, saved for discussion with Kris.** Recommended: option B, membership explicit as
+   `components: { with: [...], not: [...] }` and access modes inferred from the body, so rows stay typed over `with`
+   and matching never changes behind the author's back; `write` stays as an override for bodies the plugin can't
+   follow. Option A infers the lists entirely, typing rows over every component.
 
 ## Findings from the todo sample (`src/samples/todo/README.md`)
 

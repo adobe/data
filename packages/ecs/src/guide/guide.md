@@ -626,25 +626,185 @@ lookup's `changed: true` runs its system only when that happened anywhere in the
 
 ### 14. Kernels
 
-Systems compiled to run across workers: a system with components compiles when its body allows it, `kernel: true`
-requires it and `kernel: false` runs it as written. To be written.
+```ts
+// A kernel is a body run once per row, each row on its own, so the world can split rows across workers and run them as
+// WASM. A body that reads and writes only structs, calls math and touches no module state is one: the build compiles
+// it, with results the same as the body as written.
+const move = System.create({ components: { with: [velocity, position] } }, (row, { resources }) => {
+    row[position] = Vec3.add(row[position], Vec3.scale(row[velocity], resources[delta]));
+});
+
+// kernel: true asserts it: the build fails, saying why, if the body can't be one. It also computes f32 values at f32,
+// which is faster on dense rows.
+const drift = System.create({ kernel: true, components: { with: [velocity, position] } }, row => {
+    row[position] = Vec3.add(row[position], row[velocity]);
+});
+
+// kernel: false runs the body as written, on its thread: to step through it in a debugger, say.
+const slow = System.create({ kernel: false, components: { with: [velocity] } }, row => {
+    row[velocity] = Vec3.scale(row[velocity], 0.5);
+});
+```
+
+[`14-kernels.test.ts`](14-kernels.test.ts#L19-L35)
 
 ### 15. Reductions
 
-One value computed from many rows. To be written.
+```ts
+declare module "@adobe/ecs" {
+    interface Components {
+        [mass]: { type: F32 };
+    }
+    // A reduced resource names how contributions combine: "+", "*", "min", "max", or bitwise "&", "|", "^".
+    interface Resources {
+        [total]: { type: number; reduce: "+" };
+        [heaviest]: { type: F32; reduce: "max" };
+        [count]: { type: number; reduce: "+" };
+    }
+}
+```
+
+[`15-reductions.test.ts`](15-reductions.test.ts#L10-L20)
+
+```ts
+// Each row contributes; every run starts each resource it reduces at its operator's identity and leaves it holding the
+// fold of what every row gave, however the rows were split across workers.
+const weigh = System.create({ components: { with: [mass] } }, (row, { reduce }) => {
+    reduce[total](row[mass]);
+    reduce[heaviest](row[mass]);
+    reduce[count](1);
+});
+
+// Read the result after the run, as any resource.
+let summary = "";
+const report = System.create({ observer: true }, ({ resources }) => {
+    summary = `${resources[count]} weigh ${resources[total]}, at most ${resources[heaviest]}`;
+});
+```
+
+[`15-reductions.test.ts`](15-reductions.test.ts#L22-L34)
 
 ### 16. GPU kernels and render systems
 
-Systems that run or draw on the GPU. To be written.
+```ts
+// kernel: "gpu" runs the body as a compute shader over the GPU's copy of its components, in a world given a device
+// (World.create({ [gpuDevice]: device })), and as a kernel on the CPU in one without. Its rows hold 32-bit numbers
+// and vectors of them; it has no lookups, change filters or commands.
+const move = System.create({ kernel: "gpu", components: { with: [velocity, position] } }, row => {
+    row[position] = Vec2.add(row[position], row[velocity]);
+});
+```
+
+[`16-gpu.test.ts`](16-gpu.test.ts#L17-L22)
+
+```ts
+// A render system records draws over the GPU copy of the components its accessors name, in a world with a device.
+// Gpu.wgsl(draw) gives its shaders a function per accessor, `fn dotPosition(row: u32) -> vec2<f32>`, and
+// Gpu.layout(device) the bind group layout its pipeline takes. Each table is a group of matching rows to draw.
+let pipeline: GPURenderPipeline | null = null;
+let target: GPUTextureView | null = null;
+const draw = System.render({ shader: { accessors: { dotPosition: position, dotSize: size } } }, ({ encoder, tables }) => {
+    if (pipeline === null || target === null) return;
+    const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target, loadOp: "clear", storeOp: "store" }] });
+    pass.setPipeline(pipeline);
+    for (const table of tables) {
+        table.bind(pass);
+        pass.draw(6, table.count);
+    }
+    pass.end();
+});
+const shaderCode = Gpu.wgsl(draw);
+```
+
+[`16-gpu.test.ts`](16-gpu.test.ts#L24-L39)
 
 ### 17. Hierarchies
 
-Running rows parent first, through a reference. To be written.
+```ts
+declare module "@adobe/ecs" {
+    interface Components {
+        // Despawned with its parent.
+        [parent]: { type: Entity; reference: "owner" };
+        [offset]: { type: number };
+        [placed]: { type: number };
+        [label]: { type: string };
+    }
+}
+
+// up runs rows parent first, through a reference, so each row reads its parent's values from earlier in the same run:
+// context.up holds what the body reads of the parent, or null for a row without one.
+const place = System.create({ components: { with: [offset, placed] }, up: { through: parent } }, (row, { up }) => {
+    row[placed] = (up === null ? 0 : up[placed]) + row[offset];
+});
+```
+
+[`17-hierarchies.test.ts`](17-hierarchies.test.ts#L10-L24)
 
 ### 18. Identity and ids
 
-How systems and keys stay the same across reloads. To be written.
+```ts
+// A key, system, index, rule or finalizer is the value its constructor returns: two written alike are two, and code
+// written apart can't collide. The build gives each one bound at a module's top level an id from where it's declared,
+// its package's name and version, its module's path and its binding, so other threads and a module evaluated again
+// by hot reload name the same one.
+const explode = System.create(() => {
+    throw new Error("boom");
+});
+
+// Reports label it by its binding, and give the id beside it to tell two of one label apart.
+const failures: string[] = [];
+const logFailures = System.create({ observer: true, components: { with: [Report.errors], changed: [Report.errors] } }, row => {
+    for (const failure of row[Report.errors].failures) failures.push(`${failure.name} ${failure.id}`);
+});
+```
+
+[`18-identity.test.ts`](18-identity.test.ts#L5-L17)
 
 ### 19. Threads
 
-Sharing a world with another thread, which joins it to run systems and add observers. To be written.
+```ts
+// A logical thread is where objects live and the code touching them runs. Declare one, and place objects on it.
+declare module "@adobe/ecs" {
+    interface Threads {
+        audio: true;
+    }
+    interface Components {
+        [volume]: { type: number };
+    }
+    interface Resources {
+        [levels]: { type: ReadonlyMap<string, number>; thread: "audio" };
+    }
+}
+
+// A system runs on the thread its objects live on: this one, writing levels, runs on audio.
+const mix = System.create({ components: { with: [volume] } }, (row, { resources }) => {
+    resources[levels] = new Map([...resources[levels], [`voice ${row.entity}`, row[volume]]]);
+});
+
+// Another thread joins a shared world, claiming the threads it fills, and adds observer systems that run there after
+// the world's sync points.
+const heard: number[] = [];
+const listen = System.create({ observer: true }, ({ resources }) => {
+    heard.push(resources[levels].size);
+});
+```
+
+[`19-threads.test.ts`](19-threads.test.ts#L8-L31)
+
+```ts
+it("shares a world with another thread", async () => {
+    // Usually one end of the channel goes to a worker, `new Worker(...)`, which joins with the other.
+    const channel = new MessageChannel();
+    await using world = World.create();
+    world.share(channel.port1);
+    await using audio = World.join(channel.port2, { threads: ["audio"] });
+    audio.add(listen);
+    await world.run(spawn);
+    // A joined world runs systems as the world does.
+    await audio.run(mix);
+    await until(() => heard.at(-1) === 2);
+    expect(heard.at(-1)).toBe(2);
+});
+```
+
+[`19-threads.test.ts`](19-threads.test.ts#L43-L55)

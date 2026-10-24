@@ -13,8 +13,7 @@ code it shows: every excerpt comes from a file here that runs as a test, so the 
   compile-time checks prevent most mistakes.
 - Never mention `@adobe/data` or any other package that isn't this one. It means nothing to a consumer.
 - Describe only the current API, with no history.
-- Keep it small. Write sections for the basics and intermediate topics; advanced topics are placeholders until the
-  API settles.
+- Keep it small. Advanced sections are as short as the rest: each shows the common case of its topic and stops.
 
 ## Structure
 
@@ -24,7 +23,8 @@ code it shows: every excerpt comes from a file here that runs as a test, so the 
   share a section; entities are taught with components, and archetypes, named lists of components, with them.
 - **Intermediate:** scheduling and composites, sync points, change filters and conditions, input, rules, finalizers
   and change sets, and traits with within and references.
-- **Advanced:** placeholders only.
+- **Advanced:** lookups, indexes, kernels, reductions, GPU kernels and render systems, hierarchies, identity and ids,
+  and threads.
 
 ## Code conventions
 

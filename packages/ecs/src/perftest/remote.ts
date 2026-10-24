@@ -90,7 +90,7 @@ export const seedCaptions = System.create({}, ({ commands }, input: { readonly c
 const recaption = System.create({ components: { read: [rank], write: [caption] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
     if (row[rank] % 100 === resources[counter] % 100) row[caption] = `Buy milk and bread #${row[rank]}.${resources[counter]}`;
 });
-const reamount = System.create({ components: { read: [rank], write: [amount] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
+const reamount = System.create({ kernel: false, components: { read: [rank], write: [amount] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
     if (row[rank] % 100 === resources[counter] % 100) row[amount] = row[rank] + resources[counter];
 });
 /** Rewrites 1% of the captions a tick. */

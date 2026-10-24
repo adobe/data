@@ -34,13 +34,13 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 });
 
 /** Writes the marked entity's value, so one entity observer is notified and a selection or count is a candidate. */
-const nudge = System.create({ components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
+const nudge = System.create({ kernel: false, components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
 
 /** A kernel writing every row's rank. */
 const advance = System.create({ kernel: true, components: { write: [rank] } }, row => { row[rank] += 1; });
 
 /** A system no entity matches: a run that changes nothing. */
-const idle = System.create({ components: { has: [unmatched] } }, () => {});
+const idle = System.create({ kernel: false, components: { has: [unmatched] } }, () => {});
 
 const check = (condition: boolean, message: string): void => {
     if (!condition) throw new Error(message);

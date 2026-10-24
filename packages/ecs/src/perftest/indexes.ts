@@ -199,7 +199,7 @@ const inStorageOrder = System.create({ components: { read: [amount] } }, row => 
 const changedInRankOrder = System.create({ components: { read: [amount], changed: [amount] }, order: byRank }, row => {
     accumulated = (accumulated * 31 + row[amount]) % 1000003;
 });
-const bumpMarked = System.create({ components: { write: [amount], has: [marked] } }, row => { row[amount] += 1; });
+const bumpMarked = System.create({ kernel: false, components: { write: [amount], has: [marked] } }, row => { row[amount] += 1; });
 
 let pushed = 0;
 const neighbors = System.create({ components: { read: [place, cell] }, lookup: { near: { index: grid, read: [place] } } }, (row, { lookup }) => {
@@ -233,7 +233,7 @@ const seedPage = System.create({}, ({ commands }) => {
     commands.spawn([amount, key, marked])({ [amount]: 0, [key]: 0, [marked]: true });
     for (let i = 1; i < pageRows; i++) commands.spawn([amount, key])({ [amount]: (i * 7919) % pageRows, [key]: i });
 });
-const nudgeAmount = System.create({ components: { has: [marked], write: [amount] } }, row => { row[amount] += 1; });
+const nudgeAmount = System.create({ kernel: false, components: { has: [marked], write: [amount] } }, row => { row[amount] += 1; });
 let page: number[] = [];
 /** The page, recomputed only when what it reads changed: the 20 rows after the first 100 with a key below half, highest amounts first. */
 const readPage = System.create({ lookup: { byAmount: { index: byAmount, read: [key], changed: [key] } }, after: [nudgeAmount] }, ({ lookup }) => {

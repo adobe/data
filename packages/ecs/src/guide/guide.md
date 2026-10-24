@@ -508,7 +508,8 @@ lookup's `changed: true` runs its system only when that happened anywhere in the
 
 ### 14. Kernels
 
-Systems compiled to run across workers. To be written.
+Systems compiled to run across workers: a system with components compiles when its body allows it, `kernel: true`
+requires it and `kernel: false` runs it as written. To be written.
 
 ### 15. Reductions
 

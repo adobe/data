@@ -32,7 +32,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 });
 
 /** Writes the marked entity's value. */
-const nudge = System.create({ components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
+const nudge = System.create({ kernel: false, components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
 
 /** A kernel writing every row's rank, whose stamps it keeps only while something watches ranks change. */
 const advance = System.create({ kernel: true, components: { write: [rank] } }, row => { row[rank] += 1; });

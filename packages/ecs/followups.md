@@ -83,10 +83,7 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 The plugin is required, so it can derive what consumers now restate. Each is a contract change, reviewed one at a
 time; inferred values are emitted as the same literals the runtime takes today, so none costs anything at runtime.
 
-1. **Kernels by default.** `kernel?: boolean | "gpu"`: omitted compiles a row system whose body fits the subset,
-   `true` asserts it (a build error saying why, including for a per-run system), `false` never compiles, `"gpu"` as
-   today; per-run systems never compile automatically. Accepts results that aren't bit-exact with plain JS.
-2. **Access inferred from bodies, saved for discussion with Kris.** Recommended: option B, membership explicit as
+1. **Access inferred from bodies, saved for discussion with Kris.** Recommended: option B, membership explicit as
    `components: { with: [...], not: [...] }` and access modes inferred from the body, so rows stay typed over `with`
    and matching never changes behind the author's back; `write` stays as an override for bodies the plugin can't
    follow. Option A infers the lists entirely, typing rows over every component.

@@ -63,7 +63,7 @@ export const releaseMeasured = Finalizer.create({ components: { read: [measured,
 const spawn = System.create({}, ({ commands }) => {
     for (let k = 0; k < despawnedObjects; k++) commands.spawn([spot, handle])({ [spot]: [k, 0, 0], [handle]: null });
 });
-const despawn = System.create({ components: { has: [handle, spot] } }, (row, { commands }) => {
+const despawn = System.create({ kernel: false, components: { has: [handle, spot] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 const spawnNoted = System.create({}, ({ commands }) => {
@@ -72,10 +72,10 @@ const spawnNoted = System.create({}, ({ commands }) => {
 const spawnMeasured = System.create({}, ({ commands }) => {
     for (let k = 0; k < despawnedObjects; k++) commands.spawn([spot, measured])({ [spot]: [k, 0, 0], [measured]: null });
 });
-const despawnMeasured = System.create({ components: { has: [measured, spot] } }, (row, { commands }) => {
+const despawnMeasured = System.create({ kernel: false, components: { has: [measured, spot] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
-const despawnNoted = System.create({ components: { has: [noted, spot] } }, (row, { commands }) => {
+const despawnNoted = System.create({ kernel: false, components: { has: [noted, spot] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 

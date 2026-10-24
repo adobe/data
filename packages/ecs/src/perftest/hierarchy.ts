@@ -53,7 +53,7 @@ export const forest = System.create({
 const target = { type: "object", properties: { entity: Entity.schema } } as const;
 
 /** Changes one row's own value. */
-export const nudge = System.create({ components: { write: [local] } }, (row, _context, input: { readonly entity: Entity }) => {
+export const nudge = System.create({ kernel: false, components: { write: [local] } }, (row, _context, input: { readonly entity: Entity }) => {
     if (row.entity === input.entity) row[local] += 1;
 });
 

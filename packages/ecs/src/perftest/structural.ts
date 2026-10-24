@@ -86,12 +86,12 @@ export const spawnKernel = System.create({ kernel: true, components: { read: [in
 });
 
 /** Despawns every entity a spawn benchmark made. */
-export const despawnSpawned = System.create({ components: { has: [spawned] } }, (row, { commands }) => {
+export const despawnSpawned = System.create({ kernel: false, components: { has: [spawned] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 
 /** Despawns every seeded entity. */
-export const despawnAll = System.create({ components: { has: [index], not: [spawned] } }, (row, { commands }) => {
+export const despawnAll = System.create({ kernel: false, components: { has: [index], not: [spawned] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 
@@ -113,11 +113,11 @@ export const despawnOne = System.create({}, ({ commands }) => {
     if (entity !== undefined) commands.despawn(entity);
 });
 
-export const addFlag = System.create({ components: { has: [index], not: [flag, spawned] } }, (row, { commands }) => {
+export const addFlag = System.create({ kernel: false, components: { has: [index], not: [flag, spawned] } }, (row, { commands }) => {
     commands.add(row.entity, flag);
 });
 
-export const removeFlag = System.create({ components: { has: [flag] } }, (row, { commands }) => {
+export const removeFlag = System.create({ kernel: false, components: { has: [flag] } }, (row, { commands }) => {
     commands.remove(row.entity, flag);
 });
 
@@ -129,23 +129,23 @@ export const removeFlagKernel = System.create({ kernel: true, components: { has:
     commands.remove(row.entity, flag);
 });
 
-export const addAmount = System.create({ components: { read: [index], not: [amount, spawned] } }, (row, { commands }) => {
+export const addAmount = System.create({ kernel: false, components: { read: [index], not: [amount, spawned] } }, (row, { commands }) => {
     commands.add(row.entity, amount, row[index]);
 });
 
-export const removeAmount = System.create({ components: { has: [amount] } }, (row, { commands }) => {
+export const removeAmount = System.create({ kernel: false, components: { has: [amount] } }, (row, { commands }) => {
     commands.remove(row.entity, amount);
 });
 
 /** Adds a value every row already has: no archetype moves, only values replaced and marked changed. */
-export const replaceAmount = System.create({ components: { read: [amount] } }, (row, { commands }) => {
+export const replaceAmount = System.create({ kernel: false, components: { read: [amount] } }, (row, { commands }) => {
     commands.add(row.entity, amount, row[amount] + 1);
 });
 
-export const addSeveral = System.create({ components: { read: [index], not: [flag, spawned] } }, (row, { commands }) => {
+export const addSeveral = System.create({ kernel: false, components: { read: [index], not: [flag, spawned] } }, (row, { commands }) => {
     commands.add(row.entity, several, { [amount]: row[index], [extra]: 1 });
 });
 
-export const removeSeveral = System.create({ components: { has: [flag, amount, extra] } }, (row, { commands }) => {
+export const removeSeveral = System.create({ kernel: false, components: { has: [flag, amount, extra] } }, (row, { commands }) => {
     commands.remove(row.entity, several);
 });

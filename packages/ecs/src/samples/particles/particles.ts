@@ -26,9 +26,8 @@ export const spawn = System.create({
     }
 });
 
-// Kernels: linear components and read-only resources, so they can run in chunks across workers.
+// Kernels: linear components and read-only resources, so the build compiles them to run in chunks across workers.
 export const gravity = System.create({
-    kernel: true,
     components: { write: [velocity] },
     resources: { read: [delta] },
 }, (row, { resources }) => {
@@ -37,7 +36,6 @@ export const gravity = System.create({
 });
 
 export const integrate = System.create({
-    kernel: true,
     components: { read: [velocity], write: [position] },
     resources: { read: [delta] },
     after: [gravity],

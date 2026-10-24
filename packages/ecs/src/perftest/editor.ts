@@ -71,6 +71,7 @@ const load = System.create({}, ({ commands }) => {
 
 /** Each node's world position is its parent's plus its own. */
 const place = System.create({
+    kernel: false,
     components: { read: [localX, localY], write: [worldX, worldY], changed: [localX, localY] },
     up: { through: parent, read: [worldX, worldY] },
 }, (row, { up }) => {
@@ -79,6 +80,7 @@ const place = System.create({
 });
 /** Each node's world opacity is its parent's times its own. */
 const fade = System.create({
+    kernel: false,
     components: { read: [opacity], write: [worldOpacity], changed: [opacity] },
     up: { through: parent, read: [worldOpacity] },
 }, (row, { up }) => {

@@ -86,7 +86,7 @@ export const overlapWorldMilliseconds = 2;
 export const overlapTicks = 100;
 
 /** On the world's thread: writes every row's place, which the last tick's tail still reads. */
-const overlapWrite = System.create({ components: { write: [place] } }, row => {
+const overlapWrite = System.create({ kernel: false, components: { write: [place] } }, row => {
     row[place] = [row[place][0], 1, 0];
 });
 /** On the world's thread, after the writer: the rest of the tick's work, as systems reading what it wrote do. */

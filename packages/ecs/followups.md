@@ -109,7 +109,7 @@ None open.
   get cheap enough for it to matter: a `Report.timing` resource, off by default with `elapsed` NaN, measured `run idle`
   416 ns and `run observer` 208.
 - **Reports are hidden from queries that require no component,** as the resource entity is: an index or system with no
-  `has` or `read`, and changes finalizers watching everything, don't see them. Recommended: accept, since they're the
+  `with`, and changes finalizers watching everything, don't see them. Recommended: accept, since they're the
   world's own.
 - **Errors while tails run:** an add or removal of `Report.errors` found after a run's sync point waits for the next
   sync point while tails run on a joined thread, an earlier run's errors emptied meanwhile. Recommended: accept; errors

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { defineConfig } from "vite";
-import { kernelPlugin } from "./src/implementation/compiler/index.ts";
+import { Compiler } from "./src/implementation/compiler/index.ts";
 import { isolation, sources } from "./vitest.plugins.ts";
 
 /**
@@ -9,5 +9,5 @@ import { isolation, sources } from "./vitest.plugins.ts";
  */
 export default defineConfig({
     root: "src/samples",
-    plugins: [kernelPlugin(), isolation, sources],
+    plugins: [Compiler.plugin(), isolation, sources],
 });

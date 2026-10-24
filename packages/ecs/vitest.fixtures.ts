@@ -4,7 +4,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
 import type { TestProject } from "vitest/node";
-import { kernelPlugin } from "./src/implementation/compiler/index.ts";
+import { Compiler } from "./src/implementation/compiler/index.ts";
 
 const root = dirname(fileURLToPath(import.meta.url));
 /** Where each test run builds its fixtures, in a directory of its own: `run-<process id>-<suffix>`. */
@@ -50,7 +50,7 @@ export default async (project: TestProject): Promise<() => void> => {
         configFile: false,
         root,
         logLevel: "warn",
-        plugins: [kernelPlugin()],
+        plugins: [Compiler.plugin()],
         build: {
             ssr: true,
             outDir: fixturesDirectory,

@@ -37,15 +37,15 @@ How to use the ECS. Each excerpt comes from a test in this folder; the link unde
 ```ts
 // vite.config.ts: compiles kernels, checks each system's declaration against its body, reads the schema of each
 // body's input from its type, and gives keys and systems ids.
-import { kernelPlugin } from "@adobe/ecs/compiler";
-export default defineConfig({ plugins: [kernelPlugin()] });
+import { Compiler } from "@adobe/ecs/compiler";
+export default defineConfig({ plugins: [Compiler.plugin()] });
 ```
 
 Each component and resource is declared once, in the module that makes its key, by augmenting `Components` or
 `Resources` in `@adobe/ecs` with its traits, `type` among them. The plugin registers each declaration: it reads the
 schema the value is stored by from `type`, so a type named by `Schema.Type`, such as `F32` or `U32`, gives its
 precision or width. Traits of your own augment `Traits`. A library builds with Vite and
-`kernelPlugin({ library: true })`, so its build ships its registrations. The examples create worlds with
+`Compiler.plugin({ library: true })`, so its build ships its registrations. The examples create worlds with
 `World.create()`.
 
 ## Basics

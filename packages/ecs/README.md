@@ -38,6 +38,16 @@ A high-performance, multithreaded Entity Component System for web-based applicat
   - Kernels allocate nothing per row; commands, lookups and reports reuse their buffers
   - Errors reported as data, in each run's report
 
+## Setup
+
+```ts
+// vite.config.ts
+import { Compiler } from "@adobe/ecs/compiler";
+export default defineConfig({ plugins: [Compiler.plugin()] });
+```
+
+A library builds with `Compiler.plugin({ library: true })`, so its build ships the registrations its declarations give.
+
 ## Guide
 
 See the [guide](src/guide/guide.md) for how to use it.

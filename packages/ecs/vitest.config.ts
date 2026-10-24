@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
-import { kernelPlugin } from "./src/implementation/compiler/index.ts";
+import { Compiler } from "./src/implementation/compiler/index.ts";
 import { isolation, sources } from "./vitest.plugins.ts";
 
 /**
@@ -26,7 +26,7 @@ export default defineConfig({
     test: {
         projects: [
             {
-                plugins: [kernelPlugin()],
+                plugins: [Compiler.plugin()],
                 test: {
                     ...timeouts,
                     execArgv,
@@ -37,7 +37,7 @@ export default defineConfig({
                 },
             },
             {
-                plugins: [kernelPlugin()],
+                plugins: [Compiler.plugin()],
                 test: {
                     ...timeouts,
                     execArgv,
@@ -49,7 +49,7 @@ export default defineConfig({
                 },
             },
             {
-                plugins: [kernelPlugin(), isolation, sources],
+                plugins: [Compiler.plugin(), isolation, sources],
                 test: {
                     ...timeouts,
                     name: "browser",

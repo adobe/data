@@ -121,11 +121,11 @@ const inputPlugin = (): Plugin => {
     };
     /** The package's own files' syntax as last parsed, which every module reading the package's types shares. */
     const parsed = new Map<string, { readonly code: string; readonly program: TypedProgram }>();
-    const plugin: Plugin = {
+    const instance: Plugin = {
         name: `${packageName}/input`,
         enforce: "pre",
         configResolved: config => {
-            repeated = config.plugins.find(other => other.name === plugin.name) !== plugin;
+            repeated = config.plugins.find(other => other.name === instance.name) !== instance;
         },
         configureServer: devServer => {
             server = devServer;
@@ -178,7 +178,7 @@ const inputPlugin = (): Plugin => {
             return insertions.length === 0 ? null : insertInto(code, insertions, file);
         },
     };
-    return plugin;
+    return instance;
 };
 
 /**
@@ -187,7 +187,7 @@ const inputPlugin = (): Plugin => {
  * schemas its types give, which an application's build, reading only JavaScript there, can't make, and leaves its
  * kernels as source and its keys without ids, which the application's plugin compiles and gives.
  */
-export const kernelPlugin = (options: { readonly library?: boolean } = {}): Plugin[] => options.library === true ? [inputPlugin()] : [inputPlugin(), compilePlugin()];
+export const plugin = (options: { readonly library?: boolean } = {}): Plugin[] => options.library === true ? [inputPlugin()] : [inputPlugin(), compilePlugin()];
 
 const compilePlugin = (): Plugin => {
     let serve = true;
@@ -235,14 +235,14 @@ const compilePlugin = (): Plugin => {
         chunks.add(referenceId);
         return referenceId;
     };
-    const plugin: Plugin = {
+    const instance: Plugin = {
         name: `${packageName}/kernel`,
         enforce: "post",
         // Dep pre-bundling breaks the runtime's `new Worker(new URL("./worker.js", import.meta.url))`.
-        config: () => ({ optimizeDeps: { exclude: [packageName] }, worker: { plugins: () => kernelPlugin() } }),
+        config: () => ({ optimizeDeps: { exclude: [packageName] }, worker: { plugins: () => plugin() } }),
         configResolved: config => {
             serve = config.command === "serve";
-            repeated = config.plugins.find(other => other.name === plugin.name) !== plugin;
+            repeated = config.plugins.find(other => other.name === instance.name) !== instance;
         },
         configureServer: devServer => {
             server = devServer;
@@ -317,5 +317,5 @@ const compilePlugin = (): Plugin => {
             return await identify(result.code) ?? { code: result.code, map: null };
         },
     };
-    return plugin;
+    return instance;
 };

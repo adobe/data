@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, expect, test } from 'vitest';
 import { build, createServer, parseAst, transformWithOxc, type Rollup, type ViteDevServer } from 'vite';
 import type { KernelDescription, KernelModule } from '../world/kernel.js';
-import { kernelPlugin } from './plugin.js';
+import { plugin } from './plugin.js';
 
 const source = (path: string) => JSON.stringify(fileURLToPath(new URL(path, import.meta.url)));
 const directory = realpathSync(mkdtempSync(join(tmpdir(), "ecs-kernel-")));
@@ -196,7 +196,7 @@ const runs = (module: KernelModule, description: KernelDescription): readonly nu
 test("a build emits each kernel as its own chunk, referenced by the description's url", async () => {
     const outDir = join(directory, "dist");
     const output = await build({
-        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        configFile: false, logLevel: "silent", root: directory, plugins: [plugin()],
         build: { outDir, minify: false, lib: { entry: fixture, formats: ["es"], fileName: "main" } },
     });
     const chunks = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
@@ -213,7 +213,7 @@ test("a build emits each kernel as its own chunk, referenced by the description'
 
 const serve = async <T>(use: (server: ViteDevServer) => Promise<T>): Promise<T> => {
     const server = await createServer({
-        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        configFile: false, logLevel: "silent", root: directory, plugins: [plugin()],
         appType: "custom", server: { middlewareMode: true, hmr: false, watch: null }, optimizeDeps: { noDiscovery: true },
     });
     try {
@@ -226,7 +226,7 @@ const serve = async <T>(use: (server: ViteDevServer) => Promise<T>): Promise<T> 
 test("a build gives each kernel the url of its own chunk", async () => {
     const outDir = join(directory, "dist-pair");
     const output = await build({
-        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        configFile: false, logLevel: "silent", root: directory, plugins: [plugin()],
         build: { outDir, minify: false, lib: { entry: pair, formats: ["es"], fileName: "main" } },
     });
     const main = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
@@ -275,7 +275,7 @@ test("serve rejects a url for a different version of the kernel", async () => {
 test("a build inlines functions from TypeScript modules and packages", async () => {
     const outDir = join(directory, "dist-linked");
     const output = await build({
-        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        configFile: false, logLevel: "silent", root: directory, plugins: [plugin()],
         build: { outDir, minify: false, lib: { entry: linked, formats: ["es"], fileName: "main" } },
     });
     const chunks = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
@@ -340,7 +340,7 @@ export const description = kernelOf(kernel);
 `);
     const outDir = join(project, "dist");
     const output = await build({
-        configFile: false, logLevel: "silent", root: project, plugins: [kernelPlugin()],
+        configFile: false, logLevel: "silent", root: project, plugins: [plugin()],
         build: { outDir, minify: false, lib: { entry: application, formats: ["es"], fileName: "main" } },
     });
     const main = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
@@ -366,7 +366,7 @@ declare module "@adobe/ecs" {
     writeFileSync(application, `export { speed } from "./keys.ts";\n`);
     const outDir = join(project, "dist");
     const output = await build({
-        configFile: false, logLevel: "silent", root: project, plugins: [kernelPlugin()],
+        configFile: false, logLevel: "silent", root: project, plugins: [plugin()],
         build: { outDir, minify: false, lib: { entry: application, formats: ["es"], fileName: "main" }, rolldownOptions: { external: ["@adobe/ecs", "@adobe/ecs/declare"] } },
     });
     const chunks = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
@@ -395,7 +395,7 @@ export const slow = System.create({ name: "slow", kernel: "cpu", components: { w
 `);
     const outDir = join(project, "dist");
     const output = await build({
-        configFile: false, logLevel: "silent", root: project, plugins: [kernelPlugin({ library: true })],
+        configFile: false, logLevel: "silent", root: project, plugins: [plugin({ library: true })],
         build: { outDir, minify: false, lib: { entry, formats: ["es"], fileName: "index" }, rolldownOptions: { external: ["@adobe/ecs", "@adobe/ecs/declare"] } },
     });
     const code = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
@@ -447,7 +447,7 @@ const idsIn = (code: string): readonly string[] => [...code.matchAll(/identify\$
 test("a build gives top-level symbols ids naming no absolute path, also in workers", async () => {
     const outDir = join(directory, "dist-identified");
     const output = await build({
-        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        configFile: false, logLevel: "silent", root: directory, plugins: [plugin()],
         build: { outDir, minify: false, rolldownOptions: { input: identified, preserveEntrySignatures: "strict" } },
     });
     const items = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : []);
@@ -465,7 +465,7 @@ test("a build gives top-level symbols ids naming no absolute path, also in worke
 test("a second instance of the plugin in one bundle does nothing, as when an application also lists it for workers", async () => {
     const outDir = join(directory, "dist-twice");
     const output = await build({
-        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin(), kernelPlugin()],
+        configFile: false, logLevel: "silent", root: directory, plugins: [plugin(), plugin()],
         build: { outDir, minify: false, lib: { entry: fixture, formats: ["es"], fileName: "main" } },
     });
     const chunks = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
@@ -480,7 +480,7 @@ test("a second instance of the plugin in one bundle does nothing, as when an app
 test("a build takes a name from a package external to it as one key, and registration rejects a list there", async () => {
     const outDir = join(directory, "dist-external");
     const output = await build({
-        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        configFile: false, logLevel: "silent", root: directory, plugins: [plugin()],
         build: { outDir, minify: false, rolldownOptions: { input: [externalKey, externalList], external: ["external-keys"], preserveEntrySignatures: "strict" } },
     });
     const chunks = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
@@ -504,7 +504,7 @@ export const kernel = System.create({ name: "copied", kernel: "cpu", components:
 export const spawner = System.create({ name: "copiedSpawner", components: { read: [score] } }, (row, { commands }) => { commands.spawn([score])({ [score]: row[score] }); });
 `);
     const server = await createServer({
-        configFile: false, logLevel: "silent", root: project, plugins: [kernelPlugin()],
+        configFile: false, logLevel: "silent", root: project, plugins: [plugin()],
         appType: "custom", server: { middlewareMode: true, hmr: false, watch: null }, optimizeDeps: { noDiscovery: true },
     });
     try {
@@ -544,7 +544,7 @@ test("a build fails at a system's input whose type can't be one", async () => {
     const entry = join(directory, "bad-input.ts");
     writeFileSync(entry, `import { System } from ${source("../../interface/system/system.ts")};\nexport const bad = System.create({}, (_context, input: { readonly when: Big["when"] }) => { void input; });\n`);
     await expect(build({
-        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        configFile: false, logLevel: "silent", root: directory, plugins: [plugin()],
         build: { outDir: join(directory, "dist-bad-input"), minify: false, lib: { entry, formats: ["es"], fileName: "main" } },
     })).rejects.toThrow("(typeof X)[keyof typeof X]");
 });

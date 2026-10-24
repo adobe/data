@@ -205,7 +205,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const description = kernelOf(leaf);
         if (description === undefined) {
             indexLookups.release();
-            throw new Error(`System "${label}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
+            throw new Error(`System "${label}" is a kernel but wasn't compiled; add Compiler.plugin() to the Vite config.`);
         }
         try {
             kernel = bindKernel(state, leaf, description, indexLookups.byName, lookupSince);

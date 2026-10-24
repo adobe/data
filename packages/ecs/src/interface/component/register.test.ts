@@ -79,6 +79,11 @@ describe("registering a component", () => {
         expect(declarationOf(badReference)).toBe(undefined);
         expect(kindOf(badReference)).toBe(undefined);
     });
+    it("rejects a default that isn't one of its type's values, however it's given", () => {
+        expect(() => register(Symbol("typesComponentTest/tallHeight"), { type: { type: "number", precision: 1, default: "tall" } })).toThrow("its default, tall, isn't one of its type's values");
+        expect(() => register(Symbol("typesComponentTest/lowLevel"), { type: { type: "integer", minimum: 1, maximum: 9, default: 0 }, derived: true })).toThrow("isn't one of its type's values");
+        expect(() => register(Symbol("typesComponentTest/floor"), { type: { type: "number", precision: 1, default: -Infinity } })).not.toThrow();
+    });
     it("rejects a schema whose GPU layout can't hold it", () => {
         expect(() => register(Symbol("typesComponentTest/storageText"), { type: { type: "array", items: { type: "string" }, layout: "storage" } })).toThrow("layout needs numbers");
     });

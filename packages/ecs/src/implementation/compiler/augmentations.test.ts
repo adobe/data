@@ -137,6 +137,29 @@ const after = 1;`, files);
             `const after = 1;`,
         ]);
     });
+    test("writes a literal -0 as itself", async () => {
+        expect(await registrations(`${keys("floor")}declare module "@adobe/ecs" { interface Resources { [floor]: { type: number; default: -0 } } }`))
+            .toEqual([`declare$(floor, "resource", { type: {"type":"number","default":-0} });`]);
+    });
+    test("starts a struct's fields and a tuple's items at their own types' defaults", async () => {
+        const code = await passed(`import type { Schema } from "@adobe/ecs";\n${keys("level", "box", "pair", "pool")}declare module "@adobe/ecs" {
+    interface Resources {
+        [level]: { type: { readonly value: Schema.Type<{ type: "integer"; minimum: 1; maximum: 9; default: 5 }> } };
+        [box]: { type: { readonly height: Height; readonly width: F32 } };
+        [pair]: { type: readonly [Height, F32] };
+        [pool]: { type: Pool };
+    }
+}
+type Pool = Map<string, number>;
+type Height = F32;
+const Height = { schema: { type: "number", precision: 1, default: -1 } } as const;`);
+        expect(code?.split("\n").filter(line => line.startsWith("declare$"))).toEqual([
+            `declare$(level, "resource", { type: {"type":"object","properties":{"value":{"type":"integer","minimum":1,"maximum":9,"default":5}},"default":{"value":5}} });`,
+            `declare$(pool, "resource", { fresh: "Map" });`,
+            `declare$(box, "resource", { type: {"type":"object","properties":{"height":{"type":"number","precision":1},"width":{"type":"number","precision":1}},"default":{ "height": Height.schema.default, "width": 0 }} });`,
+            `declare$(pair, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":2,"maxItems":2,"default":[Height.schema.default, 0]} });`,
+        ]);
+    });
     test("gives a value that isn't data no schema, and its traits", async () => {
         const files = { "/src/row.ts": `export class Row extends HTMLElement {}\nexport class Pool {}` };
         expect(await registrations(`import { Row, Pool } from "./row.js";\n${keys("row", "pool", "canvas", "callback")}declare module "@adobe/ecs" {
@@ -246,7 +269,11 @@ const mark = Symbol();`);
         expect(await passed(`${keys("key")}${block(`interface Resources { [key]: { type: 1 | 2 | 4 } }`)}`)).toContain(`a union of literals without 0, false or "" starts at none of them`);
         expect(await passed(`${keys("key")}${block(`interface Resources { [key]: { type: "all" | "done" } }`)}`)).toContain("declare `default:` one of them");
         expect(await passed(`const Mode = { a: 1, b: 2 } as const;\n${keys("key")}${block(`interface Resources { [key]: { type: (typeof Mode)[keyof typeof Mode] } }`)}`)).toContain("starts at none of them");
-        expect(await passed(`class Pool {}\n${keys("key")}${block(`interface Resources { [key]: { type: Pool } }`)}`)).toContain("const Pool = { schema: { default: ... } }");
+        expect(await passed(`class Pool {}\n${keys("key")}${block(`interface Resources { [key]: { type: Pool } }`)}`)).toContain("let its type allow null");
+        expect(await passed(`${keys("key")}${block(`interface Resources { [key]: { type: OffscreenCanvas } }`)}`)).toContain("let its type allow null");
+        expect(await passed(`import type { Schema } from "@adobe/ecs";\n${keys("key")}${block(`interface Resources { [key]: { type: Schema.Type<{ type: "integer"; minimum: 1; maximum: 9 }> } }`)}`))
+            .toContain("give its schema one: `Schema.Type<{ ...; default: ... }>`");
+        expect(await passed(`${keys("key")}${block(`interface Resources { [key]: { type: 1 | 2 | 4 } }`)}`)).toContain("declare a type of its own with a namespace");
         expect(await passed(`import type { Schema } from "@adobe/ecs";\n${keys("key")}${block(`interface Resources { [key]: { type: Schema.Type<{ type: "integer"; minimum: 1; maximum: 9 }> } }`)}`)).toContain("0 isn't one of its values");
         expect(await passed(`const start = 1;\n${keys("key")}${block(`interface Resources { [key]: { type: number; default: typeof start } }`)}`)).toContain("default is a literal type, never `typeof` a value");
         expect(await passed(`import type { Lower } from "./bounds.js";\n${keys("key")}${block(`interface Resources { [key]: { type: Lower } }`)}`, { "/src/bounds.ts": `export type Lower = number;\nexport const Lower = { schema: { type: "number", default: -1 } } as const;` })).toContain("import Lower as a value");

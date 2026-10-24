@@ -5,7 +5,7 @@ import { declarationsName } from './ids.js';
 import { layoutOf } from './layout.js';
 import { claimKey, declarationOf, failRegistration, firstKeyOf, installCatchUp, kindOf, labelOf, recordFailure, requireKey, sameDeclaration } from './names.js';
 import { isReduction } from './reduction.js';
-import { allowsNull, hasBoolean, isEntity, isString, isStruct } from './schemas.js';
+import { allowsNull, hasBoolean, isEntity, isString, isStruct, matchesSchema } from './schemas.js';
 import { addTrait, isTrait } from './traits.js';
 
 /**
@@ -54,6 +54,9 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
         if ("default" in declaration || (type !== undefined && "default" in type)) fail("it starts fresh, so it has no default.");
         if (type !== undefined && "type" in type && (type.type === "set" || type.type === "map") && (type.type === "set") !== (fresh === "Set")) fail(`a ${type.type} starts as a fresh ${type.type === "set" ? "Set" : "Map"}.`);
     }
+    // A default however given, a literal, its schema's or a namespaced schema's, is one of its type's values.
+    const start: unknown = "default" in declaration ? declaration.default : type !== undefined && "default" in type ? type.default : undefined;
+    if (type !== undefined && ("default" in declaration || "default" in type) && !matchesSchema(type, start)) fail(`its default, ${labelOf(start)}, isn't one of its type's values.`);
     try {
         layoutOf(type);
     }

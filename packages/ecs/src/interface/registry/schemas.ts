@@ -72,3 +72,27 @@ export const isEntity = (schema: Schema): boolean => "format" in schema && schem
 export const conditional = (schema: Schema): boolean =>
     allowsNull(schema) || ("type" in schema && schema.type === "boolean") || ("const" in schema && schema.const === false)
     || ("anyOf" in schema && schema.anyOf.some(conditional));
+
+/** Whether `value` is one of `schema`'s values, as a default must be: its type, length, range and fields. */
+export const matchesSchema = (schema: Schema, value: unknown): boolean => {
+    if ("anyOf" in schema) return schema.anyOf.some(member => matchesSchema(member, value));
+    if ("allOf" in schema) return schema.allOf.every(member => matchesSchema(member, value));
+    if ("const" in schema) return Object.is(schema.const, value) || JSON.stringify(schema.const) === JSON.stringify(value);
+    switch (schema.type) {
+        case "null": return value === null;
+        case "boolean": return typeof value === "boolean";
+        case "string": return typeof value === "string" && value.length >= (schema.minLength ?? 0) && value.length <= (schema.maxLength ?? Infinity);
+        case "number": return typeof value === "number" && (Number.isNaN(value) || (value >= (schema.minimum ?? -Infinity) && value <= (schema.maximum ?? Infinity)));
+        case "integer": return typeof value === "number" && Number.isInteger(value) && ("format" in schema || (value >= (schema.minimum ?? -Infinity) && value <= (schema.maximum ?? Infinity)));
+        case "array": return Array.isArray(value) && value.length >= (schema.minItems ?? 0) && value.length <= (schema.maxItems ?? Infinity) && value.every(item => matchesSchema(schema.items, item));
+        case "set": return value instanceof Set;
+        case "map": return value instanceof Map;
+        case "object": {
+            if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+            const required = schema.required ?? Object.keys(schema.properties);
+            return Object.entries(value).every(([field, item]) => field in schema.properties && matchesSchema(schema.properties[field] ?? { allOf: [] }, item))
+                && required.every(field => field in value);
+        }
+        default: return false;
+    }
+};

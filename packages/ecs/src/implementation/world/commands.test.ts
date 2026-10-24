@@ -144,7 +144,8 @@ describe("spawn", () => {
         recordDeclaration(broken, "component", { type: { type: "number" }, reduce: "+" });
         await run(commands => { commands.spawn([bit0])({}); });
         for (let round = 0; round < 2; round++) {
-            await expect(run(commands => { commands.spawn([broken])({}); })).rejects.toThrow("only a resource is reduced");
+            // Undeclared to the types, so spawned as an untyped caller would.
+            await expect(run(commands => { Reflect.apply(Reflect.apply(commands.spawn, commands, [[broken]]), undefined, [{}]); })).rejects.toThrow("only a resource is reduced");
         }
         await world.dispose();
     });

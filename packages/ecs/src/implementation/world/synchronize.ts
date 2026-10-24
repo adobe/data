@@ -17,7 +17,7 @@ import { settleStops } from './stop-lists.js';
 import { closureOf, derives, gainsOf } from './structure.js';
 import type { Plan } from './plan.js';
 import type { MoveLog } from './move-log.js';
-import { archetypeOf, defaultOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
+import { archetypeOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
 import { releaseValue } from './transfers.js';
 
 /** Buffers queued for the next sync point, in merge order. Commands in guarded buffers can't touch the resource entity. */
@@ -295,7 +295,8 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
 /** Writes a derived component's default into a row it starts in, stamped as added. */
 export const writeDefault = (state: State, storage: Storage, row: number, tick: number): void => {
     // A joined thread's object starts there, as the row's move or append says.
-    if (storage.remote === null) writeCell(storage, row, defaultOf(state.keys[storage.component]));
+    // One start per world, never one per row: values are replaced whole, so a shared start is never changed.
+    if (storage.remote === null) writeCell(storage, row, state.starts[storage.component]);
     else storage.tags[row] = startTag;
     if (!storage.ticked) return;
     storage.added[row] = storage.changed[row] = tick;

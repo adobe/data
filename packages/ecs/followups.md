@@ -16,6 +16,12 @@ correctness, then optimization. Remove an item once it's decided or done.
   before the joined thread has claimed its threads, so that thread's observers miss it; the guide's threads section
   runs from the joined world instead. Options: `World.join` resolving once claimed (already true on the joined side?),
   or `world.share` returning a promise of the claim. Smallest form to be decided.
+- **Optional components:** `components: { with, optional, not, … }`, rows typed `T | undefined` for each optional key,
+  `undefined` when the archetype lacks it; never narrows matching. Presence is per archetype, so runners bind it once
+  per archetype and kernels specialize per archetype or chunk: no per-row cost. Access inferred as for `with`; writes
+  only where present (narrowed by `!== undefined`), an absent write failing the system; `changed` on one passes rows
+  that have it and changed. Possibly on lookups by entity too. Replaces two systems, self-lookups or nullable
+  components.
 - **Iterable lists:** `for (const row of list)` on index lookups' lists, binding each row as the loop reaches it with
   no allocation (the list is its own iterator, reset per loop), lowered by kernels to the indexed loop. `list[i]` and
   array methods stay out: indexing can't bind lazily without a Proxy, and the methods would widen the surface.

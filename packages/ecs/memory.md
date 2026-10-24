@@ -5,6 +5,10 @@ decisions about ecs here rather than in a personal memory, so every machine and 
 
 ## Interface
 
+- **A minimal, abstract surface, as WebGPU's is.** Expose the smallest common surface that says what consumers mean,
+  and nothing about how it's done, so the implementation stays free to change and optimize. Prefer what the build can
+  derive over what consumers write; never expose a mechanism consumers could call instead of declaring intent, such
+  as registration.
 - **Humans own the interface, agents own the implementation** (`src/interface/CLAUDE.md`). Agents add or widen nothing
   public: no exported types, built-in components or resources, fields, options, union members or observable behaviour.
   Any change that can't be avoided is proposed for review before it lands.

@@ -241,7 +241,7 @@ const createLookup = (lookup: LookupSetup) => (entity: Entity): readonly unknown
         const layout = layouts[id];
         const storage = archetype.storages.get(id);
         // An optional component the entity lacks reads undefined.
-        return !archetype.storages.has(id) ? undefined : layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
+        return storage === undefined && !archetype.storages.has(id) ? undefined : layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
     });
 };
 

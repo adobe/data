@@ -65,7 +65,7 @@ const spawnStill = System.create(({ commands }) => {
 });
 
 // An optional component is in a row where its entity has it, and undefined where it doesn't: it never narrows which
-// entities a system runs on.
+// entities a system runs on. Commands add and remove it; assigning undefined removes nothing.
 const speeds: (Vec3 | undefined)[] = [];
 const readSpeeds = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => {
     speeds.push(row[velocity]);

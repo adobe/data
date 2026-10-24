@@ -135,6 +135,47 @@ const joined = async (): Promise<{ readonly world: CreatedWorld; readonly remote
     return { world, remote };
 };
 
+
+/** Keys of systems whose rows have the same keys but other optional ones, and of stamps under two presence tests. */
+const near = Symbol("optionalTest/near");
+const far = Symbol("optionalTest/far");
+const mark = Symbol("optionalTest/mark");
+declare module "@adobe/ecs" {
+    interface Components {
+        [near]: { type: number };
+        [far]: { type: number };
+        [mark]: { type: number };
+    }
+}
+const spawnApart = System.create(({ commands }) => {
+    commands.spawn([near])({ [near]: 1 });
+    commands.spawn([far])({ [far]: 7 });
+});
+const nearSeen: unknown[] = [];
+const farSeen: unknown[] = [];
+const fromFar = System.create({ kernel: false, components: { with: [near], optional: [far] } }, row => {
+    const value = row[far];
+    nearSeen.push(value);
+    row[near] = value ?? -1;
+});
+const fromNear = System.create({ kernel: false, components: { with: [far], optional: [near] } }, row => {
+    const at = row[near];
+    farSeen.push([at, row[far]]);
+    if (at !== undefined) row[near] = row[far];
+});
+const spawnStamped = System.create(({ commands }) => {
+    commands.spawn([mark, near])({ [mark]: 0, [near]: 1 });
+});
+const markEither = System.create({ kernel: true, components: { with: [mark], optional: [near, far] } }, row => {
+    if (row[near] !== undefined) row[mark] = 1;
+    if (row[far] !== undefined) row[mark] = 2;
+});
+const marked: number[] = [];
+const watchStamped = System.create({ observer: true, components: { with: [mark], changed: [mark] } }, row => { marked.push(row[mark]); });
+const clearNear = System.create({ kernel: false, components: { with: [mark], optional: [near] } }, row => {
+    if (row[near] !== undefined) row[near] = undefined;
+});
+
 describe("optional components", () => {
     it("never narrow what a system matches, and read undefined where an entity lacks one", async () => {
         await using world = inline();
@@ -284,6 +325,33 @@ describe("optional components", () => {
         await world.run(spawn);
         const report = await runReported(world, writeKernel);
         expect(report.failures.map(failure => failure.message)).toEqual([`An entity lacks "optionalTest/velocity", optional in its system: add it with commands.add rather than assigning it.`]);
+    });
+
+    it("give systems with the same keys but other optional ones rows of their own", async () => {
+        await using world = inline();
+        await world.run(spawnApart);
+        const first = await runReported(world, fromFar);
+        const second = await runReported(world, fromNear);
+        expect([...first.failures, ...second.failures]).toEqual([]);
+        expect(nearSeen).toEqual([undefined]);
+        expect(farSeen).toEqual([[undefined, 7]]);
+    });
+
+    it("stamp a chunk changed where tests of two of them write one component", async () => {
+        await using world = inline();
+        await world.run(spawnStamped);
+        await world.run(watchStamped);
+        marked.length = 0;
+        await world.run(markEither);
+        await world.run(watchStamped);
+        expect(marked).toEqual([1]);
+    });
+
+    it("fail their system when assigned undefined, which removes nothing", async () => {
+        await using world = inline();
+        await world.run(spawnStamped);
+        const report = await runReported(world, clearNear);
+        expect(report.failures.map(failure => failure.message)).toEqual([`"optionalTest/near" was assigned undefined, which removes nothing: remove it with commands.remove.`]);
     });
 
 });

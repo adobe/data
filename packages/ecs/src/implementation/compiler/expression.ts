@@ -66,7 +66,6 @@ const literal = (node: Extract<Node, { type: "Literal" }>): Value => {
     return fail(node, "only number, boolean and null literals are in the kernel subset");
 };
 
-/** Compiles an expression to a value, emitting any statements it needs into `out`. */
 /**
  * `value === undefined` and its variants, `== null` included, for an optional component's whole value: whether the
  * call's archetype lacks it, or has it. Null for anything else.
@@ -82,6 +81,7 @@ const presenceTest = (operator: string, value: Value, other: Value, scope: Scope
     return operator === "!==" || operator === "!=" ? present : not(present);
 };
 
+/** Compiles an expression to a value, emitting any statements it needs into `out`. */
 export const expression = (node: Node, scope: Scope, out: Out): Value => {
     switch (node.type) {
         case "Literal":

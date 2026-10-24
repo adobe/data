@@ -133,11 +133,18 @@ const absentSetterOf = (key: Key): (value: unknown) => void => () => {
     throw new Error(`An entity lacks "${labelOf(key)}", optional in its system: add it with commands.add rather than assigning it.`);
 };
 
+/** A present optional component's setter, which fails its system for `undefined`: that removes nothing. */
+const presentSetterOf = (key: Key, set: (value: unknown) => void): (value: unknown) => void => value => {
+    if (value === undefined) throw new Error(`"${labelOf(key)}" was assigned undefined, which removes nothing: remove it with commands.remove.`);
+    set(value);
+};
+
 /**
- * A row of an archetype's `keys`, `absent` naming those it lacks, which an optional component may be: they read as
- * `undefined`, and assigning one fails its system.
+ * A row of an archetype's `keys`. `absent` is undefined for a member and, for an optional component, whether the
+ * archetype lacks it: one it lacks reads as `undefined` and assigning it fails its system, and one it has fails its
+ * system when assigned `undefined`.
  */
-export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly Key[], ids: readonly number[], writes: readonly Key[], absent: readonly boolean[] = []): Row => {
+export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly Key[], ids: readonly number[], writes: readonly Key[], absent: readonly (boolean | undefined)[] = []): Row => {
     const slots = ids.map((id, i): Slot | undefined => absent[i] === true ? undefined : slotOf(archetype, id));
     // Its own prototype gives the row its own root map. Rows built from `{}` share one, and defining an accessor with a
     // different getter than an existing transition's makes V8 switch the object to slow dictionary properties.
@@ -167,7 +174,7 @@ export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly
             enumerable: true,
         } : {
             get: getterOf(host, layout, slot, row),
-            set: writes.includes(key) ? setterOf(host, layout, slot, row) : undefined,
+            set: !writes.includes(key) ? undefined : absent[i] === false ? presentSetterOf(key, setterOf(host, layout, slot, row)) : setterOf(host, layout, slot, row),
             enumerable: true,
         });
     });
@@ -295,11 +302,18 @@ export const rowBinderOf = <A extends RowArchetype>(host: RowHost, idOfKey: (key
         else row.bind(archetype);
         return row;
     };
-    // Each pattern of which optional components an archetype has is a row of its own, so no read checks per row.
-    const absent: boolean[] = keys.map(() => false);
+    // Each pattern of which optional components an archetype has is a row of its own, so no read checks per row. The
+    // pattern marks every key, `-` for a member and `0` or `1` for an optional one absent or present, so systems with
+    // the same keys but other optional ones never share a row.
+    const absent: (boolean | undefined)[] = keys.map(() => undefined);
     return archetype => {
         let pattern = signature + "|";
-        for (const i of optionals) {
+        for (let i = 0, next = 0; i < keys.length; i++) {
+            if (optionals[next] !== i) {
+                pattern += "-";
+                continue;
+            }
+            next++;
             absent[i] = archetype.storageById[ids[i]] === undefined;
             pattern += absent[i] ? "0" : "1";
         }

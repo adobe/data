@@ -161,7 +161,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         indexes: indexes.flatMap(bound => bound === null ? [] : [{ lookup: bound.lookup, reader: bound.reader, watched: bound.watched.length }]),
         keys,
         labels: keys.map(id => labelOf(state.keys[id])),
-        optional: ids(leaf.declaration.components?.optional),
+        // Only those its body uses: one it declares and never touches doesn't keep an archetype lacking it off WASM.
+        optional: ids(leaf.declaration.components?.optional).filter(id => sources.some(source => source.kind !== "entity" && source.id === id)),
         starts: keys.map(id => state.starts[id]),
         spawns,
     };

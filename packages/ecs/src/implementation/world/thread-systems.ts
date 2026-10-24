@@ -1175,13 +1175,13 @@ const localStorage = (component: number, layout: Layout, views: Views, values: u
     };
 };
 
-/** A lookup returning `read` values keyed by component, from this thread's views. */
 /** What a lookup reads and requires: its reads but its optional components, which an entity it finds may lack. */
 const requiredReads = (host: RunnerHost, lookup: SystemLookupLists): readonly number[] => {
     const optional = "optional" in lookup ? lookup.optional ?? [] : [];
     return (lookup.read ?? []).filter(key => !optional.includes(key)).map(host.numberOf);
 };
 
+/** A lookup returning `read` values keyed by component, from this thread's views. */
 const lookupOf = (host: RunnerHost, lookup: SystemLookupLists) => {
     const read = (lookup.read ?? []).map(host.numberOf);
     const required = requiredReads(host, lookup);

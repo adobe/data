@@ -253,7 +253,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     const filterCount = up !== undefined ? 0 : (query?.added?.length ?? 0) + (query?.changed?.length ?? 0);
     const generate = (muted: readonly boolean[]): WasmKernel | null => useWasm && description.program !== null
         ? generateWasm(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, state.simd, filterCount, wasmLookups, upWasmColumns,
-            description.reductions.map(reduction => reduction.operator), indexes.map(bound => bound?.wasm ?? null), (description.probes ?? []).map(probe => probe.lookup))
+            description.reductions.map(reduction => reduction.operator), indexes.map(bound => bound?.wasm ?? null), (description.probes ?? []).map(probe => probe.lookup),
+            description.storagePrecision === true)
         : null;
     let muted = mutedNow();
     let index = state.kernelIndexes.get(description.url);

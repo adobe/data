@@ -15,8 +15,10 @@ export type Declaration = {
      * Whether its body compiles to a kernel, a function the build compiles to run on every matched row, in parallel, on
      * the kernel pool. Values in `components` and `lookup` must be structs and resources read-only.
      * - Without it, a system with components compiles when its body is in the kernel subset and its declaration allows
-     *   it, and otherwise runs as written. A system without components runs once, as written.
-     * - `true`: compiles, or the build fails saying why.
+     *   it, and otherwise runs as written, computing as the body as written does. A system without components runs once,
+     *   as written.
+     * - `true`: compiles, or the build fails saying why. Its arithmetic may round each step to storage precision, as
+     *   WASM's f32 SIMD lanes do, so its results may differ from the body as written.
      * - `false`: runs as written, on its thread.
      * - `"gpu"`: also has no lookups, change filters, commands or loops, and only 4-byte scalar values, its `up`
      *   included. It runs as a compute shader in a world with a GPU, and as a kernel on the pool in one without. Every

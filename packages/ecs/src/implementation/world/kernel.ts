@@ -243,6 +243,11 @@ export type KernelDescription = {
     readonly reductions: readonly Reduced[];
     /** The leaves of each value contributed whole, by resource. Registration checks they are all of the schema's leaves. */
     readonly reducedShapes: readonly Shape[];
+    /**
+     * Whether its arithmetic may round each step to storage precision, as SIMD lanes do: only for a kernel the
+     * declaration asks for. A body compiled unflagged computes as the body as written does.
+     */
+    readonly storagePrecision?: true;
 };
 
 /** What a kernel module at `KernelDescription.url` exports. */

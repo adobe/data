@@ -105,6 +105,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             `url: ${url},`,
             `program: ${serialize(program)},`,
             `reducedShapes: [${[...unit.reducedShapes].join(", ")}],`,
+            ...unit.tried ? [] : ["storagePrecision: true,"],
             `reductions: [${unit.accumulators.map(entry => {
                 const { resource, operator } = reduced[entry.reduced] ?? fail(declaration, "unknown reduction");
                 return `{ resource: ${resource}, operator: ${JSON.stringify(operator)}, path: ${JSON.stringify(entry.path)} }`;

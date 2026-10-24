@@ -210,6 +210,8 @@ export const generateWasm = (
     indexLookups: readonly (WasmIndexLookup | null)[] = [],
     /** By probe, its lookup: `KernelDescription.probes[k].lookup`. */
     probeLookups: readonly number[] = [],
+    /** Whether SIMD lanes may compute at storage precision, as only an explicit kernel's may: f32 rounds each step. */
+    storagePrecision = true,
 ): WasmKernel | null => {
     const program = withoutIntrinsics(source);
     const scalars: WasmScalar[] = [];
@@ -2117,7 +2119,8 @@ export const generateWasm = (
         // Across-rows mode doesn't filter rows, so filtered kernels fuse within rows instead.
         // Accumulators carry from row to row, which neither SIMD mode keeps.
         // Listed rows aren't consecutive, so `up` programs run one row at a time.
-        let mode: "rows" | "lanes" | "scalar" = !simdEnabled || accumulators.length > 0 || upMode ? "scalar" : filters > 0 ? "lanes" : "rows";
+        // Lanes compute in f32, so a kernel computing at the body's own precision runs one row at a time in f64.
+        let mode: "rows" | "lanes" | "scalar" = !simdEnabled || !storagePrecision || accumulators.length > 0 || upMode ? "scalar" : filters > 0 ? "lanes" : "rows";
         try {
             generate(0, mode);
         }

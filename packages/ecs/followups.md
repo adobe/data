@@ -113,6 +113,9 @@ time; inferred values are emitted as the same literals the runtime takes today, 
 
 ## Performance
 
+- **Automatic kernels over f32 columns lose SIMD,** since they compute in f64 to match the body as written: `move`
+  0.091 → 0.398 ms, `chain` 1.56 → 6.48 ms, against `kernel: true`'s f32 lanes. f64x2 lanes would give exact results
+  near SIMD speed; build and measure them.
 - **A run allocates about 3.6 KB even for an empty system,** in node: the run path's async functions (`executeTiers`,
   `perform`, `execute`, `runWith`), their promises and a few small objects. Make the path allocate nothing when nothing
   waits, and measure with a sampling heap profile.

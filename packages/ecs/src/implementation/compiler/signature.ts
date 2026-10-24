@@ -110,7 +110,7 @@ export const kernelOf = (declaration: ObjectExpression): KernelRequest | null =>
     for (const property of declaration.properties) {
         if (property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === "kernel") {
             const { value } = property;
-            if (value.type === "Literal" && value.value === "gpu" && optional !== null) return fail(optional, "a GPU kernel can't have optional components yet: list them in with, or use kernel: true to run it on the CPU");
+            if (value.type === "Literal" && value.value === "gpu" && optional !== null) return fail(optional, "a GPU kernel can't have optional components: WGSL has no undefined to read where an archetype lacks one, and a GPU kernel can't fail its system for one row; list them in with, or use kernel: true to run it on the CPU");
             if (value.type === "Literal" && value.value === true) return { target: "cpu", required: true };
             if (value.type === "Literal" && value.value === "gpu") return { target: "gpu", required: true };
             if (value.type === "Literal" && value.value === false) return null;

@@ -16,10 +16,9 @@ correctness, then optimization. Remove an item once it's decided or done.
   before the joined thread has claimed its threads, so that thread's observers miss it; the guide's threads section
   runs from the joined world instead. Options: `World.join` resolving once claimed (already true on the joined side?),
   or `world.share` returning a promise of the claim. Smallest form to be decided.
-- **Optional components in kernels, tails and joined observer systems:** kernels need a presence test lowered in the
-  JS, WASM and WGSL backends (per archetype or per chunk, never per row) and writes of absent components failing the
-  system; tails and observer posts on joined threads need their row copies to tell absent components from present
-  ones. Today those systems run as written, never run as tails, or fail to be added there.
+- **Optional components in GPU kernels:** each dispatch's record could carry a presence word, but WGSL has no
+  `undefined` to read where an archetype lacks one, and a GPU kernel can't fail its system for one row; supporting
+  them means a presence expression through the WASM and WGSL backends and a GPU semantics for absent reads and writes.
 - **Iterable lists:** `for (const row of list)` on index lookups' lists, binding each row as the loop reaches it with
   no allocation (the list is its own iterator, reset per loop), lowered by kernels to the indexed loop. `list[i]` and
   array methods stay out: indexing can't bind lazily without a Proxy, and the methods would widen the surface.
@@ -58,6 +57,9 @@ correctness, then optimization. Remove an item once it's decided or done.
 
 ## Correctness
 
+- **A finalizer without an id, placed on a joined thread, hangs the world** instead of being rejected: every run
+  waits for the thread to set it up. Found writing `optional.test.ts`, where an unbound `Finalizer.create` on a thread
+  a joined thread fills made every joined test time out.
 - **Transactions, future:** never by default, since they would cost every run. An explicit declarative option on a
   one-off system, making its run all or nothing.
 

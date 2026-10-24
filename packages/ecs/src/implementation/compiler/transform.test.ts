@@ -359,7 +359,7 @@ describe("kernels by default", () => {
         expect(await attached(`const kernel = System.create({ components: { with: [score], optional: [mass] } }, row => { const found = row[mass]; if (found !== undefined) row[score] = found; });`)).toBe(true);
         expect(await attached(`const kernel = System.create({ kernel: true, components: { with: [score], optional: [mass] } }, row => { if (row[mass] !== undefined) row[mass] = row[score]; });`)).toBe(true);
         expect(await failure(`const kernel = System.create({ kernel: "gpu", components: { with: [score], optional: [mass] } }, row => { row[score] = 1; });`))
-            .toBe("a GPU kernel can't have optional components yet: list them in with, or use kernel: true to run it on the CPU");
+            .toBe("a GPU kernel can't have optional components: WGSL has no undefined to read where an archetype lacks one, and a GPU kernel can't fail its system for one row; list them in with, or use kernel: true to run it on the CPU");
         expect(await failure(`const kernel = System.create({ components: { with: [score] } }, row => { row[score] = row[mass]; });`))
             .toBe("mass isn't in components with or optional, so the system doesn't require it: add it there to use it");
     });
@@ -1456,7 +1456,7 @@ describe("inferred access", () => {
         expect(await inferred(system("components: { with: [position] }", "(row) => { console.log(row[mass]); }")))
             .toBe("mass isn't in components with or optional, so the system doesn't require it: add it there to use it");
         expect(await inferred(system("components: { with: [target] }, lookup: { targets: { with: [mass] } }", "(row, { lookup }) => { console.log(lookup.targets(row[target])?.[position]); }")))
-            .toBe("position isn't in lookup.targets.with, so the system doesn't require it: add it there to use it");
+            .toBe("position isn't in lookup.targets.with or optional, so the system doesn't require it: add it there to use it");
     });
 
     test("finalizers, in files that import only Finalizer", async () => {

@@ -9,9 +9,13 @@ import type { ChangesDeclaration, Declaration } from './declaration.js';
 import type { Essential, ReadonlyValue } from '../component/value.js';
 import type { Elsewhere, ThreadsOf } from '../system/threads.js';
 
-/** The entity that stopped matching, with the values of its `with` as they are before the sync point applies. */
+/**
+ * The entity that stopped matching, with the values of its `with` as they are before the sync point applies, and of
+ * its `optional` where it had them, `undefined` where it didn't.
+ */
 export type Row<D extends Declaration> =
-    { readonly entity: Entity } & { readonly [K in Listed<Property<D, "components">, "with"> & Component.Key]: Component.Value<K> };
+    { readonly entity: Entity } & { readonly [K in Listed<Property<D, "components">, "with"> & Component.Key]: Component.Value<K> }
+    & { readonly [K in Exclude<Listed<Property<D, "components">, "optional">, Listed<Property<D, "components">, "with">> & Component.Key]: Component.Value<K> | undefined };
 
 /**
  * Every resource, its lookups when declared, and the commands it issues for the next sync point: none on another

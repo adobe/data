@@ -69,19 +69,19 @@ export const names = Symbol();
 export const audio = Symbol();
 export const focused = Symbol();
 
-// A value no literal writes starts at the default its type's namespaced schema holds.
+// A type's namespace may give the value it starts at, which every row and world starting from it shares, so readonly.
 export type Height = F32;
-export const Height = { schema: { ...F32.schema, default: -Infinity } } as const;
+export const Height = { default: -Infinity } as const;
 
 // It's declared once, with its traits: `type` is the value's type, and `default` a literal it starts at. Without one,
-// it starts at its type's: its schema's default, null, its zero value (0, false, "", item by item), or an empty Map or
-// Set of each world's own. The build registers what's declared.
+// it starts at its type's namespace's default, a reduction's identity, null, its zero value (0, false, "", item by
+// item), or an empty ReadonlyMap or ReadonlySet of each world's own. The build registers what's declared.
 declare module "@adobe/ecs" {
     interface Resources {
         [gravity]: { type: number; default: -9.8 };
         [floor]: { type: Height };
         [names]: { type: ReadonlyMap<string, number> };
-        // A value that isn't data, such as a class, is stored as it is.
+        // A value that isn't data, such as a class, is stored as it is; a change inside it is seen once it's written back.
         [audio]: { type: AudioContext | null };
         // Entity.none, 0, rather than null, so an entity stays data every thread reads.
         [focused]: { type: Entity };

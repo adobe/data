@@ -27,12 +27,11 @@ describe("declarations the build records", () => {
         recordDeclaration(again, "component", { type: { type: "number" } });
         expect([kindOf(again), sameKey(first, again)]).toEqual(["component", true]);
     });
-    it("throws a declaration that fails once, at the next use, and gives it as the reason its key's uses fail", () => {
+    it("never throws a declaration that fails for another key's use, and gives it as the reason its own key's uses fail", () => {
         const late = Symbol("declaredTest/late");
         const fine = Symbol("declaredTest/fine");
         recordDeclaration(late, "component", { type: { type: "number" }, reduce: "+" });
         recordDeclaration(fine, "component", { type: { type: "number" } });
-        expect(() => kindOf(fine)).toThrow(`Cannot register component "declaredTest/late": only a resource is reduced.`);
         expect([kindOf(fine), kindOf(late)]).toEqual(["component", undefined]);
         expect(whyUnregistered(late)).toBe(`its declaration failed to register: Cannot register component "declaredTest/late": only a resource is reduced.`);
         // Left valid, so any other copy of the registry reading the map later registers it.

@@ -13,6 +13,7 @@ import { Observe } from "../../observe/index.js";
 import { count, read, readEntity, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { runReported } from "./reports.test-helper.js";
+import { recordDeclaration } from "../../interface/registry/ids.test-helper.js";
 import type { F32 } from "../../interface/math/index.js";
 
 type Vec3 = readonly [number, number, number];
@@ -133,6 +134,18 @@ describe("spawn", () => {
         const before = count();
         for (let round = 0; round < 20; round++) await run(spawnAll);
         expect(count() - before).toBe(0);
+        await world.dispose();
+    });
+    it("fails only the systems using a key whose declaration failed, each time, never another key's", async () => {
+        const { world, run } = withCommands();
+        await run(() => {});
+        // As a module imported after the world exists records it.
+        const broken = Symbol("commandsTest/broken");
+        recordDeclaration(broken, "component", { type: { type: "number" }, reduce: "+" });
+        await run(commands => { commands.spawn([bit0])({}); });
+        for (let round = 0; round < 2; round++) {
+            await expect(run(commands => { commands.spawn([broken])({}); })).rejects.toThrow("only a resource is reduced");
+        }
         await world.dispose();
     });
     it("spawns a list made at runtime in each world that uses it", async () => {

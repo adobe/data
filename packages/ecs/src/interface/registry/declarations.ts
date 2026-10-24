@@ -144,13 +144,12 @@ let catching = false;
 
 /**
  * Registers what the build declared since this last ran, in the order modules evaluated, as each module registered
- * its keys when it was evaluated. A declaration that fails is recorded for its key's uses and thrown once, after the
- * rest register. Reads of keys while it runs see those registered so far.
+ * its keys when it was evaluated. A declaration that fails is recorded for its own key, whose every use fails giving
+ * it as the reason, and never for a read of another key. Reads of keys while it runs see those registered so far.
  */
 const catchUp = (): void => {
     if (catching || declared.size === seen) return;
     catching = true;
-    let failure: unknown = undefined;
     try {
         let index = 0;
         for (const [key, entry] of declared) {
@@ -161,14 +160,12 @@ const catchUp = (): void => {
             }
             catch (error) {
                 if (typeof key === "symbol") recordFailure(key, error instanceof Error ? error.message : String(error));
-                failure ??= error;
             }
         }
     }
     finally {
         catching = false;
     }
-    if (failure !== undefined) throw failure;
 };
 
 installCatchUp(catchUp);

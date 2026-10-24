@@ -339,6 +339,10 @@ describe("kernels by default", () => {
     test("runs as written a body reading data of a module object or array, which may change, and compiles one reading constants and functions", async () => {
         expect(await attached(`export const scene = { subject: 0 }; const kernel = System.create({ components: { write: [score] } }, row => { row[score] = scene.subject; });`)).toBe(false);
         expect(await attached(`const values = [1, 2]; const kernel = System.create({ components: { write: [score] } }, row => { row[score] = values[0]; });`)).toBe(false);
+        expect(await attached(`const make = () => ({ speed: 2 }); export const settings = make(); const kernel = System.create({ components: { write: [score] } }, row => { row[score] = settings.speed; });`)).toBe(false);
+        expect(await attached(`const pair = (a, b) => [a, b]; export const range = pair(1, 2); const kernel = System.create({ components: { write: [score] } }, row => { row[score] = range[1]; });`)).toBe(false);
+        expect(await attached(`const wide = true; export const shape = wide ? { size: 2 } : { size: 1 }; const kernel = System.create({ components: { write: [score] } }, row => { row[score] = shape.size; });`)).toBe(false);
+        expect(await attached(`const make = () => 3; const three = make(); const kernel = System.create({ components: { write: [score] } }, row => { row[score] = three; });`)).toBe(true);
         expect(await attached(`const half = 0.5; const twice = x => x * 2; const kernel = System.create({ components: { read: [mass], write: [score] } }, row => { row[score] = twice(row[mass]) * half; });`)).toBe(true);
         expect(await failure(`export const scene = { subject: 0 }; const kernel = System.create({ kernel: true, components: { write: [score] } }, row => { row[score] = scene.subject; });`)).toBe("compiled");
     });

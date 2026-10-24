@@ -104,8 +104,9 @@ const definition = (node: Node, name: string, binding: ModuleBinding, module: Mo
             const compile = (): Value => unit.expression(init, rootScope(unit, true, module), out);
             const value = module === unit.module ? compile() : within(node, frameIn(module, display), compile);
             unit.active.delete(identity);
-            // An object or array of data may be written after the build, which inlined it; the interface's own are fixed.
-            if (unit.tried && (init.type === "ObjectExpression" || init.type === "ArrayExpression") && holdsData(value) && packagePathOf(module.file)?.startsWith("interface/") !== true) {
+            // An object or array holding data may be written after the build, whatever made it, and a kernel would have
+            // inlined it; a primitive const can't change, and the interface's own objects are fixed.
+            if (unit.tried && value.kind !== "scalar" && holdsData(value) && packagePathOf(module.file)?.startsWith("interface/") !== true) {
                 return fail(node, `${display} holds values that may change, which a kernel would inline`);
             }
             return value;

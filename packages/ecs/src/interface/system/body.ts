@@ -19,10 +19,20 @@ export type Members<D> =
 /** Whether a declaration only reads: an observer or a render system. */
 type Reading<D> = D extends { readonly observer: true } | { readonly shader: object } ? true : false;
 
-/** Its members' values, writable but for references, and in a system that only reads. */
+/** The components a declaration's rows hold only where an entity has them. */
+export type Optional<D> = Exclude<Listed<Property<D, "components">, "optional">, Members<D>>;
+
+/** Each optional component's value or `undefined`, as `ComponentValues` gives members'. */
+type OptionalValues = { readonly [K in Component.Key]: Component.Value<K> | undefined };
+
+/**
+ * Its members' values, writable but for references, and in a system that only reads; its optional components' too, or
+ * `undefined` where an entity lacks one, which assigning to fails the system.
+ */
 export type Row<D extends Declaration> =
     { readonly entity: Entity }
-    & Values<Members<D>, Reading<D> extends true ? never : Members<D> & Writable, Component.Key, ComponentValues>;
+    & Values<Members<D>, Reading<D> extends true ? never : Members<D> & Writable, Component.Key, ComponentValues>
+    & Values<Optional<D>, Reading<D> extends true ? never : Optional<D> & Writable, Component.Key, OptionalValues>;
 
 /** Resources systems write: every one but those reduced, which only their contributors' fold sets, and those only the world writes. */
 type Writes = Exclude<Resource.Key, Reduced | WorldWritten>;

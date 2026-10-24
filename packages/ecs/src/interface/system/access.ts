@@ -10,6 +10,8 @@ import type { Index } from '../indexes/index-type.js';
  */
 export type ComponentAccess = {
     readonly with?: readonly Component.Key[];
+    /** Components its rows hold where an entity has them, `undefined` where it doesn't; they never narrow what it matches. */
+    readonly optional?: readonly Component.Key[];
     readonly not?: readonly Component.Key[];
     /** Passes rows where any of these were added since the system last ran. */
     readonly added?: readonly Component.Key[];
@@ -58,9 +60,11 @@ type Key = symbol;
 
 /**
  * What a system reads and writes, as the world takes it: the build's inferred access joined with its declaration.
- * Matches every component in `read`, `write`, `has`, `added` and `changed`, and excludes `not`.
+ * Matches every component in `read`, `write`, `has`, `added` and `changed` but those in `optional`, and excludes `not`.
  */
 export type ComponentLists = {
+    /** Members its rows hold only where an entity has them; those it uses are in `read` or `write` too. */
+    readonly optional?: readonly Key[];
     readonly read?: readonly Key[];
     readonly write?: readonly Key[];
     readonly has?: readonly Key[];

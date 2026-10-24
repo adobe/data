@@ -79,6 +79,9 @@ type Validate<D extends Declaration> =
         readonly kernel?: false | { readonly "error: a system without components runs once, so there's nothing to compile": true };
     } : {})
     & (D extends { readonly up: object } ? { readonly order?: { readonly "error: up and order both decide the order of its rows": true } } : {})
+    // Kernels don't read components an archetype may lack yet.
+    & (D extends { readonly components: { readonly optional: readonly [unknown, ...unknown[]] } }
+        ? { readonly kernel?: false | { readonly "error: a kernel can't have optional components yet": true } } : {})
     & (D extends { readonly observer: true } ? Observer : {})
     & (D extends { readonly target: string } ? Targeted : {})
     & (D extends { readonly target: string } ? Property<D, "components"> extends undefined ? { readonly target?: { readonly "error: a system on one entity runs on its row, so it needs components": true } } : {} : {})

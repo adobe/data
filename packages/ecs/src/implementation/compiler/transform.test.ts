@@ -354,6 +354,13 @@ describe("kernels by default", () => {
         expect(await attached(`const kernel = System.create({ resources: {} }, ({ resources }) => { void resources[delta]; });`)).toBe(false);
         expect(await attached(`const kernel = System.create({ kernel: false, components: { with: [mass, score] } }, row => { row[score] = row[mass]; });`)).toBe(false);
     });
+    test("runs a system with optional components as written, and fails one that requires a kernel", async () => {
+        expect(await attached(`const kernel = System.create({ components: { with: [score], optional: [mass] } }, row => { const found = row[mass]; if (found !== undefined) row[score] = found; });`)).toBe(false);
+        expect(await failure(`const kernel = System.create({ kernel: true, components: { with: [score], optional: [mass] } }, row => { row[score] = 1; });`))
+            .toBe("a kernel can't have optional components yet: list them in with, or use kernel: false to run the body as written");
+        expect(await failure(`const kernel = System.create({ components: { with: [score] } }, row => { row[score] = row[mass]; });`))
+            .toBe("mass isn't in components with or optional, so the system doesn't require it: add it there to use it");
+    });
     test("fails, saying why, a system with kernel: true that can't compile", async () => {
         expect(await attached(`const kernel = System.create({ kernel: true }, ({ resources }) => { void resources[delta]; });`))
             .toBe("a system without components runs once, so there's nothing to compile");
@@ -512,7 +519,7 @@ describe("binding identity", () => {
         expect(await failure(`const speed = "velocity";
         const kernel = System.create({ kernel: true, components: { with: [velocity, position] } }, (row) => {
             row[position] = row[speed];
-        });`)).toBe("speed isn't in components with, so the system doesn't require it: add it there to use it");
+        });`)).toBe("speed isn't in components with or optional, so the system doesn't require it: add it there to use it");
     });
 
     test("a helper parameter shadows a module binding only inside the helper", async () => {
@@ -1445,7 +1452,7 @@ describe("inferred access", () => {
 
     test("fail the build for a key a body uses that its declaration doesn't require", async () => {
         expect(await inferred(system("components: { with: [position] }", "(row) => { console.log(row[mass]); }")))
-            .toBe("mass isn't in components with, so the system doesn't require it: add it there to use it");
+            .toBe("mass isn't in components with or optional, so the system doesn't require it: add it there to use it");
         expect(await inferred(system("components: { with: [target] }, lookup: { targets: { with: [mass] } }", "(row, { lookup }) => { console.log(lookup.targets(row[target])?.[position]); }")))
             .toBe("position isn't in lookup.targets.with, so the system doesn't require it: add it there to use it");
     });

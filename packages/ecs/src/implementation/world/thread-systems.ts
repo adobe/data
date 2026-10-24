@@ -24,6 +24,7 @@ import type { WorkerError } from './protocol.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { combine, contributed, identityOf, reductionTargetsOf, type ReductionTarget } from './reductions.js';
 import { changedRowOf, emptyRow, rowBinderOf, type RowHost } from './rows.js';
+import { requiredOf } from './required.js';
 import type { Since } from './index-lookups.js';
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
 import { createThreadFinalizers } from './thread-finalizers.js';
@@ -634,13 +635,13 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
     const system: { body(subject: unknown, context?: unknown, input?: unknown): void } = leaf;
     const { components: query, resources } = declaration;
     const numberOf = host.numberOf;
-    const required = [...new Set([...query?.read ?? [], ...query?.write ?? [], ...query?.has ?? [], ...query?.added ?? [], ...query?.changed ?? []])].map(numberOf);
+    const required = requiredOf(query).map(numberOf);
     const excluded = (query?.not ?? []).map(numberOf);
     const addedIds = (query?.added ?? []).map(numberOf);
     const changedIds = (query?.changed ?? []).map(numberOf);
     const resourceChanged = (resources?.changed ?? []).map(numberOf);
     const filtered = addedIds.length + changedIds.length + resourceChanged.length > 0;
-    const bindRow = rowBinderOf<ThreadArchetype>(host.rows, numberOf, query?.read ?? [], query?.write ?? []);
+    const bindRow = rowBinderOf<ThreadArchetype>(host.rows, numberOf, query?.read ?? [], query?.write ?? [], query?.optional);
     const matches: number[] = [];
     let checked = 0;
     const refreshMatches = (): void => {

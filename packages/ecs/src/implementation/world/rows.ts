@@ -10,6 +10,7 @@ import { readString, writeString } from './strings.js';
 import { indexOf, locate } from './entities.js';
 import { ownTag } from './move-log.js';
 import { resourceCell } from './resources.js';
+import { labelOf } from '../../interface/registry/names.js';
 import { idOf, type Key, type State } from './state.js';
 import { combine, contributed, identityOf, type ReductionTarget } from './reductions.js';
 import { createIndexLookup, type Since } from './index-lookups.js';
@@ -126,8 +127,18 @@ const slotOf = (archetype: RowArchetype, id: number): Slot => {
     return { storage, view: viewOf(storage) };
 };
 
-export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly Key[], ids: readonly number[], writes: readonly Key[]): Row => {
-    const slots = ids.map(id => slotOf(archetype, id));
+/** An optional component's getter where the archetype lacks it, and its setter, which fails its system. */
+const absentGetter = (): undefined => undefined;
+const absentSetterOf = (key: Key): (value: unknown) => void => () => {
+    throw new Error(`An entity lacks "${labelOf(key)}", optional in its system: add it with commands.add rather than assigning it.`);
+};
+
+/**
+ * A row of an archetype's `keys`, `absent` naming those it lacks, which an optional component may be: they read as
+ * `undefined`, and assigning one fails its system.
+ */
+export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly Key[], ids: readonly number[], writes: readonly Key[], absent: readonly boolean[] = []): Row => {
+    const slots = ids.map((id, i): Slot | undefined => absent[i] === true ? undefined : slotOf(archetype, id));
     // Its own prototype gives the row its own root map. Rows built from `{}` share one, and defining an accessor with a
     // different getter than an existing transition's makes V8 switch the object to slow dictionary properties.
     const value: object = Object.create({});
@@ -138,18 +149,25 @@ export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly
         bind: next => {
             row.entities = next.entities;
             for (let i = 0; i < ids.length; i++) {
+                const slot = slots[i];
+                if (slot === undefined) continue;
                 const { storage, view } = slotOf(next, ids[i]);
-                slots[i].storage = storage;
-                slots[i].view = view;
+                slot.storage = storage;
+                slot.view = view;
             }
         },
     };
     Object.defineProperty(value, "entity", { get: () => row.entities[row.index], enumerable: true });
     keys.forEach((key, i) => {
         const layout = host.layouts[ids[i]];
-        Object.defineProperty(value, key, {
-            get: getterOf(host, layout, slots[i], row),
-            set: writes.includes(key) ? setterOf(host, layout, slots[i], row) : undefined,
+        const slot = slots[i];
+        Object.defineProperty(value, key, slot === undefined ? {
+            get: absentGetter,
+            set: writes.includes(key) ? absentSetterOf(key) : undefined,
+            enumerable: true,
+        } : {
+            get: getterOf(host, layout, slot, row),
+            set: writes.includes(key) ? setterOf(host, layout, slot, row) : undefined,
             enumerable: true,
         });
     });
@@ -262,11 +280,13 @@ export const parentBinder = (state: State, reads: readonly Key[]): (archetype: A
  * declares the same ones, so a body sees one row shape whichever system or archetype it runs over. A host's systems
  * run one at a time, so a binding lasts for one system's pass over one archetype. `idOfKey` gives each key's component.
  */
-export const rowBinderOf = <A extends RowArchetype>(host: RowHost, idOfKey: (key: Key) => number, reads: readonly Key[], writes: readonly Key[]): (archetype: A) => Row => {
+export const rowBinderOf = <A extends RowArchetype>(host: RowHost, idOfKey: (key: Key) => number, reads: readonly Key[], writes: readonly Key[], optional: readonly Key[] = []): (archetype: A) => Row => {
     const keys = [...new Set([...reads, ...writes])];
     const ids = keys.map(idOfKey);
     const signature = keys.map((key, i) => writes.includes(key) ? `${ids[i]}w` : `${ids[i]}`).join(",");
-    return archetype => {
+    /** The positions in `keys` of optional components, whose presence in an archetype picks its row. */
+    const optionals = keys.flatMap((key, i) => optional.includes(key) ? [i] : []);
+    if (optionals.length === 0) return archetype => {
         let row = host.rows.get(signature);
         if (row === undefined) {
             row = createRow(host, archetype, keys, ids, writes);
@@ -275,11 +295,27 @@ export const rowBinderOf = <A extends RowArchetype>(host: RowHost, idOfKey: (key
         else row.bind(archetype);
         return row;
     };
+    // Each pattern of which optional components an archetype has is a row of its own, so no read checks per row.
+    const absent: boolean[] = keys.map(() => false);
+    return archetype => {
+        let pattern = signature + "|";
+        for (const i of optionals) {
+            absent[i] = archetype.storageById[ids[i]] === undefined;
+            pattern += absent[i] ? "0" : "1";
+        }
+        let row = host.rows.get(pattern);
+        if (row === undefined) {
+            row = createRow(host, archetype, keys, ids, writes, [...absent]);
+            host.rows.set(pattern, row);
+        }
+        else row.bind(archetype);
+        return row;
+    };
 };
 
 /** The accessor row binder for main-thread systems of a world. */
-export const rowBinder = (state: State, reads: readonly Key[], writes: readonly Key[]): (archetype: Archetype) => Row =>
-    rowBinderOf<Archetype>(state, key => idOf(state, key), reads, writes);
+export const rowBinder = (state: State, reads: readonly Key[], writes: readonly Key[], optional: readonly Key[] = []): (archetype: Archetype) => Row =>
+    rowBinderOf<Archetype>(state, key => idOf(state, key), reads, writes, optional);
 
 /**
  * A lookup's matcher, with its component ids resolved once. `find` returns the row of a live entity that matches, or -1,

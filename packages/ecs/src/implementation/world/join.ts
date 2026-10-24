@@ -573,6 +573,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
     const localOf = (leaf: Leaf): Local => {
         const known = localsByLeaf.get(leaf);
         if (known !== undefined) return known;
+        // Its posts copy rows across archetypes, which don't tell an absent optional component from a present one.
+        if ((leaf.declaration.components?.optional?.length ?? 0) > 0) throw new Error(`Observer system "${leaf.name}" has optional components, which observer systems on joined threads don't support yet: run it on the world's thread, or use two systems.`);
         const declaration = describe(leaf);
         // A number of this thread's, never posted as a name: the declaration names it.
         const number = numbers.size;

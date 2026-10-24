@@ -14,6 +14,7 @@ import { createBlock, endBlock, indexOf, locate, reserveFrom } from './entities.
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, parentBinder, rowBinder } from './rows.js';
+import { requiredOf } from './required.js';
 import { scalarValue, scalarValues, type WasmKernel } from './wasm.js';
 import { idOf, type State } from './state.js';
 import { accessorsOf } from '../../interface/gpu/accessors.js';
@@ -188,7 +189,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     // Method parameters are bivariant, so the runtime can see any leaf's body with erased parameter types.
     const system: { body(subject: unknown, context?: unknown, input?: unknown): void } = leaf;
     const { components: query, resources } = declaration;
-    const required = [...new Set([...query?.read ?? [], ...query?.write ?? [], ...query?.has ?? [], ...query?.added ?? [], ...query?.changed ?? []])].map(key => idOf(state, key));
+    const required = requiredOf(query).map(key => idOf(state, key));
     const excluded = (query?.not ?? []).map(key => idOf(state, key));
     const addedIds = (query?.added ?? []).map(key => idOf(state, key));
     const changedIds = (query?.changed ?? []).map(key => idOf(state, key));
@@ -360,7 +361,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const partialAddress = (slot: number): number => partialCount === 0 ? -1 : slots.byteOffset + slot * partialCount * 8;
     const matches: Archetype[] = [];
     let checked = 0;
-    const bindRow = rowBinder(state, query?.read ?? [], query?.write ?? []);
+    const bindRow = rowBinder(state, query?.read ?? [], query?.write ?? [], query?.optional);
+    /** Whether its rows have optional components, so which an archetype has picks its row. */
+    const optional = (query?.optional?.length ?? 0) > 0;
     const bindParent = parentBinder(state, declaration.up?.read ?? []);
     let lastRun = since;
 
@@ -578,8 +581,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 const owner = archetype < owners.length ? owners[archetype] : -1;
                 if (owner < 0) continue;
                 if (owner !== current || row === null || value === null) {
-                    // The row is found once; after, it's bound in place, as often as every row when archetypes interleave.
-                    if (row === null) row = bindRow(matches[owner]);
+                    // The row is found once; after, it's bound in place, as often as every row when archetypes interleave,
+                    // unless which optional components an archetype has picks another row.
+                    if (row === null || optional) row = bindRow(matches[owner]);
                     else row.bind(matches[owner]);
                     value = row.value;
                     current = owner;

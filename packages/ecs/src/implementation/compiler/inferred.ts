@@ -28,7 +28,8 @@ const ordered = (names: ReadonlySet<string>, first: readonly string[]): Readonly
  */
 export const inOrder = (used: Used, declaration: ObjectExpression): Used => {
     const declared = fields(declaration);
-    const members = namesIn(valueOf(fields(valueOf(declared.get("components"))).get("with")));
+    const components = fields(valueOf(declared.get("components")));
+    const members = [...namesIn(valueOf(components.get("with"))), ...namesIn(valueOf(components.get("optional")))];
     const lookups = fields(valueOf(declared.get("lookup")));
     return {
         ...used,
@@ -51,10 +52,10 @@ export const unrequired = (used: Used, declaration: ObjectExpression): { readonl
         return lists.every(node => node.type === "ArrayExpression" && node.elements.every(element => element?.type === "Identifier" || element?.type === "MemberExpression"))
             ? lists.flatMap(node => namesIn(node)) : null;
     };
-    const members = literal(["with", "added", "changed"].map(name => valueOf(components.get(name))));
+    const members = literal(["with", "optional", "added", "changed"].map(name => valueOf(components.get(name))));
     if (used.query !== null && members !== null) {
         const key = [...used.query.read, ...used.query.write].find(name => !members.includes(name));
-        if (key !== undefined) return { key, list: "components with" };
+        if (key !== undefined) return { key, list: "components with or optional" };
     }
     if (used.lookups !== null) {
         for (const [name, lookup] of fields(valueOf(declared.get("lookup")))) {

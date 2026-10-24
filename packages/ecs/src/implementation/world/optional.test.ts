@@ -1,0 +1,153 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import { describe, expect, it } from "vitest";
+import { Index, System, workers } from "../../index.js";
+import { kernelOf } from "./attach-kernel.js";
+import { createWorld, join, type CreatedWorld } from "./create.js";
+import { runReported } from "./reports.test-helper.js";
+
+const position = Symbol("optionalTest/position");
+const velocity = Symbol("optionalTest/velocity");
+const label = Symbol("optionalTest/label");
+const order = Symbol("optionalTest/order");
+const marker = Symbol("optionalTest/marker");
+declare module "@adobe/ecs" {
+    interface Threads {
+        optionalTest: true;
+    }
+    interface Components {
+        [marker]: { type: { readonly text: string } | null; thread: "optionalTest" };
+        [position]: { type: number };
+        [velocity]: { type: number };
+        [label]: { type: string };
+        [order]: { type: number };
+    }
+}
+
+const spawn = System.create(({ commands }) => {
+    commands.spawn([position, order])({ [position]: 1, [order]: 2 });
+    commands.spawn([position, velocity, order])({ [position]: 10, [velocity]: 5, [order]: 1 });
+    commands.spawn([position, velocity, label, order])({ [position]: 100, [velocity]: 50, [label]: "c", [order]: 0 });
+    commands.spawn([velocity])({ [velocity]: 7 });
+});
+
+// Moves what has a velocity, and leaves the rest where they are.
+const move = System.create({ components: { with: [position], optional: [velocity] } }, row => {
+    const speed = row[velocity];
+    if (speed !== undefined) row[position] += speed;
+});
+
+let seen: (readonly [number, number | undefined, string | undefined])[] = [];
+const read = System.create({ observer: true, components: { with: [position], optional: [velocity, label] } }, row => {
+    seen.push([row[position], row[velocity], row[label]]);
+});
+const sorted = () => [...seen].sort((a, b) => a[0] - b[0]);
+
+const inline = () => createWorld({ [workers]: 0 });
+
+const spawnMarked = System.create(({ commands }) => {
+    commands.spawn([position, marker])({ [position]: 1 });
+    commands.spawn([position, velocity, marker])({ [position]: 10, [velocity]: 5 });
+});
+// Placed on the markers' thread by reading them.
+const there = System.create({ components: { with: [position, marker], optional: [velocity] } }, row => {
+    if (row[marker] === null) row[position] = row[velocity] ?? -1;
+});
+
+// An observer system there posts copies of rows, which optional components aren't in yet.
+const watchThere = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => { void row[velocity]; });
+
+/** A world shared with a thread on this one, which claims the thread markers live on. */
+const joined = async (): Promise<{ readonly world: CreatedWorld; readonly remote: ReturnType<typeof join> }> => {
+    const world = createWorld({ [workers]: 0 });
+    const channel = new MessageChannel();
+    world.share(channel.port1);
+    const remote = join(channel.port2, { threads: ["optionalTest"] });
+    await new Promise<void>(resolve => {
+        const stop = world.threads(threads => {
+            if (threads.at(-1)?.status !== "joined") return;
+            queueMicrotask(() => stop());
+            resolve();
+        });
+    });
+    return { world, remote };
+};
+
+describe("optional components", () => {
+    it("never narrow what a system matches, and read undefined where an entity lacks one", async () => {
+        await using world = inline();
+        await world.run(spawn);
+        seen = [];
+        await world.run(read);
+        expect(sorted()).toEqual([[1, undefined, undefined], [10, 5, undefined], [100, 50, "c"]]);
+        await world.run(move);
+        seen = [];
+        await world.run(read);
+        expect(sorted()).toEqual([[1, undefined, undefined], [15, 5, undefined], [150, 50, "c"]]);
+    });
+
+    it("are written where an entity has one, and fail their system where it doesn't", async () => {
+        const write = System.create({ components: { with: [position], optional: [velocity] } }, row => {
+            row[velocity] = row[position];
+        });
+        await using world = inline();
+        await world.run(spawn);
+        const report = await runReported(world, write);
+        expect(report.failures.map(failure => failure.message)).toEqual([`An entity lacks "optionalTest/velocity", optional in its system: add it with commands.add rather than assigning it.`]);
+    });
+
+    it("pass change filters on other components, and are stamped changed when written", async () => {
+        const changed: number[] = [];
+        const watch = System.create({ observer: true, components: { with: [velocity], changed: [velocity] } }, row => { changed.push(row[velocity]); });
+        const speedUp = System.create({ components: { with: [position], optional: [velocity] } }, row => {
+            const speed = row[velocity];
+            if (speed !== undefined && row[position] > 50) row[velocity] = speed + 1;
+        });
+        await using world = inline();
+        await world.run(spawn);
+        await world.run(watch);
+        changed.length = 0;
+        await world.run(speedUp);
+        await world.run(watch);
+        expect(changed).toEqual([51]);
+    });
+
+    it("run in an index's order across archetypes that have them and don't", async () => {
+        const byOrder = Index.create({ key: [order], sorted: true });
+        const ordered: (number | undefined)[] = [];
+        const list = System.create({ observer: true, components: { with: [position], optional: [velocity] }, order: byOrder }, row => {
+            ordered.push(row[velocity]);
+        });
+        await using world = inline();
+        await world.run(spawn);
+        await world.run(list);
+        expect(ordered).toEqual([50, 5, undefined]);
+    });
+
+    it("conflict with systems using them as members do", () => {
+        const writes = System.create({ components: { with: [position], optional: [velocity] } }, row => { row[velocity] = 0; });
+        const reads = System.create({ components: { with: [velocity, position] } }, row => { row[position] = row[velocity]; });
+        expect(() => System.create([writes, reads])).toThrow();
+    });
+
+    it("are read on a joined thread, where a system reading the thread's objects runs", async () => {
+        const { world, remote } = await joined();
+        await world.run(spawnMarked);
+        await world.run(there);
+        seen = [];
+        await world.run(read);
+        expect(sorted()).toEqual([[-1, undefined, undefined], [5, 5, undefined]]);
+        await remote.dispose();
+        await world.dispose();
+    });
+
+    it("aren't supported yet in observer systems on a joined thread", async () => {
+        const { world, remote } = await joined();
+        expect(() => remote.add(watchThere)).toThrow(`has optional components, which observer systems on joined threads don't support yet`);
+        await remote.dispose();
+        await world.dispose();
+    });
+
+    it("run as written, since kernels don't read components an archetype may lack yet", () => {
+        expect(kernelOf(move)).toBeUndefined();
+    });
+});

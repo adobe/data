@@ -86,15 +86,30 @@ export type KernelRequest = { readonly target: "cpu" | "gpu"; readonly required:
 const declares = (declaration: ObjectExpression, name: string): boolean => declaration.properties.some(property =>
     property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === name);
 
+/** A declaration's `components.optional` property, or null without one. */
+const hasOptional = (declaration: ObjectExpression): Property | null => {
+    for (const property of declaration.properties) {
+        if (property.type !== "Property" || property.computed || property.key.type !== "Identifier" || property.key.name !== "components") continue;
+        if (property.value.type !== "ObjectExpression") return null;
+        for (const field of property.value.properties) {
+            if (field.type === "Property" && !field.computed && field.key.type === "Identifier" && field.key.name === "optional") return field;
+        }
+    }
+    return null;
+};
+
 /**
  * How a `System.create` declaration compiles to a kernel, or null when it doesn't: `kernel: true` or `"gpu"` requires
  * it, `false` rules it out, and without it a system with components is tried, unless it observes, runs on one entity
  * or spreads what the build can't read.
  */
 export const kernelOf = (declaration: ObjectExpression): KernelRequest | null => {
+    const optional = hasOptional(declaration);
     for (const property of declaration.properties) {
         if (property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === "kernel") {
             const { value } = property;
+            const required = value.type === "Literal" && (value.value === true || value.value === "gpu");
+            if (required && optional !== null) return fail(optional, "a kernel can't have optional components yet: list them in with, or use kernel: false to run the body as written");
             if (value.type === "Literal" && value.value === true) return { target: "cpu", required: true };
             if (value.type === "Literal" && value.value === "gpu") return { target: "gpu", required: true };
             if (value.type === "Literal" && value.value === false) return null;
@@ -102,6 +117,8 @@ export const kernelOf = (declaration: ObjectExpression): KernelRequest | null =>
         }
     }
     if (declaration.properties.some(property => property.type === "SpreadElement")) return null;
+    // Kernels don't read components an archetype may lack yet, so such a system runs as written.
+    if (optional !== null) return null;
     if (!declares(declaration, "components") || declares(declaration, "observer") || declares(declaration, "target")) return null;
     return { target: "cpu", required: false };
 };

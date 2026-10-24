@@ -90,14 +90,16 @@ export const compact = <T extends object>(lists: T): T => {
  * reads.
  */
 export const componentLists = (components: ComponentAccess, used: Used | null, reading: boolean): ComponentLists => {
-    // A row holds what its added and changed filters name too.
+    // A row holds what its added and changed filters name too, and its optional components where an entity has them.
     const members = [...new Set([...components.with ?? [], ...components.added ?? [], ...components.changed ?? []])];
+    const optional = without(components.optional ?? [], members);
+    const held = [...members, ...optional];
     const write = used === null
-        ? reading ? [] : members.filter(key => declarationOf(key)?.reference === undefined)
+        ? reading ? [] : held.filter(key => declarationOf(key)?.reference === undefined)
         : used.write;
-    const read = used === null ? without(members, write) : without(used.read, write);
+    const read = used === null ? without(held, write) : without(used.read, write);
     const has = without(members, read, write);
-    return compact({ read, write, has, not: components.not, added: components.added, changed: components.changed });
+    return compact({ read, write, has, optional, not: components.not, added: components.added, changed: components.changed });
 };
 
 /**

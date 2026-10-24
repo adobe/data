@@ -33,13 +33,15 @@ const objectsOnly = (keys: readonly Key[] | undefined): boolean =>
 /**
  * Whether a leaf is terminal: the plugin proved its body never reaches `commands`, and it writes only objects, which
  * live on its own thread, reduces into nothing, and looks nothing up, since a lookup reads the entity table the next
- * sync point rewrites. Neither a kernel nor `up`.
+ * sync point rewrites. Neither a kernel nor `up`, nor with optional components, which a tail's snapshot of rows across
+ * archetypes doesn't tell apart from present ones.
  */
 export const isTerminal = (leaf: Leaf): boolean => {
     const known = terminalLeaves.get(leaf);
     if (known !== undefined) return known;
     const { declaration } = leaf;
     const terminal = leaf.kind === "system" && kernelOf(leaf) === undefined && declaration.up === undefined && provenTerminal(leaf.body)
+        && (declaration.components?.optional?.length ?? 0) === 0
         && Object.keys(declaration.lookup ?? {}).length === 0
         && (declaration.resources?.reduce?.length ?? 0) === 0
         && objectsOnly(declaration.components?.write) && objectsOnly(declaration.resources?.write);

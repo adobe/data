@@ -20,6 +20,7 @@ import { logBoundedWord, logBoundWord, logSyncWord, type MoveLog } from './move-
 import { createStopWriter, freeStops, type StopWriter } from './stop-lists.js';
 import { freeTail, stampWritten, type Tail } from './tails.js';
 import { isHeld } from './transfers.js';
+import { requiredOf } from './required.js';
 import {
     completionCapacityWord, completionMessage, completionOffsetWord, completionSystems, completionWords, executedFlag, failedFlag,
     payloadCapacityWord, payloadCount, payloadInput, payloadOffsetWord, payloadSequence, payloadSync, payloadSystems, payloadWords, ranFlag,
@@ -551,7 +552,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
     if (problem !== null) throw new Error(problem);
     const lookups = remoteIndexesOf(state, declaration.lookup, acquireLookups(state, declaration.lookup));
     const index = channel.place(state, leaf, lookups.named);
-    const required = [...new Set([...query?.read ?? [], ...query?.write ?? [], ...query?.has ?? [], ...query?.added ?? [], ...query?.changed ?? []])].map(key => idOf(state, key));
+    const required = requiredOf(query).map(key => idOf(state, key));
     const excluded = (query?.not ?? []).map(key => idOf(state, key));
     const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
     const writes = (query?.write ?? []).map(key => idOf(state, key));

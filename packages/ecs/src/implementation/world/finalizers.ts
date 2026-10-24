@@ -35,6 +35,8 @@ export type FinalizerRunner = {
     readonly target: { buffer: CommandBuffer };
     readonly commands: Commands;
     readonly reads: readonly Key[];
+    /** Its optional components, which its row reads where the entity had them. */
+    readonly optional: readonly Key[];
     /** The indexes its lookups go through, held for the world's life. */
     readonly indexes: IndexLookups;
     /** Where a joined thread fills its thread: its stops go to that thread's stop lists, and it runs there. */
@@ -74,7 +76,7 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
     for (const key of indexWatchesOf(declaration.lookup)) state.watchesPending.push(idOf(state, key));
     return {
         finalizer,
-        required: [...new Set([...reads, ...query?.has ?? []])].map(key => idOf(state, key)),
+        required: [...new Set([...reads, ...query?.has ?? []])].filter(key => !(query?.optional ?? []).includes(key)).map(key => idOf(state, key)),
         excluded: (query?.not ?? []).map(key => idOf(state, key)),
         watches,
         matches: [],
@@ -82,6 +84,7 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
         target,
         commands,
         reads,
+        optional: query?.optional ?? [],
         indexes,
         remote: null,
     };
@@ -205,7 +208,7 @@ const finalizeStops = (state: State, runner: FinalizerRunner, leaf: Leaf, errors
         if (entries === undefined) byArchetype.set(from, entries = []);
         entries.push(entry);
     }
-    const bind = rowBinder(state, runner.reads, []);
+    const bind = rowBinder(state, runner.reads, [], runner.optional);
     for (const [archetype, stopped] of byArchetype) {
         const row = bind(archetype);
         for (const entry of stopped) {
@@ -433,7 +436,7 @@ export const finalizeAll = (state: State): Thrown[] => {
         if (leaf.kind !== "finalizer" || runner.remote !== null) continue;
         const finalizer: Untyped = leaf;
         runner.context.bind();
-        const bind = rowBinder(state, runner.reads, []);
+        const bind = rowBinder(state, runner.reads, [], runner.optional);
         for (const archetype of state.archetypes) {
             if (archetype.count === 0 || !matches(runner, archetype)) continue;
             const row = bind(archetype);

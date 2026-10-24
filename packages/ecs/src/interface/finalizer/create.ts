@@ -52,8 +52,10 @@ const resolveShared = (what: string, declared: Declaration | ChangesDeclaration,
 const componentReads = (what: string, components: Declaration["components"], access: Access): Resolved["components"] => {
     const written = access.components?.write[0];
     if (written !== undefined) throw new Error(`${what} writes "${labelOf(written)}" of its row, which is read-only: it holds the values from before the entity stopped matching.`);
-    const read = access.components?.read ?? components.with ?? [];
-    return compact({ read, has: (components.with ?? []).filter(key => !read.includes(key)), not: components.not });
+    // Optional components are read where the entity had them, and never decide a stop.
+    const optional = (components.optional ?? []).filter(key => !(components.with ?? []).includes(key));
+    const read = access.components?.read ?? [...components.with ?? [], ...optional];
+    return compact({ read, has: (components.with ?? []).filter(key => !read.includes(key)), optional, not: components.not });
 };
 
 /** Throws if a resource is in both `read` and `write`, or a reduced one is written. */

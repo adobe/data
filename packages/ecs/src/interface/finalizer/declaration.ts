@@ -16,9 +16,12 @@ type Shared = {
     readonly after?: readonly Finalizer[];
 };
 
-/** A finalizer that runs for each entity that stops matching its components: those with every one in `with` and none in `not`. */
+/**
+ * A finalizer that runs for each entity that stops matching its components: those with every one in `with` and none in
+ * `not`. Its `optional` components, which never decide a stop, its row reads where the entity had them.
+ */
 export type Declaration = Shared & {
-    readonly components: { readonly with?: readonly Component.Key[]; readonly not?: readonly Component.Key[] };
+    readonly components: { readonly with?: readonly Component.Key[]; readonly optional?: readonly Component.Key[]; readonly not?: readonly Component.Key[] };
 };
 
 /**
@@ -39,7 +42,7 @@ type ResolvedShared = {
 
 /** A finalizer's declaration as the world takes it: what its body reads of its row in `read`, the rest of `with` in `has`. */
 export type Resolved = ResolvedShared & {
-    readonly components: { readonly read?: readonly Key[]; readonly has?: readonly Key[]; readonly not?: readonly Key[] };
+    readonly components: { readonly read?: readonly Key[]; readonly has?: readonly Key[]; readonly optional?: readonly Key[]; readonly not?: readonly Key[] };
 };
 
 export type ResolvedChanges = ResolvedShared & { readonly watch?: readonly Key[] };

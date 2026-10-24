@@ -62,6 +62,8 @@ type ThreadFinalizer = {
     readonly constants: readonly number[];
     readonly constantLayouts: readonly Layout[];
     readonly bind: (archetype: RowArchetype) => Row;
+    /** Its optional components, which a stop's row has only where the entity's archetype did. */
+    readonly optional: readonly number[];
     readonly context: object;
     /**
      * Resolves its resources: its thread's objects as it holds them, and the rest from the copies a group holds from
@@ -182,9 +184,10 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         const untyped: { body(row: object, context: object): void } = leaf;
         return {
             leaf, objects, starts, linear, layouts, constants, constantLayouts,
-            required: [...new Set([...reads, ...components.has ?? []])].map(host.numberOf),
+            required: [...new Set([...reads, ...components.has ?? []])].filter(key => !(components.optional ?? []).includes(key)).map(host.numberOf),
             excluded: (components.not ?? []).map(host.numberOf),
-            bind: rowBinderOf<RowArchetype>(host.rows, host.numberOf, reads, []),
+            optional: (components.optional ?? []).map(host.numberOf),
+            bind: rowBinderOf<RowArchetype>(host.rows, host.numberOf, reads, [], components.optional),
             context: value,
             cells: copies => {
                 // Before a rebuild too, its old rows are the mirror's, which hold what the rebuild keeps.
@@ -296,11 +299,38 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
                 column += columnBytes(count, stride);
             }
             for (let k = 0; k < finalizer.constants.length; k++) storageById[finalizer.constants[k]] = columnStorage(finalizer.constants[k], finalizer.constantLayouts[k], emptyViews, [], null);
-            const row = finalizer.bind({ id: -1, entities: new Float64Array(buffer, entitiesAt(group), count), storageById });
+            const entities = new Float64Array(buffer, entitiesAt(group), count);
             finalizer.cells(column);
-            for (let i = 0; i < count; i++) {
-                row.index = i;
-                guarded(index, finalizer, row);
+            if (finalizer.optional.length === 0) {
+                const row = finalizer.bind({ id: -1, entities, storageById });
+                for (let i = 0; i < count; i++) {
+                    row.index = i;
+                    guarded(index, finalizer, row);
+                }
+            }
+            else {
+                // A stop's row has an optional component only where its archetype did: rows run a run of one
+                // archetype's stops at a time, and archetypes with the same ones share their copy of the columns.
+                const byPattern = new Map<number, RowArchetype>();
+                for (let i = 0; i < count;) {
+                    const id = u32[archetypeWords + i];
+                    let end = i + 1;
+                    while (end < count && u32[archetypeWords + end] === id) end++;
+                    const components = host.archetypeAt(id)?.components ?? [];
+                    let pattern = 0;
+                    finalizer.optional.forEach((component, k) => { if (components.includes(component)) pattern |= 1 << k; });
+                    let archetype = byPattern.get(pattern);
+                    if (archetype === undefined) {
+                        const storages: (FinalizedStorage | undefined)[] = [...storageById];
+                        finalizer.optional.forEach((component, k) => { if ((pattern & (1 << k)) === 0) storages[component] = undefined; });
+                        byPattern.set(pattern, archetype = { id: -1, entities, storageById: storages });
+                    }
+                    const row = finalizer.bind(archetype);
+                    for (; i < end; i++) {
+                        row.index = i;
+                        guarded(index, finalizer, row);
+                    }
+                }
             }
             group += bytes;
         }

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Entity, Index, System, workers } from "../../index.js";
+import { Entity, Finalizer, Index, System, workers } from "../../index.js";
 import { kernelOf } from "./attach-kernel.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { runReported } from "./reports.test-helper.js";
@@ -74,6 +74,17 @@ const copySpeedKernel = System.create({
 });
 const speeds: number[] = [];
 const readSpeeds = System.create({ observer: true, components: { with: [other, order] } }, row => { speeds.push(row[order]); });
+
+/** What finalizers read of rows that stopped, on the world's thread and on the markers'. */
+const stopped: string[] = [];
+const stoppedThere: string[] = [];
+export const finalizeHere = Finalizer.create({ components: { with: [position, order], optional: [velocity] } }, row => {
+    stopped.push(`${row[position]}:${row[velocity] ?? "none"}`);
+});
+export const finalizeThere = Finalizer.create({ components: { with: [position, marker], optional: [velocity] } }, row => {
+    stoppedThere.push(`${row[position]}:${row[velocity] ?? "none"}:${row[marker] === null ? "null" : "marked"}`);
+});
+const despawnAll = System.create({ components: { with: [position] } }, (row, { commands }) => { commands.despawn(row.entity); });
 
 let seen: (readonly [number, number | undefined, string | undefined])[] = [];
 const read = System.create({ observer: true, components: { with: [position], optional: [velocity, label] } }, row => {
@@ -236,6 +247,25 @@ describe("optional components", () => {
             await world.run(read);
             expect(sorted()).toEqual([[1, undefined, undefined], [15, 5, undefined], [150, 50, "c"]]);
         }
+    });
+
+    it("are read by finalizers where an entity had them, never deciding a stop", async () => {
+        await using world = inline();
+        await world.run(spawn);
+        stopped.length = 0;
+        await world.run(despawnAll);
+        expect(stopped.sort()).toEqual(["100:50", "10:5", "1:none"]);
+    });
+
+    it("are read by finalizers on a joined thread where an entity had them", async () => {
+        const { world, remote } = await joined();
+        await world.run(spawnMarked);
+        stoppedThere.length = 0;
+        await world.run(despawnAll);
+        await remote.run(System.create({ observer: true }, () => {}));
+        expect(stoppedThere.sort()).toEqual(["10:5:null", "1:none:null"]);
+        await remote.dispose();
+        await world.dispose();
     });
 
     it("are read by lookups by entity, undefined where the entity lacks one, as written and in kernels", async () => {

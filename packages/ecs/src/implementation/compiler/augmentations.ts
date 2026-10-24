@@ -218,7 +218,8 @@ const zeroOf = (schema: Schema): Start => {
 
 /**
  * What a resource reduced with `operator` starts at when it declares no start: the operator's identity, leaf by leaf,
- * within the schema's range, as a fold of no contributions leaves it; null for a schema of other leaves.
+ * as a fold of no contributions leaves it; null for a schema of other leaves. Used only when it's one of the
+ * schema's values.
  */
 const identityOf = (schema: Schema, operator: unknown): Value | null => {
     if ("type" in schema && schema.type === "boolean") return operator === "&";
@@ -228,8 +229,8 @@ const identityOf = (schema: Schema, operator: unknown): Value | null => {
         switch (operator) {
             case "+": case "|": case "^": return 0;
             case "*": return 1;
-            // Every bit set: -1, or a range's largest for an unsigned one.
-            case "&": return minimum !== undefined && minimum >= 0 ? maximum ?? null : -1;
+            // Every bit of its column set: u32's all ones, else -1.
+            case "&": return minimum !== undefined && minimum >= 0 && maximum !== undefined && maximum <= 0xFFFFFFFF ? 0xFFFFFFFF : -1;
             case "min": return maximum ?? Infinity;
             case "max": return minimum ?? -Infinity;
             default: return null;
@@ -388,15 +389,20 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
     /** A value as its module writes it, and whether an `as const` around it makes what it writes in place readonly. */
     type Written = { readonly expression: NonNullable<Declarator["init"]>; readonly module: Module; readonly constant: boolean; readonly annotation?: TypeNode };
 
-    /** Whether an expression is an `as const` assertion, under parentheses and other casts. */
-    const isConstAssertion = (expression: Declarator["init"]): boolean => {
+    /**
+     * The outermost assertion on an expression, under parentheses, `satisfies` and `!`: "const" for `as const`, the
+     * type of any other `as`, or null without one.
+     */
+    const outerAssertion = (expression: Declarator["init"]): "const" | TypeNode | null => {
         let inner = expression;
-        while (inner !== null && (inner.type === "TSAsExpression" || inner.type === "TSSatisfiesExpression" || inner.type === "TSNonNullExpression" || inner.type === "ParenthesizedExpression")) {
-            if (inner.type === "TSAsExpression" && inner.typeAnnotation.type === "TSTypeReference" && inner.typeAnnotation.typeName.type === "Identifier" && inner.typeAnnotation.typeName.name === "const") return true;
-            inner = inner.expression;
-        }
-        return false;
+        while (inner !== null && (inner.type === "TSSatisfiesExpression" || inner.type === "TSNonNullExpression" || inner.type === "ParenthesizedExpression")) inner = inner.expression;
+        if (inner?.type !== "TSAsExpression") return null;
+        const { typeAnnotation } = inner;
+        return typeAnnotation.type === "TSTypeReference" && typeAnnotation.typeName.type === "Identifier" && typeAnnotation.typeName.name === "const" ? "const" : typeAnnotation;
     };
+
+    /** Whether an expression's outermost assertion is `as const`. */
+    const isConstAssertion = (expression: Declarator["init"]): boolean => outerAssertion(expression) === "const";
 
     /** The `default` property's value of an object a module writes: in place, or through constants and spreads. */
     const defaultProperty = async (expression: Declarator["init"], at: Module, constant: boolean, seen: Set<object>): Promise<Written | null> => {
@@ -487,14 +493,17 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
     const readonlyValue = async (written: Written, seen: Set<object>): Promise<boolean> => {
         const { module: at, annotation } = written;
         if (annotation !== undefined) return await readonlyType(annotation, at, seen);
-        const constant = written.constant || isConstAssertion(written.expression);
+        // A cast to a type is that type, whatever `as const` around it says.
+        const assertion = outerAssertion(written.expression);
+        if (assertion !== null && assertion !== "const") return await readonlyType(assertion, at, seen);
+        const constant = written.constant || assertion === "const";
         const value = unwrapped(written.expression);
         if (value === null || seen.has(value)) return false;
         seen.add(value);
         switch (value.type) {
             case "Literal": return true;
             case "TemplateLiteral": return value.expressions.length === 0;
-            case "UnaryExpression": return value.operator === "-" && (value.argument.type === "Literal" || (value.argument.type === "Identifier" && value.argument.name === "Infinity"));
+            case "UnaryExpression": return value.operator === "-" && (value.argument.type === "Literal" || (value.argument.type === "Identifier" && (value.argument.name === "Infinity" || value.argument.name === "NaN")));
             case "ArrayExpression":
                 return constant && (await Promise.all(value.elements.map(element => element === null || element.type === "SpreadElement" ? false : readonlyValue({ expression: element, module: at, constant }, seen)))).every(Boolean);
             case "ObjectExpression":
@@ -522,7 +531,7 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
             case "Literal": return typeof value.value === "string" || typeof value.value === "number" || typeof value.value === "boolean" || value.value === null ? value.value : undefined;
             case "UnaryExpression":
                 if (value.operator !== "-") return undefined;
-                if (value.argument.type === "Identifier" && value.argument.name === "Infinity") return -Infinity;
+                if (value.argument.type === "Identifier" && (value.argument.name === "Infinity" || value.argument.name === "NaN")) return -(value.argument.name === "Infinity" ? Infinity : NaN);
                 return value.argument.type === "Literal" && typeof value.argument.value === "number" ? -value.argument.value : undefined;
             case "ArrayExpression": {
                 const items: Value[] = [];
@@ -553,8 +562,12 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
         }
     };
 
-    /** A declaration's type's namespace's default, `T.default`, as code reading it, and the local binding it reads; null without one. */
-    const namespacedDefault = async (type: TypeNode, name: string): Promise<{ readonly text: string; readonly local?: string; readonly packaged: boolean } | null> => {
+    /**
+     * A declaration's type's namespace's default, `T.default`, as code reading it, and the local binding it reads; null
+     * without one. Checked against `schema` when the build can read it. `oneObject` is for a start a joined thread
+     * knows by identity, which is read, never copied.
+     */
+    const namespacedDefault = async (type: TypeNode, name: string, schema: Schema | undefined, oneObject: boolean): Promise<{ readonly text: string; readonly value?: Value; readonly local?: string; readonly packaged: boolean } | null> => {
         const inner = type.type === "TSParenthesizedType" ? type.typeAnnotation : type;
         if (inner.type !== "TSTypeReference" || inner.typeArguments !== null) return null;
         const path = typeNameParts(inner.typeName);
@@ -566,26 +579,36 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
         if (!await readonlyValue(written, new Set())) {
             fail(written.module, written.expression, `${path.join(".")}.default is shared by every row and world that starts from it, so it's deeply readonly: \`const ${path.at(-1) ?? "T"} = { default: ... } as const\`, or a const typed readonly: ReadonlyMap, ReadonlySet, Readonly<...>, readonly arrays and fields`);
         }
+        const value = await staticValue(written, new Set());
+        if (schema !== undefined && value !== undefined && !matchesSchema(schema, value)) fail(written.module, written.expression, `${path.join(".")}.default, ${codeOf(value)}, isn't one of its type's values`);
         const imported = module.imports.get(first);
         if (imported !== undefined && !imported.value) {
             // Imported as a type alone, the namespace can't be read here, so a default the build can read is written in.
-            const value = await staticValue(written, new Set());
-            if (value === undefined) fail(module, inner, `${name}'s type ${path.join(".")} starts at ${path.join(".")}.default: import ${first} as a value, which the registration reads`);
-            return { text: codeOf(value), packaged };
+            if (value === undefined || (oneObject && typeof value === "object" && value !== null)) {
+                fail(module, inner, `${name}'s type ${path.join(".")} starts at ${path.join(".")}.default${oneObject ? ", one object a joined thread knows by identity" : ""}: import ${first} as a value, which the registration reads`);
+            }
+            return { text: codeOf(value ?? null), value: value ?? null, packaged };
         }
         return { text: `${path.join(".")}.default`, local: imported === undefined ? first : undefined, packaged };
     };
 
     /**
-     * What a value of `type`, of `schema`, starts at as code: as `zeroOf` says, but each field of a struct and item of
-     * a tuple written here starting at its own type's default, its namespace's included, by the same rules;
-     * and the local bindings that code reads.
+     * A start as code, the local bindings it reads, whether a namespace or an identity gave it, not zero values alone,
+     * and its value when it's data the build wrote in.
      */
-    const startOf = async (type: TypeNode, schema: Schema): Promise<{ readonly text: string; readonly locals: readonly string[] } | { readonly fresh: "Map" | "Set" } | { readonly none: string }> => {
+    type Started = { readonly text: string; readonly locals: readonly string[]; readonly given: boolean; readonly value?: Value };
+
+    /**
+     * What a value of `type`, of `schema`, starts at as code: its namespace's default of yours; else for a reduction by
+     * `operator`, its identity when that's one of its values; else the package's namespace's; else each field of a
+     * struct and item of a tuple by these rules; else its zero value, as `zeroOf` says.
+     */
+    const startOf = async (type: TypeNode, schema: Schema, operator: unknown, oneObject: boolean): Promise<Started | { readonly fresh: "Map" | "Set" } | { readonly none: string }> => {
         const unwrapped = type.type === "TSParenthesizedType" ? type.typeAnnotation : type;
         const inner = unwrapped.type === "TSTypeOperator" && unwrapped.operator === "readonly" && unwrapped.typeAnnotation !== undefined ? unwrapped.typeAnnotation : unwrapped;
-        const namespaced = await namespacedDefault(inner, "it");
-        if (namespaced !== null) return { text: namespaced.text, locals: namespaced.local === undefined ? [] : [namespaced.local] };
+        const namespaced = await namespacedDefault(inner, "it", schema, oneObject);
+        const named = namespaced === null ? null : { text: namespaced.text, value: namespaced.value, locals: namespaced.local === undefined ? [] : [namespaced.local], given: true };
+        if (named !== null && namespaced !== null && !namespaced.packaged) return named;
         const parts = inner.type === "TSTypeLiteral" && "type" in schema && schema.type === "object"
             ? inner.members.flatMap(field => field.type === "TSPropertySignature" && !field.computed && field.key.type === "Identifier" && field.typeAnnotation !== null
                 ? [{ name: field.key.name, type: field.typeAnnotation.typeAnnotation, schema: schema.properties[field.key.name] }] : [])
@@ -593,23 +616,40 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
                 ? inner.elementTypes.flatMap((element, k) => element.type === "TSOptionalType" || element.type === "TSRestType" || element.type === "TSNamedTupleMember" ? [] : [{ name: String(k), type: element, schema: schema.items }])
                 : null;
         if (parts === null || parts.length === 0) {
+            const identity = operator === null ? null : identityOf(schema, operator);
+            if (identity !== null && matchesSchema(schema, identity)) return { text: codeOf(identity), value: identity, locals: [], given: true };
+            if (named !== null) return named;
             const zero = zeroOf(schema);
-            return "value" in zero ? { text: codeOf(zero.value), locals: [] } : zero;
+            return "value" in zero ? { text: codeOf(zero.value), value: zero.value, locals: [], given: false } : zero;
         }
         const texts: string[] = [];
         const locals: string[] = [];
+        const values: Value[] = [];
+        const fields: { [field: string]: Value } = {};
+        let given = false;
+        let data = true;
         for (const part of parts) {
-            const started = part.schema === undefined ? { none: "it isn't a property" } : await startOf(part.type, part.schema);
+            const started = part.schema === undefined ? { none: "it isn't a property" } : await startOf(part.type, part.schema, operator, false);
             if (!("text" in started)) return { none: `its ${inner.type === "TSTupleType" ? "item" : "field"} ${part.name} starts at nothing: ${"fresh" in started ? "a set or a map in a struct has no zero value" : started.none}` };
             texts.push(inner.type === "TSTupleType" ? started.text : `${JSON.stringify(part.name)}: ${started.text}`);
             locals.push(...started.locals);
+            given ||= started.given;
+            if (started.value === undefined) data = false;
+            else {
+                values.push(started.value);
+                fields[part.name] = started.value;
+            }
         }
-        // Without a namespace's default inside, the schema's zero value says the same, as data.
-        if (locals.length === 0) {
+        // With zero values alone, the schema's zero value says the same, as data.
+        if (!given) {
             const zero = zeroOf(schema);
-            if ("value" in zero) return { text: codeOf(zero.value), locals };
+            if ("value" in zero) return { text: codeOf(zero.value), value: zero.value, locals, given };
         }
-        return { text: inner.type === "TSTupleType" ? `[${texts.join(", ")}]` : `{ ${texts.join(", ")} }`, locals };
+        if (data) {
+            const value = inner.type === "TSTupleType" ? values : fields;
+            return { text: codeOf(value), value, locals, given };
+        }
+        return { text: inner.type === "TSTupleType" ? `[${texts.join(", ")}]` : `{ ${texts.join(", ")} }`, locals, given };
     };
 
     /** A declared default: a literal type, never `typeof` a value. */
@@ -716,33 +756,33 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
                 if (schema !== undefined && given !== undefined && !matchesSchema(schema, given)) fail(module, defaultNode ?? member, `${key.name}'s default isn't of its declared type`);
                 let start = given === undefined ? undefined : codeOf(given);
                 let fresh: "Map" | "Set" | null = null;
-                // First a literal, then its type's namespace's default; only resources and derived components need a
-                // start otherwise, and a component holding an object, whose start a joined thread knows by identity.
-                const started = kind === "resource" || builtIns.has("derived") || schema === undefined || !isStruct(schema);
-                const namespaced = given !== undefined || !started ? null : await namespacedDefault(typeNode, key.name);
+                // Without a literal, only resources and derived components need a start of their own, and a component
+                // holding an object, whose start a joined thread knows by identity.
+                const needed = kind === "resource" || builtIns.has("derived");
+                const oneObject = kind === "component" && (schema === undefined || !isStruct(schema));
                 const reduced = builtIns.get("reduce");
-                const identity = given !== undefined || (namespaced !== null && !namespaced.packaged) || kind !== "resource" || reduced === undefined || schema === undefined
-                    ? null : identityOf(schema, JSON.parse(reduced.text));
-                if (identity !== null) start = codeOf(identity);
-                else if (namespaced !== null) {
-                    start = namespaced.text;
-                    if (namespaced.local !== undefined) at = Math.max(at, endOfLocal(namespaced.local));
-                }
-                else if (given === undefined && (kind === "resource" || builtIns.has("derived"))) {
-                    if (schema === undefined ? await allowsNullType(typeNode, module, new Set()) : allowsNullSchema(schema)) {
-                        // It starts at null, as the world reads a value with neither.
-                    }
-                    else if (schema === undefined) {
-                        fail(module, member, `${kind} ${key.name} holds a value that isn't data, so nothing gives it a start: let its type allow null, or give its type a namespace with a deeply readonly \`default\`; a ReadonlyMap or ReadonlySet starts fresh in each world, a Map or Set doesn't`);
+                const operator: unknown = kind === "resource" && reduced !== undefined ? JSON.parse(reduced.text) : null;
+                const read = (found: Started): void => {
+                    start = found.text;
+                    for (const local of found.locals) at = Math.max(at, endOfLocal(local));
+                };
+                if (given === undefined && (needed || oneObject)) {
+                    if (schema === undefined) {
+                        const namespaced = await namespacedDefault(typeNode, key.name, undefined, oneObject);
+                        if (namespaced !== null) read({ text: namespaced.text, locals: namespaced.local === undefined ? [] : [namespaced.local], given: true });
+                        else if (needed && !await allowsNullType(typeNode, module, new Set())) {
+                            fail(module, member, `${kind} ${key.name} holds a value that isn't data, so nothing gives it a start: let its type allow null, or give its type a namespace with a deeply readonly \`default\`; a ReadonlyMap or ReadonlySet starts fresh in each world, a Map or Set doesn't`);
+                        }
                     }
                     else {
-                        const zero = await startOf(typeNode, schema);
-                        if ("fresh" in zero) fresh = zero.fresh;
-                        else if ("none" in zero) fail(module, member, `${kind} ${key.name} starts at no value its type gives, since ${zero.none}; ${workaround(typeNode)}`);
-                        // A constant is the one value it can start at, which the world reads from its schema.
-                        else if (!("const" in schema)) {
-                            start = zero.text;
-                            for (const local of zero.locals) at = Math.max(at, endOfLocal(local));
+                        const found = await startOf(typeNode, schema, operator, oneObject);
+                        if ("text" in found && found.given) read(found);
+                        // Else it starts at null, as the world reads a value with neither, when its type allows it.
+                        else if (needed && !allowsNullSchema(schema)) {
+                            if ("fresh" in found) fresh = found.fresh;
+                            else if ("none" in found) fail(module, member, `${kind} ${key.name} starts at no value its type gives, since ${found.none}; ${workaround(typeNode)}`);
+                            // A constant is the one value it can start at, which the world reads from its schema.
+                            else if (!("const" in schema)) read(found);
                         }
                     }
                 }

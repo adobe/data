@@ -303,6 +303,54 @@ const mark = Symbol();`);
         // A Transferable class, through an alias and with null.
         expect(await registrations(components(`type: Picture; transfer: true`).replace("const notKey", "type Picture = ImageBitmap | null;\nconst notKey"))).toContain(`declare$(key, "component", { transfer: true });`);
     });
+    test("starts a struct's fields and a tuple's items at imported namespaces' defaults, imported as values or types", async () => {
+        const height = { "/src/height.ts": `import type { F32 } from "@adobe/ecs";\nexport type Height = F32;\nexport const Height = { default: 7 } as const;` };
+        expect(await registrations(`import { Quat as Q } from "@adobe/ecs";\n${keys("e")}declare module "@adobe/ecs" { interface Resources { [e]: { type: { readonly q: Q } } } }`))
+            .toEqual([`declare$(e, "resource", { type: {"type":"object","properties":{"q":{"type":"array","items":{"type":"number","precision":1},"minItems":4,"maxItems":4}}}, default: { "q": Q.default } });`]);
+        expect(await registrations(`import type { Quat } from "@adobe/ecs";\n${keys("e")}declare module "@adobe/ecs" { interface Resources { [e]: { type: { readonly q: Quat } } } }`))
+            .toEqual([expect.stringContaining(`default: {"q":[0,0,0,1]}`)]);
+        expect(await registrations(`import type { Height } from "./height.js";\n${keys("e")}declare module "@adobe/ecs" { interface Resources { [e]: { type: readonly [Height, F32] } } }`, height))
+            .toEqual([expect.stringContaining(`default: [7,0]`)]);
+    });
+    test("starts a reduced resource at its operator's identity only when it's one of its type's values", async () => {
+        const reduced = (type: string, operator: string) => registrations(`import type { Schema } from "@adobe/ecs";\n${keys("k")}declare module "@adobe/ecs" { interface Resources { [k]: { type: ${type}; reduce: "${operator}" } } }`);
+        expect(await reduced("Entity", "min")).toEqual([expect.stringContaining("default: Entity.default")]);
+        expect(await reduced(`Schema.Type<{ type: "integer"; minimum: 0 }>`, "min")).toEqual([expect.stringContaining("default: 0")]);
+        expect(await reduced(`Schema.Type<{ type: "integer"; minimum: 0; maximum: 100 }>`, "&")).toEqual([expect.stringContaining("default: 0")]);
+        expect(await reduced("U32", "&")).toEqual([expect.stringContaining("default: 4294967295")]);
+        expect(await reduced(`Schema.Type<{ type: "integer"; minimum: 1; maximum: 9 }>`, "+")).toEqual(expect.stringMatching(/^failure: .*default/));
+        expect(await reduced(`Schema.Type<{ type: "integer"; minimum: 2; maximum: 9 }>`, "*")).toEqual(expect.stringMatching(/^failure: .*default/));
+    });
+    test("starts a reduced struct's fields at their own types' namespaces' defaults before the identity", async () => {
+        expect(await registrations(`${keys("k")}declare module "@adobe/ecs" { interface Resources { [k]: { type: { readonly h: Height; readonly w: F32 }; reduce: "max" } } }\ntype Height = F32;\nconst Height = { default: 7 } as const;`))
+            .toEqual([expect.stringContaining(`default: { "h": Height.default, "w": -Infinity }`)]);
+    });
+    test("fails for an object component whose namespace is imported as a type only, since its start is one object", async () => {
+        expect(await registrations(`import type { Label } from "./label.js";\n${keys("k")}declare module "@adobe/ecs" { interface Components { [k]: { type: Label; thread: "main" } } }`,
+            { "/src/label.ts": `export type Label = { readonly text: string };\nexport const Label = { default: { text: "x" } } as const;` })).toEqual(expect.stringMatching(/^failure: .*import Label as a value/));
+    });
+    test("fails for a namespace's default a cast makes mutable, wherever the cast is", async () => {
+        const named = (namespace: string) => registrations(`${keys("k")}declare module "@adobe/ecs" { interface Resources { [k]: { type: L } } }\ntype L = readonly number[];\n${namespace}`);
+        expect(await named("const L = { default: [] as number[] } as const;")).toEqual(expect.stringMatching(/^failure: L\.default is shared/));
+        expect(await named("const L = { default: [1, 2] as number[] } as const;")).toEqual(expect.stringMatching(/^failure: L\.default is shared/));
+        expect(await named("const L = { default: ([1, 2] as const) as unknown as number[] };")).toEqual(expect.stringMatching(/^failure: L\.default is shared/));
+        expect(await named("const L = { default: [1, 2] as const satisfies readonly number[] };")).toEqual([expect.stringContaining("default: L.default")]);
+    });
+    test("finds a default only where a schema's keywords are, and names the alias holding one", async () => {
+        const typed = (type: string) => registrations(`import type { Schema } from "@adobe/ecs";\n${keys("k")}declare module "@adobe/ecs" { interface Resources { [k]: { type: ${type} } } }`);
+        expect(await typed(`Schema.Type<{ type: "object"; properties: { default: { type: "number" } }; required: ["default"] }>`)).toEqual([expect.stringContaining(`default: {"default":0}`)]);
+        expect(await typed(`Schema.Type<{ const: { default: 1 } }>`)).toEqual([expect.stringContaining(`"const":{"default":1}`)]);
+        expect(await registrations(`import type { Schema } from "@adobe/ecs";\n${keys("k")}declare module "@adobe/ecs" { interface Resources { [k]: { type: Bad } } }\ntype Bad = Schema.Type<{ type: "number"; default: 1 }>;`))
+            .toEqual(expect.stringMatching(/^failure: .*Bad/));
+    });
+    test("checks a namespace's default against its type when it can read it", async () => {
+        expect(await registrations(`${keys("k")}declare module "@adobe/ecs" { interface Resources { [k]: { type: Mode } } }\ntype Mode = "a" | "b";\nconst Mode = { default: "c" } as const;`))
+            .toEqual(expect.stringMatching(/^failure: Mode\.default/));
+    });
+    test("writes in a namespace's -NaN imported as a type only", async () => {
+        expect(await registrations(`import type { Z } from "./z.js";\n${keys("k")}declare module "@adobe/ecs" { interface Resources { [k]: { type: Z } } }`,
+            { "/src/z.ts": `export type Z = number;\nexport const Z = { default: -NaN } as const;` })).toEqual([expect.stringContaining("default: NaN")]);
+    });
     test("passes over modules without a declaration of the package", async () => {
         expect(await passed(`declare module "elsewhere" { interface Components { [x]: { type: number } } }\nconst x = Symbol();`)).toBe(null);
     });

@@ -514,7 +514,11 @@ export const createConverter = (host: TypeHost, root: string) => {
         if (found !== null && intrinsic(found) === "schema" && parameters.length === 1 && argument !== undefined) {
             const schema = await valueOfType(argument, module, new Set());
             if (!isSchema(schema)) return fail(module, argument, "Schema.Type takes a schema");
-            return holdsDefault(schema) ? fail(module, argument, `a schema holds no default: give ${path.join(".")}'s alias a namespace with one, \`const T = { default: ... }\``) : schema;
+            if (!holdsDefault(schema)) return schema;
+            // The alias being read, the latest declaration entered, is the one to give a namespace.
+            const alias = [...active].at(-1);
+            const name = alias?.type === "TSTypeAliasDeclaration" ? alias.id.name : "its alias";
+            return fail(module, argument, `a schema holds no default: give ${name} a namespace with one, \`const ${alias?.type === "TSTypeAliasDeclaration" ? name : "T"} = { default: ... }\``);
         }
         return fail(module, type, `${use === "input" ? "input" : "declared"} type ${path.join(".")} takes type arguments, which ${words(use).a} doesn't, except Schema.Type`);
     };
@@ -654,8 +658,21 @@ export const pathOf = (expression: Node): readonly string[] | null => {
 const isNode = (value: object): value is Node => typeof Reflect.get(value, "start") === "number" && typeof Reflect.get(value, "end") === "number" && typeof Reflect.get(value, "type") === "string";
 
 // `Schema.Type`'s argument is constrained to `Schema` where it's written, so TypeScript checked an object's form.
-/** Whether a value a schema type writes holds a `default` anywhere. */
-const holdsDefault = (value: unknown): boolean =>
-    typeof value === "object" && value !== null && (Array.isArray(value) ? value.some(holdsDefault) : "default" in value || Object.values(value).some(holdsDefault));
+/**
+ * Whether a schema a schema type writes holds a `default` as a keyword: at its top or in a schema inside it, never in
+ * a property's name or a `const`'s value.
+ */
+const holdsDefault = (schema: unknown): boolean => {
+    if (typeof schema !== "object" || schema === null || Array.isArray(schema)) return false;
+    if ("default" in schema) return true;
+    const inside = (keyword: string): unknown => Reflect.get(schema, keyword);
+    const listed = (keyword: string): boolean => {
+        const members = inside(keyword);
+        return Array.isArray(members) && members.some(holdsDefault);
+    };
+    const properties = inside("properties");
+    return holdsDefault(inside("items")) || holdsDefault(inside("keys")) || holdsDefault(inside("values")) || listed("anyOf") || listed("allOf")
+        || (typeof properties === "object" && properties !== null && Object.values(properties).some(holdsDefault));
+};
 
 const isSchema = (value: unknown): value is Schema => typeof value === "object" && value !== null && !Array.isArray(value);

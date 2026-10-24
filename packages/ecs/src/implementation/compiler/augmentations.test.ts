@@ -180,6 +180,15 @@ const after = 1;`, files);
         expect(await registrations(`${maps}const names: ReadonlyMap<string, number> = new Map([["a", 1]]);\nconst Names = { default: names };`)).toEqual([`declare$(key, "resource", { type: {"type":"map","keys":{"type":"string"},"values":{"type":"number"}}, default: Names.default });`]);
         void shared;
     });
+    test("takes a call in a readonly default when its function's declared return type is readonly", async () => {
+        const declared = (code: string, files: { readonly [path: string]: string } = {}) => registrations(`${keys("k")}declare module "@adobe/ecs" { interface Resources { [k]: { type: Note } } }\ntype Note = { readonly color: number; readonly tags: readonly string[] };\n${code}`, files);
+        const note = (call: string) => `const Note = { default: { color: ${call}, tags: [] } } as const;`;
+        expect(await declared(`function pack(r: number, g: number): number { return r + g; }\n${note("pack(255, 214)")}`)).toEqual([expect.stringContaining("default: Note.default")]);
+        expect(await declared(`import { pack } from "./color.js";\n${note("pack(255, 214)")}`, { "/src/color.ts": `import type { U32 } from "@adobe/ecs";\nexport const pack = (r: number, g: number): U32 => r + g;` })).toEqual([expect.stringContaining("default: Note.default")]);
+        expect(await declared(`const tagsOf = (): readonly string[] => [];\nconst Note = { default: { color: 1, tags: tagsOf() } } as const;`)).toEqual([expect.stringContaining("default: Note.default")]);
+        expect(await declared(`function pack(r: number, g: number) { return r + g; }\n${note("pack(255, 214)")}`)).toEqual(expect.stringMatching(/^failure: Note\.default is shared .*`pack\(255, 214\)` returns a type the build can't see is readonly: annotate its return type/));
+        expect(await declared(`const tagsOf = (): string[] => [];\nconst Note = { default: { color: 1, tags: tagsOf() } } as const;`)).toEqual(expect.stringMatching(/^failure: Note\.default is shared .*`tagsOf\(\)` returns a type that isn't readonly/));
+    });
     test("writes a literal -0 as itself", async () => {
         expect(await registrations(`${keys("floor")}declare module "@adobe/ecs" { interface Resources { [floor]: { type: number; default: -0 } } }`))
             .toEqual([`declare$(floor, "resource", { type: {"type":"number"}, default: -0 });`]);

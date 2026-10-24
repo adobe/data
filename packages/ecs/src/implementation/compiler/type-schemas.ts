@@ -12,6 +12,8 @@ type Class = Extract<Statement, { readonly superClass: unknown }>;
 type Namespace = Extract<Statement, { readonly type: "TSModuleDeclaration"; readonly global: false }>;
 type Import = Extract<Statement, { readonly type: "ImportDeclaration" }>;
 type Enum = Extract<Statement, { readonly type: "TSEnumDeclaration" }>;
+/** A function a statement declares, by the shape every function shares. */
+type FunctionDeclared = Extract<Statement, { readonly params: unknown }>;
 export type Declarator = Extract<Statement, { readonly type: "VariableDeclaration" }>["declarations"][number];
 export type TypeNode = Alias["typeAnnotation"];
 type Member = Interface["body"]["body"][number];
@@ -66,6 +68,7 @@ export type Module = {
     readonly namespaces: ReadonlyMap<string, Namespace>;
     readonly constants: ReadonlyMap<string, Declarator>;
     readonly enums: ReadonlyMap<string, Enum>;
+    readonly functions: ReadonlyMap<string, FunctionDeclared>;
     readonly imports: ReadonlyMap<string, Imported>;
     /** The types its `declare global` blocks declare. */
     readonly globals: { readonly types: ReadonlyMap<string, Declared>; readonly enums: ReadonlyMap<string, Enum> };
@@ -102,9 +105,11 @@ const scopeOf = (statements: readonly Statement[]) => {
     const namespaces = new Map<string, Namespace>();
     const constants = new Map<string, Declarator>();
     const enums = new Map<string, Enum>();
+    const functions = new Map<string, FunctionDeclared>();
     for (const statement of statements) {
         const inner = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
         if (inner?.type === "TSEnumDeclaration") enums.set(inner.id.name, inner);
+        if (inner?.type === "FunctionDeclaration" && inner.id !== null) functions.set(inner.id.name, inner);
         const declared = declarationOf(statement);
         if (declared?.type === "TSModuleDeclaration") {
             if (declared.id.type === "Identifier") namespaces.set(declared.id.name, declared);
@@ -112,7 +117,7 @@ const scopeOf = (statements: readonly Statement[]) => {
         else if (declared !== null && declared.id !== null) types.set(declared.id.name, declared);
         for (const declarator of constantsOf(statement)) constants.set(nameOfDeclarator(declarator), declarator);
     }
-    return { types, namespaces, constants, enums };
+    return { types, namespaces, constants, enums, functions };
 };
 
 export const moduleOf = (file: string, code: string, program: TypedProgram): Module => {
@@ -339,6 +344,37 @@ export const createConverter = (host: TypeHost, root: string) => {
         if (local !== undefined) return { module, declaration: local };
         const imported = module.imports.get(first);
         return imported === undefined || imported.imported === null ? null : await fromSource(module, imported.source, imported.imported, constantsIn, new Set());
+    };
+
+    const functionsIn = (module: Module): ReadonlyMap<string, FunctionDeclared> => module.functions;
+
+    /**
+     * The declared return type of the function a name calls: a function declaration's, or a constant's holding a
+     * function or typed as one, through imports. Undefined for a function declaring none, null for no function found.
+     */
+    const returnTypeNamed = async (path: readonly string[], module: Module): Promise<{ readonly module: Module; readonly type: TypeNode } | undefined | null> => {
+        const [first] = path;
+        if (first === undefined) return null;
+        if (path.length === 1) {
+            const local = module.functions.get(first);
+            const imported = module.imports.get(first);
+            const declared = local !== undefined ? { module, declaration: local }
+                : imported === undefined || imported.imported === null ? null : await fromSource(module, imported.source, imported.imported, functionsIn, new Set());
+            if (declared !== null) {
+                const returned = declared.declaration.returnType?.typeAnnotation;
+                return returned === undefined ? undefined : { module: declared.module, type: returned };
+            }
+        }
+        const constant = await constantNamed(path, module);
+        if (constant === null) return null;
+        const { id, init } = constant.declaration;
+        const annotation = id.type === "Identifier" ? id.typeAnnotation?.typeAnnotation : undefined;
+        if (annotation?.type === "TSFunctionType") return { module: constant.module, type: annotation.returnType.typeAnnotation };
+        if (init?.type === "ArrowFunctionExpression" || init?.type === "FunctionExpression") {
+            const returned = init.returnType?.typeAnnotation;
+            return returned === undefined ? undefined : { module: constant.module, type: returned };
+        }
+        return null;
     };
 
     /** The package's own declaration a found type is, by its path in the package: `Schema.Type` and `Entity`. */
@@ -641,7 +677,7 @@ export const createConverter = (host: TypeHost, root: string) => {
         return { anyOf: values.map(value => ({ const: value })) };
     };
 
-    return { convert, read, site, fail, typeNamed, constantNamed, valueOfType };
+    return { convert, read, site, fail, typeNamed, constantNamed, returnTypeNamed, valueOfType };
 };
 
 /** A name and the properties read from it, `Entity.none` as `["Entity", "none"]`; null for any other expression. */

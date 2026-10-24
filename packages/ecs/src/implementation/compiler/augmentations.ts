@@ -445,7 +445,7 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
      */
     const readonlyType = async (type: TypeNode, at: Module, seen: Set<object>, fields = false): Promise<boolean> => {
         switch (type.type) {
-            case "TSNumberKeyword": case "TSStringKeyword": case "TSBooleanKeyword": case "TSNullKeyword": case "TSUndefinedKeyword": case "TSLiteralType": return true;
+            case "TSNumberKeyword": case "TSStringKeyword": case "TSBooleanKeyword": case "TSBigIntKeyword": case "TSNullKeyword": case "TSUndefinedKeyword": case "TSLiteralType": return true;
             case "TSParenthesizedType": return await readonlyType(type.typeAnnotation, at, seen);
             case "TSUnionType": return (await Promise.all(type.types.map(member => readonlyType(member, at, seen)))).every(Boolean);
             case "TSTypeOperator": {
@@ -489,35 +489,73 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
         }
     };
 
-    /** Whether a value a module writes is deeply readonly by its type: a literal, `as const` data, or a binding typed readonly. */
-    const readonlyValue = async (written: Written, seen: Set<object>): Promise<boolean> => {
-        const { module: at, annotation } = written;
-        if (annotation !== undefined) return await readonlyType(annotation, at, seen);
+    /** Where a value a module writes isn't evidently readonly: the part that isn't, and why. */
+    type Unreadonly = { readonly module: Module; readonly expression: NonNullable<Declarator["init"]>; readonly why: string };
+
+    /** The source text of a part of a module, for failures. */
+    const textOf = (at: Module, expression: { readonly start: number; readonly end: number }): string => at.code.slice(expression.start, expression.end);
+
+    /**
+     * Where a value a module writes isn't deeply readonly by its type, or null when it is: a literal, `as const` data, a
+     * binding typed readonly, or a call of a function whose declared return type is readonly.
+     */
+    const unreadonly = async (written: Written, seen: Set<object>): Promise<Unreadonly | null> => {
+        const { module: at, annotation, expression } = written;
+        const failing = (why: string): Unreadonly => ({ module: at, expression, why: `\`${textOf(at, expression)}\` ${why}` });
+        if (annotation !== undefined) return await readonlyType(annotation, at, seen) ? null : failing("is typed with a type that isn't readonly");
         // A cast to a type is that type, whatever `as const` around it says.
-        const assertion = outerAssertion(written.expression);
-        if (assertion !== null && assertion !== "const") return await readonlyType(assertion, at, seen);
+        const assertion = outerAssertion(expression);
+        if (assertion !== null && assertion !== "const") return await readonlyType(assertion, at, seen) ? null : failing("is cast to a type that isn't readonly");
         const constant = written.constant || assertion === "const";
-        const value = unwrapped(written.expression);
-        if (value === null || seen.has(value)) return false;
+        const value = unwrapped(expression);
+        if (value === null || seen.has(value)) return failing("isn't a value the build can read");
         seen.add(value);
+        const each = async (items: readonly Written[]): Promise<Unreadonly | null> => {
+            for (const item of items) {
+                const found = await unreadonly(item, seen);
+                if (found !== null) return found;
+            }
+            return null;
+        };
         switch (value.type) {
-            case "Literal": return true;
-            case "TemplateLiteral": return value.expressions.length === 0;
-            case "UnaryExpression": return value.operator === "-" && (value.argument.type === "Literal" || (value.argument.type === "Identifier" && (value.argument.name === "Infinity" || value.argument.name === "NaN")));
-            case "ArrayExpression":
-                return constant && (await Promise.all(value.elements.map(element => element === null || element.type === "SpreadElement" ? false : readonlyValue({ expression: element, module: at, constant }, seen)))).every(Boolean);
-            case "ObjectExpression":
-                return constant && (await Promise.all(value.properties.map(property => property.type === "SpreadElement" || property.computed
-                    ? false : readonlyValue({ expression: property.value, module: at, constant }, seen)))).every(Boolean);
+            case "Literal": return null;
+            case "TemplateLiteral": return value.expressions.length === 0 ? null : failing("isn't a literal");
+            case "UnaryExpression":
+                return value.operator === "-" && (value.argument.type === "Literal" || (value.argument.type === "Identifier" && (value.argument.name === "Infinity" || value.argument.name === "NaN"))) ? null : failing("isn't a literal");
+            case "ArrayExpression": {
+                if (!constant) return failing("isn't under `as const`");
+                const items: Written[] = [];
+                for (const element of value.elements) {
+                    if (element === null || element.type === "SpreadElement") return failing("spreads or skips items, which the build can't see are readonly");
+                    items.push({ expression: element, module: at, constant });
+                }
+                return await each(items);
+            }
+            case "ObjectExpression": {
+                if (!constant) return failing("isn't under `as const`");
+                const fields: Written[] = [];
+                for (const property of value.properties) {
+                    if (property.type === "SpreadElement" || property.computed) return failing("spreads or computes a field, which the build can't see is readonly");
+                    fields.push({ expression: property.value, module: at, constant });
+                }
+                return await each(fields);
+            }
+            case "CallExpression": {
+                const path = value.callee.type === "Super" ? null : pathOf(value.callee);
+                const returned = path === null ? null : await converter.returnTypeNamed(path, at);
+                if (returned === null) return failing("calls a function the build can't find");
+                if (returned === undefined) return failing("returns a type the build can't see is readonly: annotate its return type");
+                return await readonlyType(returned.type, returned.module, seen) ? null : failing("returns a type that isn't readonly");
+            }
             case "Identifier": case "MemberExpression": {
-                if (value.type === "Identifier" && (value.name === "Infinity" || value.name === "NaN" || value.name === "undefined")) return true;
+                if (value.type === "Identifier" && (value.name === "Infinity" || value.name === "NaN" || value.name === "undefined")) return null;
                 const path = pathOf(value);
                 const found = path === null ? null : await converter.constantNamed(path, at);
-                if (found === null || found.declaration.init === null) return false;
+                if (found === null || found.declaration.init === null) return failing("names a value the build can't read");
                 const declared = found.declaration.id.type === "Identifier" ? found.declaration.id.typeAnnotation?.typeAnnotation : undefined;
-                return await readonlyValue({ expression: found.declaration.init, module: found.module, constant: false, annotation: declared }, seen);
+                return await unreadonly({ expression: found.declaration.init, module: found.module, constant: false, annotation: declared }, seen);
             }
-            default: return false;
+            default: return failing("isn't a literal, `as const` data, a constant typed readonly or a call returning a readonly type");
         }
     };
 
@@ -576,8 +614,9 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
         if (first === undefined || written === null) return null;
         // The package's own types' defaults are their zero values and identities, which a reduction's identity outranks.
         const packaged = host.packagePath(written.module.file) !== null;
-        if (!await readonlyValue(written, new Set())) {
-            fail(written.module, written.expression, `${path.join(".")}.default is shared by every row and world that starts from it, so it's deeply readonly: \`const ${path.at(-1) ?? "T"} = { default: ... } as const\`, or a const typed readonly: ReadonlyMap, ReadonlySet, Readonly<...>, readonly arrays and fields`);
+        const mutable = await unreadonly(written, new Set());
+        if (mutable !== null) {
+            fail(mutable.module, mutable.expression, `${path.join(".")}.default is shared by every row and world that starts from it, so it's deeply readonly, but ${mutable.why}. Readonly values are \`const ${path.at(-1) ?? "T"} = { default: ... } as const\`, consts typed readonly (ReadonlyMap, ReadonlySet, Readonly<...>, readonly arrays and fields), and calls of functions whose declared return type is readonly`);
         }
         const value = await staticValue(written, new Set());
         if (schema !== undefined && value !== undefined && !matchesSchema(schema, value)) fail(written.module, written.expression, `${path.join(".")}.default, ${codeOf(value)}, isn't one of its type's values`);

@@ -65,8 +65,14 @@ const keyLists = (node: Expression | Pattern, what: string, allowed: readonly st
 const reductions = (node: Expression | Pattern, lists: Lists): readonly Reduced[] => {
     const names = identifiers(node, "resources.reduce", lists);
     return names.map((resource): Reduced => {
-        const operator = lists.reduction(resource);
-        if (!isReduction(operator)) return fail(node, `${resource} is reduced, so the build reads its operator from its declaration's reduce trait, ${operator === undefined ? "which it can't find: declare the resource with reduce in the module that makes its key" : `"${operator}", which isn't one of ${reductionOperators.map(item => JSON.stringify(item)).join(", ")}`}`);
+        const found = lists.reduction(resource);
+        const operator = found?.operator;
+        if (!isReduction(operator)) {
+            const missing = found !== null && /\.m?js$/.test(found.file)
+                ? `which its module's JavaScript doesn't register: declare it in TypeScript, and build a library declaring it with Compiler.plugin({ library: true })`
+                : "which it can't find: declare the resource with reduce in the module that makes its key";
+            return fail(node, `${resource} is reduced, so the build reads its operator from its declaration's reduce trait, ${operator === undefined ? missing : `"${operator}", which isn't one of ${reductionOperators.map(item => JSON.stringify(item)).join(", ")}`}`);
+        }
         return { resource, operator };
     }).map((entry, index, all) => all.findIndex(other => other.resource === entry.resource) === index ? entry : fail(node, `${entry.resource} is reduced twice`));
 };

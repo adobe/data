@@ -56,26 +56,56 @@ export const reductionsIn = (program: TypedProgram): ReadonlyMap<string, string>
     return found;
 };
 
+type Expression = Extract<Statement, { readonly type: "ExpressionStatement" }>["expression"];
+type Call = Extract<Expression, { readonly type: "CallExpression" }>;
+
+/** A call's statement forms as a bundle leaves them: alone, in a sequence, or `void`ed. */
+const callsOf = (expression: Expression): readonly Call[] => {
+    if (expression.type === "CallExpression") return [expression];
+    if (expression.type === "SequenceExpression") return expression.expressions.flatMap(callsOf);
+    if (expression.type === "UnaryExpression" && expression.operator === "void") return callsOf(expression.argument);
+    return [];
+};
+
 /**
  * The operator each resource a module's generated registrations, `declareResource$(key, { ..., reduce })`, give, by its
- * key's binding: what a library's build in library mode leaves of its declarations in its JavaScript.
+ * key's binding: what a library's build in library mode leaves of its declarations in its JavaScript. The call may be
+ * named or namespace-imported, under any local name, or, as a bundle that renamed its import leaves it, any call of a
+ * top-level `Symbol()` and a declaration giving `reduce`.
  */
 export const registeredReductionsIn = (program: TypedProgram): ReadonlyMap<string, string> => {
     const locals = new Set<string>();
+    const namespaces = new Set<string>();
+    const symbols = new Set<string>();
     for (const statement of program.body) {
-        if (statement.type !== "ImportDeclaration") continue;
-        for (const specifier of statement.specifiers) {
-            if (specifier.type === "ImportSpecifier" && specifier.imported.type === "Identifier" && specifier.imported.name === "declareResource$") locals.add(specifier.local.name);
+        if (statement.type === "ImportDeclaration") {
+            for (const specifier of statement.specifiers) {
+                if (specifier.type === "ImportSpecifier" && specifier.imported.type === "Identifier" && specifier.imported.name === "declareResource$") locals.add(specifier.local.name);
+                if (specifier.type === "ImportNamespaceSpecifier") namespaces.add(specifier.local.name);
+            }
+        }
+        const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+        if (declaration?.type !== "VariableDeclaration" || declaration.kind !== "const") continue;
+        for (const declarator of declaration.declarations) {
+            const init = declarator.init;
+            if (declarator.id.type === "Identifier" && init?.type === "CallExpression" && init.callee.type === "Identifier" && init.callee.name === "Symbol") symbols.add(declarator.id.name);
         }
     }
+    /** Whether a call registers a resource: through the import, under any name, or, renamed by a bundle, of a `Symbol()` key. */
+    const declares = ({ callee }: Call, key: string): boolean =>
+        callee.type === "Identifier" ? locals.has(callee.name) || symbols.has(key)
+            : callee.type === "MemberExpression" && !callee.computed && callee.object.type === "Identifier" && namespaces.has(callee.object.name)
+                && callee.property.type === "Identifier" && callee.property.name === "declareResource$";
     const found = new Map<string, string>();
     for (const statement of program.body) {
-        if (locals.size === 0 || statement.type !== "ExpressionStatement" || statement.expression.type !== "CallExpression") continue;
-        const { callee, arguments: [key, declaration] } = statement.expression;
-        if (callee.type !== "Identifier" || !locals.has(callee.name) || key?.type !== "Identifier" || declaration?.type !== "ObjectExpression") continue;
-        for (const property of declaration.properties) {
-            if (property.type !== "Property" || property.computed || property.key.type !== "Identifier" || property.key.name !== "reduce") continue;
-            if (property.value.type === "Literal" && typeof property.value.value === "string") found.set(key.name, property.value.value);
+        if (statement.type !== "ExpressionStatement") continue;
+        for (const call of callsOf(statement.expression)) {
+            const [key, declaration] = call.arguments;
+            if (key?.type !== "Identifier" || declaration?.type !== "ObjectExpression" || !declares(call, key.name)) continue;
+            for (const property of declaration.properties) {
+                if (property.type !== "Property" || property.computed || property.key.type !== "Identifier" || property.key.name !== "reduce") continue;
+                if (property.value.type === "Literal" && typeof property.value.value === "string") found.set(key.name, property.value.value);
+            }
         }
     }
     return found;

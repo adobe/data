@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, test } from 'vitest';
-import { augmentationInsertions } from './augmentations.js';
+import { parseAst } from 'vite';
+import { augmentationInsertions, registeredReductionsIn } from './augmentations.js';
 import { insertInto } from './source-map.js';
 import { hostOf } from './type-host.test-helper.js';
 import { moduleOf } from './type-schemas.js';
@@ -198,5 +199,20 @@ const after = 1;`);
         expect(await passed(`import { Mode } from "./mode.js";\n${keys("key")}${block(`interface Components { [key]: { type: Mode } }`)}`, { "/src/mode.ts": `export enum Mode { On, Off }` })).toContain("an enum");
         expect(await passed(block(`interface Components { "named": { type: number } }`))).toContain("a component's key is a `Symbol()` constant");
         expect(await passed(block(`interface Resources { "time": { type: number; default: 0 } }`))).toContain("a resource's key is a `Symbol()` constant");
+    });
+});
+
+describe("registeredReductionsIn", () => {
+    const read = (code: string) => Object.fromEntries(registeredReductionsIn(parseAst(code, { lang: "js" })));
+    test("reads the operators a library's registrations give, however its bundle wrote the calls", () => {
+        expect(read(`import { declareResource$ } from "@adobe/ecs/declare"; export const total = Symbol(); declareResource$(total, { type: {}, reduce: "+" });`)).toEqual({ total: "+" });
+        expect(read(`import { declareResource$ as d } from "@adobe/ecs/declare"; const t = Symbol(), m = Symbol(); d(t, { reduce: "+" }), d(m, { reduce: "min" }); export { t as total, m as low };`)).toEqual({ t: "+", m: "min" });
+        expect(read(`import { declareResource$ as d } from "@adobe/ecs/declare"; const t = Symbol(); void d(t, { reduce: "+" });`)).toEqual({ t: "+" });
+        expect(read(`import * as e from "@adobe/ecs/declare"; const t = Symbol(); e.declareResource$(t, { reduce: "+" });`)).toEqual({ t: "+" });
+        expect(read(`import { a as d } from "./chunk-x.js"; const t = Symbol(); d(t, { reduce: "+" });`)).toEqual({ t: "+" });
+    });
+    test("ignores calls of other functions on keys that aren't symbols", () => {
+        expect(read(`import { a as d } from "./chunk-x.js"; const t = 1; d(t, { reduce: "+" });`)).toEqual({});
+        expect(read(`import * as e from "./other.js"; const t = Symbol(); e.other(t, { reduce: "+" });`)).toEqual({});
     });
 });

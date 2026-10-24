@@ -25,9 +25,10 @@ export type Lists = {
     readonly component: (node: Node) => Named;
     /**
      * The operator the resource the kernel's module names `name` reduces with, its declaration's `reduce` trait, read
-     * through the build from the module declaring it; undefined where the build can't read one.
+     * through the build from the module declaring it, undefined where the build can't read one, and that module's file;
+     * null for a name the module doesn't bind.
      */
-    readonly reduction: (name: string) => string | undefined;
+    readonly reduction: (name: string) => { readonly operator: string | undefined; readonly file: string } | null;
 };
 
 /** What a command's component argument names, or why the compiler can't tell. */
@@ -204,12 +205,12 @@ export const createLists = (kernel: Module, link: Link | null, nodes: readonly N
         // its definition where it has one.
         return { kind: "key", name: node.type === "Identifier" || found.key === null ? reference : nameOf(found.key, reference) };
     };
-    const reduction = (name: string): string | undefined => {
+    const reduction = (name: string): { readonly operator: string | undefined; readonly file: string } | null => {
         const binding = kernel.bindings.get(name);
         const identity = binding === undefined ? null : definition(kernel, name, binding, link);
-        if (identity === null) return undefined;
+        if (identity === null) return null;
         const [file = "", defined = ""] = identity.split("\0");
-        return link?.reductionOf?.(file, defined);
+        return { operator: link?.reductionOf?.(file, defined), file };
     };
     return { names, component, reduction };
 };

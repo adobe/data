@@ -382,6 +382,28 @@ export const description = kernelOf(kernel);
     expect(description?.reductions.map(reduced => reduced.operator)).toEqual(["max"]);
 });
 
+test("an application's build says so when a library's dist doesn't register a resource it reduces", async () => {
+    const project = join(directory, "unregistered");
+    await installCopy(project);
+    writeFileSync(join(project, "package.json"), JSON.stringify({ name: "unregistered-app", type: "module" }));
+    mkdirSync(join(project, "node_modules/unregistered-library/dist"), { recursive: true });
+    writeFileSync(join(project, "node_modules/unregistered-library/package.json"), JSON.stringify({ name: "unregistered-library", type: "module", exports: "./dist/index.js" }));
+    // As a build without library mode leaves it: the types gone and no registrations in their place.
+    writeFileSync(join(project, "node_modules/unregistered-library/dist/index.js"), `import { System } from "@adobe/ecs";
+const score = Symbol();
+const largest = Symbol();
+export const kernel = System.create({ kernel: true, components: { read: [score] }, resources: { reduce: [largest] } }, (row, { reduce }) => { reduce[largest](row[score]); });
+`);
+    const application = join(project, "application.js");
+    writeFileSync(application, `export { kernel } from "unregistered-library";
+`);
+    const built = build({
+        configFile: false, logLevel: "silent", root: project, plugins: [plugin()],
+        build: { outDir: join(project, "dist"), minify: false, lib: { entry: application, formats: ["es"], fileName: "main" } },
+    });
+    await expect(built).rejects.toThrow("which its module's JavaScript doesn't register: declare it in TypeScript, and build a library declaring it with Compiler.plugin({ library: true })");
+});
+
 test("a build registers the keys a module declares, through the copy of the package the module resolves", async () => {
     const project = join(directory, "declaring");
     const copy = await installCopy(project);

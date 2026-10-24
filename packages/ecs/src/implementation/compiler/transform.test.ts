@@ -477,7 +477,7 @@ const kernel = System.create({ kernel: true, components: { read: ${read} }, reso
     test("that can't be compiled fail with the reason", async () => {
         expect(await failure(reducing("total", "reduce[total](1, 2);"))).toBe("total takes the one value it reduces");
         expect(await failure(reducing("total", "reduce[total](1);"), {}, { total: "avg" })).toBe(`total is reduced, so the build reads its operator from its declaration's reduce trait, "avg", which isn't one of "+", "*", "min", "max", "&", "|", "^"`);
-        expect(await failure(reducing("total", "reduce[total](1);"), {}, {})).toBe("total is reduced, so the build reads its operator from its declaration's reduce trait, which it can't find: declare the resource with reduce in the module that makes its key");
+        expect(await failure(reducing("total", "reduce[total](1);"), {}, {})).toBe(`total is reduced, so the build reads its operator from its declaration's reduce trait, ${"which its module's JavaScript doesn't register: declare it in TypeScript, and build a library declaring it with Compiler.plugin({ library: true })"}`);
         expect(await failure(reducing("total", "reduce[total](1);").replace(`kernel: true`, `kernel: "gpu"`))).toBe("a GPU kernel can't use reductions yet");
         expect(await failure(reducing("total", "reduce[total](1);").replace("resources: { reduce:", "resources: { read: [total], reduce:"))).toBe("total is reduced, so it can't also be read or filtered on");
         expect(await failure(reducing("total, total", "reduce[total](1);"))).toBe("total is reduced twice");

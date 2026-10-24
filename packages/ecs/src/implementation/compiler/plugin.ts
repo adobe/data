@@ -76,7 +76,8 @@ const reductionsOf = (file: string): ReadonlyMap<string, string> => {
     }
     if (!code.includes("reduce")) return noReductions;
     if (lang === "ts" || lang === "tsx") return code.includes("declare module") ? reductionsIn(parseTypes(code, { lang }, file)) : noReductions;
-    return code.includes("declareResource$") ? registeredReductionsIn(parseTypes(code, { lang }, file)) : noReductions;
+    // A bundle may have renamed the registrations' import, so any JavaScript giving `reduce` is read.
+    return registeredReductionsIn(parseTypes(code, { lang }, file));
 };
 
 /** Resolves imports through the build, from whichever transform runs. */

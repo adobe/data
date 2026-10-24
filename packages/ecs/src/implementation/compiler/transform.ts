@@ -124,10 +124,10 @@ const compileLinked = async (declaration: ObjectExpression, body: Node, module: 
 type KernelSite = { readonly node: SimpleCallExpression; readonly declaration: ObjectExpression; readonly body: Node; readonly request: KernelRequest };
 
 /**
- * The module's `System.create` calls that compile to kernels, required or tried: at module scope, with an inline
- * body. Throws for a required one elsewhere or without one; a tried one there runs as written.
+ * The module's `System.create` calls that compile to kernels, required or, when `automatic`, tried: at module scope,
+ * with an inline body. Throws for a required one elsewhere or without one; a tried one there runs as written.
  */
-const kernelSites = (program: Program, locals: ReadonlyMap<string, "System" | "Finalizer">): readonly KernelSite[] => {
+const kernelSites = (program: Program, locals: ReadonlyMap<string, "System" | "Finalizer">, automatic: boolean): readonly KernelSite[] => {
     const sites: KernelSite[] = [];
     const visit = (node: Node, nested: boolean): void => {
         if (node.type === "CallExpression" && createdBy(node, locals) === "system") {
@@ -138,7 +138,7 @@ const kernelSites = (program: Program, locals: ReadonlyMap<string, "System" | "F
                 const inline = body !== undefined && isFunction(body);
                 if (request.required && nested) fail(node, "kernel systems must be declared at module scope");
                 if (request.required && !inline) fail(node, "a kernel needs an inline body");
-                if (!nested && inline) sites.push({ node, declaration, body, request });
+                if (!nested && inline && (request.required || automatic)) sites.push({ node, declaration, body, request });
             }
         }
         const inner = nested || isFunction(node);
@@ -157,6 +157,8 @@ const kernelSites = (program: Program, locals: ReadonlyMap<string, "System" | "F
  */
 export const transformKernels = async (
     code: string, id: string, parse: Parse, resolveSystemImport: ResolveSystemImport, kernelUrl: KernelUrl, linker?: Linker,
+    /** Whether unflagged systems are tried as kernels; tests turn it off to run their bodies as written. */
+    automatic = true,
 ): Promise<TransformResult | null> => {
     if ((!code.includes("System") && !code.includes("Finalizer")) || id.includes("\0")) return null;
     const program = parse(code);
@@ -245,7 +247,7 @@ export const transformKernels = async (
         for (const child of children(node)) visit(child, inner);
     };
     try {
-        for (const { node, declaration, body, request } of kernelSites(program, locals)) {
+        for (const { node, declaration, body, request } of kernelSites(program, locals, automatic)) {
             let kernel: CompiledKernel;
             try {
                 kernel = await compileLinked(declaration, body, module, request, link);

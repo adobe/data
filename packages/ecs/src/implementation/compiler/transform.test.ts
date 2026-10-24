@@ -55,8 +55,8 @@ const host = (files: { readonly [file: string]: string }, reduced: Reductions = 
     },
 });
 
-const transform = (source: string, files: { readonly [file: string]: string } = {}, reduced: Reductions = reductions) => transformKernels(`${header}${source}`, "/test.js", parse,
-    async specifier => specifier === "ecs" ? ownCopy : null, index => JSON.stringify(`kernel:${index}`), createLinker(host(files, reduced), parse));
+const transform = (source: string, files: { readonly [file: string]: string } = {}, reduced: Reductions = reductions, automatic = true) => transformKernels(`${header}${source}`, "/test.js", parse,
+    async specifier => specifier === "ecs" ? ownCopy : null, index => JSON.stringify(`kernel:${index}`), createLinker(host(files, reduced), parse), automatic);
 
 type Compiled = KernelDescription & KernelModule;
 
@@ -321,8 +321,8 @@ const vec3 = (x: readonly number[], y: readonly number[], z: readonly number[]) 
 
 describe("kernels by default", () => {
     /** Whether the transform attached a kernel to the module's system, and the failure if it failed. */
-    const attached = async (source: string): Promise<boolean | string> => {
-        const result = await transform(source);
+    const attached = async (source: string, automatic = true): Promise<boolean | string> => {
+        const result = await transform(source, {}, reductions, automatic);
         if (result === null) return false;
         return "failure" in result ? result.failure.message : result.code.includes("attachKernel$(");
     };
@@ -345,6 +345,10 @@ describe("kernels by default", () => {
         expect(await attached(`const make = () => 3; const three = make(); const kernel = System.create({ components: { write: [score] } }, row => { row[score] = three; });`)).toBe(true);
         expect(await attached(`const half = 0.5; const twice = x => x * 2; const kernel = System.create({ components: { read: [mass], write: [score] } }, row => { row[score] = twice(row[mass]) * half; });`)).toBe(true);
         expect(await failure(`export const scene = { subject: 0 }; const kernel = System.create({ kernel: true, components: { write: [score] } }, row => { row[score] = scene.subject; });`)).toBe("compiled");
+    });
+    test("tries none unflagged when automatic compilation is off, as the suites of bodies as written turn it", async () => {
+        expect(await attached(`const kernel = System.create({ components: { read: [mass], write: [score] } }, row => { row[score] = row[mass] * 2; });`, false)).toBe(false);
+        expect(await attached(`const kernel = System.create({ kernel: true, components: { read: [mass], write: [score] } }, row => { row[score] = row[mass] * 2; });`, false)).toBe(true);
     });
     test("never compiles a system without components or with kernel: false", async () => {
         expect(await attached(`const kernel = System.create({ resources: { read: [delta] } }, ({ resources }) => { void resources[delta]; });`)).toBe(false);

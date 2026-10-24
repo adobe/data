@@ -214,9 +214,16 @@ const inputPlugin = (): Plugin => {
  * schemas its types give, which an application's build, reading only JavaScript there, can't make, and leaves its
  * kernels as source and its keys without ids, which the application's plugin compiles and gives.
  */
-export const plugin = (options: { readonly library?: boolean } = {}): Plugin[] => options.library === true ? [inputPlugin()] : [inputPlugin(), compilePlugin()];
+export const plugin = (options: { readonly library?: boolean } = {}): Plugin[] => pluginWith(options);
 
-const compilePlugin = (): Plugin => {
+/**
+ * The plugin, for this package's tests: with `automatic: false`, unflagged systems run as written, so suites of the
+ * row path run their bodies that way too.
+ */
+export const pluginWith = ({ library = false, automatic = true }: { readonly library?: boolean; readonly automatic?: boolean }): Plugin[] =>
+    library ? [inputPlugin()] : [inputPlugin(), compilePlugin(automatic)];
+
+const compilePlugin = (automatic: boolean): Plugin => {
     let serve = true;
     /** Whether an earlier instance of the plugin is in the same bundle. */
     let repeated = false;
@@ -334,7 +341,7 @@ const compilePlugin = (): Plugin => {
                 if (!serve) return `import.meta.ROLLUP_FILE_URL_${emitChunk(this, buildId(id, index), hash)}`;
                 // Served to node, a kernel's module is its url, so a pool's workers, which import it outside the server, read it too.
                 return JSON.stringify(ssr ? inlinePlaceholder(index, hash) : serveUrl(id, index, hash));
-            }, linker);
+            }, linker, automatic);
             const result = ssr && transformed !== null && !("failure" in transformed) ? { ...transformed, code: inlineKernels(transformed.code, transformed.kernels, hashes) } : transformed;
             const parent = id.split("?")[0] ?? id;
             if (result === null) {

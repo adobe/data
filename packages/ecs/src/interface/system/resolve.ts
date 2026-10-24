@@ -73,7 +73,8 @@ export const compact = <T extends object>(lists: T): T => {
  * reads.
  */
 export const componentLists = (components: ComponentAccess, used: Used | null, reading: boolean): ComponentLists => {
-    const members = components.with ?? [];
+    // A row holds what its added and changed filters name too.
+    const members = [...new Set([...components.with ?? [], ...components.added ?? [], ...components.changed ?? []])];
     const write = used === null
         ? reading ? [] : members.filter(key => declarationOf(key)?.reference === undefined)
         : used.write;

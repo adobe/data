@@ -48,8 +48,10 @@ const resolveShared = (what: string, declared: Declaration | ChangesDeclaration,
     };
 };
 
-/** A finalizer's row lists: what its body reads, the rest of `with` only required. */
-const componentReads = (components: Declaration["components"], access: Access): Resolved["components"] => {
+/** A finalizer's row lists: what its body reads, the rest of `with` only required. Throws for a body writing its row, which holds values from before. */
+const componentReads = (what: string, components: Declaration["components"], access: Access): Resolved["components"] => {
+    const written = access.components?.write[0];
+    if (written !== undefined) throw new Error(`${what} writes "${labelOf(written)}" of its row, which is read-only: it holds the values from before the entity stopped matching.`);
     const read = access.components?.read ?? components.with ?? [];
     return compact({ read, has: (components.with ?? []).filter(key => !read.includes(key)), not: components.not });
 };
@@ -99,7 +101,7 @@ export const create = <const D extends Declaration>(
     const access = accessOf(what, declared);
     const declaration: Resolved = {
         ...resolveShared(what, declared, access),
-        components: componentReads(declared.components, access),
+        components: componentReads(what, declared.components, access),
     };
     const finalizer: Leaf = { kind: "finalizer", name, declaration, body };
     checkResources(name, declaration.resources);

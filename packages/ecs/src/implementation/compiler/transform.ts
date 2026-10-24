@@ -268,11 +268,15 @@ export const transformKernels = async (
                 for (const child of children(node)) visit(child, nested || isFunction(node));
                 return;
             }
+            // A row is bound to each entity in turn, so a body resuming later would read and write another's.
+            if ((body.type === "ArrowFunctionExpression" || body.type === "FunctionExpression" || body.type === "FunctionDeclaration") && (body.async || body.generator)) {
+                fail(body, `a body can't be ${body.async ? "async" : "a generator"}: its row and context are rebound for the next entity while it waits, so start the work and finish it in a later run`);
+            }
             const declared = declaration?.type === "ObjectExpression" ? declaration : empty;
             const used = kernel?.used ?? inOrder(usedBy(declared, body, module.bindings, positions), declared);
             requireRequired(used, declared, body);
             const where = at(body);
-            if (used.query === null) warnings.push(`${where}: the build can't follow how this body uses its row, so it takes every component in with as written: index the row by key directly, or destructure it by key, to let it tell what the body reads and writes.`);
+            if (used.query === null) warnings.push(`${where}: the build can't follow how this body uses its row, so it takes every component in with, added and changed as written: index the row by key directly, or destructure it by key, to let it tell what the body reads and writes.`);
             if (used.lookups !== null && [...used.lookups.values()].some(read => read === null) || used.lookups === null && declares(declared, "lookup")) {
                 warnings.push(`${where}: the build can't follow how this body uses a lookup's rows, so it takes everything they hold as read.`);
             }

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { lookupsLists, type Access } from "./resolve.js";
+import { componentLists, lookupsLists, type Access } from "./resolve.js";
 
 const mass = Symbol("resolveTest/mass");
 const position = Symbol("resolveTest/position");
@@ -19,5 +19,11 @@ describe("lookupsLists", () => {
     it("takes a lookup the body never used as reading nothing, and one it followed as reading what it read", () => {
         expect(lookupsLists({ others: { with: [mass, position] } }, access({}))).toEqual({ others: { has: [mass, position] } });
         expect(lookupsLists({ others: { with: [mass, position] } }, access({ others: [position] }))).toEqual({ others: { read: [position], has: [mass] } });
+    });
+});
+
+describe("componentLists", () => {
+    it("takes a row the build didn't follow as writing every member, its added and changed filters' included", () => {
+        expect(componentLists({ with: [mass], changed: [position] }, null, false)).toEqual({ write: [mass, position], changed: [position] });
     });
 });

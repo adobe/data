@@ -29,18 +29,44 @@ const isName = (node: Node, parent: Node | undefined): boolean => {
     }
 };
 
-/** How `member`, a `name[key]` expression, is used: read, written, or both; null when it's a destructuring target or deleted. */
-const useOf = (member: Node, parent: Node | undefined): { readonly read: boolean; readonly write: boolean } | null => {
+type Use = { readonly read: boolean; readonly write: boolean };
+
+const read: Use = { read: true, write: false };
+const written: Use = { read: false, write: true };
+
+/**
+ * How `member`, a `name[key]` expression, is used: read, written, or both; null when it's deleted. A target of a
+ * destructuring assignment, or of a `for…of` or `for…in` loop, is written; a pattern in a declaration only binds names.
+ */
+const useOf = (member: Node, parent: Node | undefined, grandparent: Node | undefined): Use | null => {
     switch (parent?.type) {
         case "AssignmentExpression":
-            return parent.left !== member ? { read: true, write: false } : { read: parent.operator !== "=", write: true };
+            return parent.left !== member ? read : { read: parent.operator !== "=", write: true };
         case "UpdateExpression": return { read: true, write: true };
-        case "UnaryExpression": return parent.operator === "delete" ? null : { read: true, write: false };
-        case "ArrayPattern": case "RestElement": case "AssignmentPattern": case "ForInStatement": case "ForOfStatement":
-            return null;
-        case "Property": return parent.value === member && parent.shorthand ? null : { read: true, write: false };
-        default: return { read: true, write: false };
+        case "UnaryExpression": return parent.operator === "delete" ? null : read;
+        case "ArrayPattern": case "RestElement": return written;
+        case "AssignmentPattern": return parent.left === member ? written : read;
+        case "ForInStatement": case "ForOfStatement": return parent.left === member ? written : read;
+        case "Property": return parent.value === member && grandparent?.type === "ObjectPattern" ? written : read;
+        default: return read;
     }
+};
+
+/**
+ * How `member`, a `name[key]` expression, is used where `ancestors` ends with its parent: as `useOf` says, and written
+ * too when something inside its value is (`row[key].a.b = 1`, `delete row[key].a`, `[row[key][0]] = pair`), which
+ * replaces nothing but changes the value all the same.
+ */
+const deepUseOf = (member: Node, ancestors: readonly Node[], at: number): Use | null => {
+    let inner = member;
+    let index = at;
+    for (let parent = ancestors[index]; parent?.type === "MemberExpression" && parent.object === inner; parent = ancestors[index]) {
+        inner = parent;
+        index--;
+    }
+    const use = useOf(inner, ancestors[index], ancestors[index - 1]);
+    if (inner === member) return use;
+    return use === null || use.write ? { read: true, write: true } : read;
 };
 
 /** Whether a lookup result `value`, a child of `parent`, is only tested: compared with null, or used as a condition. */
@@ -100,6 +126,8 @@ const isGroup = (name: string): name is Group => name === "resources" || name ==
 export const usedBy = (declaration: ObjectExpression, body: Node, module: ModuleScope, positions: { readonly row: number; readonly context: number }): Used => {
     if (!isFunctionBody(body)) return unknown;
     if (body.type === "FunctionExpression" && mentions(body.body, "arguments")) return unknown;
+    // Code `eval` runs can use anything.
+    if (mentions(body, "eval")) return unknown;
     const counts = new Map<string, number>();
     declaredIn(body.body, name => counts.set(name, (counts.get(name) ?? 0) + 1));
     const parameters = new Set(body.params.flatMap(parameter => patternNames(parameter)));
@@ -303,12 +331,12 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
             return;
         }
         if (group === "up") {
-            const use = useOf(parent, grandparent);
+            const use = deepUseOf(parent, ancestors, at - 1);
             if (use === null || use.write) upKnown = false;
             else up.add(key);
             return;
         }
-        const use = useOf(parent, grandparent);
+        const use = deepUseOf(parent, ancestors, at - 1);
         if (use === null) return unknownGroup(group);
         if (use.read) resources.read.add(key);
         if (use.write) resources.write.add(key);
@@ -327,11 +355,8 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
                     return;
                 }
                 const key = keyOf(property);
-                // A part of a value assigned, `row[key][0] = …`, writes it, which the compiler rejects as it must.
-                const great = ancestors.at(-3);
-                const partWritten = grandparent?.type === "MemberExpression" && grandparent.object === parent
-                    && ((great?.type === "AssignmentExpression" && great.left === grandparent) || great?.type === "UpdateExpression");
-                const use = key === null ? null : partWritten ? { read: true, write: true } : useOf(parent, grandparent);
+                // A part of a value written, `row[key][0] = …`, writes it, which the compiler rejects as it must.
+                const use = key === null ? null : deepUseOf(parent, ancestors, ancestors.length - 2);
                 if (use === null || key === null) queryKnown = false;
                 else {
                     if (use.read) query.read.add(key);
@@ -362,13 +387,39 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     };
 
     const ancestors: Node[] = [];
-    /** A declaration's target pattern only binds names, so only its initializer holds references. */
     const visit = (node: Node): void => {
         if (node.type === "Identifier" && !isName(node, ancestors.at(-1))) reference(node, ancestors);
         ancestors.push(node);
-        for (const child of node.type === "VariableDeclarator" ? (node.init === null || node.init === undefined ? [] : [node.init]) : children(node)) visit(child);
+        if (node.type === "VariableDeclarator") {
+            visitPattern(node.id);
+            if (node.init !== null && node.init !== undefined) visit(node.init);
+        }
+        else for (const child of children(node)) visit(child);
         ancestors.pop();
     };
+    /** A pattern that binds names: its names aren't references, but its defaults and computed keys hold them. */
+    const visitPattern = (pattern: Node): void => {
+        ancestors.push(pattern);
+        if (pattern.type === "ObjectPattern") {
+            for (const property of pattern.properties) {
+                ancestors.push(property);
+                if (property.type === "RestElement") visitPattern(property.argument);
+                else {
+                    if (property.computed) visit(property.key);
+                    visitPattern(property.value);
+                }
+                ancestors.pop();
+            }
+        }
+        else if (pattern.type === "ArrayPattern") for (const element of pattern.elements) { if (element !== null) visitPattern(element); }
+        else if (pattern.type === "RestElement") visitPattern(pattern.argument);
+        else if (pattern.type === "AssignmentPattern") {
+            visitPattern(pattern.left);
+            visit(pattern.right);
+        }
+        ancestors.pop();
+    };
+    for (const parameter of body.params) visitPattern(parameter);
     visit(body.body);
     return {
         query: queryKnown ? query : null,

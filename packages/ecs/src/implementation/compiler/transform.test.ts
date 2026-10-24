@@ -1425,6 +1425,53 @@ describe("inferred access", () => {
         expect(result !== null && "code" in result ? result.code : "").toContain("{ components: { read: [handle], write: [] }, resources: { read: [count], write: [], reduce: [] }");
     });
 
+    test("a destructuring target, or a for…of target, written", async () => {
+        expect(await inferred(system("components: { with: [position] }", "(row) => { ({ x: row[position] } = source); }")))
+            .toContain("components: { read: [], write: [position] }");
+        expect(await inferred(system("components: { with: [position] }", "(row) => { for ({ x: row[position] } of sources); }")))
+            .toContain("components: { read: [], write: [position] }");
+        expect(await inferred(system("components: { with: [position] }", "(row) => { [row[position]] = pair; }")))
+            .toContain("components: { read: [], write: [position] }");
+        expect(await inferred(system("", "(context) => { ({ x: context.resources[score] } = source); }")))
+            .toContain("resources: { read: [], write: [score], reduce: [] }");
+    });
+
+    test("defaults and computed keys of declared patterns, and of parameters, as uses", async () => {
+        expect(await inferred(system("components: { with: [position] }", "(row) => { const { a = (row[position] = 5) } = {}; }")))
+            .toContain("components: { read: [], write: [position] }");
+        expect(await inferred(system("components: { with: [position, velocity] }", "(row) => { const { [row[velocity]]: v } = table; console.log(v); }")))
+            .toContain("components: { read: [velocity], write: [] }");
+        expect(await inferred(system("", "(context) => { const { a = context.resources[delta] } = {}; console.log(a); }")))
+            .toContain("resources: { read: [delta], write: [], reduce: [] }");
+        expect(await inferred(system("components: { with: [position, velocity] }", "(row, context, step = row[velocity]) => { console.log(step); }")))
+            .toContain("components: { read: [velocity], write: [] }");
+    });
+
+    test("what a for…of or for…in loop goes over, as a read", async () => {
+        expect(await inferred(system("", "({ resources }) => { for (const name of resources[delta]) console.log(name); }")))
+            .toContain("resources: { read: [delta], write: [], reduce: [] }");
+        expect(await inferred(system("components: { with: [position] }", "(row) => { for (const x of row[position]) console.log(x); }")))
+            .toContain("components: { read: [position], write: [] }");
+    });
+
+    test("a change inside a value, at any depth, as a write of it", async () => {
+        expect(await inferred(system("components: { with: [position] }", "(row) => { row[position].a.b = 1; }")))
+            .toContain("components: { read: [], write: [position] }");
+        expect(await inferred(system("components: { with: [position] }", "(row) => { delete row[position].a; }")))
+            .toContain("components: { read: [], write: [position] }");
+        expect(await inferred(system("components: { with: [position] }", "(row) => { [row[position][0]] = pair; }")))
+            .toContain("components: { read: [], write: [position] }");
+    });
+
+    test("a body mentioning eval as one it can't follow", async () => {
+        expect(await inferred(system("components: { with: [position] }", "(row) => { eval(\"row[position] = 1\"); }"))).toContain("components: null");
+    });
+
+    test("fail the build for an async or generator body", async () => {
+        expect(await inferred(system("components: { with: [position] }", "async (row) => { row[position] = 1; }"))).toContain("a body can't be async");
+        expect(await inferred(system("components: { with: [position] }", "function* (row) { row[position] = 1; }"))).toContain("a body can't be a generator");
+    });
+
     test("a body given by name, read where it's bound", async () => {
         expect(await inferred(`const move = (row) => { row[position] = row[velocity]; };\n${system("components: { with: [position, velocity] }", "move")}`))
             .toContain("components: { read: [velocity], write: [position] }");

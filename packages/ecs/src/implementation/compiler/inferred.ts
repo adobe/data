@@ -151,8 +151,14 @@ export const resolvedDeclaration = (declaration: ObjectExpression, used: Used): 
                 if (value?.type !== "ObjectExpression" || used.lookups === null) break;
                 properties.push(property("lookup", object([...parts].map(([name, lookup]) => {
                     const lookupParts = fields(valueOf(lookup));
-                    const reads = used.lookups?.get(name) ?? [];
-                    if (lookupParts.has("index")) return property(name, object([property("read", array(reads ?? [])), ...keep(lookupParts, ["index", "changed"])]));
+                    // A lookup the body never uses reads nothing; null, one whose rows it didn't follow.
+                    const found = used.lookups?.get(name);
+                    const reads = found === undefined ? [] : found;
+                    if (lookupParts.has("index")) {
+                        // Rows the build didn't follow read everything the index holds, as the world resolves it.
+                        const read = reads === null ? [] : [property("read", array(reads))];
+                        return property(name, object([...read, ...keep(lookupParts, ["index", "changed"])]));
+                    }
                     const withList = valueOf(lookupParts.get("with"));
                     // Rows the build didn't follow read everything the lookup requires.
                     const read = reads === null ? withList ?? array([]) : array(reads);

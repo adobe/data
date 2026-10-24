@@ -50,6 +50,9 @@ describe("Finalizer.create and Finalizer.changes", () => {
         expect(() => Finalizer.changes(identify({}, "f.ts#release"), () => {})).toThrow("its id is a finalizer's");
         expect(programFinalizers()).toHaveLength(2);
     });
+    it("reject a body writing its row, which holds the values from before", () => {
+        expect(() => untyped(Finalizer.create, { components: { with: [label] } }, { write: [label] })).toThrow("which is read-only");
+    });
     it("keep finalizers of one label apart", () => {
         const twin = (): Finalizer => Finalizer.changes({ watch: [label] }, () => {});
         const [first, second] = [twin(), twin()];

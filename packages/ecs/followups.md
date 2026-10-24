@@ -21,6 +21,9 @@ correctness, then optimization. Remove an item once it's decided or done.
 - **Optional components in GPU kernels:** each dispatch's record could carry a presence word, but WGSL has no
   `undefined` to read where an archetype lacks one, and a GPU kernel can't fail its system for one row; supporting
   them means a presence expression through the WASM and WGSL backends and a GPU semantics for absent reads and writes.
+- **Optional groups:** components always present together (boards' text's four, path's three) must each be tested
+  for `undefined` before building one object. Possible: an optional group, present or absent as a whole, narrowed by
+  one test. Boards isn't asking for it; record usage before deciding.
 - **Iterable lists:** `for (const row of list)` on index lookups' lists, binding each row as the loop reaches it with
   no allocation (the list is its own iterator, reset per loop), lowered by kernels to the indexed loop. `list[i]` and
   array methods stay out: indexing can't bind lazily without a Proxy, and the methods would widen the surface.

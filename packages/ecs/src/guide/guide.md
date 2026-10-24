@@ -532,7 +532,36 @@ check<Equal<Extract<Component.With<typeof instanced>, typeof transform | typeof 
 
 ### 12. Lookups
 
-Reading another entity's components by id, from a system. To be written.
+```ts
+// A lookup reads another entity's components by its id: its row, or null when the entity doesn't have every component
+// in with, or has one in not.
+const track = System.create({
+    components: { with: [target, aim] },
+    lookup: { enemy: { with: [health], not: [frozen] } },
+}, (row, { lookup }) => {
+    const enemy = lookup.enemy(row[target]);
+    row[aim] = enemy === null ? 0 : enemy[health];
+});
+```
+
+[`12-lookups.test.ts`](12-lookups.test.ts#L19-L27)
+
+```ts
+// With changed, its row says whether those components may have changed since the system last ran.
+const refreshed: boolean[] = [];
+const watch = System.create({
+    observer: true,
+    components: { with: [target] },
+    lookup: { enemy: { with: [health], changed: [health] } },
+}, (row, { lookup }) => {
+    const enemy = lookup.enemy(row[target]);
+    if (enemy !== null) refreshed.push(enemy.changed);
+});
+```
+
+[`12-lookups.test.ts`](12-lookups.test.ts#L29-L38)
+
+To find entities by their values rather than their ids, look up through an index (next section).
 
 ### 13. Indexes
 

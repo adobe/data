@@ -18,6 +18,16 @@ declare module "@adobe/ecs" {
     }
 }
 
+const other = Symbol("poolSizeTest/other");
+declare module "@adobe/ecs" {
+    export interface Components {
+        [other]: { type: F32 };
+    }
+}
+const others = System.create({}, ({ commands }) => {
+    for (let i = 0; i < 4096; i++) commands.spawn([other])({ [other]: i });
+});
+
 const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < 4096; i++) commands.spawn([value])({ [value]: i });
 });
@@ -122,6 +132,22 @@ export const failedLoad = async (): Promise<{ readonly failures: readonly (reado
             loads.push(failing.loads());
         }
         return { failures, loads, values: (await readEach(world, await select(world, { required: [value] }), value)).slice(0, 4) };
+    }
+    finally {
+        await world.dispose();
+    }
+};
+
+/** Workers started after a kernel runs over few rows in a world whose largest archetype no kernel matches. */
+export const unmatched = async (): Promise<number> => {
+    const counting = countingWorkers();
+    const world = createWorld({}, { minimumChunk: 64, pool: counting.platform });
+    try {
+        await world.run(others);
+        await world.run(few);
+        await world.run(double);
+        await world.run(double);
+        return counting.started();
     }
     finally {
         await world.dispose();

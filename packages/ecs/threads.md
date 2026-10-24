@@ -266,7 +266,7 @@ after anything it reported first, so an owner's report wins over the close its e
   world's thread, and `start` starts one worker, or returns null when it has no more, so a pool takes as many as it
   gets. The platform's own is browser workers where `Worker` exists, nested ones on a worker, else `worker_threads`,
   else none. `WorldOptions`' `pool` gives another, or null for none: `lentWorkers(lent)` for workers another thread
-  lent. A world starts its pool once it has a kernel and some archetype holds half a piece of rows for a worker, as
+  lent. A world starts its pool once an archetype some kernel matches holds half a piece of rows for a worker, as
   the fastest kernels split, so a small world starts none.
 - **Lending:** the owning thread starts each worker, posts it the `MessagePort` it talks on as its first message, and
   keeps a second channel to the thread it's lent to, on which it reports the worker's death and ends it when asked; a

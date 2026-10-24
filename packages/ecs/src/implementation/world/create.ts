@@ -189,11 +189,15 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             ports.push(port);
         }
         workerCount = state.workers = ports.length;
-        if (ports.length === 0) return null;
+        if (ports.length === 0) {
+            followPoolThreshold();
+            return null;
+        }
         const started = createPool(ports, state.memory);
         pool = started;
         context.workers = { pool: started, minimumChunk, next: 0 };
         context.publish = createPublisher(state, started);
+        followPoolThreshold();
         return started;
     };
 
@@ -210,20 +214,24 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         return loadAll(runners);
     };
 
-    /**
-     * Whether some archetype has rows enough for a kernel to run on workers, half a piece as the fastest kernels split
-     * at: until then kernels run here, and the pool isn't started.
-     */
-    const warranted = (): boolean => {
-        for (const archetype of state.archetypes) if (archetype.count >= minimumChunk / 2) return true;
-        return false;
-    };
-
     /** Whether kernels failed to load on the workers a run started: then they run here, and no pool starts again. */
     let workersFailed = false;
 
+    /** Whether an archetype a kernel matches has rows enough for workers, as kernels loading look before the pool starts. */
+    const kernelsWarrant = (): boolean => {
+        for (const runner of registrar.kernels()) for (const archetype of runner.matched()) if (archetype.count >= state.poolThreshold) return true;
+        return false;
+    };
+
+    /** Lets kernels running here want the pool, at half a piece, while one could start; once started, none want it. */
+    const followPoolThreshold = (): void => {
+        state.poolThreshold = pool === null && workerCount > 0 && !workersFailed ? minimumChunk / 2 : Infinity;
+        state.poolWanted = false;
+    };
+    followPoolThreshold();
+
     /**
-     * Starts the pool for a run once it's warranted. Kernels failing to load on it are a `"thread"` failure in the run's
+     * Starts the pool after a run whose kernel ran here over rows enough for workers. Kernels failing to load on it are a `"thread"` failure in the run's
      * report, and the pool ends, so kernels run here from then on rather than every run trying again.
      */
     const startWorkers = async (): Promise<void> => {
@@ -241,14 +249,15 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             if (failed !== null) void failed.terminate();
             (observerFailures ??= []).push(failureOf("thread", { name: "workers", id: null }, error));
         }
+        followPoolThreshold();
     };
 
     /**
      * Gives workers every kernel whose main-thread load is newer than theirs, including ones a failed registration
-     * reloaded, starting the pool once it's warranted.
+     * reloaded, starting the pool once a kernel ran here over rows enough for workers.
      */
     const loadOnWorkers = async (): Promise<void> => {
-        if (workerCount === 0 || !workersBehind || (pool === null && (workersFailed || !warranted()))) return;
+        if (workerCount === 0 || !workersBehind || (pool === null && !state.poolWanted && !kernelsWarrant())) return;
         const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);
         if (behind.length === 0) {
             workersBehind = false;
@@ -379,6 +388,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         context.publish = () => {};
         for (const runner of registrar.kernels()) runner.kernel?.unloadedOnWorkers();
         workersBehind = true;
+        followPoolThreshold();
         // The old pool releases its control state once its workers have left their windows; runs don't wait for it.
         if (old !== null) void old.terminate();
         await loadOnWorkers();
@@ -468,7 +478,6 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         ensureProgramResources(state, ensured);
         if (startWatches(state)) await reloadStamped();
         if (workersChanged()) await followWorkers();
-        if (pool === null && workersBehind && !workersFailed && workerCount > 0 && warranted()) await startWorkers();
         if (deviceChanged()) await followDevice();
         const schedule = registrar.registered(definition) ?? registered;
         if (schedule === undefined) throw new Error(`System "${definition.name}" didn't register.`);
@@ -498,6 +507,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             context.tails = null;
             if (deviceChanged()) await followDevice();
         }
+        // A kernel that ran here over rows enough for workers asked for the pool, which the next run's kernels use.
+        if (state.poolWanted && workersBehind) await startWorkers();
         const values = valuesOf(run, started, report.dropped);
         if (!pass) {
             tailing = tails;

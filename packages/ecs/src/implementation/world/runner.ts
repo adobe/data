@@ -962,6 +962,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 return chunks;
             }
             if (up !== null) {
+                if (workers === null && kernel !== null) for (const archetype of matches) if (archetype.count >= state.poolThreshold) state.poolWanted = true;
                 const parallel = runUp(since, values, args, tick, workers, index);
                 if (parallel !== null) chunks.push(parallel);
                 return chunks;
@@ -978,7 +979,10 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                     chunks.push(...postChunks(workers, index, archetype, from, values, args, tick));
                     chunks.push(nextChunk());
                 }
-                else runKernelLocally(kernel, archetype, from, values, args, tick);
+                else {
+                    if (archetype.count >= state.poolThreshold) state.poolWanted = true;
+                    runKernelLocally(kernel, archetype, from, values, args, tick);
+                }
             }
             return chunks;
         }

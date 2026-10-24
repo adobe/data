@@ -165,6 +165,12 @@ export type State = {
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
     readonly wasm: boolean;
     readonly simd: boolean;
+    /**
+     * Rows of an archetype a kernel runs here at which it wants the pool, while none is started: infinite with a pool,
+     * or without workers to start. A kernel reaching it sets `poolWanted`, and the next run starts the pool.
+     */
+    poolThreshold: number;
+    poolWanted: boolean;
     /** The sync point's plan, kept from planning to applying. */
     readonly plan: Plan;
     /** A sync point between planning and applying: its queued buffers, reservations and tick. */
@@ -298,6 +304,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         rows: new Map(),
         wasm,
         simd,
+        poolThreshold: Infinity,
+        poolWanted: false,
         plan: createPlan(),
         syncing: null,
         carried: null,

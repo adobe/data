@@ -49,7 +49,7 @@ declare module "@adobe/ecs" {
         [level]: { type: number; default: -1 };
         [origin]: { type: readonly [number, number]; default: [-1, -1] };
         [caption]: { type: string; default: "c" };
-        [lit]: { type: boolean; default: false };
+        [lit]: { type: boolean };
         [tint]: { type: Vec3; default: [-1, -1, -1] };
         [sample]: { type: Schema.Type<{ type: "object"; properties: { on: { type: "boolean" }; count: { type: "integer"; minimum: 0; maximum: 4294967295 }; weight: { type: "number" }; ratio: { type: "number"; precision: 1 } } }>; default: { on: false; count: 0; weight: -1; ratio: -1 } };
         [material]: { type: Schema.Type<{ type: "object"; properties: { alpha: { type: "number"; precision: 1 }; color: { type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }; glossy: { type: "boolean" } }; layout: "storage" }>; default: { alpha: -1; color: [-1, -1, -1]; glossy: false } };

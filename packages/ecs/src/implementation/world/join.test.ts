@@ -24,12 +24,11 @@ declare module "@adobe/ecs" {
         [words]: { type: ReadonlySet<string> };
     }
     export interface Resources {
-        [total]: { type: number; default: 0 };
+        [total]: { type: number };
         [names]: { type: readonly string[]; default: [] };
-        [counts]: { type: ReadonlyMap<string, number>; default: typeof countsStart };
+        [counts]: { type: ReadonlyMap<string, number> };
     }
 }
-const countsStart = new Map();
 
 /** Adds its struct input to `total`, and its object input's names to `names`. */
 const add = System.create({ resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {

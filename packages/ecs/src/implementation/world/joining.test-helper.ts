@@ -18,7 +18,7 @@ declare module "@adobe/ecs" {
         [marked]: { type: true };
     }
     export interface Resources {
-        [total]: { type: number; default: 0 };
+        [total]: { type: number };
         [names]: { type: readonly string[]; default: [] };
     }
 }

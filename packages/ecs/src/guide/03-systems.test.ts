@@ -16,7 +16,7 @@ declare module "@adobe/ecs" {
     }
     interface Resources {
         [delta]: { type: number; default: 0.5 };
-        [frames]: { type: number; default: 0 };
+        [frames]: { type: number };
     }
 }
 

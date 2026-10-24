@@ -12,8 +12,8 @@ const steps = Symbol("observerContainedTest/steps");
 declare module "@adobe/ecs" {
     interface Resources {
         [wide]: { type: readonly [number, number, number, number, number, number, number, number, number, number, number, number]; default: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
-        [paused]: { type: boolean; default: false };
-        [steps]: { type: number; default: 0 };
+        [paused]: { type: boolean };
+        [steps]: { type: number };
     }
 }
 /** Twelve f64s: more than a post's block holds, so its posts copy them into a snapshot of their own. */

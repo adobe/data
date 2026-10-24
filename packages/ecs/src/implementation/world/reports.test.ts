@@ -12,7 +12,7 @@ declare module "@adobe/ecs" {
         [amount]: { type: number };
     }
     interface Resources {
-        [level]: { type: number; default: 0 };
+        [level]: { type: number };
     }
 }
 

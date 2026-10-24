@@ -14,7 +14,7 @@ const parent = Symbol("traitsTest/parent");
 declare module "@adobe/ecs" {
     export interface Components {
         [score]: { type: number };
-        [slot]: { type: number; derived: true; default: 0 };
+        [slot]: { type: number; derived: true };
         [ready]: { type: true; within: typeof slot };
         [parent]: { type: Entity; reference: "owner" };
     }

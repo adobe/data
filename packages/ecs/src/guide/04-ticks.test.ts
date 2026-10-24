@@ -7,8 +7,8 @@ const steps = Symbol();
 
 declare module "@adobe/ecs" {
     interface Resources {
-        [elapsed]: { type: number; default: 0 };
-        [steps]: { type: number; default: 0 };
+        [elapsed]: { type: number };
+        [steps]: { type: number };
     }
 }
 

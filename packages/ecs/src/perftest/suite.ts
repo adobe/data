@@ -37,8 +37,8 @@ export const indexSum = Symbol("suite/indexSum");
 export const highest = Symbol("suite/highest");
 declare module "@adobe/ecs" {
     export interface Resources {
-        [indexSum]: { type: number; reduce: "+"; default: 0 };
-        [highest]: { type: number; reduce: "max"; default: 0 };
+        [indexSum]: { type: number; reduce: "+" };
+        [highest]: { type: number; reduce: "max" };
     }
 }
 

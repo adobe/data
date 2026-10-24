@@ -36,12 +36,11 @@ declare module "@adobe/ecs" {
         [target]: { type: Entity };
     }
     export interface Resources {
-        [seconds]: { type: number; default: typeof secondsStart };
+        [seconds]: { type: number; default: 0.016666666666666666 };
         [floor]: { type: F32; default: -2.5 };
     }
 }
 
-const secondsStart = 1 / 60;
 
 const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     let previous = Entity.none;

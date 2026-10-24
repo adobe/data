@@ -29,17 +29,20 @@ declare module "@adobe/ecs" {
         [label]: { type: string };
         [marked]: { type: true };
         [place]: { type: number };
-        [caption]: { type: { readonly text: string } | null; thread: "observeJoinedTest"; default: typeof none };
+        [caption]: { type: Caption; thread: "observeJoinedTest" };
         [widget]: { type: { readonly draw: () => string } | null; thread: "observeJoinedTest" };
         [kept]: { type: string };
     }
     export interface Resources {
-        [total]: { type: number; default: 0 };
+        [total]: { type: number };
         [names]: { type: readonly string[]; default: [] };
     }
 }
 /** The caption's start, which a command here gives it by this value. */
 const none = { text: "none" };
+/** A caption, which starts as `none`, the value commands on other threads give it by identity. */
+type Caption = { readonly text: string } | null;
+const Caption = { schema: { default: none } };
 
 const add = System.create({ resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;

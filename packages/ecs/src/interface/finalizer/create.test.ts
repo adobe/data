@@ -20,14 +20,14 @@ declare module "@adobe/ecs" {
     export interface Components {
         [node]: { type: HTMLElement; thread: "main" };
         [label]: { type: string };
-        [slot]: { type: number; derived: true; default: 0 };
+        [slot]: { type: number; derived: true };
         [mark]: { type: true; derived: true };
         [other]: { type: true; derived: true };
         [tags]: { type: readonly string[] };
     }
     export interface Resources {
-        [total]: { type: number; reduce: "+"; default: 0 };
-        [time]: { type: number; default: 0 };
+        [total]: { type: number; reduce: "+" };
+        [time]: { type: number };
         [page]: { type: Document | null; thread: "main" };
     }
 }

@@ -15,7 +15,7 @@ declare module "@adobe/ecs" {
     }
     export interface Resources {
         [mark]: { type: { readonly text: string }; thread: "removeTest"; default: { text: "m" } };
-        [pause]: { type: number; default: 0 };
+        [pause]: { type: number };
         [secondRuns]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
     }
 }

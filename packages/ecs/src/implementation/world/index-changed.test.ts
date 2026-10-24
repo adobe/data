@@ -22,7 +22,7 @@ declare module "@adobe/ecs" {
         [total]: { type: number };
     }
     interface Resources {
-        [paused]: { type: boolean; default: false };
+        [paused]: { type: boolean };
     }
 }
 

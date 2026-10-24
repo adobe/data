@@ -23,7 +23,7 @@ declare module "@adobe/ecs" {
         [out]: { type: F32 };
     }
     export interface Resources {
-        [total]: { type: number; reduce: "+"; default: 0 };
+        [total]: { type: number; reduce: "+" };
     }
 }
 

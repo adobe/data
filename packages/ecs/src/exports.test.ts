@@ -115,7 +115,7 @@ export const label = Symbol();
 declare module "@adobe/ecs" {
     interface Traits<N> { readonly [mark]: N extends Component.Key ? (Component.Value<N> extends string ? true : never) : never }
     interface Components { [count]: { type: number; thread: "main"; [mark]: true } }
-    interface Resources { [label]: { type: string; default: typeof count; transfer: true } }
+    interface Resources { [label]: { type: string; default: 1; transfer: true } }
 }
 export const world: World = World.create();
 `;

@@ -19,9 +19,9 @@ declare module "@adobe/ecs" {
         [sized]: { type: true };
     }
     export interface Resources {
-        [count]: { type: number; reduce: "+"; default: 0 };
-        [sum]: { type: number; reduce: "+"; default: 0 };
-        [largest]: { type: number; reduce: "max"; default: 0 };
+        [count]: { type: number; reduce: "+" };
+        [sum]: { type: number; reduce: "+" };
+        [largest]: { type: number; reduce: "max" };
     }
 }
 

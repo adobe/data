@@ -10,7 +10,7 @@ declare module "@adobe/ecs" {
         [health]: { type: number };
     }
     interface Resources {
-        [seen]: { type: number; default: 0 };
+        [seen]: { type: number };
     }
 }
 

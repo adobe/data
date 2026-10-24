@@ -32,13 +32,13 @@ declare module "@adobe/ecs" {
         [heavy]: { type: true };
     }
     export interface Resources {
-        [total]: { type: number; reduce: "+"; default: 0 };
-        [low]: { type: Vec3; reduce: "min"; default: [0, 0, 0] };
-        [bits]: { type: U32; reduce: "|"; default: 0 };
-        [least]: { type: U32; reduce: "min"; default: 0 };
-        [any]: { type: boolean; reduce: "|"; default: false };
-        [level]: { type: number; default: 0 };
-        [seen]: { type: number; default: 0 };
+        [total]: { type: number; reduce: "+" };
+        [low]: { type: Vec3; reduce: "min" };
+        [bits]: { type: U32; reduce: "|" };
+        [least]: { type: U32; reduce: "min" };
+        [any]: { type: boolean; reduce: "|" };
+        [level]: { type: number };
+        [seen]: { type: number };
         [wrapped]: { type: I32; default: 5; reduce: "+" };
     }
 }

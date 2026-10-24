@@ -10,7 +10,7 @@ import { workers } from "../../interface/resources/workers.js";
 const frames = Symbol("ticksBrowserTest/frames");
 declare module "@adobe/ecs" {
     export interface Resources {
-        [frames]: { type: number; default: 0 };
+        [frames]: { type: number };
     }
 }
 

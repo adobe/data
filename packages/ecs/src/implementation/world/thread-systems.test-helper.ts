@@ -36,7 +36,7 @@ declare module "@adobe/ecs" {
         [kept]: { type: string };
     }
     export interface Resources {
-        [total]: { type: number; reduce: "+"; default: 0 };
+        [total]: { type: number; reduce: "+" };
         [changes]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
         [paint]: { type: { readonly text: string }; thread: "threadSystemsTest"; default: { text: "plain" } };
         [painted]: { type: Schema.Type<{ type: "integer" }>; default: 0 };

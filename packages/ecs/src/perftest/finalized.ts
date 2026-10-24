@@ -33,7 +33,7 @@ declare module "@adobe/ecs" {
     export interface Resources {
         [note]: { type: string; default: "released" };
         [scale]: { type: number; default: 1 };
-        [offset]: { type: Vec3; default: [0, 0, 0] };
+        [offset]: { type: Vec3 };
     }
 }
 /** An object of the joined thread, as a DOM node or a GPU handle is. */

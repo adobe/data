@@ -30,14 +30,17 @@ declare module "@adobe/ecs" {
         [pose]: { type: Mat4x4 };
     }
     export interface Resources {
-        [surface]: { type: { readonly name: string }; thread: "tailsBenchmark"; default: typeof surfaceStart };
+        [surface]: { type: Surface; thread: "tailsBenchmark" };
         [poked]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
-        [rowWork]: { type: U32; default: 0 };
-        [worldWork]: { type: number; default: 0 };
+        [rowWork]: { type: U32 };
+        [worldWork]: { type: number };
     }
 }
 /** An object of the joined thread, as a canvas or the DOM is, which places the systems reading it there. */
 const surfaceStart = { name: "surface" };
+/** The surface tails draw to, which starts as `surfaceStart`, so they can tell it apart by identity. */
+type Surface = { readonly name: string };
+const Surface = { schema: { default: surfaceStart } };
 
 /** What the tails read, so their reads aren't dead. */
 export const drawn = { sum: 0 };

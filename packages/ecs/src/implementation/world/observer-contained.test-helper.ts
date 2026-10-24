@@ -10,7 +10,7 @@ export const holding = Symbol("observerContainedTest/holding");
 declare module "@adobe/ecs" {
     export interface Resources {
         [tally]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
-        [holding]: { type: number; default: 0 };
+        [holding]: { type: number };
     }
 }
 /** While negative, each run of the watcher says it reached its value and waits until the world's thread releases it. */

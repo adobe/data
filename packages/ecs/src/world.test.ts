@@ -9,7 +9,7 @@ declare module "@adobe/ecs" {
         [count]: { type: number };
     }
     export interface Resources {
-        [total]: { type: number; default: 0 };
+        [total]: { type: number };
     }
 }
 

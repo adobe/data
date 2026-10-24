@@ -34,7 +34,7 @@ declare module "@adobe/ecs" {
         [uid]: { type: number };
         [amount]: { type: number };
         [flag]: { type: true };
-        [label]: { type: { readonly text: string } | null; thread: "moveLogTest"; default: typeof none };
+        [label]: { type: Label; thread: "moveLogTest" };
         [note]: { type: Note | null; thread: "moveLogTest" };
         [own]: { type: string };
     }
@@ -43,6 +43,9 @@ declare module "@adobe/ecs" {
 type Note = { readonly text: string; readonly read: () => string };
 /** The label's start, which a command on another thread than its own gives it by this value. */
 const none = { text: "none" };
+/** A label, which starts as `none`, the value commands on other threads give it by identity. */
+type Label = { readonly text: string } | null;
+const Label = { schema: { default: none } };
 
 const remoteKeys = [label, note] as const;
 

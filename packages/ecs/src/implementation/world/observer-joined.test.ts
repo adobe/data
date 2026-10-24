@@ -24,15 +24,18 @@ declare module "@adobe/ecs" {
         [amount]: { type: number };
         [cell]: { type: number };
         [tagged]: { type: true };
-        [label]: { type: { readonly text: string }; thread: "observerJoinedTest"; default: typeof blank };
+        [label]: { type: Label; thread: "observerJoinedTest" };
         [name]: { type: string; default: "" };
     }
     interface Resources {
-        [level]: { type: number; default: 0 };
+        [level]: { type: number };
     }
 }
 /** The label's start, which a command here gives it by this value. */
 const blank = { text: "" };
+/** A label, which starts as `blank`, the value commands on other threads give it by identity. */
+type Label = { readonly text: string };
+const Label = { schema: { default: blank } };
 
 const byCell = Index.create({ key: [cell], components: { has: [amount] } });
 const allTagged = Index.create({ key: [], components: { has: [tagged] } });

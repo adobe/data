@@ -18,9 +18,9 @@ declare module "@adobe/ecs" {
     }
     interface Resources {
         [level]: { type: number; default: 1 };
-        [paused]: { type: boolean; default: false };
+        [paused]: { type: boolean };
         [map]: { type: { readonly width: number } | null };
-        [steps]: { type: number; default: 0 };
+        [steps]: { type: number };
     }
 }
 

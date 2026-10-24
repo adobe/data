@@ -8,7 +8,7 @@ import { createWorld } from "./create.js";
 const frames = Symbol("ticksTest/frames");
 declare module "@adobe/ecs" {
     interface Resources {
-        [frames]: { type: number; default: 0 };
+        [frames]: { type: number };
     }
 }
 

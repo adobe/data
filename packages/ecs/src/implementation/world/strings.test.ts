@@ -23,7 +23,7 @@ declare module "@adobe/ecs" {
     }
     export interface Resources {
         [mode]: { type: "edit" | "view"; default: "view" };
-        [title]: { type: string; default: "" };
+        [title]: { type: string };
     }
 }
 

@@ -21,9 +21,9 @@ const weight = Symbol("observeCasesTest/weight");
 
 declare module "@adobe/ecs" {
     interface Resources {
-        [level]: { type: number; default: 0 };
-        [other]: { type: number; default: 0 };
-        [total]: { type: number; reduce: "+"; default: 0 };
+        [level]: { type: number };
+        [other]: { type: number };
+        [total]: { type: number; reduce: "+" };
     }
     interface Components {
         [weight]: { type: number };

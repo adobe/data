@@ -18,9 +18,9 @@ const second = Symbol("remoteFinalizersTest/second");
 const third = Symbol("remoteFinalizersTest/third");
 declare module "@adobe/ecs" {
     export interface Resources {
-        [later]: { type: number; default: 0 };
-        [second]: { type: number; default: 0 };
-        [third]: { type: number; default: 0 };
+        [later]: { type: number };
+        [second]: { type: number };
+        [third]: { type: number };
     }
 }
 const bump = System.create({ resources: { write: [later] } }, ({ resources }) => {

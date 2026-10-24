@@ -16,13 +16,13 @@ const value = Symbol("conditionsTest/value");
 
 declare module "@adobe/ecs" {
     interface Resources {
-        [paused]: { type: boolean; default: false };
+        [paused]: { type: boolean };
         [level]: { type: { readonly size: number } | null };
-        [ticks]: { type: number; default: 0 };
-        [after]: { type: number; default: 0 };
-        [sizes]: { type: number; default: 0 };
-        [total]: { type: number; reduce: "+"; default: 0 };
-        [count]: { type: number; default: 0 };
+        [ticks]: { type: number };
+        [after]: { type: number };
+        [sizes]: { type: number };
+        [total]: { type: number; reduce: "+" };
+        [count]: { type: number };
     }
     interface Components {
         [value]: { type: number };

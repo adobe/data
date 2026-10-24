@@ -24,7 +24,7 @@ declare module "@adobe/ecs" {
     }
     export interface Components {
         [point]: { type: number };
-        [caption]: { type: { readonly text: string } | null; thread: "remoteTest"; default: typeof none };
+        [caption]: { type: Caption; thread: "remoteTest" };
         [widget]: { type: Widget | null; thread: "remoteTest" };
         [kept]: { type: string };
         [guarded]: { type: Widget | null; thread: "remoteTestFinalized" };
@@ -35,6 +35,9 @@ declare module "@adobe/ecs" {
 type Widget = { readonly draw: () => string };
 /** The caption's start, which a command here gives it by this value. */
 const none = { text: "none" };
+/** A caption, which starts as `none`, the value commands on other threads give it by identity. */
+type Caption = { readonly text: string } | null;
+const Caption = { schema: { default: none } };
 /** A widget, or the number a kernel gives one, which only the world's thread could hold. */
 
 const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {

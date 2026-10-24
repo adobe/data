@@ -26,7 +26,7 @@ declare module "@adobe/ecs" {
         [amount]: { type: number };
     }
     export interface Resources {
-        [counter]: { type: number; default: 0 };
+        [counter]: { type: number };
         [sign]: { type: number; default: 1 };
     }
 }

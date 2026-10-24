@@ -28,7 +28,7 @@ declare module "@adobe/ecs" {
     }
     export interface Resources {
         [counter]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
-        [stall]: { type: number; default: 0 };
+        [stall]: { type: number };
         [phase]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
         [motto]: { type: string; default: "motto 0" };
         [mottoRound]: { type: Schema.Type<{ type: "integer" }>; default: 0 };

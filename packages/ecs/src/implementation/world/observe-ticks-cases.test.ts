@@ -15,7 +15,7 @@ const watched = Symbol("observeTicksCasesTest/watched");
 const flag = Symbol("observeTicksCasesTest/flag");
 declare module "@adobe/ecs" {
     interface Resources {
-        [frames]: { type: number; default: 0 };
+        [frames]: { type: number };
         [seen]: { type: number; default: -1 };
     }
     interface Components {

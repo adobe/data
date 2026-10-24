@@ -21,11 +21,14 @@ declare module "@adobe/ecs" {
     }
     export interface Components {
         [serial]: { type: number };
-        [label]: { type: { readonly text: string } | null; thread: "logBenchmark"; default: typeof none };
+        [label]: { type: Label; thread: "logBenchmark" };
         [moved]: { type: true };
     }
 }
 const none = { text: "none" };
+/** A row's label, which starts as `none`, so the mirror's copies are told apart by identity. */
+type Label = { readonly text: string } | null;
+const Label = { schema: { default: none } };
 
 /** Entities moved, and swapped out of the rows they leave, per sync point of `log replay`. */
 export const replayMoves = 10_000;

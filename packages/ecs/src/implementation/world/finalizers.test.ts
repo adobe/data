@@ -35,7 +35,7 @@ declare module "@adobe/ecs" {
         [handle]: { type: number };
         [hidden]: { type: true };
         [source]: { type: number };
-        [slot]: { type: number; derived: true; default: 0 };
+        [slot]: { type: number; derived: true };
         [parent]: { type: Entity; reference: "owner" };
         [label]: { type: string };
         [late]: { type: number };
@@ -47,9 +47,9 @@ declare module "@adobe/ecs" {
         [disposing]: { type: number };
     }
     export interface Resources {
-        [released]: { type: number; default: 0 };
-        [level]: { type: number; default: 0 };
-        [written]: { type: number; default: 0 };
+        [released]: { type: number };
+        [level]: { type: number };
+        [written]: { type: number };
     }
 }
 

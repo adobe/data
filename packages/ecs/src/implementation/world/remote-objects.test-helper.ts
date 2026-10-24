@@ -19,11 +19,14 @@ declare module "@adobe/ecs" {
         [serial]: { type: number };
         [phase]: { type: number };
         [flag]: { type: true };
-        [caption]: { type: { readonly text: string } | null; thread: "remoteObjects"; default: typeof none };
+        [caption]: { type: Caption; thread: "remoteObjects" };
     }
 }
 /** The caption's start, which a command here gives it by this value. */
 const none = { text: "none" };
+/** A caption, which starts as `none`, the value commands on other threads give it by identity. */
+type Caption = { readonly text: string } | null;
+const Caption = { schema: { default: none } };
 
 /** A caption's text, null for none, as the watchers record it. */
 const textOf = (value: { readonly text: string } | null): string | null => value === null ? null : value.text;

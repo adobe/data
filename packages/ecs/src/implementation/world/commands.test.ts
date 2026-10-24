@@ -41,14 +41,14 @@ declare module "@adobe/ecs" {
         [label]: { type: string | null };
         [tag]: { type: true };
         [other]: { type: true };
-        [slot]: { type: number; derived: true; default: 0 };
+        [slot]: { type: number; derived: true };
         [bit0]: { type: true };
         [bit1]: { type: true };
         [bit2]: { type: true };
         [bit3]: { type: true };
     }
     export interface Resources {
-        [level]: { type: number; default: 0 };
+        [level]: { type: number };
     }
 }
 Rule.create({ components: { has: [other, score] }, derive: [slot] });

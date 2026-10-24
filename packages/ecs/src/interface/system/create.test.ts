@@ -31,9 +31,9 @@ declare module "@adobe/ecs" {
     }
     export interface Resources {
         [document]: { type: Document | null; thread: "main" };
-        [time]: { type: number; default: 0 };
-        [total]: { type: number; reduce: "+"; default: 0 };
-        [paused]: { type: boolean; default: false };
+        [time]: { type: number };
+        [total]: { type: number; reduce: "+" };
+        [paused]: { type: boolean };
     }
 }
 

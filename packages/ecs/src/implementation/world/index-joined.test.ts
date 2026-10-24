@@ -40,7 +40,7 @@ declare module "@adobe/ecs" {
         [target]: { type: U32 };
         [lane]: { type: U32 };
         [rank]: { type: number };
-        [label]: { type: { readonly text: string }; thread: "indexJoinedTest"; default: typeof blank };
+        [label]: { type: Label; thread: "indexJoinedTest" };
         [name]: { type: { readonly text: string }; thread: "indexJoinedTest" };
         [title]: { type: string };
         [band]: { type: U32 };
@@ -51,6 +51,9 @@ declare module "@adobe/ecs" {
 const text = { type: "object", properties: { text: { type: "string" } } } as const;
 /** A label's start, which a command here gives it by this value. */
 const blank = { text: "" };
+/** A label, which starts as `blank`, the value commands on other threads give it by identity. */
+type Label = { readonly text: string };
+const Label = { schema: { default: blank } };
 
 const grid = Index.create({ key: [cell], components: { has: [weight] } });
 const serials = Index.create({ key: [serial], unique: true, components: { has: [weight] } });

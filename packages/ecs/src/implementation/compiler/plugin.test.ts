@@ -606,3 +606,58 @@ test("a build fails at a system's input whose type can't be one", async () => {
         build: { outDir: join(directory, "dist-bad-input"), minify: false, lib: { entry, formats: ["es"], fileName: "main" } },
     })).rejects.toThrow("(typeof X)[keyof typeof X]");
 });
+
+test("two copies of the package in one application register the keys it declares, and index lists apart", async () => {
+    // The application's copy, and another a library installs under its own node_modules.
+    const project = join(directory, "copies");
+    await installCopy(project);
+    const library = join(project, "node_modules/other-library");
+    await installCopy(library);
+    writeFileSync(join(project, "package.json"), JSON.stringify({ name: "copies-app", type: "module" }));
+    mkdirSync(join(library, "dist"), { recursive: true });
+    writeFileSync(join(library, "package.json"), JSON.stringify({ name: "other-library", type: "module", exports: "./dist/index.js" }));
+    // Its systems are made when called, spawning a list made on every call.
+    writeFileSync(join(library, "dist/index.js"), `import { System, World } from "@adobe/ecs";
+export { World as OtherWorld };
+export const runOther = async (key) => {
+    const spawn = System.create(({ commands }) => { commands.spawn([key].slice())({ [key]: 10 }); });
+    let total = 0;
+    const count = System.create({ observer: true, components: { with: [key] } }, (row) => { total += row[key]; });
+    const world = World.create();
+    await world.run(spawn);
+    await world.run(spawn);
+    await world.run(count);
+    await world.dispose();
+    return total;
+};
+`);
+    const application = join(project, "application.js");
+    writeFileSync(application, `import { System, World } from "@adobe/ecs";
+import { OtherWorld, runOther } from "other-library";
+export const score = Symbol();
+declare$(score, "component", { type: { type: "number" } });
+${recorder}
+const spawn = System.create(({ commands }) => { commands.spawn([score].slice())({ [score]: 1 }); });
+let counted = 0;
+const count = System.create({ observer: true, components: { with: [score] } }, (row) => { counted += row[score]; });
+export const copies = World === OtherWorld ? 1 : 2;
+export const run = async () => {
+    const world = World.create();
+    await world.run(spawn);
+    await world.run(spawn);
+    await world.run(count);
+    await world.dispose();
+    return [counted, await runOther(score)];
+};
+`);
+    const outDir = join(project, "dist");
+    const output = await build({
+        configFile: false, logLevel: "silent", root: project, plugins: [plugin()],
+        build: { outDir, minify: false, lib: { entry: application, formats: ["es"], fileName: "main" } },
+    });
+    const main = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
+        .find((item): item is Rollup.OutputChunk => item.type === "chunk" && item.facadeModuleId === application);
+    const built: { copies: number; run: () => Promise<readonly number[]> } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
+    expect(built.copies).toBe(2);
+    expect(await built.run()).toEqual([2, 20]);
+}, 120_000);

@@ -149,6 +149,22 @@ declare module "@adobe/ecs" {
     interface Resources { [label]: { type: string; default: 1 } }
 }`);
 
+/** One key with several members that don't hold: a custom trait and a thread on a string. */
+const severalTraits = creating(`
+export const instanced = Symbol();
+export const name = Symbol();
+declare module "@adobe/ecs" {
+    interface Traits<N> { readonly [instanced]: N extends Component.Key ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never }
+    interface Components { [name]: { type: string; [instanced]: true; thread: "main" } }
+}`);
+
+/** One key whose default is of another type and which can't be transferred. */
+const defaultAndTransfer = creating(`
+export const canvas = Symbol();
+declare module "@adobe/ecs" {
+    interface Resources { [canvas]: { type: string; default: 1; transfer: true } }
+}`);
+
 describe("package exports", () => {
     beforeAll(() => {
         install();
@@ -187,6 +203,17 @@ describe("package exports", () => {
             }
         }
         expect(compile(creating("")).messages).toEqual([]);
+    }, 60_000);
+    it("name every member of a key that doesn't hold", () => {
+        const cases = [
+            { source: severalTraits, named: [`readonly [instanced]: "isn't allowed on this key"`, `readonly thread: "isn't allowed on this key"`] },
+            { source: defaultAndTransfer, named: [`readonly default: "isn't of the declared type"`, `readonly transfer: "isn't allowed on this key"`] },
+        ];
+        for (const { source, named } of cases) {
+            const { messages: reported, lines } = compile(source);
+            expect(lines).toEqual(linesWith(source, "World.create("));
+            for (const message of reported) for (const member of named) expect(message).toContain(member);
+        }
     }, 60_000);
     it("report a misdeclared system, and a composite of conflicting members, at the mistake rather than as no overload matching", () => {
         const reported = compile(misdeclared).messages;

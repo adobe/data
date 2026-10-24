@@ -88,6 +88,10 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 
 ## Features to discuss
 
+- **Nothing tells the world's thread a join finished.** After `World.join`, a run from the world's own thread can run
+  before the joined thread has claimed its threads, so that thread's observers miss it; the guide's threads section
+  runs from the joined world instead. Options: `World.join` resolving once claimed (already true on the joined side?),
+  or `world.share` returning a promise of the claim. Smallest form to be decided.
 - **Computed index keys:** an index keyed on a value computed from a component, such as a struct field
   (`position.x`, `Report.run.number`), instead of only whole components. Two possible forms:
   `key: [[Report.run, "number"]]` (a field path) or `keyOf: run => run.number` (a function). Open questions:

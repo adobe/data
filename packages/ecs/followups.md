@@ -15,7 +15,9 @@ correctness, then optimization. Remove an item once it's decided or done.
 - **Nothing tells the world's thread a join finished.** After `World.join`, a run from the world's own thread can run
   before the joined thread has claimed its threads, so that thread's observers miss it; the guide's threads section
   runs from the joined world instead. Options: `World.join` resolving once claimed (already true on the joined side?),
-  or `world.share` returning a promise of the claim. Smallest form to be decided.
+  or `world.share` returning a promise of the claim. Smallest form to be decided. A refused claim, such as one of a
+  thread an id-less finalizer runs on, shows the world's thread only `"gone"` and the joined thread only a rejected
+  first run, so a helper waiting for `"joined"` waits forever.
 - **Optional components in GPU kernels:** each dispatch's record could carry a presence word, but WGSL has no
   `undefined` to read where an archetype lacks one, and a GPU kernel can't fail its system for one row; supporting
   them means a presence expression through the WASM and WGSL backends and a GPU semantics for absent reads and writes.
@@ -57,9 +59,6 @@ correctness, then optimization. Remove an item once it's decided or done.
 
 ## Correctness
 
-- **A finalizer without an id, placed on a joined thread, hangs the world** instead of being rejected: every run
-  waits for the thread to set it up. Found writing `optional.test.ts`, where an unbound `Finalizer.create` on a thread
-  a joined thread fills made every joined test time out.
 - **Transactions, future:** never by default, since they would cost every run. An explicit declarative option on a
   one-off system, making its run all or nothing.
 

@@ -52,6 +52,9 @@ for (const name of readdirSync(packagesDir)) {
       errors.push(`${name}: publishable packages hold a LICENSE identical to the monorepo's (copy ../../LICENSE)`);
     }
   }
+  if (pkg.pages !== undefined && !(Array.isArray(pkg.pages) && pkg.pages.every((page) => typeof page?.from === "string" && typeof page?.to === "string"))) {
+    errors.push(`${name}: "pages" lists { "from", "to" } folders to publish (see scripts/collect-pages.mjs)`);
+  }
   if (pkg.scripts?.["publish-public"]) {
     errors.push(`${name}: remove the "publish-public" script — publishing is governed by the "private" field and \`pnpm -r publish\``);
   }

@@ -9,7 +9,7 @@ import { moduleOf } from './type-schemas.js';
 const header = `import { Entity, type F32, type U32, type Vec3 } from "@adobe/ecs";\n`;
 
 /** The module as the pass leaves it, or its failure's message. */
-const passed = async (body: string, files: { readonly [path: string]: string } = {}): Promise<string | null> => {
+const passedWhole = async (body: string, files: { readonly [path: string]: string } = {}): Promise<string | null> => {
     const code = header + body;
     const host = hostOf(files);
     const result = await augmentationInsertions(moduleOf("/src/keys.ts", code, host.parse(code, "/src/keys.ts")), host);
@@ -18,11 +18,15 @@ const passed = async (body: string, files: { readonly [path: string]: string } =
     return insertInto(code, result.insertions, "/src/keys.ts").code;
 };
 
-/** The registrations the pass emits, one per line, without the import. */
+/** The module as the pass leaves it without the function it appends, or its failure's message. */
+const passed = async (body: string, files: { readonly [path: string]: string } = {}): Promise<string | null> =>
+    (await passedWhole(body, files))?.replace(/\nfunction declare\$\d*\(key, kind, declaration\) \{.*\}\n$/, "") ?? null;
+
+/** The declarations the pass records, one per line, without the function recording them. */
 const registrations = async (body: string, files: { readonly [path: string]: string } = {}): Promise<readonly string[] | string | null> => {
     const code = await passed(body, files);
     if (code === null || code.startsWith("failure: ")) return code;
-    return code.split("\n").filter(line => /^declare(Component|Resource|Trait)\$\(/.test(line));
+    return code.split("\n").filter(line => /^declare\$\(/.test(line));
 };
 
 const keys = (...names: readonly string[]) => names.map(name => `const ${name} = Symbol();`).join("\n") + "\n";
@@ -33,23 +37,29 @@ describe("augmentationInsertions", () => {
     interface Components { [position]: { type: Vec3 }; [done]: { type: boolean }; [label]: { type: string } }
     interface Resources { [speed]: { type: F32 | null }; [count]: { type: U32 | null } }
 }`)).toEqual([
-            `declareComponent$(position, { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3} });`,
-            `declareComponent$(done, { type: {"type":"boolean"} });`,
-            `declareComponent$(label, { type: {"type":"string"} });`,
-            `declareResource$(speed, { type: {"anyOf":[{"type":"number","precision":1},{"type":"null"}]} });`,
-            `declareResource$(count, { type: {"anyOf":[{"type":"integer","minimum":0,"maximum":4294967295},{"type":"null"}]} });`,
+            `declare$(position, "component", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3} });`,
+            `declare$(done, "component", { type: {"type":"boolean"} });`,
+            `declare$(label, "component", { type: {"type":"string"} });`,
+            `declare$(speed, "resource", { type: {"anyOf":[{"type":"number","precision":1},{"type":"null"}]} });`,
+            `declare$(count, "resource", { type: {"anyOf":[{"type":"integer","minimum":0,"maximum":4294967295},{"type":"null"}]} });`,
         ]);
     });
-    test("imports the registry's hooks it calls", async () => {
-        const code = await passed(`${keys("tag")}declare module "@adobe/ecs" { interface Components { [tag]: { type: true } } }`);
-        expect(code?.split("\n")[0]).toBe(`import { declareComponent$ } from "declare.js";`);
+    test("appends the function recording its declarations, which imports nothing", async () => {
+        const code = await passedWhole(`${keys("tag")}declare module "@adobe/ecs" { interface Components { [tag]: { type: true } } }`);
+        expect(code?.split("\n").filter(line => line.startsWith("import"))).toEqual([header.trimEnd()]);
+        expect(code?.trimEnd().split("\n").at(-1)).toBe(`function declare$(key, kind, declaration) { (globalThis[Symbol.for("@adobe/ecs/declarations@1")] ??= new Map()).set(key, { kind, declaration }); }`);
     });
-    test("names the hooks it imports apart from the module's own names", async () => {
-        const code = await passed(`import { declareComponent$ } from "elsewhere";\n${keys("tag")}declare module "@adobe/ecs" { interface Components { [tag]: { type: true } } }`);
-        expect(code?.split("\n").filter(line => line.includes("declareComponent$1"))).toEqual([
-            `import { declareComponent$ as declareComponent$1 } from "declare.js";`,
-            `declareComponent$1(tag, { type: {"const":true} });`,
+    test("names the function apart from the module's own names", async () => {
+        const code = await passedWhole(`const declare$ = 1;\n${keys("tag")}declare module "@adobe/ecs" { interface Components { [tag]: { type: true } } }`);
+        expect(code?.split("\n").filter(line => line.includes("declare$1"))).toEqual([
+            `declare$1(tag, "component", { type: {"const":true} });`,
+            `function declare$1(key, kind, declaration) { (globalThis[Symbol.for("@adobe/ecs/declarations@1")] ??= new Map()).set(key, { kind, declaration }); }`,
         ]);
+    });
+    test("fails for a module binding a global the recording function uses", async () => {
+        for (const binding of [`const Map = 1;`, `function Symbol() {}`, `import { globalThis } from "./globals.js";`]) {
+            expect(await passed(`${binding}\n${keys("tag")}declare module "@adobe/ecs" { interface Components { [tag]: { type: true } } }`)).toContain("which the code recording its declarations uses");
+        }
     });
     test("gives a default as a literal, or as the value `typeof` names, in the schema", async () => {
         expect(await registrations(`${keys("gravity", "mode", "selected", "origin")}declare module "@adobe/ecs" {
@@ -60,10 +70,10 @@ describe("augmentationInsertions", () => {
         [origin]: { type: Vec3; default: [0, 0, 0] };
     }
 }`)).toEqual([
-            `declareResource$(gravity, { type: {"type":"number","precision":1,"default":-9.8} });`,
-            `declareResource$(mode, { type: {"anyOf":[{"const":"all"},{"const":"done"}],"default":"all"} });`,
-            `declareResource$(selected, { type: {"type":"integer","format":"entity","default":Entity.none} });`,
-            `declareResource$(origin, { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3,"default":[0,0,0]} });`,
+            `declare$(gravity, "resource", { type: {"type":"number","precision":1,"default":-9.8} });`,
+            `declare$(mode, "resource", { type: {"anyOf":[{"const":"all"},{"const":"done"}],"default":"all"} });`,
+            `declare$(selected, "resource", { type: {"type":"integer","format":"entity","default":Entity.none} });`,
+            `declare$(origin, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3,"default":[0,0,0]} });`,
         ]);
     });
     test("gives a value that isn't data no schema, and its default beside its traits", async () => {
@@ -77,11 +87,11 @@ declare module "@adobe/ecs" {
         [callback]: { type: (() => void) | null };
     }
 }`, files)).toEqual([
-            `declareComponent$(row, { thread: "main" });`,
-            `declareResource$(canvas, { transfer: true });`,
-            `declareResource$(callback, {});`,
+            `declare$(row, "component", { thread: "main" });`,
+            `declare$(canvas, "resource", { transfer: true });`,
+            `declare$(callback, "resource", {});`,
             // After the value its default names.
-            `declareResource$(pool, { default: empty });`,
+            `declare$(pool, "resource", { default: empty });`,
         ]);
     });
     test("gives traits as declared, a trait of your own by its key, and registers traits `Traits` declares", async () => {
@@ -95,24 +105,24 @@ declare module "@adobe/ecs" {
     }
     interface Resources { [total]: { type: F32; default: 0; reduce: "+" } }
 }`)).toEqual([
-            `declareTrait$(instanced);`,
-            `declareComponent$(host, { type: {"const":true} });`,
-            `declareComponent$(outline, { type: {"type":"number"}, within: host, [instanced]: true });`,
-            `declareComponent$(owner, { type: {"type":"integer","format":"entity"}, reference: "owner" });`,
-            `declareComponent$(drawn, { type: {"const":true}, derived: true });`,
-            `declareResource$(total, { type: {"type":"number","precision":1,"default":0}, reduce: "+" });`,
+            `declare$(instanced, "trait");`,
+            `declare$(host, "component", { type: {"const":true} });`,
+            `declare$(outline, "component", { type: {"type":"number"}, within: host, [instanced]: true });`,
+            `declare$(owner, "component", { type: {"type":"integer","format":"entity"}, reference: "owner" });`,
+            `declare$(drawn, "component", { type: {"const":true}, derived: true });`,
+            `declare$(total, "resource", { type: {"type":"number","precision":1,"default":0}, reduce: "+" });`,
         ]);
     });
     test("registers a block's traits before the components declaring them", async () => {
         expect(await registrations(`${keys("marked", "mark")}declare module "@adobe/ecs" {
     interface Components { [marked]: { type: true; [mark]: true } }
     interface Traits<N> { readonly [mark]: true }
-}`)).toEqual([`declareTrait$(mark);`, `declareComponent$(marked, { type: {"const":true}, [mark]: true });`]);
+}`)).toEqual([`declare$(mark, "trait");`, `declare$(marked, "component", { type: {"const":true}, [mark]: true });`]);
     });
     test("follows a type named by Schema.Type that another module declares", async () => {
         const files = { "/src/units.ts": `import type { Schema } from "@adobe/ecs";\nexport type Level = Schema.Type<{ type: "integer"; minimum: 0; maximum: 9 }>;` };
         expect(await registrations(`import type { Level } from "./units.js";\n${keys("level")}declare module "@adobe/ecs" { interface Components { [level]: { type: Level } } }`, files)).toEqual([
-            `declareComponent$(level, { type: {"type":"integer","minimum":0,"maximum":9} });`,
+            `declare$(level, "component", { type: {"type":"integer","minimum":0,"maximum":9} });`,
         ]);
     });
     test("registers right after its key, and after the bindings its declaration names, wherever the block is", async () => {
@@ -120,10 +130,10 @@ declare module "@adobe/ecs" {
 const later = Symbol();
 const start = [1, 2, 3] as const;
 const after = 1;`);
-        expect(code?.split("\n").slice(-3)).toEqual([`const start = [1, 2, 3] as const;`, `declareResource$(later, { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3,"default":start} });`, `const after = 1;`]);
+        expect(code?.split("\n").slice(-3)).toEqual([`const start = [1, 2, 3] as const;`, `declare$(later, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3,"default":start} });`, `const after = 1;`]);
         // Code between the key and a block below uses the key registered.
         const above = await passed(`const speed = Symbol();\nconst uses = [speed];\ndeclare module "@adobe/ecs" { interface Resources { [speed]: { type: F32; default: 0 } } }`);
-        expect(above?.split("\n").slice(2, 4)).toEqual([`const speed = Symbol();`, `declareResource$(speed, { type: {"type":"number","precision":1,"default":0} });`]);
+        expect(above?.split("\n").slice(1, 3)).toEqual([`const speed = Symbol();`, `declare$(speed, "resource", { type: {"type":"number","precision":1,"default":0} });`]);
     });
     test("registers a trait before what declares it, its keys declared below the blocks, the Traits block last", async () => {
         const code = await passed(`declare module "@adobe/ecs" {
@@ -134,7 +144,7 @@ declare module "@adobe/ecs" {
 }
 const marked = Symbol();
 const mark = Symbol();`);
-        expect(code?.split("\n").slice(-4)).toEqual([`const marked = Symbol();`, `const mark = Symbol();`, `declareTrait$(mark);`, `declareComponent$(marked, { type: {"const":true}, [mark]: true });`]);
+        expect(code?.split("\n").slice(-4)).toEqual([`const marked = Symbol();`, `const mark = Symbol();`, `declare$(mark, "trait");`, `declare$(marked, "component", { type: {"const":true}, [mark]: true });`]);
     });
     test("registers after a let, var or class its default names, which have no value before their statements", async () => {
         const code = await passed(`${keys("a", "b", "c")}declare module "@adobe/ecs" {
@@ -145,21 +155,21 @@ var second = new (class {})();
 class Pool {}
 const after = 1;`);
         expect(code?.split("\n").slice(-7)).toEqual([
-            `let first = new (class {})();`, `declareResource$(a, { default: first });`,
-            `var second = new (class {})();`, `declareResource$(b, { default: second });`,
-            `class Pool {}`, `declareResource$(c, { default: Pool });`,
+            `let first = new (class {})();`, `declare$(a, "resource", { default: first });`,
+            `var second = new (class {})();`, `declare$(b, "resource", { default: second });`,
+            `class Pool {}`, `declare$(c, "resource", { default: Pool });`,
             `const after = 1;`,
         ]);
     });
     test("takes a type that allows null through its aliases", async () => {
         const files = { "/src/maybe.ts": `export type Maybe = Pool | null;\nexport class Pool {}` };
-        expect(await registrations(`import type { Maybe } from "./maybe.js";\n${keys("pool")}declare module "@adobe/ecs" { interface Resources { [pool]: { type: Maybe } } }`, files)).toEqual([`declareResource$(pool, {});`]);
+        expect(await registrations(`import type { Maybe } from "./maybe.js";\n${keys("pool")}declare module "@adobe/ecs" { interface Resources { [pool]: { type: Maybe } } }`, files)).toEqual([`declare$(pool, "resource", {});`]);
     });
     test("follows types a declare global block declares, here or in a module imported, before taking a name as a global class", async () => {
         const files = { "/src/globals.ts": `declare global {\n    interface Point { readonly x: number; readonly y: number }\n}\nexport {};` };
         expect(await registrations(`import "./globals.js";\ndeclare global { type Weight = number }\n${keys("at", "weight")}declare module "@adobe/ecs" { interface Components { [at]: { type: Point }; [weight]: { type: Weight } } }`, files)).toEqual([
-            `declareComponent$(at, { type: {"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"}}} });`,
-            `declareComponent$(weight, { type: {"type":"number"} });`,
+            `declare$(at, "component", { type: {"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"}}} });`,
+            `declare$(weight, "component", { type: {"type":"number"} });`,
         ]);
     });
     test("checks the built-in traits' values, as far as their literals and types tell", async () => {
@@ -177,7 +187,7 @@ const after = 1;`);
         expect(await passed(components(`type: string; thread: "main"`))).toContain("a string lives in shared memory");
         expect(await passed(components(`type: Vec3; thread: "main"`))).toContain("a struct lives in shared memory");
         // A Transferable class, through an alias and with null.
-        expect(await registrations(components(`type: Picture; transfer: true`).replace("const notKey", "type Picture = ImageBitmap | null;\nconst notKey"))).toContain(`declareComponent$(key, { transfer: true });`);
+        expect(await registrations(components(`type: Picture; transfer: true`).replace("const notKey", "type Picture = ImageBitmap | null;\nconst notKey"))).toContain(`declare$(key, "component", { transfer: true });`);
     });
     test("passes over modules without a declaration of the package", async () => {
         expect(await passed(`declare module "elsewhere" { interface Components { [x]: { type: number } } }\nconst x = Symbol();`)).toBe(null);
@@ -206,15 +216,16 @@ const after = 1;`);
 
 describe("registeredReductionsIn", () => {
     const read = (code: string) => Object.fromEntries(registeredReductionsIn(parseAst(code, { lang: "js" })));
-    test("reads the operators a library's registrations give, however its bundle wrote the calls", () => {
-        expect(read(`import { declareResource$ } from "@adobe/ecs/declare"; export const total = Symbol(); declareResource$(total, { type: {}, reduce: "+" });`)).toEqual({ total: "+" });
-        expect(read(`import { declareResource$ as d } from "@adobe/ecs/declare"; const t = Symbol(), m = Symbol(); d(t, { reduce: "+" }), d(m, { reduce: "min" }); export { t as total, m as low };`)).toEqual({ t: "+", m: "min" });
-        expect(read(`import { declareResource$ as d } from "@adobe/ecs/declare"; const t = Symbol(); void d(t, { reduce: "+" });`)).toEqual({ t: "+" });
-        expect(read(`import * as e from "@adobe/ecs/declare"; const t = Symbol(); e.declareResource$(t, { reduce: "+" });`)).toEqual({ t: "+" });
-        expect(read(`import { a as d } from "./chunk-x.js"; const t = Symbol(); d(t, { reduce: "+" });`)).toEqual({ t: "+" });
+    test("reads the operators a library's declarations give, however its bundle wrote them", () => {
+        expect(read(`export const total = Symbol(); declare$(total, "resource", { type: {}, reduce: "+" }); function declare$(key, kind, declaration) {}`)).toEqual({ total: "+" });
+        expect(read(`const t = Symbol(), m = Symbol(); d(t, "resource", { reduce: "+" }), d(m, "resource", { reduce: "min" }); export { t as total, m as low };`)).toEqual({ t: "+", m: "min" });
+        expect(read(`const t = Symbol(); void d(t, "resource", { reduce: "+" });`)).toEqual({ t: "+" });
+        expect(read(`const t = Symbol(); (globalThis[Symbol.for("@adobe/ecs/declarations@1")] ??= new Map()).set(t, { kind: "resource", declaration: { reduce: "+" } });`)).toEqual({ t: "+" });
+        expect(read(`const t = Symbol(); (g ??= new Map).set(t, { kind: "resource", declaration: { reduce: "max" } }), e.f(1);`)).toEqual({ t: "max" });
     });
-    test("ignores calls of other functions on keys that aren't symbols", () => {
-        expect(read(`import { a as d } from "./chunk-x.js"; const t = 1; d(t, { reduce: "+" });`)).toEqual({});
-        expect(read(`import * as e from "./other.js"; const t = Symbol(); e.other(t, { reduce: "+" });`)).toEqual({});
+    test("ignores components, traits, and keys that aren't symbols", () => {
+        expect(read(`const t = 1; d(t, "resource", { reduce: "+" });`)).toEqual({});
+        expect(read(`const t = Symbol(); d(t, "component", { reduce: "+" }); d(t, "trait");`)).toEqual({});
+        expect(read(`const t = Symbol(); m.set(t, { kind: "component", declaration: { reduce: "+" } });`)).toEqual({});
     });
 });

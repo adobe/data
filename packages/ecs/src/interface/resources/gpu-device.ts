@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { declareResource$ } from '../registry/declare.js';
+import { registerResource } from '../registry/declarations.js';
 
 /**
  * The device the world's GPU storage lives on, for both `kernel: "gpu"` kernels and render systems, or null for a world
@@ -14,4 +14,4 @@ declare module '@adobe/ecs' {
     }
 }
 
-declareResource$(gpuDevice, {});
+registerResource(gpuDevice, {});

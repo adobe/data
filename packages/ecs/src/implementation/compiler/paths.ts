@@ -21,8 +21,6 @@ export type PackageCopy = {
     readonly preparedLookup: string;
     /** The package root's module, for kernels that import the package when a build treats it as external. */
     readonly index: string;
-    /** The registry's hook for the declarations the build reads from `Components`, `Resources` and `Traits`. */
-    readonly declare: string;
 };
 
 /** The root of the copy of the package containing each directory, or null; found once per directory. */
@@ -74,7 +72,6 @@ const copyAt = (root: string, source: boolean, extension: string): PackageCopy =
         preparedSpawn: `${prefix}/implementation/world/prepared-spawn${suffix}`,
         preparedLookup: `${prefix}/implementation/world/prepared-lookup${suffix}`,
         index: `${prefix}/index${suffix}`,
-        declare: `${prefix}/interface/registry/declare${suffix}`,
     };
     copies.set(key, copy);
     return copy;
@@ -189,6 +186,3 @@ export const typesFileOf = (file: string): string => {
     const declarations = path.replace(/\.([cm]?)js$/, ".d.$1ts");
     return declarations !== path && existsSync(declarations) ? declarations : path;
 };
-
-/** Whether a file is part of a copy of the package: its own sources and builds. */
-export const isInPackageCopy = (file: string): boolean => pathInCopy(fileOf(file)) !== null;

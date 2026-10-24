@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { declareComponent$ } from '../registry/declare.js';
+import { registerComponent } from '../registry/declarations.js';
 import type { Failure, Warning } from './failure.js';
 
 /**
@@ -38,7 +38,7 @@ declare module '@adobe/ecs' {
 const text = { type: "string" } as const;
 const count = { type: "integer", minimum: 0 } as const;
 
-declareComponent$(run, {
+registerComponent(run, {
     type: {
         type: "object",
         properties: {
@@ -47,7 +47,7 @@ declareComponent$(run, {
         },
     },
 });
-declareComponent$(errors, {
+registerComponent(errors, {
     type: {
         type: "object",
         properties: {

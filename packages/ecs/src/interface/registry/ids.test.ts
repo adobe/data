@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { Finalizer } from "../finalizer/finalizer.js";
 import { Rule } from "../rule/rule.js";
 import { System } from "../system/system.js";
-import { declareComponent$, declareResource$, declareTrait$ } from "./declare.js";
+import { registerComponent, registerResource } from "./declarations.js";
+import { addTrait } from "./traits.js";
 import { identify } from "./ids.test-helper.js";
 import { declarationOf, kindOf, labelOf, programFinalizers, programRules, requireDefinition, sameItem, scheduleOf } from "./index.js";
 
@@ -38,12 +39,12 @@ identify(taggedAgain, "idsTest/keys.ts#tagged");
 
 // The keys' ids are given by hand, after the keys are made, so they're registered here rather than declared, which
 // registers a key as soon as it's made.
-declareComponent$(score, { type: { type: "number" } });
-declareComponent$(shown, { type: { const: true }, derived: true });
-declareResource$(level, { type: { type: "number", default: 0 } });
-declareComponent$(changed, { type: { type: "number" } });
-declareComponent$(crossed, { type: { type: "number" } });
-declareTrait$(tagged);
+registerComponent(score, { type: { type: "number" } });
+registerComponent(shown, { type: { const: true }, derived: true });
+registerResource(level, { type: { type: "number", default: 0 } });
+registerComponent(changed, { type: { type: "number" } });
+registerComponent(crossed, { type: { type: "number" } });
+addTrait(tagged);
 
 /** Calls a constructor as an untyped caller would, naming keys no declaration types. */
 const untyped = <F extends (...parameters: never[]) => unknown>(create: F) => (...parameters: unknown[]): ReturnType<F> => Reflect.apply(create, undefined, parameters);
@@ -55,28 +56,28 @@ type Row = { [key: symbol]: number };
 describe("keys with ids", () => {
     it("labels a key by its description, however many keys share it", () => {
         expect(labelOf(score)).toBe("score");
-        declareComponent$(unnamed, { type: { type: "number" } });
+        registerComponent(unnamed, { type: { type: "number" } });
         expect([labelOf(score), labelOf(unnamed)]).toEqual(["score", "score"]);
         expect(labelOf(Symbol("score"))).toBe("score");
     });
     it("accepts another symbol under a registered key's id with the same declaration, as the same key", () => {
-        declareComponent$(scoreAgain, { type: { type: "number" } });
-        declareComponent$(shownAgain, { type: { const: true }, derived: true });
-        declareResource$(levelAgain, { type: { type: "number", default: 0 } });
-        declareTrait$(taggedAgain);
+        registerComponent(scoreAgain, { type: { type: "number" } });
+        registerComponent(shownAgain, { type: { const: true }, derived: true });
+        registerResource(levelAgain, { type: { type: "number", default: 0 } });
+        addTrait(taggedAgain);
         expect([kindOf(scoreAgain), kindOf(levelAgain), kindOf(taggedAgain)]).toEqual(["component", "resource", "trait"]);
         expect(declarationOf(scoreAgain)).toBe(declarationOf(score));
         expect(labelOf(scoreAgain)).toBe("score");
     });
     it("rejects another symbol under a registered key's id with another declaration, or as another kind", () => {
-        expect(() => declareComponent$(changedAgain, { type: { type: "string" } })).toThrow(
+        expect(() => registerComponent(changedAgain, { type: { type: "string" } })).toThrow(
             `Cannot register component "changed" (idsTest/keys.ts#changed): its id is another key's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.`);
-        expect(() => declareResource$(crossedAgain, { type: { type: "number", default: 0 } })).toThrow(
+        expect(() => registerResource(crossedAgain, { type: { type: "number", default: 0 } })).toThrow(
             `Cannot register resource "crossed" (idsTest/keys.ts#crossed): its id is a component's.`);
         expect([kindOf(changedAgain), kindOf(crossedAgain)]).toEqual([undefined, undefined]);
     });
     it("keeps keys of different ids apart, though their descriptions match", () => {
-        declareComponent$(unnamed, { type: { type: "number" } });
+        registerComponent(unnamed, { type: { type: "number" } });
         system(identify({ components: { write: [score] } }, "idsTest/systems.ts#unnamed"), (row: Row) => { row[score] = 1; });
         expect(() => system(identify({ components: { write: [unnamed] } }, "idsTest/systems.ts#unnamed"), (row: Row) => { row[unnamed] = 1; })).toThrow("reload the page");
     });

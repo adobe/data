@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Entity } from "../entity/entity.js";
-import { declareComponent$, declareTrait$ } from "../registry/declare.js";
+import { registerComponent } from "../registry/declarations.js";
+import { addTrait } from "../registry/traits.js";
 import { declarationOf, kindOf, threadOfDeclaration } from "../registry/index.js";
 
 const parent = Symbol("typesComponentTest/parent");
@@ -35,7 +36,7 @@ declare module "@adobe/ecs" {
 }
 
 /** Registers a declaration as the build does, which a test may write wrong. */
-const register = (key: unknown, declaration: object): void => declareComponent$(key, declaration);
+const register = (key: unknown, declaration: object): void => registerComponent(key, declaration);
 
 describe("registering a component", () => {
     it("records the declaration, and its thread: none for a struct or a string, else its own or \"world\"", () => {
@@ -57,7 +58,7 @@ describe("registering a component", () => {
         expect(declarationOf(count)).toEqual({ type: { type: "number" } });
         const claimed = Symbol("typesComponentTest/claimed");
         register(claimed, { type: { const: true } });
-        expect(() => declareTrait$(claimed)).toThrow(`Cannot register trait "typesComponentTest/claimed": already registered as a component.`);
+        expect(() => addTrait(claimed)).toThrow(`Cannot register trait "typesComponentTest/claimed": already registered as a component.`);
         expect(kindOf(count)).toBe("component");
     });
     it("takes only plain symbols as keys, so built-in traits' string names are no component's", () => {
@@ -101,10 +102,10 @@ describe("registering a component", () => {
     it("takes traits other packages register, in the namespace components share", () => {
         const early = Symbol("typesComponentTest/early");
         expect(() => register(early, { type: { const: true }, [late]: true })).toThrow(`typesComponentTest/late isn't a registered trait`);
-        declareTrait$(late);
+        addTrait(late);
         expect(() => register(early, { type: { const: true }, [late]: true })).not.toThrow();
         expect(declarationOf(marked)).toEqual({ type: { const: true }, [mark]: true });
-        expect(() => declareTrait$(mark)).not.toThrow();
+        expect(() => addTrait(mark)).not.toThrow();
         expect(declarationOf(slot)).toEqual({ type: { type: "number", default: 0 }, derived: true });
     });
 });

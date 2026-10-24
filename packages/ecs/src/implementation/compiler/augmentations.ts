@@ -2,14 +2,12 @@
 import { reductionOperators } from '../../interface/registry/reduction.js';
 import { isEntity, isString, isStruct } from '../../interface/registry/schemas.js';
 import type { Schema } from '../../interface/schema/schema.js';
+import { declarationsName } from '../../interface/registry/ids.js';
 import type { PassResult } from './input-schemas.js';
 import type { Insertion } from './source-map.js';
 import { createConverter, isNotData, isThrown, type Declarator, type Module, type Node, type Statement, type TypedProgram, type TypeHost, type TypeNode } from './type-schemas.js';
 
-/** The module emitted code imports its registry hooks from, for the module being transformed. */
-export type DeclareModuleOf = (file: string) => string;
-
-export type AugmentationHost = TypeHost & { readonly declareModule: DeclareModuleOf };
+export type AugmentationHost = TypeHost;
 
 type Block = Extract<Statement, { readonly type: "TSModuleDeclaration"; readonly global: false }>;
 type Interface = Extract<Statement, { readonly type: "TSInterfaceDeclaration" }>;
@@ -67,23 +65,23 @@ const callsOf = (expression: Expression): readonly Call[] => {
     return [];
 };
 
+/** An object literal's property named `name`, unless computed. */
+const propertyNamed = (object: Extract<Expression, { readonly type: "ObjectExpression" }>, name: string): Expression | null => {
+    for (const property of object.properties) {
+        if (property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === name) return property.value;
+    }
+    return null;
+};
+
 /**
- * The operator each resource a module's generated registrations, `declareResource$(key, { ..., reduce })`, give, by its
- * key's binding: what a library's build in library mode leaves of its declarations in its JavaScript. The call may be
- * named or namespace-imported, under any local name, or, as a bundle that renamed its import leaves it, any call of a
- * top-level `Symbol()` and a declaration giving `reduce`.
+ * The operator each resource a module's generated declarations give, by its key's binding: what a library's build in
+ * library mode leaves of its declarations in its JavaScript. They record `key, "resource", { ..., reduce }` through the
+ * function appended to the module, under any name a bundle gives it, or, inlined, set `{ kind: "resource", declaration }`
+ * on the declarations map; the key is a top-level `Symbol()` constant.
  */
 export const registeredReductionsIn = (program: TypedProgram): ReadonlyMap<string, string> => {
-    const locals = new Set<string>();
-    const namespaces = new Set<string>();
     const symbols = new Set<string>();
     for (const statement of program.body) {
-        if (statement.type === "ImportDeclaration") {
-            for (const specifier of statement.specifiers) {
-                if (specifier.type === "ImportSpecifier" && specifier.imported.type === "Identifier" && specifier.imported.name === "declareResource$") locals.add(specifier.local.name);
-                if (specifier.type === "ImportNamespaceSpecifier") namespaces.add(specifier.local.name);
-            }
-        }
         const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
         if (declaration?.type !== "VariableDeclaration" || declaration.kind !== "const") continue;
         for (const declarator of declaration.declarations) {
@@ -91,21 +89,25 @@ export const registeredReductionsIn = (program: TypedProgram): ReadonlyMap<strin
             if (declarator.id.type === "Identifier" && init?.type === "CallExpression" && init.callee.type === "Identifier" && init.callee.name === "Symbol") symbols.add(declarator.id.name);
         }
     }
-    /** Whether a call registers a resource: through the import, under any name, or, renamed by a bundle, of a `Symbol()` key. */
-    const declares = ({ callee }: Call, key: string): boolean =>
-        callee.type === "Identifier" ? locals.has(callee.name) || symbols.has(key)
-            : callee.type === "MemberExpression" && !callee.computed && callee.object.type === "Identifier" && namespaces.has(callee.object.name)
-                && callee.property.type === "Identifier" && callee.property.name === "declareResource$";
+    /** The declaration a call records for a resource keyed by a `Symbol()` constant, by either form, with its key. */
+    const recorded = ({ callee, arguments: parameters }: Call): { readonly key: string; readonly declaration: Expression } | null => {
+        const [key, second, third] = parameters;
+        if (key?.type !== "Identifier" || !symbols.has(key.name)) return null;
+        if (second?.type === "Literal" && second.value === "resource" && third?.type === "ObjectExpression") return { key: key.name, declaration: third };
+        const setsEntry = callee.type === "MemberExpression" && !callee.computed && callee.property.type === "Identifier" && callee.property.name === "set";
+        if (!setsEntry || second?.type !== "ObjectExpression") return null;
+        const kind = propertyNamed(second, "kind");
+        const declaration = propertyNamed(second, "declaration");
+        return kind?.type === "Literal" && kind.value === "resource" && declaration !== null ? { key: key.name, declaration } : null;
+    };
     const found = new Map<string, string>();
     for (const statement of program.body) {
         if (statement.type !== "ExpressionStatement") continue;
         for (const call of callsOf(statement.expression)) {
-            const [key, declaration] = call.arguments;
-            if (key?.type !== "Identifier" || declaration?.type !== "ObjectExpression" || !declares(call, key.name)) continue;
-            for (const property of declaration.properties) {
-                if (property.type !== "Property" || property.computed || property.key.type !== "Identifier" || property.key.name !== "reduce") continue;
-                if (property.value.type === "Literal" && typeof property.value.value === "string") found.set(key.name, property.value.value);
-            }
+            const entry = recorded(call);
+            if (entry === null || entry.declaration.type !== "ObjectExpression") continue;
+            const operator = propertyNamed(entry.declaration, "reduce");
+            if (operator?.type === "Literal" && typeof operator.value === "string") found.set(entry.key, operator.value);
         }
     }
     return found;
@@ -139,6 +141,14 @@ const testModule = /\.(test|type-test|fixture|test-helper|cases)\.tsx?$/;
 /** Whether a file is one of the package's own modules, whose built-in keys register themselves. */
 const isLibraryModule = (path: string | null, file: string): boolean =>
     path !== null && (path.startsWith("interface/") || path.startsWith("implementation/")) && !testModule.test(file);
+
+/** Whether a module's top level binds `name`: imported, or declared by a variable, function or class. */
+const bindsAtTopLevel = (program: TypedProgram, name: string): boolean => program.body.some(statement => {
+    if (statement.type === "ImportDeclaration") return statement.specifiers.some(specifier => specifier.local.name === name);
+    const declared = statement.type === "ExportNamedDeclaration" || statement.type === "ExportDefaultDeclaration" ? statement.declaration : statement;
+    if (declared?.type === "VariableDeclaration") return declared.declarations.some(declarator => declarator.id.type === "Identifier" && declarator.id.name === name);
+    return (declared?.type === "FunctionDeclaration" || declared?.type === "ClassDeclaration") && declared.id?.name === name;
+});
 
 /** `base`, or it numbered, so the name appears nowhere in the code. */
 const uniqueName = (code: string, base: string): string => {
@@ -190,10 +200,8 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
     const converter = createConverter(host, file);
     const { fail } = converter;
     const insertions: Insertion[] = [];
-    const hooks = { component: "declareComponent$", resource: "declareResource$", trait: "declareTrait$" } as const;
-    // Local names the module doesn't use, so a module importing a hook itself keeps its own.
-    const names = { component: uniqueName(code, hooks.component), resource: uniqueName(code, hooks.resource), trait: uniqueName(code, hooks.trait) };
-    const used = new Set<"component" | "resource" | "trait">();
+    // A name the module doesn't use for the function appended to record its declarations.
+    const record = uniqueName(code, "declare$");
 
     /**
      * Where a local binding has its value, which a registration naming it comes after: the end of the top-level
@@ -311,6 +319,9 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
     };
 
     try {
+        const shadowed = ["globalThis", "Symbol", "Map"].find(name => bindsAtTopLevel(module.program, name));
+        const first = augmentations[0];
+        if (shadowed !== undefined && first !== undefined) fail(module, first.block, `the module binds ${shadowed}, which the code recording its declarations uses`);
         // Traits first, so a component declaring one registers after it.
         const ordered = augmentations.flatMap(({ block, interfaces }) => interfaces.map(declared => ({ block, declared })))
             .sort((a, b) => Number(b.declared.id.name === "Traits") - Number(a.declared.id.name === "Traits"));
@@ -328,10 +339,9 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
                     // String-named traits are the package's own.
                     if (!member.computed || key.type !== "Identifier") return fail(module, member, "a trait of your own is keyed by a `Symbol()` constant: `[layer]: ...`");
                     requireOwnKey(key.name, member, "a trait's key");
-                    used.add("trait");
                     const point = endOfLocal(key.name);
                     traitPoints.set(key.name, point);
-                    insertions.push({ at: point, text: `\n${names.trait}(${key.name});` });
+                    insertions.push({ at: point, text: `\n${record}(${key.name}, "trait");` });
                     continue;
                 }
                 if (!member.computed || key.type !== "Identifier") return fail(module, member, `a ${kind}'s key is a \`Symbol()\` constant, declared as \`[key]: { type: ... }\``);
@@ -385,8 +395,7 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
                 const parts = schema === undefined ? [] : [`type: ${start === undefined ? JSON.stringify(schema) : `${JSON.stringify(schema).slice(0, -1)},"default":${start.text}}`}`];
                 if (schema === undefined && start !== undefined) parts.push(`default: ${start.text}`);
                 parts.push(...traits);
-                used.add(kind);
-                insertions.push({ at, text: `\n${names[kind]}(${key.name}, ${parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`});` });
+                insertions.push({ at, text: `\n${record}(${key.name}, "${kind}", ${parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`});` });
             }
         }
     }
@@ -395,7 +404,6 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
         throw error;
     }
     if (insertions.length === 0) return null;
-    const imports = [...used].map(kind => names[kind] === hooks[kind] ? hooks[kind] : `${hooks[kind]} as ${names[kind]}`);
-    insertions.unshift({ at: 0, text: `import { ${imports.join(", ")} } from ${JSON.stringify(host.declareModule(file))};\n` });
+    insertions.push({ at: code.length, text: `\nfunction ${record}(key, kind, declaration) { (globalThis[Symbol.for(${JSON.stringify(declarationsName)})] ??= new Map()).set(key, { kind, declaration }); }\n` });
     return { insertions, dependencies: [...converter.read] };
 };

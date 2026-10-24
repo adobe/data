@@ -23,6 +23,5 @@ export const hostOf = (files: { readonly [path: string]: string }): InputHost & 
     },
     load: async file => files[file] ?? readFileSync(file, "utf8"),
     packagePath: packagePathOf,
-    declareModule: () => "declare.js",
     isSystem: async specifier => specifier === "@adobe/ecs",
 });

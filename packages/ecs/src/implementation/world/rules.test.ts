@@ -8,7 +8,7 @@ import { createWorld } from "./create.js";
 import { count, read } from "./reads.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
-import { declareComponent$ } from "../../interface/registry/declare.js";
+import { registerComponent } from "../../interface/registry/declarations.js";
 import { programRules } from "../../interface/registry/index.js";
 
 const source = Symbol("rulesTest/source");
@@ -142,8 +142,8 @@ describe("rules", () => {
         // @ts-expect-error a reference changes only through commands
         expect(() => System.create({ components: { write: [owned] } }, row => { row[owned] = Entity.none; })).toThrow("a reference, which changes only through commands");
         // The component closing a cycle of within declarations is rejected when it's registered.
-        declareComponent$(left, { type: { const: true }, within: right });
-        expect(() => declareComponent$(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "rulesTest/right": components are within each other in a cycle: rulesTest/left, rulesTest/right.`);
+        registerComponent(left, { type: { const: true }, within: right });
+        expect(() => registerComponent(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "rulesTest/right": components are within each other in a cycle: rulesTest/left, rulesTest/right.`);
     });
 });
 

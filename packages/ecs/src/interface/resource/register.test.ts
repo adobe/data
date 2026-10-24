@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { declareComponent$, declareResource$ } from "../registry/declare.js";
+import { registerComponent, registerResource } from "../registry/declarations.js";
 import { declarationOf, kindOf, threadOfDeclaration } from "../registry/index.js";
 import { always, cadence, clock, gpuDevice, wake, workers } from "../resources/index.js";
 
@@ -30,7 +30,7 @@ declare module "@adobe/ecs" {
 }
 
 /** Registers a declaration as the build does, which a test may write wrong. */
-const register = (key: unknown, declaration: object): void => declareResource$(key, declaration);
+const register = (key: unknown, declaration: object): void => registerResource(key, declaration);
 
 const namesSchema = { type: "map", keys: { type: "string" }, values: { type: "number" } } as const;
 
@@ -50,7 +50,7 @@ describe("registering a resource", () => {
         expect(() => register(time, { type: { type: "number", default: 0 } })).not.toThrow();
         expect(() => register(time, { type: { type: "number", default: 1 } })).toThrow(`Cannot register resource "typesResourceTest/time": already registered as a resource, with another declaration.`);
         const shared = Symbol("typesResourceTest/shared");
-        declareComponent$(shared, { type: { const: true } });
+        registerComponent(shared, { type: { const: true } });
         expect(() => register(shared, { type: { const: true, default: true } })).toThrow("already registered as a component");
     });
     it("takes a resource's default from its declaration or its schema, never both, and compares sets and maps by their entries", () => {

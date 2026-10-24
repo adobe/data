@@ -39,25 +39,47 @@ const wellKnown: ReadonlyMap<symbol, string> = new Map(Reflect.ownKeys(Symbol).f
     return typeof value === "symbol" ? [[value, `Symbol.${String(name)}`]] : [];
 }));
 
+/** Registers what the build declared since it last ran; the registry's declarations install it. */
+let catchUp = (): void => {};
+
+/** Installs what registers the build's declarations, which every read of keys runs first. */
+export const installCatchUp = (update: () => void): void => {
+    catchUp = update;
+};
+
+/** Why each key the build declared failed to register, for the errors its uses give. */
+const failures = new Map<symbol, string>();
+
+/** Records why a key the build declared failed to register. */
+export const recordFailure = (key: symbol, message: string): void => {
+    failures.set(key, message);
+};
+
+/** A key's entry, once what the build declared is registered. */
+const entryOf = (key: symbol): Entry | undefined => {
+    catchUp();
+    return entries.get(key);
+};
+
 /** Whether a key is a component, a resource or a trait. */
-export const kindOf = (key: unknown): Kind | undefined => typeof key === "symbol" ? entries.get(key)?.kind : undefined;
+export const kindOf = (key: unknown): Kind | undefined => typeof key === "symbol" ? entryOf(key)?.kind : undefined;
 
 /** The declaration of a registered component or resource. */
-export const declarationOf = (key: unknown): AnyDeclaration | undefined => typeof key === "symbol" ? entries.get(key)?.declaration : undefined;
+export const declarationOf = (key: unknown): AnyDeclaration | undefined => typeof key === "symbol" ? entryOf(key)?.declaration : undefined;
 
 /** Whether two values are one key: the same value, or symbols registered under one id. */
 export const sameKey = (a: unknown, b: unknown): boolean => {
     if (a === b) return true;
     if (typeof a !== "symbol" || typeof b !== "symbol") return false;
-    const entry = entries.get(a);
+    const entry = entryOf(a);
     return entry !== undefined && entry === entries.get(b);
 };
 
 /** The symbol first registered as this key, which stands for it wherever keys are compared; any other value as it is. */
-export const firstKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entries.get(key)?.first ?? key : key;
+export const firstKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entryOf(key)?.first ?? key : key;
 
 /** The symbol last registered as this key, by which a world gives values; any other value as it is. */
-export const newestKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entries.get(key)?.newest ?? key : key;
+export const newestKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entryOf(key)?.newest ?? key : key;
 
 /**
  * How errors and reports name a key: its description, or without one its binding from its id, whatever other keys
@@ -134,12 +156,19 @@ export const claimKey = (key: unknown, kind: Kind, declaration?: AnyDeclaration)
 };
 
 /** The symbol last registered under an id, by which a world gives values, or undefined where none was. */
-export const keyOfId = (id: string): symbol | undefined => identified.get(id)?.newest;
+export const keyOfId = (id: string): symbol | undefined => {
+    catchUp();
+    return identified.get(id)?.newest;
+};
 
 /**
- * Why a key isn't registered, for errors: the build registers keys from their declarations, so either its module
- * wasn't built with the plugin, which gives keys ids, or it isn't declared.
+ * Why a key isn't registered, for errors: its declaration failed to register; or the build registers keys from their
+ * declarations, so either its module wasn't built with the plugin, which gives keys ids, or it isn't declared.
  */
-export const whyUnregistered = (key: unknown): string => typeof key === "symbol" && idOfKey(key) === undefined
-    ? "the build's Compiler.plugin() registers keys from their declarations, and didn't build the module making it"
-    : "declare it beside its key, in interface Components or Resources";
+export const whyUnregistered = (key: unknown): string => {
+    const failure = typeof key === "symbol" ? failures.get(key) : undefined;
+    if (failure !== undefined) return `its declaration failed to register: ${failure}`;
+    return typeof key === "symbol" && idOfKey(key) === undefined
+        ? "the build's Compiler.plugin() registers keys from their declarations, and didn't build the module making it"
+        : "declare it beside its key, in interface Components or Resources";
+};

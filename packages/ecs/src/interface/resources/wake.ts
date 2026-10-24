@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { declareResource$ } from '../registry/declare.js';
+import { registerResource } from '../registry/declarations.js';
 
 /**
  * The earliest `clock.now`, in milliseconds, at which a system asked for the next tick, by contributing to it; Infinity
@@ -13,4 +13,4 @@ declare module '@adobe/ecs' {
     }
 }
 
-declareResource$(wake, { type: { type: "number", default: Infinity }, reduce: "min" });
+registerResource(wake, { type: { type: "number", default: Infinity }, reduce: "min" });

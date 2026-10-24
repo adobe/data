@@ -1,11 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from '../schema/schema.js';
 import type { Key as TraitKey } from '../trait/key.js';
+import { declarationsName } from './ids.js';
 import { layoutOf } from './layout.js';
-import { claimKey, declarationOf, failRegistration, firstKeyOf, kindOf, labelOf, requireKey, sameDeclaration } from './names.js';
+import { claimKey, declarationOf, failRegistration, firstKeyOf, installCatchUp, kindOf, labelOf, recordFailure, requireKey, sameDeclaration } from './names.js';
 import { isReduction } from './reduction.js';
 import { allowsNull, hasBoolean, isEntity, isString, isStruct } from './schemas.js';
-import { isTrait } from './traits.js';
+import { addTrait, isTrait } from './traits.js';
 
 /**
  * A registered declaration, as any consumer iterating components or resources sees it: its `type` and other traits.
@@ -96,10 +97,73 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
  * Registers a declaration of `kind` under `key`, fixed from then on. The same declaration again is accepted, and so is
  * a new symbol with the id of a key of this kind, as a module evaluated again makes it.
  */
-export const createRegistry = (kind: "component" | "resource") => (key: unknown, declaration: AnyDeclaration): void => {
+const createRegistry = (kind: "component" | "resource") => (key: unknown, declaration: AnyDeclaration): void => {
     const symbol = requireKey(kind, key);
     const existing = kindOf(symbol);
     if (existing === kind && sameDeclaration(declarationOf(symbol), declaration)) return;
     if (existing === undefined) check(kind, symbol, declaration);
     claimKey(symbol, kind, declaration);
 };
+
+/** Registers a component: the package's own, and tests' keys made at runtime; the build declares every other. */
+export const registerComponent = createRegistry("component");
+
+/** Registers a resource: the package's own, and tests' keys made at runtime; the build declares every other. */
+export const registerResource = createRegistry("resource");
+
+/** The global map of what the build declared, made here when no generated code made it first. */
+const declared = ((): Map<unknown, unknown> => {
+    const name = Symbol.for(declarationsName);
+    const found: unknown = Reflect.get(globalThis, name);
+    if (found instanceof Map) return found;
+    const made = new Map<unknown, unknown>();
+    Reflect.set(globalThis, name, made);
+    return made;
+})();
+
+/** Whether a value the generated code recorded is a declaration: an object of traits, as the build wrote it. */
+const isDeclaration = (value: unknown): value is AnyDeclaration => typeof value === "object" && value !== null;
+
+/** Registers one key the build declared, as its kind says. */
+const registerDeclared = (key: unknown, entry: unknown): void => {
+    const kind: unknown = typeof entry === "object" && entry !== null ? Reflect.get(entry, "kind") : undefined;
+    const declaration: unknown = typeof entry === "object" && entry !== null ? Reflect.get(entry, "declaration") : undefined;
+    if (kind === "trait") addTrait(key);
+    else if (kind === "component" && isDeclaration(declaration)) registerComponent(key, declaration);
+    else if (kind === "resource" && isDeclaration(declaration)) registerResource(key, declaration);
+};
+
+/** How many of the map's entries this copy registered. */
+let seen = 0;
+let catching = false;
+
+/**
+ * Registers what the build declared since this last ran, in the order modules evaluated, as each module registered
+ * its keys when it was evaluated. A declaration that fails is recorded for its key's uses and thrown once, after the
+ * rest register. Reads of keys while it runs see those registered so far.
+ */
+const catchUp = (): void => {
+    if (catching || declared.size === seen) return;
+    catching = true;
+    let failure: unknown = undefined;
+    try {
+        let index = 0;
+        for (const [key, entry] of declared) {
+            if (index++ < seen) continue;
+            seen++;
+            try {
+                registerDeclared(key, entry);
+            }
+            catch (error) {
+                if (typeof key === "symbol") recordFailure(key, error instanceof Error ? error.message : String(error));
+                failure ??= error;
+            }
+        }
+    }
+    finally {
+        catching = false;
+    }
+    if (failure !== undefined) throw failure;
+};
+
+installCatchUp(catchUp);

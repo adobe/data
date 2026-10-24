@@ -11,14 +11,16 @@ import { plugin } from './plugin.js';
 
 const source = (path: string) => JSON.stringify(fileURLToPath(new URL(path, import.meta.url)));
 const directory = realpathSync(mkdtempSync(join(tmpdir(), "ecs-kernel-")));
+/** The function a module the plugin built appends, which records its keys' declarations for the registry to read. */
+const recorder = `function declare$(key, kind, declaration) { (globalThis[Symbol.for("@adobe/ecs/declarations@1")] ??= new Map()).set(key, { kind, declaration }); }`;
 // The application's package, which names its modules' ids.
 writeFileSync(join(directory, "package.json"), JSON.stringify({ name: "fixture-app", type: "module" }));
 const fixture = join(directory, "fixture.js");
 writeFileSync(fixture, `import { System } from ${source("../../interface/system/system.ts")};
-import { declareComponent$ } from ${source("../../interface/registry/declare.ts")};
+import { registerComponent } from ${source("../../interface/registry/declarations.ts")};
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
 const score = Symbol("score");
-declareComponent$(score, { type: { type: "number" } });
+registerComponent(score, { type: { type: "number" } });
 const kernel = System.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
 export const description = kernelOf(kernel);
 `);
@@ -31,9 +33,9 @@ mkdirSync(join(directory, "node_modules/fake-math/dist"), { recursive: true });
 writeFileSync(join(directory, "node_modules/fake-math/package.json"), JSON.stringify({ name: "fake-math", type: "module", exports: "./dist/index.js" }));
 writeFileSync(join(directory, "node_modules/fake-math/dist/index.js"), "export const increment = (x) => x + 1;\n");
 /** The linked kernel's keys, in a module of their own that the edit doesn't evaluate again. */
-writeFileSync(join(directory, "linked-keys.js"), `import { declareComponent$ } from ${source("../../interface/registry/declare.ts")};
+writeFileSync(join(directory, "linked-keys.js"), `import { registerComponent } from ${source("../../interface/registry/declarations.ts")};
 export const score = Symbol("score");
-declareComponent$(score, { type: { type: "number" } });
+registerComponent(score, { type: { type: "number" } });
 `);
 writeFileSync(linked, `import { System } from ${source("../../interface/system/system.ts")};
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
@@ -58,10 +60,10 @@ export const schemas = [push, label].map(system => Reflect.get(system, "input"))
 /** A kernel spawning through a list another module declares, which the test edits. */
 const listing = join(directory, "listing.js");
 const listed = join(directory, "listed.js");
-const writeListed = (keys: string) => writeFileSync(listed, `import { declareComponent$ } from ${source("../../interface/registry/declare.ts")};
+const writeListed = (keys: string) => writeFileSync(listed, `import { registerComponent } from ${source("../../interface/registry/declarations.ts")};
 import { score } from "./linked-keys.js";
 export const extra = Symbol("extra");
-declareComponent$(extra, { type: { const: true } });
+registerComponent(extra, { type: { const: true } });
 export const Listed = [${keys}];
 `);
 writeListed("score");
@@ -75,24 +77,24 @@ export const description = kernelOf(kernel);
 /** Two kernels in one module, writing different functions of the entity. */
 const pair = join(directory, "pair.js");
 writeFileSync(pair, `import { System } from ${source("../../interface/system/system.ts")};
-import { declareComponent$ } from ${source("../../interface/registry/declare.ts")};
+import { registerComponent } from ${source("../../interface/registry/declarations.ts")};
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
 const score = Symbol("score");
-declareComponent$(score, { type: { type: "number" } });
+registerComponent(score, { type: { type: "number" } });
 const doubled = System.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
 const tripled = System.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = row.entity * 3; });
 export const descriptions = [kernelOf(doubled), kernelOf(tripled)];
 `);
 /** A module of keys and what it declares with them, which serving evaluates again under another query. */
 const keys = (declaration: string, released = "score") => `import { System as Systems } from ${source("../../interface/system/system.ts")};
-import { declareComponent$ } from ${source("../../interface/registry/declare.ts")};
+import { registerComponent } from ${source("../../interface/registry/declarations.ts")};
 import { Finalizer } from ${source("../../interface/finalizer/finalizer.ts")};
 import { Rule } from ${source("../../interface/rule/rule.ts")};
 import { labelOf } from ${source("../../interface/registry/names.ts")};
 export const score = Symbol("score");
 const shown = Symbol("shown");
-declareComponent$(score, ${declaration});
-declareComponent$(shown, { type: { const: true }, derived: true });
+registerComponent(score, ${declaration});
+registerComponent(shown, { type: { const: true }, derived: true });
 export const rule = Rule.create({ components: { has: [score] }, derive: [shown] });
 export const release = Finalizer.create({ components: { read: [${released}] } }, () => {});
 export const system = Systems.create({ components: { write: [score] } }, (row) => { row[score] = 1; });
@@ -112,13 +114,13 @@ writeFileSync(join(directory, "node_modules/key-library/package.json"), JSON.str
 writeFileSync(join(directory, "node_modules/key-library/dist/index.js"), `export const marker = Symbol("marker");\n`);
 writeFileSync(join(directory, "worker-keys.js"), `export const message = Symbol("message");\nself.postMessage(String(message.description));\n`);
 writeFileSync(identified, `import { labelOf } from ${source("../../interface/registry/names.ts")};
-import { declareComponent$ } from ${source("../../interface/registry/declare.ts")};
+import { registerComponent } from ${source("../../interface/registry/declarations.ts")};
 import { marker } from "key-library";
 export const score = Symbol("score");
 const twin = Symbol("score");
 export default Symbol();
-declareComponent$(score, { type: { type: "number" } });
-declareComponent$(twin, { type: { type: "number" } });
+registerComponent(score, { type: { type: "number" } });
+registerComponent(twin, { type: { type: "number" } });
 export const labels = [labelOf(score), labelOf(twin), labelOf(marker)];
 export const worker = () => new Worker(new URL("./worker-keys.js", import.meta.url), { type: "module" });
 `);
@@ -127,11 +129,11 @@ mkdirSync(join(directory, "node_modules/external-keys"), { recursive: true });
 writeFileSync(join(directory, "node_modules/external-keys/package.json"), JSON.stringify({ name: "external-keys", type: "module", exports: "./index.js" }));
 writeFileSync(join(directory, "node_modules/external-keys/index.js"), `export const heat = Symbol("heat");\nexport const Pair = [Symbol("left"), Symbol("right")];\n`);
 const externalKernel = (name: string, added: string) => `import { System } from ${source("../../interface/system/system.ts")};
-import { declareComponent$ } from ${source("../../interface/registry/declare.ts")};
+import { registerComponent } from ${source("../../interface/registry/declarations.ts")};
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
 import { ${added} } from "external-keys";
 const score = Symbol("score");
-declareComponent$(score, { type: { type: "number" } });
+registerComponent(score, { type: { type: "number" } });
 const kernel = System.create({ kernel: true, components: { read: [score] } }, (row, { commands }) => { commands.add(row.entity, ${added}, row[score]); });
 export const description = kernelOf(kernel);
 `;
@@ -325,11 +327,11 @@ test("an application's build compiles the kernels a library ships uncompiled", a
     writeFileSync(join(project, "package.json"), JSON.stringify({ name: "shipped-app", type: "module" }));
     mkdirSync(join(project, "node_modules/kernel-library/dist"), { recursive: true });
     writeFileSync(join(project, "node_modules/kernel-library/package.json"), JSON.stringify({ name: "kernel-library", type: "module", exports: "./dist/index.js" }));
-    // As the library's own build with the plugin left it, registering its keys through the copy it resolves.
+    // As the library's own build with the plugin left it, recording its keys' declarations for every copy to read.
     writeFileSync(join(project, "node_modules/kernel-library/dist/index.js"), `import { System } from "@adobe/ecs";
-import { declareComponent$ } from "@adobe/ecs/declare";
 const score = Symbol("score");
-declareComponent$(score, { type: { type: "number" } });
+declare$(score, "component", { type: { type: "number" } });
+${recorder}
 export const kernel = System.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
 `);
     // The test hook comes from the installed copy, which the library's compiled kernel attaches to.
@@ -359,11 +361,11 @@ test("an application's build compiles a library's reducing kernel, with the oper
     writeFileSync(join(project, "node_modules/reducing-library/package.json"), JSON.stringify({ name: "reducing-library", type: "module", exports: "./dist/index.js" }));
     // As its build in library mode left it: types stripped, the registrations it gave in their place.
     writeFileSync(join(project, "node_modules/reducing-library/dist/index.js"), `import { System } from "@adobe/ecs";
-import { declareComponent$, declareResource$ } from "@adobe/ecs/declare";
 const score = Symbol();
-declareComponent$(score, { type: { type: "number" } });
+declare$(score, "component", { type: { type: "number" } });
 const largest = Symbol();
-declareResource$(largest, { type: { type: "number", default: 0 }, reduce: "max" });
+declare$(largest, "resource", { type: { type: "number", default: 0 }, reduce: "max" });
+${recorder}
 export const kernel = System.create({ kernel: true, components: { read: [score] }, resources: { reduce: [largest] } }, (row, { reduce }) => { reduce[largest](row[score]); });
 `);
     const application = join(project, "application.js");
@@ -404,7 +406,7 @@ export const kernel = System.create({ kernel: true, components: { read: [score] 
     await expect(built).rejects.toThrow("which its module's JavaScript doesn't register: declare it in TypeScript, and build a library declaring it with Compiler.plugin({ library: true })");
 });
 
-test("a build registers the keys a module declares, through the copy of the package the module resolves", async () => {
+test("a build records the keys a module declares, which the copy of the package the application loads registers", async () => {
     const project = join(directory, "declaring");
     const copy = await installCopy(project);
     writeFileSync(join(project, "package.json"), JSON.stringify({ name: "declaring-app", version: "1.0.0", type: "module" }));
@@ -420,15 +422,17 @@ declare module "@adobe/ecs" {
     const outDir = join(project, "dist");
     const output = await build({
         configFile: false, logLevel: "silent", root: project, plugins: [plugin()],
-        build: { outDir, minify: false, lib: { entry: application, formats: ["es"], fileName: "main" }, rolldownOptions: { external: ["@adobe/ecs", "@adobe/ecs/declare"] } },
+        build: { outDir, minify: false, lib: { entry: application, formats: ["es"], fileName: "main" }, rolldownOptions: { external: ["@adobe/ecs"] } },
     });
     const chunks = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
         .filter((item): item is Rollup.OutputChunk => item.type === "chunk");
-    // A library's build ships this: no path of the machine that built it.
-    expect(chunks.map(chunk => chunk.code).join("\n")).toContain(`from "@adobe/ecs/declare"`);
+    // A library's build ships this: its declarations recorded for every copy of the package, importing nothing.
+    expect(chunks.map(chunk => chunk.code).join("\n")).toContain(`Symbol.for("@adobe/ecs/declarations@1")`);
+    expect(chunks.map(chunk => chunk.code).join("\n")).not.toMatch(/^import /m);
     const main = chunks.find(chunk => chunk.facadeModuleId === application);
     const { speed }: { speed: symbol } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
-    // The registry of the copy the build's import resolves to.
+    // The registry of the installed copy, loaded as an application loads the package, reads it.
+    await import(/* @vite-ignore */ pathToFileURL(join(copy, "dist/index.js")).href);
     const { declarationOf }: { declarationOf: (key: unknown) => unknown } = await import(/* @vite-ignore */ pathToFileURL(join(copy, "dist/interface/registry/names.js")).href);
     expect(declarationOf(speed)).toEqual({ type: { type: "number", precision: 1, default: 2 } });
 });
@@ -449,12 +453,12 @@ export const slow = System.create({ kernel: true, components: { write: [speed] }
     const outDir = join(project, "dist");
     const output = await build({
         configFile: false, logLevel: "silent", root: project, plugins: [plugin({ library: true })],
-        build: { outDir, minify: false, lib: { entry, formats: ["es"], fileName: "index" }, rolldownOptions: { external: ["@adobe/ecs", "@adobe/ecs/declare"] } },
+        build: { outDir, minify: false, lib: { entry, formats: ["es"], fileName: "index" }, rolldownOptions: { external: ["@adobe/ecs"] } },
     });
     const code = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
         .flatMap(item => item.type === "chunk" ? [item.code] : []).join("\n");
-    expect(code).toContain(`from "@adobe/ecs/declare"`);
-    expect(code).toMatch(/declareComponent\$\(speed, \{ type: \{\s*"type": "number",\s*"precision": 1\s*\} \}\)/);
+    expect(code).toContain(`Symbol.for("@adobe/ecs/declarations@1")`);
+    expect(code).toMatch(/declare\$\(speed, "component", \{ type: \{\s*"type": "number",\s*"precision": 1\s*\} \}\)/);
     // The input's schema, passed to its create.
     expect(code).toMatch(/"by": \{\s*"type": "number"\s*\}/);
     expect(code).toContain(`row[speed] = row[speed] / 2`);
@@ -552,8 +556,9 @@ test("compiled code imports the runtime from the copy of the package its module 
     const module = join(project, "copied.js");
     writeFileSync(module, `import { System, Component } from "@adobe/ecs";
 const score = Symbol("score");
-declareComponent$(score, { type: { type: "number" } });
+declare$(score, "component", { type: { type: "number" } });
 export const kernel = System.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+${recorder}
 export const spawner = System.create({ kernel: false, components: { read: [score] } }, (row, { commands }) => { commands.spawn([score])({ [score]: row[score] }); });
 `);
     const server = await createServer({

@@ -7,6 +7,13 @@ export const idsName = "@adobe/ecs/ids@1";
 
 const ids = Symbol.for(idsName);
 
+/**
+ * The `Symbol.for` name of the global `Map` code the plugin generates fills, from each key a module declares to its
+ * kind and declaration, `{ kind, declaration }`, in the order modules evaluate. Every copy of the package reads it and
+ * none changes it. Its version changes with the format.
+ */
+export const declarationsName = "@adobe/ecs/declarations@1";
+
 const idsMap = (): Map<unknown, unknown> | undefined => {
     const map: unknown = Reflect.get(globalThis, ids);
     return map instanceof Map ? map : undefined;

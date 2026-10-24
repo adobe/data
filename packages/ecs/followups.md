@@ -100,6 +100,13 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
   (`interface/registry/schemas.ts`) treats every `anyOf` as an object. The work covers row readers and writers,
   narrowing on the tag in the kernel compiler, WGSL layouts, and snapshots. Check first whether the type-level
   `IsStruct` already calls numeric-tagged unions structs while the runtime doesn't.
+- **Persistence.** Saved data needs ids stable across renames and versions, which thread ids (`name@version/path#binding`)
+  deliberately aren't. Planned shape:
+  - a `persist: string` trait on each persisted component, the name saved data maps through, checked unique at
+    registration;
+  - `Finalizer.changes({ watch: "persist" }, …)`: `watch` taking a trait name as well as a list of keys, typed as
+    `Component.With<"persist">`, computed once per component id as `watches` already is, so it costs nothing per
+    change.
 
 ## Performance
 

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Entity, F32, System, World } from "../index.js";
+import { Entity, System, World, type F32 } from "../index.js";
 import { Resource } from "@adobe/ecs";
 
 // A resource is a key whose value a world holds once.

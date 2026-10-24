@@ -30,14 +30,14 @@ declare module "@adobe/ecs" {
 }
 
 
-const pause = System.create({ resources: { write: [paused] } }, ({ resources }) => { resources[paused] = true; });
-const tick = System.create({ resources: { not: [paused], write: [ticks] } }, ({ resources }) => { resources[ticks] += 1; });
-const afterTick = System.create({ resources: { write: [after] }, after: [tick] }, ({ resources }) => { resources[after] += 1; });
+const pause = System.create({  }, ({ resources }) => { resources[paused] = true; });
+const tick = System.create({ resources: { not: [paused] } }, ({ resources }) => { resources[ticks] += 1; });
+const afterTick = System.create({ after: [tick] }, ({ resources }) => { resources[after] += 1; });
 const frame = System.create({ systems: [tick, afterTick] });
-const grow = System.create({ kernel: true, components: { write: [value] }, resources: { not: [paused] } }, row => {
+const grow = System.create({ kernel: true, components: { with: [value] }, resources: { not: [paused] } }, row => {
     row[value] = row[value] + 1;
 });
-const growWhilePaused = System.create({ kernel: true, components: { write: [value] }, resources: { is: [paused] } }, row => {
+const growWhilePaused = System.create({ kernel: true, components: { with: [value] }, resources: { is: [paused] } }, row => {
     row[value] = row[value] + 1;
 });
 
@@ -53,10 +53,10 @@ describe("resource conditions", () => {
 
     it("read an `is` condition as holding", async () => {
         await using world = createWorld({ [workers]: 0 });
-        const measure = System.create({ resources: { is: [level], write: [sizes] } }, ({ resources }) => { resources[sizes] = resources[level].size; });
+        const measure = System.create({ resources: { is: [level] } }, ({ resources }) => { resources[sizes] = resources[level].size; });
         await world.run(measure);
         expect(await readResource(world, sizes)).toBe(0);
-        const load = System.create({ resources: { write: [level] } }, ({ resources }) => { resources[level] = { size: 3 }; });
+        const load = System.create({  }, ({ resources }) => { resources[level] = { size: 3 }; });
         await world.run(load);
         await world.run(measure);
         expect(await readResource(world, sizes)).toBe(3);
@@ -65,12 +65,12 @@ describe("resource conditions", () => {
     it("keep a skipped system's lastRun, so it sees every change once it runs again", async () => {
         await using world = createWorld({ [workers]: 0 });
         const seen: number[] = [];
-        const watch = System.create({ components: { read: [value], changed: [value] }, resources: { is: [level] } }, row => { seen.push(row[value]); });
+        const watch = System.create({ components: { with: [value], changed: [value] }, resources: { is: [level] } }, row => { seen.push(row[value]); });
         const spawn = System.create({}, ({ commands }) => { commands.spawn([value])({ [value]: 7 }); });
         await world.run(spawn);
         await world.run(watch);
         expect(seen).toEqual([]);
-        await world.run(System.create({ resources: { write: [level] } }, ({ resources }) => { resources[level] = { size: 1 }; }));
+        await world.run(System.create({  }, ({ resources }) => { resources[level] = { size: 1 }; }));
         await world.run(watch);
         expect(seen).toEqual([7]);
     });
@@ -78,7 +78,7 @@ describe("resource conditions", () => {
     it("leave a reduced resource as it was when every contributor is skipped", async () => {
         await using world = createWorld({ [workers]: 0 });
         let next = 5;
-        const add = System.create({ resources: { not: [paused], reduce: [total] } }, ({ reduce }) => { reduce[total](next++); });
+        const add = System.create({ resources: { not: [paused] } }, ({ reduce }) => { reduce[total](next++); });
         await world.run(add);
         expect(await readResource(world, total)).toBe(5);
         await world.run(pause);
@@ -91,8 +91,6 @@ describe("resource conditions", () => {
         expect(() => System.create({ resources: { is: [count] } }, () => {})).toThrow("which is never null or false");
         // @ts-expect-error both is and not
         expect(() => System.create({ resources: { is: [paused], not: [paused] } }, () => {})).toThrow("in both resources is and not");
-        // @ts-expect-error is already makes it readable
-        expect(() => System.create({ resources: { is: [level], read: [level] } }, ({ resources }) => { void resources[level]; })).toThrow("is already makes it readable");
     });
     it("skip a kernel the same way", async () => {
         await using world = createWorld({ [workers]: 0 });

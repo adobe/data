@@ -12,7 +12,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-export const beyond = System.create({ kernel: true, components: { read: [pair], write: [sum] } }, row => {
+export const beyond = System.create({ kernel: true, components: { with: [pair, sum] } }, row => {
     // @ts-expect-error a pair has no third item
     row[sum] = row[pair][2];
 });

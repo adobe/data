@@ -34,7 +34,7 @@ const spawn = System.create({}, ({ commands }) => {
 });
 /** Moves one item to a new depth, as reordering it does. */
 const restack = System.create({
-    components: { write: [paintDepth] },
+    components: { with: [paintDepth] },
     target: "item",
 }, (row, _context, input: { readonly item: Entity; readonly depth: number }) => {
     row[paintDepth] = input.depth;

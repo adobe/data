@@ -7,7 +7,7 @@ import { addTodo } from "./model.js";
 export type Listed = { readonly entity: Entity; readonly label: string; readonly done: boolean; readonly order: number };
 
 const listed: Listed[] = [];
-const readTodos = System.create({ observer: true, components: { read: [label, done, order] }, order: ordered }, row => {
+const readTodos = System.create({ observer: true, components: { with: [label, done, order] }, order: ordered }, row => {
     listed.push({ entity: row.entity, label: row[label], done: row[done], order: row[order] });
 });
 

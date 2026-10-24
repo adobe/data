@@ -28,18 +28,18 @@ const seed = System.create({}, ({ commands }) => {
 });
 
 /** Writes the rows whose `at` is one of three, stamping row by row. */
-const writeSome = System.create({ kernel: true, components: { read: [at], write: [value] } }, (row, _context, input: { readonly a: I32; readonly b: I32; readonly c: I32 }) => {
+const writeSome = System.create({ kernel: true, components: { with: [at, value] } }, (row, _context, input: { readonly a: I32; readonly b: I32; readonly c: I32 }) => {
     const here = row[at];
     if (here === input.a || here === input.b || here === input.c) row[value] += 1;
 });
 
 /** Counts each run of the rows whose value changed. */
-const watch = System.create({ kernel: true, components: { write: [seen], changed: [value] } }, row => {
+const watch = System.create({ kernel: true, components: { with: [seen], changed: [value] } }, row => {
     row[seen] += 1;
 });
 
 let found: number[] = [];
-const onMain = System.create({ components: { read: [at], changed: [value] } }, row => { found.push(row[at]); });
+const onMain = System.create({ components: { with: [at], changed: [value] } }, row => { found.push(row[at]); });
 
 /**
  * The rows a kernel on workers and a system on the world's thread find after a kernel on workers wrote three rows far

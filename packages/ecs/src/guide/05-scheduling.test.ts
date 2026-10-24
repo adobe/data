@@ -13,11 +13,11 @@ declare module "@adobe/ecs" {
 }
 
 const spawn = System.create(({ commands }) => { commands.spawn([health, damage])({ [health]: 10, [damage]: 4 }); });
-const hit = System.create({ components: { read: [damage], write: [health] } }, row => {
+const hit = System.create({ components: { with: [damage, health] } }, row => {
     row[health] -= row[damage];
 });
 // before, after and during list the systems themselves.
-const heal = System.create({ components: { write: [health] }, after: [hit] }, row => {
+const heal = System.create({ components: { with: [health] }, after: [hit] }, row => {
     row[health] = Math.min(row[health] * 2, 10);
 });
 // A list of systems is a composite: it runs its members as one system, in their order; members without an order
@@ -25,7 +25,7 @@ const heal = System.create({ components: { write: [health] }, after: [hit] }, ro
 const frame = System.create([heal, hit]);
 
 const healths: number[] = [];
-const read = System.create({ observer: true, components: { read: [health] } }, row => {
+const read = System.create({ observer: true, components: { with: [health] } }, row => {
     healths.push(row[health]);
 });
 
@@ -41,11 +41,11 @@ it("orders a composite's members by their constraints", async () => {
 // Phases are systems that do nothing; a system during one runs after what the phase follows and before what follows it.
 const update = System.create(() => {});
 const render = System.create({ after: [update] }, () => {});
-const poison = System.create({ components: { write: [health] }, during: [update] }, row => {
+const poison = System.create({ components: { with: [health] }, during: [update] }, row => {
     row[health] -= 1;
 });
 const seen: number[] = [];
-const report = System.create({ components: { read: [health] }, during: [render] }, row => {
+const report = System.create({ components: { with: [health] }, during: [render] }, row => {
     seen.push(row[health]);
 });
 const phased = System.create([report, poison, update, render]);

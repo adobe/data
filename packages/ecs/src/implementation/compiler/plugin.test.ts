@@ -21,7 +21,7 @@ import { registerComponent } from ${source("../../interface/registry/declaration
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
 const score = Symbol("score");
 registerComponent(score, { type: { type: "number" } });
-const kernel = System.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+const kernel = System.create({ kernel: true, components: { with: [score] } }, (row) => { row[score] = row.entity * 2; });
 export const description = kernelOf(kernel);
 `);
 /** A kernel inlining a TypeScript helper and a function from a package's `dist`. */
@@ -43,7 +43,7 @@ import { scaled } from "./helper.ts";
 import { increment } from "fake-math";
 import { score } from "./linked-keys.js";
 // Serving evaluates this module again after an edit, declaring the same system again with the same keys.
-const kernel = System.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
+const kernel = System.create({ kernel: true, components: { with: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
 export const description = kernelOf(kernel);
 `);
 /** Systems taking input, of a type another TypeScript module declares, which the test edits. */
@@ -71,7 +71,7 @@ writeFileSync(listing, `import { System } from ${source("../../interface/system/
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
 import { score } from "./linked-keys.js";
 import { Listed } from "./listed.js";
-const kernel = System.create({ kernel: true, components: { read: [score] } }, (row, { commands }) => { commands.spawn(Listed)({ [score]: row[score] }); });
+const kernel = System.create({ kernel: true, components: { with: [score] } }, (row, { commands }) => { commands.spawn(Listed)({ [score]: row[score] }); });
 export const description = kernelOf(kernel);
 `);
 /** Two kernels in one module, writing different functions of the entity. */
@@ -81,8 +81,8 @@ import { registerComponent } from ${source("../../interface/registry/declaration
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
 const score = Symbol("score");
 registerComponent(score, { type: { type: "number" } });
-const doubled = System.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
-const tripled = System.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = row.entity * 3; });
+const doubled = System.create({ kernel: true, components: { with: [score] } }, (row) => { row[score] = row.entity * 2; });
+const tripled = System.create({ kernel: true, components: { with: [score] } }, (row) => { row[score] = row.entity * 3; });
 export const descriptions = [kernelOf(doubled), kernelOf(tripled)];
 `);
 /** A module of keys and what it declares with them, which serving evaluates again under another query. */
@@ -95,10 +95,10 @@ export const score = Symbol("score");
 const shown = Symbol("shown");
 registerComponent(score, ${declaration});
 registerComponent(shown, { type: { const: true }, derived: true });
-export const rule = Rule.create({ components: { has: [score] }, derive: [shown] });
-export const release = Finalizer.create({ components: { read: [${released}] } }, () => {});
-export const system = Systems.create({ components: { write: [score] } }, (row) => { row[score] = 1; });
-export const kernel = Systems.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = 2; });
+export const rule = Rule.create({ components: { with: [score] }, derive: [shown] });
+export const release = Finalizer.create({ components: { with: [${released}] } }, () => {});
+export const system = Systems.create({ components: { with: [score] } }, (row) => { row[score] = 1; });
+export const kernel = Systems.create({ kernel: true, components: { with: [score] } }, (row) => { row[score] = 2; });
 export const label = labelOf(score);
 `;
 const evaluated = join(directory, "evaluated.js");
@@ -134,7 +134,7 @@ import { kernelOf } from ${source("../world/attach-kernel.ts")};
 import { ${added} } from "external-keys";
 const score = Symbol("score");
 registerComponent(score, { type: { type: "number" } });
-const kernel = System.create({ kernel: true, components: { read: [score] } }, (row, { commands }) => { commands.add(row.entity, ${added}, row[score]); });
+const kernel = System.create({ kernel: true, components: { with: [score] } }, (row, { commands }) => { commands.add(row.entity, ${added}, row[score]); });
 export const description = kernelOf(kernel);
 `;
 const externalKey = join(directory, "external-key.js");
@@ -332,7 +332,7 @@ test("an application's build compiles the kernels a library ships uncompiled", a
 const score = Symbol("score");
 declare$(score, "component", { type: { type: "number" } });
 ${recorder}
-export const kernel = System.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+export const kernel = System.create({ kernel: true, components: { with: [score] } }, (row) => { row[score] = row.entity * 2; });
 `);
     // The test hook comes from the installed copy, which the library's compiled kernel attaches to.
     const application = join(project, "application.js");
@@ -366,7 +366,7 @@ declare$(score, "component", { type: { type: "number" } });
 const largest = Symbol();
 declare$(largest, "resource", { type: { type: "number", default: 0 }, reduce: "max" });
 ${recorder}
-export const kernel = System.create({ kernel: true, components: { read: [score] }, resources: { reduce: [largest] } }, (row, { reduce }) => { reduce[largest](row[score]); });
+export const kernel = System.create({ kernel: true, components: { with: [score] } }, (row, { reduce }) => { reduce[largest](row[score]); });
 `);
     const application = join(project, "application.js");
     writeFileSync(application, `import { kernelOf } from ${JSON.stringify(join(copy, "dist/implementation/world/attach-kernel.js"))};
@@ -394,7 +394,7 @@ test("an application's build says so when a library's dist doesn't register a re
     writeFileSync(join(project, "node_modules/unregistered-library/dist/index.js"), `import { System } from "@adobe/ecs";
 const score = Symbol();
 const largest = Symbol();
-export const kernel = System.create({ kernel: true, components: { read: [score] }, resources: { reduce: [largest] } }, (row, { reduce }) => { reduce[largest](row[score]); });
+export const kernel = System.create({ kernel: true, components: { with: [score] } }, (row, { reduce }) => { reduce[largest](row[score]); });
 `);
     const application = join(project, "application.js");
     writeFileSync(application, `export { kernel } from "unregistered-library";
@@ -448,7 +448,7 @@ declare module "@adobe/ecs" {
     interface Components { [speed]: { type: F32 } }
 }
 export const push = System.create({}, (_context, input: { readonly by: number }) => { void input; });
-export const slow = System.create({ kernel: true, components: { write: [speed] } }, row => { row[speed] = row[speed] / 2; });
+export const slow = System.create({ kernel: true, components: { with: [speed] } }, row => { row[speed] = row[speed] / 2; });
 `);
     const outDir = join(project, "dist");
     const output = await build({
@@ -557,9 +557,9 @@ test("compiled code imports the runtime from the copy of the package its module 
     writeFileSync(module, `import { System, Component } from "@adobe/ecs";
 const score = Symbol("score");
 declare$(score, "component", { type: { type: "number" } });
-export const kernel = System.create({ kernel: true, components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+export const kernel = System.create({ kernel: true, components: { with: [score] } }, (row) => { row[score] = row.entity * 2; });
 ${recorder}
-export const spawner = System.create({ kernel: false, components: { read: [score] } }, (row, { commands }) => { commands.spawn([score])({ [score]: row[score] }); });
+export const spawner = System.create({ kernel: false, components: { with: [score] } }, (row, { commands }) => { commands.spawn([score])({ [score]: row[score] }); });
 `);
     const server = await createServer({
         configFile: false, logLevel: "silent", root: project, plugins: [plugin()],

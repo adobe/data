@@ -35,7 +35,7 @@ declare module "@adobe/ecs" {
 }
 
 
-const grid = Index.create({ key: [cell], components: { has: [weight], not: [hidden] } });
+const grid = Index.create({ key: [cell], components: { with: [weight], not: [hidden] } });
 const byServerId = Index.create({ key: [serverId], unique: true });
 const byLabel = Index.create({ key: [label] });
 const children = Index.create({ key: [owner] });
@@ -48,7 +48,7 @@ const spawnCells = System.create({}, ({ commands }, input: { readonly cells: rea
 let seen: { readonly entities: readonly Entity[]; readonly weights: readonly number[]; readonly changed: boolean; readonly length: number } | null = null;
 
 const look = System.create({
-    lookup: { near: { index: grid, read: [weight] } },
+    lookup: { near: { index: grid } },
 }, ({ lookup }, input: { readonly x: number; readonly y: number }) => {
     const near = lookup.near([input.x, input.y]);
     const entities: Entity[] = [];
@@ -61,7 +61,7 @@ const look = System.create({
 });
 
 /** Moves every entity in cell [0, 0] to [1, 0], before `lookAfter` in the same run. */
-const shift = System.create({ components: { write: [cell] } }, row => {
+const shift = System.create({ components: { with: [cell] } }, row => {
     if (row[cell][0] === 0 && row[cell][1] === 0) row[cell] = [1, 0];
 });
 let afterShift: number | null = null;
@@ -203,7 +203,7 @@ describe("call sites", () => {
         await using world = createWorld({ [workers]: 0 });
         await world.run(spawnCells, { cells: [[0, 0], [0, 0], [1, 1]] });
         let pairs: number[] = [];
-        const both = System.create({ lookup: { near: { index: grid, read: [weight] } } }, ({ lookup }) => {
+        const both = System.create({ lookup: { near: { index: grid } } }, ({ lookup }) => {
             const a = lookup.near([0, 0]);
             const b = lookup.near([1, 1]);
             pairs = [a.length, b.length, a.at(0)[weight] + a.at(1)[weight], b.at(0)[weight]];
@@ -228,7 +228,7 @@ describe("call sites", () => {
 
 describe("finalizers", () => {
     const released: number[] = [];
-    Finalizer.create({ components: { read: [order, cell] }, lookup: { near: { index: grid, read: [weight] } } }, (row, { lookup }) => {
+    Finalizer.create({ components: { with: [order, cell] }, lookup: { near: { index: grid } } }, (row, { lookup }) => {
         released.push(lookup.near(row[cell]).length);
     });
     it("look up through indexes as they are before the sync point applies", async () => {
@@ -256,7 +256,7 @@ describe("index lifetime", () => {
         await using world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
         await world.run(spawnCells, { cells: [[0, 0], [1, 1]] });
         // Ticks of what an index is keyed by stay once started, as any component's do.
-        await world.run(System.create({ components: { read: [cell], changed: [cell] } }, row => { void row[cell]; }));
+        await world.run(System.create({ components: { with: [cell], changed: [cell] } }, row => { void row[cell]; }));
         const before = await tablesAfterCollecting(world);
         // A system made for one run is collected, and its index with it.
         await world.run(System.create({ lookup: { near: { index: grid } } }, ({ lookup }) => { void lookup.near([0, 0]).length; }));
@@ -325,7 +325,7 @@ const foldOf = (bucket: readonly number[]): number => bucket.reduce((sum, entity
 /** A kernel folding the entities of its row's own cell's list, so kernels' lookups are checked against the same index. */
 const foldNear = System.create({
     kernel: true,
-    components: { read: [cell], write: [folded] },
+    components: { with: [cell, folded] },
     lookup: { near: { index: grid } },
 }, (row, { lookup }) => {
     const [x, y] = row[cell];
@@ -337,7 +337,7 @@ const foldNear = System.create({
 
 /** Moves each row whose weight is below `share` of 1000 to the cell `cell` gives it, so keys change during runs. */
 const rekey = System.create({
-    components: { read: [weight], write: [cell] }, before: [probe],
+    components: { with: [weight, cell] }, before: [probe],
 }, (row, _context, input: { readonly share: number; readonly seed: number }) => {
     if ((row[weight] * 7919 + input.seed) % 1000 < input.share * 1000) row[cell] = cells[(row[weight] + input.seed) % cells.length];
 });
@@ -368,7 +368,7 @@ describe("an incrementally refreshed hash index", () => {
             }));
             // Now and then most rows' keys change, past what a patch takes.
             await world.run(System.create({ systems: [rekey, probe] }), { share: next() < 0.1 ? 0.9 : 0.05, seed: step });
-            const scratch = Index.create({ key: [cell], components: { has: [weight], not: [hidden] } });
+            const scratch = Index.create({ key: [cell], components: { with: [weight], not: [hidden] } });
             let rebuilt: readonly (readonly number[])[] = [];
             await world.run(System.create({ lookup: { near: { index: scratch } } }, ({ lookup }) => { rebuilt = bucketsOf(key => lookup.near(key)); }));
             expect(incremental).toEqual(rebuilt);
@@ -397,7 +397,7 @@ declare module "@adobe/ecs" {
 }
 
 const byRank = Index.create({ key: [rank], sorted: true });
-const byLaneRank = Index.create({ key: [lane, rank], sorted: true, components: { has: [weight] } });
+const byLaneRank = Index.create({ key: [lane, rank], sorted: true, components: { with: [weight] } });
 const byName = Index.create({ key: [label], sorted: true, unique: true });
 const byFlagPair = Index.create({ key: [flag, pair], sorted: true });
 
@@ -413,7 +413,7 @@ describe("sorted indexes on the main thread", () => {
         for (const value of input.ranks) commands.spawn([rank])({ [rank]: value });
     });
     const query = System.create({
-        lookup: { ranks: { index: byRank, read: [rank] } },
+        lookup: { ranks: { index: byRank } },
     }, ({ lookup }, input: { readonly kind: string; readonly value: number; readonly other: number }) => {
         const { value, other } = input;
         switch (input.kind) {
@@ -471,7 +471,7 @@ describe("sorted indexes on the main thread", () => {
             model.forEach(([laneValue, rankValue], k) => commands.spawn([lane, rank, weight])({ [lane]: laneValue, [rank]: rankValue, [weight]: k }));
         }));
         let found: (readonly (readonly number[])[])[] = [];
-        await world.run(System.create({ lookup: { lanes: { index: byLaneRank, read: [lane, rank] } } }, ({ lookup }) => {
+        await world.run(System.create({ lookup: { lanes: { index: byLaneRank } } }, ({ lookup }) => {
             const read = (list: { readonly length: number; at(index: number): { readonly [lane]: number; readonly [rank]: number } }) => Array.from({ length: list.length }, (_, i) => [list.at(i)[lane], list.at(i)[rank]]);
             found = [read(lookup.lanes(0)), read(lookup.lanes(1, { "<": 10 })), read(lookup.lanes({ "<": 0 })), read(lookup.lanes(-1, 26)), read(lookup.lanes(-1, 27))];
         }));
@@ -494,7 +494,7 @@ describe("sorted indexes on the main thread", () => {
         let pairs: (readonly [boolean, readonly [number, number]])[] = [];
         let one: string | null = null;
         let none: string | null = "x";
-        await world.run(System.create({ lookup: { names: { index: byName, read: [label] }, pairs: { index: byFlagPair, read: [flag, pair] } } }, ({ lookup }) => {
+        await world.run(System.create({ lookup: { names: { index: byName }, pairs: { index: byFlagPair } } }, ({ lookup }) => {
             const all = lookup.names();
             names = Array.from({ length: all.length }, (_, i) => all.at(i)[label]);
             const ordered = lookup.pairs();
@@ -557,7 +557,7 @@ const probeSorted = System.create({ lookup: { lanes: { index: byLaneRank } } }, 
     });
 });
 const rerank = System.create({
-    components: { read: [weight], write: [rank] }, before: [probeSorted],
+    components: { with: [weight, rank] }, before: [probeSorted],
 }, (row, _context, input: { readonly share: number; readonly seed: number }) => {
     if ((row[weight] * 7919 + input.seed) % 1000 < input.share * 1000) row[rank] = (row[weight] * 31 + input.seed * 17) % 1000;
 });
@@ -565,7 +565,7 @@ const rerank = System.create({
 /** A kernel folding the entities of its row's lane's range of ranks within 50 of its own, so kernels' sorted lookups are checked against the same index. */
 const foldLane = System.create({
     kernel: true,
-    components: { read: [lane, rank], write: [folded] },
+    components: { with: [lane, rank, folded] },
     lookup: { lanes: { index: byLaneRank } },
 }, (row, { lookup }) => {
     const r = row[rank];
@@ -598,7 +598,7 @@ describe("an incrementally refreshed sorted index", () => {
                 }
             }));
             await world.run(System.create({ systems: [rerank, probeSorted] }), { share: next() < 0.1 ? 0.9 : 0.05, seed: step });
-            const scratch = Index.create({ key: [lane, rank], sorted: true, components: { has: [weight] } });
+            const scratch = Index.create({ key: [lane, rank], sorted: true, components: { with: [weight] } });
             let rebuiltRanks: readonly number[] = [];
             let rebuiltLanes: readonly (readonly number[])[] = [];
             await world.run(System.create({ lookup: { lanes: { index: scratch } } }, ({ lookup }) => {
@@ -628,7 +628,7 @@ describe("an incrementally refreshed sorted index", () => {
             expect(kernel.map(values => values?.[folded] ?? -1)).toEqual(expected);
             held = Math.max(held, incrementalRanks.length);
             // Once its blocks have split, every entity of a lane goes, so whole blocks empty and are dropped.
-            if (step === 40) await world.run(System.create({ components: { read: [lane] } }, (row, { commands }) => { if (row[lane] < 1) commands.despawn(row.entity); }));
+            if (step === 40) await world.run(System.create({ components: { with: [lane] } }, (row, { commands }) => { if (row[lane] < 1) commands.despawn(row.entity); }));
         }
         expect(held).toBeGreaterThan(250);
     });
@@ -655,7 +655,7 @@ describe("lists and their rows", () => {
         }));
         let hashed: readonly object[] = [];
         let sorted: readonly object[] = [];
-        await world.run(System.create({ lookup: { near: { index: grid, read: [weight] }, ranks: { index: byRank, read: [rank] } } }, ({ lookup }) => {
+        await world.run(System.create({ lookup: { near: { index: grid }, ranks: { index: byRank } } }, ({ lookup }) => {
             const first = lookup.near([0, 0]);
             const second = lookup.near([1, 1]);
             hashed = [first, second, first.at(0), first.at(1), second.at(0)];
@@ -676,7 +676,7 @@ describe("a lookup's rows across sync points", () => {
         await using world = createWorld({ [workers]: 0 });
         await world.run(spawnCells, { cells: [[0, 0], [0, 0]] });
         let weights: number[] = [];
-        const read = System.create({ lookup: { near: { index: grid, read: [weight] } } }, ({ lookup }) => {
+        const read = System.create({ lookup: { near: { index: grid } } }, ({ lookup }) => {
             const near = lookup.near([0, 0]);
             weights = Array.from({ length: near.length }, (_, i) => near.at(i)[weight]);
         });
@@ -684,7 +684,7 @@ describe("a lookup's rows across sync points", () => {
         expect(weights).toEqual([0, 1]);
         // Enough spawns into the same archetype to grow its arrays, and new weights for the two already read.
         await world.run(spawnCells, { cells: Array.from({ length: 200 }, () => [5, 5]) });
-        await world.run(System.create({ components: { write: [weight], read: [cell] } }, row => {
+        await world.run(System.create({ components: { with: [cell, weight] } }, row => {
             if (row[cell][0] === 0) row[weight] += 10;
         }));
         await world.run(read);
@@ -701,7 +701,7 @@ describe("a long list's rows", () => {
         }));
         let fromStart: number[] = [];
         let fromEnd: number[] = [];
-        await world.run(System.create({ lookup: { ranks: { index: byRank, read: [rank] } } }, ({ lookup }) => {
+        await world.run(System.create({ lookup: { ranks: { index: byRank } } }, ({ lookup }) => {
             const all = lookup.ranks();
             // Every row held at once, then read.
             const held = Array.from({ length: all.length }, (_, i) => all.at(i));

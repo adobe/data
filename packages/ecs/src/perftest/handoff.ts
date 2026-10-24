@@ -24,28 +24,28 @@ declare module "@adobe/ecs" {
 /** An object of the joined thread, which places the systems reading it there. */
 
 const here0 = System.create({}, () => {});
-const there0 = System.create({ resources: { read: [token] }, after: [here0] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const there0 = System.create({ after: [here0] }, ({ resources, commands }) => { void resources[token]; void commands; });
 const here1 = System.create({ after: [there0] }, () => {});
-const there1 = System.create({ resources: { read: [token] }, after: [here1] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const there1 = System.create({ after: [here1] }, ({ resources, commands }) => { void resources[token]; void commands; });
 const here2 = System.create({ after: [there1] }, () => {});
-const there2 = System.create({ resources: { read: [token] }, after: [here2] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const there2 = System.create({ after: [here2] }, ({ resources, commands }) => { void resources[token]; void commands; });
 const here3 = System.create({ after: [there2] }, () => {});
-const there3 = System.create({ resources: { read: [token] }, after: [here3] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const there3 = System.create({ after: [here3] }, ({ resources, commands }) => { void resources[token]; void commands; });
 const here4 = System.create({ after: [there3] }, () => {});
-const there4 = System.create({ resources: { read: [token] }, after: [here4] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const there4 = System.create({ after: [here4] }, ({ resources, commands }) => { void resources[token]; void commands; });
 /** Ten tiers alternating the world's thread and the joined one, empty systems. */
 export const handoff = System.create({ systems: [here0, there0, here1, there1, here2, there2, here3, there3, here4, there4] });
 
-const fused0 = System.create({ resources: { read: [token] } }, ({ resources, commands }) => { void resources[token]; void commands; });
-const fused1 = System.create({ resources: { read: [token] }, after: [fused0] }, ({ resources, commands }) => { void resources[token]; void commands; });
-const fused2 = System.create({ resources: { read: [token] }, after: [fused1] }, ({ resources, commands }) => { void resources[token]; void commands; });
-const fused3 = System.create({ resources: { read: [token] }, after: [fused2] }, ({ resources, commands }) => { void resources[token]; void commands; });
-const fused4 = System.create({ resources: { read: [token] }, after: [fused3] }, ({ resources, commands }) => { void resources[token]; void commands; });
-const fused5 = System.create({ resources: { read: [token] }, after: [fused4] }, ({ resources, commands }) => { void resources[token]; void commands; });
-const fused6 = System.create({ resources: { read: [token] }, after: [fused5] }, ({ resources, commands }) => { void resources[token]; void commands; });
-const fused7 = System.create({ resources: { read: [token] }, after: [fused6] }, ({ resources, commands }) => { void resources[token]; void commands; });
-const fused8 = System.create({ resources: { read: [token] }, after: [fused7] }, ({ resources, commands }) => { void resources[token]; void commands; });
-const fused9 = System.create({ resources: { read: [token] }, after: [fused8] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused0 = System.create({  }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused1 = System.create({ after: [fused0] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused2 = System.create({ after: [fused1] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused3 = System.create({ after: [fused2] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused4 = System.create({ after: [fused3] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused5 = System.create({ after: [fused4] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused6 = System.create({ after: [fused5] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused7 = System.create({ after: [fused6] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused8 = System.create({ after: [fused7] }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused9 = System.create({ after: [fused8] }, ({ resources, commands }) => { void resources[token]; void commands; });
 /** Ten consecutive tiers on the joined thread, empty systems. */
 export const fused = System.create({ systems: [fused0, fused1, fused2, fused3, fused4, fused5, fused6, fused7, fused8, fused9] });
 

@@ -26,17 +26,17 @@ export const spawn = System.create(({ commands }) => {
 });
 
 // Commands also add and remove components, and despawn entities.
-export const defeat = System.create({ components: { has: [enemy] } }, (row, { commands }) => {
+export const defeat = System.create({ components: { with: [enemy] } }, (row, { commands }) => {
     commands.remove(row.entity, enemy);
 });
 
 // An observer system reads them back, once per entity with its components.
 const foes: Vec3[] = [];
-const readFoes = System.create({ observer: true, components: { read: [position], has: [enemy] } }, row => {
+const readFoes = System.create({ observer: true, components: { with: [position, enemy] } }, row => {
     foes.push(row[position]);
 });
 let particles = 0;
-const countParticles = System.create({ observer: true, components: { has: Particle } }, () => {
+const countParticles = System.create({ observer: true, components: { with: [...Particle] } }, () => {
     particles += 1;
 });
 

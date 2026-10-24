@@ -31,14 +31,14 @@ const createShape = (state: WorldState, byKey: Map<Resource.Key, ResourceShape>,
     const label = ownName(`Observe.resource(${key.description ?? "?"})`);
     // On a joined thread, first values come once a run of this system resolved, never in its pass: none to skip.
     const { joined } = state;
-    const notifier = System.create(labelled({ observer: true, resources: { read: [key], changed: [key] } }, label), ({ resources }) => {
+    const notifier = System.create(labelled({ observer: true, resources: { changed: [key] } }, label, { resources: [key] }), ({ resources }) => {
         passed(state);
         entry.value = resources[key];
         entry.valid = true;
         if (entry.stopped > 0) sweepSubscribers(entry);
         throwFailed(give(entry, 0, true, state.pass, joined ? -1 : state.pass, none));
     });
-    const reader = System.create(labelled({ observer: true, resources: { read: [key] } }, label), ({ resources }) => {
+    const reader = System.create(labelled({ observer: true }, label, { resources: [key] }), ({ resources }) => {
         const through = shape.called.shift() ?? 0;
         entry.value = resources[key];
         entry.valid = true;

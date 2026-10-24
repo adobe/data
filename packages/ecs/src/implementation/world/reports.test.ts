@@ -18,29 +18,29 @@ declare module "@adobe/ecs" {
 
 const nothing = System.create({}, () => {});
 const fail = System.create({}, () => { throw new Error("run failed"); });
-const raise = System.create({ resources: { write: [level] } }, ({ resources }) => { resources[level] += 1; });
+const raise = System.create({  }, ({ resources }) => { resources[level] += 1; });
 const idle = System.create({ observer: true }, () => {});
 const spawn = System.create({}, ({ commands }) => { commands.spawn([amount])({ [amount]: 1 }); });
-const despawnAll = System.create({ components: { has: [amount] } }, (row, { commands }) => {
+const despawnAll = System.create({ components: { with: [amount] } }, (row, { commands }) => {
     commands.despawn(row.entity);
     commands.despawn(row.entity);
 });
-const failingObserver = System.create({ observer: true, resources: { read: [level], changed: [level] } }, ({ resources }) => {
+const failingObserver = System.create({ observer: true, resources: { changed: [level] } }, ({ resources }) => {
     if (resources[level] > 0) throw new Error("observer failed");
 });
 
 /** What a logger following reports saw, by pass: each changed report's run and failures' messages. */
 const logged: (readonly [number, readonly string[]])[] = [];
-const logger = System.create({ observer: true, components: { read: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
+const logger = System.create({ observer: true, components: { with: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
     logged.push([row[Report.run].number, row[Report.errors].failures.map(failure => failure.message)]);
 });
 
 /** The run numbers of every report, in entity order, and of those with errors. */
 let numbers: number[] = [];
 let withErrors: number[] = [];
-const allReports = Index.create({ key: [], components: { has: [Report.run] } });
-const erredReports = Index.create({ key: [], components: { has: [Report.run, Report.errors] } });
-const listReports = System.create({ observer: true, lookup: { all: { index: allReports, read: [Report.run] }, erred: { index: erredReports, read: [Report.run] } } }, ({ lookup }) => {
+const allReports = Index.create({ key: [], components: { with: [Report.run] } });
+const erredReports = Index.create({ key: [], components: { with: [Report.run, Report.errors] } });
+const listReports = System.create({ observer: true, lookup: { all: { index: allReports }, erred: { index: erredReports } } }, ({ lookup }) => {
     const all = lookup.all();
     numbers = [];
     for (let i = 0; i < all.length; i++) numbers.push(all.at(i)[Report.run].number);

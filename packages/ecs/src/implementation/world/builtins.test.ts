@@ -31,7 +31,7 @@ const rotation = Quat.fromAxisAngle([0, 1, 0], 0.5);
 const matrix = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
 
 /** Rotates, transforms and offsets each position, with functions from three math namespaces inlined. */
-const transform = System.create({ kernel: true, components: { read: [velocity], write: [position] } }, row => {
+const transform = System.create({ kernel: true, components: { with: [velocity, position] } }, row => {
     const q = Quat.fromAxisAngle([0, 1, 0], 0.5);
     const m = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
     row[position] = Vec3.add(Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, row[position])), Vec3.normalize(row[velocity]));
@@ -52,7 +52,7 @@ const integerResults = (b: Vec3.U32, s: Vec3.I32): { readonly counts: Vec3.U32; 
     sums: Vec3.I32.add(Vec3.I32.multiply(s, [65536, 3, 65536]), Vec3.I32.abs(Vec3.I32.negate(s))),
 });
 
-const integers = System.create({ kernel: true, components: { read: [bits], write: [counts, sums] } }, row => {
+const integers = System.create({ kernel: true, components: { with: [bits, counts, sums] } }, row => {
     const b = row[bits];
     const s = row[sums];
     row[counts] = Vec3.U32.add(Vec3.U32.countOneBits(b), Vec3.U32.add(Vec3.U32.countTrailingZeros(b), Vec3.U32.multiply(Vec3.U32.reverseBits(b), b)));

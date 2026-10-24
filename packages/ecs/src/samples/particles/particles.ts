@@ -19,7 +19,7 @@ declare module '@adobe/ecs' {
 
 // Main thread: resource-only, runs when `count` changes, including the first run.
 export const spawn = System.create({
-    resources: { read: [count], changed: [count] },
+    resources: { changed: [count] },
 }, ({ resources, commands }) => {
     for (let i = 0; i < resources[count]; i++) {
         commands.spawn([position, velocity])({ [position]: [0, 0, 0], [velocity]: [1, i, 0] });
@@ -28,16 +28,14 @@ export const spawn = System.create({
 
 // Kernels: linear components and read-only resources, so the build compiles them to run in chunks across workers.
 export const gravity = System.create({
-    components: { write: [velocity] },
-    resources: { read: [delta] },
+    components: { with: [velocity] },
 }, (row, { resources }) => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x, y - 9.8 * resources[delta], z];
 });
 
 export const integrate = System.create({
-    components: { read: [velocity], write: [position] },
-    resources: { read: [delta] },
+    components: { with: [velocity, position] },
     after: [gravity],
 }, (row, { resources }) => {
     const [px, py, pz] = row[position];
@@ -47,9 +45,7 @@ export const integrate = System.create({
 });
 
 // Transaction carrying frame time into the ECS.
-export const setDelta = System.create({
-    resources: { write: [delta] },
-}, ({ resources }, input: { readonly seconds: number }) => {
+export const setDelta = System.create({}, ({ resources }, input: { readonly seconds: number }) => {
     resources[delta] = input.seconds;
 });
 
@@ -59,7 +55,7 @@ export const main = System.create({ systems: [spawn, gravity, integrate] });
 const positions: Vec3[] = [];
 const read = System.create({
     observer: true,
-    components: { read: [position] },
+    components: { with: [position] },
 }, row => {
     positions.push(row[position]);
 });

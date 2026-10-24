@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import type { Composite } from "../../interface/system/composite.js";
-import type { Declaration } from "../../interface/system/declaration.js";
+import type { Resolved } from "../../interface/system/declaration.js";
 import type { Definition } from "../../interface/registry/index.js";
 import type { Leaf } from "../../interface/system/leaf.js";
 import { scheduleOf } from "../../interface/registry/schedule.js";
@@ -18,7 +18,7 @@ declare module "@adobe/ecs" {
 
 
 /** Systems built as values, not registered, so each test's are its own. */
-const leaf = (declaration: Declaration & { readonly name: string }): Leaf => ({ kind: "system", name: declaration.name, declaration, input: undefined, body: () => {} });
+const leaf = (declaration: Resolved & { readonly name: string }): Leaf => ({ kind: "system", name: declaration.name, declaration, input: undefined, body: () => {} });
 const composite = (declaration: Composite["declaration"] & { readonly name: string }): Composite => ({ kind: "composite", name: declaration.name, declaration });
 
 const names = (system: Definition): string[][] => scheduleOf(system).tiers.map(tier => tier.map(leaf => leaf.name));

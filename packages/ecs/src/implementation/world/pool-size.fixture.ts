@@ -34,8 +34,8 @@ const seed = System.create({}, ({ commands }) => {
 const few = System.create({}, ({ commands }) => {
     for (let i = 0; i < 16; i++) commands.spawn([value])({ [value]: i });
 });
-const double = System.create({ kernel: true, components: { write: [value] } }, row => { row[value] = row[value] * 2; });
-const resize = System.create({ resources: { write: [workers] } }, ({ resources }, input: { readonly size: number | null }) => {
+const double = System.create({ kernel: true, components: { with: [value] } }, row => { row[value] = row[value] * 2; });
+const resize = System.create({  }, ({ resources }, input: { readonly size: number | null }) => {
     resources[workers] = input.size;
 });
 

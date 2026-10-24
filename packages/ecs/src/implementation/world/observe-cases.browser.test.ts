@@ -29,7 +29,7 @@ const spawn = System.create({}, ({ commands }) => {
     spawned = [];
     for (let i = 0; i < 100; i++) spawned.push(commands.spawn([heat, rate])({ [heat]: i, [rate]: 1 }));
 });
-const warm = System.create({ kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
+const warm = System.create({ kernel: "gpu", components: { with: [rate, heat] } }, row => {
     row[heat] = row[heat] + row[rate] * 100;
 });
 

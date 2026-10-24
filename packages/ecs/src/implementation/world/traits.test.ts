@@ -50,7 +50,7 @@ describe("traits", () => {
         let first = Entity.none;
         let found: unknown = undefined;
         const spawn = System.create({}, ({ commands }) => { first = commands.spawn([score])({ [score]: 1 }); });
-        const lookup = System.create({ lookup: { scores: { read: [score] } } }, ({ lookup: { scores } }) => { found = scores(Entity.none); });
+        const lookup = System.create({ lookup: { scores: { with: [score] } } }, ({ lookup: { scores } }) => { found = scores(Entity.none); });
         const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(lookup);

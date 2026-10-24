@@ -329,9 +329,9 @@ const compilePlugin = (automatic: boolean): Plugin => {
             parseTypes ??= (await import("vite")).parseAst;
             const linker = linkerFor(ssr, this);
             const hashes: string[] = [];
-            const transformed = await transformKernels(code, id, parse, async source => {
+            const transformed = await transformKernels(code, id, parse, async (source, namespace) => {
                 const resolved = await this.resolve(source, id);
-                return resolved === null ? null : namespaceCopyOf(resolved.id, "System");
+                return resolved === null ? null : namespaceCopyOf(resolved.id, namespace);
             }, (index, identity) => {
                 const hash = kernelHash(identity);
                 hashes[index] = hash;
@@ -349,6 +349,7 @@ const compilePlugin = (automatic: boolean): Plugin => {
             for (const dependency of result.dependencies) this.addWatchFile(dependency);
             depend(parent, result.dependencies);
             if ("failure" in result) return this.error(describeFailure(result.failure), result.failure.position);
+            for (const warning of result.warnings) this.warn(warning);
             kernels.set(id, result.kernels.map((source, index) => ({ source, hash: hashes[index] ?? "" })));
             return await identify(result.code) ?? { code: result.code, map: null };
         },

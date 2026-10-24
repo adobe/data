@@ -19,7 +19,7 @@ declare module "@adobe/ecs" {
 }
 
 /** A key of a pair of i32s and an f64, so the steps encode three kinds of leaf. */
-const bySpot = Index.create({ key: [spot, bulk], components: { has: [size] } });
+const bySpot = Index.create({ key: [spot, bulk], components: { with: [size] } });
 const count = 70_000;
 
 describe("index builds in phases where code can't be generated", () => {
@@ -33,14 +33,14 @@ describe("index builds in phases where code can't be generated", () => {
                 for (let k = 0; k < count; k++) commands.spawn([spot, size, bulk])({ [spot]: [k % 37 - 18, k % 11], [size]: k, [bulk]: (k % 3) / 4 });
             }));
             const expected = new Map<string, number[]>();
-            await world.run(System.create({ components: { read: [spot, size, bulk] } }, row => {
+            await world.run(System.create({ components: { with: [spot, size, bulk] } }, row => {
                 const text = `${row[spot][0]},${row[spot][1]},${row[bulk]}`;
                 const held = expected.get(text) ?? [];
                 held.push(row[size]);
                 expected.set(text, held);
             }));
             const found = new Map<string, number[]>();
-            await world.run(System.create({ lookup: { at: { index: bySpot, read: [size] } } }, ({ lookup }) => {
+            await world.run(System.create({ lookup: { at: { index: bySpot } } }, ({ lookup }) => {
                 for (const text of expected.keys()) {
                     const [x, y, b] = text.split(",").map(Number);
                     const list = lookup.at([x, y], b);

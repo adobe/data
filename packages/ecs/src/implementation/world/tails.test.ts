@@ -74,7 +74,7 @@ describe("tails", () => {
         const { world, remote } = await joined({ loop: driver }, { [always]: true });
         await world.run(seed, { count: 10 });
         const counters: number[] = [];
-        const values = System.create({ observer: true, resources: { read: [counter] } }, ({ resources }) => { counters.push(resources[counter]); });
+        const values = System.create({ observer: true }, ({ resources }) => { counters.push(resources[counter]); });
         world.add(ticked);
         world.add(values);
         await until(Observe.resource(world, counter), value => value >= 5);
@@ -83,7 +83,7 @@ describe("tails", () => {
         const first = counters.findIndex(value => value > 0);
         expect(counters.slice(first, first + 4)).toEqual([0, 1, 2, 3].map(k => counters[first] + k));
         const reports: (readonly [number, readonly string[]])[] = [];
-        const reading = System.create({ observer: true, components: { read: [Report.errors], changed: [Report.errors] }, resources: { read: [counter] } }, (row, { resources }) => {
+        const reading = System.create({ observer: true, components: { with: [Report.errors], changed: [Report.errors] } }, (row, { resources }) => {
             reports.push([resources[counter], row[Report.errors].failures.map(failure => failure.message)]);
         });
         world.add(reading);

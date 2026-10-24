@@ -26,8 +26,8 @@ import type { F32 } from "../../interface/math/index.js";
 
 const place = System.create({
     kernel: "gpu",
-    components: { read: [offset], write: [placed] },
-    up: { through: parent, read: [placed] },
+    components: { with: [offset, placed] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[placed] = up === null ? row[offset] : up[placed] + row[offset];
 });

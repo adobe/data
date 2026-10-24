@@ -34,17 +34,17 @@ describe("accessor rows", () => {
         const seen: { entity: Entity; position: Vec3; count: number; flag: boolean }[] = [];
         const kept: Vec3[] = [];
         // Both run over two archetypes (with and without the tag), with a system using a different row between them.
-        const first = System.create({ components: { read: [position, flag], write: [count] } }, row => {
+        const first = System.create({ components: { with: [position, flag, count] } }, row => {
             const value = row[position];
             kept.push(value);
             seen.push({ entity: row.entity, position: value, count: row[count], flag: row[flag] });
             row[count] = row[count] + 10;
         });
-        const other = System.create({ components: { write: [position] }, after: [first] }, row => {
+        const other = System.create({ components: { with: [position] }, after: [first] }, row => {
             const [x, y, z] = row[position];
             row[position] = [x + 100, y, z];
         });
-        const second = System.create({ components: { read: [position, flag], write: [count] }, after: [other] }, row => {
+        const second = System.create({ components: { with: [position, flag, count] }, after: [other] }, row => {
             seen.push({ entity: row.entity, position: row[position], count: row[count], flag: row[flag] });
             row[count] = row[count] + 1;
         });

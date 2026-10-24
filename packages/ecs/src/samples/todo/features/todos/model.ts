@@ -4,7 +4,7 @@ import { Todo, done, label, order, orderAfter, ordered, todo } from "./data.js";
 
 /** Adds a todo at the end of the list, with its label trimmed; a blank label adds nothing. */
 export const addTodo = System.create({
-    lookup: { ordered: { index: ordered, read: [order] } },
+    lookup: { ordered: { index: ordered } },
 }, ({ lookup, commands }, input: { readonly label: string }) => {
     const trimmed = input.label.trim();
     if (trimmed === "") return;
@@ -16,7 +16,7 @@ type One = { readonly entity: Entity };
 
 export const toggleTodo = System.create({
     target: "entity",
-    components: { write: [done], has: [todo] },
+    components: { with: [done, todo] },
 }, (row, _context, _input: One) => {
     row[done] = !row[done];
 });
@@ -24,7 +24,7 @@ export const toggleTodo = System.create({
 /** Gives a todo a new label, trimmed; a blank one deletes it. */
 export const editTodo = System.create({
     target: "entity",
-    components: { write: [label], has: [todo] },
+    components: { with: [label, todo] },
 }, (row, { commands }, input: One & { readonly label: string }) => {
     const trimmed = input.label.trim();
     if (trimmed === "") commands.despawn(row.entity);
@@ -33,7 +33,7 @@ export const editTodo = System.create({
 
 export const deleteTodo = System.create({
     target: "entity",
-    components: { has: [todo] },
+    components: { with: [todo] },
 }, (row, { commands }, _input: One) => {
     commands.despawn(row.entity);
 });
@@ -43,7 +43,7 @@ export const deleteTodo = System.create({
  * neighbours'. When no number lies between them, every todo is numbered again.
  */
 export const moveTodo = System.create({
-    lookup: { todos: { read: [order], has: [todo] }, ordered: { index: ordered, read: [order] } },
+    lookup: { todos: { with: [order, todo] }, ordered: { index: ordered } },
 }, ({ lookup, commands }, input: { readonly entity: Entity; readonly before: Entity }) => {
     const { entity, before } = input;
     if (entity === before || lookup.todos(entity) === null) return;

@@ -25,14 +25,14 @@ export const gate: { words: Int32Array | null } = { words: null };
 /** What the watcher's runs saw, in order. */
 export const tallies: number[] = [];
 
-export const bump = System.create({ resources: { write: [tally] } }, ({ resources }) => { resources[tally] += 1; });
+export const bump = System.create({  }, ({ resources }) => { resources[tally] += 1; });
 export const nothing = System.create({}, () => {});
-export const setHolding = System.create({ resources: { write: [holding] } }, ({ resources }, input: { readonly holding: number }) => {
+export const setHolding = System.create({  }, ({ resources }, input: { readonly holding: number }) => {
     resources[holding] = input.holding;
 });
 
 /** After each sync point that changed the tally: notes it, and, while `holding` says so, waits there to be released. */
-export const watchTally = System.create({ observer: true, resources: { read: [tally, holding], changed: [tally] } }, ({ resources }) => {
+export const watchTally = System.create({ observer: true, resources: { changed: [tally] } }, ({ resources }) => {
     const value = resources[tally];
     tallies.push(value);
     const { words } = gate;

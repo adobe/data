@@ -23,7 +23,7 @@ const spawn = System.create({}, ({ commands }) => {
     for (let i = 0; i < shapes; i++) spawned.push(commands.spawn([place])({ [place]: [i, 0, 0] }));
 });
 const drag = System.create({
-    components: { write: [place] },
+    components: { with: [place] },
     target: "shape",
 }, (row, _context, input: { readonly shape: Entity; readonly x: number }) => {
     row[place] = [input.x, 1, 0];
@@ -31,7 +31,7 @@ const drag = System.create({
 /** Draws nothing: its run uploads what it reads. */
 const draw = System.render({ shader: { accessors: { place } }, after: [drag] }, () => {});
 const frame = System.create({ systems: [drag, draw] });
-const slide = System.create({ kernel: true, components: { write: [place] } }, row => {
+const slide = System.create({ kernel: true, components: { with: [place] } }, row => {
     const [x, y, z] = row[place];
     row[place] = [x + 1, y, z];
 });

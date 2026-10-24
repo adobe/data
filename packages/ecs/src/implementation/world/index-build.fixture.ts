@@ -20,7 +20,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-const grid = Index.create({ key: [cell], components: { has: [weight] } });
+const grid = Index.create({ key: [cell], components: { with: [weight] } });
 const serials = Index.create({ key: [serial], unique: true });
 
 const width = 300;
@@ -35,13 +35,13 @@ const seed = System.create({}, ({ commands }) => {
 });
 
 /** Moves every entity to another cell, so the next refresh builds the index again. */
-const shuffle = System.create({ components: { write: [cell] } }, row => {
+const shuffle = System.create({ components: { with: [cell] } }, row => {
     const [x, y] = row[cell];
     row[cell] = [(x * 7 + 3) % width, (y + x) % height];
 });
 
 /** A kernel, so the pool starts, as it does with a world's first kernel. */
-const warm = System.create({ kernel: true, components: { read: [serial], write: [weight] } }, row => {
+const warm = System.create({ kernel: true, components: { with: [serial, weight] } }, row => {
     row[weight] = row[serial] % 13;
 });
 
@@ -49,7 +49,7 @@ const seen = { grid: 0, rows: 0, serials: 0 };
 
 /** Every cell's rows, in order, folded into one number; and the unique index's row of each serial. */
 const read = System.create({
-    lookup: { near: { index: grid, read: [weight] }, bySerial: { index: serials } },
+    lookup: { near: { index: grid }, bySerial: { index: serials } },
 }, ({ lookup }) => {
     let fold = 0;
     let rows = 0;
@@ -71,7 +71,7 @@ const read = System.create({
 });
 
 /** The same folds without an index: each cell's rows sorted by entity, and each serial's lowest entity. */
-const reference = System.create({ components: { read: [cell, serial, weight] } }, row => {
+const reference = System.create({ components: { with: [cell, serial, weight] } }, row => {
     const [x, y] = row[cell];
     const cellRows = byCell[x * height + y] ??= [];
     cellRows.push([row.entity, row[weight]]);

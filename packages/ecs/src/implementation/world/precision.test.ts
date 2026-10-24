@@ -26,14 +26,14 @@ declare module "@adobe/ecs" {
 const seed = System.create(({ commands }) => {
     for (let i = 0; i < 64; i++) commands.spawn([a, c, difference])({ [a]: 1 + 2 ** -23, [c]: 1 + 2 ** -22, [difference]: 0 });
 });
-const tried = System.create({ components: { read: [a, c], write: [difference] } }, row => {
+const tried = System.create({ components: { with: [a, c, difference] } }, row => {
     row[difference] = row[a] * row[a] - row[c];
 });
-const written = System.create({ kernel: false, components: { read: [a, c], write: [difference] } }, row => {
+const written = System.create({ kernel: false, components: { with: [a, c, difference] } }, row => {
     row[difference] = row[a] * row[a] - row[c];
 });
 const seen: number[] = [];
-const read = System.create({ kernel: false, components: { read: [difference] } }, row => {
+const read = System.create({ kernel: false, components: { with: [difference] } }, row => {
     seen.push(row[difference]);
 });
 
@@ -66,25 +66,25 @@ const rows = 1027;
 const seedMany = System.create(({ commands }) => {
     for (let i = 0; i < rows; i++) commands.spawn([a, c, difference, position, velocity])({ [a]: hard(i), [c]: hard(i + 1), [difference]: 0, [position]: [hard(i + 2), hard(i + 3), hard(i + 4)], [velocity]: [hard(i + 5), hard(i + 6), hard(i)] });
 });
-const touch = System.create({ kernel: false, components: { write: [c] } }, row => {
+const touch = System.create({ kernel: false, components: { with: [c] } }, row => {
     if (row.entity % 3 === 0) row[c] = row[c] * 3;
 });
 const pairs = [
     [
-        System.create({ components: { read: [a, c], write: [difference] } }, row => { row[difference] = Math.sqrt(Math.abs(row[a])) / row[c] + Math.min(row[a], 0.75) * Math.fround(row[c]) - Math.floor(row[a]); }),
-        System.create({ kernel: false, components: { read: [a, c], write: [difference] } }, row => { row[difference] = Math.sqrt(Math.abs(row[a])) / row[c] + Math.min(row[a], 0.75) * Math.fround(row[c]) - Math.floor(row[a]); }),
+        System.create({ components: { with: [a, c, difference] } }, row => { row[difference] = Math.sqrt(Math.abs(row[a])) / row[c] + Math.min(row[a], 0.75) * Math.fround(row[c]) - Math.floor(row[a]); }),
+        System.create({ kernel: false, components: { with: [a, c, difference] } }, row => { row[difference] = Math.sqrt(Math.abs(row[a])) / row[c] + Math.min(row[a], 0.75) * Math.fround(row[c]) - Math.floor(row[a]); }),
     ],
     [
-        System.create({ components: { read: [velocity], write: [position] } }, row => { row[position] = [row[position][0] * row[velocity][0] - row[velocity][0] * 0.75, row[position][1] * row[velocity][1] - row[velocity][1] * 0.75, row[position][2] * row[velocity][2] - row[velocity][2] * 0.75]; }),
-        System.create({ kernel: false, components: { read: [velocity], write: [position] } }, row => { row[position] = [row[position][0] * row[velocity][0] - row[velocity][0] * 0.75, row[position][1] * row[velocity][1] - row[velocity][1] * 0.75, row[position][2] * row[velocity][2] - row[velocity][2] * 0.75]; }),
+        System.create({ components: { with: [velocity, position] } }, row => { row[position] = [row[position][0] * row[velocity][0] - row[velocity][0] * 0.75, row[position][1] * row[velocity][1] - row[velocity][1] * 0.75, row[position][2] * row[velocity][2] - row[velocity][2] * 0.75]; }),
+        System.create({ kernel: false, components: { with: [velocity, position] } }, row => { row[position] = [row[position][0] * row[velocity][0] - row[velocity][0] * 0.75, row[position][1] * row[velocity][1] - row[velocity][1] * 0.75, row[position][2] * row[velocity][2] - row[velocity][2] * 0.75]; }),
     ],
     [
-        System.create({ components: { read: [a, c], write: [difference], changed: [c] } }, row => { row[difference] = row[a] * row[a] - row[c]; }),
-        System.create({ kernel: false, components: { read: [a, c], write: [difference], changed: [c] } }, row => { row[difference] = row[a] * row[a] - row[c]; }),
+        System.create({ components: { with: [a, c, difference], changed: [c] } }, row => { row[difference] = row[a] * row[a] - row[c]; }),
+        System.create({ kernel: false, components: { with: [a, c, difference], changed: [c] } }, row => { row[difference] = row[a] * row[a] - row[c]; }),
     ],
 ] as const;
 const values: number[] = [];
-const readAll = System.create({ kernel: false, components: { read: [difference, position] } }, row => {
+const readAll = System.create({ kernel: false, components: { with: [difference, position] } }, row => {
     values.push(row[difference], ...row[position]);
 });
 

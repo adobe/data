@@ -26,15 +26,15 @@ declare module "@adobe/ecs" {
 
 const propagateFull = System.create({
     kernel: true,
-    components: { read: [local], write: [full], not: [hidden] },
-    up: { through: parent, read: [full] },
+    components: { with: [local, full], not: [hidden] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[full] = (up === null ? 0 : up[full]) + row[local];
 });
 const propagateFiltered = System.create({
     kernel: true,
-    components: { read: [local], write: [filtered], changed: [local], not: [hidden] },
-    up: { through: parent, read: [filtered] },
+    components: { with: [local, filtered], changed: [local], not: [hidden] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[filtered] = (up === null ? 0 : up[filtered]) + row[local];
 });

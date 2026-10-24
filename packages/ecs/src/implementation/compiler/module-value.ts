@@ -13,7 +13,7 @@ import type { Value } from './value.js';
 /** Whether `name` is one of the kernel's component or resource keys. */
 export const isKey = (scope: Scope, name: string): boolean => {
     const signature = scope.unit.signature;
-    return signature.read.has(name) || signature.write.has(name) || signature.resources.includes(name)
+    return signature.read.has(name) || signature.write.has(name) || signature.has.has(name) || signature.resources.includes(name)
         || signature.lookups.some(lookup => lookup.read.includes(name));
 };
 

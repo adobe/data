@@ -18,9 +18,8 @@ declare module "@adobe/ecs" {
 
 export const labels = System.create({
     kernel: true,
-    components: { read: [target], write: [offset] },
-    // @ts-expect-error kernel lookups read linear values
-    lookup: { named: { read: [label] } },
+    components: { with: [target, offset] },
+    lookup: { named: { with: [label] } },
 }, (row, { lookup: { named } }) => {
     const found = named(row[target]);
     row[offset] = found === null ? 0 : +found[label];

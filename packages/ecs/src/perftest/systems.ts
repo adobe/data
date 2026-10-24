@@ -26,10 +26,10 @@ const seed = System.create({}, ({ commands }) => {
 let read = 0;
 
 /** A new system for each tick: a change filter, which counts as watching `level`, and rows to read. */
-const fresh = (): System => System.create({ components: { read: [level], changed: [level] } }, row => { read += row[level]; });
+const fresh = (): System => System.create({ components: { with: [level], changed: [level] } }, row => { read += row[level]; });
 
 /** One module's system, added and removed again and again. */
-const again = System.create({ components: { read: [level], changed: [level] } }, row => { read += row[level]; });
+const again = System.create({ components: { with: [level], changed: [level] } }, row => { read += row[level]; });
 
 /** Ticks in each timed stretch. */
 export const churnTicks = 10_000;

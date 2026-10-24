@@ -43,35 +43,35 @@ const Caption = { schema: { default: none } };
 const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, caption, widget, kept])({ [point]: input.x, [kept]: `k${input.x}`, [widget]: null });
 });
-const nullCaptions = System.create({ components: { has: [caption, point] } }, (row, { commands }) => {
+const nullCaptions = System.create({ components: { with: [caption, point] } }, (row, { commands }) => {
     commands.add(row.entity, caption, null);
 });
-const restartCaptions = System.create({ components: { has: [caption, point] } }, (row, { commands }) => {
+const restartCaptions = System.create({ components: { with: [caption, point] } }, (row, { commands }) => {
     commands.add(row.entity, caption, none);
 });
-const dropCaptions = System.create({ components: { has: [caption] } }, (row, { commands }) => {
+const dropCaptions = System.create({ components: { with: [caption] } }, (row, { commands }) => {
     commands.remove(row.entity, caption);
 });
-const giveCaption = System.create({ components: { has: [point] } }, (row, { commands }) => {
+const giveCaption = System.create({ components: { with: [point] } }, (row, { commands }) => {
     commands.add(row.entity, caption, { text: "a caption only the thread gives" });
 });
 const spawnCaptioned = System.create({}, ({ commands }) => {
     commands.spawn([point, caption])({ [point]: 1, [caption]: { text: "a caption only the thread gives" } });
 });
 /** A kernel giving the thread's objects null, which they take, and a number, which they don't. */
-const nullCaptionsKernel = System.create({ kernel: true, components: { has: [caption], read: [point] } }, (row, { commands }) => {
+const nullCaptionsKernel = System.create({ kernel: true, components: { with: [point, caption] } }, (row, { commands }) => {
     if (row[point] > 0) commands.add(row.entity, caption, null);
 });
-const numberHandlesKernel = System.create({ kernel: true, components: { read: [point] } }, (row, { commands }) => {
+const numberHandlesKernel = System.create({ kernel: true, components: { with: [point] } }, (row, { commands }) => {
     commands.add(row.entity, handle, row[point]);
 });
 /** Reaches its commands, so it isn't terminal: its tier blocks rather than running as a tail. */
-const readCaptions = System.create({ components: { read: [caption] } }, (row, { commands }) => {
+const readCaptions = System.create({ components: { with: [caption] } }, (row, { commands }) => {
     if (row[caption]?.text === "never") commands.despawn(row.entity);
 });
 const idle = System.create({}, () => {});
 const after = System.create({}, () => {});
-Finalizer.create({ components: { read: [guarded] } }, () => {});
+Finalizer.create({ components: { with: [guarded] } }, row => { void row[guarded]; });
 
 /** A world shared with a thread on this one, which claims `threads`. */
 const joined = (threads: readonly ("remoteTest" | "remoteTestFinalized")[] = ["remoteTest"]): { readonly world: CreatedWorld; readonly remote: World } => {
@@ -165,7 +165,7 @@ describe("objects a joined thread fills", () => {
         await taken.remote.dispose();
         await taken.world.dispose();
         // Declared in a function, so the build gives it no id, and another thread can't name it.
-        const unnamed = System.create({ components: { read: [caption] } }, row => { void row[caption]; });
+        const unnamed = System.create({ components: { with: [caption] } }, row => { void row[caption]; });
         await world.run(unnamed);
         const channel = new MessageChannel();
         world.share(channel.port1);

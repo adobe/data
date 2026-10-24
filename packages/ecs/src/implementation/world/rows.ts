@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
-import type { Declaration } from '../../interface/system/declaration.js';
-import type { SystemLookup } from '../../interface/system/access.js';
+import type { Resolved } from '../../interface/system/declaration.js';
+import type { SystemLookupLists } from '../../interface/system/access.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Layout, TypedArray } from '../../interface/registry/layout.js';
 import { stampChanged, writeF32Lanes, writeGeneral, writeOf, type Archetype, type Storage } from './archetype.js';
@@ -285,7 +285,7 @@ export const rowBinder = (state: State, reads: readonly Key[], writes: readonly 
  * A lookup's matcher, with its component ids resolved once. `find` returns the row of a live entity that matches, or -1,
  * leaving its archetype in `archetype`.
  */
-const createMatcher = (state: State, lookup: SystemLookup) => {
+const createMatcher = (state: State, lookup: SystemLookupLists) => {
     const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => idOf(state, key));
     const read = ids(lookup.read);
     const has = ids("has" in lookup ? lookup.has : undefined);
@@ -348,7 +348,7 @@ const changedAt = (archetype: Archetype, row: number, ids: readonly number[], si
  * A lookup returning `read` values keyed by component, for main-thread systems: a new object each call, the shared
  * empty one for a lookup reading nothing, and with `changed` one row reused, its `changed` as of `since`.
  */
-export const createObjectLookup = (state: State, lookup: SystemLookup, since: Since) => {
+export const createObjectLookup = (state: State, lookup: SystemLookupLists, since: Since) => {
     const matcher = createMatcher(state, lookup);
     const keys = lookup.read ?? [];
     const watched = "index" in lookup ? undefined : lookup.changed;
@@ -379,12 +379,12 @@ export const createObjectLookup = (state: State, lookup: SystemLookup, since: Si
  * A lookup returning `read` values in declared order, for kernels: a new array each call, and with `changed` one array
  * reused, whether a component it watches may have changed after `since` last.
  */
-export const createArrayLookup = (state: State, lookup: SystemLookup, since: Since) => {
+export const createArrayLookup = (state: State, lookup: SystemLookupLists, since: Since) => {
     const watched = "index" in lookup ? undefined : lookup.changed;
     return watched === undefined ? createPlainArrayLookup(state, lookup) : createChangedArrayLookup(state, lookup, watched.map(key => idOf(state, key)), since);
 };
 
-const createChangedArrayLookup = (state: State, lookup: SystemLookup, ids: readonly number[], since: Since) => {
+const createChangedArrayLookup = (state: State, lookup: SystemLookupLists, ids: readonly number[], since: Since) => {
     const matcher = createMatcher(state, lookup);
     const { read } = matcher;
     const values = new Array<unknown>(read.length + 1);
@@ -398,7 +398,7 @@ const createChangedArrayLookup = (state: State, lookup: SystemLookup, ids: reado
     };
 };
 
-const createPlainArrayLookup = (state: State, lookup: SystemLookup) => {
+const createPlainArrayLookup = (state: State, lookup: SystemLookupLists) => {
     const matcher = createMatcher(state, lookup);
     const { read } = matcher;
     return (entity: Entity): readonly unknown[] | null => {
@@ -436,7 +436,7 @@ const never: Since = { value: -1 };
 const own = (): object => Object.create({});
 
 /** Resource cells are resolved once per run: they move only at sync points. An unresolved resource throws on access. */
-export const createContext = (state: State, declaration: Pick<Declaration, "lookup" | "resources">, { targets = [], commands, indexes, since = never }: Extras = {}): Context => {
+export const createContext = (state: State, declaration: Pick<Resolved, "lookup" | "resources">, { targets = [], commands, indexes, since = never }: Extras = {}): Context => {
     const value: { up?: unknown } = own();
     const { lookup, resources } = declaration;
     const names = Object.keys(lookup ?? {});

@@ -27,15 +27,14 @@ const spawn = System.create(({ commands }) => {
 
 // Runs once per entity with every component in read and write, and none in not.
 const move = System.create({
-    components: { read: [velocity], write: [position], not: [frozen] },
-    resources: { read: [delta] },
+    components: { with: [velocity, position], not: [frozen] },
 }, (row, { resources }) => {
     // Values are replaced whole, never edited in place.
     row[position] = Vec3.add(row[position], Vec3.scale(row[velocity], resources[delta]));
 });
 
 // Without components, a system runs once per run.
-const count = System.create({ resources: { write: [frames] } }, ({ resources }) => {
+const count = System.create({  }, ({ resources }) => {
     resources[frames] += 1;
 });
 
@@ -43,7 +42,7 @@ const count = System.create({ resources: { write: [frames] } }, ({ resources }) 
 // react to it.
 const moved: Vec3[] = [];
 let counted = 0;
-const read = System.create({ observer: true, components: { read: [position], not: [frozen] }, resources: { read: [frames] } }, (row, { resources }) => {
+const read = System.create({ observer: true, components: { with: [position], not: [frozen] } }, (row, { resources }) => {
     moved.push(row[position]);
     counted = resources[frames];
 });
@@ -67,7 +66,7 @@ const fail = System.create(() => {
 // it took, and `Report.errors` is there only when something went wrong. An observer system added to follow errors as
 // they change logs them; what observer systems throw is in the next run's report.
 const logged: string[] = [];
-const logFailures = System.create({ observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
+const logFailures = System.create({ observer: true, components: { with: [Report.errors], changed: [Report.errors] } }, row => {
     for (const failure of row[Report.errors].failures) logged.push(`${failure.name}: ${failure.message}`);
 });
 

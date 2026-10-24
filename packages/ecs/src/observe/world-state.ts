@@ -94,11 +94,33 @@ const ownNames = new Set<string>();
 /** The registry's map of labels (`@adobe/ecs/labels@1`), which the plugin fills for declarations made in functions. */
 const labels = Symbol.for("@adobe/ecs/labels@1");
 
-/** Labels a declaration of a system or index the factories make, and returns it. */
-export const labelled = <const D extends object>(declaration: D, label: string): D => {
+/** The registry's map of what bodies use (`@adobe/ecs/access@1`), which the plugin fills from bodies it can follow. */
+const access = Symbol.for("@adobe/ecs/access@1");
+
+/** What a factory's body reads: of its row, of resources, and of each lookup's rows. Factories' systems only read. */
+type Reads = {
+    readonly components?: readonly symbol[];
+    readonly resources?: readonly symbol[];
+    readonly lookup?: { readonly [name: string]: readonly symbol[] };
+};
+
+/**
+ * Labels a declaration of a system or index the factories make, gives it what its body reads, since the keys it reads
+ * are values the build can't follow, and returns it.
+ */
+export const labelled = <const D extends object>(declaration: D, label: string, reads: Reads = {}): D => {
     let map: unknown = Reflect.get(globalThis, labels);
     if (!(map instanceof WeakMap || map instanceof Map)) Reflect.set(globalThis, labels, map = new WeakMap<object, string>());
     if (map instanceof WeakMap || map instanceof Map) map.set(declaration, label);
+    let uses: unknown = Reflect.get(globalThis, access);
+    if (!(uses instanceof WeakMap)) Reflect.set(globalThis, access, uses = new WeakMap<object, unknown>());
+    if (uses instanceof WeakMap) uses.set(declaration, {
+        components: { read: reads.components ?? [], write: [] },
+        resources: { read: reads.resources ?? [], write: [], reduce: [] },
+        lookup: reads.lookup ?? {},
+        up: [],
+        at: label,
+    });
     return declaration;
 };
 
@@ -109,7 +131,7 @@ export const ownName = (name: string): string => {
 };
 
 /** Labels a declaration of a system the factories make, whose failures are theirs to rethrow. */
-export const own = <const D extends object>(declaration: D, label: string): D => labelled(declaration, ownName(label));
+export const own = <const D extends object>(declaration: D, label: string, reads: Reads = {}): D => labelled(declaration, ownName(label), reads);
 
 const ignore = (): void => {
     // A disposed world runs nothing more: its observers' first values never come.
@@ -236,7 +258,7 @@ export const stateOf = (world: World): WorldState => {
         rejected: rejectedOf(world),
         // Run with the factories' own systems, never added: what one of them throws is in a later report, whose errors
         // are written once, which the next of the factories' runs sees.
-        rethrow: System.create(own({ observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, "Observe/rethrow"), row => {
+        rethrow: System.create(own({ observer: true, components: { changed: [Report.errors] } }, "Observe/rethrow", { components: [Report.errors] }), row => {
             for (const failure of row[Report.errors].failures) if (ownNames.has(failure.name)) rethrowLater(new Error(`${failure.name}: ${failure.message}`));
         }),
         composites: new WeakMap(),

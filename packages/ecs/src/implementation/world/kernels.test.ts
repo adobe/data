@@ -26,12 +26,12 @@ declare module "@adobe/ecs" {
 const label = Symbol("kernelsTest/label");
 
 /** Reads `value` and `other`, writes nothing, reads no resources. */
-const system = System.create({ kernel: true, components: { read: [value, other] } }, row => {
+const system = System.create({ kernel: true, components: { with: [value, other] } }, row => {
     if (row[value] > row[other]) return;
 });
 
 const spawn = System.create({}, ({ commands }) => { commands.spawn([value, other])({ [value]: 3, [other]: 0 }); });
-const double = System.create({ kernel: true, components: { write: [value] } }, row => {
+const double = System.create({ kernel: true, components: { with: [value] } }, row => {
     row[value] = row[value] * 2;
 });
 
@@ -68,7 +68,7 @@ describe("attachKernel", () => {
         expect(() => attachKernel(system, describing({ keys: [value, label], structuredValues: [0] }))).not.toThrow();
     });
     it("attaches nothing, and throws nothing, for a kernel the build tried that doesn't match", () => {
-        const tried = System.create({ components: { read: [value, other] } }, row => {
+        const tried = System.create({ components: { with: [value, other] } }, row => {
             if (row[value] > row[other]) return;
         });
         expect(attachKernel(tried, describing({ keys: [value, label], structuredValues: [1] }), true)).toBe(tried);

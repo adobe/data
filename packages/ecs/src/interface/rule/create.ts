@@ -11,16 +11,17 @@ import type { Declaration } from './declaration.js';
  * if it matches on a key that isn't a registered component, derives a component that isn't derived, or derives in a
  * cycle through a negation.
  */
-export const create = <const D extends Declaration>(declaration: D): { readonly name: string } => {
+export const create = <const D extends Declaration>(declaration: D & { readonly components: { readonly has?: never } }): { readonly name: string } => {
     const id = takeIdOfDeclaration(declaration);
     const name = nameOf(declaration, id, "rule");
-    const { components, derive } = declaration;
+    const { derive } = declaration;
+    const components = { has: declaration.components.with, not: declaration.components.not };
     for (const key of [...components.has ?? [], ...components.not ?? [], ...derive]) {
         if (kindOf(key) !== "component") throw new Error(`Rule "${name}" uses "${labelOf(key)}", which isn't a registered component: ${whyUnregistered(key)}.`);
     }
     for (const key of derive) {
         if (declarationOf(key)?.derived !== true) throw new Error(`Rule "${name}" derives "${labelOf(key)}", which isn't declared derived.`);
     }
-    const rule: Created<D> = { kind: "rule", name, declaration };
+    const rule: Created = { kind: "rule", name, declaration: { ...declaration, components } };
     return addRule(rule, id);
 };

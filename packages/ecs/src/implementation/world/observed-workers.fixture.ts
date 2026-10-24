@@ -23,11 +23,11 @@ const seed = System.create({}, ({ commands }) => {
 });
 
 /** Writes every value: until something observes `value`, its stamps are muted. */
-const bump = System.create({ kernel: true, components: { write: [value] } }, row => {
+const bump = System.create({ kernel: true, components: { with: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
-const watch = System.create({ kernel: true, components: { write: [seen], changed: [value] }, after: [bump] }, row => {
+const watch = System.create({ kernel: true, components: { with: [seen], changed: [value] }, after: [bump] }, row => {
     row[seen] = row[seen] + 1;
 });
 

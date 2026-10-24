@@ -14,7 +14,7 @@ declare module "@adobe/ecs" {
 const open = new Set<number>();
 
 // Runs for each entity that stops matching, whatever the cause, reading its values from before.
-Finalizer.create({ components: { read: [handle] } }, row => {
+Finalizer.create({ components: { with: [handle] } }, row => {
     open.delete(row[handle]);
 });
 
@@ -24,7 +24,7 @@ const spawn = System.create(({ commands }) => {
         commands.spawn([handle])({ [handle]: id });
     }
 });
-const destroy = System.create({ components: { read: [handle] } }, (row, { commands }) => {
+const destroy = System.create({ components: { with: [handle] } }, (row, { commands }) => {
     if (row[handle] === 7) commands.despawn(row.entity);
     else commands.remove(row.entity, handle);
 });

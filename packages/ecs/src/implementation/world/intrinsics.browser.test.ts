@@ -149,7 +149,7 @@ const spawn = System.create({}, ({ commands }) => {
     }
 });
 
-const vec2f = System.create({ kernel: "gpu", components: { read: [f2a, f2b, f2p], write: [f2o] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec2f = System.create({ kernel: "gpu", components: { with: [f2a, f2b, f2p, f2o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f2a];
     const b = row[f2b];
     const p = row[f2p];
@@ -194,7 +194,7 @@ const vec2f = System.create({ kernel: "gpu", components: { read: [f2a, f2b, f2p]
     else if (op === 38) row[f2o] = Vec2.faceforward(a, b, p);
 });
 
-const vec2fScalar = System.create({ kernel: "gpu", components: { read: [f2a, f2b], write: [fo] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec2fScalar = System.create({ kernel: "gpu", components: { with: [f2a, f2b, fo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f2a];
     const b = row[f2b];
     if (op === 0) row[fo] = Vec2.dot(a, b);
@@ -202,7 +202,7 @@ const vec2fScalar = System.create({ kernel: "gpu", components: { read: [f2a, f2b
     else if (op === 2) row[fo] = Vec2.length(a);
 });
 
-const vec2i = System.create({ kernel: "gpu", components: { read: [i2a, i2b], write: [i2o] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec2i = System.create({ kernel: "gpu", components: { with: [i2a, i2b, i2o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[i2a];
     const b = row[i2b];
     if (op === 0) row[i2o] = Vec2.I32.add(a, b);
@@ -223,7 +223,7 @@ const vec2i = System.create({ kernel: "gpu", components: { read: [i2a, i2b], wri
     else if (op === 15) row[i2o] = Vec2.I32.clamp(a, [-1000, -1000], [1000, 1000]);
 });
 
-const vec2u = System.create({ kernel: "gpu", components: { read: [u2a, u2b], write: [u2o] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec2u = System.create({ kernel: "gpu", components: { with: [u2a, u2b, u2o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[u2a];
     const b = row[u2b];
     if (op === 0) row[u2o] = Vec2.U32.add(a, b);
@@ -242,7 +242,7 @@ const vec2u = System.create({ kernel: "gpu", components: { read: [u2a, u2b], wri
     else if (op === 13) row[u2o] = Vec2.U32.clamp(a, [1000, 1000], [100000, 100000]);
 });
 
-const vec3f = System.create({ kernel: "gpu", components: { read: [f3a, f3b, f3p], write: [f3o] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec3f = System.create({ kernel: "gpu", components: { with: [f3a, f3b, f3p, f3o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f3a];
     const b = row[f3b];
     const p = row[f3p];
@@ -289,7 +289,7 @@ const vec3f = System.create({ kernel: "gpu", components: { read: [f3a, f3b, f3p]
     else if (op === 40) row[f3o] = Vec3.faceforward(a, b, p);
 });
 
-const vec3fScalar = System.create({ kernel: "gpu", components: { read: [f3a, f3b], write: [fo] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec3fScalar = System.create({ kernel: "gpu", components: { with: [f3a, f3b, fo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f3a];
     const b = row[f3b];
     if (op === 0) row[fo] = Vec3.dot(a, b);
@@ -297,7 +297,7 @@ const vec3fScalar = System.create({ kernel: "gpu", components: { read: [f3a, f3b
     else if (op === 2) row[fo] = Vec3.length(a);
 });
 
-const vec3i = System.create({ kernel: "gpu", components: { read: [i3a, i3b], write: [i3o] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec3i = System.create({ kernel: "gpu", components: { with: [i3a, i3b, i3o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[i3a];
     const b = row[i3b];
     if (op === 0) row[i3o] = Vec3.I32.add(a, b);
@@ -319,7 +319,7 @@ const vec3i = System.create({ kernel: "gpu", components: { read: [i3a, i3b], wri
     else if (op === 16) row[i3o] = Vec3.I32.clamp(a, [-1000, -1000, -1000], [1000, 1000, 1000]);
 });
 
-const vec3u = System.create({ kernel: "gpu", components: { read: [u3a, u3b], write: [u3o] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec3u = System.create({ kernel: "gpu", components: { with: [u3a, u3b, u3o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[u3a];
     const b = row[u3b];
     if (op === 0) row[u3o] = Vec3.U32.add(a, b);
@@ -339,7 +339,7 @@ const vec3u = System.create({ kernel: "gpu", components: { read: [u3a, u3b], wri
     else if (op === 14) row[u3o] = Vec3.U32.clamp(a, [1000, 1000, 1000], [100000, 100000, 100000]);
 });
 
-const vec4f = System.create({ kernel: "gpu", components: { read: [f4a, f4b, f4p], write: [f4o] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec4f = System.create({ kernel: "gpu", components: { with: [f4a, f4b, f4p, f4o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f4a];
     const b = row[f4b];
     const p = row[f4p];
@@ -385,7 +385,7 @@ const vec4f = System.create({ kernel: "gpu", components: { read: [f4a, f4b, f4p]
     else if (op === 39) row[f4o] = Vec4.faceforward(a, b, p);
 });
 
-const vec4fScalar = System.create({ kernel: "gpu", components: { read: [f4a, f4b], write: [fo] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec4fScalar = System.create({ kernel: "gpu", components: { with: [f4a, f4b, fo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[f4a];
     const b = row[f4b];
     if (op === 0) row[fo] = Vec4.dot(a, b);
@@ -393,7 +393,7 @@ const vec4fScalar = System.create({ kernel: "gpu", components: { read: [f4a, f4b
     else if (op === 2) row[fo] = Vec4.length(a);
 });
 
-const vec4i = System.create({ kernel: "gpu", components: { read: [i4a, i4b], write: [i4o] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec4i = System.create({ kernel: "gpu", components: { with: [i4a, i4b, i4o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[i4a];
     const b = row[i4b];
     if (op === 0) row[i4o] = Vec4.I32.add(a, b);
@@ -415,7 +415,7 @@ const vec4i = System.create({ kernel: "gpu", components: { read: [i4a, i4b], wri
     else if (op === 16) row[i4o] = Vec4.I32.clamp(a, [-1000, -1000, -1000, -1000], [1000, 1000, 1000, 1000]);
 });
 
-const vec4u = System.create({ kernel: "gpu", components: { read: [u4a, u4b], write: [u4o] } }, (row, _context, { op }: { readonly op: number }) => {
+const vec4u = System.create({ kernel: "gpu", components: { with: [u4a, u4b, u4o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[u4a];
     const b = row[u4b];
     if (op === 0) row[u4o] = Vec4.U32.add(a, b);
@@ -435,7 +435,7 @@ const vec4u = System.create({ kernel: "gpu", components: { read: [u4a, u4b], wri
     else if (op === 14) row[u4o] = Vec4.U32.clamp(a, [1000, 1000, 1000, 1000], [100000, 100000, 100000, 100000]);
 });
 
-const mat4x4 = System.create({ kernel: "gpu", components: { read: [ma, mb], write: [mo] } }, (row, _context, { op }: { readonly op: number }) => {
+const mat4x4 = System.create({ kernel: "gpu", components: { with: [ma, mb, mo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[ma];
     const b = row[mb];
     if (op === 0) row[mo] = Mat4x4.multiply(a, b);
@@ -445,18 +445,18 @@ const mat4x4 = System.create({ kernel: "gpu", components: { read: [ma, mb], writ
     else if (op === 4) row[mo] = Mat4x4.scale(a, 0.5);
 });
 
-const mat4x4Vector = System.create({ kernel: "gpu", components: { read: [ma, f4a], write: [f4o] } }, (row, _context, { op }: { readonly op: number }) => {
+const mat4x4Vector = System.create({ kernel: "gpu", components: { with: [ma, f4a, f4o] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[ma];
     const b = row[f4a];
     if (op === 0) row[f4o] = Mat4x4.multiplyVec4(a, b);
 });
 
-const mat4x4Scalar = System.create({ kernel: "gpu", components: { read: [ma], write: [fo] } }, (row, _context, { op }: { readonly op: number }) => {
+const mat4x4Scalar = System.create({ kernel: "gpu", components: { with: [ma, fo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[ma];
     if (op === 0) row[fo] = Mat4x4.determinant(a);
 });
 
-const quat = System.create({ kernel: "gpu", components: { read: [qa, qb], write: [qo] } }, (row, _context, { op }: { readonly op: number }) => {
+const quat = System.create({ kernel: "gpu", components: { with: [qa, qb, qo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[qa];
     const b = row[qb];
     if (op === 0) row[qo] = Quat.add(a, b);
@@ -465,14 +465,14 @@ const quat = System.create({ kernel: "gpu", components: { read: [qa, qb], write:
     else if (op === 3) row[qo] = Quat.negate(a);
 });
 
-const quatScalar = System.create({ kernel: "gpu", components: { read: [qa, qb], write: [fo] } }, (row, _context, { op }: { readonly op: number }) => {
+const quatScalar = System.create({ kernel: "gpu", components: { with: [qa, qb, fo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[qa];
     const b = row[qb];
     if (op === 0) row[fo] = Quat.dot(a, b);
     else if (op === 1) row[fo] = Quat.length(a);
 });
 
-const u32 = System.create({ kernel: "gpu", components: { read: [ua], write: [uo] } }, (row, _context, { op }: { readonly op: number }) => {
+const u32 = System.create({ kernel: "gpu", components: { with: [ua, uo] } }, (row, _context, { op }: { readonly op: number }) => {
     const a = row[ua];
     if (op === 0) row[uo] = U32.countLeadingZeros(a);
     else if (op === 1) row[uo] = U32.countOneBits(a);

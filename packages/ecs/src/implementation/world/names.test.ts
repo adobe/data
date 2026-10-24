@@ -26,8 +26,9 @@ declare module "@adobe/ecs" {
 
 // Two libraries, written apart, each declare a rule, a finalizer and a system labeled "linked".
 const library = (finalizer: (row: { readonly [value]: number }) => void, derived: typeof first | typeof second) => {
-    Rule.create({ components: { has: [value] }, derive: [derived] });
-    Finalizer.create({ components: { read: [value] } }, finalizer);
+    Rule.create({ components: { with: [value] }, derive: [derived] });
+    // Its body is written in place, so the build reads it, and calls what it's given with the row.
+    Finalizer.create({ components: { with: [value] } }, row => finalizer(row));
 };
 const released: string[] = [];
 let failing = false;
@@ -36,12 +37,12 @@ library(row => { released.push(`second ${row[value]}`); if (failing) throw new E
 
 const ran: string[] = [];
 const spawn = System.create({}, ({ commands }) => { commands.spawn([value])({ [value]: 1 }); });
-const despawn = System.create({ components: { has: [value] } }, (row, { commands }) => { commands.despawn(row.entity); });
+const despawn = System.create({ components: { with: [value] } }, (row, { commands }) => { commands.despawn(row.entity); });
 const failOnce = System.create(() => { throw new Error("unnamed"); });
 
 describe("systems, rules and finalizers of one label", () => {
     it("are distinct in schedules, both run, and are told apart in reports by their ids", async () => {
-        const linked = (after: readonly System[], body: (row: { [value]: number }) => void): System => System.create({ components: { write: [value] }, after }, body);
+        const linked = (after: readonly System[], body: (row: { [value]: number }) => void): System => System.create({ components: { with: [value] }, after }, body);
         const a = linked([], row => { ran.push("a"); row[value] += 1; });
         const b = linked([a], row => { ran.push("b"); row[value] += 1; throw new Error("b failed"); });
         const c = linked([b], row => { ran.push(`c${row[value]}`); });
@@ -64,7 +65,7 @@ describe("systems, rules and finalizers of one label", () => {
         expect(report.failures.map(({ kind, name }) => ({ kind, name }))).toEqual([{ kind: "finalizer", name: "library" }]);
     });
     it("are labeled by the bindings of their ids, which reports give beside them", async () => {
-        const [one, two] = ["one.ts#library", "two.ts#library"].map(id => System.create(identify({ components: { write: [other] } }, id), row => { row[other] = 1; throw new Error(id); }));
+        const [one, two] = ["one.ts#library", "two.ts#library"].map(id => System.create(identify({ components: { with: [other] } }, id), row => { row[other] = 1; throw new Error(id); }));
         await using world = createWorld({ [workers]: 0 });
         await world.run(System.create({}, ({ commands }) => { commands.spawn([other])({ [other]: 0 }); }));
         const labels = async (system: System | undefined) => system === undefined ? [] : (await runReported(world, system)).failures.map(failure => [failure.name, failure.id]);

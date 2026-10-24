@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
 import { Entity, F32, System, World } from "../index.js";
+import { Resource } from "@adobe/ecs";
 
 // A resource is a key whose value a world holds once.
 export const gravity = Symbol();
@@ -29,8 +30,14 @@ declare module "@adobe/ecs" {
 }
 
 // Systems read a world: an observer only reads, after the world's changes apply.
-let values: readonly unknown[] = [];
-const read = System.create({ observer: true, resources: { read: [gravity, floor, names, audio, focused] } }, ({ resources }) => {
+let values: readonly [
+    Resource.Value<typeof gravity>,
+    Resource.Value<typeof floor>,
+    Resource.Value<typeof names>,
+    Resource.Value<typeof audio>,
+    Resource.Value<typeof focused>
+] | null = null;
+const read = System.create({ observer: true }, ({ resources }) => {
     values = [resources[gravity], resources[floor], resources[names], resources[audio], resources[focused]];
 });
 
@@ -42,5 +49,5 @@ it("holds one value per world", async () => {
     await earth.run(read);
     expect(values).toEqual([-9.8, -Infinity, new Map(), null, Entity.none]);
     await moon.run(read);
-    expect(values[0]).toBe(-1.6);
+    expect(values?.[0]).toBe(-1.6);
 });

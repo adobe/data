@@ -182,6 +182,13 @@ export const createLists = (kernel: Module, link: Link | null, nodes: readonly N
         const result: string[] = [];
         for (let k = 0; k < literal.elements.length; k++) {
             const element = literal.elements[k];
+            // The kernel's own list may spread another it can read: `with: [...Unit, tagged]`.
+            if (element?.type === "SpreadElement" && module === kernel) {
+                const spread = names(element.argument);
+                if ("error" in spread) return spread;
+                result.push(...spread);
+                continue;
+            }
             const binding = element?.type === "Identifier" ? module.bindings.get(element.name) : undefined;
             if (element?.type !== "Identifier" || binding === undefined) {
                 return { error: module === kernel ? "lists name keys by identifiers bound at module scope" : `${reference} names a key by something other than an identifier bound at the scope of ${module.file}` };

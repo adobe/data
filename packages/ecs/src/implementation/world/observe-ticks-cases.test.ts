@@ -25,17 +25,17 @@ declare module "@adobe/ecs" {
     }
 }
 
-const count = System.create({ resources: { write: [frames] } }, ({ resources }) => { resources[frames] += 1; });
-const watch = System.create({ resources: { read: [clock], write: [seen] } }, ({ resources }) => { resources[seen] = resources[clock].tick; });
+const count = System.create({  }, ({ resources }) => { resources[frames] += 1; });
+const watch = System.create({  }, ({ resources }) => { resources[seen] = resources[clock].tick; });
 const fail = System.create({}, () => { throw new Error("tick failed"); });
 const nothing = System.create({}, () => {});
 const idle = System.create({ observer: true }, () => {});
-const fast = System.create({ resources: { write: [cadence, always] } }, ({ resources }) => {
+const fast = System.create({  }, ({ resources }) => {
     resources[cadence] = { kind: "fixed", step: 1 };
     resources[always] = true;
 });
-const calm = System.create({ resources: { write: [always] } }, ({ resources }) => { resources[always] = false; });
-const later = System.create({ resources: { read: [clock], reduce: [wake] } }, ({ resources, reduce }) => {
+const calm = System.create({  }, ({ resources }) => { resources[always] = false; });
+const later = System.create({  }, ({ resources, reduce }) => {
     if (resources[clock].tick === 0) reduce[wake](resources[clock].now + 20);
 });
 
@@ -43,17 +43,17 @@ const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn([value, watched])({ [value]: i, [watched]: 0 });
 });
 /** Writes every value: until something observes `value`, its stamps are muted. */
-const bump = System.create({ kernel: true, components: { write: [value] } }, row => {
+const bump = System.create({ kernel: true, components: { with: [value] } }, row => {
     row[value] = row[value] + 1;
 });
-const watchChanged = System.create({ kernel: true, components: { write: [watched], changed: [value] }, after: [bump] }, row => {
+const watchChanged = System.create({ kernel: true, components: { with: [watched], changed: [value] }, after: [bump] }, row => {
     row[watched] = row[watched] + 1;
 });
 /** Counts rows whose `value` was added since it last ran. */
-const fresh = System.create({ components: { write: [watched], added: [value] } }, row => {
+const fresh = System.create({ components: { with: [watched], added: [value] } }, row => {
     row[watched] = row[watched] + 1;
 });
-const flagAll = System.create({ components: { has: [value] } }, (row, { commands }) => {
+const flagAll = System.create({ components: { with: [value] } }, (row, { commands }) => {
     commands.add(row.entity, flag, true);
 });
 const spawnOne = System.create({}, ({ commands }) => {

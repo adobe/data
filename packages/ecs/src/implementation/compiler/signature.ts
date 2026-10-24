@@ -25,6 +25,8 @@ export type Reduced = { readonly resource: string; readonly operator: Reduction 
 export type Signature = {
     readonly read: ReadonlySet<string>;
     readonly write: ReadonlySet<string>;
+    /** What it requires of its rows, its `with`. */
+    readonly has: ReadonlySet<string>;
     readonly resources: readonly string[];
     readonly reduced: readonly Reduced[];
     readonly lookups: readonly Lookup[];
@@ -116,7 +118,7 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
     for (const [name, property] of properties(declaration, "a kernel declaration")) {
         switch (name) {
             case "components":
-                components = keyLists(property.value, "components", ["read", "write", "has", "not", "added", "changed"], lists);
+                components = keyLists(property.value, "components", ["read", "write", "with", "not", "added", "changed"], lists);
                 break;
             case "resources":
                 for (const [list, value] of properties(property.value, "resources")) {
@@ -125,6 +127,7 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
                     else if (list === "changed") changedResources = identifiers(value.value, "resources.changed", lists);
                     else if (list === "reduce") reduced = reductions(value.value, lists);
                     else if (list === "not") continue;
+                    else if (list === "write") fail(value, "a kernel can't write resources: write them from a system that runs as written, or reduce into them");
                     else fail(value, `resources.${list} is not allowed in a kernel declaration`);
                 }
                 break;
@@ -135,7 +138,7 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
                     const index = fields.some(([field]) => field === "index");
                     const listed = fields.filter(([field]) => field !== "index");
                     const read = listed.flatMap(([field, item]) => {
-                        if (index ? field !== "read" && field !== "changed" : field !== "read" && field !== "has" && field !== "not" && field !== "changed") return fail(item, `lookup.${lookup}.${field} is not allowed in a kernel declaration`);
+                        if (index ? field !== "read" && field !== "changed" : field !== "read" && field !== "with" && field !== "not" && field !== "changed") return fail(item, `lookup.${lookup}.${field} is not allowed in a kernel declaration`);
                         // An index lookup's `changed: true` filters the system's runs, which the world does before calling it.
                         if (index && field === "changed" && item.value.type === "Literal" && item.value.value === true) return [];
                         const names = identifiers(item.value, `lookup.${lookup}.${field}`, lists);
@@ -177,5 +180,5 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
     if (both !== undefined) fail(declaration, `${both} is in both components read and write; write already makes it readable`);
     const rowFiltered = (components.get("added")?.length ?? 0) + (components.get("changed")?.length ?? 0) > 0;
     if (up !== null && ordered) fail(declaration, "a kernel can't use both up and order, which both decide the order of its rows");
-    return { read: new Set(components.get("read")), write: new Set(write), resources, reduced, lookups, up, ordered, filtered: changedResources.length > 0 || rowFiltered };
+    return { read: new Set(components.get("read")), write: new Set(write), has: new Set(components.get("with")), resources, reduced, lookups, up, ordered, filtered: changedResources.length > 0 || rowFiltered };
 };

@@ -65,40 +65,40 @@ const seenOf = (subject: Entity, lookup: {
 
 /** On the world's thread. */
 export const probe = System.create({
-    components: { read: [target] },
-    lookup: { found: { read: [value], changed: [value] }, tagged: { has: [tag], changed: [tag] }, empty: {}, has: { has: [tag] } },
+    components: { with: [target] },
+    lookup: { found: { with: [value], changed: [value] }, tagged: { with: [tag], changed: [tag] }, empty: {}, has: { with: [tag] } },
 }, (row, { lookup }) => {
     scene.seen.push(seenOf(row[target], lookup));
 });
 
 /** The same, registered later, so its first run comes after every change. */
 export const lateProbe = System.create({
-    components: { read: [target] },
-    lookup: { found: { read: [value], changed: [value] }, tagged: { has: [tag], changed: [tag] }, empty: {}, has: { has: [tag] } },
+    components: { with: [target] },
+    lookup: { found: { with: [value], changed: [value] }, tagged: { with: [tag], changed: [tag] }, empty: {}, has: { with: [tag] } },
 }, (row, { lookup }) => {
     scene.seen.push(seenOf(row[target], lookup));
 });
 
 /** On thread "entityLookupsTest", as it reads the probe's label there. */
 export const threadProbe = System.create({
-    components: { read: [target, label] },
-    lookup: { found: { read: [value], changed: [value] }, tagged: { has: [tag], changed: [tag] }, empty: {}, has: { has: [tag] } },
+    components: { with: [target, label] },
+    lookup: { found: { with: [value], changed: [value] }, tagged: { with: [tag], changed: [tag] }, empty: {}, has: { with: [tag] } },
 }, (row, { lookup }) => {
     if (row[label]?.text === "probe") scene.seen.push(seenOf(row[target], lookup));
 });
 
 /** Writes every `value` in its rows, stamping them. */
-export const bump = System.create({ components: { write: [value] } }, row => {
+export const bump = System.create({ components: { with: [value] } }, row => {
     row[value] += 1;
 });
 
 /** The same as a kernel, whose stamps are muted unless something watches `value`. */
-export const bumpKernel = System.create({ kernel: true, components: { write: [value] } }, row => {
+export const bumpKernel = System.create({ kernel: true, components: { with: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
 /** Writes every `other`, which no lookup watches. */
-export const touch = System.create({ components: { write: [other] } }, row => {
+export const touch = System.create({ components: { with: [other] } }, row => {
     row[other] += 1;
 });
 
@@ -124,7 +124,7 @@ export const edit = System.create({
 });
 
 /** Points every probe at the subject. */
-export const retarget = System.create({ components: { write: [target] } }, row => {
+export const retarget = System.create({ components: { with: [target] } }, row => {
     row[target] = scene.subject;
 });
 

@@ -23,8 +23,8 @@ declare module "@adobe/ecs" {
 
 const propagate = System.create({
     kernel: true,
-    components: { read: [local], write: [world], changed: [local] },
-    up: { through: parent, read: [world] },
+    components: { with: [local, world], changed: [local] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[world] = (up === null ? 0 : up[world]) + row[local] * 2;
 });
@@ -38,7 +38,7 @@ const grow = System.create({}, ({ commands }) => {
         }
     }
 });
-const nudge = System.create({ components: { write: [local] } }, row => {
+const nudge = System.create({ components: { with: [local] } }, row => {
     if (row[local] === 7) row[local] = 70;
 });
 

@@ -6,28 +6,23 @@ import { addFinalizer, programFinalizers } from '../registry/program.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
 import { checkLookup } from '../registry/indexes.js';
-import type { Resource } from '../resource/resource.js';
 import type { Listed, Property } from '../system/property.js';
 import type { ThreadOfComponent } from '../component/value.js';
 import type { Component } from '../component/component.js';
 import type { Elsewhere, OneThread, ThreadedBy, ThreadsOf } from '../system/threads.js';
 import type { ChangeSet, Context, Row, Watched } from './body.js';
 import type { Changes, Leaf } from './created.js';
-import type { ChangesDeclaration, Declaration } from './declaration.js';
+import type { ChangesDeclaration, Declaration, Resolved, ResolvedChanges } from './declaration.js';
+import { accessOf, compact, lookupsLists, resourceUses, type Access } from '../system/resolve.js';
 import type { Finalizer } from './finalizer.js';
 import type { Finalizer as Registered } from './created.js';
 
-/** A resource in `write` is readable too, so it isn't also in `read`. */
-type Validate<D extends Declaration | ChangesDeclaration> =
-    { readonly resources?: { readonly read?: readonly Exclude<Resource.Key, Listed<Property<D, "resources">, "write">>[] } };
-
 /**
- * A finalizer on another thread than the world's runs there after the sync point, which doesn't wait for it: it writes
- * no resources and looks up nothing.
+ * A finalizer on another thread than the world's runs there after the sync point, which doesn't wait for it: it looks
+ * up nothing, and, which registration checks, writes no resources.
  */
 type Remote<D> = true extends Elsewhere<ThreadsOf<D>>
-    ? ([Listed<Property<D, "resources">, "write">] extends [never] ? {} : { readonly "error: a finalizer on another thread than the world's writes no resources": true })
-    & ([keyof Property<D, "lookup">] extends [never] ? {} : { readonly "error: a finalizer on another thread than the world's looks up nothing": true })
+    ? ([keyof Property<D, "lookup">] extends [never] ? {} : { readonly "error: a finalizer on another thread than the world's looks up nothing": true })
     : {};
 
 /** A changes finalizer runs on the world's thread, in the sync point: it watches and reads no other thread's objects. */
@@ -36,6 +31,28 @@ type OnWorld<D> = true extends Elsewhere<ThreadsOf<D> | ThreadOfComponent<Listed
     : {};
 
 type Key = symbol;
+
+/** What a finalizer's body reads of its row and lookups, and reads and writes of resources, is inferred. */
+type Inferred = { readonly resources?: never };
+
+/** What every finalizer's declaration holds as the world takes it: its lookups' and resources' lists from what the build inferred. */
+const resolveShared = (what: string, declared: Declaration | ChangesDeclaration, access: Access) => {
+    const uses = resourceUses(what, access, undefined);
+    if (uses.reduce.length > 0) throw new Error(`${what} reduces into resources; only systems contribute to a reduction.`);
+    const lookup = lookupsLists(declared.lookup, access);
+    return {
+        ...lookup === undefined ? {} : { lookup },
+        resources: compact({ read: uses.read, write: uses.write }),
+        ...declared.before === undefined ? {} : { before: declared.before },
+        ...declared.after === undefined ? {} : { after: declared.after },
+    };
+};
+
+/** A finalizer's row lists: what its body reads, the rest of `with` only required. */
+const componentReads = (components: Declaration["components"], access: Access): Resolved["components"] => {
+    const read = access.components?.read ?? components.with ?? [];
+    return compact({ read, has: (components.with ?? []).filter(key => !read.includes(key)), not: components.not });
+};
 
 /** Throws if a resource is in both `read` and `write`, or a reduced one is written. */
 const checkResources = (name: string, resources: { readonly read?: readonly Key[]; readonly write?: readonly Key[] } | undefined): void => {
@@ -73,12 +90,18 @@ const checkOrder = (name: string, thread: string, declaration: { readonly before
  * or with a resource conflict.
  */
 export const create = <const D extends Declaration>(
-    declaration: D & Validate<D> & OneThread<ThreadsOf<D>, ThreadedBy<D>> & Remote<D>,
+    declared: D & Inferred & { readonly components: { readonly read?: never; readonly has?: never } } & OneThread<ThreadsOf<D>, ThreadedBy<D>> & Remote<D>,
     body: (row: Row<D>, context: Context<D>) => void,
 ): Finalizer => {
-    const id = takeIdOfDeclaration(declaration);
-    const name = nameOf(declaration, id, "finalizer");
-    const finalizer: Leaf<D> = { kind: "finalizer", name, declaration, body };
+    const id = takeIdOfDeclaration(declared);
+    const name = nameOf(declared, id, "finalizer");
+    const what = `Finalizer "${name}"`;
+    const access = accessOf(what, declared);
+    const declaration: Resolved = {
+        ...resolveShared(what, declared, access),
+        components: componentReads(declared.components, access),
+    };
+    const finalizer: Leaf = { kind: "finalizer", name, declaration, body };
     checkResources(name, declaration.resources);
     const thread = threadOf(declaration, "Finalizer", name);
     if (thread !== null && thread !== "world") {
@@ -104,12 +127,14 @@ export const create = <const D extends Declaration>(
  * one watching or reading another thread's values.
  */
 export const changes = <const D extends ChangesDeclaration>(
-    declaration: D & Validate<D> & OnWorld<D>,
+    declared: D & Inferred & OnWorld<D>,
     body: (changes: ChangeSet<Watched<D>>, context: Context<D>) => void,
 ): Finalizer => {
-    const id = takeIdOfDeclaration(declaration);
-    const name = nameOf(declaration, id, "finalizer");
-    const finalizer: Changes<D> = { kind: "changes", name, declaration, body };
+    const id = takeIdOfDeclaration(declared);
+    const name = nameOf(declared, id, "finalizer");
+    const what = `Finalizer "${name}"`;
+    const declaration: ResolvedChanges = { ...resolveShared(what, declared, accessOf(what, declared)), ...declared.watch === undefined ? {} : { watch: declared.watch } };
+    const finalizer: Changes = { kind: "changes", name, declaration, body };
     checkResources(name, declaration.resources);
     requireRegistered("Finalizer", name, "resource", declaration.resources?.read);
     requireRegistered("Finalizer", name, "resource", declaration.resources?.write);

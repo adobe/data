@@ -46,13 +46,13 @@ const fill = System.create({}, ({ commands }, input: { readonly count: number })
     for (const list of lists) for (let i = 0; i < input.count; i++) commands.spawn(list)({ [value]: 0 });
 });
 
-const bump = System.create({ kernel: true, components: { write: [value] } }, row => {
+const bump = System.create({ kernel: true, components: { with: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
 const total = { sum: 0, count: 0 };
 /** Sums every value on the world's thread, so it reads what workers wrote. */
-const sum = System.create({ components: { read: [value] } }, row => {
+const sum = System.create({ components: { with: [value] } }, row => {
     total.sum += row[value];
     total.count++;
 });
@@ -68,23 +68,23 @@ const spawnMany = System.create({}, ({ commands }, input: { readonly count: numb
 });
 /** Aims each looker at one of the last spawned entities. */
 let aimed = 0;
-const aim = System.create({ components: { write: [target] } }, row => {
+const aim = System.create({ components: { with: [target] } }, row => {
     row[target] = spawned[spawned.length - 1 - aimed++];
 });
-const despawnValues = System.create({ components: { has: [value], not: [child] } }, (row, { commands }) => {
+const despawnValues = System.create({ components: { with: [value], not: [child] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 /** Lookups from workers. */
 const look = System.create({
     kernel: true,
-    components: { read: [target], write: [seen] },
-    lookup: { targets: { read: [value] } },
+    components: { with: [target, seen] },
+    lookup: { targets: { with: [value] } },
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     row[seen] = other === null ? -1 : other[value];
 });
 /** Spawns from workers: a child per looker. */
-const breed = System.create({ kernel: true, components: { read: [seen] } }, (row, { commands }) => {
+const breed = System.create({ kernel: true, components: { with: [seen] } }, (row, { commands }) => {
     commands.spawn([value, child])({ [value]: row[seen] });
 });
 

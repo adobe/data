@@ -43,7 +43,7 @@ const ticksValue = System.create({ components: { added: [value, parent] } }, () 
 const kept = System.create({}, () => { calls.kept++; });
 
 /** Holds what systems can on the world's thread: an `up` order, a change filter's count, command buffers. */
-const held = System.create({ components: { read: [value], changed: [value] }, up: { through: parent, read: [value] } }, (row, { up }) => {
+const held = System.create({ components: { with: [value], changed: [value] }, up: { through: parent } }, (row, { up }) => {
     calls.held++;
     void (row[value] + (up?.[value] ?? 0));
 });
@@ -53,19 +53,19 @@ const other = System.create({}, () => { calls.other++; });
 const pair = System.create({ systems: [alone, other] });
 
 /** In a later tier than `remover`, which removes it during the tick. */
-const late = System.create({ components: { read: [value] } }, row => { calls.late += row[value] >= 0 ? 1 : 0; });
+const late = System.create({ components: { with: [value] } }, row => { calls.late += row[value] >= 0 ? 1 : 0; });
 const remover = System.create({ before: [late] }, () => { current?.remove(late); });
 
 /** Removes itself partway through its rows. */
-const selfRemoving = System.create({ components: { read: [value] } }, row => {
+const selfRemoving = System.create({ components: { with: [value] } }, row => {
     calls.self += row[value] >= 0 ? 1 : 0;
     if (calls.self === removeAfter) current?.remove(selfRemoving);
 });
 
 /** Ordered only through `phase`: removing `phase` would leave them conflicting with no order between them. */
 const phase = System.create({}, () => {});
-const writer = System.create({ components: { write: [shared] }, before: [phase] }, row => { calls.writer++; row[shared] += 1; });
-const reader = System.create({ components: { read: [shared] }, after: [phase] }, row => { calls.reader++; void row[shared]; });
+const writer = System.create({ components: { with: [shared] }, before: [phase] }, row => { calls.writer++; row[shared] += 1; });
+const reader = System.create({ components: { with: [shared] }, after: [phase] }, row => { calls.reader++; void row[shared]; });
 
 /** A world ticking back to back once something is added, with `kept` added. */
 const ticking = async (): Promise<{ readonly world: CreatedWorld; readonly ticks: (count: number) => Promise<void>; readonly close: () => Promise<void> }> => {

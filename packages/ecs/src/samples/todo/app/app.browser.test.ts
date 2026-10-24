@@ -182,10 +182,10 @@ describe("the todo app", () => {
 });
 
 // It runs in the tick that gives the todo its row, alongside createRows.
-const failing = System.create({ components: { has: [todo] } }, () => {
+const failing = System.create({ components: { with: [todo] } }, () => {
     throw new Error("a tick's system failed");
 });
-const failingObserver = System.create({ observer: true, components: { has: [row], changed: [row] } }, () => {
+const failingObserver = System.create({ observer: true, components: { with: [row], changed: [row] } }, () => {
     throw new Error("a tick's observer failed");
 });
 const pass = System.create({ observer: true }, () => {});

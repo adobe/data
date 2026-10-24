@@ -27,16 +27,16 @@ const spawn = System.create(({ commands }) => {
     commands.spawn([parent])({ [parent]: mothership });
     commands.spawn([target])({ [target]: mothership });
 });
-const deselect = System.create({ components: { has: [selected] } }, (row, { commands }) => {
+const deselect = System.create({ components: { with: [selected] } }, (row, { commands }) => {
     commands.remove(row.entity, selected);
 });
-const destroy = System.create({ components: { has: [ship] } }, (row, { commands }) => {
+const destroy = System.create({ components: { with: [ship] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 
 const counts = { outlined: 0, targeting: 0, all: 0 };
-const countOutlined = System.create({ observer: true, components: { has: [outline] } }, () => { counts.outlined += 1; });
-const countTargeting = System.create({ observer: true, components: { has: [target] } }, () => { counts.targeting += 1; });
+const countOutlined = System.create({ observer: true, components: { with: [outline] } }, () => { counts.outlined += 1; });
+const countTargeting = System.create({ observer: true, components: { with: [target] } }, () => { counts.targeting += 1; });
 const countAll = System.create({ observer: true, components: {} }, () => { counts.all += 1; });
 
 it("removes components with their host, and follows references", async () => {

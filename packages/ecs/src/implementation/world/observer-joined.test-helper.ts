@@ -81,10 +81,10 @@ export const hold = (): void => {
 export const wordOf = (value: number): string => `${"·".repeat(value % 37)}${value}`;
 
 /** On the world's thread: the counter moves on once a tick, then every row's stamp, spot and word take it. */
-export const count = System.create({ resources: { write: [counter] } }, ({ resources }) => {
+export const count = System.create({  }, ({ resources }) => {
     resources[counter] += 1;
 });
-export const advance = System.create({ components: { write: [stamp, spot, word] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
+export const advance = System.create({ components: { with: [stamp, spot, word] }, after: [count] }, (row, { resources }) => {
     const value = resources[counter];
     row[stamp] = value;
     row[spot] = [value, -value, value];
@@ -94,7 +94,7 @@ export const ticked = System.create({ systems: [count, advance] });
 export const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) commands.spawn([stamp, spot, word])({ [stamp]: 0, [spot]: [0, 0, 0], [word]: wordOf(0) });
 });
-export const setStall = System.create({ resources: { write: [stall] } }, ({ resources }, input: { readonly pause: number }) => {
+export const setStall = System.create({  }, ({ resources }, input: { readonly pause: number }) => {
     resources[stall] = input.pause;
 });
 
@@ -103,7 +103,7 @@ export type Seen = { counter: number; rows: number; wrong: number };
 export const seen: Seen[] = [];
 
 /** Reads every row, which must all be of one tick, pausing at the end of its first chunk while `stall` says so. */
-export const watchRows = System.create({ observer: true, components: { read: [stamp, spot, word] }, resources: { read: [counter, stall] } }, (row, { resources }) => {
+export const watchRows = System.create({ observer: true, components: { with: [stamp, spot, word] } }, (row, { resources }) => {
     const value = resources[counter];
     let last = seen.at(-1);
     if (last === undefined || last.counter !== value || last.rows === 1000) seen.push(last = { counter: value, rows: 0, wrong: 0 });
@@ -117,7 +117,7 @@ export const watchRows = System.create({ observer: true, components: { read: [st
 export const looked: Entity[] = [];
 
 /** Looks up every row by entity, which must all be of one tick, spinning halfway while `stall` says so. */
-export const lookRows = System.create({ observer: true, resources: { read: [counter, stall] }, lookup: { found: { read: [stamp, spot] } } }, ({ resources, lookup }) => {
+export const lookRows = System.create({ observer: true, lookup: { found: { with: [stamp, spot] } } }, ({ resources, lookup }) => {
     const value = resources[counter];
     const run: Seen = { counter: value, rows: 0, wrong: 0 };
     seen.push(run);
@@ -135,10 +135,10 @@ export const lookRows = System.create({ observer: true, resources: { read: [coun
 export const spawnHeated = System.create({}, ({ commands }) => {
     for (let i = 0; i < 100; i++) commands.spawn([heat, rate])({ [heat]: i, [rate]: 1 });
 });
-export const warm = System.create({ kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
+export const warm = System.create({ kernel: "gpu", components: { with: [rate, heat] } }, row => {
     row[heat] = row[heat] + row[rate] * 100;
 });
-export const nextPhase = System.create({ resources: { write: [phase] } }, ({ resources }) => {
+export const nextPhase = System.create({  }, ({ resources }) => {
     resources[phase] += 1;
 });
 
@@ -152,7 +152,7 @@ export const countHot = System.create({ observer: true, lookup: { hot: { index: 
 
 /** On the world's thread: the motto of a round, and the round, every motto of one size. */
 export const mottoOf = (round: number): string => `motto ${round % 10}`;
-export const setMotto = System.create({ resources: { write: [motto, mottoRound] } }, ({ resources }, input: { readonly round: number }) => {
+export const setMotto = System.create({  }, ({ resources }, input: { readonly round: number }) => {
     resources[motto] = mottoOf(input.round);
     resources[mottoRound] = input.round;
 });
@@ -164,7 +164,7 @@ export const mottos: { readonly round: number; readonly motto: string }[] = [];
  * Reads only resources, a string among them: waits on the gate first, while `stall` says so, its round plus one, then
  * reads the motto, which must be its round's.
  */
-export const watchMotto = System.create({ observer: true, resources: { read: [motto, mottoRound, stall] } }, ({ resources }) => {
+export const watchMotto = System.create({ observer: true }, ({ resources }) => {
     const round = resources[mottoRound];
     pauseAt(resources[stall], round + 1);
     mottos.push({ round, motto: resources[motto] });

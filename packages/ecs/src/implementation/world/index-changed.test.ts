@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
+import { giveAccess } from "../../interface/registry/ids.test-helper.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Index } from "../../interface/indexes/index-type.js";
@@ -26,28 +27,28 @@ declare module "@adobe/ecs" {
     }
 }
 
-const byGroup = Index.create({ key: [group], components: { has: [weight] } });
+const byGroup = Index.create({ key: [group], components: { with: [weight] } });
 const inOrder = Index.create({ key: [group], sorted: true });
-const weighted = Index.create({ key: [], components: { has: [weight] } });
+const weighted = Index.create({ key: [], components: { with: [weight] } });
 
 const one = { type: "object", properties: { entity: Entity.schema, value: { type: "number" } } } as const;
 let spawned: Entity[] = [];
 const spawn = System.create({}, ({ commands }, input: { readonly groups: readonly number[] }) => {
     for (const value of input.groups) spawned.push(commands.spawn([group, weight, total])({ [group]: value, [weight]: 1, [total]: 0 }));
 });
-const setGroup = System.create({ target: "entity", components: { write: [group] } }, (row, _context, input: { readonly entity: Entity; readonly value: number }) => {
+const setGroup = System.create({ target: "entity", components: { with: [group] } }, (row, _context, input: { readonly entity: Entity; readonly value: number }) => {
     row[group] = input.value;
 });
-const setWeight = System.create({ target: "entity", components: { write: [weight] } }, (row, _context, input: { readonly entity: Entity; readonly value: number }) => {
+const setWeight = System.create({ target: "entity", components: { with: [weight] } }, (row, _context, input: { readonly entity: Entity; readonly value: number }) => {
     row[weight] = input.value;
 });
-const despawn = System.create({ target: "entity", components: { has: [group] } }, (row, { commands }, _input: { readonly entity: Entity }) => {
+const despawn = System.create({ target: "entity", components: { with: [group] } }, (row, { commands }, _input: { readonly entity: Entity }) => {
     commands.despawn(row.entity);
 });
-const dropWeight = System.create({ target: "entity", components: { has: [weight] } }, (row, { commands }, _input: { readonly entity: Entity }) => {
+const dropWeight = System.create({ target: "entity", components: { with: [weight] } }, (row, { commands }, _input: { readonly entity: Entity }) => {
     commands.remove(row.entity, weight);
 });
-const pause = System.create({ resources: { write: [paused] } }, ({ resources }, input: { readonly paused: boolean }) => {
+const pause = System.create({  }, ({ resources }, input: { readonly paused: boolean }) => {
     resources[paused] = input.paused;
 });
 
@@ -62,7 +63,7 @@ const counting = System.create({ lookup: { byGroup: { index: byGroup, changed: t
 /** Each row's total: how many rows share its group, by hundreds, and its weight; run only when the groups changed. */
 const tally = System.create({
     kernel: true,
-    components: { read: [group, weight], write: [total] },
+    components: { with: [group, weight, total] },
     lookup: { byGroup: { index: byGroup, changed: true } },
 }, (row, { lookup }) => {
     row[total] = lookup.byGroup(row[group]).length * 100 + row[weight];
@@ -131,7 +132,7 @@ describe("an index lookup's changed: true", () => {
         spawned = [];
         const flags: boolean[] = [];
         const watching = System.create({
-            lookup: { byGroup: { index: byGroup, changed: true }, weights: { read: [weight], changed: [weight] } },
+            lookup: { byGroup: { index: byGroup, changed: true }, weights: { with: [weight], changed: [weight] } },
         }, ({ lookup }) => {
             flags.push(lookup.weights(spawned[0])?.changed ?? false);
         });
@@ -151,7 +152,7 @@ describe("an index lookup's changed: true", () => {
         spawned = [];
         const rows: number[] = [];
         const filtering = System.create({
-            components: { read: [weight], changed: [weight] },
+            components: { with: [weight], changed: [weight] },
             lookup: { byGroup: { index: byGroup, changed: true } },
         }, row => {
             rows.push(row[weight]);
@@ -204,7 +205,7 @@ describe("an index lookup's changed: true", () => {
         await using world = inline();
         spawned = [];
         const totals: number[] = [];
-        const readTotals = System.create({ observer: true, components: { read: [total] } }, row => {
+        const readTotals = System.create({ observer: true, components: { with: [total] } }, row => {
             totals.push(row[total]);
         });
         const totalsOf = async (): Promise<number[]> => {
@@ -224,11 +225,11 @@ describe("an index lookup's changed: true", () => {
     });
 
     it("is only for a system's index lookups", () => {
-        const untypedSystem = (declaration: object): unknown => Reflect.apply(System.create, undefined, [declaration, () => {}]);
-        const untypedFinalizer = (declaration: object): unknown => Reflect.apply(Finalizer.create, undefined, [declaration, () => {}]);
-        expect(() => untypedSystem({ lookup: { weights: { read: [weight], changed: true } } }))
+        const untypedSystem = (declaration: object): unknown => Reflect.apply(System.create, undefined, [giveAccess(declaration), () => {}]);
+        const untypedFinalizer = (declaration: object): unknown => Reflect.apply(Finalizer.create, undefined, [giveAccess(declaration), () => {}]);
+        expect(() => untypedSystem({ lookup: { weights: { with: [weight], changed: true } } }))
             .toThrow(`lookup "weights"'s changed is true, which only an index lookup takes; name the components it watches.`);
-        expect(() => untypedFinalizer({ components: { read: [group] }, lookup: { byGroup: { index: byGroup, changed: true } } }))
+        expect(() => untypedFinalizer({ components: { with: [group] }, lookup: { byGroup: { index: byGroup, changed: true } } }))
             .toThrow(`lookup "byGroup"'s changed is true, which only a system's index lookup takes; a finalizer runs on each entity that stops matching.`);
     });
 });

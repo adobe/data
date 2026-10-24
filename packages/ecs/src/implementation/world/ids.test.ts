@@ -19,7 +19,7 @@ describe("a world given keys with ids", () => {
         const again: typeof import("./ids-keys.test-helper.js") = await import(/* @vite-ignore */ `./ids-keys.test-helper.js?again=${Date.now()}`);
         expect(again.score).not.toBe(score);
         const spawnAgain = System.create({}, ({ commands }) => { spawned.push(commands.spawn([again.score])({ [again.score]: 2 })); });
-        const add = System.create({ components: { write: [again.score] } }, row => { row[again.score] += 10; });
+        const add = System.create({ components: { with: [again.score] } }, row => { row[again.score] += 10; });
         await world.run(spawnAgain);
         await world.run(add);
         const [first, second] = spawned;

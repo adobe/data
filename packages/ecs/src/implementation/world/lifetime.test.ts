@@ -29,16 +29,16 @@ const seed = System.create({}, ({ commands }) => {
 });
 
 /** A module-level system, run between and after the fresh ones, as an app's own systems are. */
-const steady = System.create({ components: { read: [count], changed: [count] } }, row => { void row[count]; });
+const steady = System.create({ components: { with: [count], changed: [count] } }, row => { void row[count]; });
 
 let copied = 0;
 
 /** Fresh systems of each shape that holds something: a body alone, a resource read, a change filter, and `up`. */
 const freshSystems = (k: number): readonly System[] => [
     System.create(() => {}),
-    System.create({ resources: { read: [score] } }, ({ resources }) => { copied = resources[score] + k; }),
-    System.create({ components: { write: [count], changed: [count] } }, row => { row[count] += 1; }),
-    System.create({ components: { read: [count] }, up: { through: parent, read: [count] } }, (row, { up }) => { copied = row[count] + (up?.[count] ?? 0); }),
+    System.create({  }, ({ resources }) => { copied = resources[score] + k; }),
+    System.create({ components: { with: [count], changed: [count] } }, row => { row[count] += 1; }),
+    System.create({ components: { with: [count] }, up: { through: parent } }, (row, { up }) => { copied = row[count] + (up?.[count] ?? 0); }),
 ];
 
 const fresh = 10_000;

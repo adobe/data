@@ -22,7 +22,7 @@ const seed = System.create({}, ({ commands }) => {
 });
 
 /** Long enough per row that a task over 100,000 rows is still running when its worker is killed. */
-const heavy = System.create({ kernel: true, components: { write: [value] } }, row => {
+const heavy = System.create({ kernel: true, components: { with: [value] } }, row => {
     let total = row[value];
     for (let k = 0; k < 2000; k++) total = total * 0.5 + k;
     row[value] = total;

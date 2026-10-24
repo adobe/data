@@ -50,7 +50,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 });
 
 /** Despawns every seventh entity and spawns replacements, so some targets go stale and their indexes are reused. */
-const cull = System.create({ components: { read: [position], has: [bounces] } }, (row, { commands }, input: { readonly frame: number }) => {
+const cull = System.create({ components: { with: [position, bounces] } }, (row, { commands }, input: { readonly frame: number }) => {
     if ((row.entity >>> 0) % 7 !== input.frame % 7) return;
     commands.despawn(row.entity);
     commands.spawn([position, velocity, bounces, flipped, score, target])({ [position]: row[position], [velocity]: [1, 1], [bounces]: 0, [flipped]: true, [score]: 0, [target]: row.entity });
@@ -60,8 +60,7 @@ const halve = (value: number) => value * 0.5;
 
 const integrate = System.create({
     kernel: true,
-    components: { write: [position, velocity] },
-    resources: { read: [seconds] },
+    components: { with: [position, velocity] },
 }, (row, { resources }) => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
@@ -72,8 +71,7 @@ const integrate = System.create({
 
 const bounce = System.create({
     kernel: true,
-    components: { write: [position, velocity, bounces, flipped] },
-    resources: { read: [floor] },
+    components: { with: [position, velocity, bounces, flipped] },
     after: [integrate],
 }, (row, { resources }) => {
     const [x, y] = row[position];
@@ -91,7 +89,7 @@ const bounce = System.create({
 
 const tally = System.create({
     kernel: true,
-    components: { read: [bounces, flipped, position], write: [score] },
+    components: { with: [bounces, flipped, position, score] },
     after: [bounce],
 }, row => {
     let total = 0;
@@ -106,7 +104,7 @@ const tally = System.create({
 
 const scale = System.create({
     kernel: true,
-    components: { write: [score] },
+    components: { with: [score] },
 }, (row, _context, input: { readonly factor: number }) => {
     row[score] = row[score] * input.factor;
 });
@@ -114,8 +112,7 @@ const scale = System.create({
 /** Component-wise vector math: one f32x4 operation per row. */
 const drift = System.create({
     kernel: true,
-    components: { read: [velocity], write: [position] },
-    resources: { read: [seconds] },
+    components: { with: [velocity, position] },
     after: [tally],
 }, (row, { resources }) => {
     const [x, y] = row[position];
@@ -127,7 +124,7 @@ const drift = System.create({
 /** Runs only for rows whose bounces changed since it last ran. */
 const react = System.create({
     kernel: true,
-    components: { write: [score], changed: [bounces] },
+    components: { with: [score], changed: [bounces] },
     after: [tally],
 }, row => {
     row[score] = row[score] + 1000;
@@ -136,8 +133,8 @@ const react = System.create({
 /** A lookup per row: found targets pull, missing or stale ones cost a point. */
 const chase = System.create({
     kernel: true,
-    components: { read: [target], write: [score] },
-    lookup: { targets: { read: [position, flipped] } },
+    components: { with: [target, score] },
+    lookup: { targets: { with: [position, flipped] } },
     after: [react, drift],
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
@@ -175,17 +172,17 @@ const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
 };
 
 /** Counts the runs of rows whose score changed. */
-const recount = System.create({ kernel: true, components: { write: [bounces], changed: [score] } }, row => {
+const recount = System.create({ kernel: true, components: { with: [bounces], changed: [score] } }, row => {
     row[bounces] += 1;
 });
 const chosen = new Set<Entity>();
-const rescore = System.create({ components: { write: [score] } }, row => {
+const rescore = System.create({ components: { with: [score] } }, row => {
     if (chosen.has(row.entity)) row[score] += 1;
 });
 
 /** Keeps ticks of `score` without observing its changes, so kernels writing it mute their stamps. */
 const scoreAdded = System.create({ components: { added: [score] } }, () => {});
-const raise = System.create({ kernel: true, components: { write: [score] } }, row => {
+const raise = System.create({ kernel: true, components: { with: [score] } }, row => {
     row[score] += 1;
 });
 let raised = 0;

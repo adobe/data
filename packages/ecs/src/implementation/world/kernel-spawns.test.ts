@@ -38,7 +38,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 });
 
 /** One spawn per row, from a kernel. */
-const fromKernel = System.create({ kernel: true, components: { read: [index] } }, (row, { commands }) => {
+const fromKernel = System.create({ kernel: true, components: { with: [index] } }, (row, { commands }) => {
     commands.spawn(spawned)({ [value]: row[index] });
 });
 
@@ -48,25 +48,25 @@ const fromMain = System.create({ before: [fromKernel] }, ({ commands }) => {
 });
 
 /** Spawns, then adds to and removes from what it spawned, in the same kernel and tick. */
-const spawnAndEdit = System.create({ kernel: true, components: { read: [index] } }, (row, { commands }) => {
+const spawnAndEdit = System.create({ kernel: true, components: { with: [index] } }, (row, { commands }) => {
     const entity = commands.spawn([value, flag, made])({ [value]: row[index] });
     commands.add(entity, extra, row[index] * 10);
     commands.remove(entity, flag);
 });
 
 /** A spawn with a tuple, and an object component left to its start. */
-const withObjects = System.create({ kernel: true, components: { read: [index] } }, (row, { commands }) => {
+const withObjects = System.create({ kernel: true, components: { with: [index] } }, (row, { commands }) => {
     commands.spawn([value, position, name, made])({ [value]: row[index], [position]: [row[index], -row[index]] });
 });
 
-const despawnMade = System.create({ components: { has: [made] } }, (row, { commands }) => { commands.despawn(row.entity); });
+const despawnMade = System.create({ components: { with: [made] } }, (row, { commands }) => { commands.despawn(row.entity); });
 
 const added = { seen: 0 };
-const countAdded = System.create({ components: { added: [value], has: [made] } }, () => { added.seen++; });
+const countAdded = System.create({ components: { added: [value], with: [made] } }, () => { added.seen++; });
 
 /** Each made entity's value, in storage order. */
 const madeValues: number[] = [];
-const readMade = System.create({ observer: true, components: { read: [value], has: [made] } }, row => { madeValues.push(row[value]); });
+const readMade = System.create({ observer: true, components: { with: [value, made] } }, row => { madeValues.push(row[value]); });
 const valuesOf = async (world: ReturnType<typeof createWorld>): Promise<number[]> => {
     madeValues.length = 0;
     await world.run(readMade);

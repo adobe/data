@@ -15,7 +15,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-export const showing = Rule.create({ components: { has: [score] }, derive: [shown] });
+export const showing = Rule.create({ components: { with: [score] }, derive: [shown] });
 export const recording = Finalizer.changes({ watch: [score] }, ({ groups }) => {
     for (const group of groups) changes.push(group.added);
 });

@@ -15,7 +15,7 @@ const overlay = (text: string): void => {
 
 let latest = { sprites: 0, frames: 0 };
 // Added on this thread, it runs here after each of the world's frames that changed stats.
-const show = System.create({ observer: true, resources: { read: [stats], changed: [stats] } }, ({ resources }) => {
+const show = System.create({ observer: true, resources: { changed: [stats] } }, ({ resources }) => {
     const { sprites, frames } = resources[stats];
     latest = { sprites, frames };
     overlay(`${sprites} sprites, each a texture the loader decoded and moved to the world's worker · frame ${frames}`);

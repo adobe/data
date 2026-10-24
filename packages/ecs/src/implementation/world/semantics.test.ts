@@ -31,8 +31,8 @@ const seed = System.create({}, ({ commands }) => {
 });
 const chase = System.create({
     kernel: true,
-    components: { read: [target], write: [score] },
-    lookup: { targets: { read: [position] } },
+    components: { with: [target, score] },
+    lookup: { targets: { with: [position] } },
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     if (other === null) {
@@ -83,7 +83,7 @@ describe("semantics", () => {
         let entity = Entity.none;
         const spawn = System.create({}, ({ commands }) => { entity = commands.spawn([tag, score])({ [tag]: true, [score]: 0 }); });
         const retag = System.create({}, ({ commands }) => { commands.add(entity, tag, true); });
-        const watch = System.create({ components: { has: [score], added: [tag] } }, row => { seen.push(row.entity); });
+        const watch = System.create({ components: { with: [score], added: [tag] } }, row => { seen.push(row.entity); });
         const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(watch);

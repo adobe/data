@@ -43,28 +43,26 @@ export const stored: Stored[] = [];
 /** The values systems gave components, on the thread they ran on. */
 export const kept: unknown[] = [];
 
-const store = (value: unknown, resources: { [order]: number }): void => {
+const store = (value: unknown, at: number): void => {
     const bytes = value instanceof ArrayBuffer ? value.byteLength : -1;
-    stored.push({ bytes, first: bytes > 0 && value instanceof ArrayBuffer ? new Uint8Array(value)[0] : -1, order: resources[order]++, value });
+    stored.push({ bytes, first: bytes > 0 && value instanceof ArrayBuffer ? new Uint8Array(value)[0] : -1, order: at, value });
 };
 
 /** On "transfersTest": records the buffer it's given. */
-export const storeThere = System.create({ resources: { read: [anchor], write: [order] } }, ({ resources }, input: { readonly buffer: unknown }) => {
-    if (resources[anchor].text === "anchor") store(input.buffer, resources);
+export const storeThere = System.create({}, ({ resources }, input: { readonly buffer: unknown }) => {
+    if (resources[anchor].text === "anchor") store(input.buffer, resources[order]++);
 });
 /** On the world's thread: records the buffer it's given. */
-export const storeHere = System.create({ resources: { write: [order] } }, ({ resources }, input: { readonly buffer: unknown }) => {
-    store(input.buffer, resources);
+export const storeHere = System.create({}, ({ resources }, input: { readonly buffer: unknown }) => {
+    store(input.buffer, resources[order]++);
 });
 /** On the world's thread: what a run from a joined thread saw of the order, by its value. */
 export const marks: { readonly value: number; readonly order: number }[] = [];
-export const mark = System.create({ resources: { write: [order] } }, ({ resources }, input: { readonly value: number }) => {
+export const mark = System.create({}, ({ resources }, input: { readonly value: number }) => {
     marks.push({ value: input.value, order: resources[order]++ });
 });
 /** On "transfersTest": gives an entity the port or bitmap it's given. */
-export const attachThere = System.create({
-    resources: { read: [anchor] },
-}, ({ resources, commands }, input: { readonly entity: Entity; readonly value: unknown }) => {
+export const attachThere = System.create({}, ({ resources, commands }, input: { readonly entity: Entity; readonly value: unknown }) => {
     if (resources[anchor].text !== "anchor") return;
     kept.push(input.value);
     if (input.value instanceof MessagePort) commands.add(input.entity, port, input.value);
@@ -77,7 +75,7 @@ export const attachHere = System.create({}, ({ commands }, input: { readonly ent
     else if (typeof ImageBitmap === "function" && input.value instanceof ImageBitmap) commands.add(input.entity, bitmapHere, input.value);
 });
 /** On "transfersTest": says hello through the port it's given, which only moving it there, not copying it, gives. */
-export const greetThere = System.create({ resources: { read: [anchor] } }, ({ resources }, input: { readonly port: unknown }) => {
+export const greetThere = System.create({}, ({ resources }, input: { readonly port: unknown }) => {
     if (input.port instanceof MessagePort) input.port.postMessage(resources[anchor].text);
 });
 
@@ -91,7 +89,7 @@ export const spawnHere = System.create({}, ({ commands }, input: { readonly valu
  * "transfersTest", it fails to register, so a run of it never runs.
  */
 export const unregistered = System.create({
-    components: { read: [port], write: [depth] }, up: { through: parent, read: [depth] },
+    components: { with: [port, depth] }, up: { through: parent },
 }, (row, { up }, input: { readonly value: unknown }) => {
     row[depth] = (up === null ? 0 : up[depth]) + (row[port] === input.value ? 1 : 0);
 });

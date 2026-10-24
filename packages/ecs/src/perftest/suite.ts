@@ -55,14 +55,14 @@ export const seed = System.create({}, ({ commands }, input: { readonly count: nu
 });
 
 /** Despawns a tenth of the entities and spawns as many replacements. */
-export const churn = System.create({ components: { read: [index, position] } }, (row, { commands }, input: { readonly group: number }) => {
+export const churn = System.create({ components: { with: [index, position] } }, (row, { commands }, input: { readonly group: number }) => {
     if (row[index] % 10 !== input.group) return;
     commands.despawn(row.entity);
     commands.spawn(moving)({ [position]: row[position], [velocity]: [0, 0, 0], [index]: row[index] });
 });
 
 /** Adds the tag to one tenth and removes it from another: a fifth of the entities move archetype. */
-export const retag = System.create({ components: { read: [index] } }, (row, { commands }, input: { readonly group: number }) => {
+export const retag = System.create({ components: { with: [index] } }, (row, { commands }, input: { readonly group: number }) => {
     const group = row[index] % 10;
     if (group === input.group) commands.add(row.entity, tag);
     else if (group === (input.group + 5) % 10) commands.remove(row.entity, tag);
@@ -71,7 +71,7 @@ export const retag = System.create({ components: { read: [index] } }, (row, { co
 /** Writes 1% of positions. */
 export const poke = System.create({
     kernel: true,
-    components: { read: [index], write: [position] },
+    components: { with: [index, position] },
 }, (row, _context, input: { readonly group: I32 }) => {
     if (row[index] % 100 === input.group) {
         const [x, y, z] = row[position];
@@ -82,7 +82,7 @@ export const poke = System.create({
 /** Writes 1% of positions, clustered in one contiguous run of rows. */
 export const pokeCluster = System.create({
     kernel: true,
-    components: { read: [index], write: [position] },
+    components: { with: [index, position] },
 }, (row, _context, input: { readonly group: I32 }) => {
     const group = row[index] - input.group * 10_000;
     if (group >= 0 && group < 10_000) {
@@ -94,7 +94,7 @@ export const pokeCluster = System.create({
 /** Sees only what changed since it last ran. */
 export const observe = System.create({
     kernel: true,
-    components: { read: [position], write: [velocity], changed: [position] },
+    components: { with: [position, velocity], changed: [position] },
 }, row => {
     const [x, y, z] = row[position];
     row[velocity] = [x * 0.5, y * 0.5, z * 0.5];
@@ -103,8 +103,8 @@ export const observe = System.create({
 /** Steers toward the target: one lookup per row. */
 export const follow = System.create({
     kernel: true,
-    components: { read: [position, target], write: [velocity] },
-    lookup: { targets: { read: [position] } },
+    components: { with: [position, target, velocity] },
+    lookup: { targets: { with: [position] } },
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     if (other !== null) {
@@ -117,7 +117,7 @@ export const follow = System.create({
 /** Issues commands from a kernel: a tenth of the rows record a hit. */
 export const emit = System.create({
     kernel: true,
-    components: { read: [index, position] },
+    components: { with: [index, position] },
 }, (row, { commands }) => {
     if (row[index] % 10 === 0) {
         const [x] = row[position];
@@ -126,27 +126,27 @@ export const emit = System.create({
 });
 
 /** Six dependent kernels: one tier each, so dispatch cost shows. */
-export const chain1 = System.create({ kernel: true, components: { write: [velocity] } }, row => {
+export const chain1 = System.create({ kernel: true, components: { with: [velocity] } }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain2 = System.create({ kernel: true, components: { write: [velocity] }, after: [chain1] }, row => {
+export const chain2 = System.create({ kernel: true, components: { with: [velocity] }, after: [chain1] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain3 = System.create({ kernel: true, components: { write: [velocity] }, after: [chain2] }, row => {
+export const chain3 = System.create({ kernel: true, components: { with: [velocity] }, after: [chain2] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain4 = System.create({ kernel: true, components: { write: [velocity] }, after: [chain3] }, row => {
+export const chain4 = System.create({ kernel: true, components: { with: [velocity] }, after: [chain3] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain5 = System.create({ kernel: true, components: { write: [velocity] }, after: [chain4] }, row => {
+export const chain5 = System.create({ kernel: true, components: { with: [velocity] }, after: [chain4] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain6 = System.create({ kernel: true, components: { write: [velocity] }, after: [chain5] }, row => {
+export const chain6 = System.create({ kernel: true, components: { with: [velocity] }, after: [chain5] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
@@ -155,7 +155,7 @@ export const chain = System.create({ systems: [chain1, chain2, chain3, chain4, c
 /** Fifty small main-thread systems in one tier, each reading every row. */
 let total = 0;
 export const smalls = System.create({
-    systems: Array.from({ length: 50 }, (_, i) => System.create({ components: { read: [position] } }, row => {
+    systems: Array.from({ length: 50 }, (_, i) => System.create({ components: { with: [position] } }, row => {
         total += row[position][0];
     })),
 });
@@ -187,21 +187,21 @@ export const seeded = async (create: () => World, count: number): Promise<World>
 };
 
 /** Folds every row's index into a sum and a maximum. */
-export const reduce = System.create({ kernel: true, components: { read: [index] }, resources: { reduce: [indexSum, highest] } }, (row, { reduce }) => {
+export const reduce = System.create({ kernel: true, components: { with: [index] } }, (row, { reduce }) => {
     reduce[indexSum](row[index]);
     reduce[highest](row[index]);
 });
 
 /** A system no entity matches: what a run costs with nothing to do. */
-export const idle = System.create({ components: { has: [unused] } }, () => {});
+export const idle = System.create({ components: { with: [unused] } }, () => {});
 /** A system that throws, so each run of it has a report to spawn. */
 export const failing = System.create({}, () => { throw new Error("suite: failing"); });
 /** An observer system no entity matches: a run of it alone has no tiers. */
-export const idleObserver = System.create({ observer: true, components: { has: [unused] } }, () => {});
+export const idleObserver = System.create({ observer: true, components: { with: [unused] } }, () => {});
 
 /** Fifty systems no entity matches, in one tier. */
 export const idles = System.create({
-    systems: Array.from({ length: 50 }, (_, i) => System.create({ components: { has: [unused] } }, () => {})),
+    systems: Array.from({ length: 50 }, (_, i) => System.create({ components: { with: [unused] } }, () => {})),
 });
 
 /** Spawns one entity: a run with a sync point that applies one command. */
@@ -210,6 +210,6 @@ export const spawnOne = System.create({}, ({ commands }) => {
 });
 
 /** One main-thread system reading every row. */
-export const small = System.create({ components: { read: [position] } }, row => {
+export const small = System.create({ components: { with: [position] } }, row => {
     total += row[position][0];
 });

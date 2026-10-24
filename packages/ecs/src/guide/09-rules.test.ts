@@ -20,23 +20,23 @@ declare module "@adobe/ecs" {
 }
 
 // Entities matching a rule have what it derives, only while they match.
-Rule.create({ components: { has: [mesh], not: [hidden] }, derive: [drawn] });
+Rule.create({ components: { with: [mesh], not: [hidden] }, derive: [drawn] });
 // Several rules may derive one component, present while any matches.
-Rule.create({ components: { has: [sprite], not: [hidden] }, derive: [drawn] });
+Rule.create({ components: { with: [sprite], not: [hidden] }, derive: [drawn] });
 // Rules build on what others derive.
-Rule.create({ components: { has: [drawn] }, derive: [layer] });
+Rule.create({ components: { with: [drawn] }, derive: [layer] });
 
 const spawn = System.create(({ commands }) => {
     commands.spawn([mesh])({ [mesh]: 1 });
     commands.spawn([sprite])({ [sprite]: 2 });
     commands.spawn([mesh, hidden])({ [mesh]: 3 });
 });
-const hide = System.create({ components: { has: [sprite] } }, (row, { commands }) => {
+const hide = System.create({ components: { with: [sprite] } }, (row, { commands }) => {
     commands.add(row.entity, hidden);
 });
 
 const layers: number[] = [];
-const read = System.create({ observer: true, components: { read: [layer], has: [drawn] } }, row => {
+const read = System.create({ observer: true, components: { with: [layer, drawn] } }, row => {
     layers.push(row[layer]);
 });
 

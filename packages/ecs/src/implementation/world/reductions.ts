@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Reduction } from '../../interface/resource/reduction.js';
-import type { Declaration } from '../../interface/system/declaration.js';
+import type { Resolved } from '../../interface/system/declaration.js';
 import { isReduction } from '../../interface/registry/reduction.js';
 import type { Layout, Path, View } from '../../interface/registry/layout.js';
 import { stampChanged } from './archetype.js';
@@ -24,11 +24,11 @@ const bitwise: ReadonlySet<Reduction> = new Set(["&", "|", "^"]);
  * Creating the system checked each has a trait, which registering the resource checked against its schema, so a throw
  * here is an invariant broken.
  */
-export const reductionTargets = (state: State, name: string, declaration: Declaration): readonly ReductionTarget[] =>
+export const reductionTargets = (state: State, name: string, declaration: Resolved): readonly ReductionTarget[] =>
     reductionTargetsOf(key => state.layouts[idOf(state, key)], name, declaration);
 
 /** The resources a system `name` reduces into, by `layoutFor`, each resource's layout. */
-export const reductionTargetsOf = (layoutFor: (key: Key) => Layout | undefined, name: string, declaration: Declaration): readonly ReductionTarget[] => {
+export const reductionTargetsOf = (layoutFor: (key: Key) => Layout | undefined, name: string, declaration: Resolved): readonly ReductionTarget[] => {
     const reduce = declaration.resources?.reduce;
     if (reduce === undefined) return [];
     return reduce.map((key): ReductionTarget => {

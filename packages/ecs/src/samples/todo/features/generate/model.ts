@@ -9,7 +9,7 @@ export const generatedLabel = (n: number): string => `${tasks[n % tasks.length]}
 
 /** Adds `count` todos with generated labels at the end of the list. */
 export const addGenerated = System.create({
-    lookup: { ordered: { index: ordered, read: [order] } },
+    lookup: { ordered: { index: ordered } },
 }, ({ lookup, commands }, input: { readonly count: number }) => {
     const all = lookup.ordered();
     const first = orderAfter(all);

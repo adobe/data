@@ -32,17 +32,17 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 });
 
 /** Writes the marked entity's value. */
-const nudge = System.create({ kernel: false, components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
+const nudge = System.create({ kernel: false, components: { with: [value, marked] } }, row => { row[value] += 1; });
 
 /** A kernel writing every row's rank, whose stamps it keeps only while something watches ranks change. */
-const advance = System.create({ kernel: true, components: { write: [rank] } }, row => { row[rank] += 1; });
+const advance = System.create({ kernel: true, components: { with: [rank] } }, row => { row[rank] += 1; });
 
 /** The entities `look` and `lookChanged` look up, each run. */
 let looked: readonly Entity[] = [];
 let found = 0;
 
 /** Looks up every entity of `looked` by entity, reading its value, after `nudge` where both run. */
-const look = System.create({ lookup: { values: { read: [value] } }, after: [nudge] }, ({ lookup }) => {
+const look = System.create({ lookup: { values: { with: [value] } }, after: [nudge] }, ({ lookup }) => {
     for (let i = 0; i < looked.length; i++) {
         const row = lookup.values(looked[i]);
         if (row !== null && row[value] >= 0) found++;
@@ -50,7 +50,7 @@ const look = System.create({ lookup: { values: { read: [value] } }, after: [nudg
 });
 
 /** The same, with `changed`: counts the entities whose value may have changed since it last ran. */
-const lookChanged = System.create({ lookup: { values: { read: [value], changed: [value] } }, after: [nudge] }, ({ lookup }) => {
+const lookChanged = System.create({ lookup: { values: { with: [value], changed: [value] } }, after: [nudge] }, ({ lookup }) => {
     for (let i = 0; i < looked.length; i++) {
         const row = lookup.values(looked[i]);
         if (row !== null && row[value] >= 0 && row.changed) found++;
@@ -78,7 +78,7 @@ const lookups = async (system: System): Promise<{ readonly best: number; readonl
 /** Every entity a seeded world holds. */
 const entitiesOf = async (world: World): Promise<readonly Entity[]> => {
     const found: Entity[] = [];
-    await world.run(System.create({ observer: true, components: { has: [value] } }, row => { found.push(row.entity); }));
+    await world.run(System.create({ observer: true, components: { with: [value] } }, row => { found.push(row.entity); }));
     return found;
 };
 
@@ -108,7 +108,7 @@ export const readBenchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(10_000);
             copied = 0;
-            const best = await fastest(() => world.run(System.create({ resources: { read: [level] } }, ({ resources }) => { copied = resources[level]; })), 300);
+            const best = await fastest(() => world.run(System.create({  }, ({ resources }) => { copied = resources[level]; })), 300);
             check(copied === 3, "read run: wrong value");
             await world.dispose();
             return best;
@@ -124,7 +124,7 @@ export const readBenchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(10_000);
             copied = 0;
-            const best = await fastest(() => world.run(System.create({ observer: true, resources: { read: [level] } }, ({ resources }) => { copied = resources[level]; })), 300);
+            const best = await fastest(() => world.run(System.create({ observer: true }, ({ resources }) => { copied = resources[level]; })), 300);
             check(copied === 3, "read run observer: wrong value");
             await world.dispose();
             return best;
@@ -143,7 +143,7 @@ export const readBenchmarks: readonly Benchmark[] = [
             await world.run(advance);
             copied = 0;
             const best = await fastest(async () => {
-                await world.run(System.create({ components: { read: [rank], changed: [rank] } }, row => { copied += row[rank]; }));
+                await world.run(System.create({ components: { with: [rank], changed: [rank] } }, row => { copied += row[rank]; }));
             }, 300);
             check(copied > 0, "read run changed: nothing read");
             await world.dispose();

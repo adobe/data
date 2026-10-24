@@ -16,13 +16,13 @@ declare module "@adobe/ecs" {
     }
 }
 
-export const doubled = System.create({ components: { write: [offset] } }, row => {
+export const doubled = System.create({ components: { with: [offset] } }, row => {
     row[offset] = row[offset] * 2;
 });
 
 export const labels = System.create({
-    components: { read: [target], write: [offset] },
-    lookup: { named: { read: [label] } },
+    components: { with: [target, offset] },
+    lookup: { named: { with: [label] } },
 }, (row, { lookup: { named } }) => {
     const found = named(row[target]);
     row[offset] = found === null ? 0 : found[label].length;

@@ -32,8 +32,8 @@ declare module "@adobe/ecs" {
  */
 const watchKernel = System.create({
     kernel: true,
-    components: { read: [follows], write: [kernelSeen] },
-    lookup: { found: { read: [weight], changed: [weight] }, marked: { read: [mark], changed: [mark] }, eligible: { has: [mark], not: [banned] } },
+    components: { with: [follows, kernelSeen] },
+    lookup: { found: { with: [weight], changed: [weight] }, marked: { with: [mark], changed: [mark] }, eligible: { with: [mark], not: [banned] } },
 }, (row, { lookup }) => {
     const found = lookup.found(row[follows]);
     const marked = lookup.marked(row[follows]);
@@ -44,8 +44,8 @@ const watchKernel = System.create({
 });
 
 const watchPlain = System.create({
-    components: { read: [follows], write: [plainSeen] },
-    lookup: { found: { read: [weight], changed: [weight] }, marked: { read: [mark], changed: [mark] }, eligible: { has: [mark], not: [banned] } },
+    components: { with: [follows, plainSeen] },
+    lookup: { found: { with: [weight], changed: [weight] }, marked: { with: [mark], changed: [mark] }, eligible: { with: [mark], not: [banned] } },
 }, (row, { lookup }) => {
     const found = lookup.found(row[follows]);
     const marked = lookup.marked(row[follows]);
@@ -65,7 +65,7 @@ const seed = System.create({}, ({ commands }) => {
 });
 
 /** Writes some weights, marks and unmarks some targets, despawns some and spawns others: a different change each round. */
-const stir = System.create({ components: { write: [weight] } }, (row, { commands }, input: { readonly round: number }) => {
+const stir = System.create({ components: { with: [weight] } }, (row, { commands }, input: { readonly round: number }) => {
     const w = row[weight];
     if ((w + input.round) % 5 === 0) row[weight] = w + 1000;
     if ((w + input.round) % 11 === 0) commands.add(row.entity, mark, 2);

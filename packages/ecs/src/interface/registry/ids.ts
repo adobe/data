@@ -55,3 +55,22 @@ export const takeLabelOfDeclaration = (declaration: object): string | undefined 
     map.delete(declaration);
     return typeof label === "string" ? label : undefined;
 };
+
+/**
+ * The `Symbol.for` name of the global `WeakMap` from a declaration, or the body of a system declaring nothing, to what
+ * the build inferred its body uses (`Access` in `system/resolve.ts`), which the plugin fills where it calls a
+ * constructor; an internal factory making declarations at runtime gives its own first, which the plugin's doesn't
+ * replace. Its version changes with the format.
+ */
+export const accessName = "@adobe/ecs/access@1";
+
+const access = Symbol.for(accessName);
+
+/** What the build inferred the body a declaration or body is made with uses, if it inferred it, taken out of the map. */
+export const takeAccessOf = (declaration: object): unknown => {
+    const map: unknown = Reflect.get(globalThis, access);
+    if (!(map instanceof WeakMap)) return undefined;
+    const found: unknown = map.get(declaration);
+    map.delete(declaration);
+    return found;
+};

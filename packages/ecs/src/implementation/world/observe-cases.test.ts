@@ -31,14 +31,14 @@ declare module "@adobe/ecs" {
 }
 
 
-const raise = System.create({ resources: { write: [level] } }, ({ resources }, input: { readonly by: number }) => {
+const raise = System.create({  }, ({ resources }, input: { readonly by: number }) => {
     resources[level] += input.by;
     resources[level] += input.by;
 });
-const touchOther = System.create({ resources: { write: [other] } }, ({ resources }) => { resources[other] += 1; });
+const touchOther = System.create({  }, ({ resources }) => { resources[other] += 1; });
 const spawn = System.create({}, ({ commands }) => { commands.spawn([weight])({ [weight]: 2 }); });
-const sum = System.create({ components: { read: [weight] }, resources: { reduce: [total] } }, (row, { reduce }) => { reduce[total](row[weight]); });
-const keep = System.create({ resources: { write: [level] } }, ({ resources }) => { resources[level] = resources[level] + 0; });
+const sum = System.create({ components: { with: [weight] } }, (row, { reduce }) => { reduce[total](row[weight]); });
+const keep = System.create({  }, ({ resources }) => { resources[level] = resources[level] + 0; });
 
 /** Errors thrown out of band while `catching` runs, as uncaught errors would be, caught instead. */
 const catching = async (run: () => Promise<void>): Promise<unknown[]> => {
@@ -82,12 +82,12 @@ declare module "@adobe/ecs" {
 let target = Entity.none;
 const create = System.create({}, ({ commands }) => { target = commands.spawn([weight, heat])({ [weight]: 1, [heat]: 0 }); });
 const despawn = System.create({}, ({ commands }) => { commands.despawn(target); });
-const weigh = System.create({ components: { write: [weight], not: [filler] } }, row => {
+const weigh = System.create({ components: { with: [weight], not: [filler] } }, row => {
     row[weight] += 1;
     row[weight] += 1;
 });
-const warm = System.create({ components: { write: [heat] } }, row => { row[heat] += 1; });
-const double = System.create({ kernel: true, components: { write: [heat] } }, row => { row[heat] = row[heat] * 2 + 1; });
+const warm = System.create({ components: { with: [heat] } }, row => { row[heat] += 1; });
+const double = System.create({ kernel: true, components: { with: [heat] } }, row => { row[heat] = row[heat] * 2 + 1; });
 const addTag = System.create({}, ({ commands }) => { commands.add(target, tag, true); });
 const removeTag = System.create({}, ({ commands }) => { commands.remove(target, tag); });
 const removeWeight = System.create({}, ({ commands }) => { commands.remove(target, weight); });
@@ -120,10 +120,10 @@ const swap = System.create({}, ({ commands }) => {
 });
 const mark = System.create({}, ({ commands }) => { commands.add(roster[0], marker, true); });
 const leave = System.create({}, ({ commands }) => { commands.despawn(roster[1]); });
-const score10 = System.create({ components: { write: [score] } }, row => { row[score] += 10; });
-const nudge = System.create({ components: { write: [score] } }, row => { row[score] += 0; });
-const invert = System.create({ components: { write: [score] } }, row => { row[score] = -row[score]; });
-const invertKernel = System.create({ kernel: true, components: { write: [score] } }, row => { row[score] = 0 - row[score]; });
+const score10 = System.create({ components: { with: [score] } }, row => { row[score] += 10; });
+const nudge = System.create({ components: { with: [score] } }, row => { row[score] += 0; });
+const invert = System.create({ components: { with: [score] } }, row => { row[score] = -row[score]; });
+const invertKernel = System.create({ kernel: true, components: { with: [score] } }, row => { row[score] = 0 - row[score]; });
 /** Swaps the bench like `swap`, then despawns more entities than the journal holds, so it drops the swap's entries. */
 const swapAndCrowd = System.create({}, ({ commands }) => {
     commands.add(roster[0], benched, true);
@@ -157,7 +157,7 @@ let coarseValues: readonly number[] = [];
 const spawnCoarse = System.create({}, ({ commands }) => {
     for (const each of coarseValues) commands.spawn([coarse])({ [coarse]: each });
 });
-const shiftCoarse = System.create({ components: { write: [coarse] } }, row => { row[coarse] = row[coarse] + 0.1; });
+const shiftCoarse = System.create({ components: { with: [coarse] } }, row => { row[coarse] = row[coarse] + 0.1; });
 
 type Condition = number | { readonly "<"?: number; readonly ">"?: number; readonly "<="?: number; readonly ">="?: number; readonly "=="?: number; readonly "!="?: number };
 
@@ -447,7 +447,7 @@ describe("observing entities", () => {
         const subscribe = System.create({}, () => {
             entity(world, target, { required: [weight] })(value => seen.push(value));
         });
-        const later = System.create({ components: { write: [weight] }, after: [subscribe] }, row => { row[weight] += 2; });
+        const later = System.create({ components: { with: [weight] }, after: [subscribe] }, row => { row[weight] += 2; });
         await world.run(System.create({ systems: [subscribe, later] }));
         await settle(world);
         await world.run(warm);
@@ -580,7 +580,7 @@ describe("observing queries", () => {
         const subscribe = System.create({}, () => {
             count(world, { required: [score], where: { [score]: { "<": 0 } } })(value => seen.push(value));
         });
-        const later = System.create({ components: { write: [score] }, after: [subscribe] }, row => { row[score] = -row[score]; });
+        const later = System.create({ components: { with: [score] }, after: [subscribe] }, row => { row[score] = -row[score]; });
         await world.run(System.create({ systems: [subscribe, later] }));
         await settle(world);
         expect(seen).toEqual([3]);

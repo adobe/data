@@ -72,8 +72,8 @@ const load = System.create({}, ({ commands }) => {
 /** Each node's world position is its parent's plus its own. */
 const place = System.create({
     kernel: false,
-    components: { read: [localX, localY], write: [worldX, worldY], changed: [localX, localY] },
-    up: { through: parent, read: [worldX, worldY] },
+    components: { with: [localX, localY, worldX, worldY], changed: [localX, localY] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[worldX] = (up === null ? 0 : up[worldX]) + row[localX];
     row[worldY] = (up === null ? 0 : up[worldY]) + row[localY];
@@ -81,18 +81,18 @@ const place = System.create({
 /** Each node's world opacity is its parent's times its own. */
 const fade = System.create({
     kernel: false,
-    components: { read: [opacity], write: [worldOpacity], changed: [opacity] },
-    up: { through: parent, read: [worldOpacity] },
+    components: { with: [opacity, worldOpacity], changed: [opacity] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[worldOpacity] = (up === null ? 1 : up[worldOpacity]) * row[opacity];
 });
 let checksum = 0;
 /** Each group counts its children, as a layout does. */
-const layout = System.create({ components: { has: [group] }, lookup: { children: { index: childrenOf } } }, (row, { lookup }) => {
+const layout = System.create({ components: { with: [group] }, lookup: { children: { index: childrenOf } } }, (row, { lookup }) => {
     checksum += lookup.children(row.entity).length;
 });
 /** Visits every node in paint order, as drawing does. */
-const paint = System.create({ components: { read: [worldX, worldOpacity] }, order: byPaintDepth, after: [place, fade] }, row => {
+const paint = System.create({ components: { with: [worldX, worldOpacity] }, order: byPaintDepth, after: [place, fade] }, row => {
     checksum = (checksum * 31 + row[worldX] * row[worldOpacity]) % 1000003;
 });
 const frame = System.create({ systems: [place, fade, layout, paint] });

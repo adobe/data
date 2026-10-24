@@ -32,13 +32,12 @@ declare module '@adobe/ecs' {
 }
 
 // Rules derive only derived components.
-const slots = Rule.create({ components: { has: [source], not: [hidden] }, derive: [slot] });
+const slots = Rule.create({ components: { with: [source], not: [hidden] }, derive: [slot] });
 // @ts-expect-error a rule derives only derived components
-Rule.create({ components: { has: [source] }, derive: [source] });
+Rule.create({ components: { with: [source] }, derive: [source] });
 
-// A finalizer's context holds only what it declares, and its commands.
-const other = Finalizer.create({ components: { read: [source] } }, (_, context) => {
-    // @ts-expect-error no resources declared
+// A finalizer's context holds every resource, the lookups it declares, and its commands.
+const other = Finalizer.create({ components: { with: [source] } }, (_, context) => {
     void context.resources;
     // @ts-expect-error no lookups declared
     void context.lookup;
@@ -47,8 +46,7 @@ const other = Finalizer.create({ components: { read: [source] } }, (_, context) 
 
 // Per-query finalizers read the stopping row; it's read-only.
 Finalizer.create({
-    components: { read: [slot, parent], not: [hidden] },
-    resources: { read: [time] },
+    components: { with: [slot, parent], not: [hidden] },
     after: [other],
 }, (row, { resources, commands }) => {
     const value: number = row[slot];
@@ -57,16 +55,12 @@ Finalizer.create({
     commands.despawn(target);
     // @ts-expect-error a finalizer's row is read-only
     row[slot] = 1;
-    // @ts-expect-error only declared reads are in the row
+    // @ts-expect-error only what with requires is in the row
     void row[source];
-    // @ts-expect-error read resources are read-only
-    resources[time] = 0;
     void value; void now;
 });
 Finalizer.create({
     components: {},
-    // @ts-expect-error write already makes a resource readable
-    resources: { read: [time], write: [time] },
 }, () => {});
 
 // Changes finalizers see only the essential components they watch.
@@ -88,16 +82,18 @@ Finalizer.changes({ watch: [source, parent] }, (changes, { commands }) => {
 Finalizer.changes({ watch: [slot] }, () => {});
 
 // References change only through commands, so systems can't write them.
-System.create({ components: { read: [parent], write: [source] } }, row => { row[source] = row[parent]; });
-// @ts-expect-error a reference changes only through commands
-System.create({ components: { write: [parent] } }, () => {});
+System.create({ components: { with: [parent, source] } }, row => { row[source] = row[parent]; });
+System.create({ components: { with: [parent] } }, row => {
+    // @ts-expect-error a reference changes only through commands
+    row[parent] = row.entity;
+});
 check<Equal<Extract<Writable, typeof parent | typeof source>, typeof source>>();
 
 // A rule and a finalizer are the values their constructors return, labeled by their names, which needn't be unique.
 check<Equal<typeof slots, ReturnType<typeof Rule.create>>>();
 check<Equal<typeof slots, { readonly name: string }>>();
 check<Equal<typeof other, Finalizer>>();
-const sameName: Finalizer = Finalizer.create({ components: { read: [source] } }, () => {});
+const sameName: Finalizer = Finalizer.create({ components: { with: [source] } }, () => {});
 void sameName;
 
 // Rules and finalizers apply in every world.
@@ -105,7 +101,7 @@ declare const create: Create;
 export const created: World = create();
 
 // Names are optional for rules and finalizers too.
-const unnamedRule = Rule.create({ components: { has: [source] }, derive: [slot] });
-const unnamedFinalizer: Finalizer = Finalizer.create({ components: { read: [source] } }, row => { void row[source]; });
+const unnamedRule = Rule.create({ components: { with: [source] }, derive: [slot] });
+const unnamedFinalizer: Finalizer = Finalizer.create({ components: { with: [source] } }, row => { void row[source]; });
 const unnamedChanges: Finalizer = Finalizer.changes({ watch: [source] }, changes => { void changes.groups; });
 void [unnamedRule, unnamedFinalizer, unnamedChanges];

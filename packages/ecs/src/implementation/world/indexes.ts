@@ -2,7 +2,7 @@
 import type { IndexDefinition } from '../../interface/registry/index.js';
 import { idOrNull, indexDefinitionOf, indexOfLookup, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import type { Failure } from '../../interface/report/failure.js';
-import type { SystemLookup } from '../../interface/system/access.js';
+import type { SystemLookupLists } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
 import { readCell } from './cells.js';
 import { blockShift, chunkShift } from './kernel.js';
@@ -1102,7 +1102,7 @@ const noFilters: readonly WorldIndex[] = [];
 const noLookups: IndexLookups = { byName: noIndexes, ordered: null, uses: noUses, filters: noFilters, release: () => {} };
 
 /** Acquires the indexes a declaration's lookups go through, watching what they watch, once each per index. */
-export const acquireLookups = (state: State, lookup: { readonly [name: string]: SystemLookup } | undefined, order?: unknown): IndexLookups => {
+export const acquireLookups = (state: State, lookup: { readonly [name: string]: SystemLookupLists } | undefined, order?: unknown): IndexLookups => {
     const ordering = indexDefinitionOf(order) ?? null;
     if (lookup === undefined && ordering === null) return noLookups;
     const byName = new Map<string, WorldIndex>();

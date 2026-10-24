@@ -53,33 +53,33 @@ const spawn = System.create({}, ({ commands }) => {
     }
 });
 
-const move = System.create({ kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
+const move = System.create({ kernel: "gpu", components: { with: [velocity, position] } }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];
     row[position] = [px + vx, py + vy * 2, pz + vz];
 });
 
 /** Between two GPU kernels: reads what the first wrote, and changes what both read. */
-const reset = System.create({ components: { write: [position, velocity] }, after: [move] }, row => {
+const reset = System.create({ components: { with: [position, velocity] }, after: [move] }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];
     row[position] = [px * 2, py, pz + 100];
     row[velocity] = [vz, vx, vy];
 });
 
-const moveAgain = System.create({ kernel: "gpu", components: { read: [velocity], write: [position] }, after: [reset] }, row => {
+const moveAgain = System.create({ kernel: "gpu", components: { with: [velocity, position] }, after: [reset] }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];
     row[position] = [px + vx, py + vy, pz + vz];
 });
 
 /** Between two GPU kernels: changes only what they read, so nothing needs reading back first. */
-const turn = System.create({ components: { write: [velocity] }, after: [move] }, row => {
+const turn = System.create({ components: { with: [velocity] }, after: [move] }, row => {
     const [vx, vy, vz] = row[velocity];
     row[velocity] = [vz * 3, vx, vy];
 });
 
-const moveLater = System.create({ kernel: "gpu", components: { read: [velocity], write: [position] }, after: [turn] }, row => {
+const moveLater = System.create({ kernel: "gpu", components: { with: [velocity, position] }, after: [turn] }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];
     row[position] = [px + vx, py + vy, pz + vz];
@@ -95,7 +95,7 @@ const spawnNumbers = System.create({}, ({ commands }) => {
  * JS semantics the GPU keeps: u32 values past 2^31, integer and bitwise chains bit for bit, infinities, rounding.
  * Arithmetic is f32, so only results f32 holds exactly are compared; WGSL lets implementations assume no value is NaN.
  */
-const numbers = System.create({ kernel: "gpu", components: { write: [code, amount] } }, row => {
+const numbers = System.create({ kernel: "gpu", components: { with: [code, amount] } }, row => {
     const c = row[code];
     const a = row[amount];
     const mixed = (c ^ 0x0f0f0f0f) >>> 0;
@@ -104,7 +104,7 @@ const numbers = System.create({ kernel: "gpu", components: { write: [code, amoun
         + (c | 0) / 0x1000000 + Math.clz32(c) + (c > 0x80000000 ? 10000 : 0) + Math.max(a, -1) * 100 + (a % 1.5) * 10000;
 });
 
-const flagScore = System.create({ kernel: "gpu", components: { read: [flag], write: [score] } }, row => {
+const flagScore = System.create({ kernel: "gpu", components: { with: [flag, score] } }, row => {
     row[score] = row[flag] ? 1 : 0;
 });
 
@@ -115,8 +115,8 @@ const spawnFollower = System.create({}, ({ commands }) => {
 
 /** On the CPU, reads through a lookup what a GPU kernel wrote. */
 const follow = System.create({
-    components: { read: [followed], write: [score] },
-    lookup: { leader: { read: [position] } },
+    components: { with: [followed, score] },
+    lookup: { leader: { with: [position] } },
     after: [move],
 }, (row, { lookup: { leader } }) => {
     row[score] = leader(row[followed])?.[position][0] ?? -1;
@@ -125,7 +125,7 @@ const follow = System.create({
 const following = System.create({ systems: [move, follow] });
 
 /** Despawns the first entity, moving the last into its row, then makes the sync point throw. */
-const poison = System.create({ components: { read: [position] } }, (row, { commands }) => {
+const poison = System.create({ components: { with: [position] } }, (row, { commands }) => {
     if (row[position][0] === 2) commands.despawn(row.entity);
     if (row[position][0] === 4) commands.add(row.entity, score, Symbol("poison") as unknown as number);
 });
@@ -149,7 +149,7 @@ const fail = System.render({ shader: { accessors: { place: position } }, after: 
 const failing = System.create({ systems: [move, fail] });
 
 /** Math from three namespaces, inlined into a compute shader. */
-const transform = System.create({ kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
+const transform = System.create({ kernel: "gpu", components: { with: [velocity, position] } }, row => {
     const q = Quat.fromAxisAngle([0, 1, 0], 0.5);
     const m = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
     row[position] = Vec3.add(Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, row[position])), Vec3.normalize(row[velocity]));
@@ -163,7 +163,7 @@ const spawnIntegers = System.create({}, ({ commands }) => {
 });
 
 /** Integer builtins, which wrap and count bits as the functions do. */
-const integers = System.create({ kernel: "gpu", components: { write: [bits, sums] } }, row => {
+const integers = System.create({ kernel: "gpu", components: { with: [bits, sums] } }, row => {
     const b = row[bits];
     const s = row[sums];
     row[bits] = Vec3.U32.add(Vec3.U32.countOneBits(b), Vec3.U32.add(Vec3.U32.countTrailingZeros(b), Vec3.U32.multiply(Vec3.U32.reverseBits(b), Vec3.U32.bitwiseXor(b, [7, 7, 7]))));
@@ -171,7 +171,7 @@ const integers = System.create({ kernel: "gpu", components: { write: [bits, sums
 });
 
 /** Float builtins across vectors, quaternions and matrices, on in-domain inputs. */
-const shading = System.create({ kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
+const shading = System.create({ kernel: "gpu", components: { with: [velocity, position] } }, row => {
     const p = row[position];
     const v = Vec3.add(row[velocity], [0.25, 0.5, 0.75]);
     const n = Vec3.normalize(v);
@@ -187,7 +187,7 @@ const shading = System.create({ kernel: "gpu", components: { read: [velocity], w
 });
 
 /** Reads the entity, an f64. */
-const entityScore = System.create({ kernel: "gpu", components: { write: [score] } }, row => {
+const entityScore = System.create({ kernel: "gpu", components: { with: [score] } }, row => {
     row[score] = row.entity;
 });
 
@@ -209,7 +209,7 @@ const positions = async (world: ReturnType<typeof createWorld>): Promise<Vec3[]>
     (await readEach(world, await select(world, { required: [position] }), position)).map(value => value ?? [NaN, NaN, NaN]);
 
 let nextDevice: GPUDevice | null = null;
-const setDevice = System.create({ resources: { write: [gpuDevice] } }, ({ resources }) => { resources[gpuDevice] = nextDevice; });
+const setDevice = System.create({  }, ({ resources }) => { resources[gpuDevice] = nextDevice; });
 
 describe("removing GPU systems", () => {
     it("releases the GPU records of a render system and a GPU kernel once they're removed", async () => {
@@ -264,7 +264,7 @@ describe("the gpuDevice resource", () => {
         const world = createWorld({ [workers]: 0, [gpuDevice]: lost });
         const cpuWorld = createWorld({ [workers]: 0 });
         let changes = 0;
-        const watchDevice = System.create({ resources: { read: [gpuDevice], changed: [gpuDevice] } }, ({ resources }) => {
+        const watchDevice = System.create({ resources: { changed: [gpuDevice] } }, ({ resources }) => {
             void resources[gpuDevice];
             changes++;
         });
@@ -577,7 +577,7 @@ describe("render systems", () => {
         const own = await device();
         const output = own.createBuffer({ size: count * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
         const copy = System.render({
-            components: { has: [tag] },
+            components: { with: [tag] },
             shader: { group: 0, accessors: { place: position } },
             after: [move],
         }, ({ encoder, tables }) => {
@@ -624,12 +624,12 @@ describe("render systems", () => {
 /** The x a spawned position reaches after one `move`, of the one row the nudges below write. */
 const nudged = 3000;
 
-const nudgeRow = System.create({ components: { write: [position] } }, row => {
+const nudgeRow = System.create({ components: { with: [position] } }, row => {
     const [px, py, pz] = row[position];
     if (px === nudged) row[position] = [px, py + 1, pz];
 });
 
-const nudgeKernel = System.create({ kernel: true, components: { write: [position] } }, row => {
+const nudgeKernel = System.create({ kernel: true, components: { with: [position] } }, row => {
     const [px, py, pz] = row[position];
     if (px === nudged) row[position] = [px, py + 1, pz];
 });

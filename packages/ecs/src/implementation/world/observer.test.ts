@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
+import { giveAccess } from "../../interface/registry/ids.test-helper.js";
 import { Index, Report, System, workers } from "../../index.js";
 import { isObserver, requireDefinition } from "../../interface/registry/index.js";
 import type { World } from "../../interface/world/world.js";
@@ -30,28 +31,29 @@ const reset = (): void => {
     for (const list of Object.values(seen)) list.length = 0;
 };
 
-const raise = System.create({ resources: { write: [level] } }, ({ resources }) => { resources[level] += 1; });
+const raise = System.create({  }, ({ resources }) => { resources[level] += 1; });
 const spawn = System.create({}, ({ commands }) => { commands.spawn([amount, cell])({ [amount]: 1, [cell]: 7 }); });
-const grow = System.create({ components: { write: [amount] } }, row => { row[amount] += 1; });
+const grow = System.create({ components: { with: [amount] } }, row => { row[amount] += 1; });
 const nothing = System.create({}, () => {});
 
-const watchLevel = System.create({ observer: true, resources: { read: [level] } }, context => {
+// It keeps its context, which the build can't follow, so it's given what it reads.
+const watchLevel = System.create(giveAccess({ observer: true }, { resources: { read: [level] } }), context => {
     seen.levels.push(context.resources[level]);
     seen.contexts.push(context);
 });
-const watchAmounts = System.create({ observer: true, components: { read: [amount], changed: [amount] } }, row => { seen.amounts.push(row[amount]); });
-const count = System.create({ observer: true, components: { has: [amount] } }, () => { seen.counted.push(1); });
+const watchAmounts = System.create({ observer: true, components: { with: [amount], changed: [amount] } }, row => { seen.amounts.push(row[amount]); });
+const count = System.create({ observer: true, components: { with: [amount] } }, () => { seen.counted.push(1); });
 const inCell = System.create({ observer: true, lookup: { found: { index: byCell } } }, ({ lookup }) => {
     seen.cells.push(lookup.found(7).length);
 });
-const failing = System.create({ observer: true, resources: { read: [level] } }, ({ resources }) => {
+const failing = System.create({ observer: true }, ({ resources }) => {
     if (resources[level] > 0) throw new Error("observer failed");
 });
-const watchReport = System.create({ observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
+const watchReport = System.create({ observer: true, components: { with: [Report.errors], changed: [Report.errors] } }, row => {
     seen.reports.push(row[Report.errors].failures.length);
 });
 const raiseThenWatch = System.create([raise, watchLevel]);
-const watchLevelChanges = System.create({ observer: true, resources: { read: [level], changed: [level] } }, ({ resources }) => {
+const watchLevelChanges = System.create({ observer: true, resources: { changed: [level] } }, ({ resources }) => {
     seen.levels.push(resources[level]);
 });
 

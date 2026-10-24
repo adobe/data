@@ -14,8 +14,8 @@ declare module "@adobe/ecs" {
     }
 }
 
-const count = System.create({ resources: { write: [frames] } }, ({ resources }) => { resources[frames] += 1; });
-const start = System.create({ resources: { write: [always] } }, ({ resources }) => { resources[always] = true; });
+const count = System.create({  }, ({ resources }) => { resources[frames] += 1; });
+const start = System.create({  }, ({ resources }) => { resources[always] = true; });
 
 describe("a frame cadence", () => {
     it("ticks on animation frames, with their time", async () => {

@@ -30,10 +30,10 @@ describe("passInputSchemas", () => {
         ]);
     });
     test("finds the input after the row when the declaration has components", async () => {
-        expect(await schemasOf(`System.create({ components: { read: [a] } }, (row, context, input: { dx: number }) => {});`)).toEqual([
+        expect(await schemasOf(`System.create({ components: { with: [a] } }, (row, context, input: { dx: number }) => {});`)).toEqual([
             { type: "object", properties: { dx: { type: "number" } } },
         ]);
-        expect(await schemasOf(`System.create({ components: { read: [a] } }, (row, context) => {});`)).toBe(null);
+        expect(await schemasOf(`System.create({ components: { with: [a] } }, (row, context) => {});`)).toBe(null);
     });
     test("takes a declaration not written in place's input from a third parameter, or a second with a type", async () => {
         expect(await schemasOf([
@@ -43,7 +43,7 @@ describe("passInputSchemas", () => {
         ].join("\n"))).toEqual([{ type: "object", properties: { a: { type: "number" } } }, { type: "object", properties: { b: { type: "number" } } }]);
     });
     test("passes nothing for a body without input", async () => {
-        expect(await schemasOf(`System.create({ resources: { read: [a] } }, ({ resources }) => {});\nSystem.create(context => {});`)).toBe(null);
+        expect(await schemasOf(`System.create({ resources: {} }, ({ resources }) => {});\nSystem.create(context => {});`)).toBe(null);
     });
     test("reads optional fields, literals, unions, arrays, tuples, sets and maps", async () => {
         expect(await schemasOf(`System.create({}, (_c, input: {

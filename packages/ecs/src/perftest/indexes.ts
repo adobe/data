@@ -45,9 +45,9 @@ const seedKeys = System.create({}, ({ commands }, input: { readonly count: numbe
 
 /** Moves every marked entity to another bucket, and back again the next run. */
 let flip = 1;
-const rekeyMarked = System.create({ components: { write: [key], has: [marked] } }, row => { row[key] = (row[key] + flip + keys) % keys; });
+const rekeyMarked = System.create({ components: { with: [key, marked] } }, row => { row[key] = (row[key] + flip + keys) % keys; });
 /** Moves every entity to another bucket. */
-const rekeyAll = System.create({ components: { write: [key] } }, row => { row[key] = (row[key] + flip + keys) % keys; });
+const rekeyAll = System.create({ components: { with: [key] } }, row => { row[key] = (row[key] + flip + keys) % keys; });
 
 let found = 0;
 /** Uses `byKey`, so a run of it refreshes the index. */
@@ -75,7 +75,7 @@ const threads = navigator.hardwareConcurrency - 1;
 const pooled = (): World => createWorld({ [workers]: threads });
 
 /** A kernel touching nothing, so a world's pool starts, as it does with its first kernel. */
-const startPool = System.create({ kernel: true, components: { has: [marked] } }, () => {});
+const startPool = System.create({ kernel: true, components: { with: [marked] } }, () => {});
 
 /** Indexes `index idle` keeps, each over its own thousand entities. */
 const idleIndexes = 1000;
@@ -87,12 +87,12 @@ declare module "@adobe/ecs" {
 }
 
 /** Unique serials among `unique lookup 1M`'s entities. */
-const bySerial = Index.create({ key: [serial], unique: true, components: { has: [amount] } });
+const bySerial = Index.create({ key: [serial], unique: true, components: { with: [amount] } });
 const seedSerials = System.create({}, ({ commands }) => {
     for (let i = 0; i < million; i++) commands.spawn([serial, amount])({ [serial]: i, [amount]: 1 });
 });
 let summed = 0;
-const lookUnique = System.create({ lookup: { bySerial: { index: bySerial, read: [amount] } } }, ({ lookup }) => {
+const lookUnique = System.create({ lookup: { bySerial: { index: bySerial } } }, ({ lookup }) => {
     let sum = 0;
     for (let i = 0; i < million; i++) sum += lookup.bySerial(i)?.[amount] ?? 0;
     summed = sum;
@@ -100,21 +100,21 @@ const lookUnique = System.create({ lookup: { bySerial: { index: bySerial, read: 
 
 /** Parents in `children lookup`, with ten children each. */
 const parents = 10_000;
-const childrenOf = Index.create({ key: [parent], components: { has: [amount] } });
+const childrenOf = Index.create({ key: [parent], components: { with: [amount] } });
 const seedFamilies = System.create({}, ({ commands }) => {
     for (let p = 0; p < parents; p++) {
         const entity = commands.spawn([marked])({ [marked]: true });
         for (let c = 0; c < 10; c++) commands.spawn([parent, amount])({ [parent]: entity, [amount]: 1 });
     }
 });
-const sumChildren = System.create({ components: { has: [marked] }, lookup: { children: { index: childrenOf, read: [amount] } } }, (row, { lookup }) => {
+const sumChildren = System.create({ components: { with: [marked] }, lookup: { children: { index: childrenOf } } }, (row, { lookup }) => {
     const children = lookup.children(row.entity);
     for (let i = 0; i < children.length; i++) summed += children.at(i)[amount];
 });
 
 /** Particles in `grid neighbors 100K`, in a 100 by 100 by 10 grid of unit cells, ten a cell. */
 const particles = 100_000;
-const grid = Index.create({ key: [cell], components: { has: [place] } });
+const grid = Index.create({ key: [cell], components: { with: [place] } });
 const seedParticles = System.create({}, ({ commands }) => {
     for (let i = 0; i < particles; i++) {
         const x = ((i * 7919) % 1000) / 10;
@@ -124,7 +124,7 @@ const seedParticles = System.create({}, ({ commands }) => {
     }
 });
 /** The same on a kernel: on the pool, each row's 27 probes in straight-line code. */
-const neighborsKernel = System.create({ kernel: true, components: { read: [place, cell], write: [amount] }, lookup: { near: { index: grid, read: [place] } } }, (row, { lookup }) => {
+const neighborsKernel = System.create({ kernel: true, components: { with: [place, cell, amount] }, lookup: { near: { index: grid } } }, (row, { lookup }) => {
     const [cx, cy, cz] = row[cell];
     const [x] = row[place];
     let push = 0;
@@ -152,12 +152,12 @@ const seedKernelParticles = System.create({}, ({ commands }) => {
 
 /** Particles of `rekey 1M`, drifting through cells of 4 units. */
 const drifting = million;
-const drift = System.create({ kernel: true, components: { write: [place] } }, row => {
+const drift = System.create({ kernel: true, components: { with: [place] } }, row => {
     const [x, y, z] = row[place];
     row[place] = [x + 0.25, y, z];
 });
 /** The cell a particle is in, written only when it crosses into another, so the index's work is the crossings. */
-const rekeyCells = System.create({ kernel: true, components: { read: [place], write: [cell], changed: [place] }, after: [drift] }, row => {
+const rekeyCells = System.create({ kernel: true, components: { with: [place, cell], changed: [place] }, after: [drift] }, row => {
     const [x, y, z] = row[place];
     const [cx, cy, cz] = row[cell];
     const nx = Math.floor(x / 4);
@@ -165,7 +165,7 @@ const rekeyCells = System.create({ kernel: true, components: { read: [place], wr
     const nz = Math.floor(z / 4);
     if (nx !== cx || ny !== cy || nz !== cz) row[cell] = [nx, ny, nz];
 });
-const coarse = Index.create({ key: [cell], components: { has: [place] } });
+const coarse = Index.create({ key: [cell], components: { with: [place] } });
 /** Uses `coarse` once, so a run refreshes it. */
 const lookCoarse = System.create({ lookup: { coarse: { index: coarse } }, after: [rekeyCells] }, ({ lookup }) => { found += lookup.coarse([0, 0, 0]).length; });
 const frame = System.create({ systems: [drift, rekeyCells, lookCoarse] });
@@ -181,7 +181,7 @@ const frameUnindexed = System.create({ systems: [drift, rekeyCells] });
 
 /** Rows of `order run 100K`, ranked in a scattered order. */
 const orderedRows = 100_000;
-const byRank = Index.create({ key: [serial], sorted: true, components: { has: [amount] } });
+const byRank = Index.create({ key: [serial], sorted: true, components: { with: [amount] } });
 const seedRanked = System.create({}, ({ commands }) => {
     for (let i = 0; i < orderedRows; i++) {
         if (i < orderedRows / 100) commands.spawn([serial, amount, marked])({ [serial]: (i * 7919) % orderedRows, [amount]: i });
@@ -190,19 +190,19 @@ const seedRanked = System.create({}, ({ commands }) => {
 });
 let accumulated = 0;
 /** Sums its rows' amounts, weighting each by the sum so far, so the order rows run in is part of the result. */
-const inRankOrder = System.create({ components: { read: [amount] }, order: byRank }, row => {
+const inRankOrder = System.create({ components: { with: [amount] }, order: byRank }, row => {
     accumulated = (accumulated * 31 + row[amount]) % 1000003;
 });
-const inStorageOrder = System.create({ components: { read: [amount] } }, row => {
+const inStorageOrder = System.create({ components: { with: [amount] } }, row => {
     accumulated = (accumulated * 31 + row[amount]) % 1000003;
 });
-const changedInRankOrder = System.create({ components: { read: [amount], changed: [amount] }, order: byRank }, row => {
+const changedInRankOrder = System.create({ components: { with: [amount], changed: [amount] }, order: byRank }, row => {
     accumulated = (accumulated * 31 + row[amount]) % 1000003;
 });
-const bumpMarked = System.create({ kernel: false, components: { write: [amount], has: [marked] } }, row => { row[amount] += 1; });
+const bumpMarked = System.create({ kernel: false, components: { with: [amount, marked] } }, row => { row[amount] += 1; });
 
 let pushed = 0;
-const neighbors = System.create({ components: { read: [place, cell] }, lookup: { near: { index: grid, read: [place] } } }, (row, { lookup }) => {
+const neighbors = System.create({ components: { with: [place, cell] }, lookup: { near: { index: grid } } }, (row, { lookup }) => {
     const [cx, cy, cz] = row[cell];
     const [x] = row[place];
     let push = 0;
@@ -214,9 +214,9 @@ const neighbors = System.create({ components: { read: [place, cell] }, lookup: {
 });
 
 /** Ranks of `sorted range 1M`, one an entity, and the ranges it looks up, ten ranks each. */
-const ranked = Index.create({ key: [serial], sorted: true, components: { has: [amount] } });
+const ranked = Index.create({ key: [serial], sorted: true, components: { with: [amount] } });
 const ranges = 10_000;
-const lookRanges = System.create({ lookup: { ranked: { index: ranked, read: [amount] } } }, ({ lookup }) => {
+const lookRanges = System.create({ lookup: { ranked: { index: ranked } } }, ({ lookup }) => {
     let sum = 0;
     for (let r = 0; r < ranges; r++) {
         const start = (r * 7919) % (million - 10);
@@ -228,15 +228,15 @@ const lookRanges = System.create({ lookup: { ranked: { index: ranked, read: [amo
 
 /** Entities `sorted page 100K` pages through, by a value one of them changes each run, the page the 20 after the first 100 with a small rank. */
 const pageRows = 100_000;
-const byAmount = Index.create({ key: [amount], sorted: true, components: { has: [key] } });
+const byAmount = Index.create({ key: [amount], sorted: true, components: { with: [key] } });
 const seedPage = System.create({}, ({ commands }) => {
     commands.spawn([amount, key, marked])({ [amount]: 0, [key]: 0, [marked]: true });
     for (let i = 1; i < pageRows; i++) commands.spawn([amount, key])({ [amount]: (i * 7919) % pageRows, [key]: i });
 });
-const nudgeAmount = System.create({ kernel: false, components: { has: [marked], write: [amount] } }, row => { row[amount] += 1; });
+const nudgeAmount = System.create({ kernel: false, components: { with: [amount, marked] } }, row => { row[amount] += 1; });
 let page: number[] = [];
 /** The page, recomputed only when what it reads changed: the 20 rows after the first 100 with a key below half, highest amounts first. */
-const readPage = System.create({ lookup: { byAmount: { index: byAmount, read: [key], changed: [key] } }, after: [nudgeAmount] }, ({ lookup }) => {
+const readPage = System.create({ lookup: { byAmount: { index: byAmount, changed: [key] } }, after: [nudgeAmount] }, ({ lookup }) => {
     const all = lookup.byAmount();
     if (!all.changed) return;
     const rows: number[] = [];
@@ -258,7 +258,7 @@ declare module "@adobe/ecs" {
         [tagged]: { type: true };
     }
 }
-const untagged = Index.create({ key: [], components: { has: [amount], not: [tagged] } });
+const untagged = Index.create({ key: [], components: { with: [amount], not: [tagged] } });
 const seedAmounts = System.create({}, ({ commands }) => {
     for (let i = 0; i < million; i++) {
         if (i % 100 === 0) commands.spawn([amount, marked])({ [amount]: i, [marked]: true });
@@ -267,7 +267,7 @@ const seedAmounts = System.create({}, ({ commands }) => {
 });
 /** Tags every marked entity, which leaves the index, and untags them the next run, which enter it again. */
 let tagging = true;
-const toggleMarked = System.create({ components: { has: [marked] } }, (row, { commands }) => {
+const toggleMarked = System.create({ components: { with: [marked] } }, (row, { commands }) => {
     if (tagging) commands.add(row.entity, tagged);
     else commands.remove(row.entity, tagged);
 });
@@ -281,7 +281,7 @@ const spawnAndDespawn = System.create({}, ({ commands }) => {
     spawnedLast = spawned;
 });
 /** Writes every entity's amount, which the index holds by but doesn't watch. */
-const writeAmounts = System.create({ kernel: true, components: { write: [amount] } }, row => { row[amount] = row[amount] + 1; });
+const writeAmounts = System.create({ kernel: true, components: { with: [amount] } }, row => { row[amount] = row[amount] + 1; });
 /** Reads the index's length and whether it changed, as a count kept by a system would. */
 const lengthReads = 100_000;
 const readLengths = System.create({ lookup: { untagged: { index: untagged } } }, ({ lookup }) => {
@@ -339,7 +339,7 @@ const seedFlagged = System.create({}, ({ commands }, input: { readonly count: nu
     flaggedEntities = [];
     for (let i = 0; i < input.count; i++) flaggedEntities.push(commands.spawn([flag])({ [flag]: i % 2 === 0 }));
 });
-const toggleFlag = System.create({ target: "entity", components: { write: [flag] } }, (row, _context, _input: { readonly entity: Entity }) => {
+const toggleFlag = System.create({ target: "entity", components: { with: [flag] } }, (row, _context, _input: { readonly entity: Entity }) => {
     row[flag] = !row[flag];
 });
 /** Both buckets' lengths, as a count of done and not done todos. */
@@ -455,7 +455,7 @@ export const indexBenchmarks: readonly Benchmark[] = [
         best: { bytes: 8, basis: "Each index reads its journal position, 8 bytes." },
         run: async () => {
             const world = inline();
-            const indexes = Array.from({ length: idleIndexes }, () => Index.create({ key: [], components: { has: [idleKey] } }));
+            const indexes = Array.from({ length: idleIndexes }, () => Index.create({ key: [], components: { with: [idleKey] } }));
             await world.run(System.create(({ commands }) => { for (let i = 0; i < 1000; i++) commands.spawn([idleKey])({ [idleKey]: i }); }));
             const lookup = Object.fromEntries(indexes.map((index, k) => [`i${k}`, { index }]));
             const user = System.create({ lookup }, () => {});

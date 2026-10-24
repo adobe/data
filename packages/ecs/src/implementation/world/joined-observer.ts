@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
-import type { SystemLookup } from '../../interface/system/access.js';
+import type { SystemLookupLists } from '../../interface/system/access.js';
 import { idOfItem, idOfKey, idOrNull, indexOfLookup, labelOf, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import type { Archetype } from './archetype.js';
 import { readCell } from './cells.js';
@@ -173,7 +173,7 @@ export const createObserverTarget = (thread: number, label: string, post: (messa
 
 const unique = (ids: readonly number[]): readonly number[] => [...new Set(ids)];
 
-const lookupReadsOf = (state: State, lookup: { readonly [name: string]: SystemLookup } | undefined): { readonly reads: readonly number[]; readonly watched: readonly number[] } => {
+const lookupReadsOf = (state: State, lookup: { readonly [name: string]: SystemLookupLists } | undefined): { readonly reads: readonly number[]; readonly watched: readonly number[] } => {
     const reads: number[] = [];
     const watched: number[] = [];
     for (const name in lookup) {

@@ -31,7 +31,7 @@ declare module "@adobe/ecs" {
 }
 
 const groups = [0, 1, 2];
-const byGroup = Index.create({ key: [group], components: { has: [serial], not: [hidden] } });
+const byGroup = Index.create({ key: [group], components: { with: [serial], not: [hidden] } });
 
 /** What a reader saw: each bucket's length, or each bucket's rows as entity index and serial, in order. */
 let lengths: number[] = [];
@@ -39,7 +39,7 @@ let rows: (readonly [number, number])[][] = [];
 const readLengths = System.create({ lookup: { byGroup: { index: byGroup } } }, ({ lookup }) => {
     lengths = groups.map(value => lookup.byGroup(value).length);
 });
-const readRows = System.create({ lookup: { byGroup: { index: byGroup, read: [serial] } } }, ({ lookup }) => {
+const readRows = System.create({ lookup: { byGroup: { index: byGroup } } }, ({ lookup }) => {
     rows = groups.map(value => {
         const list = lookup.byGroup(value);
         const found: (readonly [number, number])[] = [];
@@ -54,8 +54,8 @@ const readRows = System.create({ lookup: { byGroup: { index: byGroup, read: [ser
 /** Each reader row's bucket's serials, each times its position plus one: a sum that tells the order. */
 const orderSum = System.create({
     kernel: true,
-    components: { read: [reads], write: [sum] },
-    lookup: { byGroup: { index: byGroup, read: [serial] } },
+    components: { with: [reads, sum] },
+    lookup: { byGroup: { index: byGroup } },
 }, (row, { lookup }) => {
     const list = lookup.byGroup(row[reads]);
     let total = 0;
@@ -63,8 +63,8 @@ const orderSum = System.create({
     row[sum] = total;
 });
 const orderSumByHand = System.create({
-    components: { read: [reads], write: [sumByHand] },
-    lookup: { byGroup: { index: byGroup, read: [serial] } },
+    components: { with: [reads, sumByHand] },
+    lookup: { byGroup: { index: byGroup } },
 }, (row, { lookup }) => {
     const list = lookup.byGroup(row[reads]);
     let total = 0;
@@ -72,7 +72,7 @@ const orderSumByHand = System.create({
     row[sumByHand] = total;
 });
 let sums: { kernel: number[]; byHand: number[] } = { kernel: [], byHand: [] };
-const readSums = System.create({ components: { read: [reads, sum, sumByHand] } }, row => {
+const readSums = System.create({ components: { with: [reads, sum, sumByHand] } }, row => {
     sums.kernel[row[reads]] = row[sum];
     sums.byHand[row[reads]] = row[sumByHand];
 });

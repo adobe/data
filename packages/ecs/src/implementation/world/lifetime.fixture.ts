@@ -38,9 +38,8 @@ const seed = System.create({}, ({ commands }) => {
 /** A kernel that holds what kernels can: a lookup's directory, reduction partials and its load on each worker. */
 const measure = System.create({
     kernel: true,
-    components: { read: [value, target], write: [out] },
-    lookup: { targets: { read: [value] } },
-    resources: { reduce: [total] },
+    components: { with: [value, target, out] },
+    lookup: { targets: { with: [value] } },
 }, (row, { lookup: { targets }, reduce }) => {
     const other = targets(row[target]);
     row[out] = other === null ? -1 : row[value] - other[value];

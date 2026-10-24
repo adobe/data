@@ -42,17 +42,17 @@ const scatter = System.create({}, ({ commands }) => {
 const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < 4096; i++) commands.spawn([position, velocity, offset])({ [position]: [i, 0], [velocity]: [1, i % 5], [offset]: 0 });
 });
-const fastA = System.create({ kernel: true, components: { read: [velocity], write: [position] } }, row => {
+const fastA = System.create({ kernel: true, components: { with: [velocity, position] } }, row => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
     row[position] = [x + vx, y + vy];
 });
 // Commands make it a JS kernel, dispatched by message.
-const slowB = System.create({ kernel: true, components: { read: [velocity] } }, (row, { commands }) => {
+const slowB = System.create({ kernel: true, components: { with: [velocity] } }, (row, { commands }) => {
     const [vx] = row[velocity];
     if (vx > 100) commands.despawn(row.entity);
 });
-const fastC = System.create({ kernel: true, components: { read: [velocity], write: [offset] } }, row => {
+const fastC = System.create({ kernel: true, components: { with: [velocity, offset] } }, row => {
     const [vx, vy] = row[velocity];
     row[offset] = vx + vy;
 });
@@ -64,11 +64,11 @@ const grow = System.create({}, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn([position, velocity, offset])({ [position]: [i, 1], [velocity]: [2, i % 3], [offset]: 0 });
 });
 let observedRows = 0;
-const bump = System.create({ kernel: true, components: { write: [offset] } }, row => {
+const bump = System.create({ kernel: true, components: { with: [offset] } }, row => {
     row[offset] = row[offset] + 1;
 });
 const watch = System.create({ components: { changed: [offset] } }, () => { observedRows++; });
-const later = System.create({ kernel: true, components: { read: [velocity], write: [offset] }, after: [watch] }, row => {
+const later = System.create({ kernel: true, components: { with: [velocity, offset] }, after: [watch] }, row => {
     const [vx, vy] = row[velocity];
     row[offset] = vx + vy;
 });

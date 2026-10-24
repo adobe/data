@@ -38,12 +38,11 @@ const load = async (path: string): Promise<number> => {
 };
 
 // 1. A rule derives a slot for every visible entity with a mesh source.
-Rule.create({ components: { has: [meshSource], not: [hidden] }, derive: [meshSlot] });
+Rule.create({ components: { with: [meshSource], not: [hidden] }, derive: [meshSlot] });
 
 // 2. Each new slot gets a fresh token, and its load is requested; the application starts requested loads.
 const request = System.create({
-    components: { read: [meshSource], write: [meshSlot], added: [meshSlot] },
-    resources: { write: [nextToken, requests] },
+    components: { with: [meshSource, meshSlot], added: [meshSlot] },
 }, (row, { resources }) => {
     const token = resources[nextToken];
     resources[nextToken] = token + 1;
@@ -53,14 +52,14 @@ const request = System.create({
 
 // 3. A completed load arrives as a run of its own. A slot whose token still matches gets the mesh; a stale one releases it.
 const apply = System.create({
-    lookup: { slots: { read: [meshSlot] } },
+    lookup: { slots: { with: [meshSlot] } },
 }, ({ lookup, commands }, input: { readonly entity: Entity; readonly token: number; readonly handle: number }) => {
     if (lookup.slots(input.entity)?.[meshSlot] === input.token) commands.add(input.entity, meshReady, input.handle);
     else loaded.delete(input.handle);
 });
 
 // 4. When the slot goes, its mesh goes with it, and the finalizer releases what was loaded.
-Finalizer.create({ components: { read: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
+Finalizer.create({ components: { with: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
 
 const spawn = System.create({}, ({ commands }) => {
     commands.spawn([meshSource])({ [meshSource]: "ship.glb" });

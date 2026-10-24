@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
+import { giveAccess } from "../../interface/registry/ids.test-helper.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
@@ -38,13 +39,13 @@ declare module "@adobe/ecs" {
 
 
 const spawn = System.create({
-    resources: { read: [spawnCount], changed: [spawnCount] },
+    resources: { changed: [spawnCount] },
 }, ({ resources, commands }) => {
     for (let i = 0; i < resources[spawnCount]; i++) commands.spawn([position, velocity, label])({ [position]: [i, 0], [velocity]: 1, [label]: `e${i}` });
 });
 
 const move = System.create({
-    components: { read: [velocity], write: [position], not: [frozen] },
+    components: { with: [velocity, position], not: [frozen] },
     after: [spawn],
 }, row => {
     const [x, y] = row[position];
@@ -54,7 +55,6 @@ const move = System.create({
 /** Counts rows whose position may have changed since it last ran. */
 const watch = System.create({
     components: { changed: [position] },
-    resources: { write: [seen] },
     after: [move],
 }, (_, { resources }) => {
     resources[seen] += 1;
@@ -62,7 +62,7 @@ const watch = System.create({
 
 /** A kernel whose module can't be imported. */
 const missing = attachKernel(
-    System.create({ kernel: true, components: { has: [velocity] } }, () => {}),
+    System.create({ kernel: true, components: { with: [velocity] } }, () => {}),
     { columns: [], shapes: [], resources: [], lookups: [], keys: [], spawns: [], structuredValues: [], url: "/@missing/kernel.js", program: null, reductions: [], reducedShapes: [] },
 );
 
@@ -180,26 +180,21 @@ describe("World.create", () => {
     });
 
     it("throws at creating a composite with an unordered conflict, naming nothing", () => {
-        const push = System.create({ components: { write: [position] } }, row => { row[position] = [0, 0]; });
+        const push = System.create({ components: { with: [position] } }, row => { row[position] = [0, 0]; });
         expect(() => System.create({ systems: [move, push] })).toThrow('"move" and "push"');
         expect(() => System.create({ systems: [move] })).not.toThrow();
     });
 
-    it("gives a body's context only the kinds its declaration declares", async () => {
+    it("gives a body's context only the kinds its body uses", async () => {
         let keys: string[] = [];
-        const probe = System.create({ resources: { read: [seen] } }, context => {
+        // It passes its context on, so the build can't follow it, and it's given what it reads.
+        const probe = System.create(giveAccess({}, { resources: { read: [seen] } }), context => {
             keys = Object.keys(context);
             void context.resources[seen];
         });
         const world = createWorld();
         await world.run(probe);
         expect(keys).toEqual(["resources", "commands"]);
-    });
-
-    it("rejects a key listed in both read and write, since write already makes it readable", () => {
-        // @ts-expect-error write already makes it readable
-        expect(() => System.create({ components: { read: [velocity], write: [velocity] } }, row => { row[velocity] += 1; }))
-            .toThrow(`lists "createTest/velocity" in both components read and write`);
     });
 
     it("reports a system that throws, still applying its commands", async () => {
@@ -251,8 +246,8 @@ describe("World.create", () => {
 
     it("skips every row when a system's only filter is an unchanged resource", async () => {
         const count = System.create({
-            components: { has: [velocity] },
-            resources: { write: [seen], changed: [spawnCount] },
+            components: { with: [velocity] },
+            resources: { changed: [spawnCount] },
         }, (_, { resources }) => {
             resources[seen] += 1;
         });
@@ -289,11 +284,11 @@ describe("World.create", () => {
             if (input.action === "spawn") for (let i = 0; i < 2100; i++) spawned.push(commands.spawn([velocity])({ [velocity]: i }));
             else commands.despawn(spawned[5]);
         });
-        const writer = System.create({ components: { write: [velocity] } }, row => {
+        const writer = System.create({ components: { with: [velocity] } }, row => {
             if (row[velocity] === 2099) row[velocity] = -1;
         });
         const changes: number[] = [];
-        const observer = System.create({ components: { read: [velocity], changed: [velocity] } }, row => {
+        const observer = System.create({ components: { with: [velocity], changed: [velocity] } }, row => {
             changes.push(row[velocity]);
         });
         const world = createWorld();
@@ -350,13 +345,13 @@ describe("World.create", () => {
         await using world = createWorld();
         expect(await readResource(world, gpuDevice)).toBeNull();
         let seen: unknown = undefined;
-        await world.run(System.create({ resources: { read: [gpuDevice] } }, ({ resources }) => { seen = resources[gpuDevice]; }));
+        await world.run(System.create({  }, ({ resources }) => { seen = resources[gpuDevice]; }));
         expect(seen).toBeNull();
     });
 
     it("accepts a system declared again the same under its id, as a module evaluated again declares it, and rejects a different one", async () => {
-        const first = System.create(identify({ resources: { write: [seen] } }, "createTest/systems.ts#named"), ({ resources }) => { resources[seen] = 1; });
-        const again = System.create(identify({ resources: { write: [seen] } }, "createTest/systems.ts#named"), ({ resources }) => { resources[seen] = 2; });
+        const first = System.create(identify({  }, "createTest/systems.ts#named"), ({ resources }) => { resources[seen] = 1; });
+        const again = System.create(identify({  }, "createTest/systems.ts#named"), ({ resources }) => { resources[seen] = 2; });
         expect(() => System.create(identify({}, "createTest/systems.ts#named"), () => {})).toThrow('Cannot declare "named" (createTest/systems.ts#named): its id is another item\'s, with another declaration; if a module was evaluated again with a changed declaration, reload the page.');
         await using world = createWorld();
         await world.run(first);

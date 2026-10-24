@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
+import { giveAccess } from "../../interface/registry/ids.test-helper.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -27,11 +28,12 @@ describe("composite input", () => {
 
     it("rejects a body taking input without the schema the plugin gives from its type, as one not written in place has", () => {
         const counting = (_context: unknown, input: { readonly count: number }): void => { void input.count; };
-        expect(() => System.create({}, counting)).toThrow('takes input, whose schema the plugin gives from the type of its body\'s parameter: write its body in place and build it with Compiler.plugin().');
+        expect(() => System.create({}, counting)).toThrow("has no access the build inferred from its body");
+        expect(() => System.create(giveAccess({}), counting)).toThrow('takes input, whose schema the plugin gives from the type of its body\'s parameter: write its body in place and build it with Compiler.plugin().');
     });
 
     it("rejects an input schema that isn't an object of named fields", () => {
         const create: (...parameters: unknown[]) => unknown = System.create;
-        expect(() => create({}, (_context: unknown, _input: unknown) => {}, { type: "number" })).toThrow('input is an object schema of named fields.');
+        expect(() => create(giveAccess({}), (_context: unknown, _input: unknown) => {}, { type: "number" })).toThrow('input is an object schema of named fields.');
     });
 });

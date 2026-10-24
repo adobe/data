@@ -64,7 +64,7 @@ describe("render systems with an order", () => {
         const output = own.createBuffer({ size: (count + 16) * 8, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
         const tableCounts: number[][] = [];
         const draw = System.render({
-            components: { has: [visible], not: [hidden] },
+            components: { with: [visible], not: [hidden] },
             order: byDepth,
             shader: { accessors: { paintDepth: depth, paintCode: code } },
         }, ({ encoder, tables }) => {
@@ -131,7 +131,7 @@ describe("render systems with an order", () => {
         const withImage = expected.flatMap(i => i === 500 ? [[i, i], [500, 5001]] : [[i, i]]);
         expect(await read()).toEqual(withImage);
 
-        const toBack = System.create({ components: { read: [code], write: [depth] } }, row => {
+        const toBack = System.create({ components: { with: [code, depth] } }, row => {
             if (row[code] === 10) row[depth] = count + 5;
         });
         await world.run(toBack);
@@ -151,7 +151,7 @@ describe("render systems with an order", () => {
 
     it("write their order only when the index's entries change or move", async () => {
         const own = await device();
-        const draw = System.render({ components: { has: [visible], not: [hidden] }, order: byDepth, shader: { accessors: { paintDepth: depth } } }, () => {});
+        const draw = System.render({ components: { with: [visible], not: [hidden] }, order: byDepth, shader: { accessors: { paintDepth: depth } } }, () => {});
         const world = createWorld({ [gpuDevice]: own });
         await world.run(spawn);
         await world.run(draw);
@@ -169,7 +169,7 @@ describe("render systems with an order", () => {
         await world.run(draw);
         expect([sizes, records]).toEqual([[], 0]);
         // A new key writes its chunk of the column and the order, in elements; the record stays.
-        const toBack = System.create({ components: { read: [code], write: [depth] } }, row => {
+        const toBack = System.create({ components: { with: [code, depth] } }, row => {
             if (row[code] === 10) row[depth] = count + 5;
         });
         await world.run(toBack);
@@ -185,7 +185,7 @@ describe("render systems with an order", () => {
     it("give a shader one table when nothing matches", async () => {
         const own = await device();
         let tables: readonly System.RenderTable[] = [];
-        const draw = System.render({ components: { has: [hidden, image] }, order: byDepth, shader: { accessors: { paintDepth: depth } } }, context => { tables = context.tables; });
+        const draw = System.render({ components: { with: [hidden, image] }, order: byDepth, shader: { accessors: { paintDepth: depth } } }, context => { tables = context.tables; });
         const world = createWorld({ [gpuDevice]: own });
         await world.run(spawn);
         expect((await runReported(world, draw)).failures).toEqual([]);

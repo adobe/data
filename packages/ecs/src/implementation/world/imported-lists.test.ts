@@ -20,13 +20,13 @@ const seed = System.create({}, ({ commands }) => {
 });
 
 /** Spawns and adds through lists another module declares, naming one of their keys only through the list. */
-const ignite = System.create({ kernel: true, components: { read: [heat] } }, (row, { commands }) => {
+const ignite = System.create({ kernel: true, components: { with: [heat] } }, (row, { commands }) => {
     commands.spawn(Spark)({ [ember]: row[heat] * 2 });
     commands.add(row.entity, Lists.Marks, { [ember]: row[heat] });
 });
 
 /** Declares an imported list, and removes through one. */
-const cool = System.create({ kernel: true, components: { read: [ember], has: Lists.Spark } }, (row, { commands }) => {
+const cool = System.create({ kernel: true, components: { with: [ember, ...Lists.Spark] } }, (row, { commands }) => {
     if (row[ember] > 4) commands.remove(row.entity, Spark);
 });
 

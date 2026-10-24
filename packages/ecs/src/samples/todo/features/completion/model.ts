@@ -5,7 +5,7 @@ import { byDone } from "./data.js";
 
 /** Marks every todo done, or every one not done. Only todos that change are written. */
 export const toggleAll = System.create({
-    components: { write: [done], has: [todo] },
+    components: { with: [done, todo] },
 }, (row, _context, input: { readonly done: boolean }) => {
     if (row[done] !== input.done) row[done] = input.done;
 });

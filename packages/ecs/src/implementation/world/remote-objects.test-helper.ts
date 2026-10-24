@@ -41,7 +41,7 @@ export const seed = System.create({}, ({ commands }) => {
  * flagged when it's odd, so it moves archetype every tick; the other entities despawn, and four more spawn into its
  * archetypes, so rows swap into the holes they leave.
  */
-export const churn = System.create({ components: { read: [serial], write: [phase] } }, (row, { commands }) => {
+export const churn = System.create({ components: { with: [serial, phase] } }, (row, { commands }) => {
     if (row[serial] !== 0) {
         commands.despawn(row.entity);
         return;
@@ -72,7 +72,7 @@ export type Observers = "factory" | "observer";
 const observer: { entity: Entity | null; seen: ((odd: boolean, held: boolean, text: string | null | undefined) => void) | null } = { entity: null, seen: null };
 
 /** After each sync point, on the joined thread: the watched entity's phase and caption, and whether it's flagged. */
-export const observerWatch = System.create({ observer: true, lookup: { values: { read: [phase, caption] }, flagged: { has: [flag] } } }, ({ lookup }) => {
+export const observerWatch = System.create({ observer: true, lookup: { values: { with: [phase, caption] }, flagged: { with: [flag] } } }, ({ lookup }) => {
     if (observer.entity === null) return;
     const row = lookup.values(observer.entity);
     if (row === null) return;

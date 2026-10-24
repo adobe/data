@@ -37,20 +37,20 @@ declare module "@adobe/ecs" {
     interface Components { [position]: { type: number }; [element]: { type: HTMLElement; thread: "main" }; [shown]: { type: true; derived: true } }
 }
 export const Placed = Archetype.create([position, element]);
-export const showing = Rule.create({ components: { has: [element] }, derive: [shown] });
-export const move = System.create({ components: { write: [position] } }, row => { row[position] += 1; });
+export const showing = Rule.create({ components: { with: [element] }, derive: [shown] });
+export const move = System.create({ components: { with: [position] } }, row => { row[position] += 1; });
 export const all = System.create({ systems: [move] });
 export const draw = System.render({ shader: { accessors: {} } }, () => {});
-export const placed = Index.create({ key: [position], components: { has: [element] } });
+export const placed = Index.create({ key: [position], components: { with: [element] } });
 export const ranked = Index.create({ key: [position], sorted: true });
-export const after = System.create({ components: { read: [position] }, lookup: { next: { index: ranked, read: [position] } } }, (row, { lookup }) => { void lookup.next({ ">": row[position] }).length; });
+export const after = System.create({ components: { with: [position] }, lookup: { next: { index: ranked } } }, (row, { lookup }) => { void lookup.next({ ">": row[position] }).length; });
 export const sortedName = (index: Index<{ readonly sorted: true }>): string => index.name;
 // A world comes from the one import every other value does.
 export const world: World = World.create({ [workers]: 0 });
 // Another thread joins it through the other end of a channel the world shares.
 declare const port: MessagePort;
 export const joined: World = World.join(port, { threads: ["main"] });
-export const read = System.create({ observer: true, components: { read: [position] }, resources: { read: [gpuDevice] }, lookup: { at: { read: [position] } } }, () => {});
+export const read = System.create({ observer: true, components: { with: [position] }, lookup: { at: { with: [position] } } }, () => {});
 export const added = world.add(read);
 `;
 
@@ -99,7 +99,8 @@ export const health = Symbol("exportsTest/health");
 declare module "@adobe/ecs" {
     interface Components { [health]: { type: number } }
 }
-export const both = System.create({ components: { read: [health], write: [health] } }, () => {});
+// What a body reads is inferred, never declared.
+export const both = System.create({ components: { read: [health] } }, () => {});
 const near = System.create({}, (_context, input: { readonly distance: number }) => { void input; });
 const far = System.create({}, (_context, input: { readonly distance: string }) => { void input; });
 export const listed = System.create([near, far]);
@@ -133,7 +134,7 @@ describe("package exports", () => {
         expect(emitted).toContain(`export declare const placed: Index<{
     readonly key: readonly [typeof position];
     readonly components: {
-        readonly has: readonly [typeof element];
+        readonly with: readonly [typeof element];
     };
 }>;`);
         expect(emitted).toContain(`export declare const ranked: Index<{
@@ -155,7 +156,7 @@ describe("package exports", () => {
         const reported = compile(misdeclared).messages;
         expect(reported.some(message => message.includes("No overload matches"))).toBe(false);
         expect(reported.filter(message => message.includes(`has a different type in another member of this composite.`))).toHaveLength(4);
-        expect(reported.some(message => message.startsWith("Type '[unique symbol]' is not assignable"))).toBe(true);
+        expect(reported.some(message => message.startsWith("Type 'symbol[]' is not assignable to type 'undefined'"))).toBe(true);
     }, 60_000);
 });
 

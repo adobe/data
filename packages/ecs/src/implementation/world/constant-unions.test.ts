@@ -23,7 +23,7 @@ const spawn = System.create({}, ({ commands }) => {
     commands.spawn([frame, shown])({ [frame]: Frame.autoWidth, [shown]: null });
 });
 // Reads the union beside an object of the main thread: the union is a number in shared memory, on no thread.
-const show = System.create({ components: { read: [frame], write: [shown] } }, row => {
+const show = System.create({ components: { with: [frame, shown] } }, row => {
     row[shown] = { text: `frame ${row[frame]}` };
 });
 

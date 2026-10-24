@@ -37,11 +37,9 @@ System.create({ resources: { is: [paused] } }, ({ resources }) => {
     check<Equal<typeof resources[typeof paused], true>>();
 });
 
-// `not`: runs while each is null or false; its value is known, so it isn't readable.
-System.create({ components: { write: [position] }, resources: { not: [paused] } }, (row, context) => {
+// `not`: runs while each is null or false.
+System.create({ components: { with: [position] }, resources: { not: [paused] } }, row => {
     row[position] += 1;
-    // @ts-expect-error a `not` condition isn't readable
-    void context.resources;
 });
 
 // Only a resource whose type allows null or false is a condition.
@@ -50,14 +48,10 @@ System.create({ resources: { is: [count] } }, () => {});
 // @ts-expect-error a value that isn't data and doesn't allow null is never null
 System.create({ resources: { not: [handle] } }, () => {});
 
-// A condition is listed once: `is` already makes it readable, and a written value would have two types.
+// A condition is listed once.
 // @ts-expect-error both is and not
 System.create({ resources: { is: [paused], not: [paused] } }, () => {});
-// @ts-expect-error is already makes it readable
-System.create({ resources: { is: [level], read: [level] } }, () => {});
-// @ts-expect-error a condition isn't written
-System.create({ resources: { is: [level], write: [level] } }, () => {});
 
 // Kernels and render systems take conditions too.
-System.create({ kernel: true, components: { write: [position] }, resources: { not: [paused] } }, row => { row[position] += 1; });
+System.create({ kernel: true, components: { with: [position] }, resources: { not: [paused] } }, row => { row[position] += 1; });
 System.render({ resources: { is: [level] }, shader: { accessors: { place: position } } }, () => {});

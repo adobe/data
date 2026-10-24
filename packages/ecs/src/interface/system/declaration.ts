@@ -1,14 +1,15 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Index } from '../indexes/index-type.js';
 import type { Resource } from '../resource/resource.js';
-import type { ComponentAccess, ResourceAccess, SystemLookup, Up } from './access.js';
+import type { ComponentAccess, ComponentLists, ResourceAccess, ResourceLists, SystemLookup, SystemLookupLists, Up, UpLists } from './access.js';
 import type { Shader } from './render.js';
 import type { System } from './system.js';
 
 /**
  * A system never declares its thread: it runs on the one its object components and resources live on, those it
- * reads, writes or filters on by change, through `components`, `lookup`, `up` and `resources` but `has` and `not`.
- * Without them, a kernel runs on the kernel pool and any other system on `"world"`.
+ * reads, writes or filters on by change, through its row, lookups, `up` and resources. Without them, a kernel runs on
+ * the kernel pool and any other system on `"world"`. A declaration says only what its body can't show: which entities
+ * it runs over, its filters and conditions, and its order; the build infers what the body reads, writes and reduces.
  */
 export type Declaration = {
     /**
@@ -25,14 +26,14 @@ export type Declaration = {
      *   matched row counts as changed in what it writes.
      */
     readonly kernel?: boolean | "gpu";
-    /** The entities it runs over, and what it reads and writes of theirs. Omitted for a system that runs once per run. */
+    /** The entities it runs over. Omitted for a system that runs once per run. */
     readonly components?: ComponentAccess;
     readonly lookup?: { readonly [name: string]: SystemLookup };
     /**
-     * Runs rows in depth order through `through`, so each reads its parent's `read` values after the parent ran, as
-     * the context's `up`, or null for a row without a parent. With change filters, a row also passes when its parent,
-     * or what it reads of its parent, changed since the system last ran, or it moved to another archetype, as removing
-     * its parent moves it. Rows on or under a parent cycle don't run.
+     * Runs rows in depth order through `through`, so each reads its parent's values after the parent ran, as the
+     * context's `up`, or null for a row without a parent. With change filters, a row also passes when its parent, or
+     * what it reads of its parent, changed since the system last ran, or it moved to another archetype, as removing its
+     * parent moves it. Rows on or under a parent cycle don't run.
      */
     readonly up?: Up;
     /**
@@ -45,7 +46,7 @@ export type Declaration = {
     /**
      * The field of its body's input naming the one entity it runs on: its body runs once, on that entity's row, when
      * the entity is alive and matches `components`, and not at all otherwise. Needs `components`; not with `kernel`,
-     * `up`, `order` or `reduce`.
+     * `up` or `order`, nor with a body that reduces.
      */
     readonly target?: string;
     /** Makes this a render system (see `render`): its body records GPU work over the GPU copy of the components it names. */
@@ -61,4 +62,12 @@ export type Declaration = {
      * state; changes nothing; never ordered; doesn't keep the loop ticking.
      */
     readonly observer?: true;
+};
+
+/** A declaration as the world takes it: the build's inferred reads, writes and reductions joined with what it declares. */
+export type Resolved = Omit<Declaration, "components" | "lookup" | "up" | "resources"> & {
+    readonly components?: ComponentLists;
+    readonly lookup?: { readonly [name: string]: SystemLookupLists };
+    readonly up?: UpLists;
+    readonly resources?: ResourceLists;
 };

@@ -13,10 +13,10 @@ import { runReported } from "./reports.test-helper.js";
 
 /** What a finalizer's lookup gave as probes were despawned. */
 const finalized: (boolean | null)[] = [];
-Finalizer.create({ components: { read: [target] }, lookup: { found: { read: [value], changed: [value] } } }, (row, { lookup }) => {
+Finalizer.create({ components: { with: [target] }, lookup: { found: { with: [value], changed: [value] } } }, (row, { lookup }) => {
     finalized.push(lookup.found(row[target])?.changed ?? null);
 });
-const despawnProbes = System.create({ components: { has: [target] } }, (row, { commands }) => {
+const despawnProbes = System.create({ components: { with: [target] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 

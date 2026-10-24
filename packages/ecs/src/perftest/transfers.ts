@@ -22,9 +22,7 @@ declare module "@adobe/ecs" {
 export const taken = { bytes: 0 };
 
 /** On the claimed thread: takes a buffer and a bitmap, as an upload would, closing the bitmap. */
-export const take = System.create({
-    resources: { read: [sink] },
-}, ({ resources }, input: { readonly buffer: ArrayBuffer; readonly bitmap: ImageBitmap }) => {
+export const take = System.create({}, ({ resources }, input: { readonly buffer: ArrayBuffer; readonly bitmap: ImageBitmap }) => {
     if (resources[sink] !== null) return;
     taken.bytes += input.buffer.byteLength + input.bitmap.width * input.bitmap.height * 4;
     input.bitmap.close();

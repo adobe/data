@@ -25,11 +25,11 @@ expectType<Equal<typeof particle, readonly [typeof position, typeof velocity]>>(
 export const one: readonly Component.Key[] = particle;
 // A plain readonly list of components is an archetype too.
 export const plain = [position] as const;
-export const moveOver = System.create({ components: { write: plain } }, row => { row[position] += 1; });
+export const moveOver = System.create({ components: { with: [...plain] } }, row => { row[position] += 1; });
 // @ts-expect-error a resource is never in an archetype
 Archetype.create([position, scale]);
 // @ts-expect-error nor is a string
 Archetype.create(["position"]);
 // Archetypes go wherever component lists do.
-export const move = System.create({ components: { write: particle } }, row => { row[position] += row[velocity]; });
-export const read = System.create({ observer: true, components: { read: particle } }, row => { void row[velocity]; });
+export const move = System.create({ components: { with: [...particle] } }, row => { row[position] += row[velocity]; });
+export const read = System.create({ observer: true, components: { with: [...particle] } }, row => { void row[velocity]; });

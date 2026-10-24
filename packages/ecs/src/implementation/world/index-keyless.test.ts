@@ -30,9 +30,9 @@ declare module "@adobe/ecs" {
     }
 }
 
-const shown = Index.create({ key: [], components: { has: [weight], not: [hidden] } });
+const shown = Index.create({ key: [], components: { with: [weight], not: [hidden] } });
 const everything = Index.create({ key: [] });
-const inOrder = Index.create({ key: [], sorted: true, components: { has: [weight] } });
+const inOrder = Index.create({ key: [], sorted: true, components: { with: [weight] } });
 
 /** What a lookup gave: its entities and weights, in its order, its length and whether it changed. */
 type Seen = { readonly entities: readonly Entity[]; readonly weights: readonly number[]; readonly length: number; readonly changed: boolean };
@@ -40,7 +40,7 @@ let seen: Seen = { entities: [], weights: [], length: 0, changed: false };
 let all: readonly Entity[] = [];
 
 const look = System.create({
-    lookup: { shown: { index: shown, read: [weight] }, all: { index: everything } },
+    lookup: { shown: { index: shown }, all: { index: everything } },
 }, ({ lookup }) => {
     const rows = lookup.shown();
     const entities: Entity[] = [];
@@ -114,7 +114,7 @@ describe("an index without a key on the main thread", () => {
         await world.run(look);
         expect(seen.changed).toBe(false);
         // A write to what it holds by, unwatched, or to anything else, changes nothing.
-        await world.run(System.create({ components: { write: [weight, color] } }, row => {
+        await world.run(System.create({ components: { with: [weight, color] } }, row => {
             row[weight] = row[weight] + 1;
             row[color] = 2;
         }));
@@ -135,10 +135,10 @@ describe("an index without a key on the main thread", () => {
         await world.run(watchColor);
         await world.run(watchColor);
         expect(watchedChanged).toBe(false);
-        await world.run(System.create({ components: { write: [color] } }, row => { row[color] = 5; }));
+        await world.run(System.create({ components: { with: [color] } }, row => { row[color] = 5; }));
         await world.run(watchColor);
         expect(watchedChanged).toBe(false);
-        await world.run(System.create({ components: { write: [weight] } }, row => { row[weight] = 5; }));
+        await world.run(System.create({ components: { with: [weight] } }, row => { row[weight] = 5; }));
         await world.run(watchColor);
         expect(watchedChanged).toBe(true);
         await world.run(watchColor);
@@ -151,7 +151,7 @@ describe("an index without a key on the main thread", () => {
         // Moving the first to another archetype puts it last in storage order.
         await world.run(System.create(({ commands }) => { commands.add(entities[0], spin, 1); }));
         const order: Entity[] = [];
-        await world.run(System.create({ components: { read: [weight] }, order: inOrder }, row => { if (row[weight] > 0) order.push(row.entity); }));
+        await world.run(System.create({ components: { with: [weight] }, order: inOrder }, row => { if (row[weight] > 0) order.push(row.entity); }));
         expect(order).toEqual(entities);
     });
 });
@@ -203,8 +203,8 @@ describe("an incrementally refreshed index without a key", () => {
 /** Each row's tally of the rows of `shown`: how many, and the sum of a window of their weights. */
 const tally = System.create({
     kernel: true,
-    components: { read: [color], write: [total, count] },
-    lookup: { shown: { index: shown, read: [weight] } },
+    components: { with: [color, total, count] },
+    lookup: { shown: { index: shown } },
 }, (row, { lookup }) => {
     const rows = lookup.shown();
     let sum = 0;
@@ -212,7 +212,7 @@ const tally = System.create({
     row[total] = sum;
     row[count] = rows.length;
 });
-const tallyByHand = System.create({ components: { read: [color], write: [total, count] }, lookup: { shown: { index: shown, read: [weight] } } }, (row, { lookup }) => {
+const tallyByHand = System.create({ components: { with: [color, total, count] }, lookup: { shown: { index: shown } } }, (row, { lookup }) => {
     const rows = lookup.shown();
     let sum = 0;
     for (let i = row[color] % 7; i < rows.length; i += 7) sum += rows.at(i)[weight];
@@ -222,7 +222,7 @@ const tallyByHand = System.create({ components: { read: [color], write: [total, 
 /** Counts runs whose list changed, `weight` watched. */
 const visit = System.create({
     kernel: true,
-    components: { write: [visited] },
+    components: { with: [visited] },
     lookup: { shown: { index: shown, changed: [weight] } },
 }, (row, { lookup }) => {
     if (lookup.shown().changed) row[visited] = row[visited] + 1;
@@ -231,7 +231,7 @@ const visit = System.create({
 const values = async (world: CreatedWorld, keys: readonly Component.Key[]): Promise<readonly unknown[]> => {
     let found: readonly unknown[] = [];
     const entities = [...await select(world, { required: [total] })].sort(byIndex);
-    await world.run(System.create({ lookup: { of: { read: [total, count, visited] } } }, ({ lookup }) => {
+    await world.run(System.create({ lookup: { of: { with: [total, count, visited] } } }, ({ lookup }) => {
         found = entities.map(entity => {
             const row = lookup.of(entity);
             return row === null ? null : keys.map(key => key === total ? row[total] : key === count ? row[count] : row[visited]);
@@ -247,7 +247,7 @@ describe.each([[true], [false]])("kernels looking up through an index without a 
             for (let k = 0; k < 300; k++) commands.spawn([weight, color, total, count, visited])({ [weight]: k % 11, [color]: k, [total]: 0, [count]: 0, [visited]: 0 });
             for (let k = 0; k < 40; k++) commands.spawn([color, total, count, visited])({ [color]: k, [total]: 0, [count]: 0, [visited]: 0 });
         }));
-        await world.run(System.create({ components: { read: [color] } }, (row, { commands }) => {
+        await world.run(System.create({ components: { with: [color] } }, (row, { commands }) => {
             if (row[color] % 5 === 0) commands.add(row.entity, hidden);
             if (row[color] % 9 === 0) commands.despawn(row.entity);
         }));
@@ -261,10 +261,10 @@ describe.each([[true], [false]])("kernels looking up through an index without a 
         const visits = async (): Promise<number> => (await values(world, [visited])).reduce<number>((sum, row) => sum + (Array.isArray(row) ? Number(row[0]) : 0), 0);
         const rows = (await values(world, [visited])).length;
         expect(await visits()).toBe(rows);
-        await world.run(System.create({ components: { write: [color] } }, row => { row[color] = row[color] + 1; }));
+        await world.run(System.create({ components: { with: [color] } }, row => { row[color] = row[color] + 1; }));
         await world.run(visit);
         expect(await visits()).toBe(rows);
-        await world.run(System.create({ components: { write: [weight] } }, row => { row[weight] = row[weight] + 1; }));
+        await world.run(System.create({ components: { with: [weight] } }, row => { row[weight] = row[weight] + 1; }));
         await world.run(visit);
         expect(await visits()).toBe(2 * rows);
     });

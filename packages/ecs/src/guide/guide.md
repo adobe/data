@@ -123,25 +123,27 @@ export const spawn = System.create(({ commands }) => {
 });
 
 // Commands also add and remove components, and despawn entities.
-export const defeat = System.create({ components: { has: [enemy] } }, (row, { commands }) => {
+export const defeat = System.create({ components: { with: [enemy] } }, (row, { commands }) => {
     commands.remove(row.entity, enemy);
 });
 
 // An observer system reads them back, once per entity with its components.
 const foes: Vec3[] = [];
-const readFoes = System.create({ observer: true, components: { read: [position], has: [enemy] } }, row => {
+const readFoes = System.create({ observer: true, components: { with: [position, enemy] } }, row => {
     foes.push(row[position]);
 });
 let particles = 0;
-const countParticles = System.create({ observer: true, components: { has: Particle } }, () => {
+const countParticles = System.create({ observer: true, components: { with: [...Particle] } }, () => {
     particles += 1;
 });
 
-await world.run(spawn);
-await world.run(readFoes);
-await world.run(countParticles);
-expect(foes).toEqual([[0, 10, 0]]);
-expect(particles).toBe(1);
+it("spawns entities with components", async () => {
+    await using world = World.create();
+    await world.run(spawn);
+    await world.run(readFoes);
+    await world.run(countParticles);
+    expect(foes).toEqual([[0, 10, 0]]);
+    expect(particles).toBe(1);
 ```
 
 [`02-entities.test.ts`](02-entities.test.ts#L6-L49)
@@ -151,15 +153,14 @@ expect(particles).toBe(1);
 ```ts
 // Runs once per entity with every component in read and write, and none in not.
 const move = System.create({
-    components: { read: [velocity], write: [position], not: [frozen] },
-    resources: { read: [delta] },
+    components: { with: [velocity, position], not: [frozen] },
 }, (row, { resources }) => {
     // Values are replaced whole, never edited in place.
     row[position] = Vec3.add(row[position], Vec3.scale(row[velocity], resources[delta]));
 });
 
 // Without components, a system runs once per run.
-const count = System.create({ resources: { write: [frames] } }, ({ resources }) => {
+const count = System.create({  }, ({ resources }) => {
     resources[frames] += 1;
 });
 
@@ -167,18 +168,22 @@ const count = System.create({ resources: { write: [frames] } }, ({ resources }) 
 // react to it.
 const moved: Vec3[] = [];
 let counted = 0;
-const read = System.create({ observer: true, components: { read: [position], not: [frozen] }, resources: { read: [frames] } }, (row, { resources }) => {
+const read = System.create({ observer: true, components: { with: [position], not: [frozen] } }, (row, { resources }) => {
     moved.push(row[position]);
     counted = resources[frames];
 });
 
-await world.run(move);
-await world.run(count);
-await world.run(read);
-expect(moved).toEqual([[1, 0, 0]]);
+it("runs a system once per entity, or once", async () => {
+    await using world = World.create();
+    // run: runs a system once.
+    await world.run(spawn);
+    await world.run(move);
+    await world.run(count);
+    await world.run(read);
+    expect(moved).toEqual([[1, 0, 0]]);
 ```
 
-[`03-systems.test.ts`](03-systems.test.ts#L28-L58)
+[`03-systems.test.ts`](03-systems.test.ts#L28-L57)
 
 ```ts
 const fail = System.create(() => {
@@ -189,42 +194,52 @@ const fail = System.create(() => {
 // it took, and `Report.errors` is there only when something went wrong. An observer system added to follow errors as
 // they change logs them; what observer systems throw is in the next run's report.
 const logged: string[] = [];
-const logFailures = System.create({ observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
+const logFailures = System.create({ observer: true, components: { with: [Report.errors], changed: [Report.errors] } }, row => {
     for (const failure of row[Report.errors].failures) logged.push(`${failure.name}: ${failure.message}`);
 });
 
-world.add(logFailures);
-const run: number = await world.run(fail);
-expect(run).toBe(1);
-expect(logged).toEqual(["fail: broken"]);
+it("reports what failed as entities", async () => {
+    await using world = World.create();
+    world.add(logFailures);
+    const run: number = await world.run(fail);
+    expect(run).toBe(1);
+    expect(logged).toEqual(["fail: broken"]);
 ```
 
-[`03-systems.test.ts`](03-systems.test.ts#L62-L79)
+[`03-systems.test.ts`](03-systems.test.ts#L61-L78)
 
 ### 4. Ticks and cadence
 
 ```ts
 // clock is the current tick's: delta is the milliseconds since the last one.
-const advance = System.create({ resources: { read: [clock], write: [elapsed] } }, ({ resources }) => {
+const advance = System.create({  }, ({ resources }) => {
     resources[elapsed] += resources[clock].delta;
 });
 
 // Added, an observer system reacts to changes: with elapsed in changed, it runs after each tick that changed it.
 let reached: (value: number) => void = () => {};
-const watch = System.create({ observer: true, resources: { read: [elapsed], changed: [elapsed] } }, ({ resources }) => {
+const watch = System.create({ observer: true, resources: { changed: [elapsed] } }, ({ resources }) => {
     if (resources[elapsed] >= 30) reached(resources[elapsed]);
 });
 
-// cadence ticks once per animation frame by default; fixed ticks every step milliseconds, each with that delta.
-// A tick runs only after a run arrives, unless always is set.
-await using world = World.create({ [cadence]: { kind: "fixed", step: 10 }, [always]: true });
-const ticked = new Promise<number>(resolve => { reached = resolve; });
-// add: runs a system on every tick.
-world.add(advance);
-world.add(watch);
-expect(await ticked).toBeGreaterThanOrEqual(30);
-// remove: takes a system added off every tick again.
-world.remove(advance);
+let read = { elapsed: 0, delta: 0 };
+const readTime = System.create({ observer: true }, ({ resources }) => {
+    read = { elapsed: resources[elapsed], delta: resources[clock].delta };
+});
+
+it("runs added systems on every tick", async () => {
+    // cadence ticks once per animation frame by default; fixed ticks every step milliseconds, each with that delta.
+    // A tick runs only after a run arrives, unless always is set.
+    await using world = World.create({ [cadence]: { kind: "fixed", step: 10 }, [always]: true });
+    const ticked = new Promise<number>(resolve => { reached = resolve; });
+    // add: runs a system on every tick.
+    world.add(advance);
+    world.add(watch);
+    expect(await ticked).toBeGreaterThanOrEqual(30);
+    await world.run(readTime);
+    expect(read.delta).toBe(10);
+    // remove: takes a system added off every tick again.
+    world.remove(advance);
 ```
 
 [`04-ticks.test.ts`](04-ticks.test.ts#L15-L43)
@@ -232,15 +247,23 @@ world.remove(advance);
 ```ts
 // A system asks for another tick by contributing a time to wake: the first tick at or after it runs. Work that a tick's
 // commands start and a later tick finishes asks for the next one this way.
-const step = System.create({ resources: { read: [clock], write: [steps], reduce: [wake] } }, ({ resources, reduce }) => {
+const step = System.create({  }, ({ resources, reduce }) => {
     resources[steps] += 1;
     if (resources[steps] < 3) reduce[wake](resources[clock].now);
 });
 
-await using world = World.create({ [cadence]: { kind: "fixed", step: 10 } });
-world.add(step);
-// One run arriving ticks once; step's wakes tick twice more.
-await world.run(System.create(() => {}));
+let finished: (value: number) => void = () => {};
+const watchSteps = System.create({ observer: true, resources: { changed: [steps] } }, ({ resources }) => {
+    if (resources[steps] === 3) finished(resources[steps]);
+});
+
+it("ticks again when a system asks", async () => {
+    await using world = World.create({ [cadence]: { kind: "fixed", step: 10 } });
+    const done = new Promise<number>(resolve => { finished = resolve; });
+    world.add(step);
+    world.add(watchSteps);
+    // One run arriving ticks once; step's wakes tick twice more.
+    await world.run(System.create(() => {}));
 ```
 
 [`04-ticks.test.ts`](04-ticks.test.ts#L51-L69)
@@ -268,10 +291,11 @@ const frame = System.create([heal, hit]);
 // Phases are systems that do nothing; a system during one runs after what the phase follows and before what follows it.
 const update = System.create(() => {});
 const render = System.create({ after: [update] }, () => {});
-const poison = System.create({ components: { write: [health] }, during: [update] }, row => {
+const poison = System.create({ components: { with: [health] }, during: [update] }, row => {
     row[health] -= 1;
 });
-const report = System.create({ components: { read: [health] }, during: [render] }, row => {
+const seen: number[] = [];
+const report = System.create({ components: { with: [health] }, during: [render] }, row => {
     seen.push(row[health]);
 });
 const phased = System.create([report, poison, update, render]);
@@ -291,7 +315,7 @@ const spawn = System.create(({ commands }) => {
     commands.despawn(commands.spawn([health])({ [health]: 1 }));
 });
 // A composite is one run with one sync point: count runs after spawn, before its entities exist.
-const count = System.create({ components: { has: [health] }, resources: { write: [seen] }, after: [spawn] }, (row, { resources }) => {
+const count = System.create({ components: { with: [health] }, after: [spawn] }, (row, { resources }) => {
     resources[seen] += 1;
 });
 const frame = System.create([spawn, count]);
@@ -301,7 +325,7 @@ const frame = System.create([spawn, count]);
 
 ```ts
 // An observer runs after the sync point of every run and tick it's added to, reading what it left; it writes nothing.
-const watch = System.create({ observer: true, components: { read: [health] } }, row => {
+const watch = System.create({ observer: true, components: { with: [health] } }, row => {
     healths.push(row[health]);
 });
 ```
@@ -312,12 +336,12 @@ const watch = System.create({ observer: true, components: { read: [health] } }, 
 
 ```ts
 // A resource in changed passes the first run and each run after it changes: no run-once flag needed.
-const load = System.create({ resources: { read: [level], changed: [level] } }, ({ resources, commands }) => {
+const load = System.create({ resources: { changed: [level] } }, ({ resources, commands }) => {
     commands.spawn([score, shown, boss])({ [score]: 0, [shown]: -1 });
     for (let i = 0; i < resources[level]; i++) commands.spawn([score, shown])({ [score]: 0, [shown]: -1 });
 });
 // A component in changed passes only rows written since this system last ran.
-const show = System.create({ components: { read: [score], write: [shown], changed: [score] } }, row => {
+const show = System.create({ components: { with: [score, shown], changed: [score] } }, row => {
     row[shown] = row[score];
 });
 ```
@@ -326,7 +350,7 @@ const show = System.create({ components: { read: [score], write: [shown], change
 
 ```ts
 // Runs only while each resource in is is neither null nor false, and each in not is; is reads it narrowed.
-const step = System.create({ resources: { is: [map], not: [paused], write: [steps] } }, ({ resources }) => {
+const step = System.create({ resources: { is: [map], not: [paused] } }, ({ resources }) => {
     resources[steps] += resources[map].width;
 });
 ```
@@ -338,22 +362,30 @@ const step = System.create({ resources: { is: [map], not: [paused], write: [step
 ```ts
 // A body's input is its parameter after its context, an object of named fields; each run passes a value of it.
 const hit = System.create({
-    components: { write: [health] },
+    components: { with: [health] },
 }, (row, _context, input: { readonly amount: number }) => {
     row[health] -= input.amount;
 });
 
 // target names an input field holding an entity: the system runs on that entity's row alone, or on none once it's gone.
 const heal = System.create({
-    components: { write: [health] },
+    components: { with: [health] },
     target: "entity",
 }, (row, _context, input: { readonly entity: Entity; readonly amount: number }) => {
     row[health] += input.amount;
 });
 
-// Systems with input are run, not added; a composite's input has every field its members declare.
-await world.run(hit, { amount: 3 });
-await world.run(heal, { entity: player, amount: 1 });
+const healths: number[] = [];
+const read = System.create({ observer: true, components: { with: [health] } }, row => {
+    healths.push(row[health]);
+});
+
+it("runs a system with a value", async () => {
+    await using world = World.create();
+    await world.run(spawn);
+    // Systems with input are run, not added; a composite's input has every field its members declare.
+    await world.run(hit, { amount: 3 });
+    await world.run(heal, { entity: player, amount: 1 });
 ```
 
 [`08-input.test.ts`](08-input.test.ts#L16-L41)
@@ -383,12 +415,33 @@ Rule.create({ components: { has: [drawn] }, derive: [layer] });
 
 ```ts
 // Runs for each entity that stops matching, whatever the cause, reading its values from before.
-Finalizer.create({ components: { read: [handle] } }, row => {
+Finalizer.create({ components: { with: [handle] } }, row => {
     open.delete(row[handle]);
 });
 
-// dispose runs every finalizer for the entities it still matches.
-await world.dispose();
+const spawn = System.create(({ commands }) => {
+    for (const id of [7, 8]) {
+        open.add(id);
+        commands.spawn([handle])({ [handle]: id });
+    }
+});
+const destroy = System.create({ components: { with: [handle] } }, (row, { commands }) => {
+    if (row[handle] === 7) commands.despawn(row.entity);
+    else commands.remove(row.entity, handle);
+});
+
+it("releases what entities held when they stop matching", async () => {
+    await using world = World.create();
+    await world.run(spawn);
+    await world.run(destroy);
+    expect([...open]).toEqual([]);
+});
+
+it("releases what every entity holds when the world is disposed", async () => {
+    const world = World.create();
+    await world.run(spawn);
+    // dispose runs every finalizer for the entities it still matches.
+    await world.dispose();
 ```
 
 [`10-finalizers.test.ts`](10-finalizers.test.ts#L16-L43)
@@ -440,6 +493,15 @@ declare module "@adobe/ecs" {
     }
 }
 
+const transform = Symbol();
+const name = Symbol();
+declare module "@adobe/ecs" {
+    interface Components {
+        [transform]: { type: readonly [number, number, number]; [instanced]: true };
+        [name]: { type: string };
+    }
+}
+
 // Types select components by trait.
 check<Equal<Extract<Component.With<typeof instanced>, typeof transform | typeof name>, typeof transform>>();
 ```
@@ -456,10 +518,10 @@ Reading another entity's components by id, from a system. To be written.
 
 ```ts
 // An index finds entities by their components' values: here, those with a crowded count, by their cell.
-const grid = Index.create({ key: [cell], components: { has: [crowded] } });
+const grid = Index.create({ key: [cell], components: { with: [crowded] } });
 
 // A lookup through it gives the rows with a key, in entity order.
-const count = System.create({ components: { read: [cell], write: [crowded] }, lookup: { at: { index: grid } } }, (row, { lookup }) => {
+const count = System.create({ components: { with: [cell, crowded] }, lookup: { at: { index: grid } } }, (row, { lookup }) => {
     const [x, y] = row[cell];
     row[crowded] = lookup.at([x, y]).length;
 });
@@ -469,17 +531,17 @@ const count = System.create({ components: { read: [cell], write: [crowded] }, lo
 
 ```ts
 // A sorted index keeps its key's order: lookups take a range, and `order` runs a system's rows in it.
-const byScore = Index.create({ key: [score], sorted: true, components: { has: [player] } });
+const byScore = Index.create({ key: [score], sorted: true, components: { with: [player] } });
 
 const winners: string[] = [];
-const leaders = System.create({ observer: true, lookup: { scores: { index: byScore, read: [player] } } }, ({ lookup }) => {
+const leaders = System.create({ observer: true, lookup: { scores: { index: byScore } } }, ({ lookup }) => {
     winners.length = 0;
     const high = lookup.scores({ ">=": 90 });
     for (let i = 0; i < high.length; i++) winners.push(high.at(i)[player]);
 });
 
 const board: string[] = [];
-const list = System.create({ observer: true, components: { read: [player] }, order: byScore }, row => {
+const list = System.create({ observer: true, components: { with: [player] }, order: byScore }, row => {
     board.push(row[player]);
 });
 ```
@@ -500,7 +562,7 @@ const find = System.create({ lookup: { byId: { index: byServerId } } }, ({ looku
 ```ts
 // An index without a key holds every entity with its components, in entity order. With changed: true, this observer
 // system runs only when an entity entered or left the index, so added, it keeps a count as players come and go.
-const players = Index.create({ key: [], components: { has: [player] } });
+const players = Index.create({ key: [], components: { with: [player] } });
 let playerCount = 0;
 const countPlayers = System.create({ observer: true, lookup: { players: { index: players, changed: true } } }, ({ lookup }) => {
     playerCount = lookup.players().length;

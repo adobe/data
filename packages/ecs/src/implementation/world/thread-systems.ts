@@ -2,7 +2,7 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
-import type { SystemLookup } from '../../interface/system/access.js';
+import type { SystemLookupLists } from '../../interface/system/access.js';
 import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, itemOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration, watchedBy, whyUnregistered } from '../../interface/registry/index.js';
 import { layoutOf, objectLayout, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import type { StringStore } from './strings.js';
@@ -1144,7 +1144,7 @@ const localStorage = (component: number, layout: Layout, views: Views, values: u
 };
 
 /** A lookup returning `read` values keyed by component, from this thread's views. */
-const lookupOf = (host: RunnerHost, lookup: SystemLookup) => {
+const lookupOf = (host: RunnerHost, lookup: SystemLookupLists) => {
     const read = (lookup.read ?? []).map(host.numberOf);
     const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
     const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
@@ -1170,7 +1170,7 @@ const lookupOf = (host: RunnerHost, lookup: SystemLookup) => {
 };
 
 /** A lookup reading nothing, from this thread's views: the shared empty row for every entity it finds. */
-const emptyLookupOf = (host: RunnerHost, lookup: SystemLookup) => {
+const emptyLookupOf = (host: RunnerHost, lookup: SystemLookupLists) => {
     const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
     const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
     return (entity: Entity): object | null => {
@@ -1191,7 +1191,7 @@ const emptyLookupOf = (host: RunnerHost, lookup: SystemLookup) => {
  * a component `watched` names may have changed in it after `since`. A GPU kernel's column stamps reach this thread as
  * row ticks; a component keeping no ticks counts as changed.
  */
-const changedLookupOf = (host: RunnerHost, lookup: SystemLookup, watched: readonly Key[], since: Since) => {
+const changedLookupOf = (host: RunnerHost, lookup: SystemLookupLists, watched: readonly Key[], since: Since) => {
     const read = (lookup.read ?? []).map(host.numberOf);
     const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
     const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
@@ -1224,7 +1224,7 @@ const changedLookupOf = (host: RunnerHost, lookup: SystemLookup, watched: readon
 };
 
 /** The lookup by entity a declaration chooses, once: with `changed`, reading nothing, or reading values. */
-const entityLookupOf = (host: RunnerHost, lookup: SystemLookup, since: Since) => {
+const entityLookupOf = (host: RunnerHost, lookup: SystemLookupLists, since: Since) => {
     const watched = "index" in lookup ? undefined : lookup.changed;
     if (watched !== undefined) return changedLookupOf(host, lookup, watched, since);
     return (lookup.read ?? []).length === 0 ? emptyLookupOf(host, lookup) : lookupOf(host, lookup);

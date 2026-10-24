@@ -34,13 +34,13 @@ const spawn = System.create(({ commands }) => {
 });
 
 const read: number[][] = [];
-const readAll = System.create({ observer: true, components: { read: [p, c, l, s, e, v0, v1] } }, row => {
+const readAll = System.create({ observer: true, components: { with: [p, c, l, s, e, v0, v1] } }, row => {
     read.push([row[p], row[c], row[l], row[s], row[e], row[v0], row[v1]]);
 });
 
 // A kernel whose module constant and locals are named as the kernel emitter's bindings.
 const i = 100;
-const grow = System.create({ kernel: true, components: { read: [c, l], write: [p, s] } }, row => {
+const grow = System.create({ kernel: true, components: { with: [c, l, p, s] } }, row => {
     const n = row[c];
     const x0 = row[l];
     const s0 = n + x0;

@@ -1,21 +1,15 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Component } from '../component/component.js';
 import type { Resource } from '../resource/resource.js';
-import type { Writable } from '../component/value.js';
 import type { Condition } from '../resource/condition.js';
-import type { Reduced } from '../resource/reduction.js';
-import type { WorldWritten } from '../resource/written.js';
 import type { Index } from '../indexes/index-type.js';
 
 /**
- * Matches every component in `read`, `write`, `has`, `added` and `changed`, and excludes `not`. A component in `write`
- * is also readable, so it's never listed in `read` as well.
+ * The entities a system runs over: those with every component in `with`, `added` and `changed`, and none in `not`.
+ * What its body reads and writes of them the build infers from the body.
  */
 export type ComponentAccess = {
-    readonly read?: readonly Component.Key[];
-    /** A component holding a `reference` changes only through commands, so it can't be written here. */
-    readonly write?: readonly Writable[];
-    readonly has?: readonly Component.Key[];
+    readonly with?: readonly Component.Key[];
     readonly not?: readonly Component.Key[];
     /** Passes rows where any of these were added since the system last ran. */
     readonly added?: readonly Component.Key[];
@@ -24,15 +18,14 @@ export type ComponentAccess = {
 };
 
 /**
- * Read-only access to other entities: by entity, matching `read`, `has` and `not`, or through an index by key. A lookup
- * by entity's `changed` names components it reads or has, whose changes its row's `changed` reports. An index lookup's
- * `read` names components every entity the index holds has, its key parts or its `has`, and its `changed` the ones
- * whose changes its lists' `changed` reports. Both report as a system's `changed` filter does; its system can't write a
- * key part or what it reads.
+ * Read-only access to other entities: by entity, matching `with` and `not`, or through an index by key, whose rows
+ * hold what every entity the index holds has. What the body reads of them the build infers. A lookup by entity's
+ * `changed` names components in `with`, whose changes its row's `changed` reports, and an index lookup's those of its
+ * rows. Both report as a system's `changed` filter does; its system can't write a key part or what it reads.
  */
 export type Lookup =
-    | Pick<ComponentAccess, "read" | "has" | "not"> & { readonly changed?: readonly Component.Key[] }
-    | { readonly index: Index; readonly read?: readonly Component.Key[]; readonly changed?: readonly Component.Key[] };
+    | { readonly with?: readonly Component.Key[]; readonly not?: readonly Component.Key[]; readonly changed?: readonly Component.Key[]; readonly index?: never }
+    | { readonly index: Index; readonly changed?: readonly Component.Key[]; readonly with?: never; readonly not?: never };
 
 /**
  * A system's lookup. An index lookup's `changed: true` makes the index a change filter, as a resource in `changed` is:
@@ -41,30 +34,56 @@ export type Lookup =
  * when a condition fails, keeping its `lastRun`. Its lists' `changed` then reports those changes alone. Only on the
  * world's thread.
  */
-export type SystemLookup =
-    | Lookup
-    | { readonly index: Index; readonly read?: readonly Component.Key[]; readonly changed: true };
+export type SystemLookup = Lookup | { readonly index: Index; readonly changed: true };
 
 /**
  * The parent each row's values flow down from: the entity its `through` reference names, read before the row. Rows
- * run parent first, so a parent's value is the one written earlier in the same run, and `read` may name components the
- * system writes.
+ * run parent first, so a parent's value is the one written earlier in the same run. The context's `up` holds the
+ * parent's values the body reads, or null for a row without a parent or whose parent lacks one of them.
  */
-export type Up = { readonly through: Component.With<"reference">; readonly read?: readonly Component.Key[] };
+export type Up = { readonly through: Component.With<"reference"> };
 
-/**
- * A resource in `write` is also readable, so it's never listed in `read` as well. Reduced resources are never written,
- * nor are those only the world writes.
- */
+/** The resources a system filters and is conditioned on; what its body reads, writes and reduces the build infers. */
 export type ResourceAccess = {
-    readonly read?: readonly Resource.Key[];
-    readonly write?: readonly Exclude<Resource.Key, Reduced | WorldWritten>[];
-    /** The resources its body contributes to, each folded with the operator its `reduce` trait declares. */
-    readonly reduce?: readonly Reduced[];
     /** Passes every row when any of these changed since the system last ran. */
     readonly changed?: readonly Resource.Key[];
     /** Runs only while each of these is neither `null` nor `false`, and reads it as such. Otherwise it's skipped, successfully. */
     readonly is?: readonly Condition[];
     /** Runs only while each of these is `null` or `false`. Otherwise it's skipped, successfully. */
     readonly not?: readonly Condition[];
+};
+
+/** A key, as the world takes declarations: their lists come from the build, untyped. */
+type Key = symbol;
+
+/**
+ * What a system reads and writes, as the world takes it: the build's inferred access joined with its declaration.
+ * Matches every component in `read`, `write`, `has`, `added` and `changed`, and excludes `not`.
+ */
+export type ComponentLists = {
+    readonly read?: readonly Key[];
+    readonly write?: readonly Key[];
+    readonly has?: readonly Key[];
+    readonly not?: readonly Key[];
+    readonly added?: readonly Key[];
+    readonly changed?: readonly Key[];
+};
+
+/** A lookup as the world takes it, with what its body reads of its rows in `read`. */
+export type LookupLists =
+    | { readonly read?: readonly Key[]; readonly has?: readonly Key[]; readonly not?: readonly Key[]; readonly changed?: readonly Key[] }
+    | { readonly index: Index; readonly read?: readonly Key[]; readonly changed?: readonly Key[] };
+
+export type SystemLookupLists = LookupLists | { readonly index: Index; readonly read?: readonly Key[]; readonly changed: true };
+
+export type UpLists = { readonly through: Key; readonly read?: readonly Key[] };
+
+/** A system's resources as the world takes them. */
+export type ResourceLists = {
+    readonly read?: readonly Key[];
+    readonly write?: readonly Key[];
+    readonly reduce?: readonly Key[];
+    readonly changed?: readonly Key[];
+    readonly is?: readonly Key[];
+    readonly not?: readonly Key[];
 };

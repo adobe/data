@@ -51,7 +51,7 @@ declare module "@adobe/ecs" {
         [level]: { type: number };
     }
 }
-Rule.create({ components: { has: [other, score] }, derive: [slot] });
+Rule.create({ components: { with: [other, score] }, derive: [slot] });
 
 const unit = Archetype.create([position, score, tag]);
 const made = Archetype.create([score, tag]);
@@ -66,17 +66,17 @@ const literals: Entity[] = [];
 const spawnLiterals = System.create({}, ({ commands }) => {
     for (let i = 0; i < 6; i++) literals.push(commands.spawn(i % 3 === 0 ? defaulted : i % 3 === 1 ? made : [score, label])({ [score]: i }));
 });
-const addLiterals = System.create({ components: { has: [score], not: [health] } }, (row, { commands }) => {
+const addLiterals = System.create({ components: { with: [score], not: [health] } }, (row, { commands }) => {
     commands.add(row.entity, [health, label], { [label]: "x", [health]: 5 });
 });
 
-const spawnFrom = System.create({ kernel: true, components: { read: [score], not: [tag, other] } }, (row, { commands }) => {
+const spawnFrom = System.create({ kernel: true, components: { with: [score], not: [tag, other] } }, (row, { commands }) => {
     commands.spawn(made)({ [score]: row[score] + 10 });
 });
-const mark = System.create({ kernel: true, components: { has: [tag], not: [other] } }, (row, { commands }) => {
+const mark = System.create({ kernel: true, components: { with: [tag], not: [other] } }, (row, { commands }) => {
     commands.add(row.entity, marks, {});
 });
-const unmark = System.create({ kernel: true, components: { has: [other] } }, (row, { commands }) => {
+const unmark = System.create({ kernel: true, components: { with: [other] } }, (row, { commands }) => {
     commands.remove(row.entity, marks);
 });
 const defaulted = Archetype.create([score, label, tag]);
@@ -192,14 +192,14 @@ describe("literal values in a system's body", () => {
 });
 
 /** Three adds of one component to each row, by systems ordered first to third, the second adding twice. */
-const first = System.create({ kernel: true, components: { has: [position] } }, (row, { commands }) => {
+const first = System.create({ kernel: true, components: { with: [position] } }, (row, { commands }) => {
     commands.add(row.entity, score, 1);
 });
-const second = System.create({ components: { has: [position] }, after: [first] }, (row, { commands }) => {
+const second = System.create({ components: { with: [position] }, after: [first] }, (row, { commands }) => {
     commands.add(row.entity, score, 2);
     commands.add(row.entity, score, 3);
 });
-const third = System.create({ kernel: true, components: { has: [position] }, after: [second] }, (row, { commands }) => {
+const third = System.create({ kernel: true, components: { with: [position] }, after: [second] }, (row, { commands }) => {
     commands.add(row.entity, score, 4);
 });
 
@@ -258,8 +258,8 @@ describe("add and remove", () => {
         });
         const added: Entity[] = [];
         const changed: Entity[] = [];
-        const watchAdded = System.create({ components: { has: [score], added: [tag] } }, row => { added.push(row.entity); });
-        const watchChanged = System.create({ components: { has: [score], changed: [position] } }, row => { changed.push(row.entity); });
+        const watchAdded = System.create({ components: { with: [score], added: [tag] } }, row => { added.push(row.entity); });
+        const watchChanged = System.create({ components: { with: [score], changed: [position] } }, row => { changed.push(row.entity); });
         const watch = System.create({ systems: [watchAdded, watchChanged] });
         await world.run(watch);
         added.length = changed.length = 0;

@@ -37,15 +37,15 @@ declare module "@adobe/ecs" {
     }
 }
 
-const grid = Index.create({ key: [cell], components: { has: [weight] } });
-const lanes = Index.create({ key: [lane, rank], sorted: true, components: { has: [ranked] } });
-const serials = Index.create({ key: [serial], unique: true, components: { has: [weight] } });
+const grid = Index.create({ key: [cell], components: { with: [weight] } });
+const lanes = Index.create({ key: [lane, rank], sorted: true, components: { with: [ranked] } });
+const serials = Index.create({ key: [serial], unique: true, components: { with: [weight] } });
 
 /** Each row's neighbors in the 3 by 3 cells around its own: how many, and their weights' sum. */
 const neighbors = System.create({
     kernel: true,
-    components: { read: [cell], write: [total, count] },
-    lookup: { near: { index: grid, read: [weight] } },
+    components: { with: [cell, total, count] },
+    lookup: { near: { index: grid } },
 }, (row, { lookup }) => {
     const [x, y] = row[cell];
     let sum = 0;
@@ -64,7 +64,7 @@ const neighbors = System.create({
 });
 
 /** The same, on the main thread, for comparison. */
-const neighborsByHand = System.create({ components: { read: [cell], write: [total, count] }, lookup: { near: { index: grid, read: [weight] } } }, (row, { lookup }) => {
+const neighborsByHand = System.create({ components: { with: [cell, total, count] }, lookup: { near: { index: grid } } }, (row, { lookup }) => {
     const [x, y] = row[cell];
     let sum = 0;
     let found = 0;
@@ -82,7 +82,7 @@ const neighborsByHand = System.create({ components: { read: [cell], write: [tota
 /** How many rows of the row's lane have a rank within 5 of its own, and the first of them, through a sorted range. */
 const window = System.create({
     kernel: true,
-    components: { read: [lane, rank], write: [count, seen] },
+    components: { with: [lane, rank, count, seen] },
     lookup: { inLane: { index: lanes } },
 }, (row, { lookup }) => {
     const r = row[rank];
@@ -91,7 +91,7 @@ const window = System.create({
     row[seen] = near.at(0).entity;
 });
 
-const windowByHand = System.create({ components: { read: [lane, rank], write: [count, seen] }, lookup: { inLane: { index: lanes } } }, (row, { lookup }) => {
+const windowByHand = System.create({ components: { with: [lane, rank, count, seen] }, lookup: { inLane: { index: lanes } } }, (row, { lookup }) => {
     const r = row[rank];
     const near = lookup.inLane(row[lane], { ">=": r - 5, "<": r + 5 });
     row[count] = near.length;
@@ -101,8 +101,8 @@ const windowByHand = System.create({ components: { read: [lane, rank], write: [c
 /** The weight of the entity whose serial is the row's target, or -1. */
 const follow = System.create({
     kernel: true,
-    components: { read: [target], write: [total] },
-    lookup: { bySerial: { index: serials, read: [weight] } },
+    components: { with: [target, total] },
+    lookup: { bySerial: { index: serials } },
 }, (row, { lookup }) => {
     const found = lookup.bySerial(row[target]);
     row[total] = found === null ? -1 : found[weight];
@@ -111,7 +111,7 @@ const follow = System.create({
 /** Counts runs whose list of the row's cell changed. */
 const watch = System.create({
     kernel: true,
-    components: { read: [cell], write: [changes] },
+    components: { with: [cell, changes] },
     lookup: { near: { index: grid, changed: [weight] } },
 }, (row, { lookup }) => {
     if (lookup.near([row[cell][0], row[cell][1]]).changed) row[changes] = row[changes] + 1;
@@ -179,7 +179,7 @@ describe.each([[true], [false]])("kernels looking up through indexes, WASM %s", 
 /** A comparison on a hash index. */
 const compared = System.create({
     kernel: true,
-    components: { read: [serial], write: [count] },
+    components: { with: [serial, count] },
     lookup: { bySerial: { index: serials } },
 }, (row, { lookup }) => {
     // @ts-expect-error a hash index takes whole keys

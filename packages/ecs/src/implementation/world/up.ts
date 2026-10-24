@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Up } from '../../interface/system/access.js';
+import type { UpLists } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
 import { generationOf, indexOf } from './entities.js';
 import { journalEnd } from './journal.js';
@@ -76,7 +76,7 @@ let groupParents = new Int32Array(0);
  * of every row, patched for the entities whose row, level or parent changed. A filtered run marks the rows that may
  * pass, by depth, and lists only those.
  */
-export const createUp = (state: State, up: Up, isFiltered: boolean) => {
+export const createUp = (state: State, up: UpLists, isFiltered: boolean) => {
     const through = idOf(state, up.through);
     const readKeys: readonly Key[] = up.read ?? [];
     const read = readKeys.map(key => idOf(state, key));

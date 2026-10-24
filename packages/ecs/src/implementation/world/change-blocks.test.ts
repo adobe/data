@@ -59,7 +59,7 @@ const seed = System.create({}, ({ commands }) => {
 });
 
 // Writers.
-const setValue = System.create({ target: "entity", components: { write: [value] } }, (row, _context, input: { readonly entity: Entity }) => {
+const setValue = System.create({ target: "entity", components: { with: [value] } }, (row, _context, input: { readonly entity: Entity }) => {
     row[value] += 1;
 });
 const replace = System.create({}, ({ commands }, input: { readonly entities: readonly Entity[] }) => {
@@ -75,25 +75,25 @@ const spawnOne = System.create({}, ({ commands }, input: { readonly at: number }
     commands.spawn(plain)({ [value]: 0, [at]: input.at, [seen]: 0, [group]: 0 });
 });
 /** Writes the rows whose `at` is in a list of up to four, which stamps row by row. */
-const writeSome = System.create({ kernel: true, components: { read: [at], write: [value] } }, (row, _context, input: { readonly a: I32; readonly b: I32; readonly c: I32; readonly d: I32 }) => {
+const writeSome = System.create({ kernel: true, components: { with: [at, value] } }, (row, _context, input: { readonly a: I32; readonly b: I32; readonly c: I32; readonly d: I32 }) => {
     const here = row[at];
     if (here === input.a || here === input.b || here === input.c || here === input.d) row[value] += 1;
 });
 /** Writes every row, which stamps chunks and blocks once per call. */
-const writeAll = System.create({ kernel: true, components: { write: [value] } }, row => {
+const writeAll = System.create({ kernel: true, components: { with: [value] } }, row => {
     row[value] += 1;
 });
-const setGroup = System.create({ target: "entity", components: { write: [group] } }, (row, _context, input: { readonly entity: Entity }) => {
+const setGroup = System.create({ target: "entity", components: { with: [group] } }, (row, _context, input: { readonly entity: Entity }) => {
     row[group] = 1;
 });
 
 // Readers.
 let found: number[] = [];
-const onMain = System.create({ components: { read: [at], changed: [value] } }, row => { found.push(row[at]); });
-const observed = System.create({ observer: true, components: { read: [at], changed: [value] } }, row => { found.push(row[at]); });
-const ofTwo = System.create({ components: { read: [at], changed: [group, value] } }, row => { found.push(row[at]); });
-const inKernel = System.create({ kernel: true, components: { write: [seen], changed: [value] } }, row => { row[seen] += 1; });
-const inUp = System.create({ components: { read: [at], changed: [value] }, up: { through: parent, read: [value] } }, row => { found.push(row[at]); });
+const onMain = System.create({ components: { with: [at], changed: [value] } }, row => { found.push(row[at]); });
+const observed = System.create({ observer: true, components: { with: [at], changed: [value] } }, row => { found.push(row[at]); });
+const ofTwo = System.create({ components: { with: [at], changed: [group, value] } }, row => { found.push(row[at]); });
+const inKernel = System.create({ kernel: true, components: { with: [seen], changed: [value] } }, row => { row[seen] += 1; });
+const inUp = System.create({ components: { with: [at], changed: [value] }, up: { through: parent } }, row => { found.push(row[at]); });
 const byGroup = Index.create({ key: [group] });
 let grouped: number[] = [];
 const inGroup = System.create({ lookup: { byGroup: { index: byGroup } } }, ({ lookup }) => {
@@ -106,11 +106,11 @@ const seedNoted = System.create({}, ({ commands }) => {
     entities = [];
     for (let i = 0; i < rows; i++) entities.push(commands.spawn(noted)({ [value]: 0, [at]: i }));
 });
-const noteSome = System.create({ components: { read: [at], write: [note] } }, (row, _context, input: { readonly ats: readonly number[] }) => {
+const noteSome = System.create({ components: { with: [at, note] } }, (row, _context, input: { readonly ats: readonly number[] }) => {
     if (input.ats.includes(row[at])) row[note] = { text: "noted" };
 });
-const notesThere = System.create({ components: { read: [at, note], changed: [note] } }, row => { if (row[note] !== undefined) found.push(row[at]); });
-const valuesThere = System.create({ components: { read: [at, note], changed: [value] } }, row => { if (row[note] !== undefined) found.push(row[at]); });
+const notesThere = System.create({ components: { with: [at, note], changed: [note] } }, row => { if (row[note] !== undefined) found.push(row[at]); });
+const valuesThere = System.create({ components: { with: [at, note], changed: [value] } }, row => { if (row[note] !== undefined) found.push(row[at]); });
 
 /** The `at` of the rows a main-thread reader ran, in order. */
 const ranOn = async (world: World, reader: System): Promise<number[]> => {
@@ -264,8 +264,8 @@ const seedExtra = System.create({}, ({ commands }) => {
 const addExtra = System.create({}, ({ commands }, input: { readonly entity: Entity }) => {
     commands.add(input.entity, extra, 1);
 });
-const addedExtra = System.create({ components: { read: [at], added: [extra] } }, row => { found.push(row[at]); });
-const raiseHeights = System.create({ kernel: true, components: { write: [height] }, up: { through: parent, read: [height] } }, (row, { up }) => {
+const addedExtra = System.create({ components: { with: [at], added: [extra] } }, row => { found.push(row[at]); });
+const raiseHeights = System.create({ kernel: true, components: { with: [height] }, up: { through: parent } }, (row, { up }) => {
     row[height] = up === null ? 1 : up[height] + 1;
 });
-const heights = System.create({ components: { read: [at], changed: [height] } }, row => { found.push(row[at]); });
+const heights = System.create({ components: { with: [at], changed: [height] } }, row => { found.push(row[at]); });

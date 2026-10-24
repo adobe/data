@@ -20,14 +20,14 @@ declare module "@adobe/ecs" {
 }
 
 /** Todos with rows, in list order. */
-const placed = Index.create({ key: [order], sorted: true, components: { has: [todo, row] } });
+const placed = Index.create({ key: [order], sorted: true, components: { with: [todo, row] } });
 
 /**
  * Gives each new todo a row, attached to it for events from the row, while the page has a list for it. It isn't placed
  * until the row is the todo's, so a todo gone first never shows one.
  */
 export const createRows = System.create({
-    components: { has: [todo], not: [row] },
+    components: { with: [todo], not: [row] },
     resources: { is: [list] },
 }, (item, { commands }) => {
     commands.add(item.entity, row, attach(document.createElement("todo-row"), item.entity));
@@ -36,7 +36,7 @@ export const createRows = System.create({
 /** Writes what changed of each todo to its row. */
 export const bindRows = System.create({
     observer: true,
-    components: { read: [label, done, row], changed: [label, done, row] },
+    components: { with: [label, done, row], changed: [label, done, row] },
 }, item => {
     const element = item[row];
     element.label = item[label];
@@ -65,10 +65,10 @@ const place = (parent: Element, element: HTMLElement, before: Element | null): v
  */
 export const placeRows = System.create({
     observer: true,
-    components: { read: [row, order], changed: [row, order] },
+    components: { with: [row, order], changed: [row, order] },
     order: placed,
     resources: { is: [list] },
-    lookup: { placed: { index: placed, read: [row] } },
+    lookup: { placed: { index: placed } },
 }, (item, { resources, lookup }) => {
     const element = item[row];
     const parent = resources[list];
@@ -77,7 +77,7 @@ export const placeRows = System.create({
     if (before !== element) place(parent, element, before);
 });
 
-Finalizer.create({ components: { read: [row] } }, item => {
+Finalizer.create({ components: { with: [row] } }, item => {
     item[row].remove();
 });
 

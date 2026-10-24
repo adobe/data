@@ -504,7 +504,7 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             const { world, roots } = await filteredForest();
             const found: { child: Entity | null } = { child: null };
-            await world.run(System.create({ observer: true, components: { read: [hierarchyParent] } }, row => {
+            await world.run(System.create({ observer: true, components: { with: [hierarchyParent] } }, row => {
                 if (found.child === null && row[hierarchyParent] === roots[0]) found.child = row.entity;
             }));
             const { child } = found;

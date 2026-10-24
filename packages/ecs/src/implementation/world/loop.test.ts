@@ -16,9 +16,9 @@ declare module "@adobe/ecs" {
     }
 }
 
-const increment = requireDefinition(System.create({ components: { write: [count] } }, row => { row[count] += 1; }));
-const reader = requireDefinition(System.create({ components: { read: [count] } }, row => { void row[count]; }));
-const ordered = requireDefinition(System.create({ components: { read: [count] }, after: [System.create({}, () => {})] }, row => { void row[count]; }));
+const increment = requireDefinition(System.create({ components: { with: [count] } }, row => { row[count] += 1; }));
+const reader = requireDefinition(System.create({ components: { with: [count] } }, row => { void row[count]; }));
+const ordered = requireDefinition(System.create({ components: { with: [count] }, after: [System.create({}, () => {})] }, row => { void row[count]; }));
 const takesInput = requireDefinition(System.create({}, (_context, input: { readonly by: number }) => {}));
 
 /** A host whose frames and timers run only when the test says, at the times it gives. */
@@ -164,7 +164,7 @@ describe("a world's loop platform", () => {
     it("can be given, so a back-to-back driver ticks as fast as tasks run", async () => {
         const driver = backToBack();
         const world = createWorld({ [always]: true }, { loop: driver });
-        world.add(System.create({ components: { has: [count] } }, () => {}));
+        world.add(System.create({ components: { with: [count] } }, () => {}));
         const start = performance.now();
         // At 60 frames a second, a timer's frames would take 1.6 s.
         await new Promise<void>(resolve => {

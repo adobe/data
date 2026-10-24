@@ -33,37 +33,37 @@ declare module "@adobe/ecs" {
 
 const ran: string[] = [];
 const propagate = System.create({
-    components: { read: [local, label], write: [world] },
-    up: { through: parent, read: [world] },
+    components: { with: [local, label, world] },
+    up: { through: parent },
 }, (row, { up }) => {
     ran.push(row[label]);
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
 const propagateChanged = System.create({
-    components: { read: [local, label], write: [world], changed: [local] },
-    up: { through: parent, read: [world] },
+    components: { with: [local, label, world], changed: [local] },
+    up: { through: parent },
 }, (row, { up }) => {
     ran.push(row[label]);
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
 const propagateAdded = System.create({
-    components: { read: [local, label], write: [world], added: [local] },
-    up: { through: parent, read: [world] },
+    components: { with: [local, label, world], added: [local] },
+    up: { through: parent },
 }, (row, { up }) => {
     ran.push(row[label]);
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
 const propagateChangedKernel = System.create({
     kernel: true,
-    components: { read: [local], write: [world], changed: [local] },
-    up: { through: parent, read: [world] },
+    components: { with: [local, world], changed: [local] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
 const propagateKernel = System.create({
     kernel: true,
-    components: { read: [local], write: [world] },
-    up: { through: parent, read: [world] },
+    components: { with: [local, world] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
@@ -100,8 +100,8 @@ const worlds = async (value: (entity: Entity) => Promise<number | null>): Promis
 
 const show = System.create({
     kernel: true,
-    components: { read: [visible], write: [shown] },
-    up: { through: parent, read: [shown] },
+    components: { with: [visible, shown] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[shown] = up === null ? row[visible] : up[shown] && row[visible];
 });
@@ -121,7 +121,7 @@ const spawnMixed = System.create({}, ({ commands }) => {
 const growParents = System.create({}, ({ commands }) => {
     for (let i = 0; i < 100; i++) commands.spawn([local, world, anchor])({ [local]: 0, [world]: 0, [anchor]: true });
 });
-const shift = System.create({ components: { write: [local], has: [anchor] } }, row => { row[local] += 1; });
+const shift = System.create({ components: { with: [local, anchor] } }, row => { row[local] += 1; });
 
 describe("up", () => {
     for (const [kind, system] of [["main-thread", propagate], ["kernel", propagateKernel]] as const) {
@@ -293,6 +293,6 @@ describe("up", () => {
 
     it("rejects a through that isn't a reference, for untyped declarations", async () => {
         // @ts-expect-error through is a reference component
-        expect(() => System.create({ components: { write: [world] }, up: { through: local, read: [world] } }, row => { row[world] = 0; })).toThrow('up.through "upTest/local" isn\'t a reference component.');
+        expect(() => System.create({ components: { with: [world] }, up: { through: local } }, row => { row[world] = 0; })).toThrow('up.through "upTest/local" isn\'t a reference component.');
     });
 });

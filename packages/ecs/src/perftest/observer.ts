@@ -21,7 +21,7 @@ export const eachTick = (world: World, notify: () => void): (() => void) => {
 
 /** The clock as an observer run last read it. */
 const read = { tick: 0, now: 0 };
-const readClock = System.create({ observer: true, resources: { read: [clock] } }, ({ resources }) => {
+const readClock = System.create({ observer: true }, ({ resources }) => {
     read.tick = resources[clock].tick;
     read.now = resources[clock].now;
 });
@@ -36,7 +36,7 @@ export const ticksAfter = async (world: World, count: number): Promise<void> => 
     let { tick, now } = read;
     let seen = 0;
     await new Promise<void>(resolve => {
-        const counter = System.create({ observer: true, resources: { read: [clock] } }, ({ resources }) => {
+        const counter = System.create({ observer: true }, ({ resources }) => {
             const current = resources[clock];
             if (current.tick === tick && current.now === now) return;
             tick = current.tick;
@@ -52,7 +52,7 @@ export const ticksAfter = async (world: World, count: number): Promise<void> => 
 /** The entities with every component of `has` and none of `not`, in storage order, read by an observer run. */
 export const entitiesWith = async (world: World, has: readonly Component.Key[], not: readonly Component.Key[] = []): Promise<Entity[]> => {
     const found: Entity[] = [];
-    await world.run(System.create({ observer: true, components: { has, not } }, row => { found.push(row.entity); }));
+    await world.run(System.create({ observer: true, components: { with: [...has], not } }, row => { found.push(row.entity); }));
     return found;
 };
 

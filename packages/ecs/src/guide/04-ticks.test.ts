@@ -13,18 +13,18 @@ declare module "@adobe/ecs" {
 }
 
 // clock is the current tick's: delta is the milliseconds since the last one.
-const advance = System.create({ resources: { read: [clock], write: [elapsed] } }, ({ resources }) => {
+const advance = System.create({  }, ({ resources }) => {
     resources[elapsed] += resources[clock].delta;
 });
 
 // Added, an observer system reacts to changes: with elapsed in changed, it runs after each tick that changed it.
 let reached: (value: number) => void = () => {};
-const watch = System.create({ observer: true, resources: { read: [elapsed], changed: [elapsed] } }, ({ resources }) => {
+const watch = System.create({ observer: true, resources: { changed: [elapsed] } }, ({ resources }) => {
     if (resources[elapsed] >= 30) reached(resources[elapsed]);
 });
 
 let read = { elapsed: 0, delta: 0 };
-const readTime = System.create({ observer: true, resources: { read: [elapsed, clock] } }, ({ resources }) => {
+const readTime = System.create({ observer: true }, ({ resources }) => {
     read = { elapsed: resources[elapsed], delta: resources[clock].delta };
 });
 
@@ -50,13 +50,13 @@ it("runs added systems on every tick", async () => {
 
 // A system asks for another tick by contributing a time to wake: the first tick at or after it runs. Work that a tick's
 // commands start and a later tick finishes asks for the next one this way.
-const step = System.create({ resources: { read: [clock], write: [steps], reduce: [wake] } }, ({ resources, reduce }) => {
+const step = System.create({  }, ({ resources, reduce }) => {
     resources[steps] += 1;
     if (resources[steps] < 3) reduce[wake](resources[clock].now);
 });
 
 let finished: (value: number) => void = () => {};
-const watchSteps = System.create({ observer: true, resources: { read: [steps], changed: [steps] } }, ({ resources }) => {
+const watchSteps = System.create({ observer: true, resources: { changed: [steps] } }, ({ resources }) => {
     if (resources[steps] === 3) finished(resources[steps]);
 });
 

@@ -5,12 +5,12 @@ import { takeIdOfDeclaration } from '../registry/ids.js';
 import { nameOf } from '../registry/items.js';
 import { claimSystem } from '../registry/program.js';
 import type { Condition } from '../resource/condition.js';
-import type { Resource } from '../resource/resource.js';
 import type { ThreadOfResource } from '../resource/value.js';
 import { gpuDevice } from '../resources/gpu-device.js';
 import type { Body } from './body.js';
 import { accessorsOf } from '../gpu/accessors.js';
 import { checkLeaf } from './check.js';
+import { accessOf, compact, resourceUses } from './resolve.js';
 import type { Leaf } from './leaf.js';
 import type { StructComponent } from './struct.js';
 import type { System } from './system.js';
@@ -42,10 +42,10 @@ export type RenderContext = {
 };
 
 type RenderDeclaration = {
-    /** It reads the components its accessors name. */
-    readonly components?: { readonly has?: readonly Component.Key[]; readonly not?: readonly Component.Key[] };
-    /** It runs only while `gpuDevice` is set, as if `is` listed it. */
-    readonly resources?: { readonly read?: readonly Resource.Key[]; readonly is?: readonly Condition[]; readonly not?: readonly Condition[] };
+    /** It matches the components its accessors name, and those in `with`, and none in `not`. */
+    readonly components?: { readonly with?: readonly Component.Key[]; readonly not?: readonly Component.Key[] };
+    /** It runs only while `gpuDevice` is set, as if `is` listed it. What its body reads of resources the build infers. */
+    readonly resources?: { readonly is?: readonly Condition[]; readonly not?: readonly Condition[] };
     /**
      * Draws every matching row as one table, in this sorted index's order: key order, then entity order. Its shaders'
      * accessors then take a row's position in that order.
@@ -57,8 +57,11 @@ type RenderDeclaration = {
     readonly during?: readonly System<unknown>[];
 };
 
-/** A render declaration with the components its accessors name as `components.read`. */
-type Rendered<D extends RenderDeclaration> = D & { readonly components: { readonly read: readonly StructComponent[] } };
+/** What a render body reads of resources is inferred, and what it reads of components its accessors name. */
+type Inferred = {
+    readonly components?: { readonly read?: never; readonly has?: never };
+    readonly resources?: { readonly read?: never };
+};
 
 /**
  * Declares a render system: it runs once per run on `gpuDevice`'s thread, in schedule order, and records GPU work over
@@ -71,22 +74,28 @@ type Rendered<D extends RenderDeclaration> = D & { readonly components: { readon
  * 2^31 with up to two matching archetypes, 2^30 with up to four, and so on.
  */
 export const render = <const D extends RenderDeclaration>(
-    declaration: D & OneThread<ThreadsOf<D> | ThreadOfResource<typeof gpuDevice>, ThreadedBy<D>>,
-    body: Body<Rendered<D>>,
+    declaration: D & Inferred & OneThread<ThreadsOf<D> | ThreadOfResource<typeof gpuDevice>, ThreadedBy<D>>,
+    body: Body<D>,
 ): System => {
     const id = takeIdOfDeclaration(declaration);
     const name = nameOf(declaration, id, "system");
+    const what = `System "${name}"`;
+    const read = [...new Set<symbol>(Object.values(declaration.shader.accessors))];
+    const is = [...new Set<symbol>([...declaration.resources?.is ?? [], gpuDevice])];
+    const uses = resourceUses(what, accessOf(what, declaration), is);
+    const { components, resources, ...rest } = declaration;
     const system: Leaf & System = {
         kind: "render",
         name,
         declaration: {
-            ...declaration,
-            components: { ...declaration.components, read: [...new Set(Object.values(declaration.shader.accessors))] },
-            resources: { ...declaration.resources, is: [...new Set<Condition>([...declaration.resources?.is ?? [], gpuDevice])] },
+            ...rest,
+            components: compact({ read, has: (components?.with ?? []).filter(key => !read.includes(key)), not: components?.not }),
+            resources: compact({ read: uses.read, is, not: resources?.not }),
         },
         input: undefined,
         body,
     };
+    if (uses.write.length > 0 || uses.reduce.length > 0) throw new Error(`${what} writes or reduces into resources; a render system only reads.`);
     checkLeaf(system);
     const accessors = accessorsOf(declaration.shader);
     if (typeof accessors === "string") throw new Error(`System "${name}" can't render: ${accessors}.`);

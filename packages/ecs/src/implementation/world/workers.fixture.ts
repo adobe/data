@@ -74,8 +74,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 
 const integrate = System.create({
     kernel: true,
-    components: { read: [velocity], write: [position] },
-    resources: { read: [seconds] },
+    components: { with: [velocity, position] },
 }, (row, { resources }) => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
@@ -85,7 +84,7 @@ const integrate = System.create({
 /** Structural commands from workers: rows past a threshold spawn a marker and lose their velocity. */
 const split = System.create({
     kernel: true,
-    components: { read: [position], has: [velocity] },
+    components: { with: [position, velocity] },
     after: [integrate],
 }, (row, { commands }) => {
     const [x, y] = row[position];
@@ -98,8 +97,8 @@ const split = System.create({
 /** Lookups from workers: offset by the distance to the target. */
 const follow = System.create({
     kernel: true,
-    components: { read: [position, target], write: [offset] },
-    lookup: { targets: { read: [position] } },
+    components: { with: [position, target, offset] },
+    lookup: { targets: { with: [position] } },
     after: [split],
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
@@ -112,7 +111,7 @@ const main = System.create({ systems: [integrate, split, follow] });
 /** Every row writes the same entity, so only merge order decides which value survives. */
 const stamp = System.create({
     kernel: true,
-    components: { read: [position] },
+    components: { with: [position] },
 }, (row, { commands }, input: { readonly entity: Entity }) => {
     const [x, y] = row[position];
     commands.add(input.entity, offset, x * 1000 + y);
@@ -121,7 +120,7 @@ const stamp = System.create({
 /** Despawns entity 1, the resource entity, since index 0 is never an entity and registration reserves the next first. */
 const unlink = System.create({
     kernel: true,
-    components: { has: [target] },
+    components: { with: [target] },
 }, (_, { commands }) => {
     // @ts-expect-error an untyped caller can pass any number
     commands.despawn(1);
@@ -137,7 +136,7 @@ const sources = System.create({}, ({ commands }) => {
 /** A spawn per row, from wherever its chunk runs; with `edit`, each spawn is also added to and removed from. */
 const emit = System.create({
     kernel: true,
-    components: { read: [offset], not: [spawned] },
+    components: { with: [offset], not: [spawned] },
 }, (row, { commands }, input: { readonly edit: boolean }) => {
     const entity = commands.spawn([position, spawned, tagC])({ [position]: [row[offset], -row[offset]] });
     if (input.edit) {
@@ -147,11 +146,11 @@ const emit = System.create({
 });
 
 const emitted = { seen: 0 };
-const countEmitted = System.create({ components: { added: [position], has: [spawned] } }, () => { emitted.seen++; });
+const countEmitted = System.create({ components: { added: [position], with: [spawned] } }, () => { emitted.seen++; });
 
 const gathered: Entity[] = [];
-const gatherPositioned = System.create({ observer: true, components: { has: [position] } }, row => { gathered.push(row.entity); });
-const gatherSpawned = System.create({ observer: true, components: { has: [spawned] } }, row => { gathered.push(row.entity); });
+const gatherPositioned = System.create({ observer: true, components: { with: [position] } }, row => { gathered.push(row.entity); });
+const gatherSpawned = System.create({ observer: true, components: { with: [spawned] } }, row => { gathered.push(row.entity); });
 
 /** The entities an observer row system passes, in storage order. */
 const storageOrder = async (world: World, gather: System<void>): Promise<Entity[]> => {

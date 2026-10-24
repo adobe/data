@@ -56,7 +56,7 @@ export const spawn = System.create({
 
 export const move = System.create({
     kernel: "gpu",
-    components: { read: [velocity], write: [position], has: [visible, enabled] },
+    components: { with: [velocity, position, visible, enabled] },
 }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
@@ -64,7 +64,7 @@ export const move = System.create({
 /** The same move on the CPU, for comparison. */
 export const moveOnCpu = System.create({
     kernel: true,
-    components: { read: [velocity], write: [position], has: [visible, enabled] },
+    components: { with: [velocity, position, visible, enabled] },
 }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
@@ -87,8 +87,7 @@ struct Point { @builtin(position) position: vec4f, @location(0) color: vec4f }
 `;
 
 const declaration = {
-    name: "gpuParticles/draw",
-    components: { has: [visible, enabled] },
+    components: { with: [visible, enabled] },
     shader: { group: 0, accessors: { particlePosition: position, particleColor: color } },
     after: [move, moveOnCpu],
 } as const;

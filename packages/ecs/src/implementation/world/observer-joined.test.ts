@@ -37,17 +37,17 @@ const blank = { text: "" };
 type Label = { readonly text: string };
 const Label = { schema: { default: blank } };
 
-const byCell = Index.create({ key: [cell], components: { has: [amount] } });
-const allTagged = Index.create({ key: [], components: { has: [tagged] } });
+const byCell = Index.create({ key: [cell], components: { with: [amount] } });
+const allTagged = Index.create({ key: [], components: { with: [tagged] } });
 
-const raise = System.create({ resources: { write: [level] } }, ({ resources }) => { resources[level] += 1; });
+const raise = System.create({  }, ({ resources }) => { resources[level] += 1; });
 const nothing = System.create({}, () => {});
 const spawn = System.create({}, ({ commands }, input: { readonly at: number }) => {
     commands.spawn([amount, cell, tagged])({ [amount]: input.at, [cell]: input.at });
 });
 const spawnLabelled = System.create({}, ({ commands }) => { commands.spawn([amount, label])({ [amount]: 4, [label]: blank }); });
-const grow = System.create({ components: { write: [amount] } }, row => { row[amount] += 1; });
-const move = System.create({ components: { write: [cell] } }, row => { row[cell] += 10; });
+const grow = System.create({ components: { with: [amount] } }, row => { row[amount] += 1; });
+const move = System.create({ components: { with: [cell] } }, row => { row[cell] += 10; });
 
 /** What the joined thread's observer bodies saw, reset by each test. */
 const seen: { levels: number[]; amounts: number[][]; looked: (number | boolean)[][]; tagged: number[]; labels: string[]; calls: number } = { levels: [], amounts: [], looked: [], tagged: [], labels: [], calls: 0 };
@@ -59,16 +59,16 @@ const reset = (): void => {
 /** The entities the tests look up, by the joined thread's systems. */
 const watched: Entity[] = [];
 
-const watchLevel = System.create({ observer: true, resources: { read: [level], changed: [level] } }, ({ resources }) => {
+const watchLevel = System.create({ observer: true, resources: { changed: [level] } }, ({ resources }) => {
     seen.calls++;
     seen.levels.push(resources[level]);
 });
-const watchAmounts = System.create({ observer: true, components: { read: [amount], changed: [amount] } }, row => {
+const watchAmounts = System.create({ observer: true, components: { with: [amount], changed: [amount] } }, row => {
     (seen.amounts[seen.amounts.length - 1] ??= []).push(row[amount]);
 });
 const startAmounts = System.create({ observer: true }, () => { seen.amounts.push([]); });
 const amountsPass = System.create([startAmounts, watchAmounts]);
-const lookChanged = System.create({ observer: true, lookup: { found: { read: [amount], changed: [amount] } } }, ({ lookup }) => {
+const lookChanged = System.create({ observer: true, lookup: { found: { with: [amount], changed: [amount] } } }, ({ lookup }) => {
     seen.looked.push(watched.flatMap(entity => {
         const row = lookup.found(entity);
         return row === null ? [] : [row[amount], row.changed];
@@ -77,14 +77,14 @@ const lookChanged = System.create({ observer: true, lookup: { found: { read: [am
 const countTagged = System.create({ observer: true, lookup: { all: { index: allTagged } } }, ({ lookup }) => {
     seen.tagged.push(lookup.all().length);
 });
-const inCell = System.create({ observer: true, lookup: { found: { index: byCell, read: [amount] } } }, ({ lookup }) => {
+const inCell = System.create({ observer: true, lookup: { found: { index: byCell } } }, ({ lookup }) => {
     const found = lookup.found(11);
     seen.tagged.push(found.length === 0 ? 0 : found.length * 100 + (found.at(0)?.[amount] ?? -1));
 });
-const failing = System.create({ observer: true, resources: { read: [level] } }, ({ resources }) => {
+const failing = System.create({ observer: true }, ({ resources }) => {
     if (resources[level] > 1) throw new Error("observer joined failure");
 });
-const readLabels = System.create({ observer: true, components: { read: [label, amount] } }, row => {
+const readLabels = System.create({ observer: true, components: { with: [label, amount] } }, row => {
     seen.labels.push(`${row[label].text}${row[amount]}`);
 });
 
@@ -208,12 +208,12 @@ describe("observer systems on a joined thread", () => {
         await world.run(spawn, { at: 1 });
         await world.run(spawn, { at: 11 });
         // Made in a function, so the build gives them no id.
-        const made = (): readonly [Index<{ readonly key: readonly []; readonly components: { readonly has: readonly [typeof tagged, typeof cell] } }>, Index<{ readonly key: readonly [typeof cell]; readonly sorted: true; readonly components: { readonly has: readonly [typeof amount] } }>] => [
-            Index.create({ key: [], components: { has: [tagged, cell] } }),
-            Index.create({ key: [cell], sorted: true, components: { has: [amount] } }),
+        const made = (): readonly [Index<{ readonly key: readonly []; readonly components: { readonly with: readonly [typeof tagged, typeof cell] } }>, Index<{ readonly key: readonly [typeof cell]; readonly sorted: true; readonly components: { readonly with: readonly [typeof amount] } }>] => [
+            Index.create({ key: [], components: { with: [tagged, cell] } }),
+            Index.create({ key: [cell], sorted: true, components: { with: [amount] } }),
         ];
         const [madeTagged, madeByCell] = made();
-        const sizes = System.create({ observer: true, lookup: { all: { index: madeTagged, changed: [cell] }, cells: { index: madeByCell, read: [amount] } } }, ({ lookup }) => {
+        const sizes = System.create({ observer: true, lookup: { all: { index: madeTagged, changed: [cell] }, cells: { index: madeByCell } } }, ({ lookup }) => {
             const all = lookup.all();
             seen.looked.push([all.changed]);
             const high = lookup.cells({ ">=": 5 });
@@ -309,7 +309,7 @@ describe("observer systems on a joined thread", () => {
         const { world, close } = await joined(["observerJoinedTest"]);
         await world.run(spawnLabelled);
         // Made in a function, so the build gives it no id.
-        const made = () => System.create({ observer: true, components: { read: [label, amount] } }, row => {
+        const made = () => System.create({ observer: true, components: { with: [label, amount] } }, row => {
             seen.labels.push(`${row[label].text}${row[amount]}`);
         });
         const madeLabels = made();

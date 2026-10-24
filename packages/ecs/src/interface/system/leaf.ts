@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from '../schema/schema.js';
-import type { Declaration } from './declaration.js';
+import type { Resolved } from './declaration.js';
 import type { Name } from './name.js';
 
 /** The schema of a body's input: an object of named fields. */
@@ -14,7 +14,7 @@ export type InputSchema = Extract<Schema, { readonly type: "object" }>;
 export type Leaf = {
     readonly kind: "system" | "render";
     readonly name: Name;
-    readonly declaration: Declaration;
+    readonly declaration: Resolved;
     readonly input: InputSchema | undefined;
     readonly body: (...parameters: never[]) => void;
 };

@@ -55,19 +55,19 @@ const blank = { text: "" };
 type Label = { readonly text: string };
 const Label = { schema: { default: blank } };
 
-const grid = Index.create({ key: [cell], components: { has: [weight] } });
-const serials = Index.create({ key: [serial], unique: true, components: { has: [weight] } });
+const grid = Index.create({ key: [cell], components: { with: [weight] } });
+const serials = Index.create({ key: [serial], unique: true, components: { with: [weight] } });
 const lanes = Index.create({ key: [lane, rank], sorted: true });
 const names = Index.create({ key: [name] });
 const titles = Index.create({ key: [title] });
-const weighted = Index.create({ key: [], components: { has: [weight] } });
+const weighted = Index.create({ key: [], components: { with: [weight] } });
 /** Two long buckets, which changes leave unsorted until a list is read by position. */
-const bands = Index.create({ key: [band], components: { has: [serial] } });
+const bands = Index.create({ key: [band], components: { with: [serial] } });
 
 /** On the joined thread: the serials of a band's rows, in entity order. */
 const describeBand = System.create({
-    components: { read: [target], write: [label], has: [bandReader] },
-    lookup: { inBand: { index: bands, read: [serial] } },
+    components: { with: [target, label, bandReader] },
+    lookup: { inBand: { index: bands } },
 }, (row, { lookup }) => {
     const list = lookup.inBand(row[target]);
     const serials: number[] = [];
@@ -79,7 +79,7 @@ const seedBands = System.create({}, ({ commands }) => {
     for (let k = 0; k < 2; k++) commands.spawn([target, label, bandReader])({ [target]: k, [label]: blank });
 });
 /** Moves some entities to the other band, despawns some and spawns others. */
-const stirBands = System.create({ components: { read: [serial], write: [band] } }, (row, { commands }, input: { readonly round: number }) => {
+const stirBands = System.create({ components: { with: [serial, band] } }, (row, { commands }, input: { readonly round: number }) => {
     if ((row[serial] + input.round) % 7 === 0) row[band] = 1 - row[band];
     if ((row[serial] + input.round) % 29 === 0) commands.despawn(row.entity);
     if (row[serial] % 31 === input.round) commands.spawn([band, serial])({ [band]: row[serial] % 2, [serial]: 1000 + row[serial] * 10 + input.round });
@@ -88,8 +88,8 @@ const stirBands = System.create({ components: { read: [serial], write: [band] } 
 let observedBands: string[] = [];
 const observeBands = System.create({
     observer: true,
-    components: { read: [target], has: [bandReader, label] },
-    lookup: { inBand: { index: bands, read: [serial] } },
+    components: { with: [target, bandReader, label] },
+    lookup: { inBand: { index: bands } },
 }, (row, { lookup }) => {
     const list = lookup.inBand(row[target]);
     const serials: number[] = [];
@@ -121,7 +121,7 @@ const bandScenario = async (world: CreatedWorld, holder: World): Promise<readonl
 };
 
 /** On the joined thread, in the tier before the lookups, so a task of consecutive tiers there would see the index before it: moves some cells. */
-const shift = System.create({ components: { read: [serial], write: [cell, label] } }, row => {
+const shift = System.create({ components: { with: [serial, cell, label] } }, row => {
     if (row[serial] % 17 !== 0) return;
     const [x, y] = row[cell];
     row[cell] = [(x + 1) % 13, y];
@@ -130,8 +130,8 @@ const shift = System.create({ components: { read: [serial], write: [cell, label]
 
 /** On the joined thread: each cell's neighbors' count and weights, whether its list changed, and its serial's target's weight. */
 const describeCells = System.create({
-    components: { read: [cell, target], write: [label] },
-    lookup: { near: { index: grid, read: [weight], changed: [weight] }, bySerial: { index: serials, read: [weight] }, all: { index: weighted, read: [weight] } },
+    components: { with: [cell, target, label] },
+    lookup: { near: { index: grid, changed: [weight] }, bySerial: { index: serials }, all: { index: weighted } },
     after: [shift],
 }, (row, { lookup }) => {
     const [x, y] = row[cell];
@@ -153,8 +153,8 @@ const describeCells = System.create({
 
 /** On the joined thread: the rows of the row's lane within 5 of its rank, in key order. */
 const describeRanks = System.create({
-    components: { read: [lane, rank], write: [label] },
-    lookup: { inLane: { index: lanes, read: [rank] } },
+    components: { with: [lane, rank, label] },
+    lookup: { inLane: { index: lanes } },
     after: [describeCells],
 }, (row, { lookup }) => {
     const r = row[rank];
@@ -172,20 +172,20 @@ const seed = System.create({}, ({ commands }) => {
 });
 
 /** Moves cells, changes weights and ranks, despawns some and spawns others. */
-const stir = System.create({ components: { read: [serial], write: [cell, weight] } }, (row, { commands }, input: { readonly round: number }) => {
+const stir = System.create({ components: { with: [serial, cell, weight] } }, (row, { commands }, input: { readonly round: number }) => {
     const [x, y] = row[cell];
     if ((row[serial] + input.round) % 9 === 0) row[cell] = [(x + 1) % 13, y];
     if ((row[serial] + input.round) % 11 === 0) row[weight] = row[weight] + 1;
     if ((row[serial] + input.round) % 23 === 0) commands.despawn(row.entity);
     if (row[serial] % 50 === input.round) commands.spawn([cell, weight, serial, target, label])({ [cell]: [input.round, 3], [weight]: 2, [serial]: 1000 + row[serial], [target]: row[serial], [label]: blank });
 });
-const rerank = System.create({ components: { write: [rank] } }, (row, _context, input: { readonly round: number }) => {
+const rerank = System.create({ components: { with: [rank] } }, (row, _context, input: { readonly round: number }) => {
     if ((row[rank] + input.round) % 5 === 0) row[rank] = (row[rank] * 3 + 1) % 97;
 });
 
 /** A system of the joined thread looking up through an index of its strings, which the world keeps on its own thread. */
 const byName = System.create({
-    components: { read: [name], write: [label] },
+    components: { with: [name, label] },
     lookup: { named: { index: names } },
 }, (row, { lookup }) => {
     row[label] = { text: String(lookup.named(row[name]).length) };
@@ -193,7 +193,7 @@ const byName = System.create({
 
 /** On the joined thread, added and removed: labels each cell by its bucket's length. */
 const counting = System.create({
-    components: { read: [cell], write: [label] },
+    components: { with: [cell, label] },
     lookup: { near: { index: grid, changed: [weight] } },
 }, (row, { lookup }) => {
     const [x, y] = row[cell];
@@ -203,30 +203,30 @@ const keepTicking = System.create({}, () => {});
 
 const ranks = Index.create({ key: [rank], sorted: true });
 /** Systems of the joined thread writing a string, and looking up by strings, which only the world's thread does. */
-const writeTitle = System.create({ components: { read: [label], write: [title] } }, row => {
+const writeTitle = System.create({ components: { with: [label, title] } }, row => {
     row[title] = row[label].text;
 });
-const byTitle = System.create({ components: { read: [title], write: [label] }, lookup: { titled: { index: titles } } }, (row, { lookup }) => {
+const byTitle = System.create({ components: { with: [title, label] }, lookup: { titled: { index: titles } } }, (row, { lookup }) => {
     row[label] = { text: String(lookup.titled(row[title]).length) };
 });
 
 /** A system of the joined thread whose rows are in an index's order, which runs only on the world's thread. */
-const inOrder = System.create({ components: { read: [rank], write: [label] }, order: ranks }, row => {
+const inOrder = System.create({ components: { with: [rank, label] }, order: ranks }, row => {
     row[label] = { text: String(row[rank]) };
 });
 
 /** Systems on the joined thread and an observer system of its objects, each with an index as a change filter, which run only on the world's thread. */
-const countWhenMoved = System.create({ components: { read: [cell], write: [label] }, lookup: { near: { index: grid, changed: true } } }, (row, { lookup }) => {
+const countWhenMoved = System.create({ components: { with: [cell, label] }, lookup: { near: { index: grid, changed: true } } }, (row, { lookup }) => {
     row[label] = { text: String(lookup.near(row[cell]).length) };
 });
-const readWhenMoved = System.create({ observer: true, components: { read: [label] }, lookup: { near: { index: grid, changed: true } } }, row => {
+const readWhenMoved = System.create({ observer: true, components: { with: [label] }, lookup: { near: { index: grid, changed: true } } }, row => {
     void row[label];
 });
 const ownWhenMoved = System.create({ observer: true, lookup: { near: { index: grid, changed: true } } }, () => {});
 
 /** The entities `readLabels` reads, and their labels. */
 const reading: { entities: readonly Entity[]; labels: readonly string[] } = { entities: [], labels: [] };
-const readLabels = System.create({ observer: true, lookup: { labeled: { read: [label] } } }, ({ lookup }) => {
+const readLabels = System.create({ observer: true, lookup: { labeled: { with: [label] } } }, ({ lookup }) => {
     reading.labels = reading.entities.map(entity => lookup.labeled(entity)?.[label].text ?? "missing");
 });
 
@@ -270,29 +270,29 @@ const seedHeld = System.create({}, ({ commands }, input: { readonly from: number
     for (let k = input.from; k < input.from + input.count; k++) commands.spawn([serial, weight, label, title])({ [serial]: k, [weight]: k % 5, [label]: blank, [title]: `t${k}` });
 });
 /** On the joined thread: every label, by serial and round. */
-const relabelHeld = System.create({ components: { read: [serial], write: [label], has: [title] } }, (row, _context, input: { readonly round: number }) => {
+const relabelHeld = System.create({ components: { with: [serial, label, title] } }, (row, _context, input: { readonly round: number }) => {
     row[label] = { text: `${row[serial]}.${input.round}` };
 });
 /** On the world's thread: every weight and title, by round. */
-const rewriteHeld = System.create({ components: { read: [serial], write: [weight, title] } }, (row, _context, input: { readonly round: number }) => {
+const rewriteHeld = System.create({ components: { with: [serial, weight, title] } }, (row, _context, input: { readonly round: number }) => {
     row[weight] = row[serial] * 10 + input.round;
     row[title] = `t${row[serial]}.${input.round}`;
 });
 /** Moves every held entity to the other archetype, marked on one run and not on the next. */
-const markHeld = System.create({ components: { has: [title], not: [marked] } }, (row, { commands }) => {
+const markHeld = System.create({ components: { with: [title], not: [marked] } }, (row, { commands }) => {
     commands.add(row.entity, marked);
 });
-const unmarkHeld = System.create({ components: { has: [title, marked] } }, (row, { commands }) => {
+const unmarkHeld = System.create({ components: { with: [title, marked] } }, (row, { commands }) => {
     commands.remove(row.entity, marked);
 });
-const held = Index.create({ key: [], components: { has: [serial, weight, label, title] } });
-const heldSerials = Index.create({ key: [serial], unique: true, components: { has: [weight, label, title] } });
+const held = Index.create({ key: [], components: { with: [serial, weight, label, title] } });
+const heldSerials = Index.create({ key: [serial], unique: true, components: { with: [weight, label, title] } });
 /** What `observeHeld` read last. */
 let observedHeld = "";
 /** An observer system reading every held row through the keyless index, and serial 3's through the unique one. */
 const observeHeld = System.create({
     observer: true,
-    lookup: { all: { index: held, read: [serial, weight, label, title] }, bySerial: { index: heldSerials, read: [weight, label, title] } },
+    lookup: { all: { index: held }, bySerial: { index: heldSerials } },
 }, ({ lookup }) => {
     const all = lookup.all();
     const read: string[] = [];

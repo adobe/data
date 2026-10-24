@@ -53,7 +53,7 @@ const text = { type: "object", properties: { text: { type: "string" } } } as con
 const makeNote = (text: string): Note => ({ text, read: () => text });
 
 /** Spawns from the world's thread: structs and its own object, the thread's objects at their starts. */
-export const seed = System.create({ resources: { write: [nextUid] } }, ({ resources, commands }, input: { readonly count: number }) => {
+export const seed = System.create({  }, ({ resources, commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) {
         const id = resources[nextUid]++;
         commands.spawn([uid, position, velocity, caption, kept])({ [uid]: id, [position]: [id, -id], [velocity]: id % 3, [kept]: `k${id}` });
@@ -61,18 +61,18 @@ export const seed = System.create({ resources: { write: [nextUid] } }, ({ resour
 });
 
 /** On the world's thread: positions move by their velocity. */
-export const move = System.create({ components: { read: [velocity], write: [position] } }, row => {
+export const move = System.create({ components: { with: [velocity, position] } }, row => {
     const [x, y] = row[position];
     row[position] = [x + row[velocity], y - row[velocity]];
 });
 
 /** On the thread: captions written in place, from the structs it reads. */
-export const describe = System.create({ components: { read: [position, velocity], write: [caption] }, after: [move] }, row => {
+export const describe = System.create({ components: { with: [position, velocity, caption] }, after: [move] }, row => {
     if (row[velocity] !== 0) row[caption] = { text: `at ${row[position][0]}` };
 });
 
 /** On the thread: commands giving its objects values it stages, struct values and tags, and despawns. */
-export const relabel = System.create({ components: { read: [uid, caption, position], has: [velocity] }, after: [describe] }, (row, { commands }) => {
+export const relabel = System.create({ components: { with: [uid, caption, position, velocity] }, after: [describe] }, (row, { commands }) => {
     const id = row[uid];
     if (row[position][0] > 40) {
         commands.despawn(row.entity);
@@ -85,44 +85,44 @@ export const relabel = System.create({ components: { read: [uid, caption, positi
 });
 
 /** On the thread, reading its object resource: spawns giving its objects values, with a struct resource's next uid. */
-export const breed = System.create({ resources: { read: [paint], write: [nextUid] }, after: [relabel] }, ({ resources, commands }) => {
+export const breed = System.create({ after: [relabel] }, ({ resources, commands }) => {
     const id = resources[nextUid]++;
     commands.spawn([uid, position, velocity, caption, note])({ [uid]: id, [position]: [0, id], [velocity]: 1, [caption]: { text: `${resources[paint].text} ${id}` }, [note]: makeNote(`bred ${id}`) });
 });
 
 /** On the thread: a reduction over its objects and structs. */
-export const tally = System.create({ components: { read: [caption, position] }, resources: { reduce: [total] }, after: [breed] }, (row, { reduce }) => {
+export const tally = System.create({ components: { with: [caption, position] }, after: [breed] }, (row, { reduce }) => {
     reduce[total]((row[caption]?.text.length ?? 0) + row[position][1]);
 });
 
 /** On the thread: a change filter on its own objects, writing a struct resource. */
-export const watchCaptions = System.create({ components: { changed: [caption] }, resources: { write: [changes] }, after: [tally] }, (_row, { resources }) => {
+export const watchCaptions = System.create({ components: { changed: [caption] }, after: [tally] }, (_row, { resources }) => {
     resources[changes] += 1;
 });
 
 /** On the thread, while `enabled` holds: writes its object resource, and a struct resource from it. */
-export const repaint = System.create({ resources: { write: [paint, painted], is: [enabled] }, after: [watchCaptions] }, ({ resources }) => {
+export const repaint = System.create({ resources: { is: [enabled] }, after: [watchCaptions] }, ({ resources }) => {
     resources[paint] = { text: `${resources[paint].text}+` };
     resources[painted] = resources[paint].text.length;
 });
 
 /** On the thread: a lookup reading an entity's structs and this thread's objects. */
-export const peek = System.create({ components: { has: [uid, note] }, lookup: { self: { read: [position, caption] } }, after: [repaint] }, (row, { lookup, commands }) => {
+export const peek = System.create({ components: { with: [uid, note] }, lookup: { self: { with: [position, caption] } }, after: [repaint] }, (row, { lookup, commands }) => {
     const self = lookup.self(row.entity);
     if (self !== null && ((self[caption]?.text.length ?? 0) + self[position][1]) % 2 === 1) commands.add(row.entity, flagged);
 });
 
 /** On the world's thread, beside `tally`: a world object from the structs. */
-export const keep = System.create({ components: { read: [uid], write: [kept], added: [kept] }, after: [breed], before: [watchCaptions] }, row => {
+export const keep = System.create({ components: { with: [uid, kept], added: [kept] }, after: [breed], before: [watchCaptions] }, row => {
     row[kept] = `${row[kept]}.${row[uid] % 10}`;
 });
 
 /** On the thread, failing after its commands: later tiers are skipped, and its commands still apply. */
-export const fail = System.create({ components: { read: [uid, caption] } }, (row, { commands }) => {
+export const fail = System.create({ components: { with: [uid, caption] } }, (row, { commands }) => {
     commands.add(row.entity, flagged);
     if (row[uid] === 3 && row[caption] !== undefined) throw new Error("threadSystemsTest failure");
 });
-export const afterFail = System.create({ components: { read: [caption] }, after: [fail] }, (row, { commands }) => {
+export const afterFail = System.create({ components: { with: [caption] }, after: [fail] }, (row, { commands }) => {
     if (row[caption] !== undefined) commands.despawn(row.entity);
 });
 export const failing = System.create({ systems: [fail, afterFail] });
@@ -131,12 +131,12 @@ export const failing = System.create({ systems: [fail, afterFail] });
 export const tick = System.create({ systems: [move, describe, relabel, breed, tally, keep, watchCaptions, repaint, peek] });
 
 /** On the thread, with input, which comes to it by message. */
-export const stamp = System.create({ components: { read: [uid], write: [caption] } }, (row, _context, input: { readonly text: string }) => {
+export const stamp = System.create({ components: { with: [uid, caption] } }, (row, _context, input: { readonly text: string }) => {
     if (row[uid] === 1) row[caption] = { text: input.text };
 });
 
 /** Disables `repaint`, from the world's thread. */
-export const disable = System.create({ resources: { write: [enabled] } }, ({ resources }) => {
+export const disable = System.create({  }, ({ resources }) => {
     resources[enabled] = false;
 });
 
@@ -173,7 +173,7 @@ const reading: { entities: readonly Entity[]; objects: readonly { readonly [name
 /** Each entity's objects of the thread, as data, a note by its text: none for an entity that's dead or has no uid. */
 const readObjects = System.create({
     observer: true,
-    lookup: { ids: { has: [uid] }, captions: { read: [caption] }, notes: { read: [note] } },
+    lookup: { ids: { with: [uid] }, captions: { with: [caption] }, notes: { with: [note] } },
 }, ({ lookup }) => {
     reading.objects = reading.entities.map(entity => {
         const objects: { [name: string]: unknown } = {};
@@ -245,36 +245,36 @@ export const crowd = System.create({}, ({ commands }, input: { readonly count: n
     for (let k = 0; k < input.count; k++) commands.spawn([uid, caption])({ [uid]: 1000 + k });
 });
 /** On the world's thread: every crowd entity but uid 1000 moves archetype, flagged on one run and not on the next. */
-export const flagCrowd = System.create({ components: { read: [uid], has: [caption], not: [flagged] } }, (row, { commands }) => {
+export const flagCrowd = System.create({ components: { with: [uid, caption], not: [flagged] } }, (row, { commands }) => {
     if (row[uid] !== 1000) commands.add(row.entity, flagged);
 });
-export const unflagCrowd = System.create({ components: { has: [caption, flagged] } }, (row, { commands }) => {
+export const unflagCrowd = System.create({ components: { with: [caption, flagged] } }, (row, { commands }) => {
     commands.remove(row.entity, flagged);
 });
 /** On the thread: writes uid 1000's caption in place. */
-export const write = System.create({ components: { read: [uid], write: [caption] } }, row => {
+export const write = System.create({ components: { with: [uid, caption] } }, row => {
     if (row[uid] === 1000) row[caption] = { text: "written" };
 });
 /** On the thread: counts captions it holds that the thread wrote, into a struct resource. */
-export const countWritten = System.create({ components: { read: [caption] }, resources: { write: [changes] } }, (row, { resources }) => {
+export const countWritten = System.create({ components: { with: [caption] } }, (row, { resources }) => {
     if (row[caption]?.text === "written") resources[changes] += 1;
 });
 
 /** On the thread: gives an object of the world's thread a value, which can't cross, so its command drops and it fails. */
-export const giveKept = System.create({ components: { read: [caption] } }, (row, { commands }) => {
+export const giveKept = System.create({ components: { with: [caption] } }, (row, { commands }) => {
     if (row[caption] !== undefined) commands.add(row.entity, kept, "given there");
 });
 /** On the thread: spawns giving an object of the world's thread a value, which throws when it's issued. */
-export const spawnKept = System.create({ resources: { read: [paint] } }, ({ resources, commands }) => {
+export const spawnKept = System.create({  }, ({ resources, commands }) => {
     commands.spawn([uid, kept])({ [uid]: resources[paint].text.length, [kept]: "spawned there" });
 });
 
 /** On the thread: runs until its thread ends, so its task never completes. */
-export const stall = System.create({ resources: { read: [paint] } }, ({ resources }) => {
+export const stall = System.create({  }, ({ resources }) => {
     while (resources[paint].text !== "never") { /* until the thread ends */ }
 });
 /** On the world's thread: counts its runs, ticking with nothing on the thread. */
-export const count = System.create({ resources: { write: [changes] } }, ({ resources }) => {
+export const count = System.create({  }, ({ resources }) => {
     resources[changes] += 1;
 });
 /**
@@ -294,12 +294,12 @@ const setQueued = (task: () => void): void => {
     ranHere.atDue = -1;
 };
 /** On the thread: counts its runs, so the world's ticks post it a task each. */
-export const countThere = System.create({ resources: { read: [paint], write: [changes] } }, ({ resources }) => {
+export const countThere = System.create({  }, ({ resources }) => {
     if (resources[paint].text !== "never") resources[changes] += 1;
 });
 
 /** On the thread: counts its runs there in `ranHere`; it reaches its commands, so it blocks its tier, a task a tick. */
-export const counted = System.create({ resources: { read: [paint] } }, ({ resources, commands }) => {
+export const counted = System.create({  }, ({ resources, commands }) => {
     void resources[paint];
     void commands;
     ranHere.runs++;

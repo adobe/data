@@ -44,16 +44,16 @@ declare module "@adobe/ecs" {
     }
 }
 
-const grid = Index.create({ key: [cell], components: { has: [weight] } });
+const grid = Index.create({ key: [cell], components: { with: [weight] } });
 const lanes = Index.create({ key: [lane, rank], sorted: true });
-const serials = Index.create({ key: [serial], unique: true, components: { has: [weight] } });
-const weighted = Index.create({ key: [], components: { has: [weight] } });
+const serials = Index.create({ key: [serial], unique: true, components: { with: [weight] } });
+const weighted = Index.create({ key: [], components: { with: [weight] } });
 
 /** Each row's neighbors in the 3 by 3 cells around its own: how many, and their weights' sum. */
 const neighbors = System.create({
     kernel: true,
-    components: { read: [cell], write: [total, count] },
-    lookup: { near: { index: grid, read: [weight] } },
+    components: { with: [cell, total, count] },
+    lookup: { near: { index: grid } },
 }, (row, { lookup }) => {
     const [x, y] = row[cell];
     let sum = 0;
@@ -74,7 +74,7 @@ const neighbors = System.create({
 /** Counts runs whose list of the row's own cell changed. */
 const watch = System.create({
     kernel: true,
-    components: { read: [cell], write: [changes] },
+    components: { with: [cell, changes] },
     lookup: { near: { index: grid, changed: [weight] } },
     after: [neighbors],
 }, (row, { lookup }) => {
@@ -85,7 +85,7 @@ const watch = System.create({
 /** How many rows of the row's lane have a rank within 5 of its own, and the first of them. */
 const window = System.create({
     kernel: true,
-    components: { read: [lane, rank], write: [count, seen] },
+    components: { with: [lane, rank, count, seen] },
     lookup: { inLane: { index: lanes } },
     after: [watch],
 }, (row, { lookup }) => {
@@ -98,8 +98,8 @@ const window = System.create({
 /** The weight of the entity whose serial is the row's target, or -1. */
 const follow = System.create({
     kernel: true,
-    components: { read: [target], write: [total] },
-    lookup: { bySerial: { index: serials, read: [weight] } },
+    components: { with: [target, total] },
+    lookup: { bySerial: { index: serials } },
     after: [window],
 }, (row, { lookup }) => {
     const found = lookup.bySerial(row[target]);
@@ -109,8 +109,8 @@ const follow = System.create({
 /** Through an index without a key: how many entities it holds, a stride of their weights, and whether it changed. */
 const census = System.create({
     kernel: true,
-    components: { read: [target], write: [tally] },
-    lookup: { weighted: { index: weighted, read: [weight], changed: [weight] } },
+    components: { with: [target, tally] },
+    lookup: { weighted: { index: weighted, changed: [weight] } },
     after: [follow],
 }, (row, { lookup }) => {
     const all = lookup.weighted();
@@ -132,16 +132,16 @@ const seed = System.create({}, ({ commands }) => {
 });
 
 /** Moves some cells, changes some weights and ranks, despawns some serials and spawns more: a different input each time. */
-const stir = System.create({ components: { write: [cell, weight] } }, (row, _context, input: { readonly round: number }) => {
+const stir = System.create({ components: { with: [cell, weight] } }, (row, _context, input: { readonly round: number }) => {
     const [x, y] = row[cell];
     if ((x + y + input.round) % 11 === 0) row[cell] = [(x + 1) % 31, y];
     if ((x * y + input.round) % 13 === 0) row[weight] = row[weight] + 1;
 });
-const rerank = System.create({ components: { write: [rank] } }, (row, _context, input: { readonly round: number }) => {
+const rerank = System.create({ components: { with: [rank] } }, (row, _context, input: { readonly round: number }) => {
     if ((row[rank] + input.round) % 7 === 0) row[rank] = (row[rank] * 3 + 1) % 1009;
 });
 // As written: spawned on workers, entities would take ids in an order that depends on the pool, which the census samples by.
-const churn = System.create({ kernel: false, components: { read: [serial] } }, (row, { commands }, input: { readonly round: number }) => {
+const churn = System.create({ kernel: false, components: { with: [serial] } }, (row, { commands }, input: { readonly round: number }) => {
     if ((row[serial] + input.round) % 17 === 0) commands.despawn(row.entity);
     if (row[serial] % 101 === input.round) {
         commands.spawn([cell, weight, total, count, changes, serial])({ [cell]: [input.round, row[serial] % 29], [weight]: 4, [total]: 0, [count]: 0, [changes]: 0, [serial]: 3000 + row[serial] + input.round });
@@ -188,13 +188,13 @@ export const simulate = async (threads: number, wasm: boolean): Promise<{ readon
 };
 
 /** Two long buckets, which changes leave unsorted until something reads them by position. */
-const bands = Index.create({ key: [band], components: { has: [serial] } });
+const bands = Index.create({ key: [band], components: { with: [serial] } });
 
 /** Each row's band's serials, each times its position plus one: a sum that tells the order. */
 const bandOrder = System.create({
     kernel: true,
-    components: { read: [target], write: [bandSum] },
-    lookup: { inBand: { index: bands, read: [serial] } },
+    components: { with: [target, bandSum] },
+    lookup: { inBand: { index: bands } },
 }, (row, { lookup }) => {
     const list = lookup.inBand(row[target] % 2);
     let sum = 0;
@@ -202,8 +202,8 @@ const bandOrder = System.create({
     row[bandSum] = sum;
 });
 const bandOrderByHand = System.create({
-    components: { read: [target], write: [bandSumByHand] },
-    lookup: { inBand: { index: bands, read: [serial] } },
+    components: { with: [target, bandSumByHand] },
+    lookup: { inBand: { index: bands } },
 }, (row, { lookup }) => {
     const list = lookup.inBand(row[target] % 2);
     let sum = 0;
@@ -215,7 +215,7 @@ const seedBands = System.create({}, ({ commands }) => {
     for (let k = 0; k < 512; k++) commands.spawn([target, bandSum, bandSumByHand])({ [target]: k, [bandSum]: 0, [bandSumByHand]: 0 });
 });
 /** Moves some entities to the other band, despawns some and spawns others. */
-const stirBands = System.create({ components: { read: [serial], write: [band] } }, (row, { commands }, input: { readonly round: number }) => {
+const stirBands = System.create({ components: { with: [serial, band] } }, (row, { commands }, input: { readonly round: number }) => {
     if ((row[serial] + input.round) % 7 === 0) row[band] = 1 - row[band];
     if ((row[serial] + input.round) % 29 === 0) commands.despawn(row.entity);
     if (row[serial] % 31 === input.round) commands.spawn([band, serial])({ [band]: row[serial] % 2, [serial]: 1000 + row[serial] * 10 + input.round });

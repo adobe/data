@@ -1,4 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { createResolved } from '../../interface/system/create-resolved.js';
+import type { Resolved } from '../../interface/system/declaration.js';
+import type { SystemLookupLists } from '../../interface/system/access.js';
 import type { World } from '../../interface/world/world.js';
 import type { Failure } from '../../interface/report/failure.js';
 import { definitionOf, idOfKey, indexDefinitionOf, itemOfId, keyOfId, requireDefinition, type Definition } from '../../interface/registry/index.js';
@@ -12,7 +15,6 @@ import {
 import { createObserverTarget, droppedObserver, endTarget, joinedRun, type ObserverTarget } from './joined-observer.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import { Index } from '../../interface/indexes/index-type.js';
-import { System } from '../../interface/system/system.js';
 import { createMoveLog, freeMoveLog, type MoveLog } from './move-log.js';
 import { lineWords } from './protocol.js';
 import { claimThreads, releaseThreads } from './remote.js';
@@ -520,7 +522,7 @@ export const createSharing = (host: SharingHost) => {
         let index = madeIndexes.get(identity);
         if (index === undefined) {
             // `Index.create` checks the declaration as the joined thread's was checked.
-            index = indexDefinitionOf(Reflect.apply(Index.create, undefined, [{ name: declared.name, key, sorted: declared.sorted, unique: declared.unique, components: { has, not } }]));
+            index = indexDefinitionOf(Reflect.apply(Index.create, undefined, [{ name: declared.name, key, sorted: declared.sorted, unique: declared.unique, components: { with: has, not } }]));
             madeIndexes.set(identity, index);
         }
         return index;
@@ -538,7 +540,7 @@ export const createSharing = (host: SharingHost) => {
                 for (const [field, numbers] of entries) if (numbers !== null && (numbers.length > 0 || field === "changed")) result[field] = keys(numbers);
                 return result;
             };
-            const lookup: { [name: string]: object } = {};
+            const lookup: { [name: string]: SystemLookupLists } = {};
             for (const each of declared.lookup) {
                 if (each.index === null) {
                     lookup[each.name] = listed([["read", each.read], ["has", each.has], ["not", each.not], ["changed", each.changed]]);
@@ -550,14 +552,14 @@ export const createSharing = (host: SharingHost) => {
             }
             const { components, resources } = declared;
             // Unnamed, so other systems' labels stay as they are; its own is the thread's.
-            const declaration = {
+            const declaration: Resolved = {
                 observer: true,
                 ...components === null ? {} : { components: listed([["read", components.read], ["has", components.has], ["not", components.not], ["added", components.added], ["changed", components.changed]]) },
                 ...resources === null ? {} : { resources: listed([["read", resources.read], ["changed", resources.changed], ["is", resources.is], ["not", resources.not]]) },
                 ...declared.lookup.length === 0 ? {} : { lookup },
             };
-            // `System.create` checks the declaration as the joined thread's was checked; its body runs only there.
-            const created = requireDefinition(Reflect.apply(System.create, undefined, [declaration, () => {}]));
+            // Checked as the joined thread's was; its body runs only there.
+            const created = requireDefinition(createResolved(declaration, () => {}));
             if (created.kind === "composite") return;
             proxy = created;
         }

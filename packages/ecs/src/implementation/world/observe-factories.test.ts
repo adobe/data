@@ -31,8 +31,8 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
     spawned = [];
     for (let i = 0; i < input.count; i++) spawned.push(commands.spawn([amount])({ [amount]: i }));
 });
-const grow = System.create({ components: { write: [amount] } }, row => { row[amount] += 1; });
-const raise = System.create({ resources: { write: [level] } }, ({ resources }) => { resources[level] += 1; });
+const grow = System.create({ components: { with: [amount] } }, row => { row[amount] += 1; });
+const raise = System.create({  }, ({ resources }) => { resources[level] += 1; });
 const nothing = System.create({}, () => {});
 
 /** Counts passes: the observer passes after each run's sync point. */
@@ -115,7 +115,7 @@ describe("observer factories", () => {
         const stop = Observe.entity(world, spawned[0], { required: [amount] })(value => entities.push(value?.[amount]));
         await settle(world);
         await world.run(grow);
-        await world.run(System.create({ components: { write: [amount] } }, row => {
+        await world.run(System.create({ components: { with: [amount] } }, row => {
             if (row.entity !== spawned[0]) row[amount] += 1;
         }));
         expect(entities).toEqual([4, 5]);
@@ -170,7 +170,7 @@ describe("observer factories", () => {
 
     it("read only what they list, so a write elsewhere notifies nothing", async () => {
         await using world = await seeded(3);
-        const writeOther = System.create({ components: { write: [other] } }, row => { row[other] = 1; });
+        const writeOther = System.create({ components: { with: [other] } }, row => { row[other] = 1; });
         let notified = 0;
         Observe.entity(world, spawned[0], { required: [amount] })(() => notified++);
         Observe.select(world, { required: [amount], order: { [amount]: false }, page: { offset: 0, limit: 2 } })(() => notified++);

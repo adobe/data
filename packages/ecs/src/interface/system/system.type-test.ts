@@ -12,6 +12,7 @@ export const position = Symbol("systemTest/position");
 const velocity = Symbol("systemTest/velocity");
 const target = Symbol("systemTest/target");
 const player = Symbol('systemTest/player');
+const owner = Symbol("systemTest/owner");
 export const time = Symbol("systemTest/time");
 const score = Symbol("systemTest/score");
 
@@ -21,6 +22,7 @@ declare module '@adobe/ecs' {
         [velocity]: { type: number };
         [target]: { type: Entity };
         [player]: { type: true };
+        [owner]: { type: Entity; reference: "owner" };
     }
 }
 const flagged = Symbol("systemTest/flagged");
@@ -36,31 +38,37 @@ declare module '@adobe/ecs' {
     }
 }
 
-// Row: read values are read-only, write values writable, others absent.
+// Row: the values of what `with` requires, writable; what the body reads and writes the build infers.
 export const integrate = System.create({
-    components: { read: [velocity], write: [position], has: [player] },
-    resources: { read: [time] },
+    components: { with: [velocity, position, player] },
 }, (row, { resources: { [time]: delta } }) => {
     row[position] += row[velocity] * delta;
     const entity: Entity = row.entity;
-    // @ts-expect-error read values are read-only
-    row[velocity] = 0;
     // @ts-expect-error entity is read-only
     row.entity = entity;
-    // @ts-expect-error components outside read and write are not in the row
     void row[player];
 });
 
-// Write grants read: a component in write is readable, and listing it in read as well is rejected.
+System.create({ components: { with: [position] } }, row => {
+    // @ts-expect-error components outside with are not in the row
+    void row[velocity];
+});
+
 System.create({
-    // @ts-expect-error write already makes it readable
-    components: { read: [position], write: [position] },
+    // @ts-expect-error what the body reads and writes isn't declared
+    components: { read: [position] },
 }, () => {});
+
+// A reference changes only through commands, so the row holds it read-only.
+System.create({ components: { with: [owner] } }, row => {
+    // @ts-expect-error a reference is read-only in a row
+    row[owner] = Entity.none;
+});
 
 // Lookups: read-only values by entity, or null.
 export const follow = System.create({
-    components: { read: [target, position], write: [velocity] },
-    lookup: { targets: { read: [position] } },
+    components: { with: [target, position, velocity] },
+    lookup: { targets: { with: [position] } },
     after: [integrate],
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
@@ -78,8 +86,8 @@ export const follow = System.create({
 // A lookup by entity with `changed`: its row also says whether what `changed` names may have changed since the system
 // last ran.
 System.create({
-    components: { read: [target], write: [velocity] },
-    lookup: { targets: { read: [position], changed: [position] }, players: { has: [player], changed: [player] } },
+    components: { with: [target, velocity] },
+    lookup: { targets: { with: [position], changed: [position] }, players: { with: [player], changed: [player] } },
 }, (row, { lookup: { targets, players } }) => {
     const other = targets(row[target]);
     if (other !== null) {
@@ -89,55 +97,50 @@ System.create({
         other.changed = false;
     }
     const found = players(row[target]);
-    if (found !== null) check<Equal<typeof found, { readonly changed: boolean }>>();
+    if (found !== null) check<Equal<typeof found, { readonly [player]: true; readonly changed: boolean }>>();
 });
 
 System.create({
-    components: { read: [target], write: [velocity] },
-    // @ts-expect-error a lookup by entity's changed names what it reads or has
-    lookup: { targets: { read: [position], changed: [velocity] } },
+    components: { with: [target, velocity] },
+    // @ts-expect-error a lookup by entity's changed names what its with requires
+    lookup: { targets: { with: [position], changed: [velocity] } },
 }, () => {});
 
 // Input: the type of the body's parameter after its context.
 export const move = System.create({
-    components: { has: [player], write: [position] },
+    components: { with: [position, player] },
 }, (row, _context, input: { readonly distance: number }) => {
     row[position] += input.distance;
     // @ts-expect-error input has the type the body gives it
     void input.missing;
 });
-// The row and the context are still typed by the declaration.
-System.create({ components: { read: [velocity], write: [position] }, resources: { read: [time] } }, (row, { resources }, input: { readonly by: number }) => {
+// The row is still typed by the declaration, and the context holds every resource.
+System.create({ components: { with: [velocity, position] } }, (row, { resources }, input: { readonly by: number }) => {
     row[position] += row[velocity] * resources[time] * input.by;
-    // @ts-expect-error a read component is read-only
-    row[velocity] = input.by;
-    // @ts-expect-error score isn't a declared resource
+    // @ts-expect-error components outside with are not in the row
+    void row[player];
     void resources[score];
 });
 // @ts-expect-error input is the body's parameter, not part of its declaration
 System.create({ input: { type: "object", properties: {} } }, () => {});
 
-// A system without components takes only its context; resource writes are writable, and written ones readable.
-export const tally = System.create({
-    resources: { read: [time], write: [score] },
-}, ({ resources, commands }) => {
+// A system without components takes only its context, which holds every resource, writable but those reduced.
+export const tally = System.create({}, ({ resources, commands }) => {
     resources[score] += resources[time];
-    // @ts-expect-error read resources are read-only
-    resources[time] = 0;
+    // @ts-expect-error a reduced resource is never written
+    resources[total] = 0;
     const spawned: Entity = commands.spawn([position, player])({ [position]: 0, [player]: true });
     // @ts-expect-error spawn values must match the component type
     commands.spawn([position])({ [position]: "zero" });
     commands.remove(spawned, velocity);
 });
 
-// The context holds only what the declaration declares.
+// The context holds every resource and reduction, and the lookups the declaration declares.
 System.create({}, context => {
-    // @ts-expect-error no resources declared
     void context.resources;
+    void context.reduce;
     // @ts-expect-error no lookups declared
     void context.lookup;
-    // @ts-expect-error no reductions declared
-    void context.reduce;
     // @ts-expect-error input isn't in the context
     void context.input;
     void context.commands;
@@ -146,11 +149,6 @@ System.create({}, context => {
 // A system without components has no row: its second parameter is its input.
 check<Equal<typeof alone, System<{ readonly count: number }>>>();
 const alone = System.create({}, (_context, input: { readonly count: number }) => { void input.count; });
-
-System.create({
-    // @ts-expect-error write already makes a resource readable
-    resources: { read: [score], write: [score] },
-}, () => {});
 
 System.create({
     // @ts-expect-error ordering takes systems
@@ -187,45 +185,21 @@ declare module '@adobe/ecs' {
     }
 }
 
-// Kernels: linear values (numbers, booleans, entities, fixed tuples), read-only resources.
+// Kernels: a kernel's `with` may require any component; what its body reads must be linear, which the build checks.
 System.create({
     kernel: true,
-    components: { read: [velocity, vector, player, target], write: [position], has: [label] },
-    resources: { read: [time] },
-}, () => {});
-
-System.create({
-    kernel: true,
-    // @ts-expect-error kernel values must be linear
-    components: { read: [label] },
-}, () => {});
-
-System.create({
-    kernel: true,
-    // @ts-expect-error kernel values can't be variable-length arrays
-    components: { write: [path] },
-}, () => {});
-
-System.create({
-    kernel: true,
-    // @ts-expect-error kernel values can't be sets or maps
-    components: { read: [marks] },
-}, () => {});
-
-System.create({
-    kernel: true,
-    components: { read: [velocity] },
-    // @ts-expect-error kernel lookups must read linear values
-    lookup: { labels: { read: [label] } },
-}, () => {});
+    components: { with: [velocity, vector, player, target, position, label, path, marks] },
+}, row => {
+    row[position] = row[velocity];
+});
 
 declare const byTarget: Index<{ readonly key: readonly [typeof target] }>;
 
 // A kernel's lookup by entity matches has and not, as any system's does.
 System.create({
     kernel: true,
-    components: { read: [target], write: [position] },
-    lookup: { players: { read: [position], has: [player], not: [velocity] } },
+    components: { with: [target, position] },
+    lookup: { players: { with: [position, player], not: [velocity] } },
 }, (row, { lookup }) => {
     const found = lookup.players(row[target]);
     if (found !== null) row[position] = found[position];
@@ -233,49 +207,40 @@ System.create({
 
 System.create({
     kernel: true,
-    components: { read: [velocity] },
-    // @ts-expect-error an index lookup matches what its index holds, so it takes no has
-    lookup: { byTarget: { index: byTarget, read: [position], has: [player] } },
+    components: { with: [velocity] },
+    // @ts-expect-error an index lookup matches what its index holds, so it takes no with
+    lookup: { byTarget: { index: byTarget, with: [player] } },
 }, () => {});
 
 System.create({
     kernel: true,
-    components: { read: [velocity] },
-    // @ts-expect-error kernels can't write resources
-    resources: { write: [score] },
+    components: { with: [velocity] },
 }, () => {});
 
 // GPU kernels: everything kernels can't do, and no lookups, change filters or commands.
 System.create({
     kernel: "gpu",
-    components: { read: [velocity], write: [position] },
-    resources: { read: [time] },
+    components: { with: [velocity, position] },
 }, row => {
     row[position] = row[velocity];
 });
 
 System.create({
     kernel: "gpu",
-    // @ts-expect-error GPU kernel values must be linear too
-    components: { read: [label] },
-}, () => {});
-
-System.create({
-    kernel: "gpu",
-    components: { read: [target], write: [position] },
+    components: { with: [target, position] },
     // @ts-expect-error GPU kernels can't use lookups
-    lookup: { targets: { read: [position] } },
+    lookup: { targets: { with: [position] } },
 }, () => {});
 
 System.create({
     kernel: "gpu",
     // @ts-expect-error GPU kernels can't use change filters
-    components: { write: [position], changed: [velocity] },
+    components: { with: [position], changed: [velocity] },
 }, () => {});
 
 System.create({
     kernel: "gpu",
-    components: { read: [velocity], write: [position] },
+    components: { with: [velocity, position] },
 }, (row, context) => {
     // @ts-expect-error GPU kernels can't issue commands
     context.commands.despawn(row.entity);
@@ -287,24 +252,21 @@ System.create({
 }, () => {});
 
 // Without the flag a body compiles when it can; false runs it as written, whatever it uses.
-System.create({ components: { read: [label] } }, () => {});
-System.create({ kernel: false, components: { read: [label], write: [path] }, resources: { write: [score] } }, () => {});
+System.create({ components: { with: [label] } }, () => {});
+System.create({ kernel: false, components: { with: [label, path] } }, () => {});
 
 System.create({
     // @ts-expect-error a system without components runs once, so there's nothing to compile
     kernel: true,
-    resources: { read: [time] },
 }, () => {});
 System.create({
     // @ts-expect-error a system without components runs once, so there's nothing to compile, for the GPU either
     kernel: "gpu",
-    resources: { read: [time] },
 }, () => {});
 
-// Reductions: each reduced resource is a function contributing a value of its type, with its trait's operator repeated.
+// Reductions: each reduced resource is a function contributing a value of its type, folded with its trait's operator.
 System.create({
-    components: { read: [velocity, vector], changed: [velocity] },
-    resources: { reduce: [total, bounds, flagged] },
+    components: { with: [velocity, vector], changed: [velocity] },
 }, (row, { reduce }) => {
     reduce[total](row[velocity]);
     reduce[bounds](row[vector]);
@@ -315,31 +277,19 @@ System.create({
     void (reduce[total] + 1);
 });
 
-System.create({
+System.create({}, ({ reduce }) => {
     // @ts-expect-error only resources with a reduce trait can be reduced
-    resources: { reduce: [score] },
-}, () => {});
-
-System.create({
-    // @ts-expect-error a reduced resource is never written
-    resources: { write: [total] },
-}, () => {});
-
-System.create({
-    // @ts-expect-error a contributor doesn't read what it reduces into
-    resources: { read: [total], reduce: [total] },
-}, () => {});
+    reduce[time](1);
+});
 
 System.create({
     kernel: "gpu",
-    components: { read: [velocity] },
-    // @ts-expect-error GPU kernels can't reduce yet
-    resources: { reduce: [total] },
+    components: { with: [velocity] },
 }, () => {});
 
 
 // Render systems: the accessors name the components they read.
-System.render({ components: { has: [player] }, resources: { read: [time] }, shader: { accessors: { place: position, speed: velocity } } }, (gpu, { resources }) => {
+System.render({ components: { with: [player] }, shader: { accessors: { place: position, speed: velocity } } }, (gpu, { resources }) => {
     void [gpu.encoder, resources[time]];
 });
 System.render({ shader: { accessors: { place: position } } }, (_, context) => {
@@ -351,6 +301,10 @@ System.render({
     components: { read: [position] },
     shader: { accessors: { place: position } },
 }, () => {});
+System.render({ shader: { accessors: { place: position } } }, (_, { resources }) => {
+    // @ts-expect-error a render system only reads
+    resources[score] = 0;
+});
 // A pass helper several render systems share declares its context and tables by name.
 const drawAll = (gpu: System.RenderContext, pass: GPURenderPassEncoder): void => {
     for (const table of gpu.tables) drawTable(table, pass);
@@ -368,7 +322,7 @@ System.render({ shader: { accessors: { place: position } } }, gpu => {
 declare const byPosition: Index<{ readonly key: readonly [typeof position]; readonly sorted: true }>;
 declare const hashedByPosition: Index<{ readonly key: readonly [typeof position] }>;
 declare const someIndex: Index;
-System.render({ components: { has: [player] }, order: byPosition, shader: { accessors: { place: position } } }, gpu => {
+System.render({ components: { with: [player] }, order: byPosition, shader: { accessors: { place: position } } }, gpu => {
     const pass = gpu.encoder.beginRenderPass({ colorAttachments: [] });
     drawAll(gpu, pass);
     pass.end();
@@ -390,7 +344,7 @@ System.render({
 }, () => {});
 
 // Names are optional: a declaration may leave it out, and a system that declares nothing is just its body.
-export const unnamed = System.create({ components: { write: [position] }, resources: { read: [time] } }, (row, { resources }) => {
+export const unnamed = System.create({ components: { with: [position] } }, (row, { resources }) => {
     row[position] += resources[time];
 });
 check<Equal<typeof unnamed, System>>();
@@ -403,8 +357,8 @@ export const bodyOnly = System.create(({ commands }) => {
     commands.spawn([position])({ [position]: 0 });
 });
 check<Equal<typeof bodyOnly, System>>();
-// @ts-expect-error a body alone declares no resources
-System.create(({ resources }) => { void resources; });
+// A body alone reads and writes resources as any system does.
+System.create(({ resources }) => { resources[score] += 1; });
 // @ts-expect-error a body alone runs once per run, so it has no row
 System.create((row: { readonly entity: Entity }) => { void row; });
 export const unnamedAll = System.create([unnamed, bodyOnly]);
@@ -414,9 +368,8 @@ System.render({ shader: { accessors: { place: position } } }, gpu => { void gpu.
 // Observer systems read what a sync point left, after it: rows, resources, lookups and change filters, and no commands.
 export const watchPositions = System.create({
     observer: true,
-    components: { read: [position], changed: [position] },
-    resources: { read: [time] },
-    lookup: { targets: { read: [velocity] } },
+    components: { with: [position], changed: [position] },
+    lookup: { targets: { with: [velocity] } },
 }, (row, context) => {
     const read: number = row[position] + context.resources[time];
     void [read, context.lookup.targets(row.entity)];
@@ -426,41 +379,45 @@ export const watchPositions = System.create({
     void context.commands;
 });
 check<Equal<typeof watchPositions, System>>();
-export const watchTime = System.create({ observer: true, resources: { read: [time], changed: [time] } }, ({ resources }) => { void resources[time]; });
+export const watchTime = System.create({ observer: true, resources: { changed: [time] } }, ({ resources }) => { void resources[time]; });
 // A composite may hold observer members, which run after its sync point.
 export const withWatch = System.create([integrate, watchTime]);
 check<Equal<typeof withWatch, System>>();
 // @ts-expect-error observer is true or left out
-System.create({ observer: false, resources: { read: [time] } }, () => {});
-// @ts-expect-error an observer system writes no components
-System.create({ observer: true, components: { write: [position] } }, () => {});
-// @ts-expect-error an observer system writes no resources
-System.create({ observer: true, resources: { write: [score] } }, () => {});
-// @ts-expect-error an observer system reduces into nothing
-System.create({ observer: true, components: { read: [velocity] }, resources: { reduce: [total] } }, () => {});
+System.create({ observer: false }, () => {});
+System.create({ observer: true, components: { with: [position] } }, (row, { resources }) => {
+    // @ts-expect-error an observer system writes no components
+    row[position] = 0;
+    // @ts-expect-error an observer system writes no resources
+    resources[score] = 0;
+});
+System.create({ observer: true }, context => {
+    // @ts-expect-error an observer system reduces into nothing
+    void context.reduce;
+});
 // @ts-expect-error an observer system takes no input
-System.create({ observer: true, resources: { read: [time] } }, (_context, input: { readonly count: number }) => { void input; });
+System.create({ observer: true }, (_context, input: { readonly count: number }) => { void input; });
 // @ts-expect-error an observer system isn't a kernel
-System.create({ observer: true, kernel: true, components: { read: [position] } }, () => {});
-System.create({ observer: true, kernel: false, components: { read: [position] } }, () => {});
+System.create({ observer: true, kernel: true, components: { with: [position] } }, () => {});
+System.create({ observer: true, kernel: false, components: { with: [position] } }, () => {});
 // @ts-expect-error an observer system is ordered with nothing
-System.create({ observer: true, resources: { read: [time] }, after: [integrate] }, () => {});
+System.create({ observer: true, after: [integrate] }, () => {});
 // @ts-expect-error an observer system is ordered with nothing
-System.create({ observer: true, resources: { read: [time] }, before: [integrate] }, () => {});
+System.create({ observer: true, before: [integrate] }, () => {});
 // @ts-expect-error an observer system is ordered with nothing
-System.create({ observer: true, resources: { read: [time] }, during: [integrate] }, () => {});
+System.create({ observer: true, during: [integrate] }, () => {});
 
 // A system on one entity: its input names the entity, and its body runs on that entity's row.
 type OnOne = { readonly entity: Entity; readonly by: number };
-export const nudge = System.create({ target: "entity", components: { write: [position] } }, (row, _context, input: OnOne) => {
+export const nudge = System.create({ target: "entity", components: { with: [position] } }, (row, _context, input: OnOne) => {
     row[position] += input.by;
 });
 check<Equal<typeof nudge, System<OnOne>>>();
 // @ts-expect-error its target is an entity field of its input
-System.create({ target: "by", components: { write: [position] } }, (_row, _context, input: OnOne) => { void input; });
+System.create({ target: "by", components: { with: [position] } }, (_row, _context, input: OnOne) => { void input; });
 // @ts-expect-error it takes its target from its input, so it takes input
-System.create({ target: "entity", components: { write: [position] } }, row => { void row; });
+System.create({ target: "entity", components: { with: [position] } }, row => { void row; });
 // @ts-expect-error it runs on a row, so it needs components
 System.create({ target: "entity" }, (_context, input: OnOne) => { void input; });
 // @ts-expect-error not a kernel
-System.create({ target: "entity", kernel: true, components: { write: [position] } }, (_row, _context, input: OnOne) => { void input; });
+System.create({ target: "entity", kernel: true, components: { with: [position] } }, (_row, _context, input: OnOne) => { void input; });

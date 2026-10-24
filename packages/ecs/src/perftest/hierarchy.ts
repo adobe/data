@@ -26,8 +26,8 @@ const taggedChild = Archetype.create([local, world, parent, leaf]);
 /** Each row's world value is its parent's plus its own. */
 export const propagate = System.create({
     kernel: true,
-    components: { read: [local], write: [world] },
-    up: { through: parent, read: [world] },
+    components: { with: [local, world] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
@@ -35,8 +35,8 @@ export const propagate = System.create({
 /** The same, only for rows whose own or parent's values changed since it last ran. */
 export const propagateChanged = System.create({
     kernel: true,
-    components: { read: [local], write: [world], changed: [local] },
-    up: { through: parent, read: [world] },
+    components: { with: [local, world], changed: [local] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
@@ -53,7 +53,7 @@ export const forest = System.create({
 const target = { type: "object", properties: { entity: Entity.schema } } as const;
 
 /** Changes one row's own value. */
-export const nudge = System.create({ kernel: false, components: { write: [local] } }, (row, _context, input: { readonly entity: Entity }) => {
+export const nudge = System.create({ kernel: false, components: { with: [local] } }, (row, _context, input: { readonly entity: Entity }) => {
     if (row.entity === input.entity) row[local] += 1;
 });
 
@@ -100,8 +100,8 @@ const gpuChild = Archetype.create([offset, placed, parent]);
 /** `propagate` in 4-byte values, on the GPU. */
 export const place = System.create({
     kernel: "gpu",
-    components: { read: [offset], write: [placed] },
-    up: { through: parent, read: [placed] },
+    components: { with: [offset, placed] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[placed] = (up === null ? 0 : up[placed]) + row[offset];
 });

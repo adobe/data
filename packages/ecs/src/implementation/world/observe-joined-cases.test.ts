@@ -44,7 +44,7 @@ const none = { text: "none" };
 type Caption = { readonly text: string } | null;
 const Caption = { schema: { default: none } };
 
-const add = System.create({ resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
+const add = System.create({  }, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
 const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {
@@ -53,9 +53,9 @@ const spawn = System.create({}, ({ commands }, input: { readonly x: number }) =>
 const spawnPlaced = System.create({}, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([place, caption, widget, kept])({ [place]: input.x, [widget]: null, [kept]: `k${input.x}` });
 });
-const nullCaptions = System.create({ components: { has: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, null); });
-const restartCaptions = System.create({ components: { has: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, none); });
-const dropCaptions = System.create({ components: { has: [caption] } }, (row, { commands }) => { commands.remove(row.entity, caption); });
+const nullCaptions = System.create({ components: { with: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, null); });
+const restartCaptions = System.create({ components: { with: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, none); });
+const dropCaptions = System.create({ components: { with: [caption] } }, (row, { commands }) => { commands.remove(row.entity, caption); });
 
 /** A world shared with a thread joined through a channel claiming `threads`, and the joined world. */
 const joined = (threads: readonly "observeJoinedTest"[] = []): { readonly world: CreatedWorld; readonly remote: World } => {

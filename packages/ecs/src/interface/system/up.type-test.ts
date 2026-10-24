@@ -20,53 +20,48 @@ declare module '@adobe/ecs' {
     }
 }
 
-// `up` reads what `read` lists of the entity `through` names, or null for a row without one; it may read what the
-// system writes.
+// `up` holds the values of the entity `through` names, or null for a row without one; it may read what the system
+// writes. What the body reads of it the build infers.
 System.create({
     kernel: true,
-    components: { read: [local], write: [world] },
-    up: { through: parent, read: [world] },
+    components: { with: [local, world] },
+    up: { through: parent },
 }, (row, { up }) => {
-    check<Equal<typeof up, { readonly [world]: number } | null>>();
+    if (up !== null) check<Equal<typeof up[typeof world], number>>();
     row[world] = up === null ? row[local] : up[world] + row[local];
     // @ts-expect-error up's values are read-only
     if (up !== null) up[world] = 0;
 });
 
 // Without `up`, the context has none.
-System.create({ components: { read: [local] } }, (row, context) => {
+System.create({ components: { with: [local] } }, (row, context) => {
     void row[local];
     // @ts-expect-error no up declared
     void context.up;
 });
 
 System.create({
-    components: { write: [world] },
+    components: { with: [world] },
     // @ts-expect-error through is a reference component
-    up: { through: local, read: [world] },
+    up: { through: local },
 }, () => {});
 
-System.create({
-    kernel: true,
-    components: { write: [world] },
-    // @ts-expect-error a kernel's up reads linear values
-    up: { through: parent, read: [name] },
-}, () => {});
+
 
 // A GPU kernel reads up too.
 System.create({
     kernel: "gpu",
-    components: { read: [local], write: [world] },
-    up: { through: parent, read: [world] },
+    components: { with: [local, world] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[world] = up === null ? row[local] : up[world] + row[local];
 });
 
 System.create({
     // @ts-expect-error up orders rows, so it needs components
-    up: { through: parent, read: [world] },
+    up: { through: parent },
 }, () => {});
 
 // An observer system reads what a sync point left, in no order.
 // @ts-expect-error an observer system has no up
-System.create({ observer: true, components: { read: [local] }, up: { through: parent, read: [local] } }, () => {});
+System.create({ observer: true, components: { with: [local] }, up: { through: parent } }, () => {});

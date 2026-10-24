@@ -47,10 +47,10 @@ declare module "@adobe/ecs" {
 }
 
 
-Rule.create(identify({ components: { has: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
-Rule.create({ components: { has: [slot] }, derive: [visible] });
-Rule.create({ components: { has: [sprite] }, derive: [visible] });
-Rule.create({ components: { has: [tagged] }, derive: [tag] });
+Rule.create(identify({ components: { with: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
+Rule.create({ components: { with: [slot] }, derive: [visible] });
+Rule.create({ components: { with: [sprite] }, derive: [visible] });
+Rule.create({ components: { with: [tagged] }, derive: [tag] });
 
 /** Runs `edit` with commands once, as its own run. */
 const edit = System.create({}, ({ commands }, input: { readonly step: number }) => {
@@ -71,8 +71,8 @@ const components = async (world: ReturnType<typeof createWorld>, entity: Entity)
 describe("rules", () => {
     it("accept a rule declared again the same under its id, as a module evaluated again declares it, and reject a different one", () => {
         const rules = programRules().length;
-        Rule.create(identify({ components: { has: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
-        expect(() => Rule.create(identify({ components: { has: [source] }, derive: [slot] }, "rulesTest/rules.ts#slots"))).toThrow("reload the page");
+        Rule.create(identify({ components: { with: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
+        expect(() => Rule.create(identify({ components: { with: [source] }, derive: [slot] }, "rulesTest/rules.ts#slots"))).toThrow("reload the page");
         expect(programRules()).toHaveLength(rules);
     });
     it("derive components where they match, from the schema default, and remove them where they stop", async () => {
@@ -96,7 +96,7 @@ describe("rules", () => {
     });
 
     it("write the default again where a derived component starts over, on a reused row", async () => {
-        const write = System.create({ components: { write: [slot] } }, row => { row[slot] = 99; });
+        const write = System.create({ components: { with: [slot] } }, row => { row[slot] = 99; });
         const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let a = Entity.none;
@@ -127,7 +127,7 @@ describe("rules", () => {
         await world.run(spawn);
         await world.run(observe);
         expect(await count(world, { required: [late] })).toBe(0);
-        Rule.create({ components: { has: [mark] }, derive: [late] });
+        Rule.create({ components: { with: [mark] }, derive: [late] });
         await world.run(spawn);
         expect(await count(world, { required: [late] })).toBe(6);
         await world.run(observe);
@@ -137,10 +137,10 @@ describe("rules", () => {
 
     it("are rejected when they can't hold", async () => {
         // @ts-expect-error a rule derives only derived components
-        expect(() => Rule.create({ components: { has: [source] }, derive: [mark] })).toThrow(`derives "rulesTest/mark", which isn't declared derived`);
-        expect(() => Rule.create({ components: { has: [source], not: [visible] }, derive: [slot] })).toThrow("cycle through a negation, which could oscillate");
+        expect(() => Rule.create({ components: { with: [source] }, derive: [mark] })).toThrow(`derives "rulesTest/mark", which isn't declared derived`);
+        expect(() => Rule.create({ components: { with: [source], not: [visible] }, derive: [slot] })).toThrow("cycle through a negation, which could oscillate");
         // @ts-expect-error a reference changes only through commands
-        expect(() => System.create({ components: { write: [owned] } }, row => { row[owned] = Entity.none; })).toThrow("a reference, which changes only through commands");
+        expect(() => System.create({ components: { with: [owned] } }, row => { row[owned] = Entity.none; })).toThrow("a reference, which changes only through commands");
         // The component closing a cycle of within declarations is rejected when it's registered.
         registerComponent(left, { type: { const: true }, within: right });
         expect(() => registerComponent(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "rulesTest/right": components are within each other in a cycle: rulesTest/left, rulesTest/right.`);

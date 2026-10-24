@@ -72,8 +72,8 @@ const shapes = new WeakMap<WorldState, Map<string, QueryShape>>();
 type Rows = { readonly length: number; readonly changed: boolean; at(index: number): { readonly entity: Entity } & Values };
 
 /** Indexes the trackers look up through, by declaration: one each in the program. */
-const keyless = new Map<string, Index<{ readonly key: readonly []; readonly components: { readonly has: readonly Component.Key[]; readonly not: readonly Component.Key[] } }>>();
-const sortedIndexes = new Map<string, Index<{ readonly key: readonly Component.Key[]; readonly sorted: true; readonly components: { readonly has: readonly Component.Key[]; readonly not: readonly Component.Key[] } }> | null>();
+const keyless = new Map<string, Index<{ readonly key: readonly []; readonly components: { readonly with: readonly Component.Key[]; readonly not: readonly Component.Key[] } }>>();
+const sortedIndexes = new Map<string, Index<{ readonly key: readonly Component.Key[]; readonly sorted: true; readonly components: { readonly with: readonly Component.Key[]; readonly not: readonly Component.Key[] } }> | null>();
 
 /**
  * Whether `not` excludes none of `held`, an index's key parts and `has`: what an index declaration's type checks of
@@ -93,7 +93,7 @@ const excluding = (not: readonly Component.Key[], held: readonly Component.Key[]
 const keylessOf = (has: readonly Component.Key[], not: readonly Component.Key[]) => {
     const id = `${keysId(has)}|${keysId(not)}`;
     let index = keyless.get(id);
-    if (index === undefined) keyless.set(id, index = Index.create(labelled({ key: [], components: { has: [...has], not: excluding(not, has) } }, `Observe.query(${labelOf(has)})`)));
+    if (index === undefined) keyless.set(id, index = Index.create(labelled({ key: [], components: { with: [...has], not: excluding(not, has) } }, `Observe.query(${labelOf(has)})`)));
     return index;
 };
 
@@ -103,7 +103,7 @@ const sortedOf = (key: readonly Component.Key[], has: readonly Component.Key[], 
     let index = sortedIndexes.get(id);
     if (index === undefined) {
         try {
-            index = Index.create(labelled({ key: [...key], sorted: true, components: { has: [...has], not: excluding(not, [...key, ...has]) } }, `Observe.query(${labelOf(has)}) by ${labelOf(key)}`));
+            index = Index.create(labelled({ key: [...key], sorted: true, components: { with: [...has], not: excluding(not, [...key, ...has]) } }, `Observe.query(${labelOf(has)}) by ${labelOf(key)}`));
         }
         catch {
             index = null;
@@ -179,7 +179,7 @@ const rangedOf = (key: Component.Key, has: readonly Component.Key[], not: readon
     let index = rangedIndexes.get(id);
     if (index === undefined) {
         try {
-            index = Index.create(labelled({ key: [key], sorted: true, components: { has: [...has], not: excluding(not, [key, ...has]) } }, `Observe.query(${labelOf(has)}) by ${labelOf([key])}`));
+            index = Index.create(labelled({ key: [key], sorted: true, components: { with: [...has], not: excluding(not, [key, ...has]) } }, `Observe.query(${labelOf(has)}) by ${labelOf([key])}`));
         }
         catch {
             index = null;
@@ -188,7 +188,7 @@ const rangedOf = (key: Component.Key, has: readonly Component.Key[], not: readon
     }
     return index;
 };
-const rangedIndexes = new Map<string, Index<{ readonly key: readonly [Component.Key]; readonly sorted: true; readonly components: { readonly has: readonly Component.Key[]; readonly not: readonly Component.Key[] } }> | null>();
+const rangedIndexes = new Map<string, Index<{ readonly key: readonly [Component.Key]; readonly sorted: true; readonly components: { readonly with: readonly Component.Key[]; readonly not: readonly Component.Key[] } }> | null>();
 
 const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: string, counting: boolean, impossible: boolean, paged: boolean, required: readonly Component.Key[], not: readonly Component.Key[], where: readonly Component.Key[], terms: readonly Term[]): QueryShape => {
     const reads = unique([...where, ...terms.map(term => term.key)]);
@@ -403,16 +403,16 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
     };
 
     const tracker = ordered !== null
-        ? System.create(labelled({ observer: true, lookup: { list: { index: ordered, read: reads, changed: reads } } }, name), ({ lookup }) => {
+        ? System.create(labelled({ observer: true, lookup: { list: { index: ordered, changed: reads } } }, name, { lookup: { list: reads } }), ({ lookup }) => {
             track(lookup.list(), null, fromSorted);
         })
         : byRange !== null
-            ? System.create(labelled({ observer: true, lookup: { list: { index: byRange, read: reads, changed: reads } } }, name), ({ lookup }) => {
+            ? System.create(labelled({ observer: true, lookup: { list: { index: byRange, changed: reads } } }, name, { lookup: { list: reads } }), ({ lookup }) => {
                 // A range is of a `where` condition on the index's key, which the query's type checked against its
                 // values.
                 track(null, entry => ownRange(entry, range => lookup.list(range as Parameters<typeof lookup.list>[0]), () => lookup.list()), fromSorted);
             })
-            : System.create(labelled({ observer: true, lookup: { list: { index: keylessOf(has, not), read: reads, changed: reads } } }, name), ({ lookup }) => {
+            : System.create(labelled({ observer: true, lookup: { list: { index: keylessOf(has, not), changed: reads } } }, name, { lookup: { list: reads } }), ({ lookup }) => {
                 track(lookup.list(), null, fromKeyless);
             });
 
@@ -466,7 +466,7 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
         for (const entry of scan.entries) entry.gather.start();
         accept = acceptOf(scan.entries);
     };
-    const scanner = System.create(labelled({ observer: true, components: { read: reads, has: required.filter(key => !reads.includes(key)), not } }, name), row => {
+    const scanner = System.create(labelled({ observer: true, components: { with: [...reads, ...required.filter(key => !reads.includes(key))], not } }, name, { components: reads }), row => {
         if (accept === null) start();
         if (direct === 0) {
             accept?.(row);

@@ -5,7 +5,7 @@ import { Rule } from "../rule/rule.js";
 import { System } from "../system/system.js";
 import { registerComponent, registerResource } from "./declarations.js";
 import { addTrait } from "./traits.js";
-import { identify } from "./ids.test-helper.js";
+import { giveAccess, identify } from "./ids.test-helper.js";
 import { declarationOf, kindOf, labelOf, programFinalizers, programRules, requireDefinition, sameItem, scheduleOf } from "./index.js";
 
 // Each pair is one module's key and the key that module makes when evaluated again: one id, two symbols.
@@ -78,34 +78,34 @@ describe("keys with ids", () => {
     });
     it("keeps keys of different ids apart, though their descriptions match", () => {
         registerComponent(unnamed, { type: { type: "number" } });
-        system(identify({ components: { write: [score] } }, "idsTest/systems.ts#unnamed"), (row: Row) => { row[score] = 1; });
-        expect(() => system(identify({ components: { write: [unnamed] } }, "idsTest/systems.ts#unnamed"), (row: Row) => { row[unnamed] = 1; })).toThrow("reload the page");
+        system(giveAccess(identify({ components: { with: [score] } }, "idsTest/systems.ts#unnamed"), { write: [score] }), (row: Row) => { row[score] = 1; });
+        expect(() => system(giveAccess(identify({ components: { with: [unnamed] } }, "idsTest/systems.ts#unnamed"), { write: [unnamed] }), (row: Row) => { row[unnamed] = 1; })).toThrow("reload the page");
     });
 });
 
 describe("declarations evaluated again", () => {
     it("accept a system whose keys match by id, as a new system", () => {
-        const first = system(identify({ components: { write: [score] }, resources: { read: [level] } }, "idsTest/systems.ts#system"), (row: Row, { resources }: { resources: Row }) => { row[score] = resources[level] ?? 0; });
-        const again = system(identify({ components: { write: [scoreAgain] }, resources: { read: [levelAgain] } }, "idsTest/systems.ts#system"), (row: Row, { resources }: { resources: Row }) => { row[scoreAgain] = resources[levelAgain] ?? 0; });
+        const first = system(giveAccess(identify({ components: { with: [score] } }, "idsTest/systems.ts#system"), { write: [score], resources: { read: [level] } }), (row: Row, { resources }: { resources: Row }) => { row[score] = resources[level] ?? 0; });
+        const again = system(giveAccess(identify({ components: { with: [scoreAgain] } }, "idsTest/systems.ts#system"), { write: [scoreAgain], resources: { read: [levelAgain] } }), (row: Row, { resources }: { resources: Row }) => { row[scoreAgain] = resources[levelAgain] ?? 0; });
         expect(again).not.toBe(first);
         expect(sameItem(again, first)).toBe(true);
     });
     it("accept a rule whose keys match by id, which is already recorded", () => {
-        const created = rule(identify({ components: { has: [score] }, derive: [shown] }, "idsTest/systems.ts#rule"));
+        const created = rule(identify({ components: { with: [score] }, derive: [shown] }, "idsTest/systems.ts#rule"));
         const rules = programRules().length;
-        expect(rule(identify({ components: { has: [scoreAgain] }, derive: [shownAgain] }, "idsTest/systems.ts#rule"))).toBe(created);
+        expect(rule(identify({ components: { with: [scoreAgain] }, derive: [shownAgain] }, "idsTest/systems.ts#rule"))).toBe(created);
         expect(programRules()).toHaveLength(rules);
     });
     it("accept a finalizer whose keys match by id, keeping its place with the new body", () => {
-        const first = finalizer(identify({ components: { read: [score] } }, "idsTest/systems.ts#finalizer"), () => {});
+        const first = finalizer(giveAccess(identify({ components: { with: [score] } }, "idsTest/systems.ts#finalizer")), () => {});
         const body = (): void => {};
-        expect(finalizer(identify({ components: { read: [scoreAgain] } }, "idsTest/systems.ts#finalizer"), body)).toBe(first);
+        expect(finalizer(giveAccess(identify({ components: { with: [scoreAgain] } }, "idsTest/systems.ts#finalizer")), body)).toBe(first);
         const found = programFinalizers().find(finalizer => finalizer.name === "finalizer");
         expect(found?.kind === "finalizer" ? found.body : null).toBe(body);
     });
     it("schedule symbols of one id as one key", () => {
-        const write = system({ name: "write", components: { write: [score] } }, (row: Row) => { row[score] = 1; });
-        const read = system({ name: "read", components: { read: [scoreAgain] } }, (row: Row) => { void row[scoreAgain]; });
-        expect(() => scheduleOf(requireDefinition(system({ name: "unordered", systems: [write, read] })))).toThrow("both access");
+        const write = system(giveAccess({ components: { with: [score] } }, { write: [score] }), (row: Row) => { row[score] = 1; });
+        const read = system(giveAccess({ components: { with: [scoreAgain] } }, { read: [scoreAgain] }), (row: Row) => { void row[scoreAgain]; });
+        expect(() => scheduleOf(requireDefinition(system({ systems: [write, read] })))).toThrow("both access");
     });
 });

@@ -37,10 +37,10 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 });
 
 /** Shows each row's pose: a struct read and written whole per row. */
-const showPose = System.create({ kernel: false, components: { read: [pose], write: [shown] } }, row => { row[shown] = row[pose]; });
+const showPose = System.create({ kernel: false, components: { with: [pose, shown] } }, row => { row[shown] = row[pose]; });
 
 /** Commits a pose and an extent per row as commands, values every row already has. */
-const commitPose = System.create({ kernel: true, components: { read: [order] } }, (row, { commands }) => {
+const commitPose = System.create({ kernel: true, components: { with: [order] } }, (row, { commands }) => {
     commands.add(row.entity, pose, { tx: row[order], ty: 1, rotation: 0, sx: 1, sy: 1 });
     commands.add(row.entity, extent, [2, 2]);
 });

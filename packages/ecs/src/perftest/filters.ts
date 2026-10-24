@@ -41,7 +41,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 /** Writes the value of the rows whose `at` is `first` plus a multiple of `stride`. */
 const write = System.create({
     kernel: true,
-    components: { read: [at], write: [value] },
+    components: { with: [at, value] },
 }, (row, _context, input: { readonly first: I32; readonly stride: I32 }) => {
     const offset = row[at] - input.first;
     if (offset >= 0 && offset % input.stride === 0) row[value] += 1;
@@ -50,23 +50,23 @@ const write = System.create({
 let seen = 0;
 /** Main-thread systems each filtering on `value`'s changes. */
 const readers = System.create({
-    systems: Array.from({ length: 8 }, (_, i) => System.create({ components: { read: [value], changed: [value] } }, row => {
+    systems: Array.from({ length: 8 }, (_, i) => System.create({ components: { with: [value], changed: [value] } }, row => {
         seen += row[value];
     })),
 });
 /** The same filtering on `value`'s or `other`'s changes, of which only `value` is written. */
 const readersOfTwo = System.create({
-    systems: Array.from({ length: 8 }, (_, i) => System.create({ components: { read: [value], changed: [value, other] } }, row => {
+    systems: Array.from({ length: 8 }, (_, i) => System.create({ components: { with: [value], changed: [value, other] } }, row => {
         seen += row[value];
     })),
 });
 /** Kernels each filtering on `value`'s changes, writing an output of its own. */
 const kernels = System.create({
     systems: [
-        System.create({ kernel: true, components: { read: [value], write: [out0], changed: [value] } }, row => { row[out0] = row[value] * 2; }),
-        System.create({ kernel: true, components: { read: [value], write: [out1], changed: [value] } }, row => { row[out1] = row[value] * 3; }),
-        System.create({ kernel: true, components: { read: [value], write: [out2], changed: [value] } }, row => { row[out2] = row[value] * 4; }),
-        System.create({ kernel: true, components: { read: [value], write: [out3], changed: [value] } }, row => { row[out3] = row[value] * 5; }),
+        System.create({ kernel: true, components: { with: [value, out0], changed: [value] } }, row => { row[out0] = row[value] * 2; }),
+        System.create({ kernel: true, components: { with: [value, out1], changed: [value] } }, row => { row[out1] = row[value] * 3; }),
+        System.create({ kernel: true, components: { with: [value, out2], changed: [value] } }, row => { row[out2] = row[value] * 4; }),
+        System.create({ kernel: true, components: { with: [value, out3], changed: [value] } }, row => { row[out3] = row[value] * 5; }),
     ],
 });
 

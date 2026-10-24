@@ -23,13 +23,13 @@ declare module "@adobe/ecs" {
         [third]: { type: number };
     }
 }
-const bump = System.create({ resources: { write: [later] } }, ({ resources }) => {
+const bump = System.create({  }, ({ resources }) => {
     resources[later] += 1;
 });
-const bumpSecond = System.create({ resources: { write: [second] } }, ({ resources }) => {
+const bumpSecond = System.create({  }, ({ resources }) => {
     resources[second] += 1;
 });
-const bumpThird = System.create({ resources: { write: [third] } }, ({ resources }) => {
+const bumpThird = System.create({  }, ({ resources }) => {
     resources[third] += 1;
 });
 
@@ -229,9 +229,9 @@ describe("finalizers on a joined thread", () => {
         const { world, remote } = await joined();
         await world.run(spawn, { from: 0, count: 2 });
         const late: string[] = [];
-        Finalizer.create(identify({ components: { read: [widget, serial] } }, "remoteFinalizersTest#late"), row => { late.push(`${row[serial]}:${String(row[widget])}`); });
+        Finalizer.create(identify({ components: { with: [widget, serial] } }, "remoteFinalizersTest#late"), row => { late.push(`${row[serial]}:${String(row[widget])}`); });
         // Declared in a function, so the build gives it no id.
-        Finalizer.create({ components: { read: [widget] } }, () => {});
+        Finalizer.create({ components: { with: [widget] } }, row => { void row[widget]; });
         const first = await runReported(world, despawn, { serials: [0] });
         expect(first.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["finalizer", expect.stringMatching(/^finalizer #\d+$/), expect.stringMatching(/^Finalizer "finalizer #\d+" runs on thread "remoteFinalizersTest", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level finalizers one\.$/)]]);
         expect(await eventually(() => late.length === 1)).toBe(true);
@@ -241,7 +241,7 @@ describe("finalizers on a joined thread", () => {
         // Placed there by the thread's object resource alone: stops of rows holding none of its objects, which its log
         // has no entries for, run there too.
         const heard: string[] = [];
-        Finalizer.create(identify({ components: { read: [serial], not: [widget] }, resources: { read: [tone] } }, "remoteFinalizersTest#heard"), (row, { resources }) => { heard.push(`${row[serial]}:${resources[tone].text}`); });
+        Finalizer.create(identify({ components: { with: [serial], not: [widget] } }, "remoteFinalizersTest#heard"), (row, { resources }) => { heard.push(`${row[serial]}:${resources[tone].text}`); });
         const plain = System.create({}, ({ commands }) => {
             for (let k = 0; k < 3; k++) commands.spawn([serial, place])({ [serial]: 50 + k, [place]: [0, 0] });
         });

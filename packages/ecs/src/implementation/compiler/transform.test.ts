@@ -1400,6 +1400,13 @@ describe("inferred access", () => {
         expect(result !== null && "code" in result ? [result.code.includes("components: null"), result.warnings] : null).toEqual([true, []]);
     });
 
+    test("a row it can't follow with a warning unless the declaration says observer: true, as the world reads it", async () => {
+        for (const observer of ["observer: false, ", "observer: watching, "]) {
+            const result = await transform(`const watching = true;\n${system(`${observer}components: { with: [position] }`, "(row) => { helper(row); }")}`);
+            expect(result !== null && "code" in result ? result.warnings.length : null).toBe(1);
+        }
+    });
+
     test("a lookup's rows it can't follow without a warning, since what they hold is what the declaration says", async () => {
         const result = await transform(system("components: { with: [target] }, lookup: { targets: { with: [mass] } }", "(row, { lookup }) => { helper(lookup.targets(row[target])); }"));
         expect(result !== null && "code" in result ? [result.code.includes(`"targets": null`), result.warnings] : null).toEqual([true, []]);

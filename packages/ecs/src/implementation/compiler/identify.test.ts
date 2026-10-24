@@ -160,9 +160,9 @@ describe("identify, for systems, rules and finalizers", () => {
 });
 
 describe("moduleLabelOf", () => {
-    test("is the module's path in its package, else a dependency's package and subpath, else its file's name", () => {
-        const app = (directory: string) => directory === "/repo/app" ? { name: "app", version: "1.0.0" } : undefined;
-        expect(moduleLabelOf("/repo/app/src/features/a/model.ts?t=1", app)).toBe("src/features/a/model.ts");
+    test("is the module's package and path in it, else a dependency's package and subpath, else its file's name", () => {
+        const app = (directory: string) => directory === "/repo/app" ? { name: "@scope/app", version: "1.0.0" } : undefined;
+        expect(moduleLabelOf("/repo/app/src/features/a/model.ts?t=1", app)).toBe("@scope/app/src/features/a/model.ts");
         expect(moduleLabelOf("/x/node_modules/keys/index.js", () => undefined)).toBe("keys/index.js");
         expect(moduleLabelOf("/loose/model.ts", () => undefined)).toBe("model.ts");
     });

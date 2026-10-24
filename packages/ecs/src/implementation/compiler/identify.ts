@@ -46,9 +46,11 @@ export const moduleIdOf = (file: string, packageOf: PackageOf): string | null =>
     return dependency.exec(pathOf(file))?.[1] ?? null;
 };
 
-/** How messages name a module: its path in its package, as its id has it, else the file's name. */
-export const moduleLabelOf = (file: string, packageOf: PackageOf): string =>
-    packageAbove(file, packageOf)?.path ?? dependency.exec(pathOf(file))?.[1] ?? posix.basename(pathOf(file));
+/** How messages name a module: its package's name and its path there, as its id has them, else the file's name. */
+export const moduleLabelOf = (file: string, packageOf: PackageOf): string => {
+    const found = packageAbove(file, packageOf);
+    return found !== null ? `${found.name}/${found.path}` : dependency.exec(pathOf(file))?.[1] ?? posix.basename(pathOf(file));
+};
 
 /** Whether a binding named `name` is declared in the module's scope: at top level, or as a `var` in any of its blocks. */
 const declaresInModule = (program: Program, name: string): boolean => {

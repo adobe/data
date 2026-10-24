@@ -140,8 +140,10 @@ const functionOf = (binding: ModuleBinding | undefined): Node | undefined => {
 const empty: ObjectExpression = { type: "ObjectExpression", properties: [], start: 0, end: 0 };
 
 /** Whether a declaration has property `name`, written out. */
-const declares = (declaration: ObjectExpression, name: string): boolean => declaration.properties.some(property =>
-    property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === name);
+/** Whether a declaration gives `name` the literal `true`, as the world takes `observer`. */
+const declaresTrue = (declaration: ObjectExpression, name: string): boolean => declaration.properties.some(property =>
+    property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === name
+    && property.value.type === "Literal" && property.value.value === true);
 
 const uniqueName = (code: string, base: string): string => {
     let name = base;
@@ -289,7 +291,7 @@ export const transformKernels = async (
             const where = at(body);
             // An observer's row, and a lookup's rows, it can't follow are taken as read whole, which is what their
             // declarations already say; only a row taken as written whole costs what the author should know of.
-            if (used.query === null && !declares(declared, "observer")) warnings.push(`${where}: the build can't follow how this body uses its row, so it takes every component in with, added and changed as written: index the row by key directly, or destructure it by key, to let it tell what the body reads and writes.`);
+            if (used.query === null && !declaresTrue(declared, "observer")) warnings.push(`${where}: the build can't follow how this body uses its row, so it takes every component in with, added and changed as written: index the row by key directly, or destructure it by key, to let it tell what the body reads and writes.`);
             accessing = true;
             const access = accessText(used, where);
             if (kernel !== undefined) {

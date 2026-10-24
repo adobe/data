@@ -11,9 +11,9 @@ import { addTrait, isTrait } from './traits.js';
 /**
  * A registered declaration, as any consumer iterating components or resources sees it: its `type` and other traits.
  * Without `type`, the value isn't data. A resource's `default`, or a derived object's, is what it starts at, when its
- * schema has none.
+ * schema has none; `fresh` starts it as an empty `Map` or `Set` of each world's own.
  */
-export type AnyDeclaration = { readonly type?: Schema & { readonly default?: unknown }; readonly default?: unknown } & { readonly [T in TraitKey]?: unknown };
+export type AnyDeclaration = { readonly type?: Schema & { readonly default?: unknown }; readonly default?: unknown; readonly fresh?: unknown } & { readonly [T in TraitKey]?: unknown };
 
 /** The value schema of any registered component or resource, or undefined for a value that isn't data. */
 export const schemaOf = (key: unknown): Schema | undefined => declarationOf(key)?.type;
@@ -43,11 +43,16 @@ export const threadOfDeclaration = (declaration: AnyDeclaration): string | null 
 const check = (kind: "component" | "resource", key: symbol, declaration: AnyDeclaration): void => {
     const fail = (message: string): never => failRegistration(kind, key, message);
     for (const trait of Reflect.ownKeys(declaration)) {
-        if (trait !== "default" && !isTrait(trait)) fail(`${labelOf(trait)} isn't a registered trait.`);
+        if (trait !== "default" && trait !== "fresh" && !isTrait(trait)) fail(`${labelOf(trait)} isn't a registered trait.`);
     }
-    const { type } = declaration;
+    const { type, fresh } = declaration;
     if (type !== undefined && "default" in declaration && (kind === "component" || "default" in type)) {
         fail(kind === "component" ? "its schema holds its default." : "its default is given twice, by its schema and its declaration.");
+    }
+    if (fresh !== undefined) {
+        if (fresh !== "Map" && fresh !== "Set") fail(`fresh is "Map" or "Set".`);
+        if ("default" in declaration || (type !== undefined && "default" in type)) fail("it starts fresh, so it has no default.");
+        if (type !== undefined && "type" in type && (type.type === "set" || type.type === "map") && (type.type === "set") !== (fresh === "Set")) fail(`a ${type.type} starts as a fresh ${type.type === "set" ? "Set" : "Map"}.`);
     }
     try {
         layoutOf(type);
@@ -67,7 +72,7 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
     if (declaration.derived !== undefined && kind !== "component") fail("only a component is derived.");
     if (declaration.derived === true && declaration.within !== undefined) fail("a derived component's rule covers within.");
     if (declaration.derived === true && declaration.reference !== undefined) fail("a rule can't set a derived component's target, so it's no reference.");
-    if (declaration.derived === true && type !== undefined && !("default" in type || "const" in type || allowsNull(type))) {
+    if (declaration.derived === true && type !== undefined && fresh === undefined && !("default" in type || "const" in type || allowsNull(type))) {
         fail("a derived component's type has a default, which it starts at.");
     }
     if (declaration.reduce !== undefined) {

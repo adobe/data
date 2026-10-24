@@ -12,20 +12,17 @@ const total = Symbol("typesResourceTest/total");
 const flags = Symbol("typesResourceTest/flags");
 const names = Symbol("typesResourceTest/names");
 const tags = Symbol("typesResourceTest/tags");
-const cacheStart = new Map<string, number>();
-const namesStart = new Map([["a", 1]]);
-const tagsStart = new Set(["x"]);
 
 declare module "@adobe/ecs" {
     export interface Resources {
         [time]: { type: number; default: 0 };
         [symbol]: { type: boolean; default: false };
-        [cache]: { type: Map<string, number>; thread: "main"; default: typeof cacheStart };
+        [cache]: { type: Map<string, number>; thread: "main" };
         [port]: { type: MessagePort | null; transfer: true };
         [total]: { type: number; default: 0; reduce: "+" };
         [flags]: { type: boolean; default: false; reduce: "|" };
-        [names]: { type: ReadonlyMap<string, number>; default: typeof namesStart };
-        [tags]: { type: ReadonlySet<string>; default: typeof tagsStart };
+        [names]: { type: ReadonlyMap<string, number> };
+        [tags]: { type: ReadonlySet<string> };
     }
 }
 
@@ -54,11 +51,12 @@ describe("registering a resource", () => {
         expect(() => register(shared, { type: { const: true, default: true } })).toThrow("already registered as a component");
     });
     it("takes a resource's default from its declaration or its schema, never both, and compares sets and maps by their entries", () => {
-        expect(declarationOf(names)).toEqual({ type: { ...namesSchema, default: new Map([["a", 1]]) } });
-        expect(() => register(names, { type: { ...namesSchema, default: new Map([["a", 1]]) } })).not.toThrow();
-        expect(() => register(names, { type: { ...namesSchema, default: new Map([["a", 2]]) } })).toThrow("with another declaration");
-        expect(() => register(tags, { type: { type: "set", items: { type: "string" }, default: new Set(["x"]) } })).not.toThrow();
-        expect(() => register(tags, { type: { type: "set", items: { type: "string" }, default: new Set(["y"]) } })).toThrow("with another declaration");
+        expect(declarationOf(names)).toEqual({ type: namesSchema, fresh: "Map" });
+        expect(declarationOf(tags)).toEqual({ type: { type: "set", items: { type: "string" } }, fresh: "Set" });
+        const listed = Symbol("typesResourceTest/listed");
+        expect(() => register(listed, { type: { ...namesSchema, default: new Map([["a", 1]]) } })).not.toThrow();
+        expect(() => register(listed, { type: { ...namesSchema, default: new Map([["a", 1]]) } })).not.toThrow();
+        expect(() => register(listed, { type: { ...namesSchema, default: new Map([["a", 2]]) } })).toThrow("with another declaration");
         expect(() => register(Symbol("typesResourceTest/twice"), { type: { type: "number", default: 0 }, default: 1 })).toThrow("its default is given twice");
         expect(threadOfDeclaration(declarationOf(names) ?? {})).toBe("world");
     });
@@ -77,12 +75,17 @@ describe("registering a resource", () => {
         expect([cadence, always, wake, clock].map(name => threadOfDeclaration(declarationOf(name) ?? {}))).toEqual(["world", null, null, null]);
     });
     it("checks thread and transfer as far as values tell", () => {
-        expect(declarationOf(cache)).toEqual({ default: new Map(), thread: "main" });
+        expect(declarationOf(cache)).toEqual({ thread: "main", fresh: "Map" });
         expect(threadOfDeclaration(declarationOf(cache) ?? {})).toBe("main");
         expect(declarationOf(port)).toEqual({ transfer: true });
         expect(() => register(Symbol("typesResourceTest/buffer"), { default: new ArrayBuffer(8), transfer: true })).not.toThrow();
         expect(() => register(Symbol("typesResourceTest/map"), { default: new Map(), transfer: true })).toThrow("its value isn't Transferable");
         expect(() => register(Symbol("typesResourceTest/count"), { type: { type: "number", default: 0 }, thread: "main" })).toThrow("a struct lives in shared memory");
+    });
+    it("starts a fresh value only as an empty Map or Set, and not beside a default", () => {
+        expect(() => register(Symbol("typesResourceTest/array"), { fresh: "Array" })).toThrow(`fresh is "Map" or "Set".`);
+        expect(() => register(Symbol("typesResourceTest/both"), { fresh: "Map", default: null })).toThrow("it starts fresh, so it has no default.");
+        expect(() => register(Symbol("typesResourceTest/set"), { type: { type: "set", items: { type: "string" } }, fresh: "Map" })).toThrow("a set starts as a fresh Set.");
     });
     it("checks reductions", () => {
         expect(() => register(Symbol("typesResourceTest/badOperator"), { type: { type: "number", default: 0 }, reduce: "-" })).toThrow('reduce is one of "+"');

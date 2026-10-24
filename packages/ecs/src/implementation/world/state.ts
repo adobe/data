@@ -422,12 +422,14 @@ export const idOf = (state: State, key: Key): number => {
 };
 
 /**
- * What a resource or derived component starts at: its declaration's default or its schema's, or `null` when its type
- * allows leaving it out.
+ * What a resource or derived component starts at: a new empty `Map` or `Set` when it starts fresh, so each world has
+ * its own; its declaration's default or its schema's; or `null` when its type allows leaving it out.
  */
 export const defaultOf = (key: Key): unknown => {
     const declaration = declarationOf(key);
     if (declaration === undefined) return null;
+    if (declaration.fresh === "Map") return new Map();
+    if (declaration.fresh === "Set") return new Set();
     if ("default" in declaration) return declaration.default;
     const { type } = declaration;
     if (type === undefined) return null;

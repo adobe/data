@@ -183,14 +183,57 @@ const matches = (schema: Schema, value: Value): boolean => {
 const allowsNullSchema = (schema: Schema): boolean =>
     ("type" in schema && schema.type === "null") || ("const" in schema && schema.const === null) || ("anyOf" in schema && schema.anyOf.some(allowsNullSchema));
 
+/** What a value declared without a default starts at, by its type: a value, a fresh `Map` or `Set` per world, or why neither. */
+type Start = { readonly value: Value } | { readonly fresh: "Map" | "Set" } | { readonly none: string };
+
+/** A schema's zero value: 0, false or "", each item's and field's, a union's literal that is one, or a fresh set or map. */
+const zeroOf = (schema: Schema): Start => {
+    if ("const" in schema) return { value: schema.const };
+    if ("anyOf" in schema) {
+        for (const member of schema.anyOf) if ("const" in member && (member.const === 0 || member.const === false || member.const === "")) return { value: member.const };
+        return { none: schema.anyOf.every(member => "const" in member) ? `a union of literals without 0, false or "" starts at none of them: declare \`default:\` one of them` : "a union of types starts at none of them" };
+    }
+    if ("allOf" in schema) return { none: "a value of any type has no zero value" };
+    switch (schema.type) {
+        case "number": case "integer": {
+            const minimum = "minimum" in schema ? schema.minimum ?? -Infinity : -Infinity;
+            const maximum = "maximum" in schema ? schema.maximum ?? Infinity : Infinity;
+            return minimum <= 0 && maximum >= 0 ? { value: 0 } : { none: "0 isn't one of its values" };
+        }
+        case "boolean": return { value: false };
+        case "string": return (schema.minLength ?? 0) === 0 ? { value: "" } : { none: `"" isn't one of its values` };
+        case "null": return { value: null };
+        case "set": return { fresh: "Set" };
+        case "map": return { fresh: "Map" };
+        case "array": {
+            const count = schema.minItems ?? 0;
+            if (count === 0) return { value: [] };
+            if (schema.maxItems !== count) return { none: `an array of ${count} items or more has no zero value` };
+            const item = zeroOf(schema.items);
+            return "value" in item ? { value: Array.from({ length: count }, () => item.value) } : { none: "fresh" in item ? "an item that's a set or a map has no zero value" : item.none };
+        }
+        case "object": {
+            const value: { [field: string]: Value } = {};
+            for (const field of schema.required ?? Object.keys(schema.properties)) {
+                const property = schema.properties[field];
+                const zero = property === undefined ? { none: "it isn't a property" } : zeroOf(property);
+                if (!("value" in zero)) return { none: `its field ${field} starts at nothing: ${"fresh" in zero ? "a set or a map in a struct has no zero value" : zero.none}` };
+                value[field] = zero.value;
+            }
+            return { value };
+        }
+    }
+};
+
 /**
  * Registers what each `declare module "@adobe/ecs"` block declares, so consumers never write registration: each
  * component and resource of `Components` and `Resources`, with the schema of its `type`, its `default` and its other
  * traits as declared, and each trait of `Traits` keyed by a symbol. A key is a top-level `Symbol()` constant of this
  * module, so importing a key registers it: its registration comes right after it, after any binding its declaration
  * names, and after a trait of this module it declares, wherever the block is. A literal default and the built-in
- * traits' values are checked as far as literals and types show; `default: typeof value` names a value, which the
- * registration passes. Returns null when the module declares nothing.
+ * traits' values are checked as far as literals and types show. A resource or derived component without a literal
+ * default starts at its type's: its namespaced schema's, null, a zero value, or a fresh `Map` or `Set` per world.
+ * Returns null when the module declares nothing.
  */
 export const augmentationInsertions = async (module: Module, host: AugmentationHost): Promise<PassResult | null> => {
     const { code, file } = module;
@@ -301,10 +344,88 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
         if (placed !== undefined && schema !== undefined && isStruct(schema)) fail(module, placed.node, `${name} is a struct: a struct lives in shared memory, so it has no thread`);
     };
 
+    /** An expression without the casts and parentheses around it. */
+    const unwrapped = (expression: Declarator["init"]): Declarator["init"] => {
+        let inner = expression;
+        while (inner !== null && (inner.type === "TSAsExpression" || inner.type === "TSSatisfiesExpression" || inner.type === "TSNonNullExpression" || inner.type === "ParenthesizedExpression")) inner = inner.expression;
+        return inner;
+    };
+
+    /** The names a name or a chain of non-computed property reads reads; null for any other expression. */
+    const pathOf = (expression: NonNullable<Declarator["init"]>): readonly string[] | null => {
+        if (expression.type === "Identifier") return [expression.name];
+        if (expression.type !== "MemberExpression" || expression.computed || expression.property.type !== "Identifier" || expression.object.type === "Super") return null;
+        const object = pathOf(expression.object);
+        return object === null ? null : [...object, expression.property.name];
+    };
+
+    /** Whether a schema's value, as its module writes it, gives a `default`: in place, or through constants and spreads. */
+    const holdsDefault = async (expression: Declarator["init"], at: Module, seen: Set<object>): Promise<boolean> => {
+        const value = unwrapped(expression);
+        if (value === null || seen.has(value)) return false;
+        seen.add(value);
+        if (value.type === "Identifier" || value.type === "MemberExpression") {
+            const path = pathOf(value);
+            const found = path === null ? null : await converter.constantNamed(path, at);
+            return found !== null && await holdsDefault(found.declaration.init, found.module, seen);
+        }
+        if (value.type !== "ObjectExpression") return false;
+        for (const property of value.properties) {
+            if (property.type === "SpreadElement" ? await holdsDefault(property.argument, at, seen) : !property.computed && property.key.type === "Identifier" && property.key.name === "default") return true;
+        }
+        return false;
+    };
+
+    /** Whether the value a type's name names, as `Vec3` names its namespace beside its type, has a schema with a `default`. */
+    const declaresSchemaDefault = async (path: readonly string[]): Promise<boolean> => {
+        const member = await converter.constantNamed([...path, "schema"], module);
+        if (member !== null) return await holdsDefault(member.declaration.init, member.module, new Set());
+        const holder = await converter.constantNamed(path, module);
+        const value = unwrapped(holder?.declaration.init ?? null);
+        if (holder === null || value?.type !== "ObjectExpression") return false;
+        for (const property of value.properties) {
+            if (property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === "schema") {
+                return await holdsDefault(property.value, holder.module, new Set());
+            }
+        }
+        return false;
+    };
+
+    /** A declaration's type's namespaced schema default, as code reading it, and the local binding it reads; null without one. */
+    const namespacedDefault = async (type: TypeNode, name: string): Promise<{ readonly text: string; readonly local?: string } | null> => {
+        if (type.type !== "TSTypeReference" || type.typeArguments !== null) return null;
+        const path = typeNameParts(type.typeName);
+        const [first] = path;
+        if (first === undefined || !await declaresSchemaDefault(path)) return null;
+        const imported = module.imports.get(first);
+        if (imported !== undefined && !imported.value) fail(module, type, `${name}'s type ${path.join(".")} starts at its schema's default: import ${first} as a value, which the registration reads`);
+        return { text: `${path.join(".")}.schema.default`, local: imported === undefined ? first : undefined };
+    };
+
+    /** The platform class a value that isn't data starts as a fresh, empty instance of, per world: `Map` or `Set`. */
+    const freshOf = (type: TypeNode): "Map" | "Set" | null => {
+        const inner = type.type === "TSParenthesizedType" ? type.typeAnnotation : type;
+        if (inner.type !== "TSTypeReference" || inner.typeName.type !== "Identifier") return null;
+        const { name } = inner.typeName;
+        return (name === "Map" || name === "Set") && !module.types.has(name) && !module.imports.has(name) ? name : null;
+    };
+
+    /** A declared default: a literal type, never `typeof` a value. */
+    const literalDefault = async (type: TypeNode, name: string): Promise<Value> => {
+        if (type.type === "TSTypeQuery") fail(module, type, `${name}'s default is a literal type, never \`typeof\` a value: without one, its type's zero value, null, or the default of its type's namespaced schema is what it starts at`);
+        return await converter.valueOfType(type, module, new Set());
+    };
+
+    /** How to give a type's values a start no zero value gives. */
+    const workaround = (type: TypeNode): string => {
+        const name = type.type === "TSTypeReference" ? typeNameParts(type.typeName).join(".") : "Start";
+        return `declare \`default:\` as a literal, or name a type whose namespace's schema holds its default: \`type ${name} = ...; const ${name} = { schema: { default: ... } }\``;
+    };
+
     /** Where a trait a block of this module declares is registered, which what declares it comes after. */
     const traitPoints = new Map<string, number>();
 
-    /** A trait's or default's value as code: a literal, or `typeof` a value, which names it; and that value's local binding. */
+    /** A trait's value as code: a literal, or `typeof` a value, which names it; and that value's local binding. */
     const valueText = async (type: TypeNode, what: string): Promise<{ readonly text: string; readonly value?: Value; readonly local?: string }> => {
         if (type.type === "TSTypeQuery") {
             const named = type.exprName.type === "TSImportType" ? null : qualifiedParts(type.exprName);
@@ -387,14 +508,36 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
                     if (error.notData.node && !thread) fail(module, member, `${key.name} is a DOM Node, which lives on "main": declare \`thread: "main"\``);
                 }
                 await checkBuiltIns(key.name, kind, typeNode, schema, builtIns);
-                const start = defaultNode === undefined ? undefined : await valueText(defaultNode, `${key.name}'s default`);
-                if (start?.local !== undefined) at = Math.max(at, endOfLocal(start.local));
-                if (schema !== undefined && start?.value !== undefined && !matches(schema, start.value)) fail(module, defaultNode ?? member, `${key.name}'s default isn't of its declared type`);
-                const allowsNull = schema === undefined ? await allowsNullType(typeNode, module, new Set()) : allowsNullSchema(schema) || "default" in schema;
-                if (kind === "resource" && start === undefined && !allowsNull) fail(module, member, `resource ${key.name} declares the value it starts at: \`default: ...\`, which a type allowing null may leave out`);
-                const parts = schema === undefined ? [] : [`type: ${start === undefined ? JSON.stringify(schema) : `${JSON.stringify(schema).slice(0, -1)},"default":${start.text}}`}`];
-                if (schema === undefined && start !== undefined) parts.push(`default: ${start.text}`);
+                const given = defaultNode === undefined ? undefined : await literalDefault(defaultNode, key.name);
+                if (schema !== undefined && given !== undefined && !matches(schema, given)) fail(module, defaultNode ?? member, `${key.name}'s default isn't of its declared type`);
+                let start = given === undefined ? undefined : JSON.stringify(given);
+                let fresh: "Map" | "Set" | null = null;
+                // First a literal, then the type's schema's default; only resources and derived components need a start.
+                const namespaced = given !== undefined || (schema !== undefined && "default" in schema) ? null : await namespacedDefault(typeNode, key.name);
+                if (namespaced !== null) {
+                    start = namespaced.text;
+                    if (namespaced.local !== undefined) at = Math.max(at, endOfLocal(namespaced.local));
+                }
+                else if (given === undefined && (kind === "resource" || builtIns.has("derived")) && !(schema !== undefined && "default" in schema)) {
+                    if (schema === undefined ? await allowsNullType(typeNode, module, new Set()) : allowsNullSchema(schema)) {
+                        // It starts at null, as the world reads a value with neither.
+                    }
+                    else if (schema === undefined) {
+                        fresh = freshOf(typeNode);
+                        if (fresh === null) fail(module, member, `${kind} ${key.name} isn't data, so it has no zero value: ${workaround(typeNode)}`);
+                    }
+                    else {
+                        const zero = zeroOf(schema);
+                        if ("fresh" in zero) fresh = zero.fresh;
+                        else if ("none" in zero) fail(module, member, `${kind} ${key.name} starts at no value its type gives, since ${zero.none}; ${workaround(typeNode)}`);
+                        // A constant is the one value it can start at, which the world reads from its schema.
+                        else if (!("const" in schema)) start = JSON.stringify(zero.value);
+                    }
+                }
+                const parts = schema === undefined ? [] : [`type: ${start === undefined ? JSON.stringify(schema) : `${JSON.stringify(schema).slice(0, -1)},"default":${start}}`}`];
+                if (schema === undefined && start !== undefined) parts.push(`default: ${start}`);
                 parts.push(...traits);
+                if (fresh !== null) parts.push(`fresh: "${fresh}"`);
                 insertions.push({ at, text: `\n${record}(${key.name}, "${kind}", ${parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`});` });
             }
         }

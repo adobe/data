@@ -1,6 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { archetypeIndexOf, indexArchetype } from "./archetypes.js";
+import { archetypeIndexKey, indexArchetype } from "./archetypes.js";
+
+/** The index a list was given, or -1 without one. */
+const archetypeIndexOf = (list: readonly unknown[]): number => {
+    const index: unknown = Reflect.get(list, archetypeIndexKey);
+    return typeof index === "number" ? index : -1;
+};
 
 const position = Symbol();
 const velocity = Symbol();

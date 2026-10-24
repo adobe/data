@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
-import { archetypeIndexKey, labelOf, nextArchetypeIndex } from '../../interface/registry/index.js';
+import { archetypeIndexKey, internArchetype, labelOf, type Interned } from '../../interface/registry/index.js';
 import { batchOf } from './batches.js';
 import { reserve } from './entities.js';
 import { claim, generated, openRow, writerOf, type Column, type Positional, type SpawnBatch, type Writer } from './staging.js';
@@ -37,8 +37,8 @@ export type ListShape = {
     spawner: Spawner | null;
 };
 
-/** A plain list named recently, found by its keys, copied, since it may change. */
-export type Recent = { readonly keys: readonly unknown[]; readonly shape: ListShape };
+/** A plain list named recently, found by its keys, copied once for its shape, since it may change. */
+export type Recent = { keys: readonly unknown[]; shape: ListShape };
 
 const recentCount = 8;
 
@@ -89,27 +89,30 @@ const shapeOfList = (state: State, list: readonly unknown[], index: number): Lis
     }
     const { recent } = state;
     for (let r = 0; r < recent.length; r++) if (sameKeys(recent[r].keys, list)) return recent[r].shape;
-    const shape = resolve(state, list);
-    const entry: Recent = { keys: [...list], shape };
-    if (recent.length < recentCount) recent.push(entry);
-    else recent[state.nextRecent = (state.nextRecent + 1) % recentCount] = entry;
-    // Only a list resolved keeps an index, so copies made on every call stay among the recent ones and allocate nothing.
+    // Lists of these keys made on every call share one index, so a shape seen before allocates nothing here.
+    const interned = internArchetype(list);
+    const shape = state.byIndex[interned.index] ?? (state.byIndex[interned.index] = resolve(state, list));
+    if (recent.length < recentCount) recent.push({ keys: interned.keys, shape });
+    else {
+        const slot = recent[state.nextRecent = (state.nextRecent + 1) % recentCount];
+        slot.keys = interned.keys;
+        slot.shape = shape;
+    }
+    // A list keeps the record of its keys' index, so naming it again is one lookup while it holds them.
     const kept: unknown = Reflect.get(list, archetypeIndexKey);
-    const own: Kept | null = isKept(kept) ? kept : kept === undefined && Object.isExtensible(list) ? { keys: entry.keys, index: -1 } : null;
-    if (own === null) return shape;
-    if (kept === undefined) Object.defineProperty(list, archetypeIndexKey, { value: own });
-    // A list that changed takes a new index, since its shape may differ.
-    own.keys = entry.keys;
-    own.index = nextArchetypeIndex();
-    state.byIndex[own.index] = shape;
+    if (kept === undefined && Object.isExtensible(list)) {
+        record.value = interned;
+        Object.defineProperty(list, archetypeIndexKey, record);
+    }
+    else if (isKept(kept)) Reflect.set(list, archetypeIndexKey, interned);
     return shape;
 };
 
-/** What a list made at runtime keeps: the keys it was last resolved with, and the index it has while it holds them. */
-type Kept = { keys: readonly unknown[]; index: number };
+/** The descriptor a list's record is defined by, its value set for each: writable, since the list may change. */
+const record: PropertyDescriptor = { value: null, writable: true };
 
 /** Whether an index property holds a list's record: only this module puts an object there, and indexes are numbers. */
-const isKept = (value: unknown): value is Kept => typeof value === "object" && value !== null;
+const isKept = (value: unknown): value is Interned => typeof value === "object" && value !== null;
 
 /** Whether a list holds exactly the keys copied from one before. */
 const sameKeys = (keys: readonly unknown[], list: readonly unknown[]): boolean => {

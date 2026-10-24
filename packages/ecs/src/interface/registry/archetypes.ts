@@ -36,8 +36,24 @@ export const nextArchetypeIndex = (): number => {
     return next;
 };
 
-/** The program-wide index a list was given, or -1 for one never given one, such as a list made at runtime. */
-export const archetypeIndexOf = (components: readonly unknown[]): number => {
-    const index: unknown = Reflect.get(components, indexKey);
-    return typeof index === "number" ? index : -1;
+/** The keys of a list made at runtime, in its order, and the one program-wide index every list of them shares. */
+export type Interned = { readonly keys: readonly unknown[]; readonly index: number };
+
+type Node = { interned: Interned | null; readonly next: Map<unknown, Node> };
+
+const root: Node = { interned: null, next: new Map() };
+
+/**
+ * The index lists made at runtime of `list`'s keys, in its order, share: given the first time, then found without
+ * allocating, so lists made on every call take one index between them.
+ */
+export const internArchetype = (list: readonly unknown[]): Interned => {
+    let node = root;
+    for (let k = 0; k < list.length; k++) {
+        const key = list[k];
+        let next = node.next.get(key);
+        if (next === undefined) node.next.set(key, next = { interned: null, next: new Map() });
+        node = next;
+    }
+    return node.interned ??= { keys: [...list], index: nextArchetypeIndex() };
 };

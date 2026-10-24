@@ -119,6 +119,22 @@ describe("spawn", () => {
         expect(await components(world, spawned[1])).toEqual({ [score]: 2, [tag]: true });
         await world.dispose();
     });
+    it("gives lists made at runtime on every call one index per set of components, however many are made", async () => {
+        const { world, run } = withCommands();
+        const count = (): number => {
+            const value: unknown = Reflect.get(globalThis, Symbol.for("@adobe/ecs/archetypes@1"));
+            return typeof value === "number" ? value : 0;
+        };
+        // Fifteen subsets of four bits, more than are kept as recent, each list made afresh at every spawn.
+        const spawnAll = (commands: Commands): void => {
+            for (let subset = 1; subset < 16; subset++) commands.spawn(bits.filter((_, bit) => (subset & (1 << bit)) !== 0))({});
+        };
+        await run(spawnAll);
+        const before = count();
+        for (let round = 0; round < 20; round++) await run(spawnAll);
+        expect(count() - before).toBe(0);
+        await world.dispose();
+    });
     it("spawns a list made at runtime in each world that uses it", async () => {
         const first = withCommands();
         const second = withCommands();

@@ -1063,7 +1063,9 @@ describe("commands in main-thread systems", () => {
         });
         test("leave a list naming anything but module keys as written", async () => {
             const result = await transform(`${keys}const system = System.create(({ commands }) => { const c = a; commands.spawn([a, c]); commands.remove(1, [a, 2]); });`);
-            expect(result).toBe(null);
+            const transformed = result !== null && "code" in result ? result.code : "";
+            expect(transformed).toContain("commands.spawn([a, c]); commands.remove(1, [a, 2]);");
+            expect(transformed).not.toContain("archetype$");
         });
         test("fail the build for a list naming a key twice", async () => {
             const result = await transform(`${keys}const system = System.create(({ commands }) => { commands.remove(1, [a, b, a]); });`);

@@ -55,3 +55,4 @@ packages/data/references
 
 # Vitest browser attachments and failure screenshots
 .vitest/
+/site/

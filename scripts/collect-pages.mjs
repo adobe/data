@@ -6,12 +6,12 @@
 //
 // usage: node scripts/collect-pages.mjs <site directory>
 
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join, normalize } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizedPath, pagesProblems, workspacePackages } from "./pages.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const packagesDir = join(root, "packages");
 const site = process.argv[2];
 if (site === undefined) {
   console.error("usage: node scripts/collect-pages.mjs <site directory>");
@@ -19,20 +19,18 @@ if (site === undefined) {
 }
 
 const copies = [];
-for (const name of readdirSync(packagesDir)) {
-  let pkg;
-  try {
-    pkg = JSON.parse(readFileSync(join(packagesDir, name, "package.json"), "utf8"));
-  } catch {
-    continue; // not a package directory
-  }
-  for (const { from, to } of pkg.pages ?? []) copies.push({ name, from: join(packagesDir, name, from), to: normalize(to) });
+const errors = [];
+for (const name of workspacePackages(root)) {
+  const pkg = JSON.parse(readFileSync(join(root, name, "package.json"), "utf8"));
+  const problems = pagesProblems(pkg.pages);
+  for (const problem of problems) errors.push(`${name}: ${problem}`);
+  if (problems.length > 0) continue;
+  for (const { from, to } of pkg.pages ?? []) copies.push({ name, from: join(root, name, normalizedPath(from)), to: normalizedPath(to) });
 }
 
 // The root first, so a package's own path is never overwritten by it.
 copies.sort((a, b) => (a.to === "." ? 0 : 1) - (b.to === "." ? 0 : 1) || a.to.localeCompare(b.to));
 const taken = new Map();
-const errors = [];
 for (const { name, from, to } of copies) {
   if (taken.has(to)) errors.push(`${name}: publishes to "${to}", which ${taken.get(to)} already does`);
   taken.set(to, name);

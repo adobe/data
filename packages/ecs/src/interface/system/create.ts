@@ -112,7 +112,7 @@ type Validate<D extends Declaration> =
     & (Property<D, "components"> extends undefined ? {
         readonly up?: { readonly [key: string]: never };
         readonly order?: { readonly "error: a system without components runs once, in no order": true };
-        readonly kernel?: false | "gpu" | { readonly "error: a system without components runs once, so there's nothing to compile": true };
+        readonly kernel?: false | { readonly "error: a system without components runs once, so there's nothing to compile": true };
     } : {})
     & (D extends { readonly up: object } ? { readonly order?: { readonly "error: up and order both decide the order of its rows": true } } : {})
     & (D extends { readonly observer: true } ? Observer : {})

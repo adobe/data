@@ -295,6 +295,11 @@ System.create({
     kernel: true,
     resources: { read: [time] },
 }, () => {});
+System.create({
+    // @ts-expect-error a system without components runs once, so there's nothing to compile, for the GPU either
+    kernel: "gpu",
+    resources: { read: [time] },
+}, () => {});
 
 // Reductions: each reduced resource is a function contributing a value of its type, with its trait's operator repeated.
 System.create({

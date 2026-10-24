@@ -19,3 +19,4 @@ export * from "./shift-right.js";
 export * from "./subtract.js";
 export * from "./zero.js";
 export * from "./schema.js";
+export { zero as default } from "./zero.js";

@@ -45,3 +45,4 @@ export * from "./tan.js";
 export * from "./tanh.js";
 export * from "./trunc.js";
 export * from "./schema.js";
+export { default } from "./default.js";

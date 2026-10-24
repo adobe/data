@@ -37,10 +37,10 @@ declare module "@adobe/ecs" {
     }
 }
 /** An object of the joined thread, as a canvas or the DOM is, which places the systems reading it there. */
-const surfaceStart = { name: "surface" };
+const surfaceStart = { name: "surface" } as const;
 /** The surface tails draw to, which starts as `surfaceStart`, so they can tell it apart by identity. */
 type Surface = { readonly name: string };
-const Surface = { schema: { default: surfaceStart } };
+const Surface = { default: surfaceStart };
 
 /** What the tails read, so their reads aren't dead. */
 export const drawn = { sum: 0 };

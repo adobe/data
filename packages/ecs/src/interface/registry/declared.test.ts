@@ -8,10 +8,10 @@ describe("declarations the build records", () => {
     it("registers a key at its first use, as its kind says", () => {
         const speed = Symbol("declaredTest/speed");
         const tag = Symbol("declaredTest/tag");
-        recordDeclaration(speed, "resource", { type: { type: "number", default: 1 } });
+        recordDeclaration(speed, "resource", { type: { type: "number" }, default: 1 });
         recordDeclaration(tag, "trait");
         expect([kindOf(speed), kindOf(tag)]).toEqual(["resource", "trait"]);
-        expect(declarationOf(speed)).toEqual({ type: { type: "number", default: 1 } });
+        expect(declarationOf(speed)).toEqual({ type: { type: "number" }, default: 1 });
     });
     it("registers in the order modules recorded them, so a trait comes before what declares it", () => {
         const mark = Symbol("declaredTest/mark");

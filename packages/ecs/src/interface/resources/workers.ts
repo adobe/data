@@ -10,4 +10,4 @@ declare module '@adobe/ecs' {
     }
 }
 
-registerResource(workers, { type: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }], default: null } });
+registerResource(workers, { type: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] }, default: null });

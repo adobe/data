@@ -34,10 +34,10 @@ declare module "@adobe/ecs" {
 /** A value that isn't data. */
 type Widget = { readonly draw: () => string };
 /** The caption's start, which a command here gives it by this value. */
-const none = { text: "none" };
+const none = { text: "none" } as const;
 /** A caption, which starts as `none`, the value commands on other threads give it by identity. */
 type Caption = { readonly text: string } | null;
-const Caption = { schema: { default: none } };
+const Caption = { default: none };
 /** A widget, or the number a kernel gives one, which only the world's thread could hold. */
 
 const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {

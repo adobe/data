@@ -364,7 +364,7 @@ test("an application's build compiles a library's reducing kernel, with the oper
 const score = Symbol();
 declare$(score, "component", { type: { type: "number" } });
 const largest = Symbol();
-declare$(largest, "resource", { type: { type: "number", default: 0 }, reduce: "max" });
+declare$(largest, "resource", { type: { type: "number" }, default: 0, reduce: "max" });
 ${recorder}
 export const kernel = System.create({ kernel: true, components: { with: [score] } }, (row, { reduce }) => { reduce[largest](row[score]); });
 `);
@@ -434,7 +434,7 @@ declare module "@adobe/ecs" {
     // The registry of the installed copy, loaded as an application loads the package, reads it.
     await import(/* @vite-ignore */ pathToFileURL(join(copy, "dist/index.js")).href);
     const { declarationOf }: { declarationOf: (key: unknown) => unknown } = await import(/* @vite-ignore */ pathToFileURL(join(copy, "dist/interface/registry/names.js")).href);
-    expect(declarationOf(speed)).toEqual({ type: { type: "number", precision: 1, default: 2 } });
+    expect(declarationOf(speed)).toEqual({ type: { type: "number", precision: 1 }, default: 2 });
 });
 
 test("a library's build in library mode ships its registrations and input schemas, its kernels as source and no ids", async () => {

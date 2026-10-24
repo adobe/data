@@ -41,7 +41,7 @@ identify(taggedAgain, "idsTest/keys.ts#tagged");
 // registers a key as soon as it's made.
 registerComponent(score, { type: { type: "number" } });
 registerComponent(shown, { type: { const: true }, derived: true });
-registerResource(level, { type: { type: "number", default: 0 } });
+registerResource(level, { type: { type: "number" }, default: 0 });
 registerComponent(changed, { type: { type: "number" } });
 registerComponent(crossed, { type: { type: "number" } });
 addTrait(tagged);
@@ -63,7 +63,7 @@ describe("keys with ids", () => {
     it("accepts another symbol under a registered key's id with the same declaration, as the same key", () => {
         registerComponent(scoreAgain, { type: { type: "number" } });
         registerComponent(shownAgain, { type: { const: true }, derived: true });
-        registerResource(levelAgain, { type: { type: "number", default: 0 } });
+        registerResource(levelAgain, { type: { type: "number" }, default: 0 });
         addTrait(taggedAgain);
         expect([kindOf(scoreAgain), kindOf(levelAgain), kindOf(taggedAgain)]).toEqual(["component", "resource", "trait"]);
         expect(declarationOf(scoreAgain)).toBe(declarationOf(score));
@@ -72,7 +72,7 @@ describe("keys with ids", () => {
     it("rejects another symbol under a registered key's id with another declaration, or as another kind", () => {
         expect(() => registerComponent(changedAgain, { type: { type: "string" } })).toThrow(
             `Cannot register component "changed" (idsTest/keys.ts#changed): its id is another key's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.`);
-        expect(() => registerResource(crossedAgain, { type: { type: "number", default: 0 } })).toThrow(
+        expect(() => registerResource(crossedAgain, { type: { type: "number" }, default: 0 })).toThrow(
             `Cannot register resource "crossed" (idsTest/keys.ts#crossed): its id is a component's.`);
         expect([kindOf(changedAgain), kindOf(crossedAgain)]).toEqual([undefined, undefined]);
     });

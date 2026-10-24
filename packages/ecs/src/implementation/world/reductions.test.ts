@@ -235,7 +235,7 @@ describe("reductions", () => {
 
     it("reject what can't be reduced", async () => {
         // Booleans reduce bitwise.
-        expect(() => registerResource(summed, { type: { type: "boolean", default: false }, reduce: "+" })).toThrow(`booleans reduce with "&", "|" or "^"`);
+        expect(() => registerResource(summed, { type: { type: "boolean" }, default: false, reduce: "+" })).toThrow(`booleans reduce with "&", "|" or "^"`);
         // @ts-expect-error only a resource with a reduce trait is reduced
         expect(() => System.create({ components: { with: [mass] } }, (_, { reduce }) => { reduce[level](1); })).toThrow(`reduces "reductionsTest/level", which has no reduce trait`);
         // @ts-expect-error a reduced resource is never written

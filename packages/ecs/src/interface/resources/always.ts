@@ -10,4 +10,4 @@ declare module '@adobe/ecs' {
     }
 }
 
-registerResource(always, { type: { type: "boolean", default: false } });
+registerResource(always, { type: { type: "boolean" }, default: false });

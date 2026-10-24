@@ -10,10 +10,10 @@ import { addTrait, isTrait } from './traits.js';
 
 /**
  * A registered declaration, as any consumer iterating components or resources sees it: its `type` and other traits.
- * Without `type`, the value isn't data. A resource's `default`, or a derived object's, is what it starts at, when its
- * schema has none; `fresh` starts it as an empty `Map` or `Set` of each world's own.
+ * Without `type`, the value isn't data. `default` is what it starts at, never its schema's, which holds none; `fresh`
+ * starts it as an empty `Map` or `Set` of each world's own.
  */
-export type AnyDeclaration = { readonly type?: Schema & { readonly default?: unknown }; readonly default?: unknown; readonly fresh?: unknown } & { readonly [T in TraitKey]?: unknown };
+export type AnyDeclaration = { readonly type?: Schema; readonly default?: unknown; readonly fresh?: unknown } & { readonly [T in TraitKey]?: unknown };
 
 /** The value schema of any registered component or resource, or undefined for a value that isn't data. */
 export const schemaOf = (key: unknown): Schema | undefined => declarationOf(key)?.type;
@@ -39,6 +39,20 @@ export const threadOfDeclaration = (declaration: AnyDeclaration): string | null 
     return typeof declaration.thread === "string" ? declaration.thread : "world";
 };
 
+/** Whether a schema, or any schema inside it, holds a `default`. */
+const holdsDefault = (schema: Schema): boolean => {
+    if ("default" in schema) return true;
+    if ("anyOf" in schema) return schema.anyOf.some(holdsDefault);
+    if ("allOf" in schema) return schema.allOf.some(holdsDefault);
+    if ("const" in schema) return false;
+    switch (schema.type) {
+        case "object": return Object.values(schema.properties).some(holdsDefault);
+        case "array": case "set": return holdsDefault(schema.items);
+        case "map": return holdsDefault(schema.keys) || holdsDefault(schema.values);
+        default: return false;
+    }
+};
+
 /** Throws for a declaration whose traits can't hold, so far as values tell: types check the rest. */
 const check = (kind: "component" | "resource", key: symbol, declaration: AnyDeclaration): void => {
     const fail = (message: string): never => failRegistration(kind, key, message);
@@ -46,17 +60,14 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
         if (trait !== "default" && trait !== "fresh" && !isTrait(trait)) fail(`${labelOf(trait)} isn't a registered trait.`);
     }
     const { type, fresh } = declaration;
-    if (type !== undefined && "default" in declaration && (kind === "component" || "default" in type)) {
-        fail(kind === "component" ? "its schema holds its default." : "its default is given twice, by its schema and its declaration.");
-    }
+    if (type !== undefined && holdsDefault(type)) fail("its schema holds a default, which a schema never does: its start is its declaration's default.");
     if (fresh !== undefined) {
         if (fresh !== "Map" && fresh !== "Set") fail(`fresh is "Map" or "Set".`);
-        if ("default" in declaration || (type !== undefined && "default" in type)) fail("it starts fresh, so it has no default.");
+        if ("default" in declaration) fail("it starts fresh, so it has no default.");
         if (type !== undefined && "type" in type && (type.type === "set" || type.type === "map") && (type.type === "set") !== (fresh === "Set")) fail(`a ${type.type} starts as a fresh ${type.type === "set" ? "Set" : "Map"}.`);
     }
-    // A default however given, a literal, its schema's or a namespaced schema's, is one of its type's values.
-    const start: unknown = "default" in declaration ? declaration.default : type !== undefined && "default" in type ? type.default : undefined;
-    if (type !== undefined && ("default" in declaration || "default" in type) && !matchesSchema(type, start)) fail(`its default, ${labelOf(start)}, isn't one of its type's values.`);
+    // A start however the build found it, a literal, its type's namespace's or an identity, is one of its type's values.
+    if (type !== undefined && "default" in declaration && !matchesSchema(type, declaration.default)) fail(`its default, ${labelOf(declaration.default)}, isn't one of its type's values.`);
     try {
         layoutOf(type);
     }
@@ -75,8 +86,8 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
     if (declaration.derived !== undefined && kind !== "component") fail("only a component is derived.");
     if (declaration.derived === true && declaration.within !== undefined) fail("a derived component's rule covers within.");
     if (declaration.derived === true && declaration.reference !== undefined) fail("a rule can't set a derived component's target, so it's no reference.");
-    if (declaration.derived === true && type !== undefined && fresh === undefined && !("default" in type || "const" in type || allowsNull(type))) {
-        fail("a derived component's type has a default, which it starts at.");
+    if (declaration.derived === true && type !== undefined && fresh === undefined && !("default" in declaration || "const" in type || allowsNull(type))) {
+        fail("a derived component has a default, which it starts at.");
     }
     if (declaration.reduce !== undefined) {
         const operator = declaration.reduce;

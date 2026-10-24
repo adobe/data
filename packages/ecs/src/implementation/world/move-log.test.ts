@@ -42,10 +42,10 @@ declare module "@adobe/ecs" {
 /** A value that isn't data. */
 type Note = { readonly text: string; readonly read: () => string };
 /** The label's start, which a command on another thread than its own gives it by this value. */
-const none = { text: "none" };
+const none = { text: "none" } as const;
 /** A label, which starts as `none`, the value commands on other threads give it by identity. */
 type Label = { readonly text: string } | null;
-const Label = { schema: { default: none } };
+const Label = { default: none };
 
 const remoteKeys = [label, note] as const;
 

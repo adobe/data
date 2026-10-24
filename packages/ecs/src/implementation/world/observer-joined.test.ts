@@ -32,10 +32,10 @@ declare module "@adobe/ecs" {
     }
 }
 /** The label's start, which a command here gives it by this value. */
-const blank = { text: "" };
+const blank = { text: "" } as const;
 /** A label, which starts as `blank`, the value commands on other threads give it by identity. */
 type Label = { readonly text: string };
-const Label = { schema: { default: blank } };
+const Label = { default: blank };
 
 const byCell = Index.create({ key: [cell], components: { with: [amount] } });
 const allTagged = Index.create({ key: [], components: { with: [tagged] } });

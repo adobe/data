@@ -23,3 +23,4 @@ export * from "./to-axis-angle.js";
 export * from "./to-euler.js";
 export * from "./to-mat4.js";
 export * from "./schema.js";
+export { identity as default } from "./identity.js";

@@ -13,4 +13,4 @@ declare module '@adobe/ecs' {
     }
 }
 
-registerResource(wake, { type: { type: "number", default: Infinity }, reduce: "min" });
+registerResource(wake, { type: { type: "number" }, reduce: "min", default: Infinity });

@@ -7,3 +7,6 @@ export const schema = { type: "integer", format: "entity" } as const satisfies S
 
 /** No entity: index 0 is never one, so zeroed memory and an entity-valued default mean none, and a lookup of it returns null. */
 export const none = 0 as Entity;
+
+/** What an entity-typed value starts at: none. */
+export { none as default };

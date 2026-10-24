@@ -70,19 +70,19 @@ describe("registering a component", () => {
     it("rejects a declaration whose traits can't hold, recording nothing", () => {
         expect(() => register(Symbol("typesComponentTest/strayTrait"), { type: { type: "number" }, unknown: true })).toThrow("unknown isn't a registered trait");
         expect(() => register(Symbol("typesComponentTest/badReference"), { type: { type: "number" }, reference: "weak" })).toThrow("a reference's type is Entity.schema");
-        expect(() => register(Symbol("typesComponentTest/badSlot"), { type: { type: "number" }, derived: true })).toThrow("a derived component's type has a default");
+        expect(() => register(Symbol("typesComponentTest/badSlot"), { type: { type: "number" }, derived: true })).toThrow("a derived component has a default");
         expect(() => register(Symbol("typesComponentTest/reduced"), { type: { type: "number" }, reduce: "+" })).toThrow("only a resource is reduced");
-        expect(() => register(Symbol("typesComponentTest/derivedWithin"), { type: { type: "number", default: 0 }, derived: true, within: count })).toThrow("a derived component's rule covers within");
-        expect(() => register(Symbol("typesComponentTest/derivedReference"), { type: { ...Entity.schema, default: Entity.none }, derived: true, reference: "owner" })).toThrow("a rule can't set a derived component's target");
+        expect(() => register(Symbol("typesComponentTest/derivedWithin"), { type: { type: "number" }, default: 0, derived: true, within: count })).toThrow("a derived component's rule covers within");
+        expect(() => register(Symbol("typesComponentTest/derivedReference"), { type: { ...Entity.schema }, default: Entity.none, derived: true, reference: "owner" })).toThrow("a rule can't set a derived component's target");
         const badReference = Symbol("typesComponentTest/badReference");
         expect(() => register(badReference, { type: { type: "number" }, reference: "weak" })).toThrow("a reference's type is Entity.schema");
         expect(declarationOf(badReference)).toBe(undefined);
         expect(kindOf(badReference)).toBe(undefined);
     });
     it("rejects a default that isn't one of its type's values, however it's given", () => {
-        expect(() => register(Symbol("typesComponentTest/tallHeight"), { type: { type: "number", precision: 1, default: "tall" } })).toThrow("its default, tall, isn't one of its type's values");
-        expect(() => register(Symbol("typesComponentTest/lowLevel"), { type: { type: "integer", minimum: 1, maximum: 9, default: 0 }, derived: true })).toThrow("isn't one of its type's values");
-        expect(() => register(Symbol("typesComponentTest/floor"), { type: { type: "number", precision: 1, default: -Infinity } })).not.toThrow();
+        expect(() => register(Symbol("typesComponentTest/tallHeight"), { type: { type: "number", precision: 1 }, default: "tall" })).toThrow("its default, tall, isn't one of its type's values");
+        expect(() => register(Symbol("typesComponentTest/lowLevel"), { type: { type: "integer", minimum: 1, maximum: 9 }, default: 0, derived: true })).toThrow("isn't one of its type's values");
+        expect(() => register(Symbol("typesComponentTest/floor"), { type: { type: "number", precision: 1 }, default: -Infinity })).not.toThrow();
     });
     it("rejects a schema whose GPU layout can't hold it", () => {
         expect(() => register(Symbol("typesComponentTest/storageText"), { type: { type: "array", items: { type: "string" }, layout: "storage" } })).toThrow("layout needs numbers");
@@ -101,8 +101,9 @@ describe("registering a component", () => {
         expect(Reflect.has(declarationOf(bitmap) ?? {}, "type")).toBe(false);
         expect(() => register(bitmap, { transfer: true })).not.toThrow();
     });
-    it("rejects a default beside a component's schema, which holds it", () => {
-        expect(() => register(Symbol("typesComponentTest/defaulted"), { type: { type: "number" }, default: 0 })).toThrow("its schema holds its default");
+    it("takes a component's default beside its schema, never in it", () => {
+        expect(() => register(Symbol("typesComponentTest/defaulted"), { type: { type: "number" }, default: 0 })).not.toThrow();
+        expect(() => register(Symbol("typesComponentTest/inSchema"), { type: { type: "number", default: 0 } })).toThrow("its schema holds a default, which a schema never does");
     });
     it("takes traits other packages register, in the namespace components share", () => {
         const early = Symbol("typesComponentTest/early");
@@ -111,6 +112,6 @@ describe("registering a component", () => {
         expect(() => register(early, { type: { const: true }, [late]: true })).not.toThrow();
         expect(declarationOf(marked)).toEqual({ type: { const: true }, [mark]: true });
         expect(() => addTrait(mark)).not.toThrow();
-        expect(declarationOf(slot)).toEqual({ type: { type: "number", default: 0 }, derived: true });
+        expect(declarationOf(slot)).toEqual({ type: { type: "number" }, default: 0, derived: true });
     });
 });

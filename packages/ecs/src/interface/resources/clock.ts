@@ -14,5 +14,6 @@ declare module '@adobe/ecs' {
 }
 
 registerResource(clock, {
-    type: { type: "object", properties: { now: { type: "number" }, delta: { type: "number" }, tick: { type: "number" } }, default: { now: 0, delta: 0, tick: 0 } },
+    type: { type: "object", properties: { now: { type: "number" }, delta: { type: "number" }, tick: { type: "number" } } },
+    default: { now: 0, delta: 0, tick: 0 },
 });

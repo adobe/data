@@ -50,10 +50,10 @@ declare module "@adobe/ecs" {
 }
 const text = { type: "object", properties: { text: { type: "string" } } } as const;
 /** A label's start, which a command here gives it by this value. */
-const blank = { text: "" };
+const blank = { text: "" } as const;
 /** A label, which starts as `blank`, the value commands on other threads give it by identity. */
 type Label = { readonly text: string };
-const Label = { schema: { default: blank } };
+const Label = { default: blank };
 
 const grid = Index.create({ key: [cell], components: { with: [weight] } });
 const serials = Index.create({ key: [serial], unique: true, components: { with: [weight] } });

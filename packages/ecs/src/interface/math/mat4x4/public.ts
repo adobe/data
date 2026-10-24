@@ -19,3 +19,4 @@ export * from "./translation.js";
 export * from "./transpose.js";
 export * from "./zero.js";
 export * from "./schema.js";
+export { identity as default } from "./identity.js";

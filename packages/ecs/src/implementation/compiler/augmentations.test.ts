@@ -61,7 +61,7 @@ describe("augmentationInsertions", () => {
             expect(await passed(`${binding}\n${keys("tag")}declare module "@adobe/ecs" { interface Components { [tag]: { type: true } } }`)).toContain("which the code recording its declarations uses");
         }
     });
-    test("gives a literal default in the schema", async () => {
+    test("gives a literal default beside the schema", async () => {
         expect(await registrations(`${keys("gravity", "mode", "origin")}declare module "@adobe/ecs" {
     interface Resources {
         [gravity]: { type: F32; default: -9.8 };
@@ -69,12 +69,12 @@ describe("augmentationInsertions", () => {
         [origin]: { type: Vec3; default: [1, 2, 3] };
     }
 }`)).toEqual([
-            `declare$(gravity, "resource", { type: {"type":"number","precision":1,"default":-9.8} });`,
-            `declare$(mode, "resource", { type: {"anyOf":[{"const":"all"},{"const":"done"}],"default":"all"} });`,
-            `declare$(origin, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3,"default":[1,2,3]} });`,
+            `declare$(gravity, "resource", { type: {"type":"number","precision":1}, default: -9.8 });`,
+            `declare$(mode, "resource", { type: {"anyOf":[{"const":"all"},{"const":"done"}]}, default: "all" });`,
+            `declare$(origin, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3}, default: [1,2,3] });`,
         ]);
     });
-    test("derives a resource's or derived component's default from its type: zero values, null, or a fresh Map or Set", async () => {
+    test("derives a resource's or derived component's default from its type: its namespace's, null, a zero value, or a fresh ReadonlyMap or ReadonlySet", async () => {
         expect(await registrations(`${keys("layer", "drawn", "speed", "count", "on", "text", "at", "stats", "focus", "frame", "list", "maybe", "names", "tags", "cache", "audio")}declare module "@adobe/ecs" {
     interface Components {
         [layer]: { type: number; derived: true };
@@ -93,72 +93,118 @@ describe("augmentationInsertions", () => {
         [maybe]: { type: F32 | null };
         [names]: { type: ReadonlyMap<string, number> };
         [tags]: { type: ReadonlySet<string> };
-        [cache]: { type: Map<string, number>; thread: "main" };
+        [cache]: { type: Map<string, number> | null; thread: "main" };
         [audio]: { type: AudioContext | null };
     }
 }`)).toEqual([
-            `declare$(layer, "component", { type: {"type":"number","default":0}, derived: true });`,
+            `declare$(layer, "component", { type: {"type":"number"}, default: 0, derived: true });`,
             `declare$(drawn, "component", { type: {"const":true}, derived: true });`,
             `declare$(speed, "component", { type: {"type":"number"} });`,
-            `declare$(count, "resource", { type: {"type":"integer","minimum":0,"maximum":4294967295,"default":0} });`,
-            `declare$(on, "resource", { type: {"type":"boolean","default":false} });`,
-            `declare$(text, "resource", { type: {"type":"string","default":""} });`,
-            `declare$(at, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3,"default":[0,0,0]} });`,
-            `declare$(stats, "resource", { type: {"type":"object","properties":{"sprites":{"type":"integer","minimum":0,"maximum":4294967295},"frames":{"type":"integer","minimum":0,"maximum":4294967295}},"default":{"sprites":0,"frames":0}} });`,
-            `declare$(focus, "resource", { type: {"type":"integer","format":"entity","default":0} });`,
-            `declare$(frame, "resource", { type: {"anyOf":[{"const":0},{"const":1},{"const":2}],"default":0} });`,
-            `declare$(list, "resource", { type: {"type":"array","items":{"type":"string"},"default":[]} });`,
+            // U32 and Vec3 are imported as types, so their namespaces' defaults are written in; Entity is a value.
+            `declare$(count, "resource", { type: {"type":"integer","minimum":0,"maximum":4294967295}, default: 0 });`,
+            `declare$(on, "resource", { type: {"type":"boolean"}, default: false });`,
+            `declare$(text, "resource", { type: {"type":"string"}, default: "" });`,
+            `declare$(at, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3}, default: [0,0,0] });`,
+            `declare$(stats, "resource", { type: {"type":"object","properties":{"sprites":{"type":"integer","minimum":0,"maximum":4294967295},"frames":{"type":"integer","minimum":0,"maximum":4294967295}}}, default: {"sprites":0,"frames":0} });`,
+            `declare$(focus, "resource", { type: {"type":"integer","format":"entity"}, default: Entity.default });`,
+            `declare$(frame, "resource", { type: {"anyOf":[{"const":0},{"const":1},{"const":2}]}, default: 0 });`,
+            `declare$(list, "resource", { type: {"type":"array","items":{"type":"string"}}, default: [] });`,
             `declare$(maybe, "resource", { type: {"anyOf":[{"type":"number","precision":1},{"type":"null"}]} });`,
             `declare$(names, "resource", { type: {"type":"map","keys":{"type":"string"},"values":{"type":"number"}}, fresh: "Map" });`,
             `declare$(tags, "resource", { type: {"type":"set","items":{"type":"string"}}, fresh: "Set" });`,
-            `declare$(cache, "resource", { thread: "main", fresh: "Map" });`,
+            `declare$(cache, "resource", { thread: "main" });`,
             `declare$(audio, "resource", {});`,
         ]);
     });
-    test("takes the default of a namespaced type's schema, after the value holding it, unless a literal is given", async () => {
-        const files = { "/src/bounds.ts": `import { F32 } from "@adobe/ecs";\nexport type Upper = F32;\nexport const Upper = { schema: { ...F32.schema, default: Infinity } } as const;` };
+    test("takes its type's namespace's default, after the value holding it, unless a literal is given", async () => {
+        const files = { "/src/bounds.ts": `import type { F32 } from "@adobe/ecs";\nexport type Upper = F32;\nexport const Upper = { default: Infinity } as const;` };
         const code = await passed(`import { Upper } from "./bounds.js";\n${keys("low", "high", "given", "mark")}declare module "@adobe/ecs" {
     interface Components { [mark]: { type: Lower } }
     interface Resources { [low]: { type: Lower }; [high]: { type: Upper }; [given]: { type: Lower; default: 1 } }
 }
 type Lower = F32;
-const Lower = { schema: { type: "number", precision: 1, default: -Infinity } } as const;
+const Lower = { default: -Infinity } as const;
 const after = 1;`, files);
         expect(code?.split("\n").filter(line => line.startsWith("declare$"))).toEqual([
-            `declare$(high, "resource", { type: {"type":"number","precision":1,"default":Upper.schema.default} });`,
-            `declare$(given, "resource", { type: {"type":"number","precision":1,"default":1} });`,
-            `declare$(mark, "component", { type: {"type":"number","precision":1,"default":Lower.schema.default} });`,
-            `declare$(low, "resource", { type: {"type":"number","precision":1,"default":Lower.schema.default} });`,
+            `declare$(high, "resource", { type: {"type":"number","precision":1}, default: Upper.default });`,
+            `declare$(given, "resource", { type: {"type":"number","precision":1}, default: 1 });`,
+            `declare$(mark, "component", { type: {"type":"number","precision":1} });`,
+            `declare$(low, "resource", { type: {"type":"number","precision":1}, default: Lower.default });`,
         ]);
-        expect(code?.split("\n").slice(-4)).toEqual([
-            `const Lower = { schema: { type: "number", precision: 1, default: -Infinity } } as const;`,
-            `declare$(mark, "component", { type: {"type":"number","precision":1,"default":Lower.schema.default} });`,
-            `declare$(low, "resource", { type: {"type":"number","precision":1,"default":Lower.schema.default} });`,
+        expect(code?.split("\n").slice(-3)).toEqual([
+            `const Lower = { default: -Infinity } as const;`,
+            `declare$(low, "resource", { type: {"type":"number","precision":1}, default: Lower.default });`,
             `const after = 1;`,
         ]);
     });
+    test("takes the package's types' namespaces' defaults: identities for a quaternion and a matrix", async () => {
+        expect(await registrations(`import { Quat, type Mat4x4 } from "@adobe/ecs";\n${keys("turn", "view")}declare module "@adobe/ecs" { interface Resources { [turn]: { type: Quat }; [view]: { type: Mat4x4 } } }`)).toEqual([
+            `declare$(turn, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":4,"maxItems":4}, default: Quat.default });`,
+            `declare$(view, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":16,"maxItems":16}, default: [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1] });`,
+        ]);
+    });
+    test("starts a reduced resource at its operator's identity, within its type's range", async () => {
+        expect(await registrations(`${keys("sum", "product", "least", "most", "all", "any", "bounds", "masked")}declare module "@adobe/ecs" {
+    interface Resources {
+        [sum]: { type: F32; reduce: "+" };
+        [product]: { type: F32; reduce: "*" };
+        [least]: { type: F32; reduce: "min" };
+        [most]: { type: U32; reduce: "max" };
+        [all]: { type: boolean; reduce: "&" };
+        [any]: { type: boolean; reduce: "|" };
+        [bounds]: { type: { readonly low: F32; readonly high: F32 }; reduce: "max" };
+        [masked]: { type: U32; reduce: "&" };
+    }
+}`)).toEqual([
+            `declare$(sum, "resource", { type: {"type":"number","precision":1}, default: 0, reduce: "+" });`,
+            `declare$(product, "resource", { type: {"type":"number","precision":1}, default: 1, reduce: "*" });`,
+            `declare$(least, "resource", { type: {"type":"number","precision":1}, default: Infinity, reduce: "min" });`,
+            `declare$(most, "resource", { type: {"type":"integer","minimum":0,"maximum":4294967295}, default: 0, reduce: "max" });`,
+            `declare$(all, "resource", { type: {"type":"boolean"}, default: true, reduce: "&" });`,
+            `declare$(any, "resource", { type: {"type":"boolean"}, default: false, reduce: "|" });`,
+            `declare$(bounds, "resource", { type: {"type":"object","properties":{"low":{"type":"number","precision":1},"high":{"type":"number","precision":1}}}, default: {"low":-Infinity,"high":-Infinity}, reduce: "max" });`,
+            `declare$(masked, "resource", { type: {"type":"integer","minimum":0,"maximum":4294967295}, default: 4294967295, reduce: "&" });`,
+        ]);
+    });
+    test("takes a type's namespace's default only when it's deeply readonly, as a default is shared", async () => {
+        const declared = (holder: string) => `${keys("key")}declare module "@adobe/ecs" { interface Resources { [key]: { type: Settings } } }\ntype Settings = { readonly size: number };\n${holder}`;
+        const shared = "a default is shared";
+        expect(await registrations(declared(`const Settings = { default: { size: 1 } } as const;`))).toEqual([`declare$(key, "resource", { type: {"type":"object","properties":{"size":{"type":"number"}}}, default: Settings.default });`]);
+        expect(await registrations(declared(`const start: Readonly<{ size: number }> = { size: 2 };\nconst Settings = { default: start };`))).toEqual([`declare$(key, "resource", { type: {"type":"object","properties":{"size":{"type":"number"}}}, default: Settings.default });`]);
+        expect(await registrations(declared(`const start = { size: 2 } as const;\nconst Settings = { default: start };`))).toEqual([`declare$(key, "resource", { type: {"type":"object","properties":{"size":{"type":"number"}}}, default: Settings.default });`]);
+        expect(await passed(declared(`const Settings = { default: { size: 1 } };`))).toContain("is shared by every row and world that starts from it");
+        expect(await passed(declared(`const start = { size: 2 };\nconst Settings = { default: start } as const;`))).toContain("as const");
+        const maps = `${keys("key")}declare module "@adobe/ecs" { interface Resources { [key]: { type: Names } } }\ntype Names = ReadonlyMap<string, number>;\n`;
+        expect(await passed(`${maps}const Names = { default: new Map([["a", 1]]) };`)).toContain("is shared by every row and world");
+        expect(await passed(`${maps}const names: Map<string, number> = new Map();\nconst Names = { default: names };`)).toContain("ReadonlyMap");
+        expect(await registrations(`${maps}const names: ReadonlyMap<string, number> = new Map([["a", 1]]);\nconst Names = { default: names };`)).toEqual([`declare$(key, "resource", { type: {"type":"map","keys":{"type":"string"},"values":{"type":"number"}}, default: Names.default });`]);
+        void shared;
+    });
     test("writes a literal -0 as itself", async () => {
         expect(await registrations(`${keys("floor")}declare module "@adobe/ecs" { interface Resources { [floor]: { type: number; default: -0 } } }`))
-            .toEqual([`declare$(floor, "resource", { type: {"type":"number","default":-0} });`]);
+            .toEqual([`declare$(floor, "resource", { type: {"type":"number"}, default: -0 });`]);
     });
     test("starts a struct's fields and a tuple's items at their own types' defaults", async () => {
-        const code = await passed(`import type { Schema } from "@adobe/ecs";\n${keys("level", "box", "pair", "pool")}declare module "@adobe/ecs" {
+        const code = await passed(`import type { Schema } from "@adobe/ecs";\n${keys("level", "box", "pair")}declare module "@adobe/ecs" {
     interface Resources {
-        [level]: { type: { readonly value: Schema.Type<{ type: "integer"; minimum: 1; maximum: 9; default: 5 }> } };
+        [level]: { type: { readonly value: Level } };
         [box]: { type: { readonly height: Height; readonly width: F32 } };
         [pair]: { type: readonly [Height, F32] };
-        [pool]: { type: Pool };
     }
 }
-type Pool = Map<string, number>;
+type Level = Schema.Type<{ type: "integer"; minimum: 1; maximum: 9 }>;
+const Level = { default: 5 } as const;
 type Height = F32;
-const Height = { schema: { type: "number", precision: 1, default: -1 } } as const;`);
+const Height = { default: -1 } as const;`);
         expect(code?.split("\n").filter(line => line.startsWith("declare$"))).toEqual([
-            `declare$(level, "resource", { type: {"type":"object","properties":{"value":{"type":"integer","minimum":1,"maximum":9,"default":5}},"default":{"value":5}} });`,
-            `declare$(pool, "resource", { fresh: "Map" });`,
-            `declare$(box, "resource", { type: {"type":"object","properties":{"height":{"type":"number","precision":1},"width":{"type":"number","precision":1}},"default":{ "height": Height.schema.default, "width": 0 }} });`,
-            `declare$(pair, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":2,"maxItems":2,"default":[Height.schema.default, 0]} });`,
+            `declare$(level, "resource", { type: {"type":"object","properties":{"value":{"type":"integer","minimum":1,"maximum":9}}}, default: { "value": Level.default } });`,
+            `declare$(box, "resource", { type: {"type":"object","properties":{"height":{"type":"number","precision":1},"width":{"type":"number","precision":1}}}, default: { "height": Height.default, "width": 0 } });`,
+            `declare$(pair, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":2,"maxItems":2}, default: [Height.default, 0] });`,
         ]);
+    });
+    test("gives a mutable Map or Set no start of its own: null when its type allows it, else a failure", async () => {
+        expect(await registrations(`${keys("pool")}declare module "@adobe/ecs" { interface Resources { [pool]: { type: Pool | null } } }\ntype Pool = Map<string, number>;`)).toEqual([`declare$(pool, "resource", {});`]);
+        expect(await passed(`${keys("pool")}declare module "@adobe/ecs" { interface Resources { [pool]: { type: Pool } } }\ntype Pool = Map<string, number>;`)).toContain("a ReadonlyMap or ReadonlySet starts fresh in each world, a Map or Set doesn't");
     });
     test("gives a value that isn't data no schema, and its traits", async () => {
         const files = { "/src/row.ts": `export class Row extends HTMLElement {}\nexport class Pool {}` };
@@ -192,7 +238,7 @@ const Height = { schema: { type: "number", precision: 1, default: -1 } } as cons
             `declare$(outline, "component", { type: {"type":"number"}, within: host, [instanced]: true });`,
             `declare$(owner, "component", { type: {"type":"integer","format":"entity"}, reference: "owner" });`,
             `declare$(drawn, "component", { type: {"const":true}, derived: true });`,
-            `declare$(total, "resource", { type: {"type":"number","precision":1,"default":0}, reduce: "+" });`,
+            `declare$(total, "resource", { type: {"type":"number","precision":1}, default: 0, reduce: "+" });`,
         ]);
     });
     test("registers a block's traits before the components declaring them", async () => {
@@ -211,12 +257,12 @@ const Height = { schema: { type: "number", precision: 1, default: -1 } } as cons
         const code = await passed(`declare module "@adobe/ecs" { interface Resources { [later]: { type: Start } } }
 const later = Symbol();
 type Start = Vec3;
-const Start = { schema: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3, default: [1, 2, 3] } } as const;
+const Start = { default: [1, 2, 3] } as const;
 const after = 1;`);
-        expect(code?.split("\n").slice(-3)).toEqual([`const Start = { schema: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3, default: [1, 2, 3] } } as const;`, `declare$(later, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3,"default":Start.schema.default} });`, `const after = 1;`]);
+        expect(code?.split("\n").slice(-3)).toEqual([`const Start = { default: [1, 2, 3] } as const;`, `declare$(later, "resource", { type: {"type":"array","items":{"type":"number","precision":1},"minItems":3,"maxItems":3}, default: Start.default });`, `const after = 1;`]);
         // Code between the key and a block below uses the key registered.
         const above = await passed(`const speed = Symbol();\nconst uses = [speed];\ndeclare module "@adobe/ecs" { interface Resources { [speed]: { type: F32; default: 1 } } }`);
-        expect(above?.split("\n").slice(1, 3)).toEqual([`const speed = Symbol();`, `declare$(speed, "resource", { type: {"type":"number","precision":1,"default":1} });`]);
+        expect(above?.split("\n").slice(1, 3)).toEqual([`const speed = Symbol();`, `declare$(speed, "resource", { type: {"type":"number","precision":1}, default: 1 });`]);
     });
     test("registers a trait before what declares it, its keys declared below the blocks, the Traits block last", async () => {
         const code = await passed(`declare module "@adobe/ecs" {
@@ -272,11 +318,12 @@ const mark = Symbol();`);
         expect(await passed(`class Pool {}\n${keys("key")}${block(`interface Resources { [key]: { type: Pool } }`)}`)).toContain("let its type allow null");
         expect(await passed(`${keys("key")}${block(`interface Resources { [key]: { type: OffscreenCanvas } }`)}`)).toContain("let its type allow null");
         expect(await passed(`import type { Schema } from "@adobe/ecs";\n${keys("key")}${block(`interface Resources { [key]: { type: Schema.Type<{ type: "integer"; minimum: 1; maximum: 9 }> } }`)}`))
-            .toContain("give its schema one: `Schema.Type<{ ...; default: ... }>`");
-        expect(await passed(`${keys("key")}${block(`interface Resources { [key]: { type: 1 | 2 | 4 } }`)}`)).toContain("declare a type of its own with a namespace");
+            .toContain("name its type and give the type a namespace with a `default`");
+        expect(await passed(`${keys("key")}type Level = 1 | 2 | 4;\n${block(`interface Resources { [key]: { type: Level } }`)}`)).toContain("give Level a namespace with a `default`: `const Level = { default: ... }`");
+        expect(await passed(`import type { Schema } from "@adobe/ecs";\n${keys("key")}${block(`interface Resources { [key]: { type: Schema.Type<{ type: "integer"; default: 5 }> } }`)}`)).toContain("a schema holds no default");
         expect(await passed(`import type { Schema } from "@adobe/ecs";\n${keys("key")}${block(`interface Resources { [key]: { type: Schema.Type<{ type: "integer"; minimum: 1; maximum: 9 }> } }`)}`)).toContain("0 isn't one of its values");
         expect(await passed(`const start = 1;\n${keys("key")}${block(`interface Resources { [key]: { type: number; default: typeof start } }`)}`)).toContain("default is a literal type, never `typeof` a value");
-        expect(await passed(`import type { Lower } from "./bounds.js";\n${keys("key")}${block(`interface Resources { [key]: { type: Lower } }`)}`, { "/src/bounds.ts": `export type Lower = number;\nexport const Lower = { schema: { type: "number", default: -1 } } as const;` })).toContain("import Lower as a value");
+        expect(await passed(`import type { Lower } from "./bounds.js";\n${keys("key")}${block(`interface Resources { [key]: { type: Lower } }`)}`, { "/src/bounds.ts": `export type Lower = number;\nconst start: number = Date.now();\nexport const Lower = { default: start } as const;` })).toContain("import Lower as a value");
         expect(await passed(`${keys("key")}${block(`interface Resources { [key]: { type: U32; default: -1 } }`)}`)).toContain("isn't of its declared type");
         expect(await passed(`${keys("key")}${block(`interface Components { [key]: { type: HTMLDivElement } }`)}`)).toContain(`thread: "main"`);
         expect(await passed(`${keys("key")}${block(`interface Components { [key]: { type: Pick<{ a: number }, "a"> } }`)}`)).toContain("type arguments");

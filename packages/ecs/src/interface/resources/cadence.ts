@@ -23,6 +23,6 @@ registerResource(cadence, {
             { type: "object", properties: { kind: { const: "frame" } } },
             { type: "object", properties: { kind: { const: "fixed" }, step: { type: "number", minimum: 0 }, maxSteps: { type: "integer", minimum: 1 } }, required: ["kind", "step"] },
         ],
-        default: { kind: "frame" },
     },
+    default: { kind: "frame" },
 });

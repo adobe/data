@@ -23,10 +23,10 @@ declare module "@adobe/ecs" {
     }
 }
 /** The caption's start, which a command here gives it by this value. */
-const none = { text: "none" };
+const none = { text: "none" } as const;
 /** A caption, which starts as `none`, the value commands on other threads give it by identity. */
 type Caption = { readonly text: string } | null;
-const Caption = { schema: { default: none } };
+const Caption = { default: none };
 
 /** A caption's text, null for none, as the watchers record it. */
 const textOf = (value: { readonly text: string } | null): string | null => value === null ? null : value.text;

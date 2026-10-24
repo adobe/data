@@ -17,12 +17,14 @@ interface ObjectSchema<K extends string = string> {
     readonly properties: { readonly [P in K]: Schema };
     readonly required?: readonly K[];
     readonly layout?: GpuLayout;
+    readonly default?: never;
 }
 
 interface StringSchema {
     readonly type: 'string';
     readonly minLength?: number;
     readonly maxLength?: number;
+    readonly default?: never;
 }
 
 interface ArraySchema<T extends Schema> {
@@ -31,6 +33,7 @@ interface ArraySchema<T extends Schema> {
     readonly layout?: GpuLayout;
     readonly minItems?: number;
     readonly maxItems?: number;
+    readonly default?: never;
 }
 
 interface NumberSchema {
@@ -38,12 +41,14 @@ interface NumberSchema {
     readonly minimum?: number;
     readonly maximum?: number;
     readonly precision?: 1 | 2;
+    readonly default?: never;
 }
 
 /** An entity reference, typed `Entity`. Every entity-typed value uses it, so references can be found by schema. */
 interface EntitySchema {
     readonly type: 'integer';
     readonly format: 'entity';
+    readonly default?: never;
 }
 
 interface IntegerSchema {
@@ -51,20 +56,24 @@ interface IntegerSchema {
     readonly format?: never;
     readonly minimum?: number;
     readonly maximum?: number;
+    readonly default?: never;
 }
 
 interface BooleanSchema {
     readonly type: 'boolean';
+    readonly default?: never;
 }
 
 interface NullSchema {
     readonly type: 'null';
+    readonly default?: never;
 }
 
 /** A `ReadonlySet` of `items`' values. JSON has no set, so `'set'` isn't a JSON Schema type. */
 interface SetSchema<T extends Schema> {
     readonly type: 'set';
     readonly items: T;
+    readonly default?: never;
 }
 
 /** A `ReadonlyMap` from `keys`' values to `values`' values. JSON has no map, so `'map'` isn't a JSON Schema type. */
@@ -72,6 +81,7 @@ interface MapSchema<K extends Schema, V extends Schema> {
     readonly type: 'map';
     readonly keys: K;
     readonly values: V;
+    readonly default?: never;
 }
 
 /** Matches exactly one JSON value of any shape. */
@@ -79,19 +89,23 @@ interface ConstSchema {
     /** The value alone fully describes the schema; combining it with `type` is redundant and disallowed. */
     readonly type?: never;
     readonly const: JSONValue;
+    readonly default?: never;
 }
 
 interface AndSchema {
     readonly allOf: readonly Schema[];
+    readonly default?: never;
 }
 
 interface OrSchema {
     readonly anyOf: readonly Schema[];
+    readonly default?: never;
 }
 
 /**
  * A JSON Schema of the forms the ECS reads, and two forms JSON lacks: `{ type: 'set', items }` and
- * `{ type: 'map', keys, values }`.
+ * `{ type: 'map', keys, values }`. A schema describes values and holds no `default`: a value's start comes from its
+ * declaration or its type's namespace, `T.default`.
  */
 export type Schema = EntitySchema | ObjectSchema | StringSchema | ArraySchema<Schema> | NumberSchema | IntegerSchema | BooleanSchema | NullSchema | SetSchema<Schema> | MapSchema<Schema, Schema> | ConstSchema | AndSchema | OrSchema;
 

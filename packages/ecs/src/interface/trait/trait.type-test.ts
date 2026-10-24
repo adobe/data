@@ -45,7 +45,7 @@ declare module '@adobe/ecs' {
     }
     export interface Resources {
         [time]: { type: number; default: 0 };
-        [sum]: { type: number; default: 0; reduce: "+" };
+        [sum]: { type: number; reduce: "+" };
     }
 }
 

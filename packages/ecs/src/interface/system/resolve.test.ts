@@ -10,7 +10,7 @@ declare module "@adobe/ecs" {
     interface Components {
         [mass]: { type: number };
         [position]: { type: number };
-        [pool]: { type: Map<string, number>; derived: true };
+        [pool]: { type: ReadonlyMap<string, number>; derived: true };
     }
 }
 const access = (lookup: Access["lookup"]): Access => ({ components: null, resources: null, lookup, up: null, at: "a test" });

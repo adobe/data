@@ -25,10 +25,10 @@ declare module "@adobe/ecs" {
         [moved]: { type: true };
     }
 }
-const none = { text: "none" };
+const none = { text: "none" } as const;
 /** A row's label, which starts as `none`, so the mirror's copies are told apart by identity. */
 type Label = { readonly text: string } | null;
-const Label = { schema: { default: none } };
+const Label = { default: none };
 
 /** Entities moved, and swapped out of the rows they leave, per sync point of `log replay`. */
 export const replayMoves = 10_000;

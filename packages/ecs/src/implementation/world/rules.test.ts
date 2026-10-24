@@ -75,7 +75,7 @@ describe("rules", () => {
         expect(() => Rule.create(identify({ components: { with: [source] }, derive: [slot] }, "rulesTest/rules.ts#slots"))).toThrow("reload the page");
         expect(programRules()).toHaveLength(rules);
     });
-    it("derive components where they match, from the schema default, and remove them where they stop", async () => {
+    it("derive components where they match, from their start, and remove them where they stop", async () => {
         const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let a = Entity.none, b = Entity.none, c = Entity.none;

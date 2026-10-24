@@ -144,3 +144,12 @@ check<Equal<Level, number>>();
 check<Equal<Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }>, readonly [number, number, number]>>();
 // @ts-expect-error its argument is a schema
 type NotSchema = Schema.Type<{ type: "integer"; minimum: "zero" }>;
+
+// A schema holds no default, anywhere: a value's start comes from its declaration or its type's namespace.
+// @ts-expect-error a default isn't part of a schema
+const badDefault: Schema = { type: 'number', default: 0 };
+// @ts-expect-error nor of a field's schema
+const badFieldDefault: Schema = { type: 'object', properties: { x: { type: 'number', default: 0 } } };
+// @ts-expect-error Schema.Type takes a schema, so a default fails there too
+type BadType = Schema.Type<{ type: 'integer'; minimum: 1; default: 5 }>;
+void [badDefault, badFieldDefault];

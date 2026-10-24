@@ -4,15 +4,19 @@ import { Rule } from "../../interface/rule/rule.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "../index.js";
 import { readResource } from "./reads.test-helper.js";
+import { Entity, F32, I32, Mat4x4, Quat, U32, Vec2, Vec3, Vec4 } from "../../index.js";
 
 const pool = Symbol();
 const names = Symbol();
 const count = Symbol();
 const tagged = Symbol();
 const index = Symbol();
+const turn = Symbol();
+const least = Symbol();
+const all = Symbol();
 
-/** A pool declared through an alias of Map. */
-type Pool = Map<string, number>;
+/** A pool declared through an alias of ReadonlyMap. */
+type Pool = ReadonlyMap<string, number>;
 
 declare module "@adobe/ecs" {
     export interface Components {
@@ -23,13 +27,16 @@ declare module "@adobe/ecs" {
         [pool]: { type: Pool };
         [names]: { type: ReadonlyMap<string, number> };
         [count]: { type: number };
+        [turn]: { type: Quat };
+        [least]: { type: F32; reduce: "min" };
+        [all]: { type: boolean; reduce: "&" };
     }
 }
 
 Rule.create({ components: { with: [tagged] }, derive: [index] });
 
 describe("a resource declared without a default", () => {
-    it("starts at its type's zero value, and a Map or Set at an empty one of its world's own", async () => {
+    it("starts at its type's zero value, and a ReadonlyMap or ReadonlySet at an empty one of its world's own", async () => {
         await using first = createWorld();
         await using second = createWorld();
         const [firstPool, secondPool] = [await readResource(first, pool), await readResource(second, pool)];
@@ -61,5 +68,19 @@ describe("a derived component declared without a default", () => {
         expect(seen[1]).toBe(seen[0]);
         expect(seen[3]).toBe(seen[2]);
         expect(seen[2]).not.toBe(seen[0]);
+    });
+});
+
+describe("the package's types' defaults", () => {
+    it("are zeros, identities, and none for an entity", () => {
+        expect([F32.default, I32.default, U32.default, Vec2.default, Vec3.default, Vec4.default, Vec3.I32.default, Vec4.U32.default, Entity.default])
+            .toEqual([0, 0, 0, [0, 0], [0, 0, 0], [0, 0, 0, 0], [0, 0, 0], [0, 0, 0, 0], Entity.none]);
+        expect([Quat.default, Mat4x4.default]).toEqual([Quat.identity, Mat4x4.identity]);
+    });
+    it("start a world's resources, and a reduction its operator's identity", async () => {
+        await using world = createWorld();
+        expect(await readResource(world, turn)).toEqual([0, 0, 0, 1]);
+        expect(await readResource(world, least)).toBe(Infinity);
+        expect(await readResource(world, all)).toBe(true);
     });
 });

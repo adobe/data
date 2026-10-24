@@ -424,7 +424,7 @@ export const idOf = (state: State, key: Key): number => {
 
 /**
  * What a resource or derived component starts at: a new empty `Map` or `Set` when it starts fresh, so each world has
- * its own; its declaration's default or its schema's; or `null` when its type allows leaving it out.
+ * its own; its declaration's default, which the build gives; or `null` when its type allows leaving it out.
  */
 export const defaultOf = (key: Key): unknown => {
     const declaration = declarationOf(key);
@@ -434,7 +434,6 @@ export const defaultOf = (key: Key): unknown => {
     if ("default" in declaration) return declaration.default;
     const { type } = declaration;
     if (type === undefined) return null;
-    if ("default" in type) return type.default;
     // A union of number constants starts at its first, so its value is always one of them.
     return numberConstants(type)?.[0] ?? null;
 };

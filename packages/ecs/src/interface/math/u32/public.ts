@@ -5,3 +5,4 @@ export { countTrailingZeros } from "./count-trailing-zeros.js";
 export { countOneBits } from "./count-one-bits.js";
 export { reverseBits } from "./reverse-bits.js";
 export { shiftRight } from "./shift-right.js";
+export { default } from "./default.js";

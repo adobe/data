@@ -52,3 +52,4 @@ export * from "./tanh.js";
 export * from "./trunc.js";
 export * from "./zero.js";
 export * from "./schema.js";
+export { zero as default } from "./zero.js";

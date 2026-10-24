@@ -197,6 +197,8 @@ export const createConverter = (host: TypeHost, root: string) => {
                     if (statement.source !== null) return await fromSource(module, statement.source.value, localName, kind, seen);
                     const imported = module.imports.get(localName);
                     if (imported !== undefined && imported.imported !== null) return await fromSource(module, imported.source, imported.imported, kind, seen);
+                    const local = kind(module).get(localName);
+                    if (local !== undefined) return { module, declaration: local };
                 }
             }
             else if (statement.type === "ExportAllDeclaration" && statement.exported === null) {
@@ -511,7 +513,8 @@ export const createConverter = (host: TypeHost, root: string) => {
         const [argument] = parameters;
         if (found !== null && intrinsic(found) === "schema" && parameters.length === 1 && argument !== undefined) {
             const schema = await valueOfType(argument, module, new Set());
-            return isSchema(schema) ? schema : fail(module, argument, "Schema.Type takes a schema");
+            if (!isSchema(schema)) return fail(module, argument, "Schema.Type takes a schema");
+            return holdsDefault(schema) ? fail(module, argument, `a schema holds no default: give ${path.join(".")}'s alias a namespace with one, \`const T = { default: ... }\``) : schema;
         }
         return fail(module, type, `${use === "input" ? "input" : "declared"} type ${path.join(".")} takes type arguments, which ${words(use).a} doesn't, except Schema.Type`);
     };
@@ -651,4 +654,8 @@ export const pathOf = (expression: Node): readonly string[] | null => {
 const isNode = (value: object): value is Node => typeof Reflect.get(value, "start") === "number" && typeof Reflect.get(value, "end") === "number" && typeof Reflect.get(value, "type") === "string";
 
 // `Schema.Type`'s argument is constrained to `Schema` where it's written, so TypeScript checked an object's form.
+/** Whether a value a schema type writes holds a `default` anywhere. */
+const holdsDefault = (value: unknown): boolean =>
+    typeof value === "object" && value !== null && (Array.isArray(value) ? value.some(holdsDefault) : "default" in value || Object.values(value).some(holdsDefault));
+
 const isSchema = (value: unknown): value is Schema => typeof value === "object" && value !== null && !Array.isArray(value);

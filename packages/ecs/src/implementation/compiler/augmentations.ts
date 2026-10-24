@@ -160,9 +160,10 @@ const uniqueName = (code: string, base: string): string => {
 const allowsNullSchema = (schema: Schema): boolean =>
     ("type" in schema && schema.type === "null") || ("const" in schema && schema.const === null) || ("anyOf" in schema && schema.anyOf.some(allowsNullSchema));
 
-/** A value as code: JSON, but -0 as itself, which JSON writes as 0. */
+/** A value as code: JSON, but -0 and the numbers JSON can't write as themselves. */
 const codeOf = (value: unknown): string => {
     if (Object.is(value, -0)) return "-0";
+    if (typeof value === "number" && !Number.isFinite(value)) return Number.isNaN(value) ? "NaN" : value > 0 ? "Infinity" : "-Infinity";
     if (Array.isArray(value)) return `[${value.map(codeOf).join(",")}]`;
     if (typeof value === "object" && value !== null) return `{${Object.entries(value).map(([field, item]) => `${JSON.stringify(field)}:${codeOf(item)}`).join(",")}}`;
     return JSON.stringify(value);
@@ -178,7 +179,6 @@ type Start = { readonly value: Value } | { readonly fresh: "Map" | "Set" } | { r
 
 /** A schema's zero value: 0, false or "", each item's and field's, a union's literal that is one, or a fresh set or map. */
 const zeroOf = (schema: Schema): Start => {
-    if ("default" in schema && isValue(schema.default)) return { value: schema.default };
     if ("const" in schema) return { value: schema.const };
     if ("anyOf" in schema) {
         for (const member of schema.anyOf) if ("const" in member && (member.const === 0 || member.const === false || member.const === "")) return { value: member.const };
@@ -214,6 +214,41 @@ const zeroOf = (schema: Schema): Start => {
             return { value };
         }
     }
+};
+
+/**
+ * What a resource reduced with `operator` starts at when it declares no start: the operator's identity, leaf by leaf,
+ * within the schema's range, as a fold of no contributions leaves it; null for a schema of other leaves.
+ */
+const identityOf = (schema: Schema, operator: unknown): Value | null => {
+    if ("type" in schema && schema.type === "boolean") return operator === "&";
+    if ("type" in schema && (schema.type === "number" || schema.type === "integer")) {
+        const minimum = "minimum" in schema ? schema.minimum : undefined;
+        const maximum = "maximum" in schema ? schema.maximum : undefined;
+        switch (operator) {
+            case "+": case "|": case "^": return 0;
+            case "*": return 1;
+            // Every bit set: -1, or a range's largest for an unsigned one.
+            case "&": return minimum !== undefined && minimum >= 0 ? maximum ?? null : -1;
+            case "min": return maximum ?? Infinity;
+            case "max": return minimum ?? -Infinity;
+            default: return null;
+        }
+    }
+    if ("type" in schema && schema.type === "array" && schema.minItems !== undefined && schema.minItems === schema.maxItems) {
+        const item = identityOf(schema.items, operator);
+        return item === null ? null : Array.from({ length: schema.minItems }, () => item);
+    }
+    if ("type" in schema && schema.type === "object") {
+        const value: { [field: string]: Value } = {};
+        for (const [field, property] of Object.entries(schema.properties)) {
+            const leaf = identityOf(property, operator);
+            if (leaf === null) return null;
+            value[field] = leaf;
+        }
+        return value;
+    }
+    return null;
 };
 
 /**
@@ -350,63 +385,211 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
         return object === null ? null : [...object, expression.property.name];
     };
 
-    /** Whether a schema's value, as its module writes it, gives a `default`: in place, or through constants and spreads. */
-    const holdsDefault = async (expression: Declarator["init"], at: Module, seen: Set<object>): Promise<boolean> => {
+    /** A value as its module writes it, and whether an `as const` around it makes what it writes in place readonly. */
+    type Written = { readonly expression: NonNullable<Declarator["init"]>; readonly module: Module; readonly constant: boolean; readonly annotation?: TypeNode };
+
+    /** Whether an expression is an `as const` assertion, under parentheses and other casts. */
+    const isConstAssertion = (expression: Declarator["init"]): boolean => {
+        let inner = expression;
+        while (inner !== null && (inner.type === "TSAsExpression" || inner.type === "TSSatisfiesExpression" || inner.type === "TSNonNullExpression" || inner.type === "ParenthesizedExpression")) {
+            if (inner.type === "TSAsExpression" && inner.typeAnnotation.type === "TSTypeReference" && inner.typeAnnotation.typeName.type === "Identifier" && inner.typeAnnotation.typeName.name === "const") return true;
+            inner = inner.expression;
+        }
+        return false;
+    };
+
+    /** The `default` property's value of an object a module writes: in place, or through constants and spreads. */
+    const defaultProperty = async (expression: Declarator["init"], at: Module, constant: boolean, seen: Set<object>): Promise<Written | null> => {
         const value = unwrapped(expression);
-        if (value === null || seen.has(value)) return false;
+        if (value === null || seen.has(value)) return null;
         seen.add(value);
+        const inConst = constant || isConstAssertion(expression);
         if (value.type === "Identifier" || value.type === "MemberExpression") {
             const path = pathOf(value);
             const found = path === null ? null : await converter.constantNamed(path, at);
-            return found !== null && await holdsDefault(found.declaration.init, found.module, seen);
+            return found === null ? null : await defaultProperty(found.declaration.init, found.module, false, seen);
         }
-        if (value.type !== "ObjectExpression") return false;
+        if (value.type !== "ObjectExpression") return null;
         for (const property of value.properties) {
-            if (property.type === "SpreadElement" ? await holdsDefault(property.argument, at, seen) : !property.computed && property.key.type === "Identifier" && property.key.name === "default") return true;
-        }
-        return false;
-    };
-
-    /** Whether the value a type's name names, as `Vec3` names its namespace beside its type, has a schema with a `default`. */
-    const declaresSchemaDefault = async (path: readonly string[]): Promise<boolean> => {
-        const member = await converter.constantNamed([...path, "schema"], module);
-        if (member !== null) return await holdsDefault(member.declaration.init, member.module, new Set());
-        const holder = await converter.constantNamed(path, module);
-        const value = unwrapped(holder?.declaration.init ?? null);
-        if (holder === null || value?.type !== "ObjectExpression") return false;
-        for (const property of value.properties) {
-            if (property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === "schema") {
-                return await holdsDefault(property.value, holder.module, new Set());
+            if (property.type === "SpreadElement") {
+                const found = await defaultProperty(property.argument, at, inConst, seen);
+                if (found !== null) return found;
+            }
+            else if (!property.computed && property.key.type === "Identifier" && property.key.name === "default") {
+                return { expression: property.value, module: at, constant: inConst };
             }
         }
-        return false;
+        return null;
     };
 
-    /** A declaration's type's namespaced schema default, as code reading it, and the local binding it reads; null without one. */
-    const namespacedDefault = async (type: TypeNode, name: string): Promise<{ readonly text: string; readonly local?: string } | null> => {
-        if (type.type !== "TSTypeReference" || type.typeArguments !== null) return null;
-        const path = typeNameParts(type.typeName);
+    /** The value of a type's namespace's `default`, as `Vec3` names its namespace beside its type: a namespace's export, or a constant object's property. */
+    const defaultWritten = async (path: readonly string[]): Promise<Written | null> => {
+        const member = await converter.constantNamed([...path, "default"], module);
+        if (member !== null && member.declaration.init !== null) {
+            const annotation = member.declaration.id.type === "Identifier" ? member.declaration.id.typeAnnotation?.typeAnnotation : undefined;
+            return { expression: member.declaration.init, module: member.module, constant: false, annotation };
+        }
+        const holder = await converter.constantNamed(path, module);
+        return holder === null ? null : await defaultProperty(holder.declaration.init, holder.module, false, new Set());
+    };
+
+    /**
+     * Whether a type is deeply readonly as written: no array, field, map or set of it can change in place. `fields`
+     * takes an object's fields as readonly, as `Readonly<...>` makes them.
+     */
+    const readonlyType = async (type: TypeNode, at: Module, seen: Set<object>, fields = false): Promise<boolean> => {
+        switch (type.type) {
+            case "TSNumberKeyword": case "TSStringKeyword": case "TSBooleanKeyword": case "TSNullKeyword": case "TSUndefinedKeyword": case "TSLiteralType": return true;
+            case "TSParenthesizedType": return await readonlyType(type.typeAnnotation, at, seen);
+            case "TSUnionType": return (await Promise.all(type.types.map(member => readonlyType(member, at, seen)))).every(Boolean);
+            case "TSTypeOperator": {
+                if (type.operator !== "readonly") return false;
+                const inner = type.typeAnnotation.type === "TSParenthesizedType" ? type.typeAnnotation.typeAnnotation : type.typeAnnotation;
+                if (inner.type === "TSArrayType") return await readonlyType(inner.elementType, at, seen);
+                if (inner.type === "TSTupleType") {
+                    return (await Promise.all(inner.elementTypes.map(element => element.type === "TSOptionalType" || element.type === "TSRestType" || element.type === "TSNamedTupleMember" ? false : readonlyType(element, at, seen)))).every(Boolean);
+                }
+                return false;
+            }
+            case "TSTypeLiteral": {
+                for (const member of type.members) {
+                    if (member.type !== "TSPropertySignature" || (member.readonly !== true && !fields) || member.typeAnnotation === null || !await readonlyType(member.typeAnnotation.typeAnnotation, at, seen)) return false;
+                }
+                return true;
+            }
+            case "TSTypeReference": {
+                const parts = typeNameParts(type.typeName);
+                const parameters = type.typeArguments?.params ?? [];
+                const [only] = parts;
+                if (parts.length === 1 && only !== undefined && !at.types.has(only) && !at.imports.has(only) && (only === "ReadonlyMap" || only === "ReadonlySet" || only === "ReadonlyArray")) {
+                    return (await Promise.all(parameters.map(parameter => readonlyType(parameter, at, seen)))).every(Boolean);
+                }
+                const [argument] = parameters;
+                if (parts.length === 1 && only === "Readonly" && !at.types.has(only) && !at.imports.has(only) && argument !== undefined) return await readonlyType(argument, at, seen, true);
+                const found = await converter.typeNamed(parts, at);
+                if (found === null || typeof found === "string" || seen.has(found.declaration)) return false;
+                // A type a schema names, as the package's math types are, is a readonly value.
+                if (host.packagePath(found.module.file) === "interface/schema/schema" && found.declaration.id?.name === "Type") return true;
+                if (host.packagePath(found.module.file) === "interface/entity/entity" && found.declaration.id?.name === "Entity") return true;
+                seen.add(found.declaration);
+                if (found.declaration.type === "TSTypeAliasDeclaration") return found.declaration.typeParameters === null && await readonlyType(found.declaration.typeAnnotation, found.module, seen, fields);
+                if (found.declaration.type !== "TSInterfaceDeclaration" || found.declaration.extends.length > 0) return false;
+                for (const member of found.declaration.body.body) {
+                    if (member.type !== "TSPropertySignature" || (member.readonly !== true && !fields) || member.typeAnnotation === null || !await readonlyType(member.typeAnnotation.typeAnnotation, found.module, seen)) return false;
+                }
+                return true;
+            }
+            default: return false;
+        }
+    };
+
+    /** Whether a value a module writes is deeply readonly by its type: a literal, `as const` data, or a binding typed readonly. */
+    const readonlyValue = async (written: Written, seen: Set<object>): Promise<boolean> => {
+        const { module: at, annotation } = written;
+        if (annotation !== undefined) return await readonlyType(annotation, at, seen);
+        const constant = written.constant || isConstAssertion(written.expression);
+        const value = unwrapped(written.expression);
+        if (value === null || seen.has(value)) return false;
+        seen.add(value);
+        switch (value.type) {
+            case "Literal": return true;
+            case "TemplateLiteral": return value.expressions.length === 0;
+            case "UnaryExpression": return value.operator === "-" && (value.argument.type === "Literal" || (value.argument.type === "Identifier" && value.argument.name === "Infinity"));
+            case "ArrayExpression":
+                return constant && (await Promise.all(value.elements.map(element => element === null || element.type === "SpreadElement" ? false : readonlyValue({ expression: element, module: at, constant }, seen)))).every(Boolean);
+            case "ObjectExpression":
+                return constant && (await Promise.all(value.properties.map(property => property.type === "SpreadElement" || property.computed
+                    ? false : readonlyValue({ expression: property.value, module: at, constant }, seen)))).every(Boolean);
+            case "Identifier": case "MemberExpression": {
+                if (value.type === "Identifier" && (value.name === "Infinity" || value.name === "NaN" || value.name === "undefined")) return true;
+                const path = pathOf(value);
+                const found = path === null ? null : await converter.constantNamed(path, at);
+                if (found === null || found.declaration.init === null) return false;
+                const declared = found.declaration.id.type === "Identifier" ? found.declaration.id.typeAnnotation?.typeAnnotation : undefined;
+                return await readonlyValue({ expression: found.declaration.init, module: found.module, constant: false, annotation: declared }, seen);
+            }
+            default: return false;
+        }
+    };
+
+    /** The value a module writes, when it's data the build reads: literals, and arrays and objects of them, through constants; else undefined. */
+    const staticValue = async (written: Written, seen: Set<object>): Promise<Value | undefined> => {
+        const value = unwrapped(written.expression);
+        if (value === null || seen.has(value)) return undefined;
+        seen.add(value);
+        const at = written.module;
+        switch (value.type) {
+            case "Literal": return typeof value.value === "string" || typeof value.value === "number" || typeof value.value === "boolean" || value.value === null ? value.value : undefined;
+            case "UnaryExpression":
+                if (value.operator !== "-") return undefined;
+                if (value.argument.type === "Identifier" && value.argument.name === "Infinity") return -Infinity;
+                return value.argument.type === "Literal" && typeof value.argument.value === "number" ? -value.argument.value : undefined;
+            case "ArrayExpression": {
+                const items: Value[] = [];
+                for (const element of value.elements) {
+                    const item = element === null || element.type === "SpreadElement" ? undefined : await staticValue({ expression: element, module: at, constant: written.constant }, seen);
+                    if (item === undefined) return undefined;
+                    items.push(item);
+                }
+                return items;
+            }
+            case "ObjectExpression": {
+                const fields: { [field: string]: Value } = {};
+                for (const property of value.properties) {
+                    if (property.type === "SpreadElement" || property.computed || property.key.type !== "Identifier") return undefined;
+                    const field = await staticValue({ expression: property.value, module: at, constant: written.constant }, seen);
+                    if (field === undefined) return undefined;
+                    fields[property.key.name] = field;
+                }
+                return fields;
+            }
+            case "Identifier": case "MemberExpression": {
+                if (value.type === "Identifier" && (value.name === "Infinity" || value.name === "NaN")) return value.name === "Infinity" ? Infinity : NaN;
+                const path = pathOf(value);
+                const found = path === null ? null : await converter.constantNamed(path, at);
+                return found === null || found.declaration.init === null ? undefined : await staticValue({ expression: found.declaration.init, module: found.module, constant: false }, seen);
+            }
+            default: return undefined;
+        }
+    };
+
+    /** A declaration's type's namespace's default, `T.default`, as code reading it, and the local binding it reads; null without one. */
+    const namespacedDefault = async (type: TypeNode, name: string): Promise<{ readonly text: string; readonly local?: string; readonly packaged: boolean } | null> => {
+        const inner = type.type === "TSParenthesizedType" ? type.typeAnnotation : type;
+        if (inner.type !== "TSTypeReference" || inner.typeArguments !== null) return null;
+        const path = typeNameParts(inner.typeName);
         const [first] = path;
-        if (first === undefined || !await declaresSchemaDefault(path)) return null;
+        const written = first === undefined ? null : await defaultWritten(path);
+        if (first === undefined || written === null) return null;
+        // The package's own types' defaults are their zero values and identities, which a reduction's identity outranks.
+        const packaged = host.packagePath(written.module.file) !== null;
+        if (!await readonlyValue(written, new Set())) {
+            fail(written.module, written.expression, `${path.join(".")}.default is shared by every row and world that starts from it, so it's deeply readonly: \`const ${path.at(-1) ?? "T"} = { default: ... } as const\`, or a const typed readonly: ReadonlyMap, ReadonlySet, Readonly<...>, readonly arrays and fields`);
+        }
         const imported = module.imports.get(first);
-        if (imported !== undefined && !imported.value) fail(module, type, `${name}'s type ${path.join(".")} starts at its schema's default: import ${first} as a value, which the registration reads`);
-        return { text: `${path.join(".")}.schema.default`, local: imported === undefined ? first : undefined };
+        if (imported !== undefined && !imported.value) {
+            // Imported as a type alone, the namespace can't be read here, so a default the build can read is written in.
+            const value = await staticValue(written, new Set());
+            if (value === undefined) fail(module, inner, `${name}'s type ${path.join(".")} starts at ${path.join(".")}.default: import ${first} as a value, which the registration reads`);
+            return { text: codeOf(value), packaged };
+        }
+        return { text: `${path.join(".")}.default`, local: imported === undefined ? first : undefined, packaged };
     };
 
     /**
      * What a value of `type`, of `schema`, starts at as code: as `zeroOf` says, but each field of a struct and item of
-     * a tuple written here starting at its own type's default, its namespaced schema's included, by the same rules;
+     * a tuple written here starting at its own type's default, its namespace's included, by the same rules;
      * and the local bindings that code reads.
      */
     const startOf = async (type: TypeNode, schema: Schema): Promise<{ readonly text: string; readonly locals: readonly string[] } | { readonly fresh: "Map" | "Set" } | { readonly none: string }> => {
         const unwrapped = type.type === "TSParenthesizedType" ? type.typeAnnotation : type;
         const inner = unwrapped.type === "TSTypeOperator" && unwrapped.operator === "readonly" && unwrapped.typeAnnotation !== undefined ? unwrapped.typeAnnotation : unwrapped;
-        const namespaced = "default" in schema ? null : await namespacedDefault(inner, "it");
+        const namespaced = await namespacedDefault(inner, "it");
         if (namespaced !== null) return { text: namespaced.text, locals: namespaced.local === undefined ? [] : [namespaced.local] };
-        const parts = inner.type === "TSTypeLiteral" && "type" in schema && schema.type === "object" && !("default" in schema)
+        const parts = inner.type === "TSTypeLiteral" && "type" in schema && schema.type === "object"
             ? inner.members.flatMap(field => field.type === "TSPropertySignature" && !field.computed && field.key.type === "Identifier" && field.typeAnnotation !== null
                 ? [{ name: field.key.name, type: field.typeAnnotation.typeAnnotation, schema: schema.properties[field.key.name] }] : [])
-            : inner.type === "TSTupleType" && "type" in schema && schema.type === "array" && !("default" in schema)
+            : inner.type === "TSTupleType" && "type" in schema && schema.type === "array"
                 ? inner.elementTypes.flatMap((element, k) => element.type === "TSOptionalType" || element.type === "TSRestType" || element.type === "TSNamedTupleMember" ? [] : [{ name: String(k), type: element, schema: schema.items }])
                 : null;
         if (parts === null || parts.length === 0) {
@@ -421,7 +604,7 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
             texts.push(inner.type === "TSTupleType" ? started.text : `${JSON.stringify(part.name)}: ${started.text}`);
             locals.push(...started.locals);
         }
-        // Without a namespaced default inside, the schema's zero value says the same, as data.
+        // Without a namespace's default inside, the schema's zero value says the same, as data.
         if (locals.length === 0) {
             const zero = zeroOf(schema);
             if ("value" in zero) return { text: codeOf(zero.value), locals };
@@ -429,34 +612,18 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
         return { text: inner.type === "TSTupleType" ? `[${texts.join(", ")}]` : `{ ${texts.join(", ")} }`, locals };
     };
 
-    /** The platform class a value that isn't data starts as a fresh, empty instance of, per world: `Map` or `Set`, through the aliases it names. */
-    const freshOf = async (type: TypeNode, at: Module, seen: Set<object>): Promise<"Map" | "Set" | null> => {
-        const inner = type.type === "TSParenthesizedType" ? type.typeAnnotation : type;
-        if (inner.type !== "TSTypeReference") return null;
-        const parts = typeNameParts(inner.typeName);
-        const found = await converter.typeNamed(parts, at);
-        if (found === "global") {
-            const [name] = parts;
-            return parts.length === 1 && (name === "Map" || name === "Set") ? name : null;
-        }
-        if (found === null || typeof found === "string" || found.declaration.type !== "TSTypeAliasDeclaration" || seen.has(found.declaration)) return null;
-        seen.add(found.declaration);
-        return await freshOf(found.declaration.typeAnnotation, found.module, seen);
-    };
-
     /** A declared default: a literal type, never `typeof` a value. */
     const literalDefault = async (type: TypeNode, name: string): Promise<Value> => {
-        if (type.type === "TSTypeQuery") fail(module, type, `${name}'s default is a literal type, never \`typeof\` a value: without one, its type's zero value, null, or the default of its type's namespaced schema is what it starts at`);
+        if (type.type === "TSTypeQuery") fail(module, type, `${name}'s default is a literal type, never \`typeof\` a value: without one, it starts at its type's namespace's \`default\`, its reduction's identity, null, or its type's zero value`);
         return await converter.valueOfType(type, module, new Set());
     };
 
-    /** How to give a type's values a start no zero value gives: by a literal, its schema, or null for a value that isn't data. */
-    const workaround = (type: TypeNode, data: boolean): string => {
-        if (!data) return "let its type allow null, and give it a value once there is one";
-        if (type.type === "TSTypeReference" && type.typeArguments !== null) return "declare `default:` as a literal, or give its schema one: `Schema.Type<{ ...; default: ... }>`";
-        const name = type.type === "TSTypeReference" ? typeNameParts(type.typeName).join(".") : null;
-        const named = name === null ? "a type of its own" : `\`${name}\``;
-        return `declare \`default:\` as a literal, or declare ${named} with a namespace whose schema holds its default: \`type ${name ?? "Start"} = ...; const ${name ?? "Start"} = { schema: { ...; default: ... } }\``;
+    /** How to give a type's values a start no zero value gives: a literal, or its type's namespace's `default`. */
+    const workaround = (type: TypeNode): string => {
+        const name = type.type === "TSTypeReference" && type.typeArguments === null ? typeNameParts(type.typeName).join(".") : null;
+        return name === null
+            ? "declare `default:` as a literal, or name its type and give the type a namespace with a `default`: `type Start = ...; const Start = { default: ... }`"
+            : `declare \`default:\` as a literal, or give ${name} a namespace with a \`default\`: \`const ${name} = { default: ... }\``;
     };
 
     /** Where a trait a block of this module declares is registered, which what declares it comes after. */
@@ -549,24 +716,29 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
                 if (schema !== undefined && given !== undefined && !matchesSchema(schema, given)) fail(module, defaultNode ?? member, `${key.name}'s default isn't of its declared type`);
                 let start = given === undefined ? undefined : codeOf(given);
                 let fresh: "Map" | "Set" | null = null;
-                // First a literal, then the type's schema's default; only resources and derived components need a start.
-                const namespaced = given !== undefined || (schema !== undefined && "default" in schema) ? null : await namespacedDefault(typeNode, key.name);
-                if (namespaced !== null) {
+                // First a literal, then its type's namespace's default; only resources and derived components need a
+                // start otherwise, and a component holding an object, whose start a joined thread knows by identity.
+                const started = kind === "resource" || builtIns.has("derived") || schema === undefined || !isStruct(schema);
+                const namespaced = given !== undefined || !started ? null : await namespacedDefault(typeNode, key.name);
+                const reduced = builtIns.get("reduce");
+                const identity = given !== undefined || (namespaced !== null && !namespaced.packaged) || kind !== "resource" || reduced === undefined || schema === undefined
+                    ? null : identityOf(schema, JSON.parse(reduced.text));
+                if (identity !== null) start = codeOf(identity);
+                else if (namespaced !== null) {
                     start = namespaced.text;
                     if (namespaced.local !== undefined) at = Math.max(at, endOfLocal(namespaced.local));
                 }
-                else if (given === undefined && (kind === "resource" || builtIns.has("derived")) && !(schema !== undefined && "default" in schema)) {
+                else if (given === undefined && (kind === "resource" || builtIns.has("derived"))) {
                     if (schema === undefined ? await allowsNullType(typeNode, module, new Set()) : allowsNullSchema(schema)) {
                         // It starts at null, as the world reads a value with neither.
                     }
                     else if (schema === undefined) {
-                        fresh = await freshOf(typeNode, module, new Set());
-                        if (fresh === null) fail(module, member, `${kind} ${key.name} isn't data, so it has no zero value: ${workaround(typeNode, false)}`);
+                        fail(module, member, `${kind} ${key.name} holds a value that isn't data, so nothing gives it a start: let its type allow null, or give its type a namespace with a deeply readonly \`default\`; a ReadonlyMap or ReadonlySet starts fresh in each world, a Map or Set doesn't`);
                     }
                     else {
                         const zero = await startOf(typeNode, schema);
                         if ("fresh" in zero) fresh = zero.fresh;
-                        else if ("none" in zero) fail(module, member, `${kind} ${key.name} starts at no value its type gives, since ${zero.none}; ${workaround(typeNode, true)}`);
+                        else if ("none" in zero) fail(module, member, `${kind} ${key.name} starts at no value its type gives, since ${zero.none}; ${workaround(typeNode)}`);
                         // A constant is the one value it can start at, which the world reads from its schema.
                         else if (!("const" in schema)) {
                             start = zero.text;
@@ -574,8 +746,8 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
                         }
                     }
                 }
-                const parts = schema === undefined ? [] : [`type: ${start === undefined ? codeOf(schema) : `${codeOf(schema).slice(0, -1)},"default":${start}}`}`];
-                if (schema === undefined && start !== undefined) parts.push(`default: ${start}`);
+                const parts = schema === undefined ? [] : [`type: ${codeOf(schema)}`];
+                if (start !== undefined) parts.push(`default: ${start}`);
                 parts.push(...traits);
                 if (fresh !== null) parts.push(`fresh: "${fresh}"`);
                 insertions.push({ at, text: `\n${record}(${key.name}, "${kind}", ${parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`});` });

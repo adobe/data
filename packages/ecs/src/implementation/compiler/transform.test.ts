@@ -1395,6 +1395,22 @@ describe("inferred access", () => {
         expect(result !== null && "code" in result ? [result.code.includes("components: null"), result.warnings.length] : null).toEqual([true, 1]);
     });
 
+    test("an observer's row it can't follow as unknown without a warning, since the world takes an observer's as read", async () => {
+        const result = await transform(system("observer: true, components: { with: [position] }", "(row) => { helper(row); }"));
+        expect(result !== null && "code" in result ? [result.code.includes("components: null"), result.warnings] : null).toEqual([true, []]);
+    });
+
+    test("a lookup's rows it can't follow without a warning, since what they hold is what the declaration says", async () => {
+        const result = await transform(system("components: { with: [target] }, lookup: { targets: { with: [mass] } }", "(row, { lookup }) => { helper(lookup.targets(row[target])); }"));
+        expect(result !== null && "code" in result ? [result.code.includes(`"targets": null`), result.warnings] : null).toEqual([true, []]);
+    });
+
+    test("warnings name the module by the label given, with line and column", async () => {
+        const result = await transformKernels(`${header}${system("components: { with: [position] }", "(row) => { helper(row); }")}`, "/repo/app/src/features/a/model.ts", parse,
+            async specifier => specifier === "ecs" ? ownCopy : null, () => "", createLinker(host({}, reductions), parse), true, "src/features/a/model.ts");
+        expect(result !== null && "code" in result ? result.warnings.map(warning => /^[^ ]*:/.exec(warning)?.[0]) : null).toEqual([`src/features/a/model.ts:${header.split("\n").length}:${"const system = System.create({ components: { with: [position] } }, ".length + 1}:`]);
+    });
+
     test("resources read, written and reduced, however its context reaches them", async () => {
         expect(await inferred(system("", "(context) => { context.resources[score] = context.resources[delta]; }")))
             .toContain("resources: { read: [delta], write: [score], reduce: [] }");

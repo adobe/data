@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { parseAst } from 'vite';
 import { idOfKey, takeIdOfDeclaration } from '../../interface/registry/ids.js';
 import { estreeOf } from './estree.js';
-import { identify as identifyModule, moduleIdOf } from './identify.js';
+import { identify as identifyModule, moduleIdOf, moduleLabelOf } from './identify.js';
 import { ownCopy } from './paths.js';
 import { decodeMappings } from './source-map.js';
 
@@ -156,6 +156,15 @@ describe("identify, for systems, rules and finalizers", () => {
         const result = await identifyModule(`export const position = Symbol();`, null, parse, resolve);
         expect(result !== null && "failure" in result ? result.failure : result).toContain("package.json");
         expect(await identifyModule(`export const two = 2;`, null, parse, resolve)).toBe(null);
+    });
+});
+
+describe("moduleLabelOf", () => {
+    test("is the module's path in its package, else a dependency's package and subpath, else its file's name", () => {
+        const app = (directory: string) => directory === "/repo/app" ? { name: "app", version: "1.0.0" } : undefined;
+        expect(moduleLabelOf("/repo/app/src/features/a/model.ts?t=1", app)).toBe("src/features/a/model.ts");
+        expect(moduleLabelOf("/x/node_modules/keys/index.js", () => undefined)).toBe("keys/index.js");
+        expect(moduleLabelOf("/loose/model.ts", () => undefined)).toBe("model.ts");
     });
 });
 

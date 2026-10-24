@@ -205,6 +205,8 @@ export const transformKernels = async (
     code: string, id: string, parse: Parse, resolveSystemImport: ResolveSystemImport, kernelUrl: KernelUrl, linker?: Linker,
     /** Whether unflagged systems are tried as kernels; tests turn it off to run their bodies as written. */
     automatic = true,
+    /** How messages name the module: its path in its package; the file's name without one. */
+    label?: string,
 ): Promise<TransformResult | null> => {
     if ((!code.includes("System") && !code.includes("Finalizer")) || id.includes("\0")) return null;
     const program = parse(code);
@@ -214,7 +216,10 @@ export const transformKernels = async (
     const module = createModule(file, program, locateIn(code));
     linker?.add(module);
     const dependencies = new Set<string>();
-    const at = (node: Node): string => `${posix.basename(file)}:${module.locate(node.start).line}`;
+    const at = (node: Node): string => {
+        const { line, column } = module.locate(node.start);
+        return `${label ?? posix.basename(file)}:${line}:${column}`;
+    };
     const warnings: string[] = [];
     const accessName = uniqueName(code, "access$");
     let accessing = false;
@@ -282,10 +287,9 @@ export const transformKernels = async (
             const used = kernel?.used ?? inOrder(usedBy(declared, body, module.bindings, positions), declared);
             requireRequired(used, declared, body);
             const where = at(body);
-            if (used.query === null) warnings.push(`${where}: the build can't follow how this body uses its row, so it takes every component in with, added and changed as written: index the row by key directly, or destructure it by key, to let it tell what the body reads and writes.`);
-            if (used.lookups !== null && [...used.lookups.values()].some(read => read === null) || used.lookups === null && declares(declared, "lookup")) {
-                warnings.push(`${where}: the build can't follow how this body uses a lookup's rows, so it takes everything they hold as read.`);
-            }
+            // An observer's row, and a lookup's rows, it can't follow are taken as read whole, which is what their
+            // declarations already say; only a row taken as written whole costs what the author should know of.
+            if (used.query === null && !declares(declared, "observer")) warnings.push(`${where}: the build can't follow how this body uses its row, so it takes every component in with, added and changed as written: index the row by key directly, or destructure it by key, to let it tell what the body reads and writes.`);
             accessing = true;
             const access = accessText(used, where);
             if (kernel !== undefined) {

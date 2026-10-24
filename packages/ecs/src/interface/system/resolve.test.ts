@@ -29,6 +29,9 @@ describe("componentLists", () => {
     it("takes a row the build didn't follow as writing every member, its added and changed filters' included", () => {
         expect(componentLists({ with: [mass], changed: [position] }, null, false)).toEqual({ write: [mass, position], changed: [position] });
     });
+    it("takes an observer's row the build didn't follow as reading every member, writing none", () => {
+        expect(componentLists({ with: [mass], changed: [position] }, null, true)).toEqual({ read: [mass, position], changed: [position] });
+    });
 });
 
 describe("resourceUses", () => {

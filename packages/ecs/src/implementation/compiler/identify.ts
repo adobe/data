@@ -19,6 +19,21 @@ const dependency = /\/node_modules\/(?!.*\/node_modules\/)(.+)$/;
 /** What a directory's package.json gives: undefined without one, null for one without a name. */
 export type PackageOf = (directory: string) => { readonly name: string; readonly version?: string } | null | undefined;
 
+/** A module's file without a query, with forward slashes. */
+const pathOf = (file: string): string => (file.split("?")[0] ?? file).replace(/\\/g, "/");
+
+/** The nearest package.json above a module that has a name, with the module's path in it. */
+const packageAbove = (file: string, packageOf: PackageOf): { readonly name: string; readonly version?: string; readonly path: string } | null => {
+    const path = pathOf(file);
+    for (let directory = posix.dirname(path); ; directory = posix.dirname(directory)) {
+        const found = packageOf(directory);
+        if (found !== null && found !== undefined) return { ...found, path: posix.relative(directory, path) };
+        // A filesystem's root, `/` or a drive's `C:`, whose parent posix paths give as itself or as `.`.
+        const parent = posix.dirname(directory);
+        if (parent === directory || parent === ".") return null;
+    }
+};
+
 /**
  * A module's id: the name and version of the nearest package.json above it that has a name, and its path in that
  * package, else for a dependency its package name and subpath; null outside both. Without a query and with forward
@@ -26,16 +41,14 @@ export type PackageOf = (directory: string) => { readonly name: string; readonly
  * different versions have different ids.
  */
 export const moduleIdOf = (file: string, packageOf: PackageOf): string | null => {
-    const path = (file.split("?")[0] ?? file).replace(/\\/g, "/");
-    for (let directory = posix.dirname(path); ; directory = posix.dirname(directory)) {
-        const found = packageOf(directory);
-        if (found !== null && found !== undefined) return `${found.name}${found.version === undefined ? "" : `@${found.version}`}/${posix.relative(directory, path)}`;
-        // A filesystem's root, `/` or a drive's `C:`, whose parent posix paths give as itself or as `.`.
-        const parent = posix.dirname(directory);
-        if (parent === directory || parent === ".") break;
-    }
-    return dependency.exec(path)?.[1] ?? null;
+    const found = packageAbove(file, packageOf);
+    if (found !== null) return `${found.name}${found.version === undefined ? "" : `@${found.version}`}/${found.path}`;
+    return dependency.exec(pathOf(file))?.[1] ?? null;
 };
+
+/** How messages name a module: its path in its package, as its id has it, else the file's name. */
+export const moduleLabelOf = (file: string, packageOf: PackageOf): string =>
+    packageAbove(file, packageOf)?.path ?? dependency.exec(pathOf(file))?.[1] ?? posix.basename(pathOf(file));
 
 /** Whether a binding named `name` is declared in the module's scope: at top level, or as a `var` in any of its blocks. */
 const declaresInModule = (program: Program, name: string): boolean => {

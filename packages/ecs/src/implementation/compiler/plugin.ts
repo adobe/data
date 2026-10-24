@@ -6,7 +6,7 @@ import { isAbsolute } from 'node:path';
 import type { Plugin, Rollup, ViteDevServer } from 'vite';
 import { estreeOf } from './estree.js';
 import { describeFailure } from './failure.js';
-import { identify as identifyModule, moduleIdOf, type PackageOf } from './identify.js';
+import { identify as identifyModule, moduleIdOf, moduleLabelOf, type PackageOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
 import { archetypeInsertions } from './archetypes.js';
@@ -340,7 +340,7 @@ const compilePlugin = (automatic: boolean): Plugin => {
                 if (!serve) return `import.meta.ROLLUP_FILE_URL_${emitChunk(this, buildId(id, index), hash)}`;
                 // Served to node, a kernel's module is its url, so a pool's workers, which import it outside the server, read it too.
                 return JSON.stringify(ssr ? inlinePlaceholder(index, hash) : serveUrl(id, index, hash));
-            }, linker, automatic);
+            }, linker, automatic, moduleLabelOf(id, packageOf));
             const result = ssr && transformed !== null && !("failure" in transformed) ? { ...transformed, code: inlineKernels(transformed.code, transformed.kernels, hashes) } : transformed;
             const parent = id.split("?")[0] ?? id;
             if (result === null) {

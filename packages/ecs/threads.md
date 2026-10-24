@@ -100,10 +100,10 @@ of the browser or node, and a joined thread's `dispose` closes only a `MessagePo
 
 All derived from declarations and, for terminal systems, the plugin's analysis of their bodies; none is a flag.
 
-- **A system's thread** is the thread of every object component and object resource it names in `read`, `write`,
-  `added`, `changed`, `lookup`, `up` and resource `is`, and the key parts of the indexes it looks up through or orders
-  its rows by. Strings and structs don't place it. Components in `has` and `not` are structural, and read a shared
-  presence word, so they don't place it. With no objects, a kernel runs on the pool and any other system on `world`.
+- **A system's thread** is the thread of every object component and object resource its body reads or writes, as
+  the build infers, of those it filters on by `added` and `changed`, of resource `is`, and the key parts of the
+  indexes it looks up through or orders its rows by. Strings and structs don't place it. Components it only requires,
+  in `with`, and those in `not` are structural, and read a shared presence word, so they don't place it. With no objects, a kernel runs on the pool and any other system on `world`.
   Render systems and `kernel: "gpu"` systems are on `world`, with `gpuDevice`.
 - **Errors when declared:** objects of two threads in one system or finalizer, in types and when it's created, which
   registers it. **Errors when joining:** a thread claimed twice; a claimed thread whose systems or finalizers that

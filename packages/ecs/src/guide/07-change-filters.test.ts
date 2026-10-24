@@ -60,8 +60,8 @@ it("runs systems only for what changed since they last ran", async () => {
 const step = System.create({ resources: { is: [map], not: [paused] } }, ({ resources }) => {
     resources[steps] += resources[map].width;
 });
-const pause = System.create({  }, ({ resources }) => { resources[paused] = true; });
-const open = System.create({  }, ({ resources }) => { resources[map] = { width: 4 }; });
+const pause = System.create({}, ({ resources }) => { resources[paused] = true; });
+const open = System.create({}, ({ resources }) => { resources[map] = { width: 4 }; });
 
 let stepped = 0;
 const readSteps = System.create({ observer: true }, ({ resources }) => {

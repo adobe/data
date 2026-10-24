@@ -25,7 +25,8 @@ const spawn = System.create(({ commands }) => {
     commands.spawn([position, velocity, frozen])({ [position]: [0, 0, 0], [velocity]: [2, 0, 0] });
 });
 
-// Runs once per entity with every component in read and write, and none in not.
+// Runs once per entity with every component in with, and none in not. What its body reads and writes the build
+// infers.
 const move = System.create({
     components: { with: [velocity, position], not: [frozen] },
 }, (row, { resources }) => {
@@ -34,7 +35,7 @@ const move = System.create({
 });
 
 // Without components, a system runs once per run.
-const count = System.create({  }, ({ resources }) => {
+const count = System.create({}, ({ resources }) => {
     resources[frames] += 1;
 });
 

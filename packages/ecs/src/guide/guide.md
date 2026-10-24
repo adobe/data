@@ -35,8 +35,8 @@ How to use the ECS. Each excerpt comes from a test in this folder; the link unde
 ## Setup
 
 ```ts
-// vite.config.ts: compiles kernels, checks each system's declaration against its body, reads the schema of each
-// body's input from its type, and gives keys and systems ids.
+// vite.config.ts: infers what each system's body reads and writes, compiles kernels, reads the schema of each body's
+// input from its type, and gives keys and systems ids.
 import { Compiler } from "@adobe/ecs/compiler";
 export default defineConfig({ plugins: [Compiler.plugin()] });
 ```
@@ -49,6 +49,10 @@ precision or width. Traits of your own augment `Traits`. A library builds with V
 chunks, so the plugin sets Vite's `worker.format` to `"es"` when the config doesn't set it, for every worker the app
 bundles, its own included, which then load as module workers (`{ type: "module" }`). The examples create worlds with
 `World.create()`.
+
+A system declares only what its body can't show: the entities it runs over (`with` and `not`), its change filters
+and conditions, and its order. What its body reads, writes and reduces into the plugin infers from the body, so
+write the declaration and body where the system is made, and index rows and resources by key.
 
 ## Basics
 
@@ -84,18 +88,29 @@ declare module "@adobe/ecs" {
 }
 
 // Systems read a world: an observer only reads, after the world's changes apply.
-let values: readonly unknown[] = [];
-const read = System.create({ observer: true, resources: { read: [gravity, floor, names, audio, focused] } }, ({ resources }) => {
+let values: readonly [
+    Resource.Value<typeof gravity>,
+    Resource.Value<typeof floor>,
+    Resource.Value<typeof names>,
+    Resource.Value<typeof audio>,
+    Resource.Value<typeof focused>
+] | null = null;
+const read = System.create({ observer: true }, ({ resources }) => {
     values = [resources[gravity], resources[floor], resources[names], resources[audio], resources[focused]];
 });
 
-await using moon = World.create({ [gravity]: -1.6 });
-// run: runs a system once.
-await moon.run(read);
-expect(values[0]).toBe(-1.6);
+it("holds one value per world", async () => {
+    // A world starts each resource at its default, or at the value given when it's created.
+    await using earth = World.create();
+    await using moon = World.create({ [gravity]: -1.6 });
+    // run: runs a system once.
+    await earth.run(read);
+    expect(values).toEqual([-9.8, -Infinity, new Map(), null, Entity.none]);
+    await moon.run(read);
+    expect(values?.[0]).toBe(-1.6);
 ```
 
-[`01-resources.test.ts`](01-resources.test.ts#L6-L45)
+[`01-resources.test.ts`](01-resources.test.ts#L7-L52)
 
 ### 2. Entities, components and archetypes
 
@@ -151,7 +166,8 @@ it("spawns entities with components", async () => {
 ### 3. Systems
 
 ```ts
-// Runs once per entity with every component in read and write, and none in not.
+// Runs once per entity with every component in with, and none in not. What its body reads and writes the build
+// infers.
 const move = System.create({
     components: { with: [velocity, position], not: [frozen] },
 }, (row, { resources }) => {
@@ -160,7 +176,7 @@ const move = System.create({
 });
 
 // Without components, a system runs once per run.
-const count = System.create({  }, ({ resources }) => {
+const count = System.create({}, ({ resources }) => {
     resources[frames] += 1;
 });
 
@@ -183,7 +199,7 @@ it("runs a system once per entity, or once", async () => {
     expect(moved).toEqual([[1, 0, 0]]);
 ```
 
-[`03-systems.test.ts`](03-systems.test.ts#L28-L57)
+[`03-systems.test.ts`](03-systems.test.ts#L28-L58)
 
 ```ts
 const fail = System.create(() => {
@@ -206,13 +222,13 @@ it("reports what failed as entities", async () => {
     expect(logged).toEqual(["fail: broken"]);
 ```
 
-[`03-systems.test.ts`](03-systems.test.ts#L61-L78)
+[`03-systems.test.ts`](03-systems.test.ts#L62-L79)
 
 ### 4. Ticks and cadence
 
 ```ts
 // clock is the current tick's: delta is the milliseconds since the last one.
-const advance = System.create({  }, ({ resources }) => {
+const advance = System.create({}, ({ resources }) => {
     resources[elapsed] += resources[clock].delta;
 });
 
@@ -247,7 +263,7 @@ it("runs added systems on every tick", async () => {
 ```ts
 // A system asks for another tick by contributing a time to wake: the first tick at or after it runs. Work that a tick's
 // commands start and a later tick finishes asks for the next one this way.
-const step = System.create({  }, ({ resources, reduce }) => {
+const step = System.create({}, ({ resources, reduce }) => {
     resources[steps] += 1;
     if (resources[steps] < 3) reduce[wake](resources[clock].now);
 });
@@ -273,11 +289,11 @@ it("ticks again when a system asks", async () => {
 ### 5. Scheduling and composites
 
 ```ts
-const hit = System.create({ components: { read: [damage], write: [health] } }, row => {
+const hit = System.create({ components: { with: [damage, health] } }, row => {
     row[health] -= row[damage];
 });
 // before, after and during list the systems themselves.
-const heal = System.create({ components: { write: [health] }, after: [hit] }, row => {
+const heal = System.create({ components: { with: [health] }, after: [hit] }, row => {
     row[health] = Math.min(row[health] * 2, 10);
 });
 // A list of systems is a composite: it runs its members as one system, in their order; members without an order
@@ -395,6 +411,9 @@ it("runs a system with a value", async () => {
 ```ts
 declare module "@adobe/ecs" {
     interface Components {
+        [mesh]: { type: number };
+        [sprite]: { type: number };
+        [hidden]: { type: true };
         // Only rules add derived components, starting at their default.
         [drawn]: { type: true; derived: true };
         [layer]: { type: number; derived: true; default: 1 };
@@ -402,11 +421,11 @@ declare module "@adobe/ecs" {
 }
 
 // Entities matching a rule have what it derives, only while they match.
-Rule.create({ components: { has: [mesh], not: [hidden] }, derive: [drawn] });
+Rule.create({ components: { with: [mesh], not: [hidden] }, derive: [drawn] });
 // Several rules may derive one component, present while any matches.
-Rule.create({ components: { has: [sprite], not: [hidden] }, derive: [drawn] });
+Rule.create({ components: { with: [sprite], not: [hidden] }, derive: [drawn] });
 // Rules build on what others derive.
-Rule.create({ components: { has: [drawn] }, derive: [layer] });
+Rule.create({ components: { with: [drawn] }, derive: [layer] });
 ```
 
 [`09-rules.test.ts`](09-rules.test.ts#L11-L27)
@@ -571,8 +590,8 @@ const countPlayers = System.create({ observer: true, lookup: { players: { index:
 
 [`13-indexes.test.ts`](13-indexes.test.ts#L52-L58)
 
-A list stays valid until its call site runs again. Lists and rows read only what the index holds and its lookup's
-`read` names, and `list.changed` tells whether an entity entered, left or moved in it since the system last ran. A
+A list stays valid until its call site runs again. Rows hold what every entity in the index has: its key and its
+`with`. `list.changed` tells whether an entity entered, left or moved in it since the system last ran. A
 lookup's `changed: true` runs its system only when that happened anywhere in the index.
 
 ### 14. Kernels

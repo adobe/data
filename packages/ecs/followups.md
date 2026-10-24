@@ -78,16 +78,6 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 - **An observer system on a joined thread that reads a string resource doesn't post copies of its resources:** nothing
   waits for such posts, and a handle there could outlive its record, so it posts as row systems do. Recommended: accept.
 
-## API optimizations
-
-The plugin is required, so it can derive what consumers now restate. Each is a contract change, reviewed one at a
-time; inferred values are emitted as the same literals the runtime takes today, so none costs anything at runtime.
-
-1. **Access inferred from bodies, saved for discussion with Kris.** Recommended: option B, membership explicit as
-   `components: { with: [...], not: [...] }` and access modes inferred from the body, so rows stay typed over `with`
-   and matching never changes behind the author's back; `write` stays as an override for bodies the plugin can't
-   follow. Option A infers the lists entirely, typing rows over every component.
-
 ## Findings from the todo sample (`src/samples/todo/README.md`)
 
 2. **Observer systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities

@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, test } from 'vitest';
 import { parseAst } from 'vite';
-import { archetypeInsertions } from './archetypes.js';
+import { archetypeFunction, archetypeInsertions } from './archetypes.js';
+import { archetypeIndexKey } from '../../interface/registry/archetypes.js';
 import { insertInto } from './source-map.js';
 import { moduleOf } from './type-schemas.js';
 
@@ -38,6 +39,21 @@ describe("archetypeInsertions", () => {
     });
     test("leaves a module binding a global the appended function uses", () => {
         expect(passed(`${keys}const Object = 1;\nconst Todo = [todo, done] as const;`)).toBe(null);
+    });
+    test("gives an index to a list of a namespace's keys", () => {
+        expect(passed(`import { Report } from "@adobe/ecs";\nconst Reported = [Report.run, Report.errors] as const;`))
+            .toBe(`import { Report } from "@adobe/ecs";\nconst Reported = archetype$([Report.run, Report.errors] as const);`);
+    });
+    test("appends a function indexing a list of symbols each listed once, whether or not their declarations registered yet", () => {
+        const made: unknown = new Function(`${archetypeFunction("index")}\nreturn index;`)();
+        const index = (list: readonly unknown[]): unknown => typeof made === "function" ? Reflect.apply(made, undefined, [list]) : null;
+        const [first, second] = [Symbol(), Symbol()];
+        const list = [first, second];
+        expect(index(list)).toBe(list);
+        expect(typeof Reflect.get(list, archetypeIndexKey)).toBe("number");
+        const twice = [first, first];
+        index(twice);
+        expect(Reflect.get(twice, archetypeIndexKey)).toBe(undefined);
     });
     test("appends a function giving each list its index once", () => {
         const code = `${keys}const Todo = [todo, done] as const;`;

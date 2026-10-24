@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { archetypeCountName, archetypeIndexName } from '../../interface/registry/archetypes.js';
-import { declarationsName } from '../../interface/registry/ids.js';
 import type { PassResult } from './input-schemas.js';
 import type { Insertion } from './source-map.js';
 import type { Module, Node, Statement } from './type-schemas.js';
@@ -8,14 +7,15 @@ import type { Module, Node, Statement } from './type-schemas.js';
 /**
  * The function the plugin appends, as `name`, to a module with lists of keys it can read: it gives a list a
  * program-wide index, by which worlds find what they resolved for it without comparing components, when every member is
- * a component a module declared, each once, and returns the list. Generated code imports nothing, so it reads the
- * declarations and shares the count through globals, as every copy of the package does (`registry/archetypes.ts`).
+ * a symbol, each once, and returns the list. It runs where the list is made, before any key's declaration may be
+ * registered, so whether they're components is checked where the list is used. Generated code imports nothing, so it
+ * shares the count through a global, as every copy of the package does (`registry/archetypes.ts`).
  */
 export const archetypeFunction = (name: string): string => [
     `function ${name}(list) {`,
-    ` const declared = globalThis[Symbol.for(${JSON.stringify(declarationsName)})], index = Symbol.for(${JSON.stringify(archetypeIndexName)}), count = Symbol.for(${JSON.stringify(archetypeCountName)});`,
-    ` if (!declared || Object.prototype.hasOwnProperty.call(list, index) || !Object.isExtensible(list)) return list;`,
-    ` for (let k = 0; k < list.length; k++) { const entry = declared.get(list[k]); if (!entry || entry.kind !== "component" || list.indexOf(list[k]) < k) return list; }`,
+    ` const index = Symbol.for(${JSON.stringify(archetypeIndexName)}), count = Symbol.for(${JSON.stringify(archetypeCountName)});`,
+    ` if (Object.prototype.hasOwnProperty.call(list, index) || !Object.isExtensible(list)) return list;`,
+    ` for (let k = 0; k < list.length; k++) if (typeof list[k] !== "symbol" || list.indexOf(list[k]) < k) return list;`,
     ` const next = globalThis[count] || 0; globalThis[count] = next + 1; Object.defineProperty(list, index, { value: next });`,
     ` return list;`,
     `}`,
@@ -84,7 +84,7 @@ export const archetypeInsertions = (module: Module): PassResult | null => {
             }
         }
     }
-    if (keys.size === 0) return null;
+    if (keys.size === 0 && module.imports.size === 0) return null;
     /** The module's top-level constants holding lists it indexes, which other lists may spread. */
     const lists = new Set<string>();
     const insertions: Insertion[] = [];
@@ -96,6 +96,9 @@ export const archetypeInsertions = (module: Module): PassResult | null => {
         const named: string[] = [];
         for (const element of list.expression.elements) {
             if (element?.type === "Identifier" && keys.has(element.name)) named.push(element.name);
+            // A namespace's member, `Report.run`, is a key of the package or a module imported.
+            else if (element?.type === "MemberExpression" && !element.computed && element.object.type === "Identifier" && element.property.type === "Identifier"
+                && module.imports.get(element.object.name)?.value === true) named.push(`${element.object.name}.${element.property.name}`);
             else if (element?.type !== "SpreadElement" || element.argument.type !== "Identifier" || !(lists.has(element.argument.name) || module.imports.get(element.argument.name)?.value === true)) return false;
         }
         const twice = named.find((member, k) => named.indexOf(member) < k);

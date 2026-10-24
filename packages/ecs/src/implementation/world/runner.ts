@@ -483,7 +483,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
 
     const runKernelLocally = (bound: BoundKernel, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): void => {
         const slot = partialCount === 0 ? 0 : takeSlots(1);
-        if (bound.compiled() !== null && bound.wasm !== null) return runWasm(bound, archetype, 0, archetype.count, since, values, args, tick, partialAddress(slot));
+        if (bound.compiled() !== null && bound.wasm !== null && bound.allPresent(archetype)) return runWasm(bound, archetype, 0, archetype.count, since, values, args, tick, partialAddress(slot));
         const columns = bound.columnsOf(archetype);
         const filters = filtersOf(archetype);
         const run = bound.kernel();
@@ -681,7 +681,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const { pool } = workers;
         const bound = kernel;
         const scalars = bound !== null && bound.wasm !== null ? [...bound.lookupParameters(), ...indexParameters, ...scalarValues(bound.wasm.scalars, values, args)] : [];
-        const fast = isFast(bound);
+        const fast = isFast(bound) && bound !== null && bound.allPresent(archetype);
         const participants = Math.min(pool.size, Math.ceil(count / minimumFor(workers)));
         const aligned = (rows: number): number => Math.ceil(rows / chunkAlignment) * chunkAlignment;
         // WASM chunks go through shared memory. The main thread doesn't take one: measured, it finishes later than an

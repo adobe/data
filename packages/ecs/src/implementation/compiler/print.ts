@@ -4,12 +4,16 @@ import type { Expression, Statement } from './ir.js';
 import { resolve, type Out } from './out.js';
 import { rowLabel } from './statement.js';
 import type { Unit } from './unit.js';
+import { presence } from './columns.js';
 
 /** A number as JS source that reads back as the same f64. */
 export const printNumber = (value: number): string =>
     Number.isNaN(value) ? "NaN" : value === Infinity ? "Infinity" : Object.is(value, -0) ? "(-0)" : value < 0 ? `(${String(value)})` : String(value);
 
 const printPath = (path: Path): string => path.map(item => `[${JSON.stringify(item)}]`).join("");
+
+/** The presence of the optional component the key at `key` names. */
+const presenceOf = (unit: Unit, key: number): Expression => presence(unit, unit.keys[key] ?? "");
 
 export const localName = (unit: Unit, local: number): string => `${unit.names.get(local) ?? "t"}_${local}`;
 
@@ -21,10 +25,16 @@ export const printExpression = (unit: Unit, expression: Expression, observed: bo
         case "boolean": return String(expression.value);
         case "column": {
             const column = expression.column;
-            if (!observed) return `c${column}[x${column}]`;
-            unit.booleans.add(column);
-            return `(b${column} ? c${column}[x${column}] !== 0 : c${column}[x${column}])`;
+            // In the loop for archetypes without every optional component, theirs read undefined without a load.
+            if (unit.presentAs === false && unit.optionalColumns.has(column)) return "undefined";
+            // An optional component's column is empty in an archetype without it, where it reads undefined.
+            const read = observed
+                ? (unit.booleans.add(column), `(b${column} ? c${column}[x${column}] !== 0 : c${column}[x${column}])`)
+                : `c${column}[x${column}]`;
+            const key = unit.optionalColumns.get(column);
+            return key !== undefined && observed ? `(${print(presenceOf(unit, key))} ? ${read} : undefined)` : read;
         }
+        case "present": return unit.presentAs === null ? `q${expression.column}` : String(unit.presentAs);
         case "upColumn": {
             const column = expression.column;
             const read = `u${column}[p * us${column} + uo${column}]`;
@@ -66,7 +76,15 @@ const printStatement = (unit: Unit, statement: Statement, labels: Labels): strin
             return `${declare}${localName(unit, statement.local)} = ${printExpression(unit, statement.value, unit.observed.has(statement.local))};`;
         }
         case "declare": return `let ${statement.locals.map(item => localName(unit, item)).join(", ")};`;
-        case "store": return `c${statement.column}[x${statement.column}] = ${value(statement.value)};`;
+        case "store": {
+            const { column } = statement;
+            const store = `c${column}[x${column}] = ${value(statement.value)};`;
+            // Assigning an optional component an entity lacks fails its system, as a body run as written does.
+            const key = unit.optionalColumns.get(column);
+            if (key === undefined) return store;
+            const present = printExpression(unit, presenceOf(unit, key), false);
+            return present === "true" ? store : present === "false" ? `absent(${key});` : `if (${present}) ${store} else absent(${key});`;
+        }
         case "stamp": {
             const row = `c${statement.column}[x${statement.column}] = tick;`;
             return unit.stampedPerCall.has(statement.chunks) ? row : `${row}\nc${statement.blocks}[i >> ${blockShift}] = tick;\nc${statement.chunks}[i >> ${chunkShift}] = tick;`;

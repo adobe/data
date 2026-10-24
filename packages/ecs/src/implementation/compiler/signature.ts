@@ -27,6 +27,8 @@ export type Signature = {
     readonly write: ReadonlySet<string>;
     /** What it requires of its rows, its `with`. */
     readonly has: ReadonlySet<string>;
+    /** Components its rows may lack, its `optional`: an archetype without one gives the kernel an empty column. */
+    readonly optional: ReadonlySet<string>;
     readonly resources: readonly string[];
     readonly reduced: readonly Reduced[];
     readonly lookups: readonly Lookup[];
@@ -108,8 +110,7 @@ export const kernelOf = (declaration: ObjectExpression): KernelRequest | null =>
     for (const property of declaration.properties) {
         if (property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === "kernel") {
             const { value } = property;
-            const required = value.type === "Literal" && (value.value === true || value.value === "gpu");
-            if (required && optional !== null) return fail(optional, "a kernel can't have optional components yet: list them in with, or use kernel: false to run the body as written");
+            if (value.type === "Literal" && value.value === "gpu" && optional !== null) return fail(optional, "a GPU kernel can't have optional components yet: list them in with, or use kernel: true to run it on the CPU");
             if (value.type === "Literal" && value.value === true) return { target: "cpu", required: true };
             if (value.type === "Literal" && value.value === "gpu") return { target: "gpu", required: true };
             if (value.type === "Literal" && value.value === false) return null;
@@ -117,8 +118,6 @@ export const kernelOf = (declaration: ObjectExpression): KernelRequest | null =>
         }
     }
     if (declaration.properties.some(property => property.type === "SpreadElement")) return null;
-    // Kernels don't read components an archetype may lack yet, so such a system runs as written.
-    if (optional !== null) return null;
     if (!declares(declaration, "components") || declares(declaration, "observer") || declares(declaration, "target")) return null;
     return { target: "cpu", required: false };
 };
@@ -135,7 +134,7 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
     for (const [name, property] of properties(declaration, "a kernel declaration")) {
         switch (name) {
             case "components":
-                components = keyLists(property.value, "components", ["read", "write", "with", "not", "added", "changed"], lists);
+                components = keyLists(property.value, "components", ["read", "write", "with", "optional", "not", "added", "changed"], lists);
                 break;
             case "resources":
                 for (const [list, value] of properties(property.value, "resources")) {
@@ -197,5 +196,5 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
     if (both !== undefined) fail(declaration, `${both} is in both components read and write; write already makes it readable`);
     const rowFiltered = (components.get("added")?.length ?? 0) + (components.get("changed")?.length ?? 0) > 0;
     if (up !== null && ordered) fail(declaration, "a kernel can't use both up and order, which both decide the order of its rows");
-    return { read: new Set(components.get("read")), write: new Set(write), has: new Set(components.get("with")), resources, reduced, lookups, up, ordered, filtered: changedResources.length > 0 || rowFiltered };
+    return { read: new Set(components.get("read")), write: new Set(write), has: new Set(components.get("with")), optional: new Set(components.get("optional")), resources, reduced, lookups, up, ordered, filtered: changedResources.length > 0 || rowFiltered };
 };

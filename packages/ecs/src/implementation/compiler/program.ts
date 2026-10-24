@@ -109,6 +109,8 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
         switch (node.kind) {
             case "number": case "boolean": case "column": case "resource": case "args":
                 return node;
+            // WASM runs only archetypes with every optional component; the others run the JS kernel.
+            case "present": return { kind: "boolean", value: true };
             // JS throws reading a parent that isn't there, so WASM reads one only where a test proves it is.
             case "upColumn": return guards.has(upHandle) ? { kind: "upLeaf", column: node.column } : undefined;
             case "local": return { kind: "local", local: localIndex(node.local) };

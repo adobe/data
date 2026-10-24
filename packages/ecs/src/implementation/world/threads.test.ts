@@ -48,6 +48,8 @@ import type * as ObserverJoined from "./observer-joined.fixture.js";
 import { observerJoinedCases } from "./observer-joined.cases.js";
 import type * as ObserverContained from "./observer-contained.fixture.js";
 import { observerContainedCases } from "./observer-contained.cases.js";
+import type * as OptionalWorkers from "./optional-workers.fixture.js";
+import { optionalWorkersCases } from "./optional-workers.cases.js";
 
 // Real worker threads in node: the cases over fixtures `vitest.fixtures.ts` built, each typed as its source, which it's
 // built from.
@@ -75,3 +77,4 @@ indexBuildCases((): Promise<typeof IndexBuild> => builtFixture("index-build"));
 entityLookupWorkersCases((): Promise<typeof EntityLookupWorkers> => builtFixture("entity-lookup-workers"));
 observerJoinedCases((): Promise<typeof ObserverJoined> => builtFixture("observer-joined"));
 observerContainedCases((): Promise<typeof ObserverContained> => builtFixture("observer-contained"));
+optionalWorkersCases((): Promise<typeof OptionalWorkers> => builtFixture("optional-workers"));

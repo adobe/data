@@ -23,6 +23,8 @@ export type Expression =
     | { readonly kind: "number"; readonly value: number }
     | { readonly kind: "boolean"; readonly value: boolean }
     | { readonly kind: "column"; readonly column: number }
+    /** Whether this call's archetype has an optional component, by its presence column: the same for every row. */
+    | { readonly kind: "present"; readonly column: number }
     /** A column of the row's parent, at the parent's row: `Unit.upColumns`. */
     | { readonly kind: "upColumn"; readonly column: number }
     | { readonly kind: "resource"; readonly index: number; readonly path: Path }

@@ -2,7 +2,7 @@
 import type { Identifier, Node, Pattern } from 'estree';
 import { access } from './access.js';
 import { set } from './booleans.js';
-import { componentRead } from './columns.js';
+import { componentRead, presence } from './columns.js';
 import { dataValue, mapLeaves, toData } from './data.js';
 import { fail } from './failure.js';
 import { local, type Expression } from './ir.js';
@@ -42,13 +42,14 @@ const declared = (node: Identifier, value: Value, binding: Binding, scope: Scope
             return dataValue(mapLeaves(toData(value, node, scope), copy));
         case "component": {
             if (value.up !== true) requireReadable(node, scope, value.component);
-            const snapshot = createSnapshot(keyword, node.name, path => componentRead(unit, value, path));
+            const optional = value.up !== true && value.path.length === 0 && unit.signature.optional.has(value.component);
+            const snapshot = createSnapshot(keyword, node.name, path => componentRead(unit, value, path), optional ? presence(unit, value.component) : null);
             out.push(snapshotDeclaration(snapshot));
             return { kind: "snapshot", snapshot, path: [] };
         }
         case "snapshot": {
             const source = value;
-            const snapshot = createSnapshot(keyword, node.name, path => local(snapshotLeaf(unit, source.snapshot, [...source.path, ...path])));
+            const snapshot = createSnapshot(keyword, node.name, path => local(snapshotLeaf(unit, source.snapshot, [...source.path, ...path])), source.path.length === 0 ? source.snapshot.presence : null);
             out.push(snapshotDeclaration(snapshot));
             return { kind: "snapshot", snapshot, path: [] };
         }

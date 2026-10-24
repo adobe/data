@@ -142,7 +142,7 @@ export const resolvedDeclaration = (declaration: ObjectExpression, used: Used): 
                 properties.push(property("components", object([
                     property("read", array([...read].filter(key => !written.has(key)))),
                     property("write", array(written)),
-                    ...keep(parts, ["with", "not", "added", "changed"]),
+                    ...keep(parts, ["with", "optional", "not", "added", "changed"]),
                 ])));
                 continue;
             }

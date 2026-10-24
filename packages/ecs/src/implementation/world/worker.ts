@@ -5,7 +5,7 @@ import { createBlock, endBlock, locate, reserveFrom, tableLength, type Block } f
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
 import { blockShift, chunkShift, type Kernel, type KernelCommands, type KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../interface/registry/layout.js';
-import { emptyViews } from './arrays.js';
+import { absentColumn, emptyViews } from './arrays.js';
 import { claimPiece } from './claims.js';
 import { controlWords, idleKernel, lineWords, ringBase, ringCapacity, ringCursor, ringNeeded, ringSize, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
 import { runWindow } from './worker-window.js';
@@ -269,7 +269,10 @@ const bind = (loaded: LoadedKernel, archetypeId: number, archetype: ArchetypeVie
     const columns = loaded.setup.sources.map((source, k) => {
         if (loaded.setup.muted[k]) return mutedColumn;
         if (source.kind === "entity") return archetype.entities;
+        if (source.kind === "present") return archetype.storages.has(source.id) ? archetype.entities : emptyViews.f64;
         const storage = archetype.storages.get(source.id);
+        // An optional component's columns are empty where the archetype lacks it: reads give undefined.
+        if (storage === undefined && loaded.setup.optional.includes(source.id)) return absentColumn(layouts[source.id], source);
         if (storage === undefined) throw new Error(`Archetype ${archetypeId} lacks component ${source.id}.`);
         if (source.kind === "changed") return storage.changed;
         if (source.kind === "chunks") return storage.chunkChanged;
@@ -343,7 +346,8 @@ const run = (message: RunMessage): void => {
     const { columns, filters, addresses } = boundOf(loaded, message.archetype);
     const { commands } = stagingOf(loaded);
     const { wasm } = loaded;
-    if (wasm !== null && loaded.setup.wasm !== null) {
+    // WASM runs only archetypes with every optional component; the JS kernel runs the rest.
+    if (wasm !== null && loaded.setup.wasm !== null && loaded.setup.optional.every(id => boundOf(loaded, message.archetype).views.storages.has(id))) {
         wasm(message.start, message.end, message.tick, message.lastRun, ...addresses, ...message.lookups, ...message.indexes,
             ...scalarValues(loaded.setup.wasm.scalars, message.resources, message.args),
             ...message.partials < 0 ? [] : [message.partials]);
@@ -380,7 +384,7 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
         const since: Since | null = setup.lookups.some(lookup => lookup.changed !== null) ? { value: 0 } : null;
         const lookups = setup.lookups.map((lookup, k): unknown => readers.find(found => found.lookup === k)?.reader
             ?? (lookup.changed === null || since === null ? createLookup(lookup) : createChangedLookup(lookup, lookup.changed, since)));
-        kernels.set(setup.index, { since, setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets), wasm: loaded[i].wasm, lookups, readers, staging: null, bound: [] });
+        kernels.set(setup.index, { since, setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets, setup.labels), wasm: loaded[i].wasm, lookups, readers, staging: null, bound: [] });
     });
 };
 

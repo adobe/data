@@ -38,6 +38,15 @@ const raiseOptional = System.create({ kernel: false, components: { with: [height
     if (by !== undefined) row[height] += by;
 });
 
+/** As `raiseRequired` and `raiseOptional`, compiled to kernels. */
+const raiseRequiredKernel = System.create({ kernel: true, components: { with: [height, lift] } }, row => {
+    row[height] += row[lift];
+});
+const raiseOptionalKernel = System.create({ kernel: true, components: { with: [height], optional: [lift] } }, row => {
+    const by = row[lift];
+    if (by !== undefined) row[height] += by;
+});
+
 const seeded = async (lacking: boolean): Promise<World> => {
     const world = createWorld({ [workers]: 0 });
     await world.run(seed, { lacking });
@@ -71,5 +80,23 @@ export const optionalBenchmarks: readonly Benchmark[] = [
         operation: "As `optional 100K`, over rows of which half lack the optional component, in an archetype of their own.",
         ...per,
         run: () => run(raiseOptional, true),
+    },
+    {
+        name: "with 100K kernel",
+        operation: "As `with 100K`, compiled to a kernel on the world's thread: the baseline for `optional 100K kernel`.",
+        ...per,
+        run: () => run(raiseRequiredKernel, false),
+    },
+    {
+        name: "optional 100K kernel",
+        operation: "As `optional 100K`, compiled to a kernel: what an optional component costs a kernel's row.",
+        ...per,
+        run: () => run(raiseOptionalKernel, false),
+    },
+    {
+        name: "optional half 100K kernel",
+        operation: "As `optional half 100K`, compiled to a kernel.",
+        ...per,
+        run: () => run(raiseOptionalKernel, true),
     },
 ];

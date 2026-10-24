@@ -11,6 +11,7 @@ import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKer
 import { createDirectory, lookupParameters, type Directory } from './directories.js';
 import { generateWgsl, type WgslKernel } from './wgsl.js';
 import { labelOf } from '../../interface/registry/index.js';
+import { absentColumn, emptyViews } from './arrays.js';
 import type { WorldIndex } from './indexes.js';
 import { kernelIndexesOf, refreshSource, writeIndexParameters, type KernelIndex } from './kernel-indexes.js';
 import { createIndexReader, createIndexSource, type IndexReaderSetup } from './index-readers.js';
@@ -40,6 +41,8 @@ export type BoundKernel = {
         /** By lookup through an index: its lookup, how its JS reader reads it, and how many components it watches. */
         readonly indexes: readonly { readonly lookup: number; readonly reader: IndexReaderSetup; readonly watched: number }[];
         readonly keys: readonly number[];
+        readonly labels: readonly string[];
+        readonly optional: readonly number[];
         readonly starts: readonly unknown[];
         /** The component ids of each list the kernel spawns, in the order its spawner takes values. */
         readonly spawns: readonly (readonly number[])[];
@@ -68,6 +71,8 @@ export type BoundKernel = {
     wasm: WasmKernel | null;
     /** The compiled module and the main thread's instance, once loaded. */
     readonly compiled: () => { readonly module: WebAssembly.Module; readonly run: WasmRun } | null;
+    /** Whether an archetype has every optional component, the only archetypes its WASM runs: JS runs the rest. */
+    readonly allPresent: (archetype: Archetype) => boolean;
     /** For a WASM kernel with lookups: the entity table and directories, passed ahead of the scalars. */
     readonly lookupParameters: () => readonly number[];
     /** The kernel as a compute shader for the components observed at the last load, or why it can't run on the GPU. */
@@ -105,7 +110,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             return column;
         }
         const id = idOf(state, column.component);
-        if (column.kind === "changed" || column.kind === "chunks" || column.kind === "blocks") {
+        if (column.kind === "changed" || column.kind === "chunks" || column.kind === "blocks" || column.kind === "present") {
             dense();
             return { kind: column.kind, id, leaf: 0 };
         }
@@ -155,6 +160,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         })),
         indexes: indexes.flatMap(bound => bound === null ? [] : [{ lookup: bound.lookup, reader: bound.reader, watched: bound.watched.length }]),
         keys,
+        labels: keys.map(id => labelOf(state.keys[id])),
+        optional: ids(leaf.declaration.components?.optional),
         starts: keys.map(id => state.starts[id]),
         spawns,
     };
@@ -177,13 +184,18 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         }
         return value;
     };
+    const optional = new Set(setup.optional);
     const cache = new Map<Archetype, { version: number; columns: readonly TypedArray[] }>();
     const columnsOf = (archetype: Archetype): readonly TypedArray[] => {
         const cached = cache.get(archetype);
         if (cached !== undefined && cached.version === archetype.version) return cached.columns;
         const columns = sources.map(source => {
             if (source.kind === "entity") return archetype.entities;
+            // An optional component's presence: any column that has rows where the archetype has it, empty where it doesn't.
+            if (source.kind === "present") return archetype.storageOf.has(source.id) ? archetype.entities : emptyViews.f64;
             const storage = archetype.storageOf.get(source.id);
+            // An optional component's columns are empty where the archetype lacks it: reads give undefined.
+            if (storage === undefined && optional.has(source.id)) return absentColumn(state.layouts[source.id], source);
             if (storage === undefined) return fail(`column of "${labelOf(state.keys[source.id])}" isn't in its components.`);
             if (source.kind === "changed") return storage.changed;
             if (source.kind === "chunks") return storage.chunkChanged;
@@ -277,6 +289,10 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         },
         upColumnsOf,
         wasm: generate(muted),
+        allPresent: archetype => {
+            for (const id of setup.optional) if (!archetype.storageOf.has(id)) return false;
+            return true;
+        },
         compiled: () => compiled,
         kernel: () => loaded ?? fail("its module isn't loaded."),
         stale: () => {
@@ -296,7 +312,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             bound.setup = { ...setup, muted, up: upSetup };
             loadedFor = muted.join();
             const module: KernelModule = await import(/* @vite-ignore */ description.url);
-            loaded = module.create(booleans, strides.map((stride, k) => muted[k] ? 0 : stride), offsets.map((offset, k) => muted[k] ? 0 : offset), upSetup.booleans, upSetup.strides, upSetup.offsets);
+            loaded = module.create(booleans, strides.map((stride, k) => muted[k] ? 0 : stride), offsets.map((offset, k) => muted[k] ? 0 : offset), upSetup.booleans, upSetup.strides, upSetup.offsets, setup.labels);
             compiled = null;
             if (bound.wasm === null) return;
             try {

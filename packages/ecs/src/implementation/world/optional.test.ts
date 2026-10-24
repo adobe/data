@@ -36,6 +36,15 @@ const move = System.create({ components: { with: [position], optional: [velocity
     if (speed !== undefined) row[position] += speed;
 });
 
+/** As `move`, asserted a kernel. */
+const moveKernel = System.create({ kernel: true, components: { with: [position], optional: [velocity] } }, row => {
+    const speed = row[velocity];
+    if (speed !== undefined) row[position] += speed;
+});
+const writeKernel = System.create({ kernel: true, components: { with: [position], optional: [velocity] } }, row => {
+    row[velocity] = row[position];
+});
+
 let seen: (readonly [number, number | undefined, string | undefined])[] = [];
 const read = System.create({ observer: true, components: { with: [position], optional: [velocity, label] } }, row => {
     seen.push([row[position], row[velocity], row[label]]);
@@ -147,7 +156,24 @@ describe("optional components", () => {
         await world.dispose();
     });
 
-    it("run as written, since kernels don't read components an archetype may lack yet", () => {
-        expect(kernelOf(move)).toBeUndefined();
+    it("compile to kernels, which read undefined where an archetype lacks one, as a body run as written does", async () => {
+        expect(kernelOf(move)).toBeDefined();
+        expect(kernelOf(moveKernel)).toBeDefined();
+        for (const system of [move, moveKernel]) {
+            await using world = inline();
+            await world.run(spawn);
+            await world.run(system);
+            seen = [];
+            await world.run(read);
+            expect(sorted()).toEqual([[1, undefined, undefined], [15, 5, undefined], [150, 50, "c"]]);
+        }
     });
+
+    it("fail a kernel's system where it assigns one an entity lacks", async () => {
+        await using world = inline();
+        await world.run(spawn);
+        const report = await runReported(world, writeKernel);
+        expect(report.failures.map(failure => failure.message)).toEqual([`An entity lacks "optionalTest/velocity", optional in its system: add it with commands.add rather than assigning it.`]);
+    });
+
 });

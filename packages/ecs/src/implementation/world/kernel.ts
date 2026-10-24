@@ -28,7 +28,9 @@ export type Column =
      * Float64Array of the component's newest changed tick per block of `2 ** blockShift` rows, so change filters skip
      * the unchanged blocks of a chunk that changed. A stamp sets all three: the row's tick, its chunk's and its block's.
      */
-    | { readonly kind: "blocks"; readonly component: Key };
+    | { readonly kind: "blocks"; readonly component: Key }
+    /** Of an optional component: non-empty in an archetype with it and empty in one without, so a kernel tests it once per call. */
+    | { readonly kind: "present"; readonly component: Key };
 
 /** Rows per chunk of change ticks is `2 ** chunkShift`. */
 export const chunkShift = 10;
@@ -256,5 +258,5 @@ export type KernelModule = {
      * Called once per registration. Per column `k`: `booleans[k]` is true when it stores booleans as 0 or 1, so reads convert them;
      * a row's element is at `row * strides[k] + offsets[k]`, in elements of the column's array.
      */
-    readonly create: (booleans: readonly boolean[], strides: readonly number[], offsets: readonly number[], upBooleans?: readonly boolean[], upStrides?: readonly number[], upOffsets?: readonly number[]) => Kernel;
+    readonly create: (booleans: readonly boolean[], strides: readonly number[], offsets: readonly number[], upBooleans?: readonly boolean[], upStrides?: readonly number[], upOffsets?: readonly number[], labels?: readonly string[]) => Kernel;
 };

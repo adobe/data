@@ -259,6 +259,7 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
             if (column.kind === "changed") return new Uint32Array(rows);
             if (column.kind === "chunks") return new Float64Array(Math.ceil(rows / 2 ** chunkShift));
             if (column.kind === "blocks") return new Float64Array(Math.ceil(rows / 2 ** blockShift));
+            if (column.kind === "present") return new Float64Array(rows);
             const component = String(column.component);
             const values = fields[component]?.[JSON.stringify(column.path)] ?? new Array<number>(rows).fill(0);
             const stride = interleaved[component]?.stride;
@@ -354,10 +355,11 @@ describe("kernels by default", () => {
         expect(await attached(`const kernel = System.create({ resources: {} }, ({ resources }) => { void resources[delta]; });`)).toBe(false);
         expect(await attached(`const kernel = System.create({ kernel: false, components: { with: [mass, score] } }, row => { row[score] = row[mass]; });`)).toBe(false);
     });
-    test("runs a system with optional components as written, and fails one that requires a kernel", async () => {
-        expect(await attached(`const kernel = System.create({ components: { with: [score], optional: [mass] } }, row => { const found = row[mass]; if (found !== undefined) row[score] = found; });`)).toBe(false);
-        expect(await failure(`const kernel = System.create({ kernel: true, components: { with: [score], optional: [mass] } }, row => { row[score] = 1; });`))
-            .toBe("a kernel can't have optional components yet: list them in with, or use kernel: false to run the body as written");
+    test("compiles a system with optional components, testing their presence once per call, and fails a GPU kernel with them", async () => {
+        expect(await attached(`const kernel = System.create({ components: { with: [score], optional: [mass] } }, row => { const found = row[mass]; if (found !== undefined) row[score] = found; });`)).toBe(true);
+        expect(await attached(`const kernel = System.create({ kernel: true, components: { with: [score], optional: [mass] } }, row => { if (row[mass] !== undefined) row[mass] = row[score]; });`)).toBe(true);
+        expect(await failure(`const kernel = System.create({ kernel: "gpu", components: { with: [score], optional: [mass] } }, row => { row[score] = 1; });`))
+            .toBe("a GPU kernel can't have optional components yet: list them in with, or use kernel: true to run it on the CPU");
         expect(await failure(`const kernel = System.create({ components: { with: [score] } }, row => { row[score] = row[mass]; });`))
             .toBe("mass isn't in components with or optional, so the system doesn't require it: add it there to use it");
     });

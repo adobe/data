@@ -46,6 +46,7 @@ export const kernelMismatch = (leaf: Leaf, description: KernelDescription): stri
             if (!written.has(column.component)) return `writes "${labelOf(column.component)}", which isn't in its components' write.`;
             continue;
         }
+        if (column.kind === "present") continue;
         const layout = layoutOfKey(column.component);
         if (layout !== null && layout.kind !== "linear") return `"${labelOf(column.component)}" isn't stored in linear memory.`;
         if (!hasLeaf(layout, column.path)) return `"${labelOf(column.component)}" has no scalar at [${column.path.join(", ")}]; destructure tuples and structs or index their fields.`;

@@ -7,6 +7,7 @@ import type { Module } from './module-scope.js';
 import type { Out } from './out.js';
 import type { Scope } from './scope.js';
 import type { Signature } from './signature.js';
+import type { PerCall } from './stamps.js';
 import type { Value } from './value.js';
 
 export type ExpressionCompiler = (node: Node, scope: Scope, out: Out) => Value;
@@ -39,9 +40,15 @@ export type Unit = {
      * Chunk columns stamped once per call before the row loop, with their block columns, so their per-row stamps are
      * dropped.
      */
-    readonly stampedPerCall: Map<number, number>;
+    readonly stampedPerCall: Map<number, PerCall>;
     /** Columns read where a boolean's identity is observable, so they need conversion. */
     readonly booleans: Set<number>;
+    /** Columns of optional components, each by the index in `keys` of its component, which an archetype may lack. */
+    readonly optionalColumns: Map<number, number>;
+    /** Each optional component's presence column, by its binding name. */
+    readonly presences: Map<string, number>;
+    /** While a loop specialized for every optional component present, or every one absent, is printed: which; else null. */
+    presentAs: boolean | null;
     /** Every value assigned to each local, to propagate observation. */
     readonly assignments: Map<number, Expression[]>;
     /** Locals whose value reaches an observable position. */
@@ -87,7 +94,7 @@ export const createUnit = (signature: Signature, module: Module, lists: Lists, e
     const up = signature.up === null ? null : counter++;
     if (up !== null) names.set(up, "up");
     return {
-        signature, module, lists, link, target, tried, columns: [], columnIndex: new Map(), chunks: new Set(), blocks: new Set(), stampedPerCall: new Map(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
+        signature, module, lists, link, target, tried, columns: [], columnIndex: new Map(), chunks: new Set(), blocks: new Set(), stampedPerCall: new Map(), booleans: new Set(), optionalColumns: new Map(), presences: new Map(), presentAs: null, assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
         used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map(), up: new Set() },
         up, upColumns: [], upColumnIndex: new Map(), upBooleans: new Set(), probes: [], rowLeaves: [], handles: new Set(),
         next: () => counter++, expression, statement,

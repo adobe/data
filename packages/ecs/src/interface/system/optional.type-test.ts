@@ -27,10 +27,11 @@ System.create({ components: { with: [position], optional: [velocity, pilot] } },
     row[pilot] = Entity.none;
 });
 
-// Kernels don't read components an archetype may lack yet.
+// A CPU kernel reads them as a body run as written does; GPU kernels don't read components an archetype may lack yet.
+System.create({ kernel: true, components: { with: [position], optional: [velocity] } }, row => { void row[velocity]; });
 System.create({
-    // @ts-expect-error a kernel can't have optional components yet
-    kernel: true,
+    // @ts-expect-error a GPU kernel can't have optional components yet
+    kernel: "gpu",
     components: { with: [position], optional: [velocity] },
 }, row => { void row[velocity]; });
 

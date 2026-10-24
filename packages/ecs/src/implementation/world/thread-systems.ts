@@ -2,8 +2,8 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
-import type { SystemLookup } from '../../interface/system/access.js';
-import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, itemOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration, watchedBy } from '../../interface/registry/index.js';
+import type { SystemLookupLists } from '../../interface/system/access.js';
+import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, itemOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration, watchedBy, whyUnregistered } from '../../interface/registry/index.js';
 import { layoutOf, objectLayout, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import type { StringStore } from './strings.js';
 import { stampChanged, writeOf } from './archetype.js';
@@ -24,13 +24,14 @@ import type { WorkerError } from './protocol.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { combine, contributed, identityOf, reductionTargetsOf, type ReductionTarget } from './reductions.js';
 import { changedRowOf, emptyRow, rowBinderOf, type RowHost } from './rows.js';
+import { requiredOf } from './required.js';
 import type { Since } from './index-lookups.js';
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
 import { createThreadFinalizers } from './thread-finalizers.js';
 import { createThreadIndex, type ThreadIndex } from './thread-indexes.js';
 import type { EntityViews, ThreadArchetype, ThreadDirectory, ThreadStorage } from './thread-directory.js';
 import { keptSorted } from './index-keys.js';
-import { chunkShift } from './kernel.js';
+import { blockShift, chunkShift } from './kernel.js';
 import {
     doneWord, endWord, headExecuted, headRan, progressWord, snapshotFlagsWord, snapshotLayout, snapshotOffsetWord, snapshotResourceArchetypeWord,
     snapshotResourceRowWord, snapshotRowsWord, snapshotCapacityWord, snapshotted, tailBlockWords, tailChunk, waitingWord,
@@ -99,6 +100,9 @@ type CommandKey = {
 /** The system that ran a task's commands, for their checks' errors. */
 type Running = { error: unknown };
 
+/** Whether a task's mirror is current, or why not (`bringCurrent`). */
+type Readiness = "current" | "moved" | "held";
+
 /**
  * Runs the systems the world places on this thread, as tasks it posts in the task block: each task's systems in order,
  * after replaying the mirror through the task's sync, writing each system's commands and spawns as a segment of the
@@ -144,7 +148,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
             return known;
         }
         const declaration = declarationOf(key);
-        if (declaration === undefined || kindOf(key) !== "component") throw new Error(kindOf(key) === "resource" ? `"${labelOf(key)}" is a resource, not a component.` : `"${labelOf(key)}" has no registered schema; import the module that registers it.`);
+        if (declaration === undefined || kindOf(key) !== "component") throw new Error(kindOf(key) === "resource" ? `"${labelOf(key)}" is a resource, not a component.` : `"${labelOf(key)}" has no registered schema: ${whyUnregistered(key)}.`);
         if (declaration.derived === true) throw new Error(`"${labelOf(key)}" is derived, so only rules add and remove it.`);
         const layout = layoutOf(declaration.type);
         const own = ownObject(key);
@@ -283,7 +287,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
 
     const runnerHost: RunnerHost = {
         rows: rowHost, archetypeAt, countOf, tableCount, resourceRow, refreshEntities, commands, mirror,
-        refresh: directory.refresh,
+        refresh: directory.refresh, replaced: directory.replaced,
         numberOf: directory.numberOf,
         layoutOf: directory.layoutOf,
         strings: directory.strings,
@@ -359,18 +363,25 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         }));
     };
 
-    /** Brings the mirror up to the last published sync, which runs the finalizers of its stops; false while it can't. */
-    const current = (): boolean => {
+    /**
+     * Brings the mirror up to the last published sync, which runs the finalizers of its stops: `"moved"` when its
+     * rebuild found a sync point applying before or during it, so it can rebuild once that's applied, and `"held"`
+     * while it waits for something else.
+     */
+    const bringCurrent = (): Readiness => {
         const replayed = replay(mirror);
-        if (replayed === "held") return false;
-        return replayed !== "lapped" || rebuild(mirror);
+        if (replayed === "held") return "held";
+        if (replayed !== "lapped") return "current";
+        const rebuilt = rebuild(mirror);
+        return rebuilt === "rebuilt" ? "current" : rebuilt;
     };
+    const current = (): boolean => bringCurrent() === "current";
 
     /** Whether a task can run: its systems known here, its input arrived, and the mirror through its sync. */
-    const ready = (payload: Float64Array, count: number): boolean => {
-        for (let k = 0; k < count; k++) if (runners[payload[payloadSystems + k * systemFields + systemIndex]] === undefined) return false;
-        if (payload[payloadInput] !== 0 && !inputs.has(payload[payloadSequence])) return false;
-        return current();
+    const ready = (payload: Float64Array, count: number): Readiness => {
+        for (let k = 0; k < count; k++) if (runners[payload[payloadSystems + k * systemFields + systemIndex]] === undefined) return "held";
+        if (payload[payloadInput] !== 0 && !inputs.has(payload[payloadSequence])) return "held";
+        return bringCurrent();
     };
 
     /** Views of the payload and completion, kept while the world keeps them where they are. */
@@ -428,15 +439,26 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         return control;
     };
 
-    /** A task waiting for a sync point to finish applying, to rebuild its mirror, runs once it has. */
+    /**
+     * A task waiting for a sync point to finish applying, to rebuild its mirror, runs once it has. One whose rebuild
+     * found a sync point applied during it runs again after a turn of the event loop: nothing else may wake this thread
+     * before the task is done, and sync points overlapping every rebuild mustn't keep it from its event loop.
+     */
     let structureWaited = false;
-    const retryAfterStructure = (): void => {
-        if (structureWaited || !applying(mirror)) return;
-        structureWaited = true;
-        void waitStructure(mirror).then(() => {
-            structureWaited = false;
-            process();
-        });
+    const retried = (): void => {
+        structureWaited = false;
+        process();
+    };
+    const retryAfterStructure = (moved: boolean): void => {
+        if (structureWaited) return;
+        if (applying(mirror)) {
+            structureWaited = true;
+            void waitStructure(mirror).then(retried);
+        }
+        else if (moved) {
+            structureWaited = true;
+            setTimeout(retried, 0);
+        }
     };
 
     const runTask = (posted: number): void => {
@@ -445,8 +467,9 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         const count = payload[payloadCount];
         const sequence = payload[payloadSequence];
         pending = sequence;
-        if (!ready(payload, count)) {
-            retryAfterStructure();
+        const readiness = ready(payload, count);
+        if (readiness !== "current") {
+            retryAfterStructure(readiness === "moved");
             return;
         }
         pending = -1;
@@ -574,8 +597,10 @@ export type RunnerHost = {
     readonly layoutOf: (key: Key) => Layout | undefined;
     /** This thread's objects, null where it fills none. */
     readonly mirror: Mirror | null;
-    /** Views of the memory again, once it grew: its buffer. */
+    /** Views of the memory again, once it grew, and `replaced` moved on if a view may have: its buffer. */
     readonly refresh: () => ArrayBufferLike;
+    /** Moved on by `refresh` once any archetype's view may have changed, which index lookups' rows check (`thread-directory.ts`). */
+    readonly replaced: { readonly count: number };
     /** The records strings' columns name. */
     readonly strings: StringStore;
 };
@@ -607,16 +632,16 @@ type ThreadCell = { storage: ThreadStorage | undefined; row: number };
 export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: ReadonlyMap<string, number> = noRecords): ThreadRunner => {
     const { declaration } = leaf;
     // Method parameters are bivariant, so the runtime can see any leaf's body with erased parameter types.
-    const system: { body(subject: unknown, context?: unknown): void } = leaf;
+    const system: { body(subject: unknown, context?: unknown, input?: unknown): void } = leaf;
     const { components: query, resources } = declaration;
     const numberOf = host.numberOf;
-    const required = [...new Set([...query?.read ?? [], ...query?.write ?? [], ...query?.has ?? [], ...query?.added ?? [], ...query?.changed ?? []])].map(numberOf);
+    const required = requiredOf(query).map(numberOf);
     const excluded = (query?.not ?? []).map(numberOf);
     const addedIds = (query?.added ?? []).map(numberOf);
     const changedIds = (query?.changed ?? []).map(numberOf);
     const resourceChanged = (resources?.changed ?? []).map(numberOf);
     const filtered = addedIds.length + changedIds.length + resourceChanged.length > 0;
-    const bindRow = rowBinderOf<ThreadArchetype>(host.rows, numberOf, query?.read ?? [], query?.write ?? []);
+    const bindRow = rowBinderOf<ThreadArchetype>(host.rows, numberOf, query?.read ?? [], query?.write ?? [], query?.optional);
     const matches: number[] = [];
     let checked = 0;
     const refreshMatches = (): void => {
@@ -628,7 +653,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         }
     };
     const ownInput = inputFor(leaf);
-    const targets: readonly ReductionTarget[] = reductionTargetsOf(host.layoutOf, declaration);
+    const targets: readonly ReductionTarget[] = reductionTargetsOf(host.layoutOf, leaf.name, declaration);
     const reduced = targets.map(target => new Float64Array(target.leaves.length));
 
     // The context: resources, lookups, reductions, input and commands, each under its own key when declared.
@@ -678,10 +703,10 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
             if (index === undefined || record === undefined) found = entityLookupOf(host, declared, lookupSince);
             else {
                 const reads = declared.read ?? [];
-                const threadIndex = createThreadIndex(host.rows, host.archetypeAt, {
+                const threadIndex = createThreadIndex(host.rows, host.archetypeAt, host.replaced, {
                     layouts: index.declaration.key.map(key => {
                         const layout = host.layoutOf(key);
-                        if (layout === undefined) throw new Error(`"${labelOf(key)}" has no registered schema; import the module that registers it.`);
+                        if (layout === undefined) throw new Error(`"${labelOf(key)}" has no registered schema: ${whyUnregistered(key)}.`);
                         return layout;
                     }),
                     sorted: keptSorted(index.declaration),
@@ -712,14 +737,14 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         });
         Object.defineProperty(value, "reduce", { value: reducers, enumerable: true });
     }
-    if (declaration.input !== undefined) value.input = undefined;
     // A tail is terminal, so its context has no commands.
-    const tailValue: { input?: unknown } = own();
+    const tailValue: object = own();
     for (const name of Object.getOwnPropertyNames(value)) {
         const descriptor = Object.getOwnPropertyDescriptor(value, name);
-        if (descriptor !== undefined && name !== "input") Object.defineProperty(tailValue, name, descriptor);
+        if (descriptor !== undefined) Object.defineProperty(tailValue, name, descriptor);
     }
-    if (declaration.input !== undefined) tailValue.input = undefined;
+    /** The current run's input, which the body takes after its context; kept until the next run, as its context is. */
+    let runInput: unknown;
     Object.defineProperty(value, "commands", { value: host.commands, enumerable: true });
 
     /** Resolves resource cells for a run: they move only at sync points. */
@@ -764,11 +789,11 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         const filters: Filter[] = [];
         for (const id of addedIds) {
             const storage = archetype.storageById[id];
-            if (storage !== undefined) filters.push({ ticks: storage.added, chunks: storage.chunkAdded });
+            if (storage !== undefined) filters.push({ ticks: storage.added, chunks: storage.chunkAdded, blocks: storage.blockAdded });
         }
         for (const id of changedIds) {
             const storage = archetype.storageById[id];
-            if (storage !== undefined) filters.push({ ticks: storage.changed, chunks: storage.chunkChanged });
+            if (storage !== undefined) filters.push({ ticks: storage.changed, chunks: storage.chunkChanged, blocks: storage.blockChanged });
         }
         filterCache.set(archetype.id, { archetype, filters });
         return filters;
@@ -777,18 +802,19 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
     const runBody = (archetype: ThreadArchetype, count: number, since: number): void => {
         const row = bindRow(archetype);
         const subject = row.value;
+        const input = runInput;
         const filters = filtersOf(archetype);
         if (since < 0 || filters.length === 0) {
             for (let index = 0; index < count; index++) {
                 row.index = index;
-                system.body(subject, value);
+                system.body(subject, value, input);
             }
             return;
         }
         forEachPassingRange(filters, since, 0, count, (start, end) => {
             for (let index = start; index < end; index++) {
                 row.index = index;
-                system.body(subject, value);
+                system.body(subject, value, input);
             }
         });
     };
@@ -809,13 +835,14 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             bind();
             if (threadIndexes.length !== 0) {
+                // Settles the count after `ready()` or `current()` may have rebuilt the mirror, since `runTask` settles before them.
                 const buffer = host.refresh();
                 for (let k = 0; k < threadIndexes.length; k++) threadIndexes[k].refresh(buffer);
             }
-            if (declaration.input !== undefined) value.input = ownInput(input);
+            runInput = ownInput(input);
             if (query === undefined) {
                 outcome.ran = since < 0;
-                if (outcome.ran) system.body(value);
+                if (outcome.ran) system.body(value, runInput);
                 return outcome;
             }
             if (since >= 0 && addedIds.length + changedIds.length === 0) return outcome;
@@ -838,6 +865,8 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
     // thread's, which it reads from its mirror at the snapshot's rows.
     const readKeys = query?.read ?? [];
     const writeKeys = query?.write ?? [];
+    /** Its optional components, which rows from a snapshot have only where their archetype does. */
+    const optionalNumbers = (query?.optional ?? []).map(numberOf);
     const linearReads: { readonly number: number; readonly layout: Columned }[] = [];
     const constantReads: { readonly number: number; readonly layout: Layout }[] = [];
     for (const key of readKeys) {
@@ -867,18 +896,19 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
     const runRows = (archetype: ThreadArchetype, start: number, end: number, since: number): void => {
         const row = bindRow(archetype);
         const subject = row.value;
+        const input = runInput;
         const filters = filtersOf(archetype);
         if (since < 0 || filters.length === 0) {
             for (let index = start; index < end && !halted; index++) {
                 row.index = index;
-                system.body(subject, tailValue);
+                system.body(subject, tailValue, input);
             }
             return;
         }
         forEachPassingRange(filters, since, start, end, (first, last) => {
             for (let index = first; index < last && !halted; index++) {
                 row.index = index;
-                system.body(subject, tailValue);
+                system.body(subject, tailValue, input);
             }
         });
     };
@@ -954,10 +984,10 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
             if ((flags & headExecuted) === 0) return;
             outcome.executed = true;
             outcome.ran = (flags & headRan) !== 0;
-            if (declaration.input !== undefined) tailValue.input = ownInput(input);
+            runInput = ownInput(input);
             if (!outcome.ran) return;
             if (query === undefined) {
-                system.body(tailValue);
+                system.body(tailValue, runInput);
                 writeBackResources(ownResources, resourceArchetype, resourceRow, tick, at, stamps);
                 return;
             }
@@ -988,12 +1018,42 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         }
         let first = 0;
         while (first < rows && positions[first] < position) first++;
-        const row = bindRow({ id: -1, entities, storageById, record: -1, version: -1, mirrored: null, components: [], resource: false, meta: false });
-        const subject = row.value;
+        const copied = (storages: readonly (ThreadStorage | undefined)[]): ThreadArchetype =>
+            ({ id: -1, entities, storageById: storages, record: -1, version: -1, mirrored: null, components: [], resource: false, meta: false });
+        const ownedInput = runInput;
         try {
-            for (let index = first; index < rows && !halted; index++) {
-                row.index = index;
-                system.body(subject, tailValue);
+            if (optionalNumbers.length === 0) {
+                const row = bindRow(copied(storageById));
+                const subject = row.value;
+                for (let index = first; index < rows && !halted; index++) {
+                    row.index = index;
+                    system.body(subject, tailValue, ownedInput);
+                }
+            }
+            else {
+                // Rows of archetypes that lack optional components run in a row without them, a run of one archetype's rows
+                // at a time, and every archetype with the same ones shares its copy of the snapshot's columns.
+                const byPattern = new Map<number, ThreadArchetype>();
+                for (let index = first; index < rows && !halted;) {
+                    const id = archetypeIds[index];
+                    let end = index + 1;
+                    while (end < rows && archetypeIds[end] === id) end++;
+                    const components = host.archetypeAt(id)?.components ?? [];
+                    let pattern = 0;
+                    for (let k = 0; k < optionalNumbers.length; k++) if (components.includes(optionalNumbers[k])) pattern |= 1 << k;
+                    let archetype = byPattern.get(pattern);
+                    if (archetype === undefined) {
+                        const storages: (ThreadStorage | undefined)[] = [...storageById];
+                        optionalNumbers.forEach((number, k) => { if ((pattern & (1 << k)) === 0) storages[number] = undefined; });
+                        byPattern.set(pattern, archetype = copied(storages));
+                    }
+                    const row = bindRow(archetype);
+                    const subject = row.value;
+                    for (; index < end && !halted; index++) {
+                        row.index = index;
+                        system.body(subject, tailValue, ownedInput);
+                    }
+                }
             }
         }
         finally {
@@ -1052,10 +1112,10 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
             const resourcesChanged = resourceChanged.length > 0 && resourcesChangedSince(lastRun);
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             bind();
-            if (declaration.input !== undefined) tailValue.input = ownInput(input);
+            runInput = ownInput(input);
             if (query === undefined) {
                 outcome.ran = since < 0;
-                if (outcome.ran) system.body(tailValue);
+                if (outcome.ran) system.body(tailValue, runInput);
                 return outcome;
             }
             if (since >= 0 && addedIds.length + changedIds.length === 0) return outcome;
@@ -1106,16 +1166,25 @@ type Columned = Extract<Layout, { readonly stride: number }>;
 /** A storage over a snapshot's column, or of values only this thread holds, with ticks of its own for `ticked` rows. */
 const localStorage = (component: number, layout: Layout, views: Views, values: unknown[], ticked: number, strings: StringStore): ThreadStorage => {
     const chunks = ticked === 0 ? 0 : (ticked >> chunkShift) + 1;
+    const blocks = ticked === 0 ? 0 : (ticked >> blockShift) + 1;
     return {
         component, layout, views, strings: layout.kind === "string" ? strings : null, values, ...writeOf(layout), tags: noTags, ticked: ticked > 0,
         added: ticked === 0 ? noTicks : new Float64Array(ticked), changed: ticked === 0 ? noTicks : new Float64Array(ticked),
         chunkAdded: chunks === 0 ? noTicks : new Float64Array(chunks), chunkChanged: chunks === 0 ? noTicks : new Float64Array(chunks),
+        blockAdded: blocks === 0 ? noTicks : new Float64Array(blocks), blockChanged: blocks === 0 ? noTicks : new Float64Array(blocks),
     };
 };
 
+/** What a lookup reads and requires: its reads but its optional components, which an entity it finds may lack. */
+const requiredReads = (host: RunnerHost, lookup: SystemLookupLists): readonly number[] => {
+    const optional = "optional" in lookup ? lookup.optional ?? [] : [];
+    return (lookup.read ?? []).filter(key => !optional.includes(key)).map(host.numberOf);
+};
+
 /** A lookup returning `read` values keyed by component, from this thread's views. */
-const lookupOf = (host: RunnerHost, lookup: SystemLookup) => {
+const lookupOf = (host: RunnerHost, lookup: SystemLookupLists) => {
     const read = (lookup.read ?? []).map(host.numberOf);
+    const required = requiredReads(host, lookup);
     const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
     const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
     const keys = lookup.read ?? [];
@@ -1126,7 +1195,7 @@ const lookupOf = (host: RunnerHost, lookup: SystemLookup) => {
         const archetype = host.archetypeAt(table.archetype[index]);
         if (archetype === undefined || archetype.resource) return null;
         const { components } = archetype;
-        for (const id of read) if (!components.includes(id)) return null;
+        for (const id of required) if (!components.includes(id)) return null;
         for (const id of has) if (!components.includes(id)) return null;
         for (const id of not) if (components.includes(id)) return null;
         const row = table.row[index];
@@ -1140,7 +1209,7 @@ const lookupOf = (host: RunnerHost, lookup: SystemLookup) => {
 };
 
 /** A lookup reading nothing, from this thread's views: the shared empty row for every entity it finds. */
-const emptyLookupOf = (host: RunnerHost, lookup: SystemLookup) => {
+const emptyLookupOf = (host: RunnerHost, lookup: SystemLookupLists) => {
     const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
     const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
     return (entity: Entity): object | null => {
@@ -1161,8 +1230,9 @@ const emptyLookupOf = (host: RunnerHost, lookup: SystemLookup) => {
  * a component `watched` names may have changed in it after `since`. A GPU kernel's column stamps reach this thread as
  * row ticks; a component keeping no ticks counts as changed.
  */
-const changedLookupOf = (host: RunnerHost, lookup: SystemLookup, watched: readonly Key[], since: Since) => {
+const changedLookupOf = (host: RunnerHost, lookup: SystemLookupLists, watched: readonly Key[], since: Since) => {
     const read = (lookup.read ?? []).map(host.numberOf);
+    const required = requiredReads(host, lookup);
     const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
     const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
     const ids = watched.map(host.numberOf);
@@ -1175,7 +1245,7 @@ const changedLookupOf = (host: RunnerHost, lookup: SystemLookup, watched: readon
         const archetype = host.archetypeAt(table.archetype[index]);
         if (archetype === undefined || archetype.resource) return null;
         const { components, storageById } = archetype;
-        for (const id of read) if (!components.includes(id)) return null;
+        for (const id of required) if (!components.includes(id)) return null;
         for (const id of has) if (!components.includes(id)) return null;
         for (const id of not) if (components.includes(id)) return null;
         const row = table.row[index];
@@ -1194,7 +1264,7 @@ const changedLookupOf = (host: RunnerHost, lookup: SystemLookup, watched: readon
 };
 
 /** The lookup by entity a declaration chooses, once: with `changed`, reading nothing, or reading values. */
-const entityLookupOf = (host: RunnerHost, lookup: SystemLookup, since: Since) => {
+const entityLookupOf = (host: RunnerHost, lookup: SystemLookupLists, since: Since) => {
     const watched = "index" in lookup ? undefined : lookup.changed;
     if (watched !== undefined) return changedLookupOf(host, lookup, watched, since);
     return (lookup.read ?? []).length === 0 ? emptyLookupOf(host, lookup) : lookupOf(host, lookup);

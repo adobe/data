@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Up } from '../../interface/system/access.js';
+import type { UpLists } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
 import { generationOf, indexOf } from './entities.js';
 import { journalEnd } from './journal.js';
-import { chunkShift } from './kernel.js';
+import { forEachNewerRow } from './ranges.js';
 import { idOf, type Key, type State } from './state.js';
 import { allocateArray, freeArray } from './arrays.js';
 import type { Memory } from './memory.js';
@@ -44,6 +44,29 @@ const extend = (array: Int32Array<ArrayBuffer>, length: number, value: number): 
     return grown;
 };
 
+// Scratch of an order build, shared by every `up` of a thread, since a build runs start to end without yielding: a
+// second system reuses the first one's arrays rather than allocating its own.
+
+/** By index among the matched rows: its entity index, depth, archetype, parent row, and parent's archetype id when readable or -1. */
+let rowEntities = new Int32Array(0);
+let depths = new Int32Array(0);
+let rowParents = new Int32Array(0);
+let keys = new Int32Array(0);
+let owners = new Int32Array(0);
+/** The matched rows' indexes, by depth, and where each depth ends. */
+let sortedRows = new Int32Array(0);
+let counts = new Int32Array(0);
+/** By index in `matches`: the index of its first row among the matched rows. */
+let bases = new Int32Array(0);
+/** The groups of a build, laid out one after another, before the order lays them out with spare slots. */
+let builtRows = new Int32Array(0);
+let builtParents = new Int32Array(0);
+let builtEntities = new Int32Array(0);
+let groupEnds = new Int32Array(0);
+let groupDepths = new Int32Array(0);
+let groupOwners = new Int32Array(0);
+let groupParents = new Int32Array(0);
+
 /**
  * Orders an `up` system's rows by depth through its `through` reference. A row's depth is one more than its parent's
  * when its parent is among the matched rows, and 0 otherwise, so rows of one depth never read each other's writes.
@@ -53,7 +76,7 @@ const extend = (array: Int32Array<ArrayBuffer>, length: number, value: number): 
  * of every row, patched for the entities whose row, level or parent changed. A filtered run marks the rows that may
  * pass, by depth, and lists only those.
  */
-export const createUp = (state: State, up: Up, isFiltered: boolean) => {
+export const createUp = (state: State, up: UpLists, isFiltered: boolean) => {
     const through = idOf(state, up.through);
     const readKeys: readonly Key[] = up.read ?? [];
     const read = readKeys.map(key => idOf(state, key));
@@ -254,15 +277,67 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
         for (const archetype of matches) count += archetype.count;
         const all = new Int32Array(count);
         let at = 0;
+        const levels = levelOf;
         for (const archetype of matches) {
-            for (let row = 0; row < archetype.count; row++) {
-                const index = archetype.entities[row] >>> 0;
-                levelOf[index] = 1;
+            const rows = archetype.entities;
+            for (let row = 0, end = archetype.count; row < end; row++) {
+                const index = rows[row] >>> 0;
+                levels[index] = 1;
                 all[at++] = index;
             }
         }
-        for (let k = 0; k < count; k++) link(all[k], parentAt(all[k]));
-        settle(all, count);
+        // Each archetype's parent column is found once, as `parentAt` finds it per entity.
+        const { generation, archetype: archetypeOf, length: entityCount } = state.entities;
+        const parents = parentOf;
+        at = 0;
+        for (const archetype of matches) {
+            const storage: Storage | undefined = archetype.storageById[through];
+            const layout = storage?.layout;
+            const leaf = layout?.kind === "linear" ? layout.leaves[0] : undefined;
+            if (storage === undefined || leaf === undefined) {
+                for (let row = 0; row < archetype.count; row++) parents[all[at++]] = -1;
+                continue;
+            }
+            const view = storage.views[leaf.view];
+            const stride = leaf.unitStride, offset = leaf.unitOffset;
+            for (let row = 0, end = archetype.count; row < end; row++) {
+                const index = all[at++];
+                const parent = view[row * stride + offset];
+                const target = parent >>> 0;
+                link(index, parent > 0 && target < entityCount && archetypeOf[target] >= 0 && generation[target] === generationOf(parent) ? target : -1);
+            }
+        }
+        settleAll(all, count);
+    };
+
+    /**
+     * Sets the level of every matched entity in `all`, the whole tree: each walks up to a root or to an entity already
+     * set, then sets the levels on its way back down, so each entity is walked once. A walk meeting itself is a cycle,
+     * and it and everything below it on the walk is cyclic.
+     */
+    const settleAll = (all: Int32Array, count: number): void => {
+        const walking = ++pass;
+        const done = ++pass;
+        stack = extend(stack, count, 0);
+        const levels = levelOf, parents = parentOf, seen = stamps, path = stack;
+        for (let k = 0; k < count; k++) {
+            let current = all[k];
+            if (seen[current] === done) continue;
+            let height = 0;
+            for (; current >= 0 && levels[current] !== unmatched; current = parents[current]) {
+                const stamp = seen[current];
+                if (stamp === done || stamp === walking) break;
+                seen[current] = walking;
+                path[height++] = current;
+            }
+            let level = current < 0 || levels[current] === unmatched ? 0 : seen[current] === done ? levels[current] : cyclic;
+            for (let h = height - 1; h >= 0; h--) {
+                const node = path[h];
+                if (level !== cyclic) level++;
+                levels[node] = level;
+                seen[node] = done;
+            }
+        }
     };
 
     /** Brings the tree up to date with the journal. */
@@ -325,26 +400,6 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
         position = end;
         settle(pending, pending.length);
     };
-
-    /** By index among the matched rows: its entity index, depth, archetype, parent row, and parent's archetype id when readable or -1. */
-    let rowEntities = new Int32Array(0);
-    let depths = new Int32Array(0);
-    let rowParents = new Int32Array(0);
-    let keys = new Int32Array(0);
-    let owners = new Int32Array(0);
-    /** The matched rows' indexes, by depth, and where each depth ends. */
-    let sortedRows = new Int32Array(0);
-    let counts = new Int32Array(0);
-    /** By index in `matches`: the index of its first row among the matched rows. */
-    let bases = new Int32Array(0);
-    /** The groups of a build, laid out one after another, before the order lays them out with spare slots. */
-    let builtRows = new Int32Array(0);
-    let builtParents = new Int32Array(0);
-    let builtEntities = new Int32Array(0);
-    let groupEnds = new Int32Array(0);
-    let groupDepths = new Int32Array(0);
-    let groupOwners = new Int32Array(0);
-    let groupParents = new Int32Array(0);
 
     /** The matched rows in depth order from the roots. Rows on or under a parent cycle are in none. */
     const levels = (matches: readonly Archetype[]): Order => {
@@ -548,15 +603,12 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
     const changedRows = (archetype: Archetype, id: number, added: boolean, since: number, each: (row: number) => void): void => {
         const storage = archetype.storageById[id];
         if (storage === undefined) return;
-        const whole = storage.columnChanged > since;
-        const ticks = added ? storage.added : storage.changed;
-        const chunks = added ? storage.chunkAdded : storage.chunkChanged;
-        for (let chunk = 0, count = Math.ceil(archetype.count / 2 ** chunkShift); chunk < count; chunk++) {
-            if (!whole && !(chunks[chunk] > since)) continue;
-            for (let row = chunk << chunkShift, end = Math.min(archetype.count, (chunk + 1) << chunkShift); row < end; row++) {
-                if (whole || ticks[row] > since) each(row);
-            }
+        if (storage.columnChanged > since) {
+            for (let row = 0; row < archetype.count; row++) each(row);
+            return;
         }
+        if (added) forEachNewerRow(storage.added, storage.chunkAdded, storage.blockAdded, archetype.count, since, each);
+        else forEachNewerRow(storage.changed, storage.chunkChanged, storage.blockChanged, archetype.count, since, each);
     };
 
     /**
@@ -566,6 +618,13 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
      */
     const filtered = (matches: readonly Archetype[], added: readonly number[], changed: readonly number[], since: number): Pass | null => {
         update(matches);
+        // Every row passes after a rebuild, so the pass is the whole order, with nothing to mark.
+        if (rebuilt) {
+            touched = [];
+            rebuilt = false;
+            const ordered = levels(matches);
+            return ordered.levels === 0 ? null : wholePass(ordered);
+        }
         const length = state.entities.length;
         if (dirty.length < length) dirty = new Uint8Array(Math.max(length, 2 * dirty.length));
         for (const bucket of buckets) if (bucket !== undefined) bucket.length = 0;
@@ -672,6 +731,22 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
         return { next, clear };
     };
 
+    /** Every row of `ordered`, a depth at a time. */
+    const wholePass = (ordered: Order): Pass => {
+        let depth = 0;
+        const next = (): readonly Run[] | null => {
+            if (depth >= ordered.levels) return null;
+            const runs: Run[] = [];
+            for (let group = ordered.depthGroups[depth]; group < ordered.depthGroups[depth + 1]; group++) {
+                if (ordered.groupEnds[group] === ordered.groupStarts[group]) continue;
+                runs.push({ owner: ordered.groupOwners[group], parent: ordered.groupParents[group], rows: ordered.rows, parents: ordered.parents, start: ordered.groupStarts[group], end: ordered.groupEnds[group] });
+            }
+            depth++;
+            return runs;
+        };
+        return { next, clear: noClear };
+    };
+
     /** Frees what it holds in the arena and stops its reading of the journal, once nothing runs it again. */
     const release = (): void => {
         state.journal.readers--;
@@ -681,5 +756,7 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
         list = parentList = new Int32Array(0);
     };
 
-    return { levels, filtered, release };
+    return { levels, filtered, wholePass, release };
 };
+
+const noClear = (): void => {};

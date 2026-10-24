@@ -49,7 +49,7 @@ import { createState, defaultOf, idOf, reside, startTicking, type Key } from './
 import { indexOf } from './entities.js';
 import { isHeld } from './transfers.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
-import { labelOf, labelOfItem } from '../../interface/registry/index.js';
+import { labelOf, whyUnregistered } from '../../interface/registry/index.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
 
@@ -148,7 +148,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     const initial = new Map<Key, unknown>();
     // String keys are never a resource's, so they're ignored, as commands ignore them.
     for (const key of Object.getOwnPropertySymbols(resources)) {
-        if (kindOf(key) !== "resource") throw new Error(`"${labelOf(key)}" isn't a registered resource.`);
+        if (kindOf(key) !== "resource") throw new Error(`"${labelOf(key)}" isn't a registered resource: ${whyUnregistered(key)}.`);
         if (isWorldWritten(key)) throw new Error(`"${labelOf(key)}" is written only by the world.`);
         initial.set(key, Reflect.get(resources, key));
     }
@@ -178,6 +178,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     let disposed = false;
     const ensured = { version: -1 };
 
+    const minimumChunk = options.minimumChunk ?? defaultMinimumChunk;
+
     /** Starts the pool with as many of the wanted workers as the platform has, or none: then kernels run here. */
     const startPool = (): Pool | null => {
         const ports: WorkerPort[] = [];
@@ -187,11 +189,15 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             ports.push(port);
         }
         workerCount = state.workers = ports.length;
-        if (ports.length === 0) return null;
+        if (ports.length === 0) {
+            followPoolThreshold();
+            return null;
+        }
         const started = createPool(ports, state.memory);
         pool = started;
-        context.workers = { pool: started, minimumChunk: options.minimumChunk ?? defaultMinimumChunk, next: 0 };
+        context.workers = { pool: started, minimumChunk, next: 0 };
         context.publish = createPublisher(state, started);
+        followPoolThreshold();
         return started;
     };
 
@@ -208,9 +214,50 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         return loadAll(runners);
     };
 
-    /** Gives workers every kernel whose main-thread load is newer than theirs, including ones a failed registration reloaded. */
+    /** Whether kernels failed to load on the workers a run started: then they run here, and no pool starts again. */
+    let workersFailed = false;
+
+    /** Whether an archetype a kernel matches has rows enough for workers, as kernels loading look before the pool starts. */
+    const kernelsWarrant = (): boolean => {
+        for (const runner of registrar.kernels()) for (const archetype of runner.matched()) if (archetype.count >= state.poolThreshold) return true;
+        return false;
+    };
+
+    /** Lets kernels running here want the pool, at half a piece, while one could start; once started, none want it. */
+    const followPoolThreshold = (): void => {
+        state.poolThreshold = pool === null && workerCount > 0 && !workersFailed ? minimumChunk / 2 : Infinity;
+        state.poolWanted = false;
+    };
+    followPoolThreshold();
+
+    /**
+     * Starts the pool after a run whose kernel ran here over rows enough for workers. Kernels failing to load on it are a `"thread"` failure in the run's
+     * report, and the pool ends, so kernels run here from then on rather than every run trying again.
+     */
+    const startWorkers = async (): Promise<void> => {
+        try {
+            await loadOnWorkers();
+        }
+        catch (error) {
+            workersFailed = true;
+            workersBehind = false;
+            const failed = pool;
+            pool = null;
+            context.workers = null;
+            context.publish = () => {};
+            for (const runner of registrar.kernels()) runner.kernel?.unloadedOnWorkers();
+            if (failed !== null) void failed.terminate();
+            (observerFailures ??= []).push(failureOf("thread", { name: "workers", id: null }, error));
+        }
+        followPoolThreshold();
+    };
+
+    /**
+     * Gives workers every kernel whose main-thread load is newer than theirs, including ones a failed registration
+     * reloaded, starting the pool once a kernel ran here over rows enough for workers.
+     */
     const loadOnWorkers = async (): Promise<void> => {
-        if (workerCount === 0 || !workersBehind) return;
+        if (workerCount === 0 || !workersBehind || (pool === null && !state.poolWanted && !kernelsWarrant())) return;
         const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);
         if (behind.length === 0) {
             workersBehind = false;
@@ -333,6 +380,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         const wanted = platform === null ? 0 : workersOf(platform, readResource(workers));
         if (wanted === workerCount) return;
         workerCount = wanted;
+        workersFailed = false;
         state.workers = wanted;
         const old = pool;
         pool = null;
@@ -340,6 +388,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         context.publish = () => {};
         for (const runner of registrar.kernels()) runner.kernel?.unloadedOnWorkers();
         workersBehind = true;
+        followPoolThreshold();
         // The old pool releases its control state once its workers have left their windows; runs don't wait for it.
         if (old !== null) void old.terminate();
         await loadOnWorkers();
@@ -431,10 +480,10 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (workersChanged()) await followWorkers();
         if (deviceChanged()) await followDevice();
         const schedule = registrar.registered(definition) ?? registered;
-        if (schedule === undefined) throw new Error(`System "${labelOfItem(definition)}" didn't register.`);
+        if (schedule === undefined) throw new Error(`System "${definition.name}" didn't register.`);
         // An input that moved to a joined thread runs only there: that thread went since, its claims with it.
         if (isHeld(value) && (definition.kind === "composite" || registrar.runnerOf(definition).remote?.channel !== value.channel)) {
-            throw new Error(`System "${labelOfItem(definition)}": the run's input moved to a joined thread that's gone.`);
+            throw new Error(`System "${definition.name}": the run's input moved to a joined thread that's gone.`);
         }
         const run = ++runs;
         const started = performance.now();
@@ -458,6 +507,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             context.tails = null;
             if (deviceChanged()) await followDevice();
         }
+        // A kernel that ran here over rows enough for workers asked for the pool, which the next run's kernels use.
+        if (state.poolWanted && workersBehind) await startWorkers();
         const values = valuesOf(run, started, report.dropped);
         if (!pass) {
             tailing = tails;
@@ -526,7 +577,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 await complete(registrar.register(system));
             }
             catch (error) {
-                (observerFailures ??= []).push(failureOf("system", labelOfItem(system), error));
+                (observerFailures ??= []).push(failureOf("system", system, error));
             }
         });
     };
@@ -604,7 +655,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             }
             startRan(state.ran);
             values = valuesOf(run, performance.now(), 0);
-            report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: none, dropped: 0, warnings: none };
+            report = { failures: [failureOf("system", composite, error)], skipped: none, dropped: 0, warnings: none };
         }
         report = withFailures(report, takeFailures());
         const tails = tailing;

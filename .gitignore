@@ -47,6 +47,7 @@ source.txt
 # Generated Docs (typedoc output)
 docs/api
 packages/data/docs/api
+packages/ecs/docs
 packages/data/references
 
 # Playwright MCP capture artifacts
@@ -54,3 +55,4 @@ packages/data/references
 
 # Vitest browser attachments and failure screenshots
 .vitest/
+/site/

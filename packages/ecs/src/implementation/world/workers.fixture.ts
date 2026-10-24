@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -10,6 +8,7 @@ import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
 import { countingWorkers } from "./platforms.test-helper.js";
 import type { WorkerPlatform } from "./worker-platform.js";
+import type { F32 } from "../../interface/math/index.js";
 
 /** Scenarios of kernels on workers against the main thread alone, run built in node and from source in chromium. */
 
@@ -35,10 +34,10 @@ const seconds = Symbol("workersTest/seconds");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number] };
-        [velocity]: { type: readonly [number, number] };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2 }> };
+        [velocity]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2 }> };
         [target]: { type: Entity };
-        [offset]: { type: number };
+        [offset]: { type: F32 };
         [spawned]: { type: true };
         [tagA]: { type: true };
         [tagB]: { type: true };
@@ -51,37 +50,22 @@ declare module "@adobe/ecs" {
         [tagI]: { type: true };
     }
     export interface Resources {
-        [seconds]: { type: number };
+        [seconds]: { type: number; default: 0.25 };
     }
 }
 
-Component.register(position, { type: vec2 });
-Component.register(velocity, { type: vec2 });
-Component.register(target, { type: Entity.schema });
-Component.register(offset, { type: { type: "number", precision: 1 } });
-Component.register(spawned, { type: { const: true } });
-Component.register(tagA, { type: { const: true } });
-Component.register(tagB, { type: { const: true } });
-Component.register(tagC, { type: { const: true } });
-Component.register(tagD, { type: { const: true } });
-Component.register(tagE, { type: { const: true } });
-Component.register(tagF, { type: { const: true } });
-Component.register(tagG, { type: { const: true } });
-Component.register(tagH, { type: { const: true } });
-Component.register(tagI, { type: { const: true } });
 
 /** 64 entities in each of the 512 archetypes the tags combine into. */
-const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) => {
+const scatter = System.create({}, ({ commands }) => {
     for (let i = 0; i < 512 * 64; i++) {
         const components: (typeof position | typeof velocity | (typeof tags)[number])[] = [position, velocity];
         tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) components.push(tag); });
         commands.spawn(components)({ [position]: [i, 0], [velocity]: [1, i % 5] });
     }
 });
-Resource.register(seconds, { type: { type: "number", default: 0.25 } });
 
 /** Spawns `count` moving entities, each following the one before it. */
-const seed = System.create({ name: "workersTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     let previous = commands.spawn([position, velocity])({ [position]: [0, 0], [velocity]: [1, 0] });
     for (let i = 1; i < input.count; i++) {
         previous = commands.spawn([position, velocity, target])({ [position]: [i, 0], [velocity]: [1, i % 7], [target]: previous });
@@ -89,10 +73,8 @@ const seed = System.create({ name: "workersTest/seed", input: { type: "object", 
 });
 
 const integrate = System.create({
-    name: "workersTest/integrate",
-    kernel: "cpu",
-    components: { read: [velocity], write: [position] },
-    resources: { read: [seconds] },
+    kernel: true,
+    components: { with: [velocity, position] },
 }, (row, { resources }) => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
@@ -101,9 +83,8 @@ const integrate = System.create({
 
 /** Structural commands from workers: rows past a threshold spawn a marker and lose their velocity. */
 const split = System.create({
-    name: "workersTest/split",
-    kernel: "cpu",
-    components: { read: [position], has: [velocity] },
+    kernel: true,
+    components: { with: [position, velocity] },
     after: [integrate],
 }, (row, { commands }) => {
     const [x, y] = row[position];
@@ -115,10 +96,9 @@ const split = System.create({
 
 /** Lookups from workers: offset by the distance to the target. */
 const follow = System.create({
-    name: "workersTest/follow",
-    kernel: "cpu",
-    components: { read: [position, target], write: [offset] },
-    lookup: { targets: { read: [position] } },
+    kernel: true,
+    components: { with: [position, target, offset] },
+    lookup: { targets: { with: [position] } },
     after: [split],
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
@@ -126,31 +106,28 @@ const follow = System.create({
     row[offset] = other === null ? -1 : x - other[position][0];
 }, );
 
-const main = System.create({ name: "workersTest/main", systems: [integrate, split, follow] });
+const main = System.create({ systems: [integrate, split, follow] });
 
 /** Every row writes the same entity, so only merge order decides which value survives. */
 const stamp = System.create({
-    name: "workersTest/stamp",
-    kernel: "cpu",
-    input: { type: "object", properties: { entity: Entity.schema } },
-    components: { read: [position] },
-}, (row, { input, commands }) => {
+    kernel: true,
+    components: { with: [position] },
+}, (row, { commands }, input: { readonly entity: Entity }) => {
     const [x, y] = row[position];
     commands.add(input.entity, offset, x * 1000 + y);
 });
 
 /** Despawns entity 1, the resource entity, since index 0 is never an entity and registration reserves the next first. */
 const unlink = System.create({
-    name: "workersTest/unlink",
-    kernel: "cpu",
-    components: { has: [target] },
+    kernel: true,
+    components: { with: [target] },
 }, (_, { commands }) => {
     // @ts-expect-error an untyped caller can pass any number
     commands.despawn(1);
 });
 
 /** Archetypes in this order: 5 rows the main thread runs, 1,000 that workers run, then 10 more on the main thread. */
-const sources = System.create({ name: "workersTest/sources" }, ({ commands }) => {
+const sources = System.create({}, ({ commands }) => {
     for (let i = 0; i < 5; i++) commands.spawn([offset, tagD])({ [offset]: i });
     for (let i = 5; i < 1_005; i++) commands.spawn([offset, tagA])({ [offset]: i });
     for (let i = 1_005; i < 1_015; i++) commands.spawn([offset, tagB])({ [offset]: i });
@@ -158,11 +135,9 @@ const sources = System.create({ name: "workersTest/sources" }, ({ commands }) =>
 
 /** A spawn per row, from wherever its chunk runs; with `edit`, each spawn is also added to and removed from. */
 const emit = System.create({
-    name: "workersTest/emit",
-    kernel: "cpu",
-    input: { type: "object", properties: { edit: { type: "boolean" } } },
-    components: { read: [offset], not: [spawned] },
-}, (row, { input, commands }) => {
+    kernel: true,
+    components: { with: [offset], not: [spawned] },
+}, (row, { commands }, input: { readonly edit: boolean }) => {
     const entity = commands.spawn([position, spawned, tagC])({ [position]: [row[offset], -row[offset]] });
     if (input.edit) {
         commands.add(entity, velocity, [row[offset], 1]);
@@ -171,11 +146,11 @@ const emit = System.create({
 });
 
 const emitted = { seen: 0 };
-const countEmitted = System.create({ name: "workersTest/countEmitted", components: { added: [position], has: [spawned] } }, () => { emitted.seen++; });
+const countEmitted = System.create({ components: { added: [position], with: [spawned] } }, () => { emitted.seen++; });
 
 const gathered: Entity[] = [];
-const gatherPositioned = System.create({ name: "workersTest/gatherPositioned", observer: true, components: { has: [position] } }, row => { gathered.push(row.entity); });
-const gatherSpawned = System.create({ name: "workersTest/gatherSpawned", observer: true, components: { has: [spawned] } }, row => { gathered.push(row.entity); });
+const gatherPositioned = System.create({ observer: true, components: { with: [position] } }, row => { gathered.push(row.entity); });
+const gatherSpawned = System.create({ observer: true, components: { with: [spawned] } }, row => { gathered.push(row.entity); });
 
 /** The entities an observer row system passes, in storage order. */
 const storageOrder = async (world: World, gather: System<void>): Promise<Entity[]> => {
@@ -253,8 +228,9 @@ export const unlinked = (): Promise<number> => using(createWorld({ [workers]: 2 
 /** Workers ended by `dispose`, and what a run after it rejects with. */
 export const disposed = async (): Promise<{ readonly started: number; readonly terminated: number; readonly after: string }> => {
     const counting = countingWorkers();
-    const world = createWorld({ [workers]: 2 }, { pool: counting.platform });
-    // Workers start with the first kernel.
+    const world = createWorld({ [workers]: 2 }, { minimumChunk: 64, pool: counting.platform });
+    // Workers start with the first kernel run over rows enough for them.
+    await world.run(seed, { count: 64 });
     await world.run(main);
     await world.dispose();
     const after = await world.run(main).then(() => "resolved", (error: unknown) => String(error));

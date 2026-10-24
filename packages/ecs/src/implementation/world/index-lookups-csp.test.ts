@@ -1,23 +1,21 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
+import type { Vec2 } from "../../interface/math/index.js";
 
 const spot = Symbol("indexLookupsCspTest/spot");
 const size = Symbol("indexLookupsCspTest/size");
 declare module "@adobe/ecs" {
     interface Components {
-        [spot]: { type: readonly [number, number] };
+        [spot]: { type: Vec2.I32 };
         [size]: { type: number };
     }
 }
-Component.register(spot, { type: { type: "array", items: { type: "integer", minimum: -100, maximum: 100 }, minItems: 2, maxItems: 2 } });
-Component.register(size, { type: { type: "number" } });
 
-const bySpot = Index.create({ key: [spot], components: { has: [size] } });
+const bySpot = Index.create({ key: [spot], components: { with: [size] } });
 const bySize = Index.create({ key: [size], sorted: true, unique: true });
 
 describe("index lookups where code can't be generated", () => {
@@ -31,7 +29,7 @@ describe("index lookups where code can't be generated", () => {
                 for (let k = 0; k < 6; k++) commands.spawn([spot, size])({ [spot]: [k % 2, 0], [size]: k });
             }));
             let found: number[] = [];
-            await world.run(System.create({ lookup: { at: { index: bySpot, read: [size] }, sized: { index: bySize, read: [size] } } }, ({ lookup }) => {
+            await world.run(System.create({ lookup: { at: { index: bySpot }, sized: { index: bySize } } }, ({ lookup }) => {
                 const list = lookup.at([1, 0]);
                 const range = lookup.sized({ ">": 1, "<=": 4 });
                 found = [...Array.from({ length: list.length }, (_, i) => list.at(i)[size]), -1, ...Array.from({ length: range.length }, (_, i) => range.at(i)[size]), -1, lookup.sized(5)?.[size] ?? -2];

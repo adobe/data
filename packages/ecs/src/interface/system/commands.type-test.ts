@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Resource } from '../resource/resource.js';
 import { Component } from '../component/component.js';
-import { Archetype } from '../archetype/archetype.js';
 import type { Entity } from '../entity/entity.js';
 import type { Commands } from './commands.js';
 
@@ -26,14 +25,8 @@ declare module '@adobe/ecs' {
         [time]: { type: number };
     }
 }
-Component.register(position, { type: { type: "number" } });
-Component.register(velocity, { type: { type: "number" } });
-Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Component.register(player, { type: { const: true } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Resource.register(time, { type: { type: "number", default: 0 } });
 
-const particle = Archetype.create([position, velocity, label, player]);
+const particle = [position, velocity, label, player] as const;
 
 export const issue = (commands: Commands, entity: Entity): void => {
     // `spawn` is curried: the components first, then their values, giving an entity.

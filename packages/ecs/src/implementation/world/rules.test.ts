@@ -8,7 +8,8 @@ import { createWorld } from "./create.js";
 import { count, read } from "./reads.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
-import { labelOfItem, programRules } from "../../interface/registry/index.js";
+import { registerComponent } from "../../interface/registry/declarations.js";
+import { programRules } from "../../interface/registry/index.js";
 
 const source = Symbol("rulesTest/source");
 const hidden = Symbol("rulesTest/hidden");
@@ -20,6 +21,7 @@ const glow = Symbol("rulesTest/glow");
 const owned = Symbol("rulesTest/owned");
 const follows = Symbol("rulesTest/follows");
 const mark = Symbol("rulesTest/mark");
+// Within each other, so never declared: the second to register closes a cycle.
 const left = Symbol("rulesTest/left");
 const right = Symbol("rulesTest/right");
 const late = Symbol("rulesTest/late");
@@ -31,43 +33,27 @@ declare module "@adobe/ecs" {
         [source]: { type: number };
         [hidden]: { type: true };
         [sprite]: { type: true };
-        [slot]: { type: number; derived: true };
+        [slot]: { type: number; derived: true; default: 7 };
         [visible]: { type: true; derived: true };
         [ready]: { type: number; within: typeof slot };
         [glow]: { type: true; within: typeof ready };
         [owned]: { type: Entity; reference: "owner" };
         [follows]: { type: Entity; reference: "weak" };
         [mark]: { type: number };
-        [left]: { type: true; within: typeof right };
-        [right]: { type: true; within: typeof left };
         [late]: { type: true; derived: true };
         [tagged]: { type: true };
         [tag]: { type: true; derived: true };
     }
 }
 
-Component.register(source, { type: { type: "number" } });
-Component.register(hidden, { type: { const: true } });
-Component.register(sprite, { type: { const: true } });
-Component.register(slot, { type: { type: "number", default: 7 }, derived: true });
-Component.register(visible, { type: { const: true }, derived: true });
-Component.register(ready, { type: { type: "number" }, within: slot });
-Component.register(glow, { type: { const: true }, within: ready });
-Component.register(owned, { type: Entity.schema, reference: "owner" });
-Component.register(follows, { type: Entity.schema, reference: "weak" });
-Component.register(mark, { type: { type: "number" } });
-Component.register(left, { type: { const: true }, within: right });
-Component.register(late, { type: { const: true }, derived: true });
-Component.register(tagged, { type: { const: true } });
-Component.register(tag, { type: { const: true }, derived: true });
 
-Rule.create(identify({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
-Rule.create({ name: "rulesTest/visible", components: { has: [slot] }, derive: [visible] });
-Rule.create({ name: "rulesTest/sprites", components: { has: [sprite] }, derive: [visible] });
-Rule.create({ name: "rulesTest/tag", components: { has: [tagged] }, derive: [tag] });
+Rule.create(identify({ components: { with: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
+Rule.create({ components: { with: [slot] }, derive: [visible] });
+Rule.create({ components: { with: [sprite] }, derive: [visible] });
+Rule.create({ components: { with: [tagged] }, derive: [tag] });
 
 /** Runs `edit` with commands once, as its own run. */
-const edit = System.create({ name: "rulesTest/edit", input: { type: "object", properties: { step: { type: "integer" } } } }, ({ input, commands }) => {
+const edit = System.create({}, ({ commands }, input: { readonly step: number }) => {
     for (const step of steps[input.step] ?? []) step(commands);
 });
 let steps: ((commands: System.Commands) => void)[][] = [];
@@ -85,11 +71,11 @@ const components = async (world: ReturnType<typeof createWorld>, entity: Entity)
 describe("rules", () => {
     it("accept a rule declared again the same under its id, as a module evaluated again declares it, and reject a different one", () => {
         const rules = programRules().length;
-        Rule.create(identify({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
-        expect(() => Rule.create(identify({ name: "rulesTest/slots", components: { has: [source] }, derive: [slot] }, "rulesTest/rules.ts#slots"))).toThrow("reload the page");
+        Rule.create(identify({ components: { with: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
+        expect(() => Rule.create(identify({ components: { with: [source] }, derive: [slot] }, "rulesTest/rules.ts#slots"))).toThrow("reload the page");
         expect(programRules()).toHaveLength(rules);
     });
-    it("derive components where they match, from the schema default, and remove them where they stop", async () => {
+    it("derive components where they match, from their start, and remove them where they stop", async () => {
         const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let a = Entity.none, b = Entity.none, c = Entity.none;
@@ -110,7 +96,7 @@ describe("rules", () => {
     });
 
     it("write the default again where a derived component starts over, on a reused row", async () => {
-        const write = System.create({ name: "rulesTest/write", components: { write: [slot] } }, row => { row[slot] = 99; });
+        const write = System.create({ components: { with: [slot] } }, row => { row[slot] = 99; });
         const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let a = Entity.none;
@@ -124,7 +110,7 @@ describe("rules", () => {
     });
 
     it("apply in a world from the first sync point after it meets their components, deriving on the first spawn", async () => {
-        const spawn = System.create({ name: "rulesTest/tagged" }, ({ commands }) => { commands.spawn([tagged])({ [tagged]: true }); });
+        const spawn = System.create({}, ({ commands }) => { commands.spawn([tagged])({ [tagged]: true }); });
         const world = createWorld({ [workers]: 0 });
         await world.run(edit, { step: -1 });
         expect(await count(world, { required: [tag] })).toBe(0);
@@ -135,13 +121,13 @@ describe("rules", () => {
 
     it("created after a world has entities they match, derive for them at the next run, and for batch spawns", async () => {
         let added = 0;
-        const observe = System.create({ name: "rulesTest/added", components: { added: [late] } }, () => { added++; });
-        const spawn = System.create({ name: "rulesTest/spawn" }, ({ commands }) => { for (let i = 0; i < 3; i++) commands.spawn([mark])({ [mark]: i }); });
+        const observe = System.create({ components: { added: [late] } }, () => { added++; });
+        const spawn = System.create({}, ({ commands }) => { for (let i = 0; i < 3; i++) commands.spawn([mark])({ [mark]: i }); });
         const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(observe);
         expect(await count(world, { required: [late] })).toBe(0);
-        Rule.create({ name: "rulesTest/late", components: { has: [mark] }, derive: [late] });
+        Rule.create({ components: { with: [mark] }, derive: [late] });
         await world.run(spawn);
         expect(await count(world, { required: [late] })).toBe(6);
         await world.run(observe);
@@ -151,15 +137,13 @@ describe("rules", () => {
 
     it("are rejected when they can't hold", async () => {
         // @ts-expect-error a rule derives only derived components
-        expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [source] }, derive: [mark] })).toThrow(`derives "rulesTest/mark", which isn't declared derived`);
-        expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [source], not: [visible] }, derive: [slot] })).toThrow("cycle through a negation, which could oscillate");
-        // A rejected rule records nothing, so its name labels only the next; a system may share a rule's name.
-        expect(labelOfItem(Rule.create({ name: "rulesTest/bad", components: { has: [tagged] }, derive: [late] }))).toBe("rulesTest/bad");
-        expect(labelOfItem(System.create({ name: "rulesTest/visible" }, () => {}))).toBe("rulesTest/visible#2");
+        expect(() => Rule.create({ components: { with: [source] }, derive: [mark] })).toThrow(`derives "rulesTest/mark", which isn't declared derived`);
+        expect(() => Rule.create({ components: { with: [source], not: [visible] }, derive: [slot] })).toThrow("cycle through a negation, which could oscillate");
         // @ts-expect-error a reference changes only through commands
-        expect(() => System.create({ name: "rulesTest/writeReference", components: { write: [owned] } }, row => { row[owned] = Entity.none; })).toThrow("a reference, which changes only through commands");
+        expect(() => System.create({ components: { with: [owned] } }, row => { row[owned] = Entity.none; })).toThrow("a reference, which changes only through commands");
         // The component closing a cycle of within declarations is rejected when it's registered.
-        expect(() => Component.register(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "rulesTest/right": components are within each other in a cycle: rulesTest/left, rulesTest/right.`);
+        registerComponent(left, { type: { const: true }, within: right });
+        expect(() => registerComponent(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "rulesTest/right": components are within each other in a cycle: rulesTest/left, rulesTest/right.`);
     });
 });
 

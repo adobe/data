@@ -43,23 +43,27 @@ type Removed = "component" | "persistent" | "shared" | "threadPort" | "threadSta
 check<Equal<Extract<Removed, keyof typeof Ecs | Component.Key>, never>>();
 
 // Systems read the loop's state, ask for a wake time and change its cadence.
-System.create({ name: "loopTypeTest/read", resources: { read: [clock] } }, ({ resources }) => {
+System.create({}, ({ resources }) => {
     const now: number = resources[clock].now;
     void now;
 });
-System.create({ name: "loopTypeTest/pace", resources: { write: [cadence, always] } }, ({ resources }) => {
+System.create({}, ({ resources }) => {
     resources[cadence] = { kind: "fixed", step: 1000 / 60, maxSteps: 2 };
     resources[always] = true;
 });
-System.create({ name: "loopTypeTest/sleep", reduce: { [wake]: "min" } }, ({ reduce }) => { reduce[wake](1000); });
-// @ts-expect-error clock is written only by the world
-System.create({ name: "loopTypeTest/clock", resources: { write: [clock] } }, () => {});
-// @ts-expect-error wake is reduced, never written
-System.create({ name: "loopTypeTest/wake", resources: { write: [wake] } }, () => {});
-// @ts-expect-error a finalizer doesn't write clock either
-Finalizer.create({ name: "loopTypeTest/finalizeClock", components: {}, resources: { write: [clock] } }, () => {});
+System.create({}, ({ reduce }) => { reduce[wake](1000); });
+System.create({}, ({ resources }) => {
+    // @ts-expect-error clock is written only by the world
+    resources[clock] = resources[clock];
+    // @ts-expect-error wake is reduced, never written
+    resources[wake] = 0;
+});
+Finalizer.create({ components: {} }, (_row, { resources }) => {
+    // @ts-expect-error a finalizer doesn't write clock either
+    resources[clock] = resources[clock];
+});
 // @ts-expect-error a cadence is a frame or a fixed step
-System.create({ name: "loopTypeTest/badCadence", resources: { write: [cadence] } }, ({ resources }) => { resources[cadence] = { kind: "fixed" }; });
+System.create({}, ({ resources }) => { resources[cadence] = { kind: "fixed" }; });
 
 // Worlds start the loop's settings at other values; clock is the world's own.
 const paced: World = create({ [cadence]: { kind: "fixed", step: 10 }, [always]: true, [workers]: 2 });

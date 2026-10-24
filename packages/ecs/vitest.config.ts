@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
-import { kernelPlugin } from "./src/implementation/compiler/index.ts";
+import { Compiler } from "./src/implementation/compiler/index.ts";
+import { pluginWith } from "./src/implementation/compiler/plugin.ts";
 import { isolation, sources } from "./vitest.plugins.ts";
 
 /**
@@ -9,6 +10,16 @@ import { isolation, sources } from "./vitest.plugins.ts";
  * workers load the built `worker.js`.
  */
 const threads = "src/implementation/world/threads.test.ts";
+
+/**
+ * Suites of what row systems do, run a second time with unflagged systems as written, since the build compiles every
+ * body in the subset: so both the kernels and the bodies as written of their systems are tested.
+ */
+const rowPath = [
+    "up", "up-tree", "index-order", "index-sorted", "index-hash", "index-keyless", "index-changed", "indexes", "entity-lookups",
+    "change-blocks", "conditions", "commands", "rows", "target", "remove", "strings", "synchronize", "ticks", "observer",
+    "schedule", "reductions", "loop",
+].map(name => `src/implementation/world/${name}.test.ts`);
 
 /** A test's timeout only guards against a hang, which no test asserts on: long enough for a machine busy elsewhere. */
 const timeouts = { testTimeout: 30000, hookTimeout: 30000 };
@@ -26,7 +37,7 @@ export default defineConfig({
     test: {
         projects: [
             {
-                plugins: [kernelPlugin()],
+                plugins: [Compiler.plugin()],
                 test: {
                     ...timeouts,
                     execArgv,
@@ -37,7 +48,17 @@ export default defineConfig({
                 },
             },
             {
-                plugins: [kernelPlugin()],
+                plugins: [pluginWith({ automatic: false })],
+                test: {
+                    ...timeouts,
+                    execArgv,
+                    name: "as written",
+                    include: rowPath,
+                    sequence: { groupOrder: 0 },
+                },
+            },
+            {
+                plugins: [Compiler.plugin()],
                 test: {
                     ...timeouts,
                     execArgv,
@@ -49,7 +70,7 @@ export default defineConfig({
                 },
             },
             {
-                plugins: [kernelPlugin(), isolation, sources],
+                plugins: [Compiler.plugin(), isolation, sources],
                 test: {
                     ...timeouts,
                     name: "browser",

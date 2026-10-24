@@ -12,8 +12,9 @@ import type { Memory } from './memory.js';
  *
  * Header words: the memory's length in pages (`memory.ts`), the table's offset and length, the structure epoch, then
  * the entity-table record: its `cursor` offset, which never moves, `free` offset and capacity, `archetype`, `row` and
- * `generation` offsets and their capacity, and its version; then the resource entity's index plus one, 0 for none. The
- * table's length is `cursor[2]`.
+ * `generation` offsets and their capacity, and its version; then the resource entity's index plus one, 0 for none; the
+ * structure epoch's waiters; and how many flushes replaced an existing archetype's arrays. The table's length is
+ * `cursor[2]`.
  *
  * The structure epoch is odd from the start of each sync point that applies anything until its directory writes at the
  * end, and even otherwise. A thread reading entity locations outside a task reads while it's even and checks it again
@@ -35,12 +36,18 @@ export const entitiesVersionField = 7;
 export const resourceEntityWord = 12;
 /** Readers waiting on the structure epoch, so the world notifies only when one is. */
 export const structureWaitersWord = 13;
+/**
+ * Flushes that wrote an existing archetype's record again, its arrays replaced, so a joined thread checks this word
+ * once a run rather than each record's version for every row it reads.
+ */
+export const replacedWord = 14;
 
 /**
  * An archetype record: its capacity, `entities` offset, storage count, version, flags and row count, then per storage
- * its component number, flags, column, `added`, `changed`, `chunkAdded` and `chunkChanged` offsets, and chunk count.
- * Offsets a storage doesn't have are 0. A record is allocated once, since an archetype's storages are fixed, and never
- * moves. Its count is written at flushes while a joined thread may read it, for archetypes whose count changed.
+ * its component number, flags, column, `added`, `changed`, `chunkAdded` and `chunkChanged` offsets, chunk count, and
+ * `blockAdded` and `blockChanged` offsets, of `chunks << (chunkShift - blockShift)` blocks. Offsets a storage doesn't
+ * have are 0. A record is allocated once, since an archetype's storages are fixed, and never moves. Its count is
+ * written at flushes while a joined thread may read it, for archetypes whose count changed.
  */
 export const recordCapacity = 0;
 export const recordEntities = 1;
@@ -53,7 +60,7 @@ export const recordWords = 6;
 export const resourceFlag = 1;
 /** Record flags: it holds reports, which only queries that require a component see. */
 export const metaFlag = 2;
-export const storageWords = 8;
+export const storageWords = 10;
 export const storageComponent = 0;
 export const storageFlags = 1;
 export const storageColumn = 2;
@@ -62,6 +69,8 @@ export const storageChanged = 4;
 export const storageChunkAdded = 5;
 export const storageChunkChanged = 6;
 export const storageChunks = 7;
+export const storageBlockAdded = 8;
+export const storageBlockChanged = 9;
 /**
  * Storage flags: it keeps ticks; it has a column in linear memory, a string's of handles included; its objects are a joined thread's, whose number is
  * the flags from `threadShift` on, and its column holds each row's tag (`move-log.ts`).
@@ -148,6 +157,8 @@ const writeArchetype = (directory: LayoutDirectory, archetype: Archetype): void 
         record[base + storageChunkAdded] = storage.ticked ? storage.chunkAdded.byteOffset : 0;
         record[base + storageChunkChanged] = storage.ticked ? storage.chunkChanged.byteOffset : 0;
         record[base + storageChunks] = storage.chunkAdded.length;
+        record[base + storageBlockAdded] = storage.ticked ? storage.blockAdded.byteOffset : 0;
+        record[base + storageBlockChanged] = storage.ticked ? storage.blockChanged.byteOffset : 0;
     }
     Atomics.store(record, recordVersion, archetype.version);
     // Entered once complete, so a reader that finds it finds a whole record.
@@ -170,13 +181,16 @@ export const flushDirectory = (directory: LayoutDirectory | null, bumped: Archet
         directory.entities = entities.version;
     }
     if (bumped.length === 0) return;
+    let replaced = false;
     for (let k = 0; k < bumped.length; k++) {
         const archetype = bumped[k];
         archetype.listed = false;
+        if (directory.records[archetype.id] !== undefined) replaced = true;
         writeArchetype(directory, archetype);
     }
     bumped.length = 0;
     Atomics.store(directory.header, tableLengthWord, archetypes.length);
+    if (replaced) Atomics.add(directory.header, replacedWord, 1);
 };
 
 /**

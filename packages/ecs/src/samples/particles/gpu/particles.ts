@@ -1,40 +1,33 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype, Component, Gpu, System, Vec3 } from '../../../index.js';
+import { type F32, Gpu, System, type U32, Vec3 } from '../../../index.js';
 
 // The perf particles (src/perftest/particles.ts) on screen: 1M particles over four archetypes by visible and
 // enabled, with screen-space positions and velocities in pixels per frame. `move` is the perf move kernel, on the GPU.
 
-export const position = Symbol("gpuParticles/position");
-export const velocity = Symbol("gpuParticles/velocity");
-export const color = Symbol("gpuParticles/color");
-export const mass = Symbol("gpuParticles/mass");
-export const visible = Symbol("gpuParticles/visible");
-export const enabled = Symbol("gpuParticles/enabled");
+export const position = Symbol();
+export const velocity = Symbol();
+export const color = Symbol();
+export const mass = Symbol();
+export const visible = Symbol();
+export const enabled = Symbol();
 
 declare module '@adobe/ecs' {
     interface Components {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
-        [color]: { type: number };
-        [mass]: { type: number };
+        [color]: { type: U32 };
+        [mass]: { type: F32 };
         [visible]: { type: true };
         [enabled]: { type: true };
     }
 }
 
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(mass, { type: { type: "number", precision: 1 } });
-Component.register(visible, { type: { const: true } });
-Component.register(enabled, { type: { const: true } });
-
 /** Entity i goes to archetype i % 4. */
 const archetypes = [
-    Archetype.create([color, mass, position, velocity, visible, enabled]),
-    Archetype.create([color, mass, position, velocity, visible]),
-    Archetype.create([color, mass, position, velocity, enabled]),
-    Archetype.create([color, mass, position, velocity]),
+    [color, mass, position, velocity, visible, enabled] as const,
+    [color, mass, position, velocity, visible] as const,
+    [color, mass, position, velocity, enabled] as const,
+    [color, mass, position, velocity] as const,
 ] as const;
 
 /** A deterministic sequence in [0, 1), so every mode starts from the same particles. */
@@ -48,9 +41,7 @@ const random = (seed: number): (() => number) => {
 
 /** The particle count, and the field's width and height in pixels. Entity i goes to archetype i % 4. */
 export const spawn = System.create({
-    name: "gpuParticles/spawn",
-    input: { type: "object", properties: { count: { type: "integer" }, width: { type: "number" }, height: { type: "number" } } },
-}, ({ input: { count, width, height }, commands }) => {
+}, ({ commands }, { count, width, height }: { readonly count: number; readonly width: number; readonly height: number }) => {
     const next = random(7);
     for (let i = 0; i < count; i++) {
         const p = [next() * width, next() * height, 0] as const;
@@ -64,18 +55,16 @@ export const spawn = System.create({
 });
 
 export const move = System.create({
-    name: "gpuParticles/move",
     kernel: "gpu",
-    components: { read: [velocity], write: [position], has: [visible, enabled] },
+    components: { with: [velocity, position, visible, enabled] },
 }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
 
 /** The same move on the CPU, for comparison. */
 export const moveOnCpu = System.create({
-    name: "gpuParticles/moveOnCpu",
-    kernel: "cpu",
-    components: { read: [velocity], write: [position], has: [visible, enabled] },
+    kernel: true,
+    components: { with: [velocity, position, visible, enabled] },
 }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
@@ -98,8 +87,7 @@ struct Point { @builtin(position) position: vec4f, @location(0) color: vec4f }
 `;
 
 const declaration = {
-    name: "gpuParticles/draw",
-    components: { has: [visible, enabled] },
+    components: { with: [visible, enabled] },
     shader: { group: 0, accessors: { particlePosition: position, particleColor: color } },
     after: [move, moveOnCpu],
 } as const;

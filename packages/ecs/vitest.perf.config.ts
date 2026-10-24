@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
-import { kernelPlugin } from "./src/implementation/compiler/index.ts";
+import { Compiler } from "./src/implementation/compiler/index.ts";
 import { isolation, sources } from "./vitest.plugins.ts";
 
 // `*.perf-test.ts` runs in node; `*.perf-browser-test.ts` runs in chromium, with real workers.
@@ -10,9 +10,9 @@ export default defineConfig({
         // `pnpm perf:browser` reads the results from the console lines, which the default reporter drops for passing tests.
         reporters: "verbose",
         projects: [
-            { plugins: [kernelPlugin()], test: { name: "perf-node", include: ["src/**/*.perf-test.ts"] } },
+            { plugins: [Compiler.plugin()], test: { name: "perf-node", include: ["src/**/*.perf-test.ts"] } },
             {
-                plugins: [kernelPlugin(), isolation, sources],
+                plugins: [Compiler.plugin(), isolation, sources],
                 test: {
                     name: "perf-browser",
                     include: ["src/**/*.perf-browser-test.ts"],

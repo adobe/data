@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { runReported } from "./reports.test-helper.js";
+import type { U32, Vec2 } from "../../interface/math/index.js";
 
 /** Scenarios of indexes built again across the pool, run built in node and from source in chromium. */
 
@@ -14,37 +14,34 @@ const weight = Symbol("indexBuildTest/weight");
 
 declare module "@adobe/ecs" {
     interface Components {
-        [cell]: { type: readonly [number, number] };
-        [serial]: { type: number };
+        [cell]: { type: Vec2.I32 };
+        [serial]: { type: U32 };
         [weight]: { type: number };
     }
 }
-Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
-Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 10000000 } });
-Component.register(weight, { type: { type: "number" } });
 
-const grid = Index.create({ name: "indexBuildTest/grid", key: [cell], components: { has: [weight] } });
-const serials = Index.create({ name: "indexBuildTest/serials", key: [serial], unique: true });
+const grid = Index.create({ key: [cell], components: { with: [weight] } });
+const serials = Index.create({ key: [serial], unique: true });
 
 const width = 300;
 const height = 200;
 const count = 150_000;
 
 /** Spawns entities in cells, with serials of which a few repeat. */
-const seed = System.create({ name: "indexBuildTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     for (let k = 0; k < count; k++) {
         commands.spawn([cell, serial, weight])({ [cell]: [(k * 7919) % width, (k * 104729) % height], [serial]: k % 50_000 === 7 ? 7 : k, [weight]: k % 13 });
     }
 });
 
 /** Moves every entity to another cell, so the next refresh builds the index again. */
-const shuffle = System.create({ name: "indexBuildTest/shuffle", components: { write: [cell] } }, row => {
+const shuffle = System.create({ components: { with: [cell] } }, row => {
     const [x, y] = row[cell];
     row[cell] = [(x * 7 + 3) % width, (y + x) % height];
 });
 
 /** A kernel, so the pool starts, as it does with a world's first kernel. */
-const warm = System.create({ name: "indexBuildTest/warm", kernel: "cpu", components: { read: [serial], write: [weight] } }, row => {
+const warm = System.create({ kernel: true, components: { with: [serial, weight] } }, row => {
     row[weight] = row[serial] % 13;
 });
 
@@ -52,8 +49,7 @@ const seen = { grid: 0, rows: 0, serials: 0 };
 
 /** Every cell's rows, in order, folded into one number; and the unique index's row of each serial. */
 const read = System.create({
-    name: "indexBuildTest/read",
-    lookup: { near: { index: grid, read: [weight] }, bySerial: { index: serials } },
+    lookup: { near: { index: grid }, bySerial: { index: serials } },
 }, ({ lookup }) => {
     let fold = 0;
     let rows = 0;
@@ -75,7 +71,7 @@ const read = System.create({
 });
 
 /** The same folds without an index: each cell's rows sorted by entity, and each serial's lowest entity. */
-const reference = System.create({ name: "indexBuildTest/reference", components: { read: [cell, serial, weight] } }, row => {
+const reference = System.create({ components: { with: [cell, serial, weight] } }, row => {
     const [x, y] = row[cell];
     const cellRows = byCell[x * height + y] ??= [];
     cellRows.push([row.entity, row[weight]]);

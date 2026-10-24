@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Path } from '../world/kernel.js';
 import type { Expression } from './ir.js';
-import type { Unit } from './unit.js';
+import { keyIndex, type Unit } from './unit.js';
 
 const column = (unit: Unit, identity: string, description: string): number => {
     const existing = unit.columnIndex.get(identity);
@@ -14,17 +14,32 @@ const column = (unit: Unit, identity: string, description: string): number => {
 /** The column of a scalar leaf of a component. */
 export const fieldColumn = (unit: Unit, component: string, path: Path): number => {
     const json = JSON.stringify(path);
-    return column(unit, `field ${component} ${json}`, `{ kind: "field", component: ${component}, path: ${json} }`);
+    const index = column(unit, `field ${component} ${json}`, `{ kind: "field", component: ${component}, path: ${json} }`);
+    if (unit.signature.optional.has(component) && !unit.optionalColumns.has(index)) unit.optionalColumns.set(index, keyIndex(unit, component));
+    return index;
+};
+
+/**
+ * An optional component's presence column, which an archetype with it gives non-empty and one without empty, so a
+ * kernel tells them apart once per call whatever the component's shape.
+ */
+export const presence = (unit: Unit, component: string): Expression => {
+    const index = column(unit, `present ${component}`, `{ kind: "present", component: ${component} }`);
+    unit.presences.set(component, index);
+    keyIndex(unit, component);
+    return { kind: "present", column: index };
 };
 
 export const fieldRead = (unit: Unit, component: string, path: Path): Expression => ({ kind: "column", column: fieldColumn(unit, component, path) });
 
-/** A component's changed column, immediately followed by its dense chunk column. */
-export const changedColumns = (unit: Unit, component: string): { readonly column: number; readonly chunks: number } => {
+/** A component's changed column, immediately followed by its dense chunk and block columns. */
+export const changedColumns = (unit: Unit, component: string): { readonly column: number; readonly chunks: number; readonly blocks: number } => {
     const changed = column(unit, `changed ${component}`, `{ kind: "changed", component: ${component} }`);
     const chunks = column(unit, `chunks ${component}`, `{ kind: "chunks", component: ${component} }`);
+    const blocks = column(unit, `blocks ${component}`, `{ kind: "blocks", component: ${component} }`);
     unit.chunks.add(chunks);
-    return { column: changed, chunks };
+    unit.blocks.add(blocks);
+    return { column: changed, chunks, blocks };
 };
 
 /** A scalar leaf of a component of the row's parent, read through `up`. */

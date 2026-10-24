@@ -7,7 +7,7 @@ export const tailsCases = (load: () => Promise<typeof Fixture>) => describe("tai
     it("see one tick's values in every run while the world ticks on: in place, from a snapshot when late, and both across a switch at a chunk", async () => {
         const fixture = await load();
         const seen = await fixture.continuous();
-        expect({ wrong: seen.wrong, labels: seen.labels, fewest: seen.fewest, most: seen.most }).toEqual({ wrong: 0, labels: 0, fewest: 1000, most: 1000 });
+        expect({ wrong: seen.wrong, labels: seen.labels, fewest: seen.fewest, most: seen.most, lacking: seen.lacking }).toEqual({ wrong: 0, labels: 0, fewest: 1000, most: 1000, lacking: true });
         expect(seen.late).toBeGreaterThan(0);
         expect(seen.switched).toBeGreaterThan(0);
     }, 30000);
@@ -39,7 +39,7 @@ export const tailsCases = (load: () => Promise<typeof Fixture>) => describe("tai
     }, 30000);
     it("are skipped in every run queued when their thread left, and nothing waits for a tail on a thread that's gone", async () => {
         const fixture = await load();
-        const skipped = ["tailsTest/lead", "tailsTest/watch"];
+        const skipped = ["lead", "watch"];
         expect(await fixture.leaveQueued()).toEqual({ skipped: [skipped, skipped], after: 0 });
     }, 30000);
 });

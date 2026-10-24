@@ -28,14 +28,15 @@ const reserved = new Set(("alias break case const const_assert continue continui
 
 /**
  * Accessors for a render system's shader, in `accessors` order, or the reason one can't be read on the GPU: scalars
- * and tuples of two to four scalars of one type, laid out in 4-byte words.
+ * and tuples of two to four scalars of one type, laid out in 4-byte words. An `ordered` system's accessors take a
+ * row's position in its order, which `ecs_address` resolves to a table's column.
  */
-export const accessorsOf = (shader: Shader): readonly Accessor[] | string => {
+export const accessorsOf = (shader: Shader, ordered = false): readonly Accessor[] | string => {
     const accessors: Accessor[] = [];
     const entries = Object.entries(shader.accessors);
     // A table record is a row count, then a word address per accessor.
     if (entries.length > 63) return "it names more than 63 accessors";
-    for (const [name, key] of entries) {
+    for (const [column, [name, key]] of entries.entries()) {
         const component = labelOf(key);
         if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || name.startsWith("ecs_") || reserved.has(name)) return `"${name}" isn't usable as a WGSL function name`;
         const declaration = declarationOf(key);
@@ -48,26 +49,41 @@ export const accessorsOf = (shader: Shader): readonly Accessor[] | string => {
             return `"${component}" isn't laid out in 4-byte words of f32, i32, u32 or booleans; give it a "storage" or "vertex" layout or 4-byte scalars`;
         }
         const words = stride / 4;
-        const word = (leaf: Leaf): string => `ecs_table.ecs_${name} + row * ${words}u + ${leaf.offset / 4}u`;
+        const word = ordered
+            ? (leaf: Leaf): string => `ecs_base + ${leaf.offset / 4}u`
+            : (leaf: Leaf): string => `ecs_table.ecs_${name} + row * ${words}u + ${leaf.offset / 4}u`;
+        const base = ordered ? `let ecs_base = ecs_address(row, ${column}u, ${words}u); ` : "";
         const [first] = leaves;
         if (leaves.length === 1 && first.path.length === 0) {
-            accessors.push({ name, component: key, code: `fn ${name}(row: u32) -> ${types[0]} { return ${readOf(first, word(first))}; }` });
+            accessors.push({ name, component: key, code: `fn ${name}(row: u32) -> ${types[0]} { ${base}return ${readOf(first, word(first))}; }` });
             continue;
         }
         const tuple = leaves.length >= 2 && leaves.length <= 4 && leaves.every((leaf, i) => leaf.path.length === 1 && leaf.path[0] === i && types[i] === types[0]);
         if (!tuple) return `"${component}" isn't a scalar or a tuple of two to four scalars of one type`;
         const items = leaves.map(leaf => readOf(leaf, word(leaf))).join(", ");
-        accessors.push({ name, component: key, code: `fn ${name}(row: u32) -> vec${leaves.length}<${types[0]}> { return vec${leaves.length}<${types[0]}>(${items}); }` });
+        accessors.push({ name, component: key, code: `fn ${name}(row: u32) -> vec${leaves.length}<${types[0]}> { ${base}return vec${leaves.length}<${types[0]}>(${items}); }` });
     }
     return accessors;
 };
 
 /** The WGSL declarations of a render system's bind group and accessors. */
-export const declarationsOf = (group: number, accessors: readonly Accessor[]): string => [
+export const declarationsOf = (group: number, accessors: readonly Accessor[], ordered = false): string => [
     `@group(${group}) @binding(0) var<storage, read> ecs_heap: array<u32>;`,
-    `struct EcsTable { ecs_rows: u32, ${accessors.map(accessor => `ecs_${accessor.name}: u32`).join(", ")} }`,
+    ordered
+        ? "struct EcsTable { ecs_rows: u32, ecs_order: u32, ecs_tables: u32, ecs_shift: u32 }"
+        : `struct EcsTable { ecs_rows: u32, ${accessors.map(accessor => `ecs_${accessor.name}: u32`).join(", ")} }`,
     `@group(${group}) @binding(1) var<uniform> ecs_table: EcsTable;`,
     `fn ecs_count() -> u32 { return ecs_table.ecs_rows; }`,
+    ...ordered ? [orderedAddress(accessors.length)] : [],
     ...accessors.map(accessor => accessor.code),
     "",
 ].join("\n");
+
+/**
+ * The word address of a column's value at a position of an ordered system's order. The order block holds, by position,
+ * a table's slot above `ecs_shift` bits and its row below them; the tables block holds, by slot, a word address per
+ * accessor.
+ */
+const orderedAddress = (columns: number): string =>
+    "fn ecs_address(row: u32, column: u32, words: u32) -> u32 { let ecs_entry = ecs_heap[ecs_table.ecs_order + row]; "
+    + `return ecs_heap[ecs_table.ecs_tables + (ecs_entry >> ecs_table.ecs_shift) * ${columns}u + column] + (ecs_entry & ((1u << ecs_table.ecs_shift) - 1u)) * words; }`;

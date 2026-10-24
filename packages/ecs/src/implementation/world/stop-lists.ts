@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Finalizer } from '../../interface/finalizer/created.js';
+import { viewsOf, type Layout } from '../../interface/registry/layout.js';
 import type { Memory } from './memory.js';
 import type { StringStore } from './strings.js';
 import { logFinalizedWord, logStopsWord, type MoveLog } from './move-log.js';
@@ -12,7 +13,9 @@ import { logFinalizedWord, logStopsWord, type MoveLog } from './move-log.js';
 // its bytes. Then a group per finalizer with stops, in the world's finalizer order: its index on the thread, its stops,
 // its bytes; then as columns, each on 8 bytes, every stop's entity (f64), its archetype and row before apply (u32), the
 // tag of each object it reads (u32), and the value of each linear struct it reads in that component's layout, or for a
-// string, the handle of a copy of its record, freed with the block, since the thread may read it sync points later.
+// string, the handle of a copy of its record; then its resources as they were before apply: the handle of a copy of
+// each string resource it reads (u32), then each linear resource it reads in its layout, each on 8 bytes. Copies of
+// records are freed with the block, since the thread may read them sync points later.
 
 export const blockSyncWord = 0;
 export const blockNextWord = 1;
@@ -37,11 +40,29 @@ export const valuesAt = (group: number, count: number, objects: number): number 
 /** Bytes of one linear read's column of `count` values of `stride` bytes. */
 export const columnBytes = (count: number, stride: number): number => align(count * stride);
 
-/** Bytes of a group of `count` stops of a finalizer reading `objects` objects and linear values of `strides` bytes. */
-const groupBytes = (count: number, objects: number, strides: readonly number[]): number => {
+/**
+ * Where each linear resource's copy starts past a group's columns, after the handles of `strings` string resources,
+ * for linear resources of `strides` bytes; then the bytes of them all.
+ */
+export const resourceOffsetsOf = (strings: number, strides: readonly number[]): number[] => {
+    const offsets: number[] = [];
+    let at = align(4 * strings);
+    for (const stride of strides) {
+        offsets.push(at);
+        at += align(stride);
+    }
+    offsets.push(at);
+    return offsets;
+};
+
+/**
+ * Bytes of a group of `count` stops of a finalizer reading `objects` objects, linear values of `strides` bytes and
+ * `resources` bytes of resources.
+ */
+const groupBytes = (count: number, objects: number, strides: readonly number[], resources: number): number => {
     let bytes = valuesAt(0, count, objects);
     for (const stride of strides) bytes += columnBytes(count, stride);
-    return bytes;
+    return bytes + resources;
 };
 
 /** One of a joined thread's finalizers, as the world writes its stops. */
@@ -55,6 +76,18 @@ export type StopsOf = {
     readonly strides: readonly number[];
     /** By linear read: whether it's a string's handles, whose records the block holds copies of. */
     readonly copies: readonly boolean[];
+    /**
+     * The string resources it reads, then its linear resources with their strides, in its context's order, which each
+     * group holds copies of; and where each linear one's copy starts past the group's columns, then their bytes.
+     */
+    readonly stringResources: readonly number[];
+    readonly linearResources: readonly number[];
+    readonly resourceStrides: readonly number[];
+    readonly resourceOffsets: readonly number[];
+    /** What its string and linear resources start at, with the linear ones' layouts, for one the world doesn't hold. */
+    readonly stringStarts: readonly unknown[];
+    readonly linearStarts: readonly unknown[];
+    readonly resourceLayouts: readonly Layout[];
     /** This sync point's stops, as plan entries, reused by every sync point. */
     readonly entries: number[];
 };
@@ -128,7 +161,10 @@ const copyStrings = (strings: StringStore, copied: number[], u32: Uint32Array, a
 /** A storage as stops are copied from it: its tags, or its linear values. */
 type Copied = { readonly tags: Uint32Array; readonly views: { readonly u8: Uint8Array; readonly u32: Uint32Array } };
 
-/** What a sync point's stops come from: entries' entities and archetypes before apply, and the entity table's rows. */
+/**
+ * What a sync point's stops come from: entries' entities and archetypes before apply, the entity table's rows, and the
+ * resource entity's archetype and row, -1 without one.
+ */
 export type StopSource = {
     readonly entity: Float64Array;
     readonly from: Int32Array;
@@ -136,6 +172,8 @@ export type StopSource = {
     readonly archetypes: readonly { readonly storageById: readonly (Copied | undefined)[] }[];
     readonly row: Uint32Array;
     readonly holds: Holds;
+    readonly resourceArchetype: number;
+    readonly resourceRow: number;
 };
 
 /**
@@ -147,7 +185,7 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
     const { staged, memory } = writer;
     if (staged.length === 0) return;
     let bytes = blockHeaderBytes;
-    for (const stops of staged) bytes += groupBytes(stops.entries.length, stops.objects.length, stops.strides);
+    for (const stops of staged) bytes += groupBytes(stops.entries.length, stops.objects.length, stops.strides, stops.resourceOffsets[stops.linearResources.length]);
     const offset = memory.allocate(bytes);
     const buffer = memory.memory.buffer;
     const u8 = new Uint8Array(buffer);
@@ -163,9 +201,9 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
     let group = offset + blockHeaderBytes;
     const { entity, from, despawned, archetypes, row: rows, holds } = source;
     for (const stops of staged) {
-        const { entries, objects, linear, strides, copies } = stops;
+        const { entries, objects, linear, strides, copies, stringResources, linearResources, resourceStrides, resourceOffsets } = stops;
         const count = entries.length;
-        const size = groupBytes(count, objects.length, strides);
+        const size = groupBytes(count, objects.length, strides, resourceOffsets[linearResources.length]);
         u32[(group >> 2) + groupIndexWord] = stops.index;
         u32[(group >> 2) + groupCountWord] = count;
         u32[(group >> 2) + groupBytesWord] = size;
@@ -228,6 +266,36 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
                 }
             }
             column += columnBytes(count, stride);
+        }
+        // As before apply, as its components are: the thread may read them after the resources are written again.
+        if (stringResources.length > 0 || linearResources.length > 0) {
+            const { strings } = writer;
+            const { resourceRow } = source;
+            const storageById = source.resourceArchetype < 0 ? undefined : archetypes[source.resourceArchetype].storageById;
+            for (let k = 0; k < stringResources.length; k++) {
+                const handles = storageById?.[stringResources[k]]?.views.u32;
+                // Without the resource, unreachable while a finalizer activates only once its resources exist: its start.
+                const start = stops.stringStarts[k];
+                const copy = strings === null ? 0 : handles !== undefined ? strings.copy(handles[resourceRow]) : typeof start === "string" ? strings.write(start) : 0;
+                if (copy !== 0) copied.push(copy);
+                u32[(column >> 2) + k] = copy;
+            }
+            for (let k = 0; k < linearResources.length; k++) {
+                const values = storageById?.[linearResources[k]]?.views;
+                const stride = resourceStrides[k];
+                const target = column + resourceOffsets[k];
+                if (values === undefined) {
+                    // Unreachable while a finalizer activates only once its resources exist: its start.
+                    const layout = stops.resourceLayouts[k];
+                    if (layout.kind === "linear") layout.write(viewsOf(buffer, target, stride), 0, stops.linearStarts[k]);
+                    continue;
+                }
+                if ((stride & 3) === 0) {
+                    const words = stride >> 2;
+                    for (let w = 0; w < words; w++) u32[(target >> 2) + w] = values.u32[resourceRow * words + w];
+                }
+                else for (let b = 0; b < stride; b++) u8[target + b] = values.u8[resourceRow * stride + b];
+            }
         }
         stopped.push([stops.finalizer, count]);
         group += size;

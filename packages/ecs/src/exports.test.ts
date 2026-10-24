@@ -29,31 +29,28 @@ const install = (): void => {
 };
 
 const consumer = `
-import { Archetype, Component, Index, Rule, System, World, gpuDevice, workers } from "@adobe/ecs";
+import { Index, Rule, System, World, gpuDevice, workers } from "@adobe/ecs";
 export const position = Symbol("exportsTest/position");
 export const element = Symbol("exportsTest/element");
 export const shown = Symbol("exportsTest/shown");
 declare module "@adobe/ecs" {
     interface Components { [position]: { type: number }; [element]: { type: HTMLElement; thread: "main" }; [shown]: { type: true; derived: true } }
 }
-Component.register(position, { type: { type: "number" } });
-Component.register(element, { thread: "main" });
-Component.register(shown, { type: { const: true }, derived: true });
-export const Placed = Archetype.create([position, element]);
-export const showing = Rule.create({ components: { has: [element] }, derive: [shown] });
-export const move = System.create({ name: "exportsTest/move", components: { write: [position] } }, row => { row[position] += 1; });
-export const all = System.create({ name: "exportsTest/all", systems: [move] });
-export const draw = System.render({ name: "exportsTest/draw", shader: { accessors: {} } }, () => {});
-export const placed = Index.create({ name: "exportsTest/placed", key: [position], components: { has: [element] } });
+export const Placed = [position, element] as const;
+export const showing = Rule.create({ components: { with: [element] }, derive: [shown] });
+export const move = System.create({ components: { with: [position] } }, row => { row[position] += 1; });
+export const all = System.create({ systems: [move] });
+export const draw = System.render({ shader: { accessors: {} } }, () => {});
+export const placed = Index.create({ key: [position], components: { with: [element] } });
 export const ranked = Index.create({ key: [position], sorted: true });
-export const after = System.create({ components: { read: [position] }, lookup: { next: { index: ranked, read: [position] } } }, (row, { lookup }) => { void lookup.next({ ">": row[position] }).length; });
+export const after = System.create({ components: { with: [position] }, lookup: { next: { index: ranked } } }, (row, { lookup }) => { void lookup.next({ ">": row[position] }).length; });
 export const sortedName = (index: Index<{ readonly sorted: true }>): string => index.name;
 // A world comes from the one import every other value does.
 export const world: World = World.create({ [workers]: 0 });
 // Another thread joins it through the other end of a channel the world shares.
 declare const port: MessagePort;
 export const joined: World = World.join(port, { threads: ["main"] });
-export const read = System.create({ observer: true, components: { read: [position] }, resources: { read: [gpuDevice] }, lookup: { at: { read: [position] } } }, () => {});
+export const read = System.create({ observer: true, components: { with: [position] }, lookup: { at: { with: [position] } } }, () => {});
 export const added = world.add(read);
 `;
 
@@ -78,7 +75,7 @@ const internal = (path: string): boolean =>
     || path.startsWith("interface/gpu/record");
 
 /** Compiles a consumer's `index.ts` against the installed package, emitting its declarations. */
-const compile = (source: string): { readonly messages: string[] } => {
+const compile = (source: string): { readonly messages: string[]; readonly lines: number[] } => {
     writeFileSync(join(temporary, "index.ts"), source);
     const program = ts.createProgram([join(temporary, "index.ts")], {
         target: ts.ScriptTarget.ESNext,
@@ -92,35 +89,81 @@ const compile = (source: string): { readonly messages: string[] } => {
         outDir: join(temporary, "out"),
     });
     const result = program.emit();
-    return { messages: messages([...ts.getPreEmitDiagnostics(program), ...result.diagnostics]) };
+    const diagnostics = [...ts.getPreEmitDiagnostics(program), ...result.diagnostics];
+    // Each diagnostic's line in the consumer, 1-based; 0 for one outside it.
+    const lines = diagnostics.map(diagnostic => diagnostic.file === undefined || diagnostic.start === undefined || !diagnostic.file.fileName.endsWith("index.ts")
+        ? 0
+        : diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start).line + 1);
+    return { messages: messages(diagnostics), lines };
 };
 
-/** A consumer that registers a symbol-keyed component beside the augmentation given. */
-const stringKeyed = (augmentation: string, registration = ""): string => `
-import { Component, Trait } from "@adobe/ecs";
-export const keyed = Symbol("exportsTest/keyed");
-declare module "@adobe/ecs" {
-    interface Components { [keyed]: { type: number } }
-    ${augmentation}
-}
-Component.register(keyed, { type: { type: "number" } });
-${registration}
-`;
+/** The 1-based lines of `source` holding `text`. */
+const linesWith = (source: string, text: string): number[] =>
+    source.split("\n").flatMap((line, index) => line.includes(text) ? [index + 1] : []);
 
 /** A consumer with a system whose declaration lists a key in both read and write, and composites of conflicting inputs. */
 const misdeclared = `
-import { Component, System } from "@adobe/ecs";
+import { System } from "@adobe/ecs";
 export const health = Symbol("exportsTest/health");
 declare module "@adobe/ecs" {
     interface Components { [health]: { type: number } }
 }
-Component.register(health, { type: { type: "number" } });
-export const both = System.create({ components: { read: [health], write: [health] } }, () => {});
-const near = System.create({ input: { type: "object", properties: { distance: { type: "number" } } } }, () => {});
-const far = System.create({ input: { type: "object", properties: { distance: { type: "string" } } } }, () => {});
+// What a body reads is inferred, never declared.
+export const both = System.create({ components: { read: [health] } }, () => {});
+const near = System.create({}, (_context, input: { readonly distance: number }) => { void input; });
+const far = System.create({}, (_context, input: { readonly distance: string }) => { void input; });
 export const listed = System.create([near, far]);
 export const declared = System.create({ systems: [near, far], after: [both] });
 `;
+
+/** A consumer creating two worlds and using them, with `declarations` augmenting the package. */
+const creating = (declarations: string): string => `
+import { World, workers, type Component } from "@adobe/ecs";
+${declarations}
+export const world: World = World.create();
+export const other: World = World.create({ [workers]: 0 });
+export const typed: World = world;
+export const disposed = other.dispose();
+`;
+
+/** A trait of your own on a key its type doesn't allow. */
+const customTrait = creating(`
+export const instanced = Symbol();
+export const foo = Symbol();
+declare module "@adobe/ecs" {
+    interface Traits<N> { readonly [instanced]: N extends Component.Key ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never }
+    interface Components { [foo]: { type: string; [instanced]: true } }
+}`);
+
+/** A built-in trait on a key its type doesn't allow: a thread on a struct. */
+const builtInTrait = creating(`
+export const spot = Symbol();
+declare module "@adobe/ecs" {
+    interface Components { [spot]: { type: number; thread: "main" } }
+}`);
+
+/** A default that isn't of the declared type. */
+const wrongDefault = creating(`
+export const label = Symbol();
+declare module "@adobe/ecs" {
+    interface Resources { [label]: { type: string; default: 1 } }
+}`);
+
+/** One key with several members that don't hold: a custom trait and a thread on a string. */
+const severalTraits = creating(`
+export const instanced = Symbol();
+export const name = Symbol();
+declare module "@adobe/ecs" {
+    interface Traits<N> { readonly [instanced]: N extends Component.Key ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never }
+    interface Components { [name]: { type: string; [instanced]: true; thread: "main" } }
+}`);
+
+/** One key whose default is of another type and which can't be transferred. */
+const defaultAndTransfer = creating(`
+export const canvas = Symbol();
+declare module "@adobe/ecs" {
+    interface Resources { [canvas]: { type: string; default: 1; transfer: true } }
+}`);
 
 describe("package exports", () => {
     beforeAll(() => {
@@ -133,10 +176,9 @@ describe("package exports", () => {
         // An index's type reads as it was declared, naming only the package root.
         const emitted = readFileSync(join(temporary, "out", "index.d.ts"), "utf8");
         expect(emitted).toContain(`export declare const placed: Index<{
-    readonly name: "exportsTest/placed";
     readonly key: readonly [typeof position];
     readonly components: {
-        readonly has: readonly [typeof element];
+        readonly with: readonly [typeof element];
     };
 }>;`);
         expect(emitted).toContain(`export declare const ranked: Index<{
@@ -145,21 +187,39 @@ describe("package exports", () => {
 }>;`);
         expect([...emitted.matchAll(/import\("([^"]+)"\)/g)].map(match => match[1]).filter(path => path !== "@adobe/ecs")).toEqual([]);
     }, 60_000);
+    it("report a declaration that doesn't hold once at each World.create call, naming the key, the member and the problem", () => {
+        const cases = [
+            { source: customTrait, named: `readonly [foo]: { readonly [instanced]: "isn't allowed on this key"; }` },
+            { source: builtInTrait, named: `readonly [spot]: { readonly thread: "isn't allowed on this key"; }` },
+            { source: wrongDefault, named: `readonly [label]: { readonly default: "isn't of the declared type"; }` },
+        ];
+        for (const { source, named } of cases) {
+            const { messages: reported, lines } = compile(source);
+            // One error per call, on the call; uses of the worlds type-check.
+            expect(lines).toEqual(linesWith(source, "World.create("));
+            for (const message of reported) {
+                expect(message).toContain("declarations don't hold");
+                expect(message).toContain(named);
+            }
+        }
+        expect(compile(creating("")).messages).toEqual([]);
+    }, 60_000);
+    it("name every member of a key that doesn't hold", () => {
+        const cases = [
+            { source: severalTraits, named: [`readonly [instanced]: "isn't allowed on this key"`, `readonly thread: "isn't allowed on this key"`] },
+            { source: defaultAndTransfer, named: [`readonly default: "isn't of the declared type"`, `readonly transfer: "isn't allowed on this key"`] },
+        ];
+        for (const { source, named } of cases) {
+            const { messages: reported, lines } = compile(source);
+            expect(lines).toEqual(linesWith(source, "World.create("));
+            for (const message of reported) for (const member of named) expect(message).toContain(member);
+        }
+    }, 60_000);
     it("report a misdeclared system, and a composite of conflicting members, at the mistake rather than as no overload matching", () => {
         const reported = compile(misdeclared).messages;
         expect(reported.some(message => message.includes("No overload matches"))).toBe(false);
         expect(reported.filter(message => message.includes(`has a different type in another member of this composite.`))).toHaveLength(4);
-        expect(reported.some(message => message.startsWith("Type '[unique symbol]' is not assignable"))).toBe(true);
-    }, 60_000);
-    it("fail every registration to compile while a component, resource or trait is keyed by a string, naming the keys", () => {
-        expect(compile(stringKeyed(`interface Components { "exportsTest/named": { type: number } }`)).messages.join("\n"))
-            .toContain(`'{ readonly "component keys must be symbols": "exportsTest/named"; }'`);
-        expect(compile(stringKeyed(`interface Resources { "exportsTest/time": { type: number } }`)).messages.join("\n"))
-            .toContain(`'{ readonly "resource keys must be symbols": "exportsTest/time"; }'`);
-        const trait = compile(stringKeyed(`interface Traits<N> { readonly persisted: true }`, `Trait.register("persisted");`)).messages.join("\n");
-        expect(trait).toContain(`'{ readonly "trait keys must be symbols": "persisted"; }'`);
-        // Registration takes only symbol keys, so a string-keyed trait can't be registered either.
-        expect(trait).toContain(`Argument of type '"persisted"' is not assignable`);
+        expect(reported.some(message => message.startsWith("Type 'symbol[]' is not assignable to type 'undefined'"))).toBe(true);
     }, 60_000);
 });
 

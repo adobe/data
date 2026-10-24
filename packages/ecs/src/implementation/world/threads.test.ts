@@ -14,6 +14,8 @@ import type * as Reductions from "./reductions.fixture.js";
 import { reductionsCases } from "./reductions.cases.js";
 import type * as ObservedWorkers from "./observed-workers.fixture.js";
 import { observedWorkersCases } from "./observed-workers.cases.js";
+import type * as ChangeBlocks from "./change-blocks.fixture.js";
+import { changeBlocksCases } from "./change-blocks.cases.js";
 import type * as UpWorkers from "./up-workers.fixture.js";
 import { upWorkersCases } from "./up-workers.cases.js";
 import type * as Ports from "./ports.fixture.js";
@@ -46,6 +48,8 @@ import type * as ObserverJoined from "./observer-joined.fixture.js";
 import { observerJoinedCases } from "./observer-joined.cases.js";
 import type * as ObserverContained from "./observer-contained.fixture.js";
 import { observerContainedCases } from "./observer-contained.cases.js";
+import type * as OptionalWorkers from "./optional-workers.fixture.js";
+import { optionalWorkersCases } from "./optional-workers.cases.js";
 
 // Real worker threads in node: the cases over fixtures `vitest.fixtures.ts` built, each typed as its source, which it's
 // built from.
@@ -56,6 +60,7 @@ poolSizeCases((): Promise<typeof PoolSize> => builtFixture("pool-size"));
 dispatchCases((): Promise<typeof Dispatch> => builtFixture("dispatch"));
 reductionsCases((): Promise<typeof Reductions> => builtFixture("reductions"));
 observedWorkersCases((): Promise<typeof ObservedWorkers> => builtFixture("observed-workers"));
+changeBlocksCases((): Promise<typeof ChangeBlocks> => builtFixture("change-blocks"));
 upWorkersCases((): Promise<typeof UpWorkers> => builtFixture("up-workers"));
 portsCases((): Promise<typeof Ports> => builtFixture("ports"));
 commandRingsCases((): Promise<typeof CommandRings> => builtFixture("command-rings"));
@@ -72,3 +77,4 @@ indexBuildCases((): Promise<typeof IndexBuild> => builtFixture("index-build"));
 entityLookupWorkersCases((): Promise<typeof EntityLookupWorkers> => builtFixture("entity-lookup-workers"));
 observerJoinedCases((): Promise<typeof ObserverJoined> => builtFixture("observer-joined"));
 observerContainedCases((): Promise<typeof ObserverContained> => builtFixture("observer-contained"));
+optionalWorkersCases((): Promise<typeof OptionalWorkers> => builtFixture("optional-workers"));

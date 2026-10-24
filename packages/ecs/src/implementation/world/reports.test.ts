@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component, Index, Report, Resource, System, clock, workers } from "../../index.js";
+import { Index, Report, System, clock, workers } from "../../index.js";
 import { createWorld } from "./create.js";
 import { retainedRuns } from "./reports.js";
 import { reportOf, runOf } from "./reports.test-helper.js";
@@ -15,34 +15,32 @@ declare module "@adobe/ecs" {
         [level]: { type: number };
     }
 }
-Component.register(amount, { type: { type: "number" } });
-Resource.register(level, { type: { type: "number", default: 0 } });
 
-const nothing = System.create({ name: "reportsTest/nothing" }, () => {});
-const fail = System.create({ name: "reportsTest/fail" }, () => { throw new Error("run failed"); });
-const raise = System.create({ name: "reportsTest/raise", resources: { write: [level] } }, ({ resources }) => { resources[level] += 1; });
-const idle = System.create({ name: "reportsTest/idle", observer: true }, () => {});
-const spawn = System.create({ name: "reportsTest/spawn" }, ({ commands }) => { commands.spawn([amount])({ [amount]: 1 }); });
-const despawnAll = System.create({ name: "reportsTest/despawnAll", components: { has: [amount] } }, (row, { commands }) => {
+const nothing = System.create({}, () => {});
+const fail = System.create({}, () => { throw new Error("run failed"); });
+const raise = System.create({}, ({ resources }) => { resources[level] += 1; });
+const idle = System.create({ observer: true }, () => {});
+const spawn = System.create({}, ({ commands }) => { commands.spawn([amount])({ [amount]: 1 }); });
+const despawnAll = System.create({ components: { with: [amount] } }, (row, { commands }) => {
     commands.despawn(row.entity);
     commands.despawn(row.entity);
 });
-const failingObserver = System.create({ name: "reportsTest/failingObserver", observer: true, resources: { read: [level], changed: [level] } }, ({ resources }) => {
+const failingObserver = System.create({ observer: true, resources: { changed: [level] } }, ({ resources }) => {
     if (resources[level] > 0) throw new Error("observer failed");
 });
 
 /** What a logger following reports saw, by pass: each changed report's run and failures' messages. */
 const logged: (readonly [number, readonly string[]])[] = [];
-const logger = System.create({ name: "reportsTest/logger", observer: true, components: { read: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
+const logger = System.create({ observer: true, components: { with: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
     logged.push([row[Report.run].number, row[Report.errors].failures.map(failure => failure.message)]);
 });
 
 /** The run numbers of every report, in entity order, and of those with errors. */
 let numbers: number[] = [];
 let withErrors: number[] = [];
-const allReports = Index.create({ name: "reportsTest/allReports", key: [], components: { has: [Report.run] } });
-const erredReports = Index.create({ name: "reportsTest/erredReports", key: [], components: { has: [Report.run, Report.errors] } });
-const listReports = System.create({ name: "reportsTest/listReports", observer: true, lookup: { all: { index: allReports, read: [Report.run] }, erred: { index: erredReports, read: [Report.run] } } }, ({ lookup }) => {
+const allReports = Index.create({ key: [], components: { with: [Report.run] } });
+const erredReports = Index.create({ key: [], components: { with: [Report.run, Report.errors] } });
+const listReports = System.create({ observer: true, lookup: { all: { index: allReports }, erred: { index: erredReports } } }, ({ lookup }) => {
     const all = lookup.all();
     numbers = [];
     for (let i = 0; i < all.length; i++) numbers.push(all.at(i)[Report.run].number);
@@ -83,7 +81,7 @@ describe("reports", () => {
         const failed = await world.run(fail);
         expect(logged).toEqual([[failed, ["run failed"]]]);
         const { failures } = await reportOf(world, failed);
-        expect(failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "reportsTest/fail", "run failed"]]);
+        expect(failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "fail", "run failed"]]);
         await world.run(spawn);
         const dropping = await world.run(despawnAll);
         expect(await reportOf(world, dropping)).toEqual({ failures: [], skipped: [], dropped: 1, warnings: [] });
@@ -103,7 +101,7 @@ describe("reports", () => {
         expect((await reportOf(world, raised)).failures).toEqual([]);
         // The reader's run, the next, holds them, and the logger saw them in its pass.
         const { failures } = await reportOf(world, raised + 1);
-        expect(failures.map(({ name, message }) => [name, message])).toEqual([["reportsTest/failingObserver", "observer failed"]]);
+        expect(failures.map(({ name, message }) => [name, message])).toEqual([["failingObserver", "observer failed"]]);
         expect(logged).toEqual([[raised + 1, ["observer failed"]]]);
         // A failed run's report holds its own failures; its pass's are in the next.
         const both = System.create([fail, raise]);
@@ -133,7 +131,7 @@ describe("reports", () => {
         await using world = inline();
         logged.length = 0;
         world.add(logger);
-        const failWith = System.create({ name: "reportsTest/failWith", input: { type: "object", properties: { k: { type: "integer" } } } }, ({ input }) => { throw new Error(`run ${input.k}`); });
+        const failWith = System.create({}, (_context, input: { readonly k: number }) => { throw new Error(`run ${input.k}`); });
         for (let k = 0; k < retainedRuns; k++) await world.run(failWith, { k });
         logged.length = 0;
         const reused = await world.run(failWith, { k: retainedRuns });
@@ -152,7 +150,7 @@ describe("reports", () => {
         let ticked = (): void => {};
         // Its first pass passes its filter; only a tick writes the clock after.
         let passes = 0;
-        const watchTicks = System.create({ name: "reportsTest/watchTicks", observer: true, resources: { changed: [clock] } }, () => {
+        const watchTicks = System.create({ observer: true, resources: { changed: [clock] } }, () => {
             if (++passes > 1) ticked();
         });
         world.add(watchTicks);

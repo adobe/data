@@ -50,5 +50,8 @@ jobs:
       - name: Build (every package, topological)
         run: pnpm -r run build
 
+      - name: API docs (every package that defines them; warnings fail)
+        run: pnpm -r run docs
+
       - name: Test (each package runs its own complete suite)
         run: pnpm -r run test

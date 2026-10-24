@@ -2,7 +2,7 @@
 import { ensureCapacity, type Archetype } from './archetype.js';
 import type { CommandBuffer } from './buffer.js';
 import { indexOf } from './entities.js';
-import { chunkShift } from './kernel.js';
+import { blockShift, chunkShift } from './kernel.js';
 import { createBatch, type SpawnBatch } from './staging.js';
 import { archetypeOf, type State } from './state.js';
 import { gainsOf } from './structure.js';
@@ -82,7 +82,9 @@ const commitRows = (state: State, batch: SpawnBatch, first: number, n: number, t
         if (!storage.ticked) continue;
         storage.added.fill(tick, start, start + n);
         if (storage.changed !== storage.added) storage.changed.fill(tick, start, start + n);
-        // Ticks only increase, so the newest tick in each chunk the rows reach is this one.
+        // Ticks only increase, so the newest tick in each chunk and block the rows reach is this one.
+        storage.blockAdded.fill(tick, start >> blockShift, ((start + n - 1) >> blockShift) + 1);
+        if (storage.blockChanged !== storage.blockAdded) storage.blockChanged.fill(tick, start >> blockShift, ((start + n - 1) >> blockShift) + 1);
         storage.chunkAdded.fill(tick, start >> chunkShift, ((start + n - 1) >> chunkShift) + 1);
         if (storage.chunkChanged !== storage.chunkAdded) storage.chunkChanged.fill(tick, start >> chunkShift, ((start + n - 1) >> chunkShift) + 1);
     }

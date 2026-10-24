@@ -11,7 +11,7 @@ export type ListNames = readonly string[] | { readonly error: string };
 export type Lists = {
     /**
      * The keys a list names: an array literal of the kernel's module-scope identifiers, or a constant, of the kernel's
-     * module or imported through any re-exports and namespaces, holding an array literal or `Archetype.create` of one.
+     * module or imported through any re-exports and namespaces, holding an array literal.
      * A key of another module's list is named by the kernel's binding of the same definition, or else by the list
      * itself, as `List[k]`.
      */
@@ -23,6 +23,12 @@ export type Lists = {
      * external to it, is taken as a key, and registration rejects a list there. Anything else fails with the reason.
      */
     readonly component: (node: Node) => Named;
+    /**
+     * The operator the resource the kernel's module names `name` reduces with, its declaration's `reduce` trait, read
+     * through the build from the module declaring it, undefined where the build can't read one, and that module's file;
+     * null for a name the module doesn't bind.
+     */
+    readonly reduction: (name: string) => { readonly operator: string | undefined; readonly file: string } | null;
 };
 
 /** What a command's component argument names, or why the compiler can't tell. */
@@ -50,14 +56,11 @@ const isKey = (node: Expression, module: Module): boolean => {
     return module.bindings.get(node.callee.name)?.kind === "function" && symbol !== undefined && symbol.type !== "SpreadElement" && isSymbolCall(symbol, module);
 };
 
-/** `Archetype.create(<array literal>)`, with `Archetype` imported under any name: its array literal, else null. */
-const createdList = (node: Expression, module: Module): ArrayExpression | null => {
-    if (node.type !== "CallExpression" || node.arguments.length !== 1) return null;
-    const { callee } = node;
-    if (callee.type !== "MemberExpression" || callee.computed || callee.object.type !== "Identifier" || callee.property.type !== "Identifier" || callee.property.name !== "create") return null;
-    const binding = module.bindings.get(callee.object.name);
+/** A list's literal as the plugin gives it an index, `archetype$([...])` with its appended function: the literal, else null. */
+const indexedList = (node: Expression, module: Module): ArrayExpression | null => {
+    if (node.type !== "CallExpression" || node.arguments.length !== 1 || node.callee.type !== "Identifier" || !/^archetype\$\d*$/.test(node.callee.name)) return null;
     const [list] = node.arguments;
-    return binding?.kind === "import" && binding.imported === "Archetype" && list.type === "ArrayExpression" ? list : null;
+    return module.bindings.get(node.callee.name)?.kind === "function" && list.type === "ArrayExpression" ? list : null;
 };
 
 const fileOf = (module: Module, kernel: Module): string => module === kernel ? "this module" : module.file;
@@ -72,14 +75,14 @@ const follow = (name: string, binding: ModuleBinding, module: Module, kernel: Mo
         case "const": {
             const { init } = binding;
             if (init.type === "ArrayExpression") return { literal: init, module, reference };
-            const created = createdList(init, module);
-            if (created !== null) return { literal: created, module, reference };
+            const indexed = indexedList(init, module);
+            if (indexed !== null) return { literal: indexed, module, reference };
             if (init.type === "Identifier") {
                 const aliased = module.bindings.get(init.name);
                 if (aliased !== undefined) return follow(init.name, aliased, module, kernel, link, reference, wanted, seen);
             }
             if (isKey(init, module)) return { key: identity };
-            const declare = wanted === "list" ? "declare it as an array literal, or Archetype.create of one" : "declare a key as Symbol(...), or a list as an array literal or Archetype.create of one";
+            const declare = wanted === "list" ? "declare it as an array literal, `as const`" : "declare a key as Symbol(...), or a list as an array literal, `as const`";
             return { error: `${reference} is computed when ${fileOf(module, kernel)} runs, so ${unread}; ${declare}` };
         }
         case "import": case "importNamespace":
@@ -111,7 +114,7 @@ const chain = (node: Node): readonly string[] | null => {
 const find = (node: Node, kernel: Module, link: Link | null, wanted: Wanted): Followed => {
     if (node.type === "ArrayExpression") return { literal: node, module: kernel, reference: "" };
     const names = chain(node);
-    if (names === null) return { error: "commands and kernel declarations name a list as an array literal, or a constant holding one or Archetype.create of one" };
+    if (names === null) return { error: "commands and kernel declarations name a list as an array literal, or a constant holding one" };
     const [first, ...members] = names;
     const reference = names.join(".");
     const binding = kernel.bindings.get(first);
@@ -176,6 +179,13 @@ export const createLists = (kernel: Module, link: Link | null, nodes: readonly N
         const result: string[] = [];
         for (let k = 0; k < literal.elements.length; k++) {
             const element = literal.elements[k];
+            // The kernel's own list may spread another it can read: `with: [...Unit, tagged]`.
+            if (element?.type === "SpreadElement" && module === kernel) {
+                const spread = names(element.argument);
+                if ("error" in spread) return spread;
+                result.push(...spread);
+                continue;
+            }
             const binding = element?.type === "Identifier" ? module.bindings.get(element.name) : undefined;
             if (element?.type !== "Identifier" || binding === undefined) {
                 return { error: module === kernel ? "lists name keys by identifiers bound at module scope" : `${reference} names a key by something other than an identifier bound at the scope of ${module.file}` };
@@ -199,5 +209,12 @@ export const createLists = (kernel: Module, link: Link | null, nodes: readonly N
         // its definition where it has one.
         return { kind: "key", name: node.type === "Identifier" || found.key === null ? reference : nameOf(found.key, reference) };
     };
-    return { names, component };
+    const reduction = (name: string): { readonly operator: string | undefined; readonly file: string } | null => {
+        const binding = kernel.bindings.get(name);
+        const identity = binding === undefined ? null : definition(kernel, name, binding, link);
+        if (identity === null) return null;
+        const [file = "", defined = ""] = identity.split("\0");
+        return { operator: link?.reductionOf?.(file, defined), file };
+    };
+    return { names, component, reduction };
 };

@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../interface/component/component.js";
 import type { Entity } from "../interface/entity/entity.js";
-import { Resource } from "../interface/resource/resource.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
@@ -25,29 +23,24 @@ declare module "@adobe/ecs" {
         [unmatched]: { type: true };
     }
     export interface Resources {
-        [level]: { type: number };
+        [level]: { type: number; default: 3 };
     }
 }
-Resource.register(level, { type: { type: "number", default: 3 } });
-Component.register(value, { type: { type: "number" } });
-Component.register(rank, { type: { type: "number" } });
-Component.register(marked, { type: { const: true } });
-Component.register(unmatched, { type: { const: true } });
 
 /** `count` entities with a value and a rank, the first of them marked. */
-const seed = System.create({ name: "observed/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     commands.spawn([value, rank, marked])({ [value]: 0, [rank]: 0, [marked]: true });
     for (let i = 1; i < input.count; i++) commands.spawn([value, rank])({ [value]: (i * 7919) % input.count, [rank]: i });
 });
 
 /** Writes the marked entity's value, so one entity observer is notified and a selection or count is a candidate. */
-const nudge = System.create({ name: "observed/nudge", components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
+const nudge = System.create({ kernel: false, components: { with: [value, marked] } }, row => { row[value] += 1; });
 
 /** A kernel writing every row's rank. */
-const advance = System.create({ name: "observed/advance", kernel: "cpu", components: { write: [rank] } }, row => { row[rank] += 1; });
+const advance = System.create({ kernel: true, components: { with: [rank] } }, row => { row[rank] += 1; });
 
 /** A system no entity matches: a run that changes nothing. */
-const idle = System.create({ name: "observed/idle", components: { has: [unmatched] } }, () => {});
+const idle = System.create({ kernel: false, components: { with: [unmatched] } }, () => {});
 
 const check = (condition: boolean, message: string): void => {
     if (!condition) throw new Error(message);

@@ -9,7 +9,7 @@ import { triggersOf } from './program.js';
 import { ensureResources, findResource } from './resources.js';
 import { idOf, metIdOf, type Key, type State } from './state.js';
 import { restratify } from './structure.js';
-import { idOfItem, idOfKey, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
+import { idOfItem, idOfKey, labelOf, threadOf } from '../../interface/registry/index.js';
 
 /**
  * Why a joined thread that imported the items of ids `imported` can't claim `threads`: a program finalizer on one that
@@ -20,7 +20,7 @@ export const finalizerCrossing = (threads: readonly string[], imported: Readonly
         if (finalizer.kind !== "finalizer") continue;
         const thread = threadOf(finalizer.declaration, "Finalizer", finalizer.name);
         if (thread === null || !threads.includes(thread)) continue;
-        const label = labelOfItem(finalizer);
+        const label = finalizer.name;
         const id = idOfItem(finalizer);
         if (id === undefined) return `Finalizer "${label}" runs on thread "${thread}" and has no id, so a joined thread can't run it; the build gives top-level finalizers one.`;
         if (!imported.has(id)) return `Finalizer "${label}" runs on thread "${thread}", which the joined thread claiming it never imported.`;

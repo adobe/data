@@ -1,28 +1,28 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
-import type { Resource } from '../resource/resource.js';
 import type { Commands } from '../system/commands.js';
 import type { Listed, Property } from '../system/property.js';
-import type { LookupFunction, ResourceValues, Values } from '../system/values.js';
+import type { LookupFunction } from '../system/values.js';
+import type { WriteResources } from '../system/body.js';
 import type { ChangesDeclaration, Declaration } from './declaration.js';
 import type { Essential, ReadonlyValue } from '../component/value.js';
 import type { Elsewhere, ThreadsOf } from '../system/threads.js';
 
-/** The entity that stopped matching, with its `read` values as they are before the sync point applies. */
+/**
+ * The entity that stopped matching, with the values of its `with` as they are before the sync point applies, and of
+ * its `optional` where it had them, `undefined` where it didn't.
+ */
 export type Row<D extends Declaration> =
-    { readonly entity: Entity } & { readonly [K in Listed<Property<D, "components">, "read"> & Component.Key]: Component.Value<K> };
-
-type Resources<D> = Listed<Property<D, "resources">, "read"> | Listed<Property<D, "resources">, "write">;
+    { readonly entity: Entity } & { readonly [K in Listed<Property<D, "components">, "with"> & Component.Key]: Component.Value<K> }
+    & { readonly [K in Exclude<Listed<Property<D, "components">, "optional">, Listed<Property<D, "components">, "with">> & Component.Key]: Component.Value<K> | undefined };
 
 /**
- * Resources and lookups, each present only when declared, and the commands it issues for the next sync point: none on
- * another thread than the world's, which runs after the sync point.
+ * Every resource, its lookups when declared, and the commands it issues for the next sync point: none on another
+ * thread than the world's, which runs after the sync point and writes no resources.
  */
 export type Context<D extends Declaration | ChangesDeclaration> =
-    ([Resources<D>] extends [never] ? {} : {
-        readonly resources: Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Key, ResourceValues>;
-    })
+    { readonly resources: WriteResources }
     & ([keyof Property<D, "lookup">] extends [never] ? {} : {
         readonly lookup: { readonly [K in keyof Property<D, "lookup">]: LookupFunction<Property<D, "lookup">[K]> };
     })

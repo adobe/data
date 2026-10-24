@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
-import type { Declaration } from '../../interface/system/declaration.js';
-import type { SystemLookup } from '../../interface/system/access.js';
+import type { Resolved } from '../../interface/system/declaration.js';
+import type { SystemLookupLists } from '../../interface/system/access.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Layout, TypedArray } from '../../interface/registry/layout.js';
 import { stampChanged, writeF32Lanes, writeGeneral, writeOf, type Archetype, type Storage } from './archetype.js';
@@ -10,6 +10,7 @@ import { readString, writeString } from './strings.js';
 import { indexOf, locate } from './entities.js';
 import { ownTag } from './move-log.js';
 import { resourceCell } from './resources.js';
+import { labelOf } from '../../interface/registry/names.js';
 import { idOf, type Key, type State } from './state.js';
 import { combine, contributed, identityOf, type ReductionTarget } from './reductions.js';
 import { createIndexLookup, type Since } from './index-lookups.js';
@@ -19,7 +20,7 @@ import type { WorldIndex } from './indexes.js';
  * What an accessor row reads and writes: a storage, or a joined thread's view of one. A joined thread's own objects
  * have `tags`, the world's tags of their rows, which a write marks as the thread's own value.
  */
-export type RowStorage = Pick<Storage, "layout" | "views" | "strings" | "values" | "write" | "ticked" | "added" | "changed" | "chunkAdded" | "chunkChanged" | "tags">;
+export type RowStorage = Pick<Storage, "layout" | "views" | "strings" | "values" | "write" | "ticked" | "added" | "changed" | "chunkAdded" | "chunkChanged" | "blockAdded" | "blockChanged" | "tags">;
 
 /** What a row binds to: an archetype, or a joined thread's view of one. */
 export type RowArchetype = { readonly id: number; readonly entities: Float64Array; readonly storageById: readonly (RowStorage | undefined)[] };
@@ -126,8 +127,25 @@ const slotOf = (archetype: RowArchetype, id: number): Slot => {
     return { storage, view: viewOf(storage) };
 };
 
-export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly Key[], ids: readonly number[], writes: readonly Key[]): Row => {
-    const slots = ids.map(id => slotOf(archetype, id));
+/** An optional component's getter where the archetype lacks it, and its setter, which fails its system. */
+const absentGetter = (): undefined => undefined;
+const absentSetterOf = (key: Key): (value: unknown) => void => () => {
+    throw new Error(`An entity lacks "${labelOf(key)}", optional in its system: add it with commands.add rather than assigning it.`);
+};
+
+/** A present optional component's setter, which fails its system for `undefined`: that removes nothing. */
+const presentSetterOf = (key: Key, set: (value: unknown) => void): (value: unknown) => void => value => {
+    if (value === undefined) throw new Error(`"${labelOf(key)}" was assigned undefined, which removes nothing: remove it with commands.remove.`);
+    set(value);
+};
+
+/**
+ * A row of an archetype's `keys`. `absent` is undefined for a member and, for an optional component, whether the
+ * archetype lacks it: one it lacks reads as `undefined` and assigning it fails its system, and one it has fails its
+ * system when assigned `undefined`.
+ */
+export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly Key[], ids: readonly number[], writes: readonly Key[], absent: readonly (boolean | undefined)[] = []): Row => {
+    const slots = ids.map((id, i): Slot | undefined => absent[i] === true ? undefined : slotOf(archetype, id));
     // Its own prototype gives the row its own root map. Rows built from `{}` share one, and defining an accessor with a
     // different getter than an existing transition's makes V8 switch the object to slow dictionary properties.
     const value: object = Object.create({});
@@ -138,18 +156,25 @@ export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly
         bind: next => {
             row.entities = next.entities;
             for (let i = 0; i < ids.length; i++) {
+                const slot = slots[i];
+                if (slot === undefined) continue;
                 const { storage, view } = slotOf(next, ids[i]);
-                slots[i].storage = storage;
-                slots[i].view = view;
+                slot.storage = storage;
+                slot.view = view;
             }
         },
     };
     Object.defineProperty(value, "entity", { get: () => row.entities[row.index], enumerable: true });
     keys.forEach((key, i) => {
         const layout = host.layouts[ids[i]];
-        Object.defineProperty(value, key, {
-            get: getterOf(host, layout, slots[i], row),
-            set: writes.includes(key) ? setterOf(host, layout, slots[i], row) : undefined,
+        const slot = slots[i];
+        Object.defineProperty(value, key, slot === undefined ? {
+            get: absentGetter,
+            set: writes.includes(key) ? absentSetterOf(key) : undefined,
+            enumerable: true,
+        } : {
+            get: getterOf(host, layout, slot, row),
+            set: !writes.includes(key) ? undefined : absent[i] === false ? presentSetterOf(key, setterOf(host, layout, slot, row)) : setterOf(host, layout, slot, row),
             enumerable: true,
         });
     });
@@ -262,11 +287,13 @@ export const parentBinder = (state: State, reads: readonly Key[]): (archetype: A
  * declares the same ones, so a body sees one row shape whichever system or archetype it runs over. A host's systems
  * run one at a time, so a binding lasts for one system's pass over one archetype. `idOfKey` gives each key's component.
  */
-export const rowBinderOf = <A extends RowArchetype>(host: RowHost, idOfKey: (key: Key) => number, reads: readonly Key[], writes: readonly Key[]): (archetype: A) => Row => {
+export const rowBinderOf = <A extends RowArchetype>(host: RowHost, idOfKey: (key: Key) => number, reads: readonly Key[], writes: readonly Key[], optional: readonly Key[] = []): (archetype: A) => Row => {
     const keys = [...new Set([...reads, ...writes])];
     const ids = keys.map(idOfKey);
     const signature = keys.map((key, i) => writes.includes(key) ? `${ids[i]}w` : `${ids[i]}`).join(",");
-    return archetype => {
+    /** The positions in `keys` of optional components, whose presence in an archetype picks its row. */
+    const optionals = keys.flatMap((key, i) => optional.includes(key) ? [i] : []);
+    if (optionals.length === 0) return archetype => {
         let row = host.rows.get(signature);
         if (row === undefined) {
             row = createRow(host, archetype, keys, ids, writes);
@@ -275,21 +302,47 @@ export const rowBinderOf = <A extends RowArchetype>(host: RowHost, idOfKey: (key
         else row.bind(archetype);
         return row;
     };
+    // Each pattern of which optional components an archetype has is a row of its own, so no read checks per row. The
+    // pattern marks every key, `-` for a member and `0` or `1` for an optional one absent or present, so systems with
+    // the same keys but other optional ones never share a row.
+    const absent: (boolean | undefined)[] = keys.map(() => undefined);
+    return archetype => {
+        let pattern = signature + "|";
+        for (let i = 0, next = 0; i < keys.length; i++) {
+            if (optionals[next] !== i) {
+                pattern += "-";
+                continue;
+            }
+            next++;
+            absent[i] = archetype.storageById[ids[i]] === undefined;
+            pattern += absent[i] ? "0" : "1";
+        }
+        let row = host.rows.get(pattern);
+        if (row === undefined) {
+            row = createRow(host, archetype, keys, ids, writes, [...absent]);
+            host.rows.set(pattern, row);
+        }
+        else row.bind(archetype);
+        return row;
+    };
 };
 
 /** The accessor row binder for main-thread systems of a world. */
-export const rowBinder = (state: State, reads: readonly Key[], writes: readonly Key[]): (archetype: Archetype) => Row =>
-    rowBinderOf<Archetype>(state, key => idOf(state, key), reads, writes);
+export const rowBinder = (state: State, reads: readonly Key[], writes: readonly Key[], optional: readonly Key[] = []): (archetype: Archetype) => Row =>
+    rowBinderOf<Archetype>(state, key => idOf(state, key), reads, writes, optional);
 
 /**
  * A lookup's matcher, with its component ids resolved once. `find` returns the row of a live entity that matches, or -1,
  * leaving its archetype in `archetype`.
  */
-const createMatcher = (state: State, lookup: SystemLookup) => {
+const createMatcher = (state: State, lookup: SystemLookupLists) => {
     const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => idOf(state, key));
     const read = ids(lookup.read);
     const has = ids("has" in lookup ? lookup.has : undefined);
     const not = ids("not" in lookup ? lookup.not : undefined);
+    // What it reads but its optional components, which an entity it finds may lack.
+    const optional = ids("optional" in lookup ? lookup.optional : undefined);
+    const required = read.filter(id => !optional.includes(id));
     const matcher = {
         read,
         archetype: null as Archetype | null,
@@ -299,7 +352,7 @@ const createMatcher = (state: State, lookup: SystemLookup) => {
             const archetype = state.archetypes[state.entities.archetype[index]];
             if (archetype.resource) return -1;
             const { storageById } = archetype;
-            for (let i = 0; i < read.length; i++) if (storageById[read[i]] === undefined) return -1;
+            for (let i = 0; i < required.length; i++) if (storageById[required[i]] === undefined) return -1;
             for (let i = 0; i < has.length; i++) if (storageById[has[i]] === undefined) return -1;
             for (let i = 0; i < not.length; i++) if (storageById[not[i]] !== undefined) return -1;
             const row = state.entities.row[index];
@@ -348,7 +401,7 @@ const changedAt = (archetype: Archetype, row: number, ids: readonly number[], si
  * A lookup returning `read` values keyed by component, for main-thread systems: a new object each call, the shared
  * empty one for a lookup reading nothing, and with `changed` one row reused, its `changed` as of `since`.
  */
-export const createObjectLookup = (state: State, lookup: SystemLookup, since: Since) => {
+export const createObjectLookup = (state: State, lookup: SystemLookupLists, since: Since) => {
     const matcher = createMatcher(state, lookup);
     const keys = lookup.read ?? [];
     const watched = "index" in lookup ? undefined : lookup.changed;
@@ -379,12 +432,12 @@ export const createObjectLookup = (state: State, lookup: SystemLookup, since: Si
  * A lookup returning `read` values in declared order, for kernels: a new array each call, and with `changed` one array
  * reused, whether a component it watches may have changed after `since` last.
  */
-export const createArrayLookup = (state: State, lookup: SystemLookup, since: Since) => {
+export const createArrayLookup = (state: State, lookup: SystemLookupLists, since: Since) => {
     const watched = "index" in lookup ? undefined : lookup.changed;
     return watched === undefined ? createPlainArrayLookup(state, lookup) : createChangedArrayLookup(state, lookup, watched.map(key => idOf(state, key)), since);
 };
 
-const createChangedArrayLookup = (state: State, lookup: SystemLookup, ids: readonly number[], since: Since) => {
+const createChangedArrayLookup = (state: State, lookup: SystemLookupLists, ids: readonly number[], since: Since) => {
     const matcher = createMatcher(state, lookup);
     const { read } = matcher;
     const values = new Array<unknown>(read.length + 1);
@@ -398,7 +451,7 @@ const createChangedArrayLookup = (state: State, lookup: SystemLookup, ids: reado
     };
 };
 
-const createPlainArrayLookup = (state: State, lookup: SystemLookup) => {
+const createPlainArrayLookup = (state: State, lookup: SystemLookupLists) => {
     const matcher = createMatcher(state, lookup);
     const { read } = matcher;
     return (entity: Entity): readonly unknown[] | null => {
@@ -412,11 +465,11 @@ const createPlainArrayLookup = (state: State, lookup: SystemLookup) => {
 };
 
 /**
- * A body's context: its resources, lookups, reductions, input and commands, each under its own key and present only
+ * A body's context: its resources, lookups, reductions and commands, each under its own key and present only
  * when declared. `bind` resolves the resources' cells for a run; `reduced[t]` holds the leaves of the fold into its
  * `t`th reduction target so far this run.
  */
-export type Context = { readonly value: { input?: unknown; up?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
+export type Context = { readonly value: { up?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
 
 /**
  * What a context holds beyond the declaration's resources and lookups, and for lookups through indexes, the index of
@@ -425,7 +478,6 @@ export type Context = { readonly value: { input?: unknown; up?: unknown }; reado
 type Extras = {
     readonly targets?: readonly ReductionTarget[];
     readonly commands?: Commands;
-    readonly input?: boolean;
     readonly indexes?: ReadonlyMap<string, WorldIndex>;
     readonly since?: Since;
 };
@@ -437,8 +489,8 @@ const never: Since = { value: -1 };
 const own = (): object => Object.create({});
 
 /** Resource cells are resolved once per run: they move only at sync points. An unresolved resource throws on access. */
-export const createContext = (state: State, declaration: Pick<Declaration, "lookup" | "resources">, { targets = [], commands, input = false, indexes, since = never }: Extras = {}): Context => {
-    const value: { input?: unknown; up?: unknown } = own();
+export const createContext = (state: State, declaration: Pick<Resolved, "lookup" | "resources">, { targets = [], commands, indexes, since = never }: Extras = {}): Context => {
+    const value: { up?: unknown } = own();
     const { lookup, resources } = declaration;
     const names = Object.keys(lookup ?? {});
     if (names.length > 0) {
@@ -501,7 +553,6 @@ export const createContext = (state: State, declaration: Pick<Declaration, "look
         });
         Object.defineProperty(value, "reduce", { value: reducers, enumerable: true });
     }
-    if (input) value.input = undefined;
     if (commands !== undefined) Object.defineProperty(value, "commands", { value: commands, enumerable: true });
     const bind = (): void => {
         if (keys.length > 0) {

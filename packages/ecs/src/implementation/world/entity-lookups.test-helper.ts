@@ -1,9 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
+import { giveAccess } from "../../interface/registry/ids.test-helper.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { fillReports } from "./reports.test-helper.js";
+import type { F32 } from "../../interface/math/index.js";
 
 // Lookups by entity with `changed`, where systems run: probes on the world's thread, and on thread
 // "entityLookupsTest", which a joined thread fills, as they read a probe's object there.
@@ -19,20 +20,14 @@ declare module "@adobe/ecs" {
         entityLookupsTest: true;
     }
     export interface Components {
-        [value]: { type: number };
+        [value]: { type: F32 };
         [other]: { type: number };
         [tag]: { type: true };
         [extra]: { type: number };
         [target]: { type: Entity };
-        [label]: { type: { readonly text: string } | null; thread: "entityLookupsTest" };
+        [label]: { type: { readonly text: string } | null; thread: "entityLookupsTest"; default: { text: "probe" } };
     }
 }
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(other, { type: { type: "number" } });
-Component.register(tag, { type: { const: true } });
-Component.register(extra, { type: { type: "number" } });
-Component.register(target, { type: Entity.schema });
-Component.register(label, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: { text: "probe" } }, thread: "entityLookupsTest" });
 
 /**
  * What a probe saw of its target in one run: each lookup's `changed`, or null where it found nothing; the value it
@@ -70,52 +65,53 @@ const seenOf = (subject: Entity, lookup: {
 };
 
 /** On the world's thread. */
-export const probe = System.create({
-    name: "entityLookupsTest/probe",
-    components: { read: [target] },
-    lookup: { found: { read: [value], changed: [value] }, tagged: { has: [tag], changed: [tag] }, empty: {}, has: { has: [tag] } },
-}, (row, { lookup }) => {
+/**
+ * What a probe's body reads: its lookups are passed to a helper, which the build can't follow, so they're given: only
+ * `found`'s rows are read, so the others keep the forms of lookups reading nothing.
+ */
+const probeReads = (read: readonly symbol[]) => ({ read, lookup: { found: [value], tagged: [], empty: [], has: [] } });
+
+export const probe = System.create(giveAccess({
+    components: { with: [target] },
+    lookup: { found: { with: [value], changed: [value] }, tagged: { with: [tag], changed: [tag] }, empty: {}, has: { with: [tag] } },
+}, probeReads([target])), (row, { lookup }) => {
     scene.seen.push(seenOf(row[target], lookup));
 });
 
 /** The same, registered later, so its first run comes after every change. */
-export const lateProbe = System.create({
-    name: "entityLookupsTest/lateProbe",
-    components: { read: [target] },
-    lookup: { found: { read: [value], changed: [value] }, tagged: { has: [tag], changed: [tag] }, empty: {}, has: { has: [tag] } },
-}, (row, { lookup }) => {
+export const lateProbe = System.create(giveAccess({
+    components: { with: [target] },
+    lookup: { found: { with: [value], changed: [value] }, tagged: { with: [tag], changed: [tag] }, empty: {}, has: { with: [tag] } },
+}, probeReads([target])), (row, { lookup }) => {
     scene.seen.push(seenOf(row[target], lookup));
 });
 
 /** On thread "entityLookupsTest", as it reads the probe's label there. */
-export const threadProbe = System.create({
-    name: "entityLookupsTest/threadProbe",
-    components: { read: [target, label] },
-    lookup: { found: { read: [value], changed: [value] }, tagged: { has: [tag], changed: [tag] }, empty: {}, has: { has: [tag] } },
-}, (row, { lookup }) => {
+export const threadProbe = System.create(giveAccess({
+    components: { with: [target, label] },
+    lookup: { found: { with: [value], changed: [value] }, tagged: { with: [tag], changed: [tag] }, empty: {}, has: { with: [tag] } },
+}, probeReads([target, label])), (row, { lookup }) => {
     if (row[label]?.text === "probe") scene.seen.push(seenOf(row[target], lookup));
 });
 
 /** Writes every `value` in its rows, stamping them. */
-export const bump = System.create({ name: "entityLookupsTest/bump", components: { write: [value] } }, row => {
+export const bump = System.create({ components: { with: [value] } }, row => {
     row[value] += 1;
 });
 
 /** The same as a kernel, whose stamps are muted unless something watches `value`. */
-export const bumpKernel = System.create({ name: "entityLookupsTest/bumpKernel", kernel: "cpu", components: { write: [value] } }, row => {
+export const bumpKernel = System.create({ kernel: true, components: { with: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
 /** Writes every `other`, which no lookup watches. */
-export const touch = System.create({ name: "entityLookupsTest/touch", components: { write: [other] } }, row => {
+export const touch = System.create({ components: { with: [other] } }, row => {
     row[other] += 1;
 });
 
 /** Changes the subject by command: `action` names how. */
 export const edit = System.create({
-    name: "entityLookupsTest/edit",
-    input: { type: "object", properties: { action: { type: "string" } } },
-}, ({ input, commands }) => {
+}, ({ commands }, input: { readonly action: string }) => {
     const { subject } = scene;
     switch (input.action) {
         case "spawn":
@@ -135,7 +131,7 @@ export const edit = System.create({
 });
 
 /** Points every probe at the subject. */
-export const retarget = System.create({ name: "entityLookupsTest/retarget", components: { write: [target] } }, row => {
+export const retarget = System.create({ components: { with: [target] } }, row => {
     row[target] = scene.subject;
 });
 

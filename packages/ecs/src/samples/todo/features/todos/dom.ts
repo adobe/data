@@ -1,14 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component, Finalizer, Index, Resource, System } from "../../../../index.js";
+import { Finalizer, Index, System } from "../../../../index.js";
 import { attach } from "../../shared/attach.js";
 import { done, label, order, todo } from "./data.js";
 import { TodoList } from "./elements/todo-list.js";
 import { TodoRow } from "./elements/todo-row.js";
 
 /** The row showing a todo. */
-export const row = Symbol("row");
+export const row = Symbol();
 /** The page's list, which rows are placed in; null until the page provides it. */
-export const list = Symbol("list");
+export const list = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -19,19 +19,15 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(row, { thread: "main" });
-Resource.register(list, { thread: "main" });
-
 /** Todos with rows, in list order. */
-const placed = Index.create({ name: "todos/placed", key: [order], sorted: true, components: { has: [todo, row] } });
+const placed = Index.create({ key: [order], sorted: true, components: { with: [todo, row] } });
 
 /**
  * Gives each new todo a row, attached to it for events from the row, while the page has a list for it. It isn't placed
  * until the row is the todo's, so a todo gone first never shows one.
  */
 export const createRows = System.create({
-    name: "todos/createRows",
-    components: { has: [todo], not: [row] },
+    components: { with: [todo], not: [row] },
     resources: { is: [list] },
 }, (item, { commands }) => {
     commands.add(item.entity, row, attach(document.createElement("todo-row"), item.entity));
@@ -39,9 +35,8 @@ export const createRows = System.create({
 
 /** Writes what changed of each todo to its row. */
 export const bindRows = System.create({
-    name: "todos/bindRows",
     observer: true,
-    components: { read: [label, done, row], changed: [label, done, row] },
+    components: { with: [label, done, row], changed: [label, done, row] },
 }, item => {
     const element = item[row];
     element.label = item[label];
@@ -69,12 +64,11 @@ const place = (parent: Element, element: HTMLElement, before: Element | null): v
  * its focus.
  */
 export const placeRows = System.create({
-    name: "todos/placeRows",
     observer: true,
-    components: { read: [row, order], changed: [row, order] },
+    components: { with: [row, order], changed: [row, order] },
     order: placed,
     resources: { is: [list] },
-    lookup: { placed: { index: placed, read: [row] } },
+    lookup: { placed: { index: placed } },
 }, (item, { resources, lookup }) => {
     const element = item[row];
     const parent = resources[list];
@@ -83,7 +77,7 @@ export const placeRows = System.create({
     if (before !== element) place(parent, element, before);
 });
 
-Finalizer.create({ name: "todos/removeRows", components: { read: [row] } }, item => {
+Finalizer.create({ components: { with: [row] } }, item => {
     item[row].remove();
 });
 

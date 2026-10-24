@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -21,20 +20,16 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(local, { type: { type: "number" } });
-Component.register(world, { type: { type: "number" } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
 
 const propagate = System.create({
-    name: "upWorkersTest/propagate",
-    kernel: "cpu",
-    components: { read: [local], write: [world], changed: [local] },
-    up: { through: parent, read: [world] },
+    kernel: true,
+    components: { with: [local, world], changed: [local] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[world] = (up === null ? 0 : up[world]) + row[local] * 2;
 });
 /** 100 trees, each a root with 40 levels of two children, ordered so storage order isn't depth order. */
-const grow = System.create({ name: "upWorkersTest/grow" }, ({ commands }) => {
+const grow = System.create({}, ({ commands }) => {
     for (let tree = 0; tree < 100; tree++) {
         let level = [commands.spawn([local, world])({ [local]: tree, [world]: 0 })];
         for (let depth = 1; depth < 40; depth++) {
@@ -43,7 +38,7 @@ const grow = System.create({ name: "upWorkersTest/grow" }, ({ commands }) => {
         }
     }
 });
-const nudge = System.create({ name: "upWorkersTest/nudge", components: { write: [local] } }, row => {
+const nudge = System.create({ components: { with: [local] } }, row => {
     if (row[local] === 7) row[local] = 70;
 });
 

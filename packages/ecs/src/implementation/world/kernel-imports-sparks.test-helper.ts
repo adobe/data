@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype, Component, Vec3 } from "../../index.js";
+import { Vec3 } from "../../index.js";
 
 export const position = Symbol("kernelImports/position");
 export const spark = Symbol("kernelImports/spark");
@@ -11,8 +11,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(position, { type: Vec3.schema });
-Component.register(spark, { type: { const: true } });
 
 /** A list a kernel imports: the build reads its components here, and compiles the kernel again when this module changes. */
-export const sparks = Archetype.create([position, spark]);
+export const sparks = [position, spark] as const;

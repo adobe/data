@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Thread } from '../../interface/thread/thread.js';
 import type { World } from '../../interface/world/world.js';
-import { declarationOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, labelOfItem, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';
+import { declarationOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';
 import { unsharedKeyOf } from './index-keys.js';
 import { layoutOf, type Views } from '../../interface/registry/layout.js';
 import {
@@ -220,7 +220,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         const base = slotsWord + slot * slotWords;
         control[base + slotStatus] = pending;
         control[base + slotNumber] = number;
-        const schema = definition.kind === "composite" ? undefined : definition.declaration.input;
+        const schema = definition.kind === "composite" ? undefined : definition.input;
         const layout = fitsInline(schema, input) ? inputLayoutOf(definition, schema) : null;
         if (layout !== null && layout.kind === "linear") {
             layout.write(views[slot], 0, input);
@@ -410,7 +410,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                     current: () => {
                         if (replayed === null) return true;
                         const state = replay(replayed);
-                        return state !== "held" && (state !== "lapped" || rebuild(replayed));
+                        return state !== "held" && (state !== "lapped" || rebuild(replayed) === "rebuilt");
                     },
                 });
                 if (message.tasks !== null && mirror !== null) {
@@ -530,7 +530,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
 
     /** What an observer system reads, for the world, by this thread's numbers; throws for what can't cross. */
     const describe = (leaf: Leaf): ObserverDeclaration => {
-        const label = labelOfItem(leaf);
+        const label = leaf.name;
         const readable = (keys: readonly unknown[] | undefined): number[] => (keys ?? []).map(key => {
             const symbol = symbolOf(key);
             if (layoutOf(declarationOf(symbol)?.type).kind === "object" && !ownObject(symbol, claims)) {
@@ -549,21 +549,21 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             let indexed: string | ObserverIndex | null = null;
             if (index !== undefined) {
                 const object = unsharedKeyOf(index.declaration.key);
-                if (object !== undefined) throw new Error(`Observer system "${label}" looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object.key)}" is ${object.what}, so it runs only on the world's thread.`);
-                if (declared.changed === true) throw new Error(`Observer system "${label}" runs when index "${labelOfItem(index)}" changed, as its lookup "${name}"'s changed is true, so it runs only on the world's thread.`);
+                if (object !== undefined) throw new Error(`Observer system "${label}" looks up through index "${index.name}", whose key part "${labelOf(object.key)}" is ${object.what}, so it runs only on the world's thread.`);
+                if (declared.changed === true) throw new Error(`Observer system "${label}" runs when index "${index.name}" changed, as its lookup "${name}"'s changed is true, so it runs only on the world's thread.`);
                 const { key, components: held, sorted, unique } = index.declaration;
                 // One without an id, made in a function, is named by its declaration, and the world makes one like it.
                 indexed = idOfItem(index) ?? {
-                    name: labelOfItem(index), key: readable(key), has: present(held?.has), not: present(held?.not), sorted: sorted === true, unique: unique === true,
+                    name: index.name, key: readable(key), has: present(held?.has), not: present(held?.not), sorted: sorted === true, unique: unique === true,
                 };
             }
             lookups.push({
-                name, read, has: present("has" in declared ? declared.has : undefined), not: present("not" in declared ? declared.not : undefined),
+                name, read, has: present("has" in declared ? declared.has : undefined), optional: present("optional" in declared ? declared.optional : undefined), not: present("not" in declared ? declared.not : undefined),
                 changed: "changed" in declared && declared.changed !== undefined ? readable(watchedBy(declared)) : null, index: indexed,
             });
         }
         return {
-            components: components === undefined ? null : { read: readable(components.read), has: present(components.has), not: present(components.not), added: present(components.added), changed: readable(components.changed) },
+            components: components === undefined ? null : { read: readable(components.read), has: present(components.has), optional: present(components.optional), not: present(components.not), added: present(components.added), changed: readable(components.changed) },
             resources: resources === undefined ? null : { read: readable(resources.read), changed: present(resources.changed), is: readable(resources.is), not: readable(resources.not) },
             lookup: lookups,
         };
@@ -581,7 +581,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         localsByLeaf.set(leaf, local);
         localsByNumber.set(number, new WeakRef(local));
         collected.register(leaf, number);
-        post({ protocol: protocolName, kind: "observer", number, name: labelOfItem(leaf), declaration, added: false });
+        post({ protocol: protocolName, kind: "observer", number, name: leaf.name, declaration, added: false });
         return local;
     };
 
@@ -615,7 +615,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                     return Promise.all(locals.map(local => runNumbered(local.number, local.leaf, undefined, local))).then(lastOf);
                 }
                 id = idOfItem(definition);
-                if (id === undefined) throw new Error(`System "${labelOfItem(definition)}" has no id, so it can't run from another thread; the build gives top-level systems one.`);
+                if (id === undefined) throw new Error(`System "${definition.name}" has no id, so it can't run from another thread; the build gives top-level systems one.`);
             }
             catch (error) {
                 return Promise.reject(error);

@@ -1,11 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import { World } from "../../interface/world/world.js";
 import { definitionOf } from "../../interface/registry/index.js";
-import { attachKernel } from "./attach-kernel.js";
+import { attachKernel, kernelOf } from "./attach-kernel.js";
 import { bindKernel } from "./kernels.js";
 import type { KernelDescription } from "./kernel.js";
 import { createState } from "./state.js";
@@ -21,23 +19,19 @@ declare module "@adobe/ecs" {
         [label]: { type: string | null };
     }
     export interface Resources {
-        [scale]: { type: number };
+        [scale]: { type: number; default: 1 };
     }
 }
 
 const label = Symbol("kernelsTest/label");
-Component.register(value, { type: { type: "number" } });
-Component.register(other, { type: { type: "number" } });
-Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Resource.register(scale, { type: { type: "number", default: 1 } });
 
 /** Reads `value` and `other`, writes nothing, reads no resources. */
-const system = System.create({ name: "kernelsTest/read", kernel: "cpu", components: { read: [value, other] } }, row => {
+const system = System.create({ kernel: true, components: { with: [value, other] } }, row => {
     if (row[value] > row[other]) return;
 });
 
-const spawn = System.create({ name: "kernelsTest/spawn" }, ({ commands }) => { commands.spawn([value, other])({ [value]: 3, [other]: 0 }); });
-const double = System.create({ name: "kernelsTest/double", kernel: "cpu", components: { write: [value] } }, row => {
+const spawn = System.create({}, ({ commands }) => { commands.spawn([value, other])({ [value]: 3, [other]: 0 }); });
+const double = System.create({ kernel: true, components: { with: [value] } }, row => {
     row[value] = row[value] * 2;
 });
 
@@ -67,13 +61,22 @@ describe("bindKernel", () => {
 
 describe("attachKernel", () => {
     it("rejects at registration a spawn site naming a component twice", () => {
-        expect(() => attachKernel(system, describing({ keys: [value, other], spawns: [[1, 0, 1]] }))).toThrow('Kernel "kernelsTest/read": spawns a list naming "kernelsTest/other" twice.');
+        expect(() => attachKernel(system, describing({ keys: [value, other], spawns: [[1, 0, 1]] }))).toThrow('spawns a list naming "kernelsTest/other" twice.');
     });
     it("rejects at registration a tuple or struct given to a component without a linear layout", () => {
-        expect(() => attachKernel(system, describing({ keys: [value, label], structuredValues: [1] }))).toThrow('Kernel "kernelsTest/read": gives "kernelsTest/label" a tuple or struct, which only a component stored in linear memory takes.');
+        expect(() => attachKernel(system, describing({ keys: [value, label], structuredValues: [1] }))).toThrow('gives "kernelsTest/label" a tuple or struct, which only a component stored in linear memory takes.');
         expect(() => attachKernel(system, describing({ keys: [value, label], structuredValues: [0] }))).not.toThrow();
     });
+    it("attaches nothing, and throws nothing, for a kernel the build tried that doesn't match", () => {
+        const tried = System.create({ components: { with: [value, other] } }, row => {
+            if (row[value] > row[other]) return;
+        });
+        expect(attachKernel(tried, describing({ keys: [value, label], structuredValues: [1] }), true)).toBe(tried);
+        expect(kernelOf(tried)).toBeUndefined();
+        expect(attachKernel(tried, describing({}), true)).toBe(tried);
+        expect(kernelOf(tried)).toBeDefined();
+    });
     it("rejects at registration a spawn site naming a component outside its keys", () => {
-        expect(() => attachKernel(system, describing({ keys: [value], spawns: [[0, 1]] }))).toThrow('Kernel "kernelsTest/read": spawns a list naming component 1 of its 1 keys.');
+        expect(() => attachKernel(system, describing({ keys: [value], spawns: [[0, 1]] }))).toThrow('spawns a list naming component 1 of its 1 keys.');
     });
 });

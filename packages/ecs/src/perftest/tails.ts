@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { Component } from "../interface/component/component.js";
-import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
 import { eachTick, ticksAfter } from "./observer.js";
 import { workers } from "../interface/resources/workers.js";
@@ -11,6 +9,8 @@ import { backToBack, createWorld, type CreatedWorld } from "../implementation/in
 import { tailWriters } from "../implementation/world/tails.js";
 import type { Benchmark } from "./benchmark.js";
 import { reportOf, runReported } from "../implementation/world/reports.test-helper.js";
+import type { Mat4x4, U32, Vec3 } from "../interface/math/index.js";
+import type { Schema } from "../interface/schema/schema.js";
 
 // Tails: terminal systems on a joined worker, which claims "tailsBenchmark", running after their tick's sync point
 // while the world goes on. The joined thread is `joined.ts`.
@@ -26,24 +26,21 @@ declare module "@adobe/ecs" {
         tailsBenchmark: true;
     }
     export interface Components {
-        [place]: { type: readonly [number, number, number] };
-        [pose]: { type: readonly [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number] };
+        [place]: { type: Vec3 };
+        [pose]: { type: Mat4x4 };
     }
     export interface Resources {
-        [surface]: { type: { readonly name: string }; thread: "tailsBenchmark" };
-        [poked]: { type: number };
-        [rowWork]: { type: number };
+        [surface]: { type: Surface; thread: "tailsBenchmark" };
+        [poked]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
+        [rowWork]: { type: U32 };
         [worldWork]: { type: number };
     }
 }
-Component.register(place, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
-Component.register(pose, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 16, maxItems: 16 } });
 /** An object of the joined thread, as a canvas or the DOM is, which places the systems reading it there. */
-const surfaceStart = { name: "surface" };
-Resource.register(surface, { type: { type: "object", properties: { name: { type: "string" } }, default: surfaceStart }, thread: "tailsBenchmark" });
-Resource.register(poked, { type: { type: "integer", default: 0 } });
-Resource.register(rowWork, { type: { type: "integer", minimum: 0, maximum: 1_000_000, default: 0 } });
-Resource.register(worldWork, { type: { type: "number", default: 0 } });
+const surfaceStart = { name: "surface" } as const;
+/** The surface tails draw to, which starts as `surfaceStart`, so they can tell it apart by identity. */
+type Surface = { readonly name: string };
+const Surface = { default: surfaceStart };
 
 /** What the tails read, so their reads aren't dead. */
 export const drawn = { sum: 0 };
@@ -54,36 +51,36 @@ export const lateRows = 10_000;
 /** Ticks in each timed stretch of the prompt tail. */
 export const tailTicks = 1_000;
 
-const spawnPlaces = System.create({ name: "tails/spawnPlaces" }, ({ commands }) => {
+const spawnPlaces = System.create({}, ({ commands }) => {
     for (let k = 0; k < promptRows; k++) commands.spawn([place])({ [place]: [k, 0, 0] });
 });
-const spawnPoses = System.create({ name: "tails/spawnPoses" }, ({ commands }) => {
+const spawnPoses = System.create({}, ({ commands }) => {
     for (let k = 0; k < lateRows; k++) commands.spawn([place, pose])({ [place]: [k, 0, 0], [pose]: [k, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] });
 });
 
-const here = System.create({ name: "tails/here" }, () => {});
+const here = System.create({}, () => {});
 /** On the joined thread, terminal: reads every row's place, as a DOM-writing system reads positions. */
-const draw = System.create({ name: "tails/draw", components: { read: [place] }, resources: { read: [surface] } }, (row, { resources }) => {
+const draw = System.create({ components: { with: [place] } }, (row, { resources }) => {
     if (resources[surface] === surfaceStart) drawn.sum += row[place][0];
 });
 /** A tick of a world system and a 1,000-row tail that finishes before the next tick needs it. */
-export const promptTick = System.create({ name: "tails/promptTick", systems: [here, draw] });
+export const promptTick = System.create({ systems: [here, draw] });
 
 /** On the joined thread, ahead of the late tail: busy for a while, as a main thread is with layout. */
-const busy = System.create({ name: "tails/busy", resources: { read: [surface] } }, ({ resources }) => {
+const busy = System.create({}, ({ resources }) => {
     const until = performance.now() + 4;
     while (performance.now() < until && resources[surface] === surfaceStart);
 });
 /** On the joined thread, terminal, after `busy`: reads every row's place and pose, and the resource `poke` writes. */
-const copied = System.create({ name: "tails/copied", components: { read: [place, pose] }, resources: { read: [surface, poked] }, after: [busy] }, (row, { resources }) => {
+const copied = System.create({ components: { with: [place, pose] }, after: [busy] }, (row, { resources }) => {
     if (resources[surface] === surfaceStart) drawn.sum += row[place][0] + row[pose][15] + resources[poked];
 });
-export const lateTick = System.create({ name: "tails/lateTick", systems: [busy, copied] });
+export const lateTick = System.create({ systems: [busy, copied] });
 /** On the world's thread: writes what the late tail reads, so it copies the rest of the tail's reads first. */
-const poke = System.create({ name: "tails/poke", resources: { write: [poked] } }, ({ resources }) => {
+const poke = System.create({}, ({ resources }) => {
     resources[poked] += 1;
 });
-const nothing = System.create({ name: "tails/nothing" }, () => {});
+const nothing = System.create({}, () => {});
 
 /** Steps of work each row of the overlapping tail does, about 2.5 ms over 10,000 rows; the world's work after its writer. */
 export const overlapWork = 40;
@@ -92,23 +89,23 @@ export const overlapWorldMilliseconds = 2;
 export const overlapTicks = 100;
 
 /** On the world's thread: writes every row's place, which the last tick's tail still reads. */
-const overlapWrite = System.create({ name: "tails/overlapWrite", components: { write: [place] } }, row => {
+const overlapWrite = System.create({ kernel: false, components: { with: [place] } }, row => {
     row[place] = [row[place][0], 1, 0];
 });
 /** On the world's thread, after the writer: the rest of the tick's work, as systems reading what it wrote do. */
-const overlapSimulate = System.create({ name: "tails/overlapSimulate", resources: { read: [worldWork] }, after: [overlapWrite] }, ({ resources }) => {
+const overlapSimulate = System.create({ after: [overlapWrite] }, ({ resources }) => {
     const until = performance.now() + resources[worldWork];
     while (performance.now() < until);
 });
 /** On the joined thread, terminal: works on every row's place and pose, as a DOM-writing system on main does. */
-const overlapDraw = System.create({ name: "tails/overlapDraw", components: { read: [place, pose] }, resources: { read: [surface, rowWork] }, after: [overlapWrite] }, (row, { resources }) => {
+const overlapDraw = System.create({ components: { with: [place, pose] }, after: [overlapWrite] }, (row, { resources }) => {
     if (resources[surface] !== surfaceStart) return;
     let sum = row[place][0] + row[pose][15];
     for (let k = resources[rowWork]; k > 0; k--) sum = Math.sqrt(sum + k);
     drawn.sum += sum;
 });
-export const overlapTick = System.create({ name: "tails/overlapTick", systems: [overlapWrite, overlapSimulate, overlapDraw] });
-const setOverlap = System.create({ name: "tails/setOverlap", resources: { write: [rowWork, worldWork] } }, ({ resources }) => {
+export const overlapTick = System.create({ systems: [overlapWrite, overlapSimulate, overlapDraw] });
+const setOverlap = System.create({}, ({ resources }) => {
     resources[rowWork] = overlapWork;
     resources[worldWork] = overlapWorldMilliseconds;
 });

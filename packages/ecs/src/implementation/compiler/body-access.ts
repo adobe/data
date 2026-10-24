@@ -1,10 +1,22 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Node, ObjectExpression, Pattern } from 'estree';
 import { children, declaredIn, patternNames } from './estree.js';
-import type { Used } from './exact.js';
 import type { ModuleScope } from './module-scope.js';
 
-const unknown: Used = { query: null, resources: null, lookups: null };
+/** Keys read and written, and those changed inside their values (`row[k].a = 1`), which registration judges by kind. */
+type Access = { readonly read: ReadonlySet<string>; readonly write: ReadonlySet<string>; readonly mutate: ReadonlySet<string> };
+
+/** The keys a body reads, writes and contributes to, by module-scope binding name; null where the body doesn't show every use. */
+export type Used = {
+    readonly query: Access | null;
+    readonly resources: (Access & { readonly reduce: ReadonlySet<string> }) | null;
+    /** The components read from each lookup's results, by lookup name: null for one whose results aren't followed. */
+    readonly lookups: ReadonlyMap<string, ReadonlySet<string> | null> | null;
+    /** The components read from `up`. */
+    readonly up: ReadonlySet<string> | null;
+};
+
+const unknown: Used = { query: null, resources: null, lookups: null, up: null };
 
 /** Whether `node`, a child of `parent`, names a property or label, or declares a binding, rather than referring to one. */
 const isName = (node: Node, parent: Node | undefined): boolean => {
@@ -18,18 +30,45 @@ const isName = (node: Node, parent: Node | undefined): boolean => {
     }
 };
 
-/** How `member`, a `name[key]` expression, is used: read, written, or both; null when it's a destructuring target or deleted. */
-const useOf = (member: Node, parent: Node | undefined): { readonly read: boolean; readonly write: boolean } | null => {
+type Use = { readonly read: boolean; readonly write: boolean; readonly mutate?: true };
+
+const read: Use = { read: true, write: false };
+const written: Use = { read: false, write: true };
+const mutated: Use = { read: true, write: false, mutate: true };
+
+/**
+ * How `member`, a `name[key]` expression, is used: read, written, or both; null when it's deleted. A target of a
+ * destructuring assignment, or of a `for…of` or `for…in` loop, is written; a pattern in a declaration only binds names.
+ */
+const useOf = (member: Node, parent: Node | undefined, grandparent: Node | undefined): Use | null => {
     switch (parent?.type) {
         case "AssignmentExpression":
-            return parent.left !== member ? { read: true, write: false } : { read: parent.operator !== "=", write: true };
+            return parent.left !== member ? read : { read: parent.operator !== "=", write: true };
         case "UpdateExpression": return { read: true, write: true };
-        case "UnaryExpression": return parent.operator === "delete" ? null : { read: true, write: false };
-        case "ArrayPattern": case "RestElement": case "AssignmentPattern": case "ForInStatement": case "ForOfStatement":
-            return null;
-        case "Property": return parent.value === member && parent.shorthand ? null : { read: true, write: false };
-        default: return { read: true, write: false };
+        case "UnaryExpression": return parent.operator === "delete" ? null : read;
+        case "ArrayPattern": case "RestElement": return written;
+        case "AssignmentPattern": return parent.left === member ? written : read;
+        case "ForInStatement": case "ForOfStatement": return parent.left === member ? written : read;
+        case "Property": return parent.value === member && grandparent?.type === "ObjectPattern" ? written : read;
+        default: return read;
     }
+};
+
+/**
+ * How `member`, a `name[key]` expression, is used where `ancestors` ends with its parent: as `useOf` says, and changed
+ * in place when something inside its value is written (`row[key].a.b = 1`, `delete row[key].a`, `[row[key][0]] = pair`):
+ * an object changes so, while a data value, replaced whole, can't, which registration tells apart by its kind.
+ */
+const deepUseOf = (member: Node, ancestors: readonly Node[], at: number): Use | null => {
+    let inner = member;
+    let index = at;
+    for (let parent = ancestors[index]; parent?.type === "MemberExpression" && parent.object === inner; parent = ancestors[index]) {
+        inner = parent;
+        index--;
+    }
+    const use = useOf(inner, ancestors[index], ancestors[index - 1]);
+    if (inner === member) return use;
+    return use === null || use.write ? mutated : read;
 };
 
 /** Whether a lookup result `value`, a child of `parent`, is only tested: compared with null, or used as a condition. */
@@ -74,13 +113,13 @@ const indexLookupNames = (declaration: ObjectExpression): ReadonlySet<string> =>
             ? [property.key.name] : []));
 };
 
-type Group = "resources" | "lookup" | "reduce";
+type Group = "resources" | "lookup" | "reduce" | "up";
 
-const isGroup = (name: string): name is Group => name === "resources" || name === "lookup" || name === "reduce";
+const isGroup = (name: string): name is Group => name === "resources" || name === "lookup" || name === "reduce" || name === "up";
 
 /**
- * What a main-thread body reads, writes and contributes to through its row and context, for the parts where every use
- * shows in its source. `row` and `context` are the indexes of those parameters, or -1 for none. The row and the
+ * What a body reads, writes and contributes to through its row and context, for the parts where every use shows in
+ * its source. `row` and `context` are the indexes of those parameters, or -1 for none. The row and the
  * context's `resources`, `lookup` and `reduce` are indexed only by module-scope keys the body doesn't shadow, or
  * destructured by them, and never passed on, aliased or spread. A lookup's results are followed where each is indexed
  * by such keys or tested, directly or through a `const` declared once; a lookup through an index's lists where they're
@@ -89,15 +128,27 @@ const isGroup = (name: string): name is Group => name === "resources" || name ==
 export const usedBy = (declaration: ObjectExpression, body: Node, module: ModuleScope, positions: { readonly row: number; readonly context: number }): Used => {
     if (!isFunctionBody(body)) return unknown;
     if (body.type === "FunctionExpression" && mentions(body.body, "arguments")) return unknown;
+    // Code `eval` runs can use anything.
+    if (mentions(body, "eval")) return unknown;
     const counts = new Map<string, number>();
     declaredIn(body.body, name => counts.set(name, (counts.get(name) ?? 0) + 1));
     const parameters = new Set(body.params.flatMap(parameter => patternNames(parameter)));
     const isKey = (name: string): boolean => module.has(name) && !counts.has(name) && !parameters.has(name);
+    /** The key `node` names: a module-scope binding, or a namespace's member (`Report.run`), as its source; null for any other. */
+    const keyOf = (node: Node): string | null => {
+        if (node.type === "Identifier") return isKey(node.name) ? node.name : null;
+        if (node.type === "MemberExpression" && !node.computed && node.object.type === "Identifier" && node.property.type === "Identifier") {
+            return isKey(node.object.name) ? `${node.object.name}.${node.property.name}` : null;
+        }
+        return null;
+    };
     const lookups = lookupNames(declaration);
     const indexed = indexLookupNames(declaration);
 
-    const query = { read: new Set<string>(), write: new Set<string>() };
-    const resources = { read: new Set<string>(), write: new Set<string>(), reduce: new Set<string>() };
+    const query = { read: new Set<string>(), write: new Set<string>(), mutate: new Set<string>() };
+    const resources = { read: new Set<string>(), write: new Set<string>(), mutate: new Set<string>(), reduce: new Set<string>() };
+    const up = new Set<string>();
+    let upKnown = true;
     const lookupReads = new Map<string, Set<string> | null>((lookups ?? []).map(name => [name, new Set<string>()]));
     let queryKnown = true;
     let resourcesKnown = true;
@@ -105,6 +156,7 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     const unknownLookup = (lookup: string): void => { lookupReads.set(lookup, null); };
     const unknownGroup = (group: Group): void => {
         if (group === "lookup") lookupsKnown = false;
+        else if (group === "up") upKnown = false;
         else resourcesKnown = false;
     };
 
@@ -121,12 +173,14 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     const destructure = (pattern: Pattern, named: (property: string, value: Pattern) => boolean, keyed: (key: string) => void): boolean => {
         if (pattern.type !== "ObjectPattern") return false;
         for (const property of pattern.properties) {
-            if (property.type === "RestElement" || property.key.type !== "Identifier") return false;
+            if (property.type === "RestElement") return false;
             if (!property.computed) {
-                if (!named(property.key.name, property.value)) return false;
+                if (property.key.type !== "Identifier" || !named(property.key.name, property.value)) return false;
+                continue;
             }
-            else if (isKey(property.key.name)) keyed(property.key.name);
-            else return false;
+            const key = keyOf(property.key);
+            if (key === null) return false;
+            keyed(key);
         }
         return true;
     };
@@ -145,6 +199,9 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
         else if (group === "resources") {
             if (!destructure(pattern, () => false, key => resources.read.add(key))) resourcesKnown = false;
         }
+        else if (group === "up") {
+            if (!destructure(pattern, () => false, key => up.add(key))) upKnown = false;
+        }
         else resourcesKnown = false;
     };
     /** Binds the context's groups from a destructuring of it; `declaredOnce` says whether a bound name is safe to follow. */
@@ -158,6 +215,7 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     const unknownContext = (): void => {
         resourcesKnown = false;
         lookupsKnown = false;
+        upKnown = false;
     };
 
     const row = positions.row < 0 ? undefined : body.params[positions.row];
@@ -171,8 +229,11 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     const rowOf = (lookup: string, value: Node, ancestors: readonly Node[], at: number): void => {
         const parent = ancestors[at];
         if (parent?.type === "MemberExpression" && parent.object === value) {
-            if (parent.computed && parent.property.type === "Identifier" && isKey(parent.property.name)) lookupReads.get(lookup)?.add(parent.property.name);
-            else if (!(indexed.has(lookup) && !parent.computed && parent.property.type === "Identifier" && parent.property.name === "entity")) unknownLookup(lookup);
+            const key = parent.computed ? keyOf(parent.property) : null;
+            if (key !== null) lookupReads.get(lookup)?.add(key);
+            // A row's `changed` says whether what its lookup watches changed; an index's rows name their entity.
+            else if (!(!parent.computed && parent.property.type === "Identifier"
+                && (parent.property.name === "changed" || (indexed.has(lookup) && parent.property.name === "entity")))) unknownLookup(lookup);
         }
         else if (parent?.type === "VariableDeclarator" && parent.init === value && parent.id.type === "Identifier"
             && (results.get(parent.id.name) === lookup || rows.get(parent.id.name) === lookup)) return;
@@ -255,6 +316,8 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
         if (followed.has(node)) return;
         const parent = ancestors[at];
         const grandparent = ancestors[at - 1];
+        // `up` is null for a row without a parent, so it's tested.
+        if (group === "up" && isTested(node, parent)) return;
         if (parent?.type !== "MemberExpression" || parent.object !== node) return unknownGroup(group);
         const { property } = parent;
         if (group === "lookup") {
@@ -262,16 +325,24 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
             else lookupsKnown = false;
             return;
         }
-        if (!parent.computed || property.type !== "Identifier" || !isKey(property.name)) return unknownGroup(group);
+        const key = parent.computed ? keyOf(property) : null;
+        if (key === null) return unknownGroup(group);
         if (group === "reduce") {
-            if (grandparent?.type === "CallExpression" && grandparent.callee === parent) resources.reduce.add(property.name);
+            if (grandparent?.type === "CallExpression" && grandparent.callee === parent) resources.reduce.add(key);
             else resourcesKnown = false;
             return;
         }
-        const use = useOf(parent, grandparent);
+        if (group === "up") {
+            const use = deepUseOf(parent, ancestors, at - 1);
+            if (use === null || use.write || use.mutate) upKnown = false;
+            else up.add(key);
+            return;
+        }
+        const use = deepUseOf(parent, ancestors, at - 1);
         if (use === null) return unknownGroup(group);
-        if (use.read) resources.read.add(property.name);
-        if (use.write) resources.write.add(property.name);
+        if (use.read) resources.read.add(key);
+        if (use.write) resources.write.add(key);
+        if (use.mutate) resources.mutate.add(key);
     };
 
     /** Classifies a reference; `ancestors` ends with its parent. */
@@ -286,11 +357,14 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
                     if (property.type !== "Identifier" || !rowNamed(property.name)) queryKnown = false;
                     return;
                 }
-                const use = property.type === "Identifier" && isKey(property.name) ? useOf(parent, grandparent) : null;
-                if (use === null || property.type !== "Identifier") queryKnown = false;
+                const key = keyOf(property);
+                // A part of a value written, `row[key][0] = …`, writes it, which the compiler rejects as it must.
+                const use = key === null ? null : deepUseOf(parent, ancestors, ancestors.length - 2);
+                if (use === null || key === null) queryKnown = false;
                 else {
-                    if (use.read) query.read.add(property.name);
-                    if (use.write) query.write.add(property.name);
+                    if (use.read) query.read.add(key);
+                    if (use.write) query.write.add(key);
+                    if (use.mutate) query.mutate.add(key);
                 }
             }
             else if (!(parent?.type === "VariableDeclarator" && parent.init === node && destructure(parent.id, rowNamed, key => query.read.add(key)))) queryKnown = false;
@@ -317,17 +391,44 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     };
 
     const ancestors: Node[] = [];
-    /** A declaration's target pattern only binds names, so only its initializer holds references. */
     const visit = (node: Node): void => {
         if (node.type === "Identifier" && !isName(node, ancestors.at(-1))) reference(node, ancestors);
         ancestors.push(node);
-        for (const child of node.type === "VariableDeclarator" ? (node.init === null || node.init === undefined ? [] : [node.init]) : children(node)) visit(child);
+        if (node.type === "VariableDeclarator") {
+            visitPattern(node.id);
+            if (node.init !== null && node.init !== undefined) visit(node.init);
+        }
+        else for (const child of children(node)) visit(child);
         ancestors.pop();
     };
+    /** A pattern that binds names: its names aren't references, but its defaults and computed keys hold them. */
+    const visitPattern = (pattern: Node): void => {
+        ancestors.push(pattern);
+        if (pattern.type === "ObjectPattern") {
+            for (const property of pattern.properties) {
+                ancestors.push(property);
+                if (property.type === "RestElement") visitPattern(property.argument);
+                else {
+                    if (property.computed) visit(property.key);
+                    visitPattern(property.value);
+                }
+                ancestors.pop();
+            }
+        }
+        else if (pattern.type === "ArrayPattern") for (const element of pattern.elements) { if (element !== null) visitPattern(element); }
+        else if (pattern.type === "RestElement") visitPattern(pattern.argument);
+        else if (pattern.type === "AssignmentPattern") {
+            visitPattern(pattern.left);
+            visit(pattern.right);
+        }
+        ancestors.pop();
+    };
+    for (const parameter of body.params) visitPattern(parameter);
     visit(body.body);
     return {
         query: queryKnown ? query : null,
         resources: resourcesKnown ? resources : null,
         lookups: lookupsKnown ? lookupReads : null,
+        up: upKnown ? up : null,
     };
 };

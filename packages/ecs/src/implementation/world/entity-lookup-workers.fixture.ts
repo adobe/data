@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
@@ -26,21 +25,15 @@ declare module "@adobe/ecs" {
         [banned]: { type: true };
     }
 }
-Component.register(weight, { type: { type: "number" } });
-Component.register(mark, { type: { type: "number" } });
-Component.register(follows, { type: Entity.schema });
-Component.register(kernelSeen, { type: { type: "number" } });
-Component.register(plainSeen, { type: { type: "number" } });
-Component.register(banned, { type: { const: true } });
 
 /**
  * Counts, in base 4 by run, what the lookups gave the entity a row follows: 0 not found, 1 unchanged, 2 changed, and
  * whether its mark changed in the next digit, then whether it has a mark and isn't banned.
  */
 const watchKernel = System.create({
-    name: "entityLookupWorkersTest/watchKernel", kernel: "cpu",
-    components: { read: [follows], write: [kernelSeen] },
-    lookup: { found: { read: [weight], changed: [weight] }, marked: { read: [mark], changed: [mark] }, eligible: { has: [mark], not: [banned] } },
+    kernel: true,
+    components: { with: [follows, kernelSeen] },
+    lookup: { found: { with: [weight], changed: [weight] }, marked: { with: [mark], changed: [mark] }, eligible: { with: [mark], not: [banned] } },
 }, (row, { lookup }) => {
     const found = lookup.found(row[follows]);
     const marked = lookup.marked(row[follows]);
@@ -51,9 +44,8 @@ const watchKernel = System.create({
 });
 
 const watchPlain = System.create({
-    name: "entityLookupWorkersTest/watchPlain",
-    components: { read: [follows], write: [plainSeen] },
-    lookup: { found: { read: [weight], changed: [weight] }, marked: { read: [mark], changed: [mark] }, eligible: { has: [mark], not: [banned] } },
+    components: { with: [follows, plainSeen] },
+    lookup: { found: { with: [weight], changed: [weight] }, marked: { with: [mark], changed: [mark] }, eligible: { with: [mark], not: [banned] } },
 }, (row, { lookup }) => {
     const found = lookup.found(row[follows]);
     const marked = lookup.marked(row[follows]);
@@ -63,17 +55,17 @@ const watchPlain = System.create({
     row[plainSeen] = ((row[plainSeen] * 4 + seen) % 1000003 * 4 + flagged) * 2 + eligible;
 });
 
-const tick = System.create({ name: "entityLookupWorkersTest/tick", systems: [watchKernel, watchPlain] });
+const tick = System.create({ systems: [watchKernel, watchPlain] });
 
 const targets: Entity[] = [];
-const seed = System.create({ name: "entityLookupWorkersTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     targets.length = 0;
     for (let k = 0; k < 500; k++) targets.push(k % 3 === 0 ? commands.spawn([weight, mark])({ [weight]: k, [mark]: 1 }) : commands.spawn([weight])({ [weight]: k }));
     for (let k = 0; k < 4000; k++) commands.spawn([follows, kernelSeen, plainSeen])({ [follows]: targets[(k * 7) % targets.length], [kernelSeen]: 0, [plainSeen]: 0 });
 });
 
 /** Writes some weights, marks and unmarks some targets, despawns some and spawns others: a different change each round. */
-const stir = System.create({ name: "entityLookupWorkersTest/stir", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [weight] } }, (row, { input, commands }) => {
+const stir = System.create({ components: { with: [weight] } }, (row, { commands }, input: { readonly round: number }) => {
     const w = row[weight];
     if ((w + input.round) % 5 === 0) row[weight] = w + 1000;
     if ((w + input.round) % 11 === 0) commands.add(row.entity, mark, 2);

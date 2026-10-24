@@ -3,13 +3,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import { System, World, workers } from "../../../index.js";
 import { logFailures } from "./log-failures.js";
 
-const fails = System.create({ name: "test/fails" }, () => {
+const fails = System.create({}, () => {
     throw new Error("broken");
 });
-const failsObserving = System.create({ name: "test/failsObserving", observer: true }, () => {
+const failsObserving = System.create({ observer: true }, () => {
     throw new Error("observer broken");
 });
-const nothing = System.create({ name: "test/nothing" }, () => {});
+const nothing = System.create({}, () => {});
 
 afterEach(() => {
     vi.restoreAllMocks();

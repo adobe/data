@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Views } from '../../interface/registry/layout.js';
 import { copyValue, ensureCapacity, swapRemove, writeF32, writeF32Lanes, writeF64, writeI32, writeU32, type Archetype, type Storage } from './archetype.js';
-import { chunkShift } from './kernel.js';
+import { blockShift, chunkShift } from './kernel.js';
 import { addCommand, clearBuffer, despawnCommand, endOf, referenceAt, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { readCell, writeCell } from './cells.js';
 import { commitBatches, commitStaged } from './batches.js';
@@ -17,7 +17,7 @@ import { settleStops } from './stop-lists.js';
 import { closureOf, derives, gainsOf } from './structure.js';
 import type { Plan } from './plan.js';
 import type { MoveLog } from './move-log.js';
-import { archetypeOf, defaultOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
+import { archetypeOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
 import { releaseValue } from './transfers.js';
 
 /** Buffers queued for the next sync point, in merge order. Commands in guarded buffers can't touch the resource entity. */
@@ -281,10 +281,12 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
         // A constant's `changed` ticks are its `added` ticks, and its value can't change: only a new start stamps it.
         if (storage.changed !== storage.added || starts) {
             storage.changed[toRow] = tick;
+            storage.blockChanged[toRow >> blockShift] = tick;
             storage.chunkChanged[toRow >> chunkShift] = tick;
         }
         if (starts) {
             storage.added[toRow] = tick;
+            storage.blockAdded[toRow >> blockShift] = tick;
             storage.chunkAdded[toRow >> chunkShift] = tick;
         }
     }
@@ -293,10 +295,12 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
 /** Writes a derived component's default into a row it starts in, stamped as added. */
 export const writeDefault = (state: State, storage: Storage, row: number, tick: number): void => {
     // A joined thread's object starts there, as the row's move or append says.
-    if (storage.remote === null) writeCell(storage, row, defaultOf(state.keys[storage.component]));
+    // One start per world, never one per row: values are replaced whole, so a shared start is never changed.
+    if (storage.remote === null) writeCell(storage, row, state.starts[storage.component]);
     else storage.tags[row] = startTag;
     if (!storage.ticked) return;
     storage.added[row] = storage.changed[row] = tick;
+    storage.blockAdded[row >> blockShift] = storage.blockChanged[row >> blockShift] = tick;
     storage.chunkAdded[row >> chunkShift] = storage.chunkChanged[row >> chunkShift] = tick;
 };
 
@@ -416,7 +420,10 @@ const copyColumn = (from: Storage, to: Storage, plan: Plan, order: Int32Array, f
         const changed = from.changed[fromRow];
         to.added[toRow] = added;
         to.changed[toRow] = changed;
-        // A chunk's tick is the newest of its rows, so a row moving in can raise it.
+        // A block's and a chunk's tick are the newest of their rows, so a row moving in can raise them.
+        const block = toRow >> blockShift;
+        if (added > to.blockAdded[block]) to.blockAdded[block] = added;
+        if (changed > to.blockChanged[block]) to.blockChanged[block] = changed;
         const chunk = toRow >> chunkShift;
         if (added > to.chunkAdded[chunk]) to.chunkAdded[chunk] = added;
         if (changed > to.chunkChanged[chunk]) to.chunkChanged[chunk] = changed;

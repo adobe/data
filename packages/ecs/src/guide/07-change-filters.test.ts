@@ -1,14 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Resource, System, World } from "../index.js";
+import { System, World } from "../index.js";
 
-const score = Symbol("score");
-const shown = Symbol("shown");
-const boss = Symbol("boss");
-const level = Symbol("level");
-const paused = Symbol("paused");
-const map = Symbol("map");
-const steps = Symbol("steps");
+const score = Symbol();
+const shown = Symbol();
+const boss = Symbol();
+const level = Symbol();
+const paused = Symbol();
+const map = Symbol();
+const steps = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -17,36 +17,28 @@ declare module "@adobe/ecs" {
         [boss]: { type: true };
     }
     interface Resources {
-        [level]: { type: number };
+        [level]: { type: number; default: 1 };
         [paused]: { type: boolean };
         [map]: { type: { readonly width: number } | null };
         [steps]: { type: number };
     }
 }
 
-Component.register(score, { type: { type: "number" } });
-Component.register(shown, { type: { type: "number" } });
-Component.register(boss, { type: { const: true } });
-Resource.register(level, { type: { type: "number", default: 1 } });
-Resource.register(paused, { type: { type: "boolean", default: false } });
-Resource.register(map, { type: { anyOf: [{ type: "object", properties: { width: { type: "number" } } }, { type: "null" }] } });
-Resource.register(steps, { type: { type: "number", default: 0 } });
-
 // A resource in changed passes the first run and each run after it changes: no run-once flag needed.
-const load = System.create({ resources: { read: [level], changed: [level] } }, ({ resources, commands }) => {
+const load = System.create({ resources: { changed: [level] } }, ({ resources, commands }) => {
     commands.spawn([score, shown, boss])({ [score]: 0, [shown]: -1 });
     for (let i = 0; i < resources[level]; i++) commands.spawn([score, shown])({ [score]: 0, [shown]: -1 });
 });
 // A component in changed passes only rows written since this system last ran.
-const show = System.create({ components: { read: [score], write: [shown], changed: [score] } }, row => {
+const show = System.create({ components: { with: [score, shown], changed: [score] } }, row => {
     row[shown] = row[score];
 });
-const bump = System.create({ components: { write: [score], has: [boss] } }, row => {
+const bump = System.create({ components: { with: [score, boss] } }, row => {
     row[score] += 10;
 });
 
 const shownValues: number[] = [];
-const readShown = System.create({ observer: true, components: { read: [shown] } }, row => {
+const readShown = System.create({ observer: true, components: { with: [shown] } }, row => {
     shownValues.push(row[shown]);
 });
 
@@ -65,14 +57,14 @@ it("runs systems only for what changed since they last ran", async () => {
 });
 
 // Runs only while each resource in is is neither null nor false, and each in not is; is reads it narrowed.
-const step = System.create({ resources: { is: [map], not: [paused], write: [steps] } }, ({ resources }) => {
+const step = System.create({ resources: { is: [map], not: [paused] } }, ({ resources }) => {
     resources[steps] += resources[map].width;
 });
-const pause = System.create({ resources: { write: [paused] } }, ({ resources }) => { resources[paused] = true; });
-const open = System.create({ resources: { write: [map] } }, ({ resources }) => { resources[map] = { width: 4 }; });
+const pause = System.create({}, ({ resources }) => { resources[paused] = true; });
+const open = System.create({}, ({ resources }) => { resources[map] = { width: 4 }; });
 
 let stepped = 0;
-const readSteps = System.create({ observer: true, resources: { read: [steps] } }, ({ resources }) => {
+const readSteps = System.create({ observer: true }, ({ resources }) => {
     stepped = resources[steps];
 });
 

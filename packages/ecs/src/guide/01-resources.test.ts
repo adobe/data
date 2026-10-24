@@ -1,36 +1,44 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Entity, Resource, System, World } from "../index.js";
+import { Entity, System, World, type F32 } from "../index.js";
+import { Resource } from "@adobe/ecs";
 
 // A resource is a key whose value a world holds once.
-export const gravity = Symbol("gravity");
-export const names = Symbol("names");
-export const audio = Symbol("audio");
-export const focused = Symbol("focused");
+export const gravity = Symbol();
+export const floor = Symbol();
+export const names = Symbol();
+export const audio = Symbol();
+export const focused = Symbol();
 
-// Its traits are declared; `type` is the value's type.
+// A type's namespace may give the value it starts at, which every row and world starting from it shares, so readonly.
+export type Height = F32;
+export const Height = { default: -Infinity } as const;
+
+// It's declared once, with its traits: `type` is the value's type, and `default` a literal it starts at. Without one,
+// it starts at its type's namespace's default, a reduction's identity, null, its zero value (0, false, "", item by
+// item), or an empty ReadonlyMap or ReadonlySet of each world's own. The build registers what's declared.
 declare module "@adobe/ecs" {
     interface Resources {
-        [gravity]: { type: number };
+        [gravity]: { type: number; default: -9.8 };
+        [floor]: { type: Height };
         [names]: { type: ReadonlyMap<string, number> };
+        // A value that isn't data, such as a class, is stored as it is; a change inside it is seen once it's written back.
         [audio]: { type: AudioContext | null };
+        // Entity.none, 0, rather than null, so an entity stays data every thread reads.
         [focused]: { type: Entity };
     }
 }
 
-// Registration gives the same traits, with a schema that describes exactly the declared type. A resource always has a
-// value: its schema's default, or one beside it.
-Resource.register(gravity, { type: { type: "number", default: -9.8 } });
-Resource.register(names, { type: { type: "map", keys: { type: "string" }, values: { type: "number" } }, default: new Map() });
-// A value that isn't data has no schema and is stored as it is. A type that allows null starts there.
-Resource.register(audio, {});
-// No entity is Entity.none rather than null, so an entity stays data every thread reads.
-Resource.register(focused, { type: { ...Entity.schema, default: Entity.none } });
-
 // Systems read a world: an observer only reads, after the world's changes apply.
-let values: readonly unknown[] = [];
-const read = System.create({ observer: true, resources: { read: [gravity, names, audio, focused] } }, ({ resources }) => {
-    values = [resources[gravity], resources[names], resources[audio], resources[focused]];
+let values: readonly [
+    Resource.Value<typeof gravity>,
+    Resource.Value<typeof floor>,
+    Resource.Value<typeof names>,
+    Resource.Value<typeof audio>,
+    Resource.Value<typeof focused>
+] | null = null;
+const read = System.create({ observer: true }, ({ resources }) => {
+    values = [resources[gravity], resources[floor], resources[names], resources[audio], resources[focused]];
 });
 
 it("holds one value per world", async () => {
@@ -39,7 +47,7 @@ it("holds one value per world", async () => {
     await using moon = World.create({ [gravity]: -1.6 });
     // run: runs a system once.
     await earth.run(read);
-    expect(values).toEqual([-9.8, new Map(), null, Entity.none]);
+    expect(values).toEqual([-9.8, -Infinity, new Map(), null, Entity.none]);
     await moon.run(read);
-    expect(values[0]).toBe(-1.6);
+    expect(values?.[0]).toBe(-1.6);
 });

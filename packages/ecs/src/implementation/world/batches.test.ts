@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
@@ -12,6 +11,7 @@ import { createBuffer } from "./buffer.js";
 import { createCommands } from "./commands.js";
 import { createState } from "./state.js";
 import { runReported } from "./reports.test-helper.js";
+import type { F32 } from "../../interface/math/index.js";
 
 type Vec3 = readonly [number, number, number];
 const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
@@ -21,29 +21,25 @@ const name = Symbol("batchesTest/name");
 const tag = Symbol("batchesTest/tag");
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number, number] };
-        [score]: { type: number };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }> };
+        [score]: { type: F32 };
         [name]: { type: string };
         [tag]: { type: true };
     }
 }
-Component.register(position, { type: vec3 });
-Component.register(score, { type: { type: "number", precision: 1 } });
-Component.register(name, { type: { type: "string" } });
-Component.register(tag, { type: { const: true } });
 
 describe("staged spawns", () => {
     it("are seen once by `added` observers in earlier, the same and later tiers, and not before the sync point", async () => {
         const seen = { early: 0, same: 0, late: 0 };
         const spawned: Entity[] = [];
-        const early = System.create({ name: "batchesTest/early", components: { added: [score] } }, () => { seen.early++; });
-        const spawn = System.create({ name: "batchesTest/spawn", after: [early] }, ({ commands }) => {
+        const early = System.create({ components: { added: [score] } }, () => { seen.early++; });
+        const spawn = System.create({ after: [early] }, ({ commands }) => {
             if (spawned.length > 0) return;
             for (let i = 0; i < 100; i++) spawned.push(commands.spawn([position, score, name, tag])({ [position]: [i, i, i], [score]: i, [name]: `${i}`, [tag]: true }));
         });
-        const same = System.create({ name: "batchesTest/same", components: { added: [score] }, after: [early] }, () => { seen.same++; });
-        const late = System.create({ name: "batchesTest/late", components: { added: [score] }, after: [spawn, same] }, () => { seen.late++; });
-        const frame = System.create({ name: "batchesTest/edit", systems: [early, spawn, same, late] });
+        const same = System.create({ components: { added: [score] }, after: [early] }, () => { seen.same++; });
+        const late = System.create({ components: { added: [score] }, after: [spawn, same] }, () => { seen.late++; });
+        const frame = System.create({ systems: [early, spawn, same, late] });
         const world = createWorld({ [workers]: 0 });
         await world.run(frame);
         // Nothing saw the spawns during their own run.
@@ -58,7 +54,7 @@ describe("staged spawns", () => {
 
     it("can be changed, removed, re-added or despawned in the run that spawns them", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "batchesTest/edit/2" }, ({ commands }) => {
+        const edit = System.create({}, ({ commands }) => {
             for (let i = 0; i < 4; i++) spawned.push(commands.spawn([score, name])({ [score]: i, [name]: `${i}` }));
             commands.add(spawned[0], score, 10);
             commands.remove(spawned[1], name);
@@ -76,7 +72,7 @@ describe("staged spawns", () => {
     it("keep the spawns before a value that can't be written, and release that one's entity", async () => {
         const spawned: Entity[] = [];
         let poison = true;
-        const spawn = System.create({ name: "batchesTest/spawn/2" }, ({ commands }) => {
+        const spawn = System.create({}, ({ commands }) => {
             for (let i = 0; i < 3; i++) spawned.push(commands.spawn([position, score])({ [position]: [i, 0, 0], [score]: i }));
             // A symbol can't convert to a number, so writing it throws.
             if (poison) commands.spawn([position, score])({ [position]: [0, 0, 0], [score]: Symbol("x") as unknown as number });
@@ -93,7 +89,7 @@ describe("staged spawns", () => {
 
     it("take value objects built before the spawn", async () => {
         const spawned: Entity[] = [];
-        const spawn = System.create({ name: "batchesTest/spawn/4" }, ({ commands }) => {
+        const spawn = System.create({}, ({ commands }) => {
             for (let i = 0; i < 20; i++) {
                 const values = i % 2 === 0 ? { [position]: [i, 0, 1] as const, [score]: i, [name]: `${i}` } : { [score]: i, [position]: [i, 0, 1] as const, [name]: `${i}` };
                 spawned.push(commands.spawn([position, score, name])(values));
@@ -118,7 +114,7 @@ describe("spawns keyed by symbols", () => {
     });
     it("read only their components' values, as adds do", async () => {
         let spawned = Entity.none;
-        const edit = System.create({ name: "batchesTest/stringKeys" }, ({ commands }) => {
+        const edit = System.create({}, ({ commands }) => {
             const values = { [score]: 1, "batchesTest/score": 2, [name]: "a" };
             spawned = commands.spawn([score])(values);
             commands.add(spawned, [score], values);

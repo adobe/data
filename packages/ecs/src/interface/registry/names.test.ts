@@ -42,35 +42,32 @@ describe("claimKey", () => {
 });
 
 describe("labelOf", () => {
-    it("labels a key by its description while no other registered key has it, else by its id", () => {
+    it("labels a key by its description, whatever other keys have it", () => {
         const first = Symbol("labelOf/shared");
         const second = Symbol("labelOf/shared");
-        const lone = Symbol("labelOf/lone");
         identify(first, "a.ts#first");
         identify(second, "b.ts#second");
-        identify(lone, "c.ts#lone");
-        expect([labelOf(first), labelOf(lone)]).toEqual(["labelOf/shared", "labelOf/lone"]);
         claimKey(first, "component", number);
-        claimKey(lone, "component", number);
-        expect([labelOf(first), labelOf(second), labelOf(lone)]).toEqual(["labelOf/shared", "b.ts#second", "labelOf/lone"]);
         claimKey(second, "resource", number);
-        expect([labelOf(first), labelOf(second), labelOf(lone)]).toEqual(["a.ts#first", "b.ts#second", "labelOf/lone"]);
+        expect([labelOf(first), labelOf(second)]).toEqual(["labelOf/shared", "labelOf/shared"]);
+        const twin = Symbol("labelOf/shared");
+        claimKey(twin, "trait");
+        expect(labelOf(twin)).toBe("labelOf/shared");
     });
-    it("labels a key without an id by its description, numbered by registration when another key has it", () => {
-        const first = Symbol("labelOf/twin");
-        const second = Symbol("labelOf/twin");
-        const third = Symbol("labelOf/twin");
-        expect(labelOf(first)).toBe("labelOf/twin");
-        claimKey(second, "component", { type: { type: "number" } });
-        claimKey(first, "component", { type: { type: "number" } });
-        claimKey(third, "trait");
-        expect([labelOf(first), labelOf(second), labelOf(third)]).toEqual(["labelOf/twin#2", "labelOf/twin", "labelOf/twin#3"]);
+    it("labels a key without a description by its binding, which the plugin's id names", () => {
+        const speed = Symbol();
+        const other = Symbol();
+        identify(speed, "app@1.0.0/keys.ts#labelOfSpeed");
+        identify(other, "app@1.0.0/other.ts#labelOfSpeed");
+        claimKey(speed, "resource", number);
+        claimKey(other, "component", number);
+        expect([labelOf(speed), labelOf(other)]).toEqual(["labelOfSpeed", "labelOfSpeed"]);
     });
-    it("gives a key without a description a numbered label, and names other values as text", () => {
+    it("gives a key without a description or an id a numbered label, and names other values as text", () => {
         const anonymous = Symbol();
         expect(labelOf(anonymous)).toBe("Symbol()");
         claimKey(anonymous, "trait");
-        expect(labelOf(anonymous)).toMatch(/^Symbol\(\)(#\d+)?$/);
+        expect(labelOf(anonymous)).toBe("Symbol()");
         expect([labelOf("text"), labelOf(1)]).toEqual(["text", "1"]);
     });
 });

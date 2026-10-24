@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { viewsOf, type Views } from '../../interface/registry/layout.js';
+import { viewsOf, type Layout, type TypedArray, type Views } from '../../interface/registry/layout.js';
 import type { Memory } from './memory.js';
 
 export type ArrayConstructor<T> = {
@@ -42,3 +42,7 @@ export const freeViews = (memory: Memory, views: Views): void => freeArray(memor
 
 /** Views of no bytes, for components with nothing to store. */
 export const emptyViews: Views = viewsOf(new ArrayBuffer(0), 0, 0);
+
+/** A kernel's column of a component an archetype lacks, optional in its system: empty, so its reads give undefined. */
+export const absentColumn = (layout: Layout, source: { readonly kind: string; readonly leaf?: number }): TypedArray =>
+    source.kind === "field" && layout.kind === "linear" && source.leaf !== undefined ? emptyViews[layout.leaves[source.leaf].view] : emptyViews.f64;

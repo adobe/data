@@ -2,7 +2,7 @@
 import { Report } from '../../interface/report/report.js';
 import type { Failure, Warning } from '../../interface/report/failure.js';
 import { stampChanged } from './archetype.js';
-import { addCommand, createBuffer, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
+import { addCommand, clearBuffer, createBuffer, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { writeCell } from './cells.js';
 import type { Views } from '../../interface/registry/layout.js';
 import { pushValues } from './commands.js';
@@ -79,6 +79,8 @@ export const createReports = (state: State, applyAlone: (buffer: CommandBuffer) 
     let oldest = 0;
     /** The slot the last run took. */
     let last: Slot | null = null;
+    /** The buffer that spawns reports. */
+    const spawns = createBuffer(1);
 
     /** The storage and row of a slot's component `id`, while its entity holds it. */
     const cellOf = (slot: Slot, id: number) => {
@@ -130,7 +132,10 @@ export const createReports = (state: State, applyAlone: (buffer: CommandBuffer) 
             slot.errors = null;
         }
         slot.entity = reserve(state.entities);
-        const buffer = createBuffer();
+        // One buffer spawns every report, as each sync point is done with it before the next run takes one; a new one
+        // only while it's still queued.
+        const buffer = state.queued.some(queued => queued.buffer === spawns) ? createBuffer(1) : spawns;
+        clearBuffer(buffer);
         pushValues(state, buffer, spawnCommand, slot.entity, {
             [Report.run]: { number: run, elapsed: 0, systems: 0, workers: 0, joined: 0, main: false, gpu: false, dropped: 0 } satisfies RunValues,
         });

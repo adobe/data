@@ -6,11 +6,15 @@ import { isAbsolute } from 'node:path';
 import type { Plugin, Rollup, ViteDevServer } from 'vite';
 import { estreeOf } from './estree.js';
 import { describeFailure } from './failure.js';
-import { identify as identifyModule, moduleIdOf, type PackageNameOf } from './identify.js';
+import { identify as identifyModule, moduleIdOf, moduleLabelOf, type PackageOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
-import { isNamespaceModule, isSystemModule, packageIndex } from './paths.js';
-import { locateThroughMap } from './source-map.js';
+import { archetypeInsertions } from './archetypes.js';
+import { augmentationInsertions, reductionsIn, registeredReductionsIn, type AugmentationHost } from './augmentations.js';
+import { inputInsertions, type InputHost } from './input-schemas.js';
+import { copyForImporter, namespaceCopyOf, packagePathOf, typesFileOf } from './paths.js';
+import { moduleOf, type TypedProgram } from './type-schemas.js';
+import { insertInto, locateThroughMap } from './source-map.js';
 import { transformKernels } from './transform.js';
 
 const scripts = /\.[cm]?[jt]sx?$/;
@@ -30,33 +34,61 @@ const loadFile = async (file: string): Promise<{ readonly code: string; readonly
     return { code: result.code, locate: result.map === undefined ? undefined : locateThroughMap(result.code, result.map.mappings) };
 };
 
-/** The name each directory's package.json gives, read once per directory. */
-const packageNames = (): PackageNameOf => {
-    const names = new Map<string, string | null | undefined>();
+/** The name and version each directory's package.json gives, read once per directory. */
+const packages = (): PackageOf => {
+    const found = new Map<string, ReturnType<PackageOf>>();
     return directory => {
-        if (names.has(directory)) return names.get(directory);
-        let name: string | null | undefined;
+        if (found.has(directory)) return found.get(directory);
+        let entry: ReturnType<PackageOf>;
         try {
             const json: unknown = JSON.parse(readFileSync(`${directory}/package.json`, "utf8"));
-            const named: unknown = typeof json === "object" && json !== null ? Reflect.get(json, "name") : undefined;
-            name = typeof named === "string" && named !== "" ? named : null;
+            const name: unknown = typeof json === "object" && json !== null ? Reflect.get(json, "name") : undefined;
+            const version: unknown = typeof json === "object" && json !== null ? Reflect.get(json, "version") : undefined;
+            entry = typeof name !== "string" || name === "" ? null : typeof version === "string" && version !== "" ? { name, version } : { name };
         }
         catch {
             // No package.json here, or none that parses.
-            name = undefined;
+            entry = undefined;
         }
-        names.set(directory, name);
-        return name;
+        found.set(directory, entry);
+        return entry;
     };
+};
+
+/** Vite's parser of TypeScript, loaded by the first kernel transform, which reads `reduce` traits with it. */
+let parseTypes: typeof import("vite").parseAst | null = null;
+
+const noReductions: ReadonlyMap<string, string> = new Map();
+
+/**
+ * The `reduce` traits a file's declarations give: read from a TypeScript file's source, and from the registrations a
+ * JavaScript file's build gave them, as a library's `dist` ships them.
+ */
+const reductionsOf = (file: string): ReadonlyMap<string, string> => {
+    const extension = file.slice(file.lastIndexOf(".") + 1);
+    const lang = loaders[extension] ?? (extension === "js" || extension === "mjs" ? "js" : undefined);
+    if (parseTypes === null || lang === undefined) return noReductions;
+    let code: string;
+    try {
+        code = readFileSync(file, "utf8");
+    }
+    catch {
+        return noReductions;
+    }
+    if (!code.includes("reduce")) return noReductions;
+    if (lang === "ts" || lang === "tsx") return code.includes("declare module") ? reductionsIn(parseTypes(code, { lang }, file)) : noReductions;
+    // A bundle may have renamed the registrations' import, so any JavaScript giving `reduce` is read.
+    return registeredReductionsIn(parseTypes(code, { lang }, file));
 };
 
 /** Resolves imports through the build, from whichever transform runs. */
 const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
+    reductions: reductionsOf,
     resolve: async (specifier, importer) => {
         const resolved = await resolver().resolve(specifier, importer, { skipSelf: true });
         if (resolved === null) return { error: `${specifier} can't be resolved from ${importer}` };
         if (resolved.external) {
-            return specifier === packageName ? packageIndex : { error: `${specifier} is external to the build, so kernels can't inline from it`, unreadable: true };
+            return specifier === packageName ? copyForImporter(importer).index : { error: `${specifier} is external to the build, so kernels can't inline from it`, unreadable: true };
         }
         const id = resolved.id.split("?")[0] ?? resolved.id;
         return id.includes("\0") || !isAbsolute(id) ? { error: `${specifier} isn't a file` } : id;
@@ -65,7 +97,7 @@ const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
 });
 
 /**
- * Compiles kernel systems (`kernel: "cpu"` or `"gpu"`). Runs after TypeScript is stripped and before minification, so it sees plain JS
+ * Compiles kernel systems (`kernel: true` or `"gpu"`). Runs after TypeScript is stripped and before minification, so it sees plain JS
  * with source names. Each kernel's `create` becomes its own module at `description.url`: served from a
  * root-absolute url in dev, and emitted as a chunk in a build.
  *
@@ -93,13 +125,109 @@ const inlineKernels = (code: string, kernels: readonly string[], hashes: readonl
         JSON.stringify(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`),
     ), code);
 
-export const kernelPlugin = (): Plugin => {
+const typed = /\.[cm]?tsx?$/;
+
+/**
+ * Registers the keys `declare module "@adobe/ecs"` blocks declare (`augmentations.ts`), passes each system's
+ * `create` the schema of its body's input, from the type of the body's parameter after its context
+ * (`input-schemas.ts`), and gives lists of keys declared `as const` their indexes (`archetypes.ts`). It runs before
+ * TypeScript is stripped, which all three read.
+ */
+const inputPlugin = (): Plugin => {
+    let repeated = false;
+    let server: ViteDevServer | undefined;
+    /** Modules whose input types each file declares, and the files each module's input types were read from. */
+    const dependents = new Map<string, Set<string>>();
+    const dependencies = new Map<string, readonly string[]>();
+    const depend = (parent: string, files: readonly string[]): void => {
+        for (const file of dependencies.get(parent) ?? []) dependents.get(file)?.delete(parent);
+        dependencies.set(parent, files);
+        for (const file of files) {
+            const parents = dependents.get(file) ?? new Set<string>();
+            parents.add(parent);
+            dependents.set(file, parents);
+        }
+    };
+    /** The package's own files' syntax as last parsed, which every module reading the package's types shares. */
+    const parsed = new Map<string, { readonly code: string; readonly program: TypedProgram }>();
+    const instance: Plugin = {
+        name: `${packageName}/input`,
+        enforce: "pre",
+        configResolved: config => {
+            repeated = config.plugins.find(other => other.name === instance.name) !== instance;
+        },
+        configureServer: devServer => {
+            server = devServer;
+        },
+        // A module whose input types come from a changed file is transformed again, for its schemas.
+        watchChange(id) {
+            for (const parent of dependents.get(id) ?? []) {
+                for (const module of server?.moduleGraph.getModulesByFile(parent) ?? []) server?.moduleGraph.invalidateModule(module);
+            }
+        },
+        async transform(code, id) {
+            const file = id.split("?")[0] ?? id;
+            if (repeated || id.includes("\0") || !typed.test(file)) return null;
+            // Only a module declaring keys, creating systems or listing keys `as const` has anything for the passes.
+            if (!(code.includes("declare module") && code.includes("@adobe/ecs")) && !(code.includes("System") && code.includes(".create(")) && !code.includes("as const")) return null;
+            const { parseAst } = await import("vite");
+            const resolved = async (specifier: string, importer: string) => await this.resolve(specifier, importer, { skipSelf: true });
+            const host: InputHost & AugmentationHost = {
+                parse: (source, path) => {
+                    const known = parsed.get(path);
+                    if (known !== undefined && known.code === source) return known.program;
+                    const program = parseAst(source, { lang: path.endsWith("x") ? "tsx" : "ts" }, path);
+                    if (packagePathOf(path) !== null) parsed.set(path, { code: source, program });
+                    return program;
+                },
+                resolve: async (specifier, importer) => {
+                    const found = await resolved(specifier, importer);
+                    if (found === null) return null;
+                    // A build that treats the package as external still reads its types, from the importer's copy.
+                    const path = found.external ? (specifier === packageName ? copyForImporter(importer).index : null) : found.id.split("?")[0] ?? found.id;
+                    return path === null || path.includes("\0") || !isAbsolute(path) ? null : typesFileOf(path);
+                },
+                load: file => readFile(file, "utf8"),
+                packagePath: packagePathOf,
+                isSystem: async (specifier, importer) => {
+                    const found = await resolved(specifier, importer);
+                    return found !== null && (found.external ? specifier === packageName : namespaceCopyOf(found.id, "System") !== null);
+                },
+            };
+            const module = moduleOf(file, code, host.parse(code, file));
+            const results = [await augmentationInsertions(module, host), await inputInsertions(module, host), archetypeInsertions(module)].filter(result => result !== null);
+            const read = [...new Set(results.flatMap(result => result.dependencies))].filter(dependency => dependency !== file);
+            for (const dependency of read) this.addWatchFile(dependency);
+            depend(file, read);
+            for (const result of results) if ("failure" in result) return this.error(describeFailure(result.failure), result.failure.position);
+            const insertions = results.flatMap(result => "insertions" in result ? result.insertions : []);
+            return insertions.length === 0 ? null : insertInto(code, insertions, file);
+        },
+    };
+    return instance;
+};
+
+/**
+ * The plugin's two parts: registrations and input schemas, before TypeScript is stripped, and kernels and ids,
+ * after. A library's build takes `{ library: true }`, the first part alone: its build then ships the registrations and
+ * schemas its types give, which an application's build, reading only JavaScript there, can't make, and leaves its
+ * kernels as source and its keys without ids, which the application's plugin compiles and gives.
+ */
+export const plugin = (options: { readonly library?: boolean } = {}): Plugin[] => pluginWith(options);
+
+/**
+ * The plugin, for this package's tests: with `automatic: false`, unflagged systems run as written, so suites of the
+ * row path run their bodies that way too.
+ */
+export const pluginWith = ({ library = false, automatic = true }: { readonly library?: boolean; readonly automatic?: boolean }): Plugin[] =>
+    library ? [inputPlugin()] : [inputPlugin(), compilePlugin(automatic)];
+
+const compilePlugin = (automatic: boolean): Plugin => {
     let serve = true;
-    let root = process.cwd();
     /** Whether an earlier instance of the plugin is in the same bundle. */
     let repeated = false;
     let server: ViteDevServer | undefined;
-    const packageNameOf = packageNames();
+    const packageOf = packages();
     /**
      * A linker per environment, since client and SSR builds resolve imports under different conditions. Each resolves
      * through its environment's latest transform.
@@ -140,15 +268,18 @@ export const kernelPlugin = (): Plugin => {
         chunks.add(referenceId);
         return referenceId;
     };
-    const plugin: Plugin = {
+    const instance: Plugin = {
         name: `${packageName}/kernel`,
         enforce: "post",
-        // Dep pre-bundling breaks the runtime's `new Worker(new URL("./worker.js", import.meta.url))`.
-        config: () => ({ optimizeDeps: { exclude: [packageName] }, worker: { plugins: () => [kernelPlugin()] } }),
+        // Dep pre-bundling breaks the runtime's `new Worker(new URL("./worker.js", import.meta.url))`. Kernels are chunks
+        // of their own, so a worker bundle holding one is a module, unless the configuration says otherwise.
+        config: user => ({
+            optimizeDeps: { exclude: [packageName] },
+            worker: { plugins: () => plugin(), ...user.worker?.format === undefined ? { format: "es" as const } : {} },
+        }),
         configResolved: config => {
             serve = config.command === "serve";
-            root = config.root;
-            repeated = config.plugins.find(other => other.name === plugin.name) !== plugin;
+            repeated = config.plugins.find(other => other.name === instance.name) !== instance;
         },
         configureServer: devServer => {
             server = devServer;
@@ -189,23 +320,27 @@ export const kernelPlugin = (): Plugin => {
         async transform(code, id, options) {
             if (repeated || id.includes("\0") || !scripts.test(id.split("?")[0] ?? id)) return null;
             const parse = (input: string) => estreeOf(this.parse(input));
-            const identify = (input: string) => identifyModule(input, moduleIdOf(id, root, packageNameOf), parse, async (source, namespace) => {
-                const resolved = await this.resolve(source, id);
-                return resolved !== null && (resolved.external ? source === packageName : isNamespaceModule(resolved.id, namespace));
-            });
+            const identify = async (input: string) => {
+                const identified = await identifyModule(input, moduleIdOf(id, packageOf), parse, async (source, namespace) => {
+                    const resolved = await this.resolve(source, id);
+                    return resolved !== null && (resolved.external ? source === packageName : namespaceCopyOf(resolved.id, namespace) !== null);
+                });
+                return identified !== null && "failure" in identified ? this.error(identified.failure) : identified;
+            };
             const ssr = options?.ssr === true;
+            parseTypes ??= (await import("vite")).parseAst;
             const linker = linkerFor(ssr, this);
             const hashes: string[] = [];
-            const transformed = await transformKernels(code, id, parse, async source => {
+            const transformed = await transformKernels(code, id, parse, async (source, namespace) => {
                 const resolved = await this.resolve(source, id);
-                return resolved !== null && isSystemModule(resolved.id);
+                return resolved === null ? null : namespaceCopyOf(resolved.id, namespace);
             }, (index, identity) => {
                 const hash = kernelHash(identity);
                 hashes[index] = hash;
                 if (!serve) return `import.meta.ROLLUP_FILE_URL_${emitChunk(this, buildId(id, index), hash)}`;
                 // Served to node, a kernel's module is its url, so a pool's workers, which import it outside the server, read it too.
                 return JSON.stringify(ssr ? inlinePlaceholder(index, hash) : serveUrl(id, index, hash));
-            }, linker);
+            }, linker, automatic, moduleLabelOf(id, packageOf));
             const result = ssr && transformed !== null && !("failure" in transformed) ? { ...transformed, code: inlineKernels(transformed.code, transformed.kernels, hashes) } : transformed;
             const parent = id.split("?")[0] ?? id;
             if (result === null) {
@@ -216,9 +351,10 @@ export const kernelPlugin = (): Plugin => {
             for (const dependency of result.dependencies) this.addWatchFile(dependency);
             depend(parent, result.dependencies);
             if ("failure" in result) return this.error(describeFailure(result.failure), result.failure.position);
+            for (const warning of result.warnings) this.warn(warning);
             kernels.set(id, result.kernels.map((source, index) => ({ source, hash: hashes[index] ?? "" })));
             return await identify(result.code) ?? { code: result.code, map: null };
         },
     };
-    return plugin;
+    return instance;
 };

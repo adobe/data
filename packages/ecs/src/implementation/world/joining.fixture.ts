@@ -14,7 +14,7 @@ import { add, drive, names, total, until, withReports } from "./joining.test-hel
  */
 
 /** A system only this thread imports, which a world on a worker never did. */
-const unimportedByWorker = System.create({ name: "joiningTest/unimportedByWorker" }, () => {});
+const unimportedByWorker = System.create({}, () => {});
 
 type Worker = {
     readonly ask: (message: ToJoiningWorker, transfer?: readonly unknown[]) => Promise<FromJoiningWorker>;

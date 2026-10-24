@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "../index.js";
@@ -11,6 +9,7 @@ import { settle } from "./observe.test-helper.js";
 import { fillReports, runReported, runThenNext } from "./reports.test-helper.js";
 import { retainedRuns } from "./reports.js";
 import { Report } from "../../interface/report/report.js";
+import type { F32 } from "../../interface/math/index.js";
 
 // The observer factories of `src/observe`. Each case subscribes, settles, then expects, so it holds whenever a first
 // value comes.
@@ -31,19 +30,15 @@ declare module "@adobe/ecs" {
     }
 }
 
-Resource.register(level, { type: { type: "number", default: 0 } });
-Resource.register(other, { type: { type: "number", default: 0 } });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
-Component.register(weight, { type: { type: "number" } });
 
-const raise = System.create({ name: "observeCasesTest/raise", input: { type: "object", properties: { by: { type: "number" } } }, resources: { write: [level] } }, ({ input, resources }) => {
+const raise = System.create({}, ({ resources }, input: { readonly by: number }) => {
     resources[level] += input.by;
     resources[level] += input.by;
 });
-const touchOther = System.create({ name: "observeCasesTest/touchOther", resources: { write: [other] } }, ({ resources }) => { resources[other] += 1; });
-const spawn = System.create({ name: "observeCasesTest/spawn" }, ({ commands }) => { commands.spawn([weight])({ [weight]: 2 }); });
-const sum = System.create({ name: "observeCasesTest/sum", components: { read: [weight] }, reduce: { [total]: "+" } }, (row, { reduce }) => { reduce[total](row[weight]); });
-const keep = System.create({ name: "observeCasesTest/keep", resources: { write: [level] } }, ({ resources }) => { resources[level] = resources[level] + 0; });
+const touchOther = System.create({}, ({ resources }) => { resources[other] += 1; });
+const spawn = System.create({}, ({ commands }) => { commands.spawn([weight])({ [weight]: 2 }); });
+const sum = System.create({ components: { with: [weight] } }, (row, { reduce }) => { reduce[total](row[weight]); });
+const keep = System.create({}, ({ resources }) => { resources[level] = resources[level] + 0; });
 
 /** Errors thrown out of band while `catching` runs, as uncaught errors would be, caught instead. */
 const catching = async (run: () => Promise<void>): Promise<unknown[]> => {
@@ -82,25 +77,21 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(heat, { type: { type: "number" } });
-Component.register(tag, { type: { const: true } });
-Component.register(flag, { type: { const: true } });
-Component.register(filler, { type: { type: "number" } });
 
 /** The entity the systems below act on, set by `create`. */
 let target = Entity.none;
-const create = System.create({ name: "observeCasesTest/create" }, ({ commands }) => { target = commands.spawn([weight, heat])({ [weight]: 1, [heat]: 0 }); });
-const despawn = System.create({ name: "observeCasesTest/despawn" }, ({ commands }) => { commands.despawn(target); });
-const weigh = System.create({ name: "observeCasesTest/weigh", components: { write: [weight], not: [filler] } }, row => {
+const create = System.create({}, ({ commands }) => { target = commands.spawn([weight, heat])({ [weight]: 1, [heat]: 0 }); });
+const despawn = System.create({}, ({ commands }) => { commands.despawn(target); });
+const weigh = System.create({ components: { with: [weight], not: [filler] } }, row => {
     row[weight] += 1;
     row[weight] += 1;
 });
-const warm = System.create({ name: "observeCasesTest/warm", components: { write: [heat] } }, row => { row[heat] += 1; });
-const double = System.create({ name: "observeCasesTest/double", kernel: "cpu", components: { write: [heat] } }, row => { row[heat] = row[heat] * 2 + 1; });
-const addTag = System.create({ name: "observeCasesTest/addTag" }, ({ commands }) => { commands.add(target, tag, true); });
-const removeTag = System.create({ name: "observeCasesTest/removeTag" }, ({ commands }) => { commands.remove(target, tag); });
-const removeWeight = System.create({ name: "observeCasesTest/removeWeight" }, ({ commands }) => { commands.remove(target, weight); });
-const addFlag = System.create({ name: "observeCasesTest/addFlag" }, ({ commands }) => { commands.add(target, flag, true); });
+const warm = System.create({ components: { with: [heat] } }, row => { row[heat] += 1; });
+const double = System.create({ kernel: true, components: { with: [heat] } }, row => { row[heat] = row[heat] * 2 + 1; });
+const addTag = System.create({}, ({ commands }) => { commands.add(target, tag, true); });
+const removeTag = System.create({}, ({ commands }) => { commands.remove(target, tag); });
+const removeWeight = System.create({}, ({ commands }) => { commands.remove(target, weight); });
+const addFlag = System.create({}, ({ commands }) => { commands.add(target, flag, true); });
 
 const score = Symbol("observeCasesTest/score");
 const benched = Symbol("observeCasesTest/benched");
@@ -114,36 +105,33 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(score, { type: { type: "number" } });
-Component.register(benched, { type: { const: true } });
-Component.register(marker, { type: { const: true } });
 
 /** Players the systems below act on, in spawn order, set by `players`. */
 let roster: Entity[] = [];
-const players = System.create({ name: "observeCasesTest/players" }, ({ commands }) => {
+const players = System.create({}, ({ commands }) => {
     roster = [commands.spawn([score])({ [score]: 1 }), commands.spawn([score])({ [score]: 2 }), commands.spawn([score, benched])({ [score]: 3, [benched]: true })];
 });
-const join = System.create({ name: "observeCasesTest/join" }, ({ commands }) => { roster.push(commands.spawn([score])({ [score]: 0 })); });
-const bench = System.create({ name: "observeCasesTest/bench" }, ({ commands }) => { commands.add(roster[0], benched, true); });
+const join = System.create({}, ({ commands }) => { roster.push(commands.spawn([score])({ [score]: 0 })); });
+const bench = System.create({}, ({ commands }) => { commands.add(roster[0], benched, true); });
 /** The first player leaves the bench as the last joins it, so as many match as before. */
-const swap = System.create({ name: "observeCasesTest/swap" }, ({ commands }) => {
+const swap = System.create({}, ({ commands }) => {
     commands.add(roster[0], benched, true);
     commands.remove(roster[2], benched);
 });
-const mark = System.create({ name: "observeCasesTest/mark" }, ({ commands }) => { commands.add(roster[0], marker, true); });
-const leave = System.create({ name: "observeCasesTest/leave" }, ({ commands }) => { commands.despawn(roster[1]); });
-const score10 = System.create({ name: "observeCasesTest/score10", components: { write: [score] } }, row => { row[score] += 10; });
-const nudge = System.create({ name: "observeCasesTest/nudge", components: { write: [score] } }, row => { row[score] += 0; });
-const invert = System.create({ name: "observeCasesTest/invert", components: { write: [score] } }, row => { row[score] = -row[score]; });
-const invertKernel = System.create({ name: "observeCasesTest/invertKernel", kernel: "cpu", components: { write: [score] } }, row => { row[score] = 0 - row[score]; });
+const mark = System.create({}, ({ commands }) => { commands.add(roster[0], marker, true); });
+const leave = System.create({}, ({ commands }) => { commands.despawn(roster[1]); });
+const score10 = System.create({ components: { with: [score] } }, row => { row[score] += 10; });
+const nudge = System.create({ components: { with: [score] } }, row => { row[score] += 0; });
+const invert = System.create({ components: { with: [score] } }, row => { row[score] = -row[score]; });
+const invertKernel = System.create({ kernel: true, components: { with: [score] } }, row => { row[score] = 0 - row[score]; });
 /** Swaps the bench like `swap`, then despawns more entities than the journal holds, so it drops the swap's entries. */
-const swapAndCrowd = System.create({ name: "observeCasesTest/swapAndCrowd" }, ({ commands }) => {
+const swapAndCrowd = System.create({}, ({ commands }) => {
     commands.add(roster[0], benched, true);
     commands.remove(roster[2], benched);
     for (const spawned of crowded.splice(0)) commands.despawn(spawned);
 });
 const crowded: Entity[] = [];
-const crowdUp = System.create({ name: "observeCasesTest/crowdUp" }, ({ commands }) => {
+const crowdUp = System.create({}, ({ commands }) => {
     for (let i = 0; i < 5000; i++) crowded.push(commands.spawn([filler])({ [filler]: i }));
 });
 
@@ -157,22 +145,19 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(rank, { type: { type: "number" } });
-Component.register(second, { type: { type: "number" } });
 
 const coarse = Symbol("observeCasesTest/coarse");
 declare module "@adobe/ecs" {
     interface Components {
-        [coarse]: { type: number };
+        [coarse]: { type: F32 };
     }
 }
 // Kept at 32 bits, so a 64-bit bound may fall between two values it keeps.
-Component.register(coarse, { type: { type: "number", precision: 1 } });
 let coarseValues: readonly number[] = [];
-const spawnCoarse = System.create({ name: "observeCasesTest/spawnCoarse" }, ({ commands }) => {
+const spawnCoarse = System.create({}, ({ commands }) => {
     for (const each of coarseValues) commands.spawn([coarse])({ [coarse]: each });
 });
-const shiftCoarse = System.create({ name: "observeCasesTest/shiftCoarse", components: { write: [coarse] } }, row => { row[coarse] = row[coarse] + 0.1; });
+const shiftCoarse = System.create({ components: { with: [coarse] } }, row => { row[coarse] = row[coarse] + 0.1; });
 
 type Condition = number | { readonly "<"?: number; readonly ">"?: number; readonly "<="?: number; readonly ">="?: number; readonly "=="?: number; readonly "!="?: number };
 
@@ -184,12 +169,12 @@ const passesCondition = (value: number, condition: Condition): boolean => typeof
 let ranks: readonly (readonly [number, number, boolean])[] = [];
 /** The entities `rankAll` spawned, in order. */
 let ranked: Entity[] = [];
-const rankAll = System.create({ name: "observeCasesTest/rankAll" }, ({ commands }) => {
+const rankAll = System.create({}, ({ commands }) => {
     ranked = ranks.map(([value, key, marked]) => commands.spawn(marked ? [rank, second, marker] : [rank, second])({ [rank]: value, [second]: key }));
 });
 /** What `rerank` sets: an index into `ranked` and its new rank. */
 let reranks: readonly (readonly [number, number])[] = [];
-const rerank = System.create({ name: "observeCasesTest/rerank" }, ({ commands }) => {
+const rerank = System.create({}, ({ commands }) => {
     for (const [index, value] of reranks) commands.add(ranked[index], rank, value);
 });
 
@@ -459,11 +444,11 @@ describe("observing entities", () => {
         await using world = createWorld();
         await world.run(create);
         const seen: unknown[] = [];
-        const subscribe = System.create({ name: "observeCasesTest/subscribeEntity" }, () => {
+        const subscribe = System.create({}, () => {
             entity(world, target, { required: [weight] })(value => seen.push(value));
         });
-        const later = System.create({ name: "observeCasesTest/laterWeigh", components: { write: [weight] }, after: [subscribe] }, row => { row[weight] += 2; });
-        await world.run(System.create({ name: "observeCasesTest/subscribeThenWeigh", systems: [subscribe, later] }));
+        const later = System.create({ components: { with: [weight] }, after: [subscribe] }, row => { row[weight] += 2; });
+        await world.run(System.create({ systems: [subscribe, later] }));
         await settle(world);
         await world.run(warm);
         expect(seen).toEqual([{ [weight]: 3 }]);
@@ -592,11 +577,11 @@ describe("observing queries", () => {
         await using world = createWorld();
         await world.run(players);
         const seen: number[] = [];
-        const subscribe = System.create({ name: "observeCasesTest/subscribe" }, () => {
+        const subscribe = System.create({}, () => {
             count(world, { required: [score], where: { [score]: { "<": 0 } } })(value => seen.push(value));
         });
-        const later = System.create({ name: "observeCasesTest/later", components: { write: [score] }, after: [subscribe] }, row => { row[score] = -row[score]; });
-        await world.run(System.create({ name: "observeCasesTest/subscribeThenWrite", systems: [subscribe, later] }));
+        const later = System.create({ components: { with: [score] }, after: [subscribe] }, row => { row[score] = -row[score]; });
+        await world.run(System.create({ systems: [subscribe, later] }));
         await settle(world);
         expect(seen).toEqual([3]);
     });
@@ -774,8 +759,8 @@ describe("observing a page of a query", () => {
 describe("the factories' own runs", () => {
     it("rethrow their systems' failures out of band, from their reports, once a later run of theirs read them", async () => {
         await using world = createWorld({ [workers]: 0 });
-        const fail = System.create({ name: "observeCasesTest/failRun" }, () => { throw new Error("run failed"); });
-        const nothing = System.create({ name: "observeCasesTest/nothing" }, () => {});
+        const fail = System.create({}, () => { throw new Error("run failed"); });
+        const nothing = System.create({}, () => {});
         let reports = -1;
         const caught = await catching(async () => {
             // Its notifier throws once the failed run's report loses its errors, which a run of the factories' own does

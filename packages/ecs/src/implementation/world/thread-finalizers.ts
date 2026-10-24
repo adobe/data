@@ -6,12 +6,12 @@ import { writeOf } from './archetype.js';
 import { emptyViews } from './arrays.js';
 import { readCell } from './cells.js';
 import { logFinalizedWord, logStopsWord, nullTag, ownTag, slotTags, startTag } from './move-log.js';
-import { stagedValue, type Mirror, type Previously } from './mirror.js';
+import { resourceValueOf, stagedValue, type Mirror, type Previously } from './mirror.js';
 import type { WorkerError } from './protocol.js';
 import { rowBinderOf, type Row, type RowArchetype, type RowHost, type RowStorage } from './rows.js';
 import {
     archetypesAt, blockGroupsWord, blockHeaderBytes, blockNextWord, blockSyncWord, columnBytes, entitiesAt, groupBytesWord, groupCountWord,
-    groupIndexWord, rowsAt, tagsAt, valuesAt,
+    groupIndexWord, resourceOffsetsOf, rowsAt, tagsAt, valuesAt,
 } from './stop-lists.js';
 import type { Key } from './state.js';
 import type { StringStore } from './strings.js';
@@ -62,15 +62,20 @@ type ThreadFinalizer = {
     readonly constants: readonly number[];
     readonly constantLayouts: readonly Layout[];
     readonly bind: (archetype: RowArchetype) => Row;
+    /** Its optional components, which a stop's row has only where the entity's archetype did. */
+    readonly optional: readonly number[];
     readonly context: object;
-    /** Resolves its resources' cells, as of now. */
-    readonly cells: () => void;
+    /**
+     * Resolves its resources: its thread's objects as it holds them, and the rest from the copies a group holds from
+     * byte `copies`, as before its stops' sync point applied, or with -1, once the world is disposed, where they are.
+     */
+    readonly cells: (copies: number) => void;
     readonly body: (row: object, context: object) => void;
 };
 
 /** A storage a stop list's column holds, for a row over its stops. */
 const columnStorage = (component: number, layout: Layout, views: RowStorage["views"], values: unknown[], strings: StringStore | null): FinalizedStorage => ({
-    component, layout, views, strings: layout.kind === "string" ? strings : null, values, ...writeOf(layout), ticked: false, added: noTicks, changed: noTicks, chunkAdded: noTicks, chunkChanged: noTicks, tags: noTags,
+    component, layout, views, strings: layout.kind === "string" ? strings : null, values, ...writeOf(layout), ticked: false, added: noTicks, changed: noTicks, chunkAdded: noTicks, chunkChanged: noTicks, blockAdded: noTicks, blockChanged: noTicks, tags: noTags,
 });
 
 /**
@@ -128,11 +133,44 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         const keys = [...new Set<Key>(resources?.read ?? [])];
         const numbers = keys.map(host.numberOf);
         const resolved: { storage: FinalizedStorage | undefined; row: number }[] = keys.map(() => ({ storage: undefined, row: 0 }));
+        // Its thread's object resources are read from the mirror, which may be behind the entity table as it replays.
+        const own = keys.map(key => host.layoutOf(key)?.kind === "object");
+        const resourceStarts = numbers.map(number => mirror.starts.get(number) ?? null);
+        const ownValues: unknown[] = keys.map(() => undefined);
+        const shared = own.includes(false);
+        // The world copies the rest for each group, in this order: by slot, its strings' handles, then its linear
+        // values, each with its key's index and layout. A constant needs no copy.
+        const stringKeys: number[] = [];
+        const stringLayouts: Layout[] = [];
+        const linearKeys: number[] = [];
+        const linearLayouts: Layout[] = [];
+        const linearStrides: number[] = [];
+        const constantKeys: number[] = [];
+        const constantStorages: FinalizedStorage[] = [];
+        keys.forEach((key, k) => {
+            const layout = host.layoutOf(key);
+            if (layout === undefined || layout.kind === "object") return;
+            if (layout.kind === "string") {
+                stringKeys.push(k);
+                stringLayouts.push(layout);
+            }
+            else if (layout.kind === "linear") {
+                linearKeys.push(k);
+                linearLayouts.push(layout);
+                linearStrides.push(layout.stride);
+            }
+            else {
+                constantKeys.push(k);
+                constantStorages.push(columnStorage(numbers[k], layout, emptyViews, [], null));
+            }
+        });
+        const resourceOffsets = resourceOffsetsOf(stringKeys.length, linearStrides);
         if (keys.length > 0) {
             const values: object = Object.create({});
             keys.forEach((key, k) => {
                 Object.defineProperty(values, key, {
                     get: () => {
+                        if (own[k]) return ownValues[k];
                         const { storage, row } = resolved[k];
                         if (storage === undefined) throw new Error(`Resource "${labelOf(key)}" isn't in this world.`);
                         return readCell(storage, row);
@@ -146,15 +184,41 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         const untyped: { body(row: object, context: object): void } = leaf;
         return {
             leaf, objects, starts, linear, layouts, constants, constantLayouts,
-            required: [...new Set([...reads, ...components.has ?? []])].map(host.numberOf),
+            required: [...new Set([...reads, ...components.has ?? []])].filter(key => !(components.optional ?? []).includes(key)).map(host.numberOf),
             excluded: (components.not ?? []).map(host.numberOf),
-            bind: rowBinderOf<RowArchetype>(host.rows, host.numberOf, reads, []),
+            optional: (components.optional ?? []).map(host.numberOf),
+            bind: rowBinderOf<RowArchetype>(host.rows, host.numberOf, reads, [], components.optional),
             context: value,
-            cells: () => {
-                const found = keys.length === 0 ? null : host.resourceRow();
-                for (let k = 0; k < keys.length; k++) {
-                    resolved[k].storage = found?.archetype.storageById[numbers[k]];
-                    resolved[k].row = found?.row ?? 0;
+            cells: copies => {
+                // Before a rebuild too, its old rows are the mirror's, which hold what the rebuild keeps.
+                for (let k = 0; k < keys.length; k++) if (own[k]) ownValues[k] = resourceValueOf(mirror, numbers[k], resourceStarts[k]);
+                if (!shared) return;
+                if (copies < 0) {
+                    const found = host.resourceRow();
+                    for (let k = 0; k < keys.length; k++) {
+                        if (own[k]) continue;
+                        resolved[k].storage = found?.archetype.storageById[numbers[k]];
+                        resolved[k].row = found?.row ?? 0;
+                    }
+                    return;
+                }
+                if (stringKeys.length > 0) {
+                    // One view over every handle, a slot each.
+                    const views = viewsOf(buffer, copies, 4 * stringKeys.length);
+                    for (let slot = 0; slot < stringKeys.length; slot++) {
+                        const k = stringKeys[slot];
+                        resolved[k].storage = columnStorage(numbers[k], stringLayouts[slot], views, [], host.strings);
+                        resolved[k].row = slot;
+                    }
+                }
+                for (let slot = 0; slot < linearKeys.length; slot++) {
+                    const k = linearKeys[slot];
+                    resolved[k].storage = columnStorage(numbers[k], linearLayouts[slot], viewsOf(buffer, copies + resourceOffsets[slot], linearStrides[slot]), [], null);
+                    resolved[k].row = 0;
+                }
+                for (let slot = 0; slot < constantKeys.length; slot++) {
+                    resolved[constantKeys[slot]].storage = constantStorages[slot];
+                    resolved[constantKeys[slot]].row = 0;
                 }
             },
             body: (row, context) => untyped.body(row, context),
@@ -235,11 +299,38 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
                 column += columnBytes(count, stride);
             }
             for (let k = 0; k < finalizer.constants.length; k++) storageById[finalizer.constants[k]] = columnStorage(finalizer.constants[k], finalizer.constantLayouts[k], emptyViews, [], null);
-            const row = finalizer.bind({ id: -1, entities: new Float64Array(buffer, entitiesAt(group), count), storageById });
-            finalizer.cells();
-            for (let i = 0; i < count; i++) {
-                row.index = i;
-                guarded(index, finalizer, row);
+            const entities = new Float64Array(buffer, entitiesAt(group), count);
+            finalizer.cells(column);
+            if (finalizer.optional.length === 0) {
+                const row = finalizer.bind({ id: -1, entities, storageById });
+                for (let i = 0; i < count; i++) {
+                    row.index = i;
+                    guarded(index, finalizer, row);
+                }
+            }
+            else {
+                // A stop's row has an optional component only where its archetype did: rows run a run of one
+                // archetype's stops at a time, and archetypes with the same ones share their copy of the columns.
+                const byPattern = new Map<number, RowArchetype>();
+                for (let i = 0; i < count;) {
+                    const id = u32[archetypeWords + i];
+                    let end = i + 1;
+                    while (end < count && u32[archetypeWords + end] === id) end++;
+                    const components = host.archetypeAt(id)?.components ?? [];
+                    let pattern = 0;
+                    finalizer.optional.forEach((component, k) => { if (components.includes(component)) pattern |= 1 << k; });
+                    let archetype = byPattern.get(pattern);
+                    if (archetype === undefined) {
+                        const storages: (FinalizedStorage | undefined)[] = [...storageById];
+                        finalizer.optional.forEach((component, k) => { if ((pattern & (1 << k)) === 0) storages[component] = undefined; });
+                        byPattern.set(pattern, archetype = { id: -1, entities, storageById: storages });
+                    }
+                    const row = finalizer.bind(archetype);
+                    for (; i < end; i++) {
+                        row.index = i;
+                        guarded(index, finalizer, row);
+                    }
+                }
             }
             group += bytes;
         }
@@ -297,7 +388,7 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         for (let index = 0; index < finalizers.length; index++) {
             const finalizer = finalizers[index];
             if (finalizer === null || finalizer === undefined) continue;
-            finalizer.cells();
+            finalizer.cells(-1);
             for (let id = 0; id < host.tableCount(); id++) {
                 const archetype = host.archetypeAt(id);
                 if (archetype === undefined || archetype.resource || (archetype.meta && finalizer.required.length === 0)) continue;

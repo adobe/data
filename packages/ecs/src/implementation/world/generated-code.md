@@ -21,7 +21,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { transformKernels } from '../implementation/compiler/transform.js';
 import { createLinker } from '../implementation/compiler/link.js';
-import { packageIndex } from '../implementation/compiler/paths.js';
+import { ownCopy } from '../implementation/compiler/paths.js';
 import { estreeOf } from '../implementation/compiler/estree.js';
 import { generateWgsl } from '../implementation/world/wgsl.js';
 import { generateWasm, type WasmColumn } from '../implementation/world/wasm.js';
@@ -31,12 +31,12 @@ const parse = (code: string) => estreeOf(parseAst(code));
 test("show", async () => {
     const source = `import { System, Vec3 } from "@adobe/ecs";
 const position = "position"; const velocity = "velocity";
-const move = System.create({ name: "move", kernel: "gpu", components: { read: [velocity], write: [position] } },
+const move = System.create({ kernel: "gpu", components: { read: [velocity], write: [position] } },
     row => { row[position] = Vec3.add(row[position], row[velocity]); });`;
     // Resolves the package to its source and relative imports to files, stripping types as the plugin does.
     const linker = createLinker({
         resolve: async (specifier, importer) => {
-            if (specifier === "@adobe/ecs") return packageIndex;
+            if (specifier === "@adobe/ecs") return ownCopy.index;
             const path = resolve(dirname(importer), specifier);
             return existsSync(path.replace(/\.js$/, ".ts")) ? path.replace(/\.js$/, ".ts") : path;
         },
@@ -45,7 +45,7 @@ const move = System.create({ name: "move", kernel: "gpu", components: { read: [v
             return { code: file.endsWith(".ts") ? (await (await import("vite")).transformWithOxc(code, file, { lang: "ts" })).code : code };
         },
     }, parse);
-    const result = await transformKernels(source, "/move.js", parse, async s => s === "@adobe/ecs", i => JSON.stringify(`kernel:${i}`), linker);
+    const result = await transformKernels(source, "/move.js", parse, async s => s === "@adobe/ecs" ? ownCopy : null, i => JSON.stringify(`kernel:${i}`), linker);
     if (result === null || "failure" in result) throw new Error(JSON.stringify(result));
     console.log(result.code);
     console.log(result.kernels[0]);
@@ -112,9 +112,9 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(num_workgroups) group
 Calls nest as builtins do: `Vec3.scale(Vec3.normalize(Vec3.cross(p, v)), Vec3.dot(p, v))` emits
 `cross_6 = cross(…)`, `normalize_19 = normalize(cross_6)`, `dot_26 = dot(…)` and `scale_31 = (normalize_19 * dot_26)`.
 
-### WASM (499 bytes, excerpts from `wasm2wat`)
+### WASM (557 bytes, excerpts from `wasm2wat`)
 
-Three loops: chunk stamps, four rows at a time, then one row at a time for the rest.
+Four loops: block stamps, chunk stamps, four rows at a time, then one row at a time for the rest.
 
 ```wat
 ;; Four rows: 48 bytes per component, three v128 loads each.

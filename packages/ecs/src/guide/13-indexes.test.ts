@@ -1,70 +1,64 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Index, System, World } from "../index.js";
+import { type I32, Index, System, type Vec2, World } from "../index.js";
 
-const cell = Symbol("cell");
-const crowded = Symbol("crowded");
-const score = Symbol("score");
-const player = Symbol("player");
-const serverId = Symbol("serverId");
+const cell = Symbol();
+const crowded = Symbol();
+const score = Symbol();
+const player = Symbol();
+const serverId = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
-        [cell]: { type: readonly [number, number] };
+        [cell]: { type: Vec2.I32 };
         [crowded]: { type: number };
         [score]: { type: number };
         [player]: { type: string };
-        [serverId]: { type: number };
+        [serverId]: { type: I32 };
     }
 }
 
-Component.register(cell, { type: { type: "array", items: { type: "integer" }, minItems: 2, maxItems: 2 } });
-Component.register(crowded, { type: { type: "number" } });
-Component.register(score, { type: { type: "number" } });
-Component.register(player, { type: { type: "string" } });
-Component.register(serverId, { type: { type: "integer" } });
-
-// An index finds entities by their components' values: here, those with a crowded count, by their cell.
-const grid = Index.create({ key: [cell], components: { has: [crowded] } });
+// Here, entities with a crowded count, by their cell.
+const grid = Index.create({ key: [cell], components: { with: [crowded] } });
 
 // A lookup through it gives the rows with a key, in entity order.
-const count = System.create({ components: { read: [cell], write: [crowded] }, lookup: { at: { index: grid } } }, (row, { lookup }) => {
+const count = System.create({ components: { with: [cell, crowded] }, lookup: { at: { index: grid } } }, (row, { lookup }) => {
     const [x, y] = row[cell];
     row[crowded] = lookup.at([x, y]).length;
 });
 
 // A sorted index keeps its key's order: lookups take a range, and `order` runs a system's rows in it.
-const byScore = Index.create({ key: [score], sorted: true, components: { has: [player] } });
+const byScore = Index.create({ key: [score], sorted: true, components: { with: [player] } });
 
 const winners: string[] = [];
-const leaders = System.create({ observer: true, lookup: { scores: { index: byScore, read: [player] } } }, ({ lookup }) => {
+const leaders = System.create({ observer: true, lookup: { scores: { index: byScore } } }, ({ lookup }) => {
     winners.length = 0;
     const high = lookup.scores({ ">=": 90 });
     for (let i = 0; i < high.length; i++) winners.push(high.at(i)[player]);
 });
 
 const board: string[] = [];
-const list = System.create({ observer: true, components: { read: [player] }, order: byScore }, row => {
+const list = System.create({ observer: true, components: { with: [player] }, order: byScore }, row => {
     board.push(row[player]);
 });
 
 // A unique index gives one row, or null.
 const byServerId = Index.create({ key: [serverId], unique: true });
 let found: number | null = null;
-const find = System.create({ input: { type: "object", properties: { id: { type: "integer" } } }, lookup: { byId: { index: byServerId } } }, ({ input, lookup }) => {
+const find = System.create({ lookup: { byId: { index: byServerId } } }, ({ lookup }, input: { readonly id: number }) => {
     found = lookup.byId(input.id)?.entity ?? null;
 });
 
 // An index without a key holds every entity with its components, in entity order. With changed: true, this observer
 // system runs only when an entity entered or left the index, so added, it keeps a count as players come and go.
-const players = Index.create({ key: [], components: { has: [player] } });
+const players = Index.create({ key: [], components: { with: [player] } });
 let playerCount = 0;
 const countPlayers = System.create({ observer: true, lookup: { players: { index: players, changed: true } } }, ({ lookup }) => {
     playerCount = lookup.players().length;
 });
 
 const crowds: number[] = [];
-const readCrowds = System.create({ observer: true, components: { read: [crowded] } }, row => {
+const readCrowds = System.create({ observer: true, components: { with: [crowded] } }, row => {
     crowds.push(row[crowded]);
 });
 

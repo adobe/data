@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Mat4x4, Quat, Vec3 } from "../../interface/math/index.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
@@ -23,13 +22,8 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(bits, { type: Vec3.U32.schema });
-Component.register(counts, { type: Vec3.U32.schema });
-Component.register(sums, { type: Vec3.I32.schema });
 
-const spawn = System.create({ name: "builtinsTest/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     for (let i = 0; i < 64; i++) commands.spawn([position, velocity])({ [position]: [i, i % 5, -i], [velocity]: [1, 0.5 * (i % 3), 0.25] });
 });
 
@@ -37,7 +31,7 @@ const rotation = Quat.fromAxisAngle([0, 1, 0], 0.5);
 const matrix = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
 
 /** Rotates, transforms and offsets each position, with functions from three math namespaces inlined. */
-const transform = System.create({ name: "builtinsTest/transform", kernel: "cpu", components: { read: [velocity], write: [position] } }, row => {
+const transform = System.create({ kernel: true, components: { with: [velocity, position] } }, row => {
     const q = Quat.fromAxisAngle([0, 1, 0], 0.5);
     const m = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
     row[position] = Vec3.add(Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, row[position])), Vec3.normalize(row[velocity]));
@@ -48,7 +42,7 @@ const expected = (p: Vec3, v: Vec3): Vec3 => Vec3.add(Mat4x4.multiplyVec3(matrix
 const bitsAt = (i: number): Vec3.U32 => [Math.imul(i + 1, 0x9E3779B9) >>> 0, (0xFFFFFFFF - i) >>> 0, i << 26 >>> 0];
 const sumsAt = (i: number): Vec3.I32 => [2 ** 31 - 1 - i, -(2 ** 31) + i, Math.imul(i, 65536)];
 
-const spawnBits = System.create({ name: "builtinsTest/spawnBits" }, ({ commands }) => {
+const spawnBits = System.create({}, ({ commands }) => {
     for (let i = 0; i < 64; i++) commands.spawn([bits, counts, sums])({ [bits]: bitsAt(i), [counts]: [0, 0, 0], [sums]: sumsAt(i) });
 });
 
@@ -58,7 +52,7 @@ const integerResults = (b: Vec3.U32, s: Vec3.I32): { readonly counts: Vec3.U32; 
     sums: Vec3.I32.add(Vec3.I32.multiply(s, [65536, 3, 65536]), Vec3.I32.abs(Vec3.I32.negate(s))),
 });
 
-const integers = System.create({ name: "builtinsTest/integers", kernel: "cpu", components: { read: [bits], write: [counts, sums] } }, row => {
+const integers = System.create({ kernel: true, components: { with: [bits, counts, sums] } }, row => {
     const b = row[bits];
     const s = row[sums];
     row[counts] = Vec3.U32.add(Vec3.U32.countOneBits(b), Vec3.U32.add(Vec3.U32.countTrailingZeros(b), Vec3.U32.multiply(Vec3.U32.reverseBits(b), b)));

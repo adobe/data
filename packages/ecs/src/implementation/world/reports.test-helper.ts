@@ -23,7 +23,7 @@ const readerOf = (world: World): Reader => {
     const known = readers.get(world);
     if (known !== undefined) return known;
     const asked: Reader["asked"] = [];
-    const system = System.create({ name: "test/readReport", observer: true, components: { read: [Report.run] }, lookup: { errorsOf: { read: [Report.errors] } } }, (row, { lookup }) => {
+    const system = System.create({ observer: true, components: { with: [Report.run] }, lookup: { errorsOf: { with: [Report.errors] } } }, (row, { lookup }) => {
         const read = asked[0];
         const values = row[Report.run];
         if (read === undefined || (read.run >= 0 ? values.number !== read.run : values.number <= (read.values?.number ?? -1))) return;
@@ -90,7 +90,7 @@ export const followReports = (world: World) => {
     type Seen = { readonly run: number; readonly failures: readonly Report.Failure[] };
     const seen: Seen[] = [];
     const waiting: (() => void)[] = [];
-    const system = System.create({ name: "test/followReports", observer: true, components: { read: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
+    const system = System.create({ observer: true, components: { with: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
         seen.push({ run: row[Report.run].number, failures: row[Report.errors].failures });
         for (const wake of waiting.splice(0)) wake();
     });
@@ -106,11 +106,11 @@ export const followReports = (world: World) => {
 };
 
 /** Despawns every report, for tests that compare entity order with a world that has none: later runs spawn them again. */
-export const dropReports = System.create({ name: "test/dropReports", components: { has: [Report.run] } }, (row, { commands }) => {
+export const dropReports = System.create({ components: { with: [Report.run] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 
-const nothing = System.create({ name: "test/nothing" }, () => {});
+const nothing = System.create({}, () => {});
 
 /** Runs a world until every report it keeps is spawned, so later runs reuse their entities and spawn none. */
 export const fillReports = async (world: World): Promise<void> => {

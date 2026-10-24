@@ -1,11 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
+import type { F32 } from "../../interface/math/index.js";
 
 /** Scenarios of dispatching tasks to workers, run built in node and from source in chromium. */
 
@@ -24,45 +24,35 @@ const tagG = Symbol("dispatchTest/g");
 const tags = [tagA, tagB, tagC, tagD, tagE, tagF, tagG] as const;
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number] };
-        [velocity]: { type: readonly [number, number] };
-        [offset]: { type: number };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2 }> };
+        [velocity]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2 }> };
+        [offset]: { type: F32 };
         [tagA]: { type: true }; [tagB]: { type: true }; [tagC]: { type: true }; [tagD]: { type: true };
         [tagE]: { type: true }; [tagF]: { type: true }; [tagG]: { type: true };
     }
 }
-Component.register(position, { type: vec2 });
-Component.register(velocity, { type: vec2 });
-Component.register(offset, { type: { type: "number", precision: 1 } });
-Component.register(tagA, { type: { const: true } });
-Component.register(tagB, { type: { const: true } });
-Component.register(tagC, { type: { const: true } });
-Component.register(tagD, { type: { const: true } });
-Component.register(tagE, { type: { const: true } });
-Component.register(tagF, { type: { const: true } });
-Component.register(tagG, { type: { const: true } });
 
-const scatter = System.create({ name: "dispatchTest/scatter" }, ({ commands }) => {
+const scatter = System.create({}, ({ commands }) => {
     for (let i = 0; i < 128 * 64; i++) {
         const components: (typeof position | typeof velocity | typeof offset | (typeof tags)[number])[] = [position, velocity, offset];
         tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) components.push(tag); });
         commands.spawn(components)({ [position]: [i, 0], [velocity]: [1, i % 5], [offset]: 0 });
     }
 });
-const seed = System.create({ name: "dispatchTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < 4096; i++) commands.spawn([position, velocity, offset])({ [position]: [i, 0], [velocity]: [1, i % 5], [offset]: 0 });
 });
-const fastA = System.create({ name: "dispatchTest/fastA", kernel: "cpu", components: { read: [velocity], write: [position] } }, row => {
+const fastA = System.create({ kernel: true, components: { with: [velocity, position] } }, row => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
     row[position] = [x + vx, y + vy];
 });
 // Commands make it a JS kernel, dispatched by message.
-const slowB = System.create({ name: "dispatchTest/slowB", kernel: "cpu", components: { read: [velocity] } }, (row, { commands }) => {
+const slowB = System.create({ kernel: true, components: { with: [velocity] } }, (row, { commands }) => {
     const [vx] = row[velocity];
     if (vx > 100) commands.despawn(row.entity);
 });
-const fastC = System.create({ name: "dispatchTest/fastC", kernel: "cpu", components: { read: [velocity], write: [offset] } }, row => {
+const fastC = System.create({ kernel: true, components: { with: [velocity, offset] } }, row => {
     const [vx, vy] = row[velocity];
     row[offset] = vx + vy;
 });
@@ -70,15 +60,15 @@ const fastC = System.create({ name: "dispatchTest/fastC", kernel: "cpu", compone
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | "timeout"> =>
     Promise.race([promise, new Promise<"timeout">(resolve => setTimeout(() => resolve("timeout"), ms))]);
 
-const grow = System.create({ name: "dispatchTest/seed/2" }, ({ commands }) => {
+const grow = System.create({}, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn([position, velocity, offset])({ [position]: [i, 1], [velocity]: [2, i % 3], [offset]: 0 });
 });
 let observedRows = 0;
-const bump = System.create({ name: "dispatchTest/fastA/2", kernel: "cpu", components: { write: [offset] } }, row => {
+const bump = System.create({ kernel: true, components: { with: [offset] } }, row => {
     row[offset] = row[offset] + 1;
 });
-const watch = System.create({ name: "dispatchTest/slowB/2", components: { changed: [offset] } }, () => { observedRows++; });
-const later = System.create({ name: "dispatchTest/fastC/2", kernel: "cpu", components: { read: [velocity], write: [offset] }, after: [watch] }, row => {
+const watch = System.create({ components: { changed: [offset] } }, () => { observedRows++; });
+const later = System.create({ kernel: true, components: { with: [velocity, offset] }, after: [watch] }, row => {
     const [vx, vy] = row[velocity];
     row[offset] = vx + vy;
 });
@@ -112,7 +102,7 @@ export const afterFailedRegistration = (failing = 2): Promise<{ readonly rejecte
     WebAssembly.compile = (bytes: BufferSource) => (++calls === failing ? Promise.reject(new Error("injected")) : original(bytes));
     let rejected = "resolved";
     try {
-        await world.run(System.create({ name: "dispatchTest/tier/2", systems: [watch, later] }));
+        await world.run(System.create({ systems: [watch, later] }));
     }
     catch (error) {
         rejected = String(error);
@@ -159,7 +149,7 @@ let tiers = 0;
 
 /** A tier of `systems` run `frames` times on `count` workers after `prepare`: "ok", or "timeout" if a run hung. */
 const runTier = (systems: readonly System[], count: number, frames: number, prepare: System): Promise<"ok" | "timeout"> => using(createWorld({ [workers]: count }, { minimumChunk: 64 }), async world => {
-    const tier = System.create({ name: `dispatchTest/tier/${3 + tiers++}`, systems: [...systems] });
+    const tier = System.create({ systems: [...systems] });
     await world.run(prepare);
     let result: unknown = "ok";
     for (let frame = 0; frame < frames && result !== "timeout"; frame++) result = await withTimeout(world.run(tier), 3000);

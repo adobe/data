@@ -13,14 +13,14 @@ import { runReported } from "./reports.test-helper.js";
 
 /** What a finalizer's lookup gave as probes were despawned. */
 const finalized: (boolean | null)[] = [];
-Finalizer.create({ name: "entityLookupsTest/finalize", components: { read: [target] }, lookup: { found: { read: [value], changed: [value] } } }, (row, { lookup }) => {
+Finalizer.create({ components: { with: [target] }, lookup: { found: { with: [value], changed: [value] } } }, (row, { lookup }) => {
     finalized.push(lookup.found(row[target])?.changed ?? null);
 });
-const despawnProbes = System.create({ name: "entityLookupsTest/despawnProbes", components: { has: [target] } }, (row, { commands }) => {
+const despawnProbes = System.create({ components: { with: [target] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 
-const keepTicking = System.create({ name: "entityLookupsTest/keepTicking" }, () => {});
+const keepTicking = System.create({}, () => {});
 
 /** A world shared with a thread on this one, through a MessageChannel, which claims the probes' thread. */
 const joined = async () => {
@@ -58,7 +58,7 @@ describe("lookups by entity with changed", () => {
         const { seen, reused } = await scenario(world, threadProbe);
         expect(reused).toBe(true);
         expect(seen).toEqual(expected);
-        expect((await runReported(world, threadProbe)).warnings.map(warning => warning.name)).toEqual(["entityLookupsTest/threadProbe"]);
+        expect((await runReported(world, threadProbe)).warnings.map(warning => warning.name)).toEqual(["threadProbe"]);
         await remote.dispose();
         await world.dispose();
     });

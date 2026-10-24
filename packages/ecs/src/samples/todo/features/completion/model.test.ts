@@ -8,7 +8,7 @@ import { clearCompleted, toggleAll } from "./model.js";
 
 let writes = 0;
 /** Counts the todos written since it last ran. */
-const countWrites = System.create({ name: "test/countWrites", observer: true, components: { has: [done], changed: [done] } }, () => {
+const countWrites = System.create({ observer: true, components: { with: [done], changed: [done] } }, () => {
     writes += 1;
 });
 

@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it, vi } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { Observe } from "../../observe/index.js";
@@ -27,22 +25,19 @@ declare module "@adobe/ecs" {
         [level]: { type: number };
     }
 }
-Component.register(amount, { type: { type: "number" } });
-Component.register(other, { type: { type: "number" } });
-Resource.register(level, { type: { type: "number", default: 0 } });
 
 let spawned: Entity[] = [];
-const seed = System.create({ name: "observeFactoriesTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     spawned = [];
     for (let i = 0; i < input.count; i++) spawned.push(commands.spawn([amount])({ [amount]: i }));
 });
-const grow = System.create({ name: "observeFactoriesTest/grow", components: { write: [amount] } }, row => { row[amount] += 1; });
-const raise = System.create({ name: "observeFactoriesTest/raise", resources: { write: [level] } }, ({ resources }) => { resources[level] += 1; });
-const nothing = System.create({ name: "observeFactoriesTest/nothing" }, () => {});
+const grow = System.create({ components: { with: [amount] } }, row => { row[amount] += 1; });
+const raise = System.create({}, ({ resources }) => { resources[level] += 1; });
+const nothing = System.create({}, () => {});
 
 /** Counts passes: the observer passes after each run's sync point. */
 const passes = { count: 0 };
-const counter = System.create({ name: "observeFactoriesTest/counter", observer: true }, () => { passes.count++; });
+const counter = System.create({ observer: true }, () => { passes.count++; });
 
 /**
  * A world of `count` entities, each amount its index and one more, at level 1: the runs below registered, so runners
@@ -120,7 +115,7 @@ describe("observer factories", () => {
         const stop = Observe.entity(world, spawned[0], { required: [amount] })(value => entities.push(value?.[amount]));
         await settle(world);
         await world.run(grow);
-        await world.run(System.create({ name: "observeFactoriesTest/growOthers", components: { write: [amount] } }, row => {
+        await world.run(System.create({ components: { with: [amount] } }, row => {
             if (row.entity !== spawned[0]) row[amount] += 1;
         }));
         expect(entities).toEqual([4, 5]);
@@ -175,7 +170,7 @@ describe("observer factories", () => {
 
     it("read only what they list, so a write elsewhere notifies nothing", async () => {
         await using world = await seeded(3);
-        const writeOther = System.create({ name: "observeFactoriesTest/writeOther", components: { write: [other] } }, row => { row[other] = 1; });
+        const writeOther = System.create({ components: { with: [other] } }, row => { row[other] = 1; });
         let notified = 0;
         Observe.entity(world, spawned[0], { required: [amount] })(() => notified++);
         Observe.select(world, { required: [amount], order: { [amount]: false }, page: { offset: 0, limit: 2 } })(() => notified++);
@@ -188,7 +183,7 @@ describe("observer factories", () => {
 
     it("rethrow only their own systems' failures from their runs, not those of observer systems the world added", async () => {
         await using world = await seeded(3);
-        const failing = System.create({ name: "observeFactoriesTest/failing", observer: true }, () => { throw new Error("added failed"); });
+        const failing = System.create({ observer: true }, () => { throw new Error("added failed"); });
         world.add(failing);
         const caught: unknown[] = [];
         const original = globalThis.queueMicrotask;
@@ -211,7 +206,7 @@ describe("observer factories", () => {
         }
         expect(caught).toEqual([]);
         // The world's runs still report it.
-        expect((await runReported(world, nothing)).failures.map(failure => failure.name)).toEqual(["observeFactoriesTest/failing"]);
+        expect((await runReported(world, nothing)).failures.map(failure => failure.name)).toEqual(["failing"]);
     });
 });
 

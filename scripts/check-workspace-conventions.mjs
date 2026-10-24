@@ -24,6 +24,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative, resolve } from "node:path";
+import { pagesProblems } from "./pages.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const packagesDir = join(root, "packages");
@@ -52,6 +53,7 @@ for (const name of readdirSync(packagesDir)) {
       errors.push(`${name}: publishable packages hold a LICENSE identical to the monorepo's (copy ../../LICENSE)`);
     }
   }
+  for (const problem of pagesProblems(pkg.pages)) errors.push(`${name}: ${problem}`);
   if (pkg.scripts?.["publish-public"]) {
     errors.push(`${name}: remove the "publish-public" script — publishing is governed by the "private" field and \`pnpm -r publish\``);
   }

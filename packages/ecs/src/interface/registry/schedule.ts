@@ -2,25 +2,21 @@
 import type { Schema } from '../schema/schema.js';
 import type { Definition } from '../system/definition.js';
 import type { Leaf } from '../system/leaf.js';
-import { firstItemOf, labelOfItem } from './items.js';
+import { firstItemOf } from './items.js';
 import { requireDefinition } from './program.js';
 import { firstKeyOf, labelOf, sameDeclaration } from './names.js';
 import { lookupKeysOf, orderKeysOf } from './indexes.js';
 
 type Key = symbol;
 
-/** Throws unless each leaf's input is an object schema of named fields, and a field several declare has one schema. */
+/** Throws unless a field of the input several leaves take has one schema. */
 const checkInputs = (leaves: readonly Leaf[]): void => {
     const fields = new Map<string, { readonly schema: Schema; readonly system: string }>();
     for (const leaf of leaves) {
-        const { input } = leaf.declaration;
-        const name = labelOfItem(leaf);
+        const { input } = leaf;
+        const name = leaf.name;
         if (input === undefined) continue;
-        const schema: Schema = input;
-        if (!("type" in schema) || schema.type !== "object" || typeof schema.properties !== "object" || schema.properties === null) {
-            throw new Error(`System "${name}": input is an object schema of named fields.`);
-        }
-        for (const [field, property] of Object.entries(schema.properties)) {
+        for (const [field, property] of Object.entries(input.properties)) {
             const seen = fields.get(field);
             if (seen === undefined) fields.set(field, { schema: property, system: name });
             else if (!sameDeclaration(seen.schema, property)) {
@@ -40,7 +36,7 @@ export type Schedule = { readonly tiers: readonly (readonly Leaf[])[]; readonly 
 export const isLeaf = (system: Definition): system is Leaf => system.kind !== "composite";
 
 /** Whether a system is an observer leaf, which runs after a sync point rather than in a tier. */
-export const isObserver = (system: Definition): system is Leaf => system.kind !== "composite" && system.declaration.observer === true;
+export const isObserver = (system: Definition): system is Leaf & { readonly declaration: { readonly observer: true } } => system.kind !== "composite" && system.declaration.observer === true;
 
 /** Each system is an interval, from its start node to its end node. */
 const start = (unit: number): number => 2 * unit;
@@ -105,7 +101,7 @@ const topologicalOrder = ({ units, successors }: Graph): number[] => {
         for (const next of successors[node]) if (--incoming[next] === 0) ready.push(next);
     }
     if (order.length < successors.length) {
-        const cyclic = units.filter((_, unit) => incoming[start(unit)] > 0 || incoming[end(unit)] > 0).map(system => `"${labelOfItem(system)}"`);
+        const cyclic = units.filter((_, unit) => incoming[start(unit)] > 0 || incoming[end(unit)] > 0).map(system => `"${system.name}"`);
         throw new Error(`Ordering cycle between ${cyclic.join(", ")}.`);
     }
     return order;
@@ -144,8 +140,7 @@ type Access = { readonly reads: ReadonlySet<Key>; readonly writes: ReadonlySet<K
 
 /** The resources a leaf reduces into. */
 export const reducedBy = (leaf: Leaf): readonly Key[] => {
-    const { reduce } = leaf.declaration;
-    return reduce === undefined ? [] : Object.getOwnPropertySymbols(reduce).filter(key => Reflect.get(reduce, key) !== undefined);
+    return leaf.declaration.resources?.reduce ?? [];
 };
 
 /**
@@ -205,7 +200,7 @@ const createSchedule = (system: Definition): Schedule => {
         for (let b = a + 1; b < leaves.length; b++) {
             const key = conflictOf(accesses[a], accesses[b]);
             if (key !== undefined && !ordered(reach, leaves[a].unit, leaves[b].unit)) {
-                throw new Error(`Systems "${labelOfItem(leaves[a].leaf)}" and "${labelOfItem(leaves[b].leaf)}" both access "${labelOf(key)}" and one writes it; order them with before or after.`);
+                throw new Error(`Systems "${leaves[a].leaf.name}" and "${leaves[b].leaf.name}" both access "${labelOf(key)}" and one writes it; order them with before or after.`);
             }
         }
     }

@@ -1,48 +1,42 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Rule, System, World } from "../index.js";
+import { Rule, System, World } from "../index.js";
 
-const mesh = Symbol("mesh");
-const sprite = Symbol("sprite");
-const hidden = Symbol("hidden");
-const drawn = Symbol("drawn");
-const layer = Symbol("layer");
+const mesh = Symbol();
+const sprite = Symbol();
+const hidden = Symbol();
+const drawn = Symbol();
+const layer = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
         [mesh]: { type: number };
         [sprite]: { type: number };
         [hidden]: { type: true };
-        // Only rules add derived components, starting at their schema's default.
+        // Only rules add derived components, starting at their default.
         [drawn]: { type: true; derived: true };
-        [layer]: { type: number; derived: true };
+        [layer]: { type: number; derived: true; default: 1 };
     }
 }
 
-Component.register(mesh, { type: { type: "number" } });
-Component.register(sprite, { type: { type: "number" } });
-Component.register(hidden, { type: { const: true } });
-Component.register(drawn, { type: { const: true }, derived: true });
-Component.register(layer, { type: { type: "number", default: 1 }, derived: true });
-
 // Entities matching a rule have what it derives, only while they match.
-Rule.create({ components: { has: [mesh], not: [hidden] }, derive: [drawn] });
+Rule.create({ components: { with: [mesh], not: [hidden] }, derive: [drawn] });
 // Several rules may derive one component, present while any matches.
-Rule.create({ components: { has: [sprite], not: [hidden] }, derive: [drawn] });
+Rule.create({ components: { with: [sprite], not: [hidden] }, derive: [drawn] });
 // Rules build on what others derive.
-Rule.create({ components: { has: [drawn] }, derive: [layer] });
+Rule.create({ components: { with: [drawn] }, derive: [layer] });
 
 const spawn = System.create(({ commands }) => {
     commands.spawn([mesh])({ [mesh]: 1 });
     commands.spawn([sprite])({ [sprite]: 2 });
     commands.spawn([mesh, hidden])({ [mesh]: 3 });
 });
-const hide = System.create({ components: { has: [sprite] } }, (row, { commands }) => {
+const hide = System.create({ components: { with: [sprite] } }, (row, { commands }) => {
     commands.add(row.entity, hidden);
 });
 
 const layers: number[] = [];
-const read = System.create({ observer: true, components: { read: [layer], has: [drawn] } }, row => {
+const read = System.create({ observer: true, components: { with: [layer, drawn] } }, row => {
     layers.push(row[layer]);
 });
 

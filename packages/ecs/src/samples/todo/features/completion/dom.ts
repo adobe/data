@@ -1,12 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Resource, System } from "../../../../index.js";
+import { System } from "../../../../index.js";
 import { byDone } from "./data.js";
 import { TodoSummary } from "./elements/todo-summary.js";
 import { TodoToggleAll } from "./elements/todo-toggle-all.js";
 
 /** The page's summary and toggle-all checkbox; null until the page provides them. */
-export const summary = Symbol("summary");
-export const toggleAllBox = Symbol("toggleAllBox");
+export const summary = Symbol();
+export const toggleAllBox = Symbol();
 
 declare module "@adobe/ecs" {
     interface Resources {
@@ -15,15 +15,11 @@ declare module "@adobe/ecs" {
     }
 }
 
-Resource.register(summary, { thread: "main" });
-Resource.register(toggleAllBox, { thread: "main" });
-
 /**
  * Writes the counts, read off the index's lists, and whether all are done, after a pass in which a todo was added,
  * removed or toggled: the index's entries changing is its only change filter.
  */
 export const bindCompletion = System.create({
-    name: "completion/bindCompletion",
     observer: true,
     resources: { is: [summary, toggleAllBox] },
     lookup: { byDone: { index: byDone, changed: true } },

@@ -20,7 +20,8 @@ type Structs = { readonly [K in Component.Key | Resource.Key as K]: IsString<Val
 
 /**
  * The value each trait allows on the component or resource `N`. Augment it, with this exact type parameter, to
- * define a trait, and register its name with `Trait.register`. A trait that doesn't apply to `N` resolves to `never`.
+ * define a trait, keyed by a `Symbol()` constant of the same module, which the build registers. A trait that doesn't
+ * apply to `N` resolves to `never`.
  * An allowed value may look at `N`'s own traits and at the one component a declared value names, never map over
  * every component, or checking grows with the square of the component count.
  */

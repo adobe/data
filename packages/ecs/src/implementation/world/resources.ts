@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Storage } from './archetype.js';
 import { indexOf, reserve } from './entities.js';
-import { defaultOf, idOf, type Key, type State } from './state.js';
+import { idOf, type Key, type State } from './state.js';
 import { synchronizeAlone } from './synchronize.js';
 import { addCommand, createBuffer, spawnCommand } from './buffer.js';
 import { pushValues } from './commands.js';
@@ -10,8 +10,11 @@ import { labelOf } from '../../interface/registry/index.js';
 /** Resources are components on one entity, so they share storage, ticks and sync with every other component. */
 export type ResourceCell = { readonly storage: Storage; readonly row: number };
 
-/** A resource's value before anything writes it: the one given at the world's creation, or its default. */
-export const initialOf = (state: State, key: Key): unknown => state.initial.has(key) ? state.initial.get(key) : defaultOf(key);
+/**
+ * A resource's value before anything writes it: the one given at the world's creation, or the start the world made
+ * for it, so a fresh `Map` or `Set` is one value however often it's read.
+ */
+export const initialOf = (state: State, key: Key): unknown => state.initial.has(key) ? state.initial.get(key) : state.starts[idOf(state, key)];
 
 /**
  * Adds any missing resources with their initial values, as their own sync point, between runs; commands that are

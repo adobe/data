@@ -113,7 +113,6 @@ describe("todo-row", () => {
     });
 });
 
-
 describe("todo-list", () => {
     type Row = HTMLElementTagNameMap["todo-row"];
 
@@ -179,7 +178,6 @@ describe("todo-list", () => {
         expect([...list.children]).toEqual(rows);
     });
 });
-
 
 describe("todo-entry", () => {
     it("dispatches todo-add on Enter and clears itself, ignoring blank text; Escape clears", () => {

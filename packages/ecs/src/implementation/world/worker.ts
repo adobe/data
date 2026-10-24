@@ -3,11 +3,12 @@ import { buildKernel, buildViews, phases, readPlan, runBuildStep } from './index
 import type { Entity } from '../../interface/entity/entity.js';
 import { createBlock, endBlock, locate, reserveFrom, tableLength, type Block } from './entities.js';
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
-import type { Kernel, KernelCommands, KernelModule } from './kernel.js';
+import { blockShift, chunkShift, type Kernel, type KernelCommands, type KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../interface/registry/layout.js';
-import { emptyViews } from './arrays.js';
+import { absentColumn, emptyViews } from './arrays.js';
 import { claimPiece } from './claims.js';
-import { controlWords, done, epoch, idleKernel, lineWords, posted, ringBase, ringCapacity, ringCursor, ringNeeded, ringSize, signal, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
+import { controlWords, idleKernel, lineWords, ringBase, ringCapacity, ringCursor, ringNeeded, ringSize, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
+import { runWindow } from './worker-window.js';
 import { beginCommand, createRingWriter, encoderOf, endSegment, noExtent, objectStart, putComponent, putStart, putValue, startSegment, type Encoder, type Extent } from './command-ring.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { indexParameterCount, instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
@@ -16,7 +17,7 @@ import { coveringBuffer, pageBytes, pagesWord } from './memory.js';
 import { endpointChannel, scopeChannel } from './port.js';
 import {
     archetypeField, capacityField, cursorField, entitiesVersionField, entitiesWord, freeCapacityField, freeField, generationField, linearFlag,
-    recordCapacity, recordEntities, recordStorages, recordVersion, recordWords, rowField, storageAdded, storageChanged, storageChunkAdded,
+    recordCapacity, recordEntities, recordStorages, recordVersion, recordWords, rowField, storageAdded, storageBlockAdded, storageBlockChanged, storageChanged, storageChunkAdded,
     storageChunkChanged, storageChunks, storageColumn, storageComponent, storageFlags, storageWords, tableLengthWord, tableOffsetWord, tickedFlag,
 } from './layout-directory.js';
 
@@ -27,6 +28,8 @@ type StorageViews = {
     readonly changed: Float64Array;
     readonly chunkAdded: Float64Array;
     readonly chunkChanged: Float64Array;
+    readonly blockAdded: Float64Array;
+    readonly blockChanged: Float64Array;
 };
 
 /** A worker's views of one archetype's columns, as of its record's `version`. */
@@ -161,6 +164,8 @@ const viewArchetype = (record: number, version: number): ArchetypeViews => {
             changed: ticked ? new Float64Array(memoryBuffer, words[base + storageChanged], capacity) : noTicks,
             chunkAdded: ticked ? new Float64Array(memoryBuffer, words[base + storageChunkAdded], words[base + storageChunks]) : noTicks,
             chunkChanged: ticked ? new Float64Array(memoryBuffer, words[base + storageChunkChanged], words[base + storageChunks]) : noTicks,
+            blockAdded: ticked ? new Float64Array(memoryBuffer, words[base + storageBlockAdded], words[base + storageChunks] << (chunkShift - blockShift)) : noTicks,
+            blockChanged: ticked ? new Float64Array(memoryBuffer, words[base + storageBlockChanged], words[base + storageChunks] << (chunkShift - blockShift)) : noTicks,
         });
     }
     return { version, entities: new Float64Array(memoryBuffer, words[record + recordEntities], capacity), storages };
@@ -202,7 +207,7 @@ const createChangedLookup = (lookup: LookupSetup, watched: readonly number[], si
         if (index < 0) return null;
         const archetype = archetypeAt(table.archetype[index]);
         if (archetype === undefined) return null;
-        for (const id of lookup.read) if (!archetype.storages.has(id)) return null;
+        for (const id of lookup.read) if (!archetype.storages.has(id) && !lookup.optional.includes(id)) return null;
         for (const id of lookup.has) if (!archetype.storages.has(id)) return null;
         for (const id of lookup.not) if (archetype.storages.has(id)) return null;
         const row = table.row[index];
@@ -210,7 +215,7 @@ const createChangedLookup = (lookup: LookupSetup, watched: readonly number[], si
         for (let i = 0; i < read.length; i++) {
             const layout = layouts[read[i]];
             const storage = archetype.storages.get(read[i]);
-            values[i] = layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
+            values[i] = storage === undefined && !archetype.storages.has(read[i]) ? undefined : layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
         }
         let changed = since.value < 0;
         for (let i = 0; i < watched.length && !changed; i++) {
@@ -228,14 +233,15 @@ const createLookup = (lookup: LookupSetup) => (entity: Entity): readonly unknown
     if (index < 0) return null;
     const archetype = archetypeAt(table.archetype[index]);
     if (archetype === undefined) return null;
-    for (const id of lookup.read) if (!archetype.storages.has(id)) return null;
+    for (const id of lookup.read) if (!archetype.storages.has(id) && !lookup.optional.includes(id)) return null;
     for (const id of lookup.has) if (!archetype.storages.has(id)) return null;
     for (const id of lookup.not) if (archetype.storages.has(id)) return null;
     const row = table.row[index];
     return lookup.read.map(id => {
         const layout = layouts[id];
         const storage = archetype.storages.get(id);
-        return layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
+        // An optional component the entity lacks reads undefined.
+        return storage === undefined && !archetype.storages.has(id) ? undefined : layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
     });
 };
 
@@ -248,15 +254,15 @@ const readerArchetype = (id: number) => {
 /** The one element a muted tick column's stores land on. */
 const mutedColumn = new Float64Array(1);
 
-/** A kernel's change filters in an archetype: `added` then `changed`, rows and chunks. */
+/** A kernel's change filters in an archetype: `added` then `changed`, rows, chunks and blocks. */
 const filtersOf = (loaded: LoadedKernel, archetype: ArchetypeViews): Filter[] => [
     ...loaded.setup.added.flatMap(id => {
         const storage = archetype.storages.get(id);
-        return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded }];
+        return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded, blocks: storage.blockAdded }];
     }),
     ...loaded.setup.changed.flatMap(id => {
         const storage = archetype.storages.get(id);
-        return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged }];
+        return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged, blocks: storage.blockChanged }];
     }),
 ];
 
@@ -264,16 +270,20 @@ const bind = (loaded: LoadedKernel, archetypeId: number, archetype: ArchetypeVie
     const columns = loaded.setup.sources.map((source, k) => {
         if (loaded.setup.muted[k]) return mutedColumn;
         if (source.kind === "entity") return archetype.entities;
+        if (source.kind === "present") return archetype.storages.has(source.id) ? archetype.entities : emptyViews.f64;
         const storage = archetype.storages.get(source.id);
+        // An optional component's columns are empty where the archetype lacks it: reads give undefined.
+        if (storage === undefined && loaded.setup.optional.includes(source.id)) return absentColumn(layouts[source.id], source);
         if (storage === undefined) throw new Error(`Archetype ${archetypeId} lacks component ${source.id}.`);
         if (source.kind === "changed") return storage.changed;
         if (source.kind === "chunks") return storage.chunkChanged;
+        if (source.kind === "blocks") return storage.blockChanged;
         const layout = layouts[source.id];
         if (layout.kind !== "linear") throw new Error(`Component ${source.id} isn't linear.`);
         return storage.views[layout.leaves[source.leaf].view];
     });
     const filters = filtersOf(loaded, archetype);
-    const addresses = [...columns.map(column => column.byteOffset), ...filters.map(filter => filter.ticks.byteOffset), ...filters.map(filter => filter.chunks.byteOffset)];
+    const addresses = [...columns.map(column => column.byteOffset), ...filters.map(filter => filter.ticks.byteOffset), ...filters.map(filter => filter.chunks.byteOffset), ...filters.map(filter => filter.blocks.byteOffset)];
     return { views: archetype, columns, filters, addresses };
 };
 
@@ -337,7 +347,8 @@ const run = (message: RunMessage): void => {
     const { columns, filters, addresses } = boundOf(loaded, message.archetype);
     const { commands } = stagingOf(loaded);
     const { wasm } = loaded;
-    if (wasm !== null && loaded.setup.wasm !== null) {
+    // WASM runs only archetypes with every optional component; the JS kernel runs the rest.
+    if (wasm !== null && loaded.setup.wasm !== null && loaded.setup.optional.every(id => boundOf(loaded, message.archetype).views.storages.has(id))) {
         wasm(message.start, message.end, message.tick, message.lastRun, ...addresses, ...message.lookups, ...message.indexes,
             ...scalarValues(loaded.setup.wasm.scalars, message.resources, message.args),
             ...message.partials < 0 ? [] : [message.partials]);
@@ -374,7 +385,7 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
         const since: Since | null = setup.lookups.some(lookup => lookup.changed !== null) ? { value: 0 } : null;
         const lookups = setup.lookups.map((lookup, k): unknown => readers.find(found => found.lookup === k)?.reader
             ?? (lookup.changed === null || since === null ? createLookup(lookup) : createChangedLookup(lookup, lookup.changed, since)));
-        kernels.set(setup.index, { since, setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets), wasm: loaded[i].wasm, lookups, readers, staging: null, bound: [] });
+        kernels.set(setup.index, { since, setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets, setup.labels), wasm: loaded[i].wasm, lookups, readers, staging: null, bound: [] });
     });
 };
 
@@ -424,54 +435,30 @@ const runBuildTask = (payloads: Float64Array, base: number, buffer: ArrayBufferL
  * Runs tasks from this worker's ring in shared memory, blocking between them, until the main thread asks it to leave;
  * then it returns to handling messages.
  */
-const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
+const openWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
     const buffer = required(memory, "memory").buffer;
     // The pool's control state never moves, so these views last the window.
     const control = new Int32Array(buffer, message.control + message.worker * controlWords * 4, controlWords);
     const statuses = new Int32Array(buffer, message.statuses + message.worker * ringSize * 4, ringSize);
     const payloads = new Float64Array(buffer, message.payloads + message.worker * ringSize * taskWords * 8, ringSize * taskWords);
-    let next = Atomics.load(control, done);
-    for (;;) {
-        const seen = Atomics.load(control, signal);
-        if (next < Atomics.load(control, posted)) {
-            const ring = next % ringSize;
-            const base = ring * taskWords;
-            // A task from a later window waits until this worker has handled the messages sent before it.
-            if (payloads[base + 6] !== message.epoch) return;
-            let status = next + 1;
-            try {
-                refreshMemory();
-                const kernel = payloads[base];
-                if (kernel === buildKernel) runBuildTask(payloads, base, buffer, message);
-                else if (kernel !== idleKernel) {
-                    const loaded = kernels.get(kernel);
-                    if (loaded === undefined) throw new Error("Worker can't run this task.");
-                    const line = payloads[base + 8];
-                    const participants = payloads[base + 11];
-                    const scalarCount = payloads[base + 7];
-                    const partials = loaded.setup.reduces ? payloads[base + taskFields + scalarCount] : -1;
-                    const partialBytes = loaded.setup.reduces ? payloads[base + taskFields + scalarCount + 1] : 0;
-                    runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5],
-                        Array.from(payloads.subarray(base + taskFields, base + taskFields + scalarCount)),
-                        line < 0 ? null : { words: new Int32Array(buffer, message.claims + line * lineWords * 4, participants * lineWords), self: payloads[base + 10], participants },
-                        payloads[base + 9], partials ?? -1, partialBytes ?? 0);
-                }
-            }
-            catch {
-                status = -status;
-            }
-            Atomics.store(statuses, ring, status);
-            next++;
-            Atomics.store(control, done, next);
-            Atomics.notify(control, done);
-            continue;
+    runWindow(control, statuses, payloads, message.epoch, base => {
+        refreshMemory();
+        const kernel = payloads[base];
+        if (kernel === buildKernel) runBuildTask(payloads, base, buffer, message);
+        else if (kernel !== idleKernel) {
+            const loaded = kernels.get(kernel);
+            if (loaded === undefined) throw new Error("Worker can't run this task.");
+            const line = payloads[base + 8];
+            const participants = payloads[base + 11];
+            const scalarCount = payloads[base + 7];
+            const partials = loaded.setup.reduces ? payloads[base + taskFields + scalarCount] : -1;
+            const partialBytes = loaded.setup.reduces ? payloads[base + taskFields + scalarCount + 1] : 0;
+            runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5],
+                Array.from(payloads.subarray(base + taskFields, base + taskFields + scalarCount)),
+                line < 0 ? null : { words: new Int32Array(buffer, message.claims + line * lineWords * 4, participants * lineWords), self: payloads[base + 10], participants },
+                payloads[base + 9], partials ?? -1, partialBytes ?? 0);
         }
-        if (Atomics.load(control, epoch) !== message.epoch) return;
-        // Tiers follow each other closely, so spin briefly before paying for a blocking wait's wake-up.
-        const deadline = performance.now() + 0.05;
-        while (Atomics.load(control, signal) === seen && performance.now() < deadline);
-        if (Atomics.load(control, signal) === seen) Atomics.wait(control, signal, seen);
-    }
+    });
 };
 
 /** Where messages come from and replies go: this worker's own scope, until a lent worker's owner gives it a port. */
@@ -493,7 +480,7 @@ const handle = async (message: ToWorker): Promise<void> => {
         return;
     }
     if (message.kind === "window") {
-        runWindow(message);
+        openWindow(message);
         return;
     }
     if (message.kind === "layout") {

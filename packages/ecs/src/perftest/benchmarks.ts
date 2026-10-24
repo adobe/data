@@ -9,6 +9,7 @@ import * as structural from "./structural.js";
 import { chain, churn, emit, failing, fastest, follow, highest, hits, idle, idles, idleObserver, index, indexSum, observe, poke, pokeCluster, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
 
 import type { Benchmark } from "./benchmark.js";
+import { retainedRuns } from "../implementation/world/reports.js";
 import { loopTickIdle, loopTicks, observerIdles } from "./loop.js";
 import { main, placed, pooled } from "./placed.js";
 import { wake } from "./wake.js";
@@ -21,8 +22,11 @@ import { readBenchmarks } from "./reads.js";
 import { observedBenchmarks } from "./observed.js";
 import { systemBenchmarks } from "./systems.js";
 import { indexBenchmarks } from "./indexes.js";
+import { editorBenchmarks } from "./editor.js";
 import { stringBenchmarks } from "./strings.js";
 import { structReplace, valueBenchmarks } from "./values.js";
+import { filterBenchmarks } from "./filters.js";
+import { optionalBenchmarks } from "./optional.js";
 import { createWorld } from "../implementation/index.js";
 import { workers } from "../interface/resources/workers.js";
 // Last, so the bundle orders the modules the benchmarks share as it did before these imports.
@@ -50,14 +54,19 @@ const observed = async (world: World, writer: typeof poke | typeof pokeCluster):
     return best;
 };
 
-/** The fastest run of `measured` right after `before` runs, over `rounds` rounds after `warmup`. */
+/**
+ * The fastest run of `measured` right after `before` runs, over `rounds - warmup` rounds after a warmup of at least
+ * `warmup` rounds, and enough for the world to keep its full count of reports: until then each run spawns its own,
+ * which its sync point costs.
+ */
 const after = async (before: () => Promise<unknown>, measured: () => Promise<unknown>, rounds = 100, warmup = 20): Promise<number> => {
     let best = Infinity;
-    for (let i = 0; i < rounds; i++) {
+    const warm = Math.max(warmup, Math.ceil(retainedRuns / 2));
+    for (let i = 0; i < warm + rounds - warmup; i++) {
         await before();
         const start = performance.now();
         await measured();
-        if (i >= warmup) best = Math.min(best, performance.now() - start);
+        if (i >= warm) best = Math.min(best, performance.now() - start);
     }
     return best;
 };
@@ -496,7 +505,7 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             const { world, roots } = await filteredForest();
             const found: { child: Entity | null } = { child: null };
-            await world.run(System.create({ observer: true, components: { read: [hierarchyParent] } }, row => {
+            await world.run(System.create({ observer: true, components: { with: [hierarchyParent] } }, row => {
                 if (found.child === null && row[hierarchyParent] === roots[0]) found.child = row.entity;
             }));
             const { child } = found;
@@ -687,7 +696,10 @@ export const benchmarks: readonly Benchmark[] = [
     ...observedBenchmarks,
     ...systemBenchmarks,
     ...indexBenchmarks,
+    ...editorBenchmarks,
     ...stringBenchmarks,
     ...valueBenchmarks,
     structReplace("main", 0),
+    ...filterBenchmarks,
+    ...optionalBenchmarks,
 ];

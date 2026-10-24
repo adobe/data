@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Finalizer } from '../finalizer/created.js';
-import { firstItemOf, labelOfItem } from './items.js';
+import { firstItemOf } from './items.js';
 import { firstKeyOf, labelOf } from './names.js';
 
 /**
@@ -26,7 +26,7 @@ export const orderFinalizers = (runners: readonly Finalizer[]): Finalizer[] => {
         for (const other of successors[index]) if (--incoming[other] === 0) ready.push(other);
     }
     if (order.length < runners.length) {
-        const cycle = runners.filter((_, index) => !order.includes(index)).map(runner => `"${labelOfItem(runner)}"`).join(", ");
+        const cycle = runners.filter((_, index) => !order.includes(index)).map(runner => `"${runner.name}"`).join(", ");
         throw new Error(`Finalizers ${cycle} are ordered in a cycle.`);
     }
     const reaches = (from: number, to: number): boolean => {
@@ -46,7 +46,7 @@ export const orderFinalizers = (runners: readonly Finalizer[]): Finalizer[] => {
     for (let a = 0; a < runners.length; a++) for (let b = a + 1; b < runners.length; b++) {
         const conflict = [...writes[a]].find(key => writes[b].has(key) || reads[b].has(key)) ?? [...writes[b]].find(key => reads[a].has(key));
         if (conflict !== undefined && !reaches(a, b) && !reaches(b, a)) {
-            throw new Error(`Finalizers "${labelOfItem(runners[a])}" and "${labelOfItem(runners[b])}" both access "${labelOf(conflict)}", one writing it; order them with before or after.`);
+            throw new Error(`Finalizers "${runners[a].name}" and "${runners[b].name}" both access "${labelOf(conflict)}", one writing it; order them with before or after.`);
         }
     }
     return order.map(index => runners[index]);

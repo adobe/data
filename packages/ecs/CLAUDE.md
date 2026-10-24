@@ -25,7 +25,8 @@ Humans own the interface and agents own the implementation: agents don't add to 
   It's a project of its own: nothing in it imports from outside it. Each type exists once, there.
 - **`src/implementation`** holds `createWorld` and everything behind it, the kernel compiler included. It imports
   types and the registry's read side from `src/interface`.
-- **`src/samples`** holds one folder per sample, its page included; `pnpm sample` serves them.
+- **`src/samples`** holds one folder per sample, its page included. `pnpm dev` (or `pnpm sample`, without
+  the type-check watch) serves them, with a sample browser at the root that has a tab for each.
 - `src/index.ts` exports `src/interface`, and `World` as a value too, whose `create` and `join` are the
   implementation's, so `import { World } from "@adobe/ecs"` gives consumers the type, `World.create` and `World.join`,
   the only entry points. Samples and the guide use them; tests and benchmarks may take `createWorld` from
@@ -43,6 +44,12 @@ The ECS runs every frame, so performance is a requirement, not a polish step, an
 when a measured win conflicts with a style or design preference, take the win and state the trade. Keep work per run, per system and per
 row as low as it can be, and allocate nothing on those paths: reuse arrays, buffers and objects, share read-only
 empties, and avoid closures, spreads and awaits there. Measure changes with `pnpm perf` against the recorded baseline.
+
+## Pull requests
+
+Each PR costs a review, a merge and a publish, so keep one open PR at a time. Add new work and fixes to it as more
+commits; never open stacked or parallel PRs. Keep it rebased on main, with this package's version one above main's.
+Bump it by hand in `package.json`; never run the workspace `bump` script, which bumps packages this PR didn't change.
 
 ## Memory
 

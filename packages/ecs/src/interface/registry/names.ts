@@ -7,16 +7,14 @@ import { sameItem } from './items.js';
 export type Kind = "component" | "resource" | "trait";
 
 /**
- * A registered key: its kind, its declaration (none for a trait), its description, its id if the plugin gave one, and
- * the label it has without one, numbered when another key had its description; shared by every symbol registered under
- * its id. `first` is the symbol registered first, `newest` the one registered last.
+ * A registered key: its kind, its declaration (none for a trait), its label and its id if the plugin gave one; shared
+ * by every symbol registered under its id. `first` is the symbol registered first, `newest` the one registered last.
  */
 type Entry = {
     readonly kind: Kind;
     readonly declaration: AnyDeclaration | undefined;
     readonly description: string;
     readonly id: string | undefined;
-    readonly numbered: string;
     readonly first: symbol;
     newest: symbol;
 };
@@ -27,14 +25,13 @@ const entries = new Map<symbol, Entry>();
 /** Entries by the ids the plugin gave their keys. */
 const identified = new Map<string, Entry>();
 
-/** Numbered labels given, so each key's is unique. */
-const labels = new Set<string>();
-
-/** How many registered keys have each description. */
-const described = new Map<string, number>();
-
-/** A symbol's description, `Symbol()` without one. */
-const descriptionOf = (key: symbol): string => key.description === undefined || key.description === "" ? "Symbol()" : key.description;
+/** A symbol's description; without one, its binding, which the plugin's id names, or `Symbol()` without an id. */
+const descriptionOf = (key: symbol): string => {
+    if (key.description !== undefined && key.description !== "") return key.description;
+    const id = idOfKey(key);
+    const binding = id === undefined ? "" : id.slice(id.lastIndexOf("#") + 1);
+    return binding === "" ? "Symbol()" : binding;
+};
 
 /** `Symbol.iterator` and the rest, which the platform shares, so they can't be keys. */
 const wellKnown: ReadonlyMap<symbol, string> = new Map(Reflect.ownKeys(Symbol).flatMap((name): [symbol, string][] => {
@@ -42,52 +39,60 @@ const wellKnown: ReadonlyMap<symbol, string> = new Map(Reflect.ownKeys(Symbol).f
     return typeof value === "symbol" ? [[value, `Symbol.${String(name)}`]] : [];
 }));
 
+/** Registers what the build declared since it last ran; the registry's declarations install it. */
+let catchUp = (): void => {};
+
+/** Installs what registers the build's declarations, which every read of keys runs first. */
+export const installCatchUp = (update: () => void): void => {
+    catchUp = update;
+};
+
+/** Why each key the build declared failed to register, for the errors its uses give. */
+const failures = new Map<symbol, string>();
+
+/** Records why a key the build declared failed to register. */
+export const recordFailure = (key: symbol, message: string): void => {
+    failures.set(key, message);
+};
+
+/** A key's entry, once what the build declared is registered. */
+const entryOf = (key: symbol): Entry | undefined => {
+    catchUp();
+    return entries.get(key);
+};
+
 /** Whether a key is a component, a resource or a trait. */
-export const kindOf = (key: unknown): Kind | undefined => typeof key === "symbol" ? entries.get(key)?.kind : undefined;
+export const kindOf = (key: unknown): Kind | undefined => typeof key === "symbol" ? entryOf(key)?.kind : undefined;
 
 /** The declaration of a registered component or resource. */
-export const declarationOf = (key: unknown): AnyDeclaration | undefined => typeof key === "symbol" ? entries.get(key)?.declaration : undefined;
+export const declarationOf = (key: unknown): AnyDeclaration | undefined => typeof key === "symbol" ? entryOf(key)?.declaration : undefined;
 
 /** Whether two values are one key: the same value, or symbols registered under one id. */
 export const sameKey = (a: unknown, b: unknown): boolean => {
     if (a === b) return true;
     if (typeof a !== "symbol" || typeof b !== "symbol") return false;
-    const entry = entries.get(a);
+    const entry = entryOf(a);
     return entry !== undefined && entry === entries.get(b);
 };
 
 /** The symbol first registered as this key, which stands for it wherever keys are compared; any other value as it is. */
-export const firstKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entries.get(key)?.first ?? key : key;
+export const firstKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entryOf(key)?.first ?? key : key;
 
 /** The symbol last registered as this key, by which a world gives values; any other value as it is. */
-export const newestKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entries.get(key)?.newest ?? key : key;
+export const newestKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entryOf(key)?.newest ?? key : key;
 
 /**
- * How errors and reports name a key: its description, `Symbol()` without one, while no other registered key has it;
- * else its id when the plugin gave it one, and without one, for a registered key, its description numbered by
- * registration order. Any other value is named as text.
+ * How errors and reports name a key: its description, or without one its binding from its id, whatever other keys
+ * have; for display only, with its id (`idOfKey`) to tell keys of one label apart. Any other value is named as text.
  */
 export const labelOf = (key: unknown): string => {
     if (typeof key !== "symbol") return String(key);
-    const known = wellKnown.get(key);
-    if (known !== undefined) return known;
-    const entry = entries.get(key);
-    const description = entry?.description ?? descriptionOf(key);
-    if ((described.get(description) ?? 0) <= (entry === undefined ? 0 : 1)) return description;
-    return entry === undefined ? idOfKey(key) ?? description : entry.id ?? entry.numbered;
+    return wellKnown.get(key) ?? entries.get(key)?.description ?? descriptionOf(key);
 };
 
-/** A label for a key registered now without an id, its description numbered when another key's has it. */
-const numberedFor = (description: string): string => {
-    let label = description;
-    for (let n = 2; labels.has(label); n++) label = `${description}#${n}`;
-    labels.add(label);
-    return label;
-};
-
-/** Throws, naming the key, for a key registration can't take. */
-export const failRegistration = (kind: Kind, key: unknown, message: string): never => {
-    throw new Error(`Cannot register ${kind} "${labelOf(key)}": ${message}`);
+/** Throws, naming the key by its label, and by `id` too where the failure is its id's, for a key registration can't take. */
+export const failRegistration = (kind: Kind, key: unknown, message: string, id?: string): never => {
+    throw new Error(`Cannot register ${kind} "${labelOf(key)}"${id === undefined ? "" : ` (${id})`}: ${message}`);
 };
 
 /** The key, or a throw for one that isn't a plain `Symbol(...)`: a `Symbol.for` or well-known symbol is shared. */
@@ -136,20 +141,34 @@ export const claimKey = (key: unknown, kind: Kind, declaration?: AnyDeclaration)
     const id = idOfKey(symbol);
     const named = id === undefined ? undefined : identified.get(id);
     if (named !== undefined) {
-        if (named.kind !== kind) failRegistration(kind, symbol, `its id is a ${named.kind}'s.`);
+        if (named.kind !== kind) failRegistration(kind, symbol, `its id is a ${named.kind}'s.`, id);
         if (!sameDeclaration(named.declaration, declaration)) {
-            failRegistration(kind, symbol, "its id is another key's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.");
+            failRegistration(kind, symbol, "its id is another key's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.", id);
         }
         named.newest = symbol;
         entries.set(symbol, named);
         return;
     }
     const description = descriptionOf(symbol);
-    const entry: Entry = { kind, declaration, description, id, numbered: numberedFor(description), first: symbol, newest: symbol };
-    described.set(description, (described.get(description) ?? 0) + 1);
+    const entry: Entry = { kind, declaration, description, id, first: symbol, newest: symbol };
     if (id !== undefined) identified.set(id, entry);
     entries.set(symbol, entry);
 };
 
 /** The symbol last registered under an id, by which a world gives values, or undefined where none was. */
-export const keyOfId = (id: string): symbol | undefined => identified.get(id)?.newest;
+export const keyOfId = (id: string): symbol | undefined => {
+    catchUp();
+    return identified.get(id)?.newest;
+};
+
+/**
+ * Why a key isn't registered, for errors: its declaration failed to register; or the build registers keys from their
+ * declarations, so either its module wasn't built with the plugin, which gives keys ids, or it isn't declared.
+ */
+export const whyUnregistered = (key: unknown): string => {
+    const failure = typeof key === "symbol" ? failures.get(key) : undefined;
+    if (failure !== undefined) return `its declaration failed to register: ${failure}`;
+    return typeof key === "symbol" && idOfKey(key) === undefined
+        ? "the build's Compiler.plugin() registers keys from their declarations, and didn't build the module making it"
+        : "declare it beside its key, in interface Components or Resources";
+};

@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { IsData } from "./is-data.js";
 import type { IsStruct } from "./is-struct.js";
 import type { Schema } from "./schema.js";
 
@@ -135,20 +134,22 @@ const badSetForm: Schema = { type: 'set', keys: { type: 'string' }, values: { ty
 const badMapForm: Schema = { type: 'map', items: { type: 'string' } };
 void [okSet, okMap, badSet, badMap, badSetForm, badMapForm];
 
-// A ReadonlySet or ReadonlyMap of data is data; a Set or Map, which changes in place, isn't, nor one holding functions.
-check<Equal<IsData<ReadonlySet<string>>, true>>();
-check<Equal<IsData<ReadonlyMap<string, { readonly x: number }>>, true>>();
-check<Equal<IsData<ReadonlySet<() => void>>, false>>();
-check<Equal<IsData<Set<string>>, false>>();
-check<Equal<IsData<Map<string, number>>, false>>();
-// An object is data only when every member is: a record of handles isn't, however deep they are.
-check<Equal<IsData<{ readonly context: GPUCanvasContext; readonly canvas: HTMLCanvasElement }>, false>>();
-check<Equal<IsData<{ readonly pipelines: { readonly fill: GPURenderPipeline } }>, false>>();
-check<Equal<IsData<{ readonly items: readonly { readonly blob: Blob }[] }>, false>>();
-check<Equal<IsData<{ readonly at: readonly [number, number]; readonly label?: string; readonly nested: { readonly x: number } }>, true>>();
-// A recursive data type is still data.
-type Tree = { readonly value: number; readonly children: readonly Tree[] };
-check<Equal<IsData<Tree>, true>>();
-// Neither is a struct: neither lives in shared memory.
+// A set or map isn't a struct: neither lives in shared memory.
 check<Equal<IsStruct<ReadonlySet<number>>, false>>();
 check<Equal<IsStruct<ReadonlyMap<number, number>>, false>>();
+
+// Schema.Type is the plain type a schema describes, so a type named by it is that type: a number or a tuple, unbranded.
+type Level = Schema.Type<{ type: "integer"; minimum: 0; maximum: 9 }>;
+check<Equal<Level, number>>();
+check<Equal<Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }>, readonly [number, number, number]>>();
+// @ts-expect-error its argument is a schema
+type NotSchema = Schema.Type<{ type: "integer"; minimum: "zero" }>;
+
+// A schema holds no default, anywhere: a value's start comes from its declaration or its type's namespace.
+// @ts-expect-error a default isn't part of a schema
+const badDefault: Schema = { type: 'number', default: 0 };
+// @ts-expect-error nor of a field's schema
+const badFieldDefault: Schema = { type: 'object', properties: { x: { type: 'number', default: 0 } } };
+// @ts-expect-error Schema.Type takes a schema, so a default fails there too
+type BadType = Schema.Type<{ type: 'integer'; minimum: 1; default: 5 }>;
+void [badDefault, badFieldDefault];

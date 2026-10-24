@@ -7,6 +7,7 @@ import { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "./create.js";
+import type { F32, U32, Vec2 } from "../../interface/math/index.js";
 
 const cell = Symbol("indexKernelsTest/cell");
 const weight = Symbol("indexKernelsTest/weight");
@@ -22,40 +23,29 @@ const ranked = Symbol("indexKernelsTest/ranked");
 
 declare module "@adobe/ecs" {
     interface Components {
-        [cell]: { type: readonly [number, number] };
-        [weight]: { type: number };
+        [cell]: { type: Vec2.I32 };
+        [weight]: { type: F32 };
         [total]: { type: number };
         [count]: { type: number };
-        [lane]: { type: number };
+        [lane]: { type: U32 };
         [rank]: { type: number };
-        [serial]: { type: number };
-        [target]: { type: number };
+        [serial]: { type: U32 };
+        [target]: { type: U32 };
         [seen]: { type: Entity };
         [changes]: { type: number };
         [ranked]: { type: true };
     }
 }
-Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
-Component.register(weight, { type: { type: "number", precision: 1 } });
-Component.register(total, { type: { type: "number" } });
-Component.register(count, { type: { type: "number" } });
-Component.register(lane, { type: { type: "integer", minimum: 0, maximum: 1000 } });
-Component.register(rank, { type: { type: "number" } });
-Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
-Component.register(target, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
-Component.register(seen, { type: Entity.schema });
-Component.register(changes, { type: { type: "number" } });
-Component.register(ranked, { type: { const: true } });
 
-const grid = Index.create({ name: "indexKernelsTest/grid", key: [cell], components: { has: [weight] } });
-const lanes = Index.create({ name: "indexKernelsTest/lanes", key: [lane, rank], sorted: true, components: { has: [ranked] } });
-const serials = Index.create({ name: "indexKernelsTest/serials", key: [serial], unique: true, components: { has: [weight] } });
+const grid = Index.create({ key: [cell], components: { with: [weight] } });
+const lanes = Index.create({ key: [lane, rank], sorted: true, components: { with: [ranked] } });
+const serials = Index.create({ key: [serial], unique: true, components: { with: [weight] } });
 
 /** Each row's neighbors in the 3 by 3 cells around its own: how many, and their weights' sum. */
 const neighbors = System.create({
-    name: "indexKernelsTest/neighbors", kernel: "cpu",
-    components: { read: [cell], write: [total, count] },
-    lookup: { near: { index: grid, read: [weight] } },
+    kernel: true,
+    components: { with: [cell, total, count] },
+    lookup: { near: { index: grid } },
 }, (row, { lookup }) => {
     const [x, y] = row[cell];
     let sum = 0;
@@ -74,7 +64,7 @@ const neighbors = System.create({
 });
 
 /** The same, on the main thread, for comparison. */
-const neighborsByHand = System.create({ name: "indexKernelsTest/neighborsByHand", components: { read: [cell], write: [total, count] }, lookup: { near: { index: grid, read: [weight] } } }, (row, { lookup }) => {
+const neighborsByHand = System.create({ components: { with: [cell, total, count] }, lookup: { near: { index: grid } } }, (row, { lookup }) => {
     const [x, y] = row[cell];
     let sum = 0;
     let found = 0;
@@ -91,8 +81,8 @@ const neighborsByHand = System.create({ name: "indexKernelsTest/neighborsByHand"
 
 /** How many rows of the row's lane have a rank within 5 of its own, and the first of them, through a sorted range. */
 const window = System.create({
-    name: "indexKernelsTest/window", kernel: "cpu",
-    components: { read: [lane, rank], write: [count, seen] },
+    kernel: true,
+    components: { with: [lane, rank, count, seen] },
     lookup: { inLane: { index: lanes } },
 }, (row, { lookup }) => {
     const r = row[rank];
@@ -101,7 +91,7 @@ const window = System.create({
     row[seen] = near.at(0).entity;
 });
 
-const windowByHand = System.create({ name: "indexKernelsTest/windowByHand", components: { read: [lane, rank], write: [count, seen] }, lookup: { inLane: { index: lanes } } }, (row, { lookup }) => {
+const windowByHand = System.create({ components: { with: [lane, rank, count, seen] }, lookup: { inLane: { index: lanes } } }, (row, { lookup }) => {
     const r = row[rank];
     const near = lookup.inLane(row[lane], { ">=": r - 5, "<": r + 5 });
     row[count] = near.length;
@@ -110,9 +100,9 @@ const windowByHand = System.create({ name: "indexKernelsTest/windowByHand", comp
 
 /** The weight of the entity whose serial is the row's target, or -1. */
 const follow = System.create({
-    name: "indexKernelsTest/follow", kernel: "cpu",
-    components: { read: [target], write: [total] },
-    lookup: { bySerial: { index: serials, read: [weight] } },
+    kernel: true,
+    components: { with: [target, total] },
+    lookup: { bySerial: { index: serials } },
 }, (row, { lookup }) => {
     const found = lookup.bySerial(row[target]);
     row[total] = found === null ? -1 : found[weight];
@@ -120,18 +110,18 @@ const follow = System.create({
 
 /** Counts runs whose list of the row's cell changed. */
 const watch = System.create({
-    name: "indexKernelsTest/watch", kernel: "cpu",
-    components: { read: [cell], write: [changes] },
+    kernel: true,
+    components: { with: [cell, changes] },
     lookup: { near: { index: grid, changed: [weight] } },
 }, (row, { lookup }) => {
     if (lookup.near([row[cell][0], row[cell][1]]).changed) row[changes] = row[changes] + 1;
 });
 
-const spawnGrid = System.create({ name: "indexKernelsTest/spawnGrid", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const spawnGrid = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) commands.spawn([cell, weight, total, count, changes, serial])({ [cell]: [(k * 7) % 5, (k * 3) % 4], [weight]: k % 9, [total]: 0, [count]: 0, [changes]: 0, [serial]: k });
 });
 
-const spawnLanes = System.create({ name: "indexKernelsTest/spawnLanes", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const spawnLanes = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) commands.spawn([lane, rank, ranked, count, seen])({ [lane]: k % 3, [rank]: (k * 37) % 101, [ranked]: true, [count]: 0, [seen]: Entity.none });
 });
 
@@ -188,8 +178,8 @@ describe.each([[true], [false]])("kernels looking up through indexes, WASM %s", 
 
 /** A comparison on a hash index. */
 const compared = System.create({
-    name: "indexKernelsTest/compared", kernel: "cpu",
-    components: { read: [serial], write: [count] },
+    kernel: true,
+    components: { with: [serial, count] },
     lookup: { bySerial: { index: serials } },
 }, (row, { lookup }) => {
     // @ts-expect-error a hash index takes whole keys

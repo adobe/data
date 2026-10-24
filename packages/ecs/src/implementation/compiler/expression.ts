@@ -11,6 +11,7 @@ import { memberKey } from './key.js';
 import { moduleValue } from './module-value.js';
 import type { Out } from './out.js';
 import { scalar } from './scalar.js';
+import { presence } from './columns.js';
 import { findLocal, rootScope, type Scope } from './scope.js';
 import { fresh } from './unit.js';
 import { scalarValue, type Value } from './value.js';
@@ -65,6 +66,21 @@ const literal = (node: Extract<Node, { type: "Literal" }>): Value => {
     return fail(node, "only number, boolean and null literals are in the kernel subset");
 };
 
+/**
+ * `value === undefined` and its variants, `== null` included, for an optional component's whole value: whether the
+ * call's archetype lacks it, or has it. Null for anything else.
+ */
+const presenceTest = (operator: string, value: Value, other: Value, scope: Scope): Expression | null => {
+    if (!["===", "!==", "==", "!="].includes(operator) || other.kind !== "scalar" || other.expression.kind !== "nullish") return null;
+    if (other.expression.value === "null" && (operator === "===" || operator === "!==")) return null;
+    const { unit } = scope;
+    const present = value.kind === "snapshot" && value.path.length === 0 ? value.snapshot.presence
+        : value.kind === "component" && value.up !== true && value.path.length === 0 && unit.signature.optional.has(value.component) ? presence(unit, value.component)
+        : null;
+    if (present === null) return null;
+    return operator === "!==" || operator === "!=" ? present : not(present);
+};
+
 /** Compiles an expression to a value, emitting any statements it needs into `out`. */
 export const expression = (node: Node, scope: Scope, out: Out): Value => {
     switch (node.type) {
@@ -96,8 +112,13 @@ export const expression = (node: Node, scope: Scope, out: Out): Value => {
         case "BinaryExpression": {
             const operator = node.operator;
             if (!isBinary(operator) || node.left.type === "PrivateIdentifier") return fail(node, `${node.operator} is not in the kernel subset`);
-            const left = scalar(expression(node.left, scope, out), node.left, scope);
-            const right = scalar(expression(node.right, scope, out), node.right, scope);
+            const leftValue = expression(node.left, scope, out);
+            const rightValue = expression(node.right, scope, out);
+            // An optional component tested for undefined is its archetype's presence, the same for every row of a call.
+            const tested = presenceTest(operator, leftValue, rightValue, scope) ?? presenceTest(operator, rightValue, leftValue, scope);
+            if (tested !== null) return scalarValue(tested);
+            const left = scalar(leftValue, node.left, scope);
+            const right = scalar(rightValue, node.right, scope);
             // Strict equality tells true from 1, so boolean reads are converted here.
             const strict = operator === "===" || operator === "!==";
             return scalarValue(strict

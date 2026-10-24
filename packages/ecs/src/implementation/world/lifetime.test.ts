@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -20,30 +18,27 @@ declare module "@adobe/ecs" {
         [parent]: { type: Entity; reference: "owner" };
     }
     interface Resources {
-        [score]: { type: number };
+        [score]: { type: number; default: 7 };
     }
 }
 
-Component.register(count, { type: { type: "number" } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Resource.register(score, { type: { type: "number", default: 7 } });
 
-const seed = System.create({ name: "lifetimeTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     const root = commands.spawn([count])({ [count]: 1 });
     for (let i = 0; i < 4; i++) commands.spawn([count, parent])({ [count]: i, [parent]: root });
 });
 
 /** A module-level system, run between and after the fresh ones, as an app's own systems are. */
-const steady = System.create({ name: "lifetimeTest/steady", components: { read: [count], changed: [count] } }, row => { void row[count]; });
+const steady = System.create({ components: { with: [count], changed: [count] } }, row => { void row[count]; });
 
 let copied = 0;
 
 /** Fresh systems of each shape that holds something: a body alone, a resource read, a change filter, and `up`. */
 const freshSystems = (k: number): readonly System[] => [
     System.create(() => {}),
-    System.create({ resources: { read: [score] } }, ({ resources }) => { copied = resources[score] + k; }),
-    System.create({ components: { write: [count], changed: [count] } }, row => { row[count] += 1; }),
-    System.create({ components: { read: [count] }, up: { through: parent, read: [count] } }, (row, { up }) => { copied = row[count] + (up?.[count] ?? 0); }),
+    System.create({}, ({ resources }) => { copied = resources[score] + k; }),
+    System.create({ components: { with: [count], changed: [count] } }, row => { row[count] += 1; }),
+    System.create({ components: { with: [count] }, up: { through: parent } }, (row, { up }) => { copied = row[count] + (up?.[count] ?? 0); }),
 ];
 
 const fresh = 10_000;

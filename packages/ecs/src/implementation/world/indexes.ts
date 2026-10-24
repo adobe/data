@@ -1,15 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { IndexDefinition } from '../../interface/registry/index.js';
-import { indexDefinitionOf, indexOfLookup, labelOfItem, watchedBy, watchesEntries } from '../../interface/registry/index.js';
+import { idOrNull, indexDefinitionOf, indexOfLookup, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import type { Failure } from '../../interface/report/failure.js';
-import type { SystemLookup } from '../../interface/system/access.js';
+import type { SystemLookupLists } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
 import { readCell } from './cells.js';
-import { chunkShift } from './kernel.js';
+import { blockShift, chunkShift } from './kernel.js';
+import { forEachNewerRow } from './ranges.js';
 import { journalEnd } from './journal.js';
 import { encodeStored, hashWords, keyPartsOf, missing, release as releaseInterned, retain, type KeyPart } from './index-keys.js';
 import {
-    bucketFor, coverBuckets, coverEntities, createHashTable, entryWords, insertEntry, lengthOf, loadHashTable, mergeEntries, place, placeAll, recordHash,
+    bucketFor, coverBuckets, coverEntities, createHashTable, entryWords, insertEntry, lengthOf, loadHashTable, forgetUnsorted, place, placeAll, recordHash,
     recordKey, rehash, relocate, slotsHold, releaseHashTable, removeEntry, startOf, tidyHashTable, unwatchHashComponent, watchHashComponent, type HashTable,
 } from './index-hash.js';
 import { allocateArray, freeArray } from './arrays.js';
@@ -51,6 +52,11 @@ export type WorldIndex = {
      * it was built; 0 before.
      */
     changed: number;
+    /**
+     * For a sorted index, the tick of the last refresh at which an entry moved to another archetype or row with its key
+     * and place unchanged, or it was built; 0 before.
+     */
+    moved: number;
     /** By watched component: how many lookups watch it, and the tick its ticks were read up to. */
     readonly watchers: Map<number, number>;
     readonly scanned: Map<number, number>;
@@ -64,8 +70,6 @@ export type WorldIndex = {
     pending: Int32Array;
     pendingArchetypes: Int32Array;
     pendingRows: Int32Array;
-    /** What an incremental refresh changes, by bucket: removals' entity indexes and insertions' entries. */
-    operations: Int32Array;
     /** A unique index's insertions of a refresh, as bucket and entity index pairs. */
     inserted: Int32Array;
     /**
@@ -75,8 +79,6 @@ export type WorldIndex = {
     readonly built: { entries: Int32Array; keys: Uint32Array; hashes: Uint32Array; buckets: Int32Array; order: Int32Array; spare: Int32Array; readonly histogram: Int32Array };
     /** What a build across the pool lists, in the arena, kept for the next; null before the first. */
     pooled: Pooled | null;
-    /** A merge's scratch, kept for the next: by bucket, its operations' start; operations in bucket order; removals, insertions and a segment. */
-    merging: { starts: Int32Array; order: Int32Array; removed: Int32Array; added: Int32Array; segment: Int32Array };
 };
 
 /** A build across the pool's arrays in the arena (`index-build.ts`): by entry, by piece, by partition, and its plan. */
@@ -110,7 +112,7 @@ export const acquireIndex = (state: State, definition: IndexDefinition): WorldIn
     const sorted = keptSorted(definition.declaration);
     const index: WorldIndex = {
         definition,
-        label: labelOfItem(definition),
+        label: definition.name,
         users: 1,
         keys,
         has: (components?.has ?? []).map(component => idOf(state, component)),
@@ -124,6 +126,7 @@ export const acquireIndex = (state: State, definition: IndexDefinition): WorldIn
         position: -1,
         refreshed: 0,
         changed: 0,
+        moved: 0,
         watchers: new Map(),
         scanned: new Map(),
         hash: sorted ? null : createHashTable(state.memory, words),
@@ -134,11 +137,9 @@ export const acquireIndex = (state: State, definition: IndexDefinition): WorldIn
         pending: new Int32Array(64),
         pendingArchetypes: new Int32Array(64),
         pendingRows: new Int32Array(64),
-        operations: new Int32Array(64),
         inserted: new Int32Array(64),
         built: { entries: new Int32Array(0), keys: new Uint32Array(0), hashes: new Uint32Array(0), buckets: new Int32Array(0), order: new Int32Array(0), spare: new Int32Array(0), histogram: new Int32Array(sorted && words > 0 ? 65536 : 0) },
         pooled: null,
-        merging: { starts: new Int32Array(0), order: new Int32Array(0), removed: new Int32Array(0), added: new Int32Array(0), segment: new Int32Array(0) },
     };
     state.indexes.set(definition, index);
     state.journal.readers++;
@@ -274,6 +275,7 @@ const reportConflict = (state: State, index: WorldIndex, kept: number, other: nu
     failures.push({
         kind: "index",
         name: index.label,
+        id: idOrNull(index.definition),
         message: `Index "${index.label}" is unique, and entities ${kept} and ${other} both have key ${keyText(state, index, archetype, row)}; lookups give ${kept}, the one with the lower entity index.`,
         stack: null,
     });
@@ -352,14 +354,11 @@ const pend = (index: WorldIndex, entity: number, archetype: number, row: number,
 
 /** Calls `each` with every row of a storage whose `changed` tick is after `since`, a whole column a GPU kernel wrote included. */
 const changedRows = (archetype: Archetype, storage: Storage, since: number, each: (row: number) => void): void => {
-    const whole = storage.columnChanged > since;
-    const { changed, chunkChanged } = storage;
-    for (let chunk = 0, count = Math.ceil(archetype.count / 2 ** chunkShift); chunk < count; chunk++) {
-        if (!whole && !(chunkChanged[chunk] > since)) continue;
-        for (let row = chunk << chunkShift, end = Math.min(archetype.count, (chunk + 1) << chunkShift); row < end; row++) {
-            if (whole || changed[row] > since) each(row);
-        }
+    if (storage.columnChanged > since) {
+        for (let row = 0; row < archetype.count; row++) each(row);
+        return;
     }
+    forEachNewerRow(storage.changed, storage.chunkChanged, storage.blockChanged, archetype.count, since, each);
 };
 
 /** Whether a component may have been written since `since`: by a system, or by a command's value at a sync point. */
@@ -434,6 +433,7 @@ const finishRefresh = async (state: State, index: WorldIndex, end: number, tick:
 /** Builds an index again: in phases, across the pool when there is one, for a large hash index keyed by structs; else here. */
 const rebuildAny = (state: State, index: WorldIndex, tick: number, failures: Failure[], pool: Pool | null): Promise<void> | null => {
     index.changed = tick;
+    index.moved = tick;
     const phased = rebuildPhased(state, index, tick, failures, pool);
     if (phased !== false) return phased;
     rebuild(state, index, tick, failures);
@@ -468,10 +468,15 @@ const refresh = (state: State, index: WorldIndex, end: number, keyed: boolean, t
                 const storage = archetype.storageById[part];
                 if (storage === undefined || !storage.ticked || !writtenSince(state, part, since)) continue;
                 const whole = storage.columnChanged > since;
-                const { changed, chunkChanged } = storage;
+                const { changed, chunkChanged, blockChanged } = storage;
                 for (let chunk = 0, chunks = Math.ceil(archetype.count / 2 ** chunkShift); chunk < chunks; chunk++) {
                     if (!whole && !(chunkChanged[chunk] > since)) continue;
                     for (let row = chunk << chunkShift, end = Math.min(archetype.count, (chunk + 1) << chunkShift); row < end; row++) {
+                        // A block no row of which changed is passed over whole.
+                        if (!whole && (row & (2 ** blockShift - 1)) === 0 && !(blockChanged[row >> blockShift] > since)) {
+                            row += 2 ** blockShift - 1;
+                            continue;
+                        }
                         if (!whole && !(changed[row] > since)) continue;
                         count = marking ? pend(index, rows[row] >>> 0, id, row, count) : list(index, rows[row] >>> 0, id, row, count);
                         if (count > most) return rebuildAny(state, index, tick, failures, pool);
@@ -488,38 +493,17 @@ const refresh = (state: State, index: WorldIndex, end: number, keyed: boolean, t
 };
 
 /**
- * A bucket at least this long takes a refresh's operations in one merge, rather than a shift each; shorter ones take
- * each as it comes.
- */
-const mergeMinimum = 64;
-
-/**
- * Files each pending entity in the bucket of its key, or none: an operation applies at once on a short bucket, and on
- * a long one waits to merge with the bucket's others. A unique index's buckets holding two entries once every
- * operation applied are conflicts.
+ * Files each pending entity in the bucket of its key, or none. A long bucket of an index that isn't unique may be left
+ * unsorted (`index-hash.ts`), so a change to it costs O(1) amortized; a unique index's stay sorted, and its buckets
+ * holding two entries once every change applied are conflicts.
  */
 const patch = (state: State, index: WorldIndex, hash: HashTable, count: number, tick: number, failures: Failure[]): void => {
     const { pending, key, words, pendingArchetypes, pendingRows } = index;
     const { entities } = state;
     coverEntities(hash, entities.length);
-    // Each waiting operation: bucket, entity index, archetype id or -1 for a removal, row.
-    let waiting = 0;
-    const wait = (bucket: number, entity: number, archetype: number, row: number): void => {
-        if (4 * (waiting + 1) > index.operations.length) index.operations = fit(index.operations, 4 * (waiting + 1));
-        const at = 4 * waiting++;
-        index.operations[at] = bucket;
-        index.operations[at + 1] = entity;
-        index.operations[at + 2] = archetype;
-        index.operations[at + 3] = row;
-    };
+    const unsorting = !index.unique;
     // A unique index's insertions, as bucket and entity index pairs, checked once all apply.
     let inserted = 0;
-    const remove = (bucket: number, entity: number): void => {
-        index.changed = tick;
-        holdKey(hash, index, bucket, false);
-        if (lengthOf(hash, bucket) >= mergeMinimum) wait(bucket, entity, -1, 0);
-        else removeEntry(hash, bucket, entity, tick);
-    };
     for (let k = 0; k < count; k++) {
         const entity = pending[k];
         const scanned = pendingArchetypes[k];
@@ -527,7 +511,9 @@ const patch = (state: State, index: WorldIndex, hash: HashTable, count: number, 
         const old = hash.bucketOf[entity];
         if (archetypeId < 0 || index.member[archetypeId] !== 1) {
             if (old < 0) continue;
-            remove(old, entity);
+            index.changed = tick;
+            holdKey(hash, index, old, false);
+            removeEntry(hash, old, entity, tick, unsorting);
             hash.bucketOf[entity] = -1;
             continue;
         }
@@ -544,9 +530,11 @@ const patch = (state: State, index: WorldIndex, hash: HashTable, count: number, 
         }
         if (!fresh) holdKey(hash, index, bucket, true);
         index.changed = tick;
-        if (old >= 0) remove(old, entity);
-        if (lengthOf(hash, bucket) >= mergeMinimum) wait(bucket, entity, archetypeId, row);
-        else insertEntry(hash, bucket, entity, archetypeId, row, tick);
+        if (old >= 0) {
+            holdKey(hash, index, old, false);
+            removeEntry(hash, old, entity, tick, unsorting);
+        }
+        insertEntry(hash, bucket, entity, archetypeId, row, tick, unsorting);
         hash.bucketOf[entity] = bucket;
         if (index.unique) {
             if (2 * (inserted + 1) > index.inserted.length) index.inserted = fit(index.inserted, 2 * (inserted + 1));
@@ -554,7 +542,6 @@ const patch = (state: State, index: WorldIndex, hash: HashTable, count: number, 
             index.inserted[2 * inserted++ + 1] = entity;
         }
     }
-    if (waiting > 0) merge(index, hash, waiting, tick);
     for (let k = 0; k < inserted; k++) {
         const bucket = index.inserted[2 * k];
         if (lengthOf(hash, bucket) > 1 && hash.bucketOf[index.inserted[2 * k + 1]] === bucket) conflict(state, index, hash, bucket, index.inserted[2 * k + 1], failures);
@@ -597,7 +584,7 @@ const patchSorted = (state: State, index: WorldIndex, sorted: SortedTable, count
         const fresh = index.objects && unknownValue(index, key);
         if (fresh) encodeRow(index, archetype, row, key, 0, true);
         if (old >= 0 && !fresh && sameStoredKey(sorted, old, key, 0)) {
-            relocateSorted(sorted, entity, archetypeId, row);
+            if (relocateSorted(sorted, entity, archetypeId, row)) index.moved = tick;
             continue;
         }
         if (objects && !fresh) holdWords(index, key, 0, true);
@@ -613,59 +600,6 @@ const patchSorted = (state: State, index: WorldIndex, sorted: SortedTable, count
         }
     }
     for (let k = 0; k < inserted; k++) sortedConflict(state, index, sorted, index.inserted[k], failures);
-};
-
-/** Applies the operations long buckets wait with, each bucket's in one merge, in entity order. */
-const merge = (index: WorldIndex, hash: HashTable, count: number, tick: number): void => {
-    const operations = index.operations;
-    const merging = index.merging;
-    // By bucket, counted then placed, in the order they came; then each bucket's by entity index.
-    if (merging.starts.length < hash.count + 1) merging.starts = new Int32Array(Math.max(hash.count + 1, 2 * merging.starts.length));
-    if (merging.order.length < count) {
-        const length = Math.max(count, 2 * merging.order.length);
-        merging.order = new Int32Array(length);
-        merging.removed = new Int32Array(length);
-        merging.added = new Int32Array(length * entryWords);
-    }
-    const { starts, order, removed, added } = merging;
-    starts.fill(0, 0, hash.count + 1);
-    for (let k = 0; k < count; k++) starts[operations[4 * k] + 1]++;
-    for (let bucket = 0; bucket < hash.count; bucket++) starts[bucket + 1] += starts[bucket];
-    for (let k = 0; k < count; k++) order[starts[operations[4 * k]]++] = k;
-    let scratch = merging.segment;
-    for (let start = 0; start < count;) {
-        const bucket = operations[4 * order[start]];
-        let end = start + 1;
-        while (end < count && operations[4 * order[end]] === bucket) end++;
-        // Insertion sort by entity index: a bucket's operations of one refresh are few.
-        for (let k = start + 1; k < end; k++) {
-            const moved = order[k];
-            const entity = operations[4 * moved + 1];
-            let at = k;
-            while (at > start && operations[4 * order[at - 1] + 1] > entity) {
-                order[at] = order[at - 1];
-                at--;
-            }
-            order[at] = moved;
-        }
-        let removals = 0;
-        let insertions = 0;
-        for (let k = start; k < end; k++) {
-            const at = 4 * order[k];
-            if (operations[at + 2] < 0) removed[removals++] = operations[at + 1];
-            else {
-                added[insertions * entryWords] = operations[at + 1];
-                added[insertions * entryWords + 1] = operations[at + 2];
-                added[insertions * entryWords + 2] = operations[at + 3];
-                insertions++;
-            }
-        }
-        const length = lengthOf(hash, bucket) * entryWords;
-        if (scratch.length < length) scratch = new Int32Array(Math.max(length, 2 * scratch.length));
-        mergeEntries(hash, bucket, removed, removals, added, insertions, scratch, tick);
-        start = end;
-    }
-    merging.segment = scratch;
 };
 
 /** Builds an index from every entity it holds, in entity order. */
@@ -875,6 +809,7 @@ const startBuild = (state: State, index: WorldIndex, hash: HashTable, total: num
     const entityEnd = entities.length;
     const pieces = Math.ceil(entityEnd / pieceEntities);
     coverEntities(hash, entityEnd);
+    forgetUnsorted(hash);
     // Sized for as many buckets as it last held, as `loadHashTable` sizes it.
     rehash(hash, Math.min(total, Math.max(16, hash.count - hash.freed.length - hash.empty)));
     const pooled = pooledFor(state, index, total, pieces);
@@ -1060,6 +995,8 @@ const sortedOrder = (index: WorldIndex, count: number, keys: Uint32Array): Int32
         order.set(ordered);
         return order;
     }
+    // Entries already in key order, as a load in document order lists them, need no sort.
+    if (inKeyOrder(keys, count, words)) return order;
     const histogram = built.histogram;
     for (let w = words - 1; w >= 0; w--) {
         for (let shift = 0; shift < 32; shift += 16) {
@@ -1085,6 +1022,21 @@ const sortedOrder = (index: WorldIndex, count: number, keys: Uint32Array): Int32
     built.order = order;
     built.spare = spare;
     return order;
+};
+
+/** Whether each of `count` entries' keys, `words` each, is at least the one before, comparing words from the first. */
+const inKeyOrder = (keys: Uint32Array, count: number, words: number): boolean => {
+    for (let k = 1; k < count; k++) {
+        const previous = (k - 1) * words;
+        const next = k * words;
+        for (let w = 0; w < words; w++) {
+            const a = keys[previous + w];
+            const b = keys[next + w];
+            if (a < b) break;
+            if (a > b) return false;
+        }
+    }
+    return true;
 };
 
 /** Stamps the buckets holding rows whose watched component changed since it was last read, with `tick`. */
@@ -1150,7 +1102,7 @@ const noFilters: readonly WorldIndex[] = [];
 const noLookups: IndexLookups = { byName: noIndexes, ordered: null, uses: noUses, filters: noFilters, release: () => {} };
 
 /** Acquires the indexes a declaration's lookups go through, watching what they watch, once each per index. */
-export const acquireLookups = (state: State, lookup: { readonly [name: string]: SystemLookup } | undefined, order?: unknown): IndexLookups => {
+export const acquireLookups = (state: State, lookup: { readonly [name: string]: SystemLookupLists } | undefined, order?: unknown): IndexLookups => {
     const ordering = indexDefinitionOf(order) ?? null;
     if (lookup === undefined && ordering === null) return noLookups;
     const byName = new Map<string, WorldIndex>();

@@ -91,18 +91,54 @@ export const rethrowLater = (error: unknown): void => {
  */
 const ownNames = new Set<string>();
 
-/** Names a system the factories make. */
+/** The registry's map of labels (`@adobe/ecs/labels@1`), which the plugin fills for declarations made in functions. */
+const labels = Symbol.for("@adobe/ecs/labels@1");
+
+/** The registry's map of what bodies use (`@adobe/ecs/access@1`), which the plugin fills from bodies it can follow. */
+const access = Symbol.for("@adobe/ecs/access@1");
+
+/** What a factory's body reads: of its row, of resources, and of each lookup's rows. Factories' systems only read. */
+type Reads = {
+    readonly components?: readonly symbol[];
+    readonly resources?: readonly symbol[];
+    readonly lookup?: { readonly [name: string]: readonly symbol[] };
+};
+
+/**
+ * Labels a declaration of a system or index the factories make, gives it what its body reads, since the keys it reads
+ * are values the build can't follow, and returns it.
+ */
+export const labelled = <const D extends object>(declaration: D, label: string, reads: Reads = {}): D => {
+    let map: unknown = Reflect.get(globalThis, labels);
+    if (!(map instanceof WeakMap || map instanceof Map)) Reflect.set(globalThis, labels, map = new WeakMap<object, string>());
+    if (map instanceof WeakMap || map instanceof Map) map.set(declaration, label);
+    let uses: unknown = Reflect.get(globalThis, access);
+    if (!(uses instanceof WeakMap)) Reflect.set(globalThis, access, uses = new WeakMap<object, unknown>());
+    if (uses instanceof WeakMap) uses.set(declaration, {
+        components: { read: reads.components ?? [], write: [] },
+        resources: { read: reads.resources ?? [], write: [], reduce: [] },
+        lookup: reads.lookup ?? {},
+        up: [],
+        at: label,
+    });
+    return declaration;
+};
+
+/** Names a system the factories make, whose failures are theirs to rethrow. */
 export const ownName = (name: string): string => {
     ownNames.add(name);
     return name;
 };
+
+/** Labels a declaration of a system the factories make, whose failures are theirs to rethrow. */
+export const own = <const D extends object>(declaration: D, label: string, reads: Reads = {}): D => labelled(declaration, ownName(label), reads);
 
 const ignore = (): void => {
     // A disposed world runs nothing more: its observers' first values never come.
 };
 
 /** Runs nothing: a run of it resolves while its world lives. */
-const alive = System.create({ name: ownName("Observe/alive"), observer: true }, () => {});
+const alive = System.create(own({ observer: true }, "Observe/alive"), () => {});
 
 /**
  * What a rejected run of the factories' own does: nothing for a disposed world, whose first values never come, and for
@@ -174,7 +210,7 @@ const sweepShapes = (state: WorldState): void => {
 };
 
 /** A system no world adds, which only a joined thread's `remove` refuses, since it isn't an observer. */
-const probe = System.create({ name: "Observe/probe" }, () => {});
+const probe = System.create(labelled({}, "Observe/probe"), () => {});
 
 /** Whether `world` is a joined thread's: its `remove` takes only observer systems, where the world's ignores one never added. */
 const isJoined = (world: World): boolean => {
@@ -222,11 +258,11 @@ export const stateOf = (world: World): WorldState => {
         rejected: rejectedOf(world),
         // Run with the factories' own systems, never added: what one of them throws is in a later report, whose errors
         // are written once, which the next of the factories' runs sees.
-        rethrow: System.create({ name: ownName("Observe/rethrow"), observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
+        rethrow: System.create(own({ observer: true, components: { changed: [Report.errors] } }, "Observe/rethrow", { components: [Report.errors] }), row => {
             for (const failure of row[Report.errors].failures) if (ownNames.has(failure.name)) rethrowLater(new Error(`${failure.name}: ${failure.message}`));
         }),
         composites: new WeakMap(),
-        deliver: System.create({ name: ownName("Observe/deliver"), observer: true }, () => {
+        deliver: System.create(own({ observer: true }, "Observe/deliver"), () => {
             const delivery = created.deliveries.shift();
             if (delivery === undefined) return;
             created.delivered = delivery.batch;
@@ -237,7 +273,7 @@ export const stateOf = (world: World): WorldState => {
     states.set(world, created);
     if (joined) return created;
     // Added before any shape's system, so in each pass it counts the pass before they run.
-    world.add(System.create({ name: ownName("Observe/maintain"), observer: true }, () => {
+    world.add(System.create(own({ observer: true }, "Observe/maintain"), () => {
         created.pass++;
         if (created.idle.length > 0) sweepShapes(created);
     }));

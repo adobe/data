@@ -2,48 +2,39 @@
 import { Entity, System } from "../../../../index.js";
 import { Todo, done, label, order, orderAfter, ordered, todo } from "./data.js";
 
-const text = { type: "string" } as const;
-
 /** Adds a todo at the end of the list, with its label trimmed; a blank label adds nothing. */
 export const addTodo = System.create({
-    name: "todos/add",
-    input: { type: "object", properties: { label: text } },
-    lookup: { ordered: { index: ordered, read: [order] } },
-}, ({ input, lookup, commands }) => {
+    lookup: { ordered: { index: ordered } },
+}, ({ lookup, commands }, input: { readonly label: string }) => {
     const trimmed = input.label.trim();
     if (trimmed === "") return;
     commands.spawn(Todo)({ [label]: trimmed, [done]: false, [order]: orderAfter(lookup.ordered()) });
 });
 
-const one = { entity: Entity.schema } as const;
+/** The todo a system on one acts on. */
+type One = { readonly entity: Entity };
 
 export const toggleTodo = System.create({
-    name: "todos/toggle",
-    input: { type: "object", properties: one },
     target: "entity",
-    components: { write: [done], has: [todo] },
-}, row => {
+    components: { with: [done, todo] },
+}, (row, _context, _input: One) => {
     row[done] = !row[done];
 });
 
 /** Gives a todo a new label, trimmed; a blank one deletes it. */
 export const editTodo = System.create({
-    name: "todos/edit",
-    input: { type: "object", properties: { ...one, label: text } },
     target: "entity",
-    components: { write: [label], has: [todo] },
-}, (row, { input, commands }) => {
+    components: { with: [label, todo] },
+}, (row, { commands }, input: One & { readonly label: string }) => {
     const trimmed = input.label.trim();
     if (trimmed === "") commands.despawn(row.entity);
     else row[label] = trimmed;
 });
 
 export const deleteTodo = System.create({
-    name: "todos/delete",
-    input: { type: "object", properties: one },
     target: "entity",
-    components: { has: [todo] },
-}, (row, { commands }) => {
+    components: { with: [todo] },
+}, (row, { commands }, _input: One) => {
     commands.despawn(row.entity);
 });
 
@@ -52,10 +43,8 @@ export const deleteTodo = System.create({
  * neighbours'. When no number lies between them, every todo is numbered again.
  */
 export const moveTodo = System.create({
-    name: "todos/move",
-    input: { type: "object", properties: { entity: Entity.schema, before: Entity.schema } },
-    lookup: { todos: { read: [order], has: [todo] }, ordered: { index: ordered, read: [order] } },
-}, ({ input, lookup, commands }) => {
+    lookup: { todos: { with: [order, todo] }, ordered: { index: ordered } },
+}, ({ lookup, commands }, input: { readonly entity: Entity; readonly before: Entity }) => {
     const { entity, before } = input;
     if (entity === before || lookup.todos(entity) === null) return;
     const next = before === Entity.none ? null : lookup.todos(before);

@@ -31,21 +31,22 @@ check<Equal<typeof Report.Archetype, readonly [typeof Report.run]>>();
 declare const failure: Report.Failure;
 check<Equal<typeof failure.kind, "system" | "finalizer" | "gpu" | "thread" | "index">>();
 check<Equal<typeof failure.stack, string | null>>();
-check<Equal<Report.Warning, { readonly kind: "blocking"; readonly name: string; readonly message: string }>>();
+check<Equal<Report.Warning, { readonly kind: "blocking"; readonly name: string; readonly id: string | null; readonly message: string }>>();
+check<Equal<typeof failure.id, string | null>>();
 
 // A report's values: errors only when something went wrong.
 check<Equal<Report, { readonly [Report.run]: Run; readonly [Report.errors]?: Errors }>>();
 
 // An observer system follows reports by their components.
 const logged: Report.Failure[] = [];
-export const logger = System.create({ observer: true, components: { read: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
+export const logger = System.create({ observer: true, components: { with: [Report.run, Report.errors], changed: [Report.errors] } }, row => {
     const number: number = row[Report.run].number;
     for (const each of row[Report.errors].failures) logged.push(each);
     // @ts-expect-error a report's lists are read-only
     row[Report.errors].failures.push(logged[0]);
     void number;
 });
-export const timings = System.create({ observer: true, components: { read: [Report.run], changed: [Report.run] } }, row => {
+export const timings = System.create({ observer: true, components: { with: [Report.run], changed: [Report.run] } }, row => {
     const { elapsed, systems, workers, joined, main: onMain, gpu, dropped } = row[Report.run];
     void [elapsed, systems, workers, joined, onMain, gpu, dropped];
 });

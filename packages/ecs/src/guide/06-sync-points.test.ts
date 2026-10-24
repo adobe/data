@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Resource, System, World } from "../index.js";
+import { System, World } from "../index.js";
 
-const health = Symbol("health");
-const seen = Symbol("seen");
+const health = Symbol();
+const seen = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -14,9 +14,6 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(health, { type: { type: "number" } });
-Resource.register(seen, { type: { type: "number", default: 0 } });
-
 // Value writes apply at once; commands wait for the sync point that ends each run, then apply in the order issued.
 const spawn = System.create(({ commands }) => {
     // spawn gives the entity at once, so later commands can name it.
@@ -26,18 +23,18 @@ const spawn = System.create(({ commands }) => {
     commands.despawn(commands.spawn([health])({ [health]: 1 }));
 });
 // A composite is one run with one sync point: count runs after spawn, before its entities exist.
-const count = System.create({ components: { has: [health] }, resources: { write: [seen] }, after: [spawn] }, (row, { resources }) => {
+const count = System.create({ components: { with: [health] }, after: [spawn] }, (row, { resources }) => {
     resources[seen] += 1;
 });
 const frame = System.create([spawn, count]);
 
 const healths: number[] = [];
 // An observer runs after the sync point of every run and tick it's added to, reading what it left; it writes nothing.
-const watch = System.create({ observer: true, components: { read: [health] } }, row => {
+const watch = System.create({ observer: true, components: { with: [health] } }, row => {
     healths.push(row[health]);
 });
 let counted = 0;
-const readSeen = System.create({ observer: true, resources: { read: [seen] } }, ({ resources }) => {
+const readSeen = System.create({ observer: true }, ({ resources }) => {
     counted = resources[seen];
 });
 

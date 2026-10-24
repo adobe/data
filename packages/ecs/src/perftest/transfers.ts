@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Resource } from "../interface/resource/resource.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "../implementation/index.js";
@@ -18,24 +17,15 @@ declare module "@adobe/ecs" {
     }
 }
 /** An object of the claimed thread, which places the system reading it there. */
-Resource.register(sink, { thread: "transfersBenchmark" });
 
 /** Bytes `take` took, on the claimed thread. */
 export const taken = { bytes: 0 };
 
-/**
- * On the claimed thread: takes a buffer and a bitmap, as an upload would, closing the bitmap. Its input's fields take
- * any value, `{ allOf: [] }`, typed `unknown`, which it narrows.
- */
-export const take = System.create({
-    name: "transfers/take", input: { type: "object", properties: { buffer: { allOf: [] }, bitmap: { allOf: [] } } }, resources: { read: [sink] },
-}, ({ input, resources }) => {
+/** On the claimed thread: takes a buffer and a bitmap, as an upload would, closing the bitmap. */
+export const take = System.create({}, ({ resources }, input: { readonly buffer: ArrayBuffer; readonly bitmap: ImageBitmap }) => {
     if (resources[sink] !== null) return;
-    if (input.buffer instanceof ArrayBuffer) taken.bytes += input.buffer.byteLength;
-    if (typeof ImageBitmap === "function" && input.bitmap instanceof ImageBitmap) {
-        taken.bytes += input.bitmap.width * input.bitmap.height * 4;
-        input.bitmap.close();
-    }
+    taken.bytes += input.buffer.byteLength + input.bitmap.width * input.bitmap.height * 4;
+    input.bitmap.close();
 });
 
 /** Every system the joined threads run, which they import so the world can place them there. */

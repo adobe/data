@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component, Resource, System, always, cadence, clock, wake, workers } from "../../index.js";
+import { always, cadence, clock, type F32, System, wake, workers } from "../../index.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld } from "./create.js";
 import { Observe } from "../../observe/index.js";
@@ -16,52 +16,47 @@ const flag = Symbol("observeTicksCasesTest/flag");
 declare module "@adobe/ecs" {
     interface Resources {
         [frames]: { type: number };
-        [seen]: { type: number };
+        [seen]: { type: number; default: -1 };
     }
     interface Components {
-        [value]: { type: number };
-        [watched]: { type: number };
+        [value]: { type: F32 };
+        [watched]: { type: F32 };
         [flag]: { type: true };
     }
 }
-Resource.register(frames, { type: { type: "number", default: 0 } });
-Resource.register(seen, { type: { type: "number", default: -1 } });
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(watched, { type: { type: "number", precision: 1 } });
-Component.register(flag, { type: { const: true } });
 
-const count = System.create({ name: "observeTicksCasesTest/count", resources: { write: [frames] } }, ({ resources }) => { resources[frames] += 1; });
-const watch = System.create({ name: "observeTicksCasesTest/watch", resources: { read: [clock], write: [seen] } }, ({ resources }) => { resources[seen] = resources[clock].tick; });
-const fail = System.create({ name: "observeTicksCasesTest/fail" }, () => { throw new Error("tick failed"); });
-const nothing = System.create({ name: "observeTicksCasesTest/nothing" }, () => {});
-const idle = System.create({ name: "observeTicksCasesTest/idle", observer: true }, () => {});
-const fast = System.create({ name: "observeTicksCasesTest/fast", resources: { write: [cadence, always] } }, ({ resources }) => {
+const count = System.create({}, ({ resources }) => { resources[frames] += 1; });
+const watch = System.create({}, ({ resources }) => { resources[seen] = resources[clock].tick; });
+const fail = System.create({}, () => { throw new Error("tick failed"); });
+const nothing = System.create({}, () => {});
+const idle = System.create({ observer: true }, () => {});
+const fast = System.create({}, ({ resources }) => {
     resources[cadence] = { kind: "fixed", step: 1 };
     resources[always] = true;
 });
-const calm = System.create({ name: "observeTicksCasesTest/calm", resources: { write: [always] } }, ({ resources }) => { resources[always] = false; });
-const later = System.create({ name: "observeTicksCasesTest/later", resources: { read: [clock] }, reduce: { [wake]: "min" } }, ({ resources, reduce }) => {
+const calm = System.create({}, ({ resources }) => { resources[always] = false; });
+const later = System.create({}, ({ resources, reduce }) => {
     if (resources[clock].tick === 0) reduce[wake](resources[clock].now + 20);
 });
 
-const seed = System.create({ name: "observeTicksCasesTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn([value, watched])({ [value]: i, [watched]: 0 });
 });
 /** Writes every value: until something observes `value`, its stamps are muted. */
-const bump = System.create({ name: "observeTicksCasesTest/bump", kernel: "cpu", components: { write: [value] } }, row => {
+const bump = System.create({ kernel: true, components: { with: [value] } }, row => {
     row[value] = row[value] + 1;
 });
-const watchChanged = System.create({ name: "observeTicksCasesTest/watchChanged", kernel: "cpu", components: { write: [watched], changed: [value] }, after: [bump] }, row => {
+const watchChanged = System.create({ kernel: true, components: { with: [watched], changed: [value] }, after: [bump] }, row => {
     row[watched] = row[watched] + 1;
 });
 /** Counts rows whose `value` was added since it last ran. */
-const fresh = System.create({ name: "observeTicksCasesTest/fresh", components: { write: [watched], added: [value] } }, row => {
+const fresh = System.create({ components: { with: [watched], added: [value] } }, row => {
     row[watched] = row[watched] + 1;
 });
-const flagAll = System.create({ name: "observeTicksCasesTest/flagAll", components: { has: [value] } }, (row, { commands }) => {
+const flagAll = System.create({ components: { with: [value] } }, (row, { commands }) => {
     commands.add(row.entity, flag, true);
 });
-const spawnOne = System.create({ name: "observeTicksCasesTest/spawnOne" }, ({ commands }) => {
+const spawnOne = System.create({}, ({ commands }) => {
     commands.spawn([value, watched])({ [value]: -1, [watched]: 0 });
 });
 
@@ -146,7 +141,7 @@ describe("ticks", () => {
         world.add(fail);
         await world.run(nothing);
         const last = await reports.until(next => next.failures.length > 0);
-        expect(last.failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "observeTicksCasesTest/fail", "tick failed"]]);
+        expect(last.failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "fail", "tick failed"]]);
     });
 
     it("put what an observer throws on a tick's values in a later run's report, once", async () => {

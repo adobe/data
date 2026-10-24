@@ -1,6 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import { Observe } from "../../observe/index.js";
 import type { World } from "../../interface/world/world.js";
@@ -21,27 +19,22 @@ declare module "@adobe/ecs" {
     }
     export interface Resources {
         [total]: { type: number };
-        [names]: { type: readonly string[] };
+        [names]: { type: readonly string[]; default: [] };
     }
 }
-Component.register(point, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-Component.register(label, { type: { type: "string" } });
-Component.register(marked, { type: { const: true } });
-Resource.register(total, { type: { type: "number", default: 0 } });
-Resource.register(names, { type: { type: "array", items: { type: "string" }, default: [] } });
 
 /** Appends a digit to `total`, so the order of runs shows in it. */
-export const add = System.create({ name: "joiningTest/add", input: { type: "object", properties: { amount: { type: "number" } } }, resources: { write: [total] } }, ({ input, resources }) => {
+export const add = System.create({}, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
-export const append = System.create({ name: "joiningTest/append", input: { type: "object", properties: { name: { type: "string" } } }, resources: { write: [names] } }, ({ input, resources }) => {
+export const append = System.create({}, ({ resources }, input: { readonly name: string }) => {
     resources[names] = [...resources[names], input.name];
 });
-export const spawn = System.create({ name: "joiningTest/spawn", input: { type: "object", properties: { x: { type: "number" } } } }, ({ input, commands }) => {
+export const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, label, marked])({ [point]: [input.x, -input.x], [label]: `p${input.x}` });
 });
-export const fail = System.create({ name: "joiningTest/fail" }, () => { throw new Error("joiningTest failure"); });
-export const idle = System.create({ name: "joiningTest/idle" }, () => {});
+export const fail = System.create({}, () => { throw new Error("joiningTest failure"); });
+export const idle = System.create({}, () => {});
 
 /** The first value an observer gives that `accept` takes. */
 export const until = <T>(observe: Observe<T>, accept: (value: T) => boolean): Promise<T> => new Promise(resolve => {

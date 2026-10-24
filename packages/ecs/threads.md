@@ -32,14 +32,16 @@ Referenced from `design.md`.
   never wait on another thread.
 - **Objects default to `world`.** A declaration without `thread` is on `world`; one with it names a logical thread.
   Libraries declare threads on components; the application decides which joined thread fills each.
-- **The DOM rule:** a DOM `Node` lives on `main`, the window's thread, and its declaration says so: the types require
-  `thread: "main"` where the DOM library is loaded, and registration checks it on values it can see.
+- **The DOM rule:** a DOM `Node` lives on `main`, the window's thread, and its declaration says so: the build requires
+  `thread: "main"` for a type that's one of the DOM's classes or extends one, and registration checks it on values it
+  can see.
 - **Keys are symbols,** so components, resources and traits never collide, but a symbol is a different value on each
   thread. Threads agree on keys through the ids the plugin gives top-level `Symbol(...)` declarations, by which the
   registry already takes the symbols of one id as one key; a key without one can't cross, so a joined thread's observer
-  system naming one fails to register. Ids name packages, not directories, so threads bundled apart agree on them, and
-  the plugin adds itself to `worker.plugins`, so worker bundles' keys get them too.
-- **Systems, rules and finalizers are their values,** and names are optional labels, so a value is different on each
+  system naming one fails to register. Ids name packages and their versions, not directories, so threads bundled apart
+  agree on them, and the plugin adds itself to `worker.plugins`, so worker bundles' keys get them too. Every declared
+  key has one, since a declaration names only a top-level `Symbol()` constant.
+- **Systems, rules and finalizers are their values,** labeled by their bindings, so a value is different on each
   thread too. Threads agree on them through the ids the plugin gives top-level `System.create`, `System.render`,
   `Rule.create`, `Finalizer.create` and `Finalizer.changes` bindings, composites included, by which the registry
   already takes values of one id as one item. A threaded world rejects an item without one where it crosses threads:
@@ -51,7 +53,7 @@ Referenced from `design.md`.
   the id once by message the first time; the world maps (thread, number) to its own. The world holds runs whose slots
   use a number it can't map yet, in order, until that message arrives. A run of an id the world never imported
   rejects.
-- **Archetypes are lists of keys.** The index `Archetype.create` gives a list is for its own thread's lookups;
+- **Archetypes are lists of keys.** The index the build or a world gives a list is for its own thread's lookups;
   threads agree on an archetype through the world's numbers for its components. Commands and staged spawn batches
   carry those numbers, never archetype indexes.
 - **Inline is the same layout.** With every logical thread filled by the world's thread, storage and code paths are
@@ -66,20 +68,17 @@ export interface Threads {
     main: true;    // the window's thread, where the DOM is
 }
 
-// `thread` only on objects: a struct with `thread` fails in types and at registration.
+// `thread` only on objects: a struct with `thread` fails at registration. The build registers each declaration, a
+// value that isn't data without a schema.
 declare module "@adobe/ecs" {
     interface Components {
-        // A DOM Node lives on "main", and says so; the check resolves to no requirement where the DOM library isn't
-        // loaded.
+        // A DOM Node lives on "main", and says so; the build requires it.
         [domNode]: { type: HTMLElement; thread: "main" };
         // `transfer: true` requires a Transferable type: ArrayBuffer, ImageBitmap, VideoFrame, OffscreenCanvas,
         // MessagePort. It lives on `world`, where the GPU uploads it; a loader thread sets it by moving the value there.
         [textureSource]: { type: ImageBitmap; transfer: true };
     }
 }
-// A value that isn't data is registered without a schema.
-Component.register(domNode, { thread: "main" });
-Component.register(textureSource, { transfer: true });
 
 // On the thread that holds the world:
 const world = World.create(resources?);
@@ -101,10 +100,10 @@ of the browser or node, and a joined thread's `dispose` closes only a `MessagePo
 
 All derived from declarations and, for terminal systems, the plugin's analysis of their bodies; none is a flag.
 
-- **A system's thread** is the thread of every object component and object resource it names in `read`, `write`,
-  `added`, `changed`, `lookup`, `up` and resource `is`, and the key parts of the indexes it looks up through or orders
-  its rows by. Strings and structs don't place it. Components in `has` and `not` are structural, and read a shared
-  presence word, so they don't place it. With no objects, a kernel runs on the pool and any other system on `world`.
+- **A system's thread** is the thread of every object component and object resource its body reads or writes, as
+  the build infers, of those it filters on by `added` and `changed`, of resource `is`, and the key parts of the
+  indexes it looks up through or orders its rows by. Strings and structs don't place it. Components it only requires,
+  in `with`, and those in `not` are structural, and read a shared presence word, so they don't place it. With no objects, a kernel runs on the pool and any other system on `world`.
   Render systems and `kernel: "gpu"` systems are on `world`, with `gpuDevice`.
 - **Errors when declared:** objects of two threads in one system or finalizer, in types and when it's created, which
   registers it. **Errors when joining:** a thread claimed twice; a claimed thread whose systems or finalizers that
@@ -181,9 +180,10 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 - **Archetype records:** the table holds, by the world's archetype number, the offset of that archetype's record. Each
   record is allocated once, since an archetype's storages are fixed, and never moves; only the table grows. A record
   holds `capacity`, the `entities` offset, a version, its flags and its count, and per storage its component number, its
-  flags (`ticked`, linear, remote with the joined thread's number), its column, tick and chunk-tick offsets and its
-  chunk count; a remote storage's column is its tags. Offsets are `Uint32`, since memory reaches 4 GiB. The resource
-  archetype has a record too, flagged, and the header holds the resource entity's index.
+  flags (`ticked`, linear, remote with the joined thread's number), its column, tick and chunk-tick offsets, its
+  chunk count and its block-tick offsets, sixteen blocks a chunk; a remote storage's column is its tags. Offsets are
+  `Uint32`, since memory reaches 4 GiB. The resource archetype has a record too, flagged, and the header holds the
+  resource entity's index, and a count of flushes that wrote an existing archetype's record again.
 - **Entity-table record:** the `cursor` offset, which never moves, the free list's offset and capacity, the
   `archetype`, `row` and `generation` offsets and capacity, and a version. The table's length is `cursor[2]`. Its
   arrays move whenever they grow, even without memory growing, since a grown array's old block is reused.
@@ -195,7 +195,9 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 - **Reads:** a thread checks a record's version, one load, before using what it cached for that archetype, and keeps
   per-archetype column views and kernel columns, rebuilt only when that version moves. The whole-buffer view serves the
   header and records; columns stay views of their own, as kernels and layouts take them. On an entity-table version
-  change, a worker updates the `entities` object its spawners hold in place.
+  change, a worker updates the `entities` object its spawners hold in place. A joined thread's index lookups check
+  that count once a run instead, with its mirror's archetypes and its own views (memory grown, keys named): rows they
+  gave stay bound while none moved, and are bound again to the views they find otherwise, a rebuilt mirror's included.
 - **Messages:** only new components' schemas are posted, none for a value that isn't data, since a message closes the
   pool's windows. A new archetype is found in the table, its record naming its component numbers, the first time a
   task names it.
@@ -255,14 +257,17 @@ only on node, so browser bundles never load them, and the node worker's url isn'
 so a browser build bundles one worker (`worker-platform.ts`). Death is a `Worker`'s `error` or `messageerror`, a node
 worker's `error`, `messageerror` or `exit`, or, for a lent worker, what its owner reports or either `MessagePort`'s
 `close` where the platform has it, whichever comes first; nothing polls, so a quiet world does no work. A browser
-`Worker` ended from outside its port reports nothing, so a lent worker's owner reports the end of one it ends.
+`Worker` ended from outside its port reports nothing, so a lent worker's owner reports the end of one it ends, before
+ending it. The worker's port closing is reported only once the owner answers a `closed` on its channel, which comes
+after anything it reported first, so an owner's report wins over the close its ending causes.
 
 - **Platforms:** a world's pool comes from a platform, `{ count, start }`: `count` is what the `workers` resource's
   `null` resolves to, its hardware threads, `navigator.hardwareConcurrency` or `os.availableParallelism()`, minus the
   world's thread, and `start` starts one worker, or returns null when it has no more, so a pool takes as many as it
   gets. The platform's own is browser workers where `Worker` exists, nested ones on a worker, else `worker_threads`,
   else none. `WorldOptions`' `pool` gives another, or null for none: `lentWorkers(lent)` for workers another thread
-  lent.
+  lent. A world starts its pool once an archetype some kernel matches holds half a piece of rows for a worker, as
+  the fastest kernels split, so a small world starts none.
 - **Lending:** the owning thread starts each worker, posts it the `MessagePort` it talks on as its first message, and
   keeps a second channel to the thread it's lent to, on which it reports the worker's death and ends it when asked; a
   lent worker is started once, so a pool resized past what was lent gets fewer workers. `terminate` asks the owner and
@@ -453,8 +458,11 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
 - **Stop lists** (`stop-lists.ts`): before apply, the world's thread writes one block per sync point with stops for that
   thread: per finalizer, in the world's finalizer order, a group of its stops as columns: each entity, its pre-apply
   archetype and row, the tag of each object it reads, and a copy of each linear struct it reads, in that component's
-  layout, and of each string's record, by its handle, let go once the thread acknowledged the block: it may finalize
-  sync points after the row's own record was let go and freed. The world copies a column at a time, finding each column's storage once per run of an archetype. Blocks are
+  layout, and of each string's record, by its handle; then, once per group, the resources it reads that aren't its
+  thread's objects, as they were before apply: a copy of each string resource's record, by its handle, then each linear
+  resource's value in its layout, from the resource entity's row; a constant needs none. A finalizer reading no such
+  resource adds no bytes. The records' copies are let go once the thread acknowledged the block: it may finalize sync
+  points after the row's or resource's own record was let go and freed. The world copies a column at a time, finding each column's storage once per run of an archetype. Blocks are
   linked in sync order, the first from the log header's stops word, each block's next offset stored once that block is
   whole, so a thread reads only whole blocks of published syncs. A block is freed once the thread acknowledged a later
   one, since the thread reads the next offset from the newest block it ran. The world wakes the thread after each sync
@@ -463,14 +471,18 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   entry, before the sync's entries apply, or at replay's end for a sync with no entries for it; its finalizers read the
   linear structs from the block, constants as they are, and its objects by each stop's tag: the start or `null` as
   tagged, any other at the stop's row in its mirror. After its log lapped, it runs them before it rebuilds, reading a
-  value it wrote or a settled slot's by entity in its old rows, and a live slot's from its staging array. Resources are
-  read where they are. Then it stores "finalized through sync N" in the log header. A stop list naming a finalizer
+  value it wrote or a settled slot's by entity in its old rows, and a live slot's from its staging array. Its thread's
+  object resources are read as it holds them: at the resource entity's row in its mirror as replayed so far, which may
+  be behind the entity table, its old rows before a rebuild, and the start where no row holds it, as before its first
+  rebuild. That's what the rebuild keeps: only its systems write those values, and the world gives them only their start,
+  when they're added or claimed. Its string and linear resources are read from the group's copies, so every resource
+  it reads is as of before its stops' sync point applied. Then it stores "finalized through sync N" in the log header. A stop list naming a finalizer
   whose setup hasn't arrived holds replay before its sync, as a component without a key does; one this thread never
   imported fails each of its groups. What its finalizers throw is posted, and a later run's report lists it as a
   `"finalizer"` failure.
 - **The guarantee:** each such finalizer runs exactly once per stop, on its thread, before that thread's next task or
   observer post after the sync point and before the entity's index is reused, seeing its declared struct and string
-  reads and its thread's objects as of before apply.
+  reads, its thread's objects and every resource it reads as of before apply.
 - **Held indexes:** the index of an entity despawned with such stops is held, counted by index for each thread that
   hasn't acknowledged it, apart from `released`, so the leak scan never sees it and the free list never has it; the
   sync point after a thread acknowledges releases it once no thread holds it. A thread that's gone has its held indexes
@@ -583,9 +595,10 @@ its tails before it resolves, with their failures in its report.
 - **Fallback snapshot.** Sometimes a conflicting writer is ready before the tail has finished its reads, as when main
   is late. The world's thread then evaluates the tail's head as the tail would, copies the declared linear struct reads
   of the passing rows from the position the tail reached, with their position, archetype, row and entity, and its
-  linear resources, a string's handles among them, into a tail buffer, a column at a time; exchanges the progress word for a sentinel; and waits until
-  the tail is done through what it had claimed, at most one chunk, spinning briefly before it waits. A claim that
-  returns the sentinel reads the rest from the copy, rows from its own position on. The values are the same either
+  linear resources, a string's handles among them, into a tail buffer, a column at a time; adds a sentinel to the
+  progress word, which then still shows whether a claim came first; and waits until the tail is done through what it
+  had claimed, at most one chunk, spinning briefly before it waits. A claim that returns the sentinel or more reads the
+  rest from the copy, rows from its own position on. The values are the same either
   way, so this stays deterministic. A prompt main never copies. A string's handle in the copy names its record as of
   the copy, which outlives the tail: a tick posts its tails once the last tick's are done, and a run waits for them, so
   a tail ends before the second sync point after the one it reads, and a record let go is freed only then. The copy lets the world's work after its writer
@@ -596,8 +609,9 @@ its tails before it resolves, with their failures in its report.
 - **The tail's own objects** are read where they are: while a tail is in flight, the thread's replay stops at the sync
   it names, which the world stores in the log header as it posts it, so the next sync point's moves wait in the log
   until the tail finishes. Rows read from the copy take their objects from the mirror at the copy's rows, or, once its
-  log lapped and it rebuilt past that sync, by entity. Objects it writes from the copy go back to the mirror after its
-  body; the world marks their tags the thread's own when it copies, and stamps them changed at the tail's tick, as the
+  log lapped and it rebuilt past that sync, by entity. Its object resources stay at the copy's resource row, rebuilt or
+  not, since the resource entity moves only when resources are added, which waits for tails. Objects it writes from the
+  copy go back to the mirror after its body; the world marks their tags the thread's own when it copies, and stamps them changed at the tail's tick, as the
   task's completion names them by entity, before the thread's next task.
 - **What waits for a tail to finish:** the next task on its thread, and what moves rows a tail may still read outside
   a sync point: registration, resources added between runs, a GPU device change, and joined threads joining or leaving.
@@ -629,8 +643,8 @@ is in the input, and the system, which writes the component, runs on that thread
   point, and a staged slot of a joined thread's once it replays that sync point, which the world wakes it for.
   Releasing closes an `ImageBitmap`, `VideoFrame`, `AudioData`, `MessagePort` or `RTCDataChannel`, cancels or aborts
   a stream, and leaves an `ArrayBuffer`'s or an `OffscreenCanvas`'s memory to the collector.
-- **Types:** an input schema can't name a Transferable type yet; a field declared `{ allOf: [] }` takes any value,
-  typed `unknown`, which the body narrows.
+- **Types:** an input field is typed as its class, `{ readonly canvas: OffscreenCanvas }`, whose schema the plugin
+  gives as one taking any value.
 
 ### Without cross-origin isolation
 
@@ -687,7 +701,7 @@ then green type tests, then runtime with red then green runtime tests. Each phas
 
 ### Built: threads in declarations, the loop, and the pool
 
-- `Threads`, `thread`, `transfer` and the DOM rule in types, with registration's checks; a system's and finalizer's
+- `Threads`, `thread`, `transfer` and the DOM rule, in the build and registration's checks; a system's and finalizer's
   thread derived, and two threads rejected, when it's created. With every thread filled by `world`, nothing changes at
   runtime.
 - Ids: the plugin gives top-level keys and `System.create`, `System.render`, `Rule.create`, `Finalizer.create` and
@@ -910,8 +924,7 @@ that's gone rejects; an input no task took is released once its run finishes; a 
 its thread. The sample (`src/samples/transfers`) runs the world on a worker drawing into the OffscreenCanvas main moved
 to it, main showing its state in the DOM, and a loader worker moving each texture it decoded to the world's thread.
 
-- Interface: none. An input schema can't name a Transferable type, so a run's input can't be typed with one; proposed
-  for review, and meanwhile a field `{ allOf: [] }` takes one as `unknown`.
+- Interface: none; an input field is typed as its Transferable class.
 - Contract: a run's Transferable input moves, never copied, to the thread its system runs on, and the run lands once
   it arrived, in call order with that thread's other runs; a run whose input moved to a thread that's gone rejects; a
   value whose command drops is released on its thread.

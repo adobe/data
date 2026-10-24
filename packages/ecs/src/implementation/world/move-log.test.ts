@@ -1,16 +1,21 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { createBuffer, addCommand, pushCommand, pushComponent, removeCommand, type CommandBuffer } from "./buffer.js";
 import { readCell } from "./cells.js";
 import { createCommands } from "./commands.js";
 import { asEntity, indexOf, locate as locateHere } from "./entities.js";
 import { recordCount, structureWord, tableOffsetWord } from "./layout-directory.js";
 import { applying, cellOf, createMirror, nameComponent, rebuild, replay, stage, waitStructure, type Mirror } from "./mirror.js";
-import { createMoveLog, ownTag, slotValue, type MoveLog } from "./move-log.js";
+import { createMoveLog, logSyncWord, ownTag, slotValue, type MoveLog } from "./move-log.js";
 import { claimThreads } from "./remote.js";
 import { createState, defaultOf, idOf, startTicking, type State } from "./state.js";
 import { applySync, prepareSync, synchronize } from "./synchronize.js";
+import { createThreadDirectory } from "./thread-directory.js";
+import { createThreadSystems } from "./thread-systems.js";
+import {
+    completionCapacityWord, completionOffsetWord, payloadCapacityWord, payloadCount, payloadInput, payloadOffsetWord, payloadSequence, payloadSync, ringBaseWord,
+    ringCapacityWord, taskBlockWords, taskDoneWord, taskPostedWord,
+} from "./thread-tasks.js";
 
 // The move log on one thread: a world whose objects of thread "moveLogTest" a mirror fills, against an inline world given
 // the same commands, compared after every sync point by each entity's id.
@@ -29,21 +34,18 @@ declare module "@adobe/ecs" {
         [uid]: { type: number };
         [amount]: { type: number };
         [flag]: { type: true };
-        [label]: { type: { readonly text: string } | null; thread: "moveLogTest" };
+        [label]: { type: Label; thread: "moveLogTest" };
         [note]: { type: Note | null; thread: "moveLogTest" };
         [own]: { type: string };
     }
 }
-Component.register(uid, { type: { type: "number" } });
-Component.register(amount, { type: { type: "number" } });
-Component.register(flag, { type: { const: true } });
 /** A value that isn't data. */
 type Note = { readonly text: string; readonly read: () => string };
 /** The label's start, which a command on another thread than its own gives it by this value. */
-const none = { text: "none" };
-Component.register(label, { type: { anyOf: [{ type: "object", properties: { text: { type: "string" } } }, { type: "null" }], default: none }, thread: "moveLogTest" });
-Component.register(note, { thread: "moveLogTest" });
-Component.register(own, { type: { type: "string" } });
+const none = { text: "none" } as const;
+/** A label, which starts as `none`, the value commands on other threads give it by identity. */
+type Label = { readonly text: string } | null;
+const Label = { default: none };
 
 const remoteKeys = [label, note] as const;
 
@@ -81,7 +83,7 @@ const inline = (): State => {
 /** Brings the mirror up to the last sync point, rebuilding when its log lapped it. */
 const follow = (mirror: Mirror): void => {
     const replayed = replay(mirror);
-    if (replayed === "lapped") expect(rebuild(mirror)).toBe(true);
+    if (replayed === "lapped") expect(rebuild(mirror)).toBe("rebuilt");
     else expect(replayed).toBe("current");
 };
 
@@ -225,6 +227,49 @@ const property = (seed: number, minimum: number, steps: number): { readonly comp
     return { compared, rebuilds: mirror.rebuilds };
 };
 
+/**
+ * A thread's systems over a mirror the log lapped, so its next task rebuilds it: `post` posts a task of no systems,
+ * which runs once the mirror is current, its input by message when `input`; `refreshes` counts its tries.
+ */
+const lapped = () => {
+    const { state, mirror, log } = threaded(4);
+    const { commands, target } = worldCommands(state);
+    const queue = (): void => { state.queued.push({ buffer: target.buffer, guarded: true }); };
+    const entity = commands.spawn([uid, label])({ [uid]: 1 });
+    queue();
+    synchronize(state);
+    follow(mirror);
+    const { memory } = state;
+    const control = new Int32Array(memory.memory.buffer, memory.allocate(taskBlockWords * 4), taskBlockWords);
+    const payload = memory.allocate(256);
+    Atomics.store(control, payloadOffsetWord, payload);
+    Atomics.store(control, payloadCapacityWord, 256);
+    Atomics.store(control, completionOffsetWord, memory.allocate(256));
+    Atomics.store(control, completionCapacityWord, 256);
+    Atomics.store(control, ringBaseWord, memory.allocate(1 << 16));
+    Atomics.store(control, ringCapacityWord, 1 << 16);
+    const directory = createThreadDirectory(memory.memory, mirror);
+    let refreshed = 0;
+    const counted = { ...directory, refresh: () => { refreshed++; return directory.refresh(); } };
+    const systems = createThreadSystems({
+        memory: memory.memory, mirror, directory: counted, control, claims: new Set(["moveLogTest"]),
+        worldWaits: true, post: () => {}, keyNumber: () => 0, numbered: () => 0,
+    });
+    // More entries than the log holds.
+    for (let k = 0; k < 8; k++) commands.add(entity, amount, k);
+    queue();
+    synchronize(state);
+    const post = (input: boolean): void => {
+        const words = new Float64Array(memory.memory.buffer, payload, 32);
+        words[payloadSequence] = 1;
+        words[payloadSync] = Atomics.load(log.header, logSyncWord) >>> 0;
+        words[payloadCount] = 0;
+        words[payloadInput] = input ? 1 : 0;
+        Atomics.store(control, taskPostedWord, 1);
+    };
+    return { state, mirror, entity, commands, queue, systems, post, done: () => Atomics.load(control, taskDoneWord) === 1, refreshes: () => refreshed };
+};
+
 describe("the move log", () => {
     it("gives a joined thread's columns the inline world's values and ticks after every sync point, replaying its log", () => {
         for (const seed of [1, 2, 3, 4]) {
@@ -323,5 +368,62 @@ describe("the move log", () => {
         state.queued.push({ buffer: target.buffer, guarded: true });
         synchronize(state);
         expect(words[record + recordCount]).toBe(4);
+    });
+    it("runs a thread's task once its rebuild failed for a sync point applied during it, with no wake after", async () => {
+        const { state, mirror, entity, commands, queue, systems, post, done } = lapped();
+        // A sync point applies while the thread rebuilds, after it read the structure epoch, and none follows it.
+        const through = mirror.finalize;
+        let applied = false;
+        mirror.finalize = (sync, old) => {
+            if (!applied) {
+                applied = true;
+                commands.add(entity, amount, 9);
+                queue();
+                synchronize(state);
+            }
+            return through === null || through(sync, old);
+        };
+        post(false);
+        expect(systems.process()).toBe(false);
+        expect(applied).toBe(true);
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(done()).toBe(true);
+    });
+    it("runs a thread's task once the sync point its rebuild found applying is applied", async () => {
+        const { state, mirror, entity, commands, queue, systems, post, done, refreshes } = lapped();
+        commands.add(entity, amount, 9);
+        queue();
+        expect(prepareSync(state)).toBe(true);
+        expect(rebuild(mirror)).toBe("moved");
+        post(false);
+        expect(systems.process()).toBe(false);
+        const tried = refreshes();
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(done()).toBe(false);
+        // It waits on the structure epoch, trying nothing until the sync point is applied.
+        expect(refreshes()).toBe(tried);
+        applySync(state);
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(done()).toBe(true);
+    });
+    it("keeps a thread's event loop while its task waits for its input, after a rebuild outside a task found a sync point applying", async () => {
+        const { state, mirror, entity, commands, queue, systems, post, done, refreshes } = lapped();
+        commands.add(entity, amount, 9);
+        queue();
+        expect(prepareSync(state)).toBe(true);
+        // Its finalizers replay, and the rebuild finds the sync point applying.
+        mirror.stagedTransfers = 1;
+        systems.finalize();
+        applySync(state);
+        // A task whose input is posted after it: nothing runs it until the input arrives.
+        post(true);
+        expect(systems.process()).toBe(false);
+        const before = refreshes();
+        for (let k = 0; k < 200; k++) await Promise.resolve();
+        const tries = refreshes() - before;
+        systems.input(1, { given: true });
+        expect(done()).toBe(true);
+        // None while the thread's event loop goes on, so the input's message can arrive.
+        expect(tries).toBe(0);
     });
 });

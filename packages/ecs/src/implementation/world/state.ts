@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { createHolds, type Holds } from './stop-lists.js';
 import type { Entity } from '../../interface/entity/entity.js';
-import { declarationOf, firstKeyOf, kindOf, labelOf } from '../../interface/registry/index.js';
+import { declarationOf, firstKeyOf, kindOf, labelOf, whyUnregistered } from '../../interface/registry/index.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
 import type { SpawnBatch } from './staging.js';
 import type { CommandBuffer } from './buffer.js';
@@ -15,6 +15,7 @@ import type { FinalizerRunner, Thrown } from './finalizers.js';
 import { createPlan, type Plan } from './plan.js';
 import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
 import { layoutOf, objectLayout, type Layout } from '../../interface/registry/layout.js';
+import { numberConstants } from '../../interface/registry/schemas.js';
 import { createMemory, type Memory } from './memory.js';
 import { createStrings, type StringStore } from './strings.js';
 import { createLayoutDirectory, type LayoutDirectory } from './layout-directory.js';
@@ -138,8 +139,9 @@ export type State = {
     readonly batches: SpawnBatch[];
     readonly batchByKey: Map<string, SpawnBatch>;
     /**
-     * Lists of components commands named, by their sorted ids; archetypes by their program-wide index, and the last
-     * eight plain lists, which find them first.
+     * Lists of components commands named, by their sorted ids; lists the build gave indexes, and those made at runtime
+     * that keep one while their keys stay the same, by their index; and the last eight made at runtime, by their keys,
+     * which find copies of them before they keep their own (`lists.ts`).
      */
     readonly lists: Map<string, readonly ListShape[]>;
     readonly byIndex: ListShape[];
@@ -165,6 +167,12 @@ export type State = {
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
     readonly wasm: boolean;
     readonly simd: boolean;
+    /**
+     * Rows of an archetype a kernel runs here at which it wants the pool, while none is started: infinite with a pool,
+     * or without workers to start. A kernel reaching it sets `poolWanted`, and the next run starts the pool.
+     */
+    poolThreshold: number;
+    poolWanted: boolean;
     /** The sync point's plan, kept from planning to applying. */
     readonly plan: Plan;
     /** A sync point between planning and applying: its queued buffers, reservations and tick. */
@@ -298,6 +306,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         rows: new Map(),
         wasm,
         simd,
+        poolThreshold: Infinity,
+        poolWanted: false,
         plan: createPlan(),
         syncing: null,
         carried: null,
@@ -367,7 +377,7 @@ export const idOf = (state: State, key: Key): number => {
         return id;
     }
     const declaration = declarationOf(key);
-    if (declaration === undefined) throw new Error(`"${labelOf(key)}" has no registered schema; import the module that registers it.`);
+    if (declaration === undefined) throw new Error(`"${labelOf(key)}" has no registered schema: ${whyUnregistered(key)}.`);
     const { structure } = state;
     // A host gets its id first, so stratifying with the new edge can name it; a cycle throws before anything is
     // recorded.
@@ -413,15 +423,19 @@ export const idOf = (state: State, key: Key): number => {
 };
 
 /**
- * What a resource or derived component starts at: its declaration's default or its schema's, or `null` when its type
- * allows leaving it out.
+ * What a resource or derived component starts at: a new empty `Map` or `Set` when it starts fresh, so each world has
+ * its own; its declaration's default, which the build gives; or `null` when its type allows leaving it out.
  */
 export const defaultOf = (key: Key): unknown => {
     const declaration = declarationOf(key);
     if (declaration === undefined) return null;
+    if (declaration.fresh === "Map") return new Map();
+    if (declaration.fresh === "Set") return new Set();
     if ("default" in declaration) return declaration.default;
     const { type } = declaration;
-    return type !== undefined && "default" in type ? type.default : null;
+    if (type === undefined) return null;
+    // A union of number constants starts at its first, so its value is always one of them.
+    return numberConstants(type)?.[0] ?? null;
 };
 
 /**

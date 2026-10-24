@@ -13,10 +13,12 @@ export type Snapshot = {
     readonly hint: string;
     readonly read: (path: Path) => Expression;
     readonly leaves: Map<string, { readonly local: number; readonly value: Expression }>;
+    /** Of an optional component's whole value: whether the call's archetype has it, which tests for undefined read. */
+    readonly presence: Expression | null;
 };
 
-export const createSnapshot = (keyword: "const" | "let", hint: string, read: (path: Path) => Expression): Snapshot =>
-    ({ keyword, hint, read, leaves: new Map() });
+export const createSnapshot = (keyword: "const" | "let", hint: string, read: (path: Path) => Expression, presence: Expression | null = null): Snapshot =>
+    ({ keyword, hint, read, leaves: new Map(), presence });
 
 /** The local holding one leaf of `snapshot`. */
 export const snapshotLeaf = (unit: Unit, snapshot: Snapshot, path: Path): number => {

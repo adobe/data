@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Finalizer, System, World } from "../index.js";
+import { Finalizer, System, World } from "../index.js";
 
-const handle = Symbol("handle");
+const handle = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -10,13 +10,11 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(handle, { type: { type: "number" } });
-
 /** What handles name outside the world, as GPU buffers and DOM nodes are. */
 const open = new Set<number>();
 
 // Runs for each entity that stops matching, whatever the cause, reading its values from before.
-Finalizer.create({ components: { read: [handle] } }, row => {
+Finalizer.create({ components: { with: [handle] } }, row => {
     open.delete(row[handle]);
 });
 
@@ -26,7 +24,7 @@ const spawn = System.create(({ commands }) => {
         commands.spawn([handle])({ [handle]: id });
     }
 });
-const destroy = System.create({ components: { read: [handle] } }, (row, { commands }) => {
+const destroy = System.create({ components: { with: [handle] } }, (row, { commands }) => {
     if (row[handle] === 7) commands.despawn(row.entity);
     else commands.remove(row.entity, handle);
 });

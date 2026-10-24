@@ -46,7 +46,7 @@ describe("systems on a joined thread", () => {
         expect(actual.reports).toEqual(expected.reports);
         expect(expected.warnings.every(names => names.length === 0)).toBe(true);
         // Every tick waits for the joined thread's tiers.
-        expect(actual.warnings[1]).toEqual(["threadSystemsTest/describe", "threadSystemsTest/relabel", "threadSystemsTest/breed", "threadSystemsTest/tally", "threadSystemsTest/watchCaptions", "threadSystemsTest/repaint", "threadSystemsTest/peek"]);
+        expect(actual.warnings[1]).toEqual(["describe", "relabel", "breed", "tally", "watchCaptions", "repaint", "peek"]);
         await remote.dispose();
         await world.dispose();
     });
@@ -65,10 +65,10 @@ describe("systems on a joined thread", () => {
         const { world, remote } = await joined();
         await world.run(crowd, { count: 1 });
         const given = await runReported(world, giveKept);
-        expect(given.failures.map(failure => [failure.name, failure.message])).toEqual([["threadSystemsTest/giveKept", '"threadSystemsTest/kept" is a string, which only the world\'s thread writes, so a command on another thread gives it only its start.']]);
+        expect(given.failures.map(failure => [failure.name, failure.message])).toEqual([["giveKept", '"threadSystemsTest/kept" is a string, which only the world\'s thread writes, so a command on another thread gives it only its start.']]);
         expect(given.dropped).toBe(1);
         const spawned = await runReported(world, spawnKept);
-        expect(spawned.failures.map(failure => [failure.name, failure.message])).toEqual([["threadSystemsTest/spawnKept", '"threadSystemsTest/kept" is a string, which only the world\'s thread writes, so a command on another thread gives it only its start.']]);
+        expect(spawned.failures.map(failure => [failure.name, failure.message])).toEqual([["spawnKept", '"threadSystemsTest/kept" is a string, which only the world\'s thread writes, so a command on another thread gives it only its start.']]);
         expect(await Observe.toPromise(Observe.count(world, { required: [kept] }))).toBe(0);
         await remote.dispose();
         await world.dispose();
@@ -80,8 +80,8 @@ describe("systems on a joined thread", () => {
         const leaving = remote.dispose();
         const report = await runReported(world, write);
         await leaving;
-        expect(report.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["thread", "threadSystemsTest/write", 'Thread "threadSystemsTest" is gone, so its systems don\'t run.']]);
-        expect(report.skipped).toEqual(["threadSystemsTest/write"]);
+        expect(report.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["thread", "write", 'Thread "threadSystemsTest" is gone, so its systems don\'t run.']]);
+        expect(report.skipped).toEqual(["write"]);
         const [entity] = await Observe.toPromise(Observe.select(world, { required: [uid] }));
         expect(await runReported(world, write)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         expect(await Observe.toPromise(Observe.entity(world, entity, { required: [caption] }))).toEqual({ [caption]: { text: "written" } });
@@ -111,7 +111,7 @@ describe("systems on a joined thread", () => {
             return ran;
         };
         const failuresOf = async (ran: number | null) => ran === null ? null : (await reportOf(world, ran)).failures.map(failure => [failure.kind, failure.name, failure.message]);
-        const failed = [["system", "threadSystemsTest/write", `This thread's memory is ${pages * pageBytes} bytes, short of the ${(pages + 1) * pageBytes} the world stored.`]];
+        const failed = [["system", "write", `This thread's memory is ${pages * pageBytes} bytes, short of the ${(pages + 1) * pageBytes} the world stored.`]];
         // Read once every run ran, as the thread saw them.
         const runs = [await short(), await world.run(write), await short(), await world.run(write)];
         expect(await Promise.all(runs.map(failuresOf))).toEqual([failed, [], failed, []]);

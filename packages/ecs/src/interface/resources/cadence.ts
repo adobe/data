@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Resource } from '../resource/resource.js';
+import { registerResource } from '../registry/declarations.js';
 
 /** The cadence's value, for the implementation: `Resource.Value<typeof cadence>`. */
 export type Cadence = { readonly kind: "frame" } | { readonly kind: "fixed"; readonly step: number; readonly maxSteps?: number };
@@ -17,12 +17,12 @@ declare module '@adobe/ecs' {
     }
 }
 
-Resource.register(cadence, {
+registerResource(cadence, {
     type: {
         anyOf: [
             { type: "object", properties: { kind: { const: "frame" } } },
             { type: "object", properties: { kind: { const: "fixed" }, step: { type: "number", minimum: 0 }, maxSteps: { type: "integer", minimum: 1 } }, required: ["kind", "step"] },
         ],
-        default: { kind: "frame" },
     },
+    default: { kind: "frame" },
 });

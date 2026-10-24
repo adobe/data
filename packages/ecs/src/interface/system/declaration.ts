@@ -1,36 +1,39 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Index } from '../indexes/index-type.js';
 import type { Resource } from '../resource/resource.js';
-import type { Schema } from '../schema/schema.js';
-import type { ComponentAccess, ResourceAccess, SystemLookup, Up } from './access.js';
-import type { Name } from './name.js';
+import type { ComponentAccess, ComponentLists, ResourceAccess, ResourceLists, SystemLookup, SystemLookupLists, Up, UpLists } from './access.js';
 import type { Shader } from './render.js';
 import type { System } from './system.js';
-import type { OperatorOf, Reduced } from '../resource/reduction.js';
 
 /**
  * A system never declares its thread: it runs on the one its object components and resources live on, those it
- * reads, writes or filters on by change, through `components`, `lookup`, `up` and `resources` but `has` and `not`.
- * Without them, a kernel runs on the kernel pool and any other system on `"world"`.
+ * reads, writes or filters on by change, through its row, lookups, `up` and resources. Without them, a kernel runs on
+ * the kernel pool and any other system on `"world"`. A declaration says only what its body can't show: which entities
+ * it runs over, its filters and conditions, and its order; the build infers what the body reads, writes and reduces.
  */
 export type Declaration = {
-    readonly name?: Name;
     /**
-     * Compiled to a kernel, which the build rejects if the body leaves the kernel subset. Values in `components` and
-     * `lookup` must be structs and resources read-only. Without it, the system runs as written, on its thread.
-     * - `"cpu"`: runs on the kernel pool. - `"gpu"`: also has no lookups, change filters, commands or loops, and only
-     *   4-byte scalar values, its `up` included. It runs as a   compute shader in a world with a GPU, and as a `"cpu"`
-     *   kernel in one without. Every matched row counts as   changed in what it writes.
+     * Whether its body compiles to a kernel, a function the build compiles to run on every matched row, in parallel, on
+     * the kernel pool. Values in `components` and `lookup` must be structs and resources read-only.
+     * - Without it, a system with components compiles when its body is in the kernel subset and its declaration allows
+     *   it, and otherwise runs as written, computing as the body as written does. A system without components runs once,
+     *   as written.
+     * - `true`: compiles, or the build fails saying why. Its arithmetic may round each step to storage precision, as
+     *   WASM's f32 SIMD lanes do, so its results may differ from the body as written.
+     * - `false`: runs as written, on its thread.
+     * - `"gpu"`: also has no lookups, change filters, commands or loops, and only 4-byte scalar values, its `up`
+     *   included. It runs as a compute shader in a world with a GPU, and as a kernel on the pool in one without. Every
+     *   matched row counts as changed in what it writes.
      */
-    readonly kernel?: "cpu" | "gpu";
-    /** The entities it runs over, and what it reads and writes of theirs. Omitted for a system that runs once per run. */
+    readonly kernel?: boolean | "gpu";
+    /** The entities it runs over. Omitted for a system that runs once per run. */
     readonly components?: ComponentAccess;
     readonly lookup?: { readonly [name: string]: SystemLookup };
     /**
-     * Runs rows in depth order through `through`, so each reads its parent's `read` values after the parent ran, as
-     * the context's `up`, or null for a row without a parent. With change filters, a row also passes when its parent,
-     * or what it reads of its parent, changed since the system last ran, or it moved to another archetype, as removing
-     * its parent moves it. Rows on or under a parent cycle don't run.
+     * Runs rows in depth order through `through`, so each reads its parent's values after the parent ran, as the
+     * context's `up`, or null for a row without a parent. With change filters, a row also passes when its parent, or
+     * what it reads of its parent, changed since the system last ran, or it moved to another archetype, as removing its
+     * parent moves it. Rows on or under a parent cycle don't run.
      */
     readonly up?: Up;
     /**
@@ -40,14 +43,10 @@ export type Declaration = {
      */
     readonly order?: Index<{ readonly sorted: true }>;
     readonly resources?: ResourceAccess;
-    /** The resources its body contributes to, each with the operator its `reduce` trait declares. */
-    readonly reduce?: { readonly [K in Reduced]?: OperatorOf<K> };
-    /** The object of named fields passed to each run. A system with input can't use `added` or `changed`. */
-    readonly input?: Extract<Schema, { readonly type: "object" }>;
     /**
-     * The input field naming the one entity it runs on: its body runs once, on that entity's row, when the entity is
-     * alive and matches `components`, and not at all otherwise. Needs `components`; not with `kernel`, `up`, `order`
-     * or `reduce`.
+     * The field of its body's input naming the one entity it runs on: its body runs once, on that entity's row, when
+     * the entity is alive and matches `components`, and not at all otherwise. Needs `components`; not with `kernel`,
+     * `up` or `order`, nor with a body that reduces.
      */
     readonly target?: string;
     /** Makes this a render system (see `render`): its body records GPU work over the GPU copy of the components it names. */
@@ -63,4 +62,12 @@ export type Declaration = {
      * state; changes nothing; never ordered; doesn't keep the loop ticking.
      */
     readonly observer?: true;
+};
+
+/** A declaration as the world takes it: the build's inferred reads, writes and reductions joined with what it declares. */
+export type Resolved = Omit<Declaration, "components" | "lookup" | "up" | "resources"> & {
+    readonly components?: ComponentLists;
+    readonly lookup?: { readonly [name: string]: SystemLookupLists };
+    readonly up?: UpLists;
+    readonly resources?: ResourceLists;
 };

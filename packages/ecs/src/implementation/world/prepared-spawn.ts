@@ -4,9 +4,8 @@ import type { Essential } from '../../interface/component/value.js';
 import type { Entity } from '../../interface/entity/entity.js';
 import { addCommand, pushCommand, pushComponent, type CommandBuffer } from './buffer.js';
 import { commandsTarget, type CommandsTarget } from './commands.js';
-import { listShapeOf, positionalOf, type ListShape, type Positional } from './lists.js';
+import { listIndexOf, listShapeOf, positionalOf, type ListShape, type Positional } from './lists.js';
 import type { Key, State } from './state.js';
-import { archetypeIndexOf } from '../../interface/registry/index.js';
 
 type TargetedCommands = Commands & { readonly [commandsTarget]: CommandsTarget };
 
@@ -22,17 +21,17 @@ const valuesOf = (keys: readonly Key[], values: readonly unknown[]): { [key: str
 /** What a site resolved for a world and shape. */
 type Planned = { readonly state: State; readonly shape: ListShape };
 
-/** A site's plans: by archetype index, for the world that last used it, and by shape, which belongs to one world and is held only while it lives. */
-type Plans<P> = { readonly byIndex: (P | undefined)[]; readonly byShape: WeakMap<ListShape, P> };
+/** A site's plans, each for the world that last used it: by its list's index, and by its shape's index in that world. */
+type Plans<P> = { readonly byIndex: (P | undefined)[]; readonly byShape: (P | undefined)[] };
 
-const createPlans = <P>(): Plans<P> => ({ byIndex: [], byShape: new WeakMap() });
+const createPlans = <P>(): Plans<P> => ({ byIndex: [], byShape: [] });
 
 /**
  * A site's plan for a world and list: a kept one, else one `make` makes for its shape and the site's keys, kept from
  * then on. `make` is one function per kind of site, so finding a plan allocates nothing.
  */
 const planFor = <P extends Planned>(plans: Plans<P>, state: State, list: readonly unknown[], site: readonly Key[], make: (state: State, shape: ListShape, site: readonly Key[]) => P): P => {
-    const index = archetypeIndexOf(list);
+    const index = listIndexOf(list);
     const indexed = index >= 0 ? plans.byIndex[index] : undefined;
     // Kept small, so it inlines into the systems spawning and adding: the rest is outlined.
     return indexed !== undefined && indexed.state === state ? indexed : planned(plans, state, list, site, make, index);
@@ -41,12 +40,14 @@ const planFor = <P extends Planned>(plans: Plans<P>, state: State, list: readonl
 /** A site's plan other than one kept by archetype index for this world. */
 const planned = <P extends Planned>(plans: Plans<P>, state: State, list: readonly unknown[], site: readonly Key[], make: (state: State, shape: ListShape, site: readonly Key[]) => P, index: number): P => {
     const shape = listShapeOf(state, list);
-    let plan = plans.byShape.get(shape);
-    if (plan === undefined) {
+    let plan = plans.byShape[shape.index];
+    if (plan === undefined || plan.shape !== shape) {
         plan = make(state, shape, site);
-        plans.byShape.set(shape, plan);
+        plans.byShape[shape.index] = plan;
     }
-    if (index >= 0) plans.byIndex[index] = plan;
+    // A list made at runtime has an index once resolved.
+    const kept = index >= 0 ? index : listIndexOf(list);
+    if (kept >= 0) plans.byIndex[kept] = plan;
     return plan;
 };
 

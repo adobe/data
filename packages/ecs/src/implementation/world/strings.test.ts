@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import type { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, join } from "./create.js";
@@ -24,60 +22,54 @@ declare module "@adobe/ecs" {
         [note]: { type: string | null };
     }
     export interface Resources {
-        [mode]: { type: "edit" | "view" };
+        [mode]: { type: "edit" | "view"; default: "view" };
         [title]: { type: string };
     }
 }
 
-Component.register(label, { type: { type: "string" } });
-Component.register(order, { type: { type: "number" } });
-Component.register(tagged, { type: { const: true } });
-Component.register(note, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Resource.register(mode, { type: { anyOf: [{ const: "edit" }, { const: "view" }], default: "view" } });
-Resource.register(title, { type: { type: "string", default: "" } });
 
 /** Text of every kind a string holds: none, letters, astral characters as surrogate pairs, and a long run. */
 const textOf = (n: number): string => n % 4 === 0 ? "" : n % 4 === 1 ? `item ${n}` : n % 4 === 2 ? `✓ ${n} 😀 naïve` : `${"long ".repeat(40)}${n}`;
 
-const spawn = System.create({ name: "stringsTest/spawn", input: { type: "object", properties: { count: { type: "integer" }, from: { type: "integer" } } } }, ({ input, commands }) => {
+const spawn = System.create({}, ({ commands }, input: { readonly count: number; readonly from: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([label, order])({ [label]: textOf(input.from + i), [order]: input.from + i });
 });
 
 /** `count` rows with labels of 400 code units, whose records are 1024-byte blocks of the arena. */
-const spawnLong = System.create({ name: "stringsTest/spawnLong", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const spawnLong = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([label, order])({ [label]: `${i}`.padStart(400, "·"), [order]: i });
 });
 
 /** A run over every row that changes nothing, for its sync point. */
-const pass = System.create({ name: "stringsTest/pass", components: { read: [order] } }, row => { void row[order]; });
+const pass = System.create({ components: { with: [order] } }, row => { void row[order]; });
 
-const rename = System.create({ name: "stringsTest/rename", input: { type: "object", properties: { suffix: { type: "string" } } }, components: { read: [order], write: [label] } }, (row, { input }) => {
+const rename = System.create({ components: { with: [order, label] } }, (row, _context, input: { readonly suffix: string }) => {
     row[label] = `${textOf(row[order])}${input.suffix}`;
 });
 
-const relabel = System.create({ name: "stringsTest/relabel", input: { type: "object", properties: { suffix: { type: "string" } } }, components: { read: [order], has: [label] } }, (row, { input, commands }) => {
+const relabel = System.create({ components: { with: [order, label] } }, (row, { commands }, input: { readonly suffix: string }) => {
     commands.add(row.entity, label, `${textOf(row[order])}${input.suffix}`);
 });
 
-const tag = System.create({ name: "stringsTest/tag", components: { has: [label] } }, (row, { commands }) => commands.add(row.entity, tagged));
-const untag = System.create({ name: "stringsTest/untag", components: { has: [tagged] } }, (row, { commands }) => commands.remove(row.entity, tagged));
-const unlabel = System.create({ name: "stringsTest/unlabel", components: { has: [label] } }, (row, { commands }) => commands.remove(row.entity, label));
-const despawn = System.create({ name: "stringsTest/despawn", components: { has: [order] } }, (row, { commands }) => commands.despawn(row.entity));
-const annotate = System.create({ name: "stringsTest/annotate", components: { read: [order], write: [note] } }, row => {
+const tag = System.create({ components: { with: [label] } }, (row, { commands }) => commands.add(row.entity, tagged));
+const untag = System.create({ components: { with: [tagged] } }, (row, { commands }) => commands.remove(row.entity, tagged));
+const unlabel = System.create({ components: { with: [label] } }, (row, { commands }) => commands.remove(row.entity, label));
+const despawn = System.create({ components: { with: [order] } }, (row, { commands }) => commands.despawn(row.entity));
+const annotate = System.create({ components: { with: [order, note] } }, row => {
     row[note] = row[order] % 3 === 0 ? null : `note ${row[order]}`;
 });
-const unannotate = System.create({ name: "stringsTest/unannotate", components: { write: [note] } }, row => {
+const unannotate = System.create({ components: { with: [note] } }, row => {
     row[note] = null;
 });
-const noted = System.create({ name: "stringsTest/noted", components: { has: [order], not: [note] } }, (row, { commands }) => commands.add(row.entity, note, null));
-const despawnEven = System.create({ name: "stringsTest/despawnEven", components: { read: [order] } }, (row, { commands }) => {
+const noted = System.create({ components: { with: [order], not: [note] } }, (row, { commands }) => commands.add(row.entity, note, null));
+const despawnEven = System.create({ components: { with: [order] } }, (row, { commands }) => {
     if (row[order] % 2 === 0) commands.despawn(row.entity);
 });
-const labelAgain = System.create({ name: "stringsTest/labelAgain", input: { type: "object", properties: { suffix: { type: "string" } } }, components: { read: [order], not: [label] } }, (row, { input, commands }) => {
+const labelAgain = System.create({ components: { with: [order], not: [label] } }, (row, { commands }, input: { readonly suffix: string }) => {
     commands.add(row.entity, label, `${textOf(row[order])}${input.suffix}`);
 });
 
-const edit = System.create({ name: "stringsTest/edit", input: { type: "object", properties: { title: { type: "string" } } }, resources: { write: [mode, title] } }, ({ input, resources }) => {
+const edit = System.create({}, ({ resources }, input: { readonly title: string }) => {
     resources[mode] = "edit";
     resources[title] = input.title;
 });

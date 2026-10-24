@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Resource, System } from "../../../../index.js";
+import { System } from "../../../../index.js";
 import { done } from "../todos/data.js";
 import { row } from "../todos/dom.js";
 import { TodoRow } from "../todos/elements/todo-row.js";
@@ -7,15 +7,13 @@ import { filter, type Filter } from "./data.js";
 import { TodoFilters } from "./elements/todo-filters.js";
 
 /** The page's filter buttons; null until the page provides them. */
-export const filters = Symbol("filters");
+export const filters = Symbol();
 
 declare module "@adobe/ecs" {
     interface Resources {
         [filters]: { type: TodoFilters | null; thread: "main" };
     }
 }
-
-Resource.register(filters, { thread: "main" });
 
 /** Whether the filter leaves a todo out. */
 const leavesOut = (chosen: Filter, isDone: boolean): boolean => chosen === "completed" ? !isDone : chosen === "active" && isDone;
@@ -40,10 +38,9 @@ const focusNearest = (hiding: Element, chosen: Filter): void => {
  * README).
  */
 export const filterRows = System.create({
-    name: "filter/filterRows",
     observer: true,
-    components: { read: [done, row], changed: [done, row] },
-    resources: { read: [filter], changed: [filter] },
+    components: { with: [done, row], changed: [done, row] },
+    resources: { changed: [filter] },
 }, (item, { resources }) => {
     const element = item[row];
     const hidden = leavesOut(resources[filter], item[done]);
@@ -53,9 +50,8 @@ export const filterRows = System.create({
 });
 
 export const bindFilters = System.create({
-    name: "filter/bindFilters",
     observer: true,
-    resources: { read: [filter], changed: [filter], is: [filters] },
+    resources: { changed: [filter], is: [filters] },
 }, ({ resources }) => {
     resources[filters].filter = resources[filter];
 });

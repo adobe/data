@@ -14,13 +14,13 @@ export const threadSystemsCases = (load: () => Promise<typeof Fixture>) => descr
     it("are skipped with a \"thread\" failure when the worker dies mid-task, and run on the world's thread once it's gone", async () => {
         const fixture = await load();
         expect(await fixture.diesMidTask()).toEqual({
-            report: { failures: [["thread", "threadSystemsTest/stall", 'Thread "threadSystemsTest" is gone, so its systems don\'t run.']], skipped: ["threadSystemsTest/stall"] },
+            report: { failures: [["thread", "stall", 'Thread "threadSystemsTest" is gone, so its systems don\'t run.']], skipped: ["stall"] },
             after: 0,
         });
     }, 30000);
     it("can't join claiming the thread of a system the joined thread never imported", async () => {
         const fixture = await load();
-        expect(await fixture.unimported()).toBe('System "threadSystemsTest/onlyHere" runs on thread "threadSystemsTest", which the joined thread claiming it never imported.');
+        expect(await fixture.unimported()).toBe('System "onlyHere" runs on thread "threadSystemsTest", which the joined thread claiming it never imported.');
     }, 30000);
     it("don't stall ticks that don't touch their thread when it never yields", async () => {
         const fixture = await load();

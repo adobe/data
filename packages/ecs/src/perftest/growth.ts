@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from "../interface/archetype/archetype.js";
-import { Component } from "../interface/component/component.js";
 import { System } from "../interface/system/system.js";
+import type { F32 } from "../interface/math/index.js";
 
 // A hundred archetypes, each grown at once: what a sync point costs where every archetype it touches grows.
 
@@ -16,7 +15,7 @@ const g6 = Symbol("growth/g6");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [value]: { type: number };
+        [value]: { type: F32 };
         [g0]: { type: true };
         [g1]: { type: true };
         [g2]: { type: true };
@@ -27,30 +26,22 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(g0, { type: { const: true } });
-Component.register(g1, { type: { const: true } });
-Component.register(g2, { type: { const: true } });
-Component.register(g3, { type: { const: true } });
-Component.register(g4, { type: { const: true } });
-Component.register(g5, { type: { const: true } });
-Component.register(g6, { type: { const: true } });
 
 const tags = [g0, g1, g2, g3, g4, g5, g6] as const;
 /** `value` with each of the first 100 sets of the seven tags, by their bits. */
-const hundred = Array.from({ length: 100 }, (_, bits) => Archetype.create([value, ...tags.filter((_, bit) => (bits & (1 << bit)) !== 0)]));
+const hundred = Array.from({ length: 100 }, (_, bits) => [value, ...tags.filter((_, bit) => (bits & (1 << bit)) !== 0)] as const);
 
 /** Spawns `count` entities into each of the hundred archetypes. */
-export const fillEach = System.create({ name: "growth/fillEach", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+export const fillEach = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (const archetype of hundred) for (let i = 0; i < input.count; i++) commands.spawn(archetype)({ [value]: i });
 });
 
 /** One spawn into each of the hundred archetypes. */
-export const spawnEach = System.create({ name: "growth/spawnEach" }, ({ commands }) => {
+export const spawnEach = System.create({}, ({ commands }) => {
     for (const archetype of hundred) commands.spawn(archetype)({ [value]: 0 });
 });
 
 /** A kernel over every row of the hundred archetypes. */
-export const bumpEach = System.create({ name: "growth/bumpEach", kernel: "cpu", components: { write: [value] } }, row => {
+export const bumpEach = System.create({ kernel: true, components: { with: [value] } }, row => {
     row[value] = row[value] + 1;
 });

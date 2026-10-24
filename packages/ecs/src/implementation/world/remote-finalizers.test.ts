@@ -12,6 +12,27 @@ import { indexOf } from "./entities.js";
 import { attach, despawn, eventually, finalized, marked, place, released, retone, scenario, serial, sorted, spawn, throwing, tone, widget } from "./remote-finalizers.test-helper.js";
 import { runReported } from "./reports.test-helper.js";
 
+/** Resources of the world's thread, each added once the thread joined, so the resource entity moves to another archetype. */
+const later = Symbol("remoteFinalizersTest/later");
+const second = Symbol("remoteFinalizersTest/second");
+const third = Symbol("remoteFinalizersTest/third");
+declare module "@adobe/ecs" {
+    export interface Resources {
+        [later]: { type: number };
+        [second]: { type: number };
+        [third]: { type: number };
+    }
+}
+const bump = System.create({}, ({ resources }) => {
+    resources[later] += 1;
+});
+const bumpSecond = System.create({}, ({ resources }) => {
+    resources[second] += 1;
+});
+const bumpThird = System.create({}, ({ resources }) => {
+    resources[third] += 1;
+});
+
 // Finalizers on a joined thread, with the world and the thread on this one, joined through a MessageChannel.
 
 /** The first value an observer gives that `accept` takes. */
@@ -50,7 +71,7 @@ describe("finalizers on a joined thread", () => {
         reset();
         const seen: (readonly symbol[] | null)[][] = [];
         let watching = false;
-        Finalizer.changes({ name: "remoteFinalizersTest/everything" }, changes => {
+        Finalizer.changes({}, changes => {
             if (watching) for (const group of changes.groups) seen.push([group.to, group.added]);
         });
         const { world, remote } = await joined();
@@ -89,7 +110,7 @@ describe("finalizers on a joined thread", () => {
         let reusedEarly = 0;
         let reused = 0;
         // Spawns check each entity they reserve: an index whose last entity stopped is reused only once it was finalized.
-        const check = System.create(identify({ name: "remoteFinalizersTest/check", input: { type: "object", properties: { serial: { type: "integer" } } } }, "remoteFinalizersTest#check"), ({ input, commands }) => {
+        const check = System.create(identify({}, "remoteFinalizersTest#check"), ({ commands }, input: { readonly serial: number }) => {
             const entity = commands.spawn([serial, place, marked, widget])({ [serial]: input.serial, [place]: [0, 0], [widget]: null });
             const before = stopped.get(indexOf(entity));
             if (before === undefined) return;
@@ -124,7 +145,7 @@ describe("finalizers on a joined thread", () => {
             await new Promise(resolve => setTimeout(resolve, 1));
             report = await runReported(world, despawn, { serials: [] });
         }
-        expect(report.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["finalizer", "remoteFinalizersTest/release", "remoteFinalizersTest: 1 throws"]]);
+        expect(report.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["finalizer", "release", "remoteFinalizersTest: 1 throws"]]);
         expect((await runReported(world, despawn, { serials: [] })).failures).toEqual([]);
         await remote.dispose();
         await world.dispose();
@@ -156,17 +177,63 @@ describe("finalizers on a joined thread", () => {
         await world.dispose();
         expect(released.map(stop => stop.serial)).toEqual([0, 1, 2]);
     });
+    it("read their thread's object resource as the thread holds it, from the first sync point after joining and once the resource entity moved before they ran", async () => {
+        reset();
+        const { world, remote } = await joined();
+        // Stops the thread runs as it first rebuilds, before it holds any row.
+        await world.run(spawn, { from: 0, count: 3 });
+        await world.run(despawn, { serials: [0] });
+        expect(await eventually(() => released.length === 1)).toBe(true);
+        await world.run(retone, { tone: "soft" });
+        // Not awaited: the resource entity moves to another archetype before the thread replays the stop's sync.
+        await Promise.all([world.run(despawn, { serials: [1] }), world.run(bump)]);
+        expect(await eventually(() => released.length === 2)).toBe(true);
+        expect(released.map(stop => [stop.serial, stop.tone])).toEqual([[0, "quiet"], [1, "soft"]]);
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("read their thread's object resource where the resource entity moved since it was last found, before a later write applies", async () => {
+        reset();
+        const { world, remote } = await joined();
+        await world.run(spawn, { from: 0, count: 3 });
+        await world.run(despawn, { serials: [0] });
+        expect(await eventually(() => released.length === 1)).toBe(true);
+        // Replayed, not rebuilt: the resource entity is found in the mirror.
+        await world.run(despawn, { serials: [1] });
+        expect(await eventually(() => released.length === 2)).toBe(true);
+        await world.run(bump);
+        await world.run(retone, { tone: "soft" });
+        // The write after the stop's sync is a task the thread runs once it replayed that sync.
+        await Promise.all([world.run(despawn, { serials: [2] }), world.run(retone, { tone: "loud" })]);
+        expect(await eventually(() => released.length === 3)).toBe(true);
+        expect(released.map(stop => [stop.serial, stop.tone])).toEqual([[0, "quiet"], [1, "quiet"], [2, "soft"]]);
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("read their thread's object resource once the resource entity moved twice before the thread replayed", async () => {
+        reset();
+        const { world, remote } = await joined();
+        await world.run(spawn, { from: 0, count: 2 });
+        await world.run(despawn, { serials: [0] });
+        expect(await eventually(() => released.length === 1)).toBe(true);
+        await world.run(retone, { tone: "soft" });
+        await Promise.all([world.run(despawn, { serials: [1] }), world.run(bumpSecond), world.run(bumpThird)]);
+        expect(await eventually(() => released.length === 2)).toBe(true);
+        expect(released.map(stop => [stop.serial, stop.tone])).toEqual([[0, "quiet"], [1, "soft"]]);
+        await remote.dispose();
+        await world.dispose();
+    });
     // Last: the finalizers it creates stay in the program.
     it("created after the claim run there; one the thread can't name doesn't activate, reported once", async () => {
         reset();
         const { world, remote } = await joined();
         await world.run(spawn, { from: 0, count: 2 });
         const late: string[] = [];
-        Finalizer.create(identify({ name: "remoteFinalizersTest/late", components: { read: [widget, serial] } }, "remoteFinalizersTest#late"), row => { late.push(`${row[serial]}:${String(row[widget])}`); });
+        Finalizer.create(identify({ components: { with: [widget, serial] } }, "remoteFinalizersTest#late"), row => { late.push(`${row[serial]}:${String(row[widget])}`); });
         // Declared in a function, so the build gives it no id.
-        Finalizer.create({ name: "remoteFinalizersTest/unnamed", components: { read: [widget] } }, () => {});
+        Finalizer.create({ components: { with: [widget] } }, row => { void row[widget]; });
         const first = await runReported(world, despawn, { serials: [0] });
-        expect(first.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["finalizer", "remoteFinalizersTest/unnamed", 'Finalizer "remoteFinalizersTest/unnamed" runs on thread "remoteFinalizersTest", which a joined thread fills, and has no id, so that thread can\'t name it; the build gives top-level finalizers one.']]);
+        expect(first.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["finalizer", expect.stringMatching(/^finalizer #\d+$/), expect.stringMatching(/^Finalizer "finalizer #\d+" runs on thread "remoteFinalizersTest", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level finalizers one\.$/)]]);
         expect(await eventually(() => late.length === 1)).toBe(true);
         expect((await runReported(world, despawn, { serials: [1] })).failures).toEqual([]);
         expect(await eventually(() => late.length === 2)).toBe(true);
@@ -174,8 +241,8 @@ describe("finalizers on a joined thread", () => {
         // Placed there by the thread's object resource alone: stops of rows holding none of its objects, which its log
         // has no entries for, run there too.
         const heard: string[] = [];
-        Finalizer.create(identify({ name: "remoteFinalizersTest/heard", components: { read: [serial], not: [widget] }, resources: { read: [tone] } }, "remoteFinalizersTest#heard"), (row, { resources }) => { heard.push(`${row[serial]}:${resources[tone].text}`); });
-        const plain = System.create({ name: "remoteFinalizersTest/plain" }, ({ commands }) => {
+        Finalizer.create(identify({ components: { with: [serial], not: [widget] } }, "remoteFinalizersTest#heard"), (row, { resources }) => { heard.push(`${row[serial]}:${resources[tone].text}`); });
+        const plain = System.create({}, ({ commands }) => {
             for (let k = 0; k < 3; k++) commands.spawn([serial, place])({ [serial]: 50 + k, [place]: [0, 0] });
         });
         await world.run(plain);

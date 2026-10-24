@@ -5,6 +5,10 @@
   "type": "module",
   "sideEffects": false,
   "private": false,
+  "pages": [
+    { "from": "docs", "to": "." },
+    { "from": "dist", "to": "dist" }
+  ],
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"
@@ -19,8 +23,8 @@
   "scripts": {
     "build": "pnpm build-assembly && run-p build:*",
     "build:code": "tsc -b",
-    "build:apidocs": "typedoc",
     "typecheck": "pnpm build-assembly && tsc -b",
+    "docs": "typedoc",
     "build-assembly": "run-p asbuild:release",
     "clean": "rm -rf dist build node_modules",
     "clean-cache": "rm -rf node_modules/.cache",

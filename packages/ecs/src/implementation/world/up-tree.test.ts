@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -24,25 +23,18 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(local, { type: { type: "number" } });
-Component.register(full, { type: { type: "number" } });
-Component.register(filtered, { type: { type: "number" } });
-Component.register(parent, { type: Entity.schema, reference: "weak" });
-Component.register(hidden, { type: { const: true } });
 
 const propagateFull = System.create({
-    name: "upTreeTest/propagateFull",
-    kernel: "cpu",
-    components: { read: [local], write: [full], not: [hidden] },
-    up: { through: parent, read: [full] },
+    kernel: true,
+    components: { with: [local, full], not: [hidden] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[full] = (up === null ? 0 : up[full]) + row[local];
 });
 const propagateFiltered = System.create({
-    name: "upTreeTest/propagateFiltered",
-    kernel: "cpu",
-    components: { read: [local], write: [filtered], changed: [local], not: [hidden] },
-    up: { through: parent, read: [filtered] },
+    kernel: true,
+    components: { with: [local, filtered], changed: [local], not: [hidden] },
+    up: { through: parent },
 }, (row, { up }) => {
     row[filtered] = (up === null ? 0 : up[filtered]) + row[local];
 });
@@ -53,7 +45,7 @@ type Operation =
     | { readonly kind: "reparent"; readonly entity: Entity; readonly to: Entity }
     | { readonly kind: "set"; readonly entity: Entity; readonly local: number };
 const operations: Operation[] = [];
-const apply = System.create({ name: "upTreeTest/apply" }, ({ commands }) => {
+const apply = System.create({}, ({ commands }) => {
     for (const operation of operations.splice(0)) {
         switch (operation.kind) {
             case "spawn":

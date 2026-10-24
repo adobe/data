@@ -6,7 +6,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import type { FromRemoteFinalizersWorker, ToRemoteFinalizersWorker } from "./remote-finalizers-worker.fixture.js";
-import { despawn, released, retitle, scenario, serial, sorted, spawn, spawnTitled, type Released } from "./remote-finalizers.test-helper.js";
+import { despawn, regauge, rehead, released, retitle, scenario, serial, sorted, spawn, spawnHeaded, spawnTitled, type Released, type Surveyed } from "./remote-finalizers.test-helper.js";
 import { fillReports, runReported } from "./reports.test-helper.js";
 
 /**
@@ -66,6 +66,16 @@ const joined = async (world: CreatedWorld): Promise<{ readonly worker: Worker }>
     return { worker };
 };
 
+/** Holds the worker, which runs nothing until the returned function lets it go on. */
+const hold = async (worker: Worker): Promise<() => void> => {
+    const flag = new Int32Array(new SharedArrayBuffer(4));
+    await worker.ask({ kind: "hold", flag });
+    return () => {
+        Atomics.store(flag, 0, 1);
+        Atomics.notify(flag, 0);
+    };
+};
+
 /** What the worker's finalizer saw. */
 const releasedThere = async (worker: Worker): Promise<readonly Released[]> => {
     const reply = await worker.ask({ kind: "released" });
@@ -118,7 +128,7 @@ export const diesHolding = async () => {
 };
 
 /**
- * Titled rows despawned while the worker runs nothing, then the world's thread rewriting the titles of others six
+ * Titled rows despawned while the worker is held, then the world's thread rewriting the titles of others six
  * times, so the records the despawned rows' titles were in are freed and reused before the worker finalizes them:
  * the titles its finalizer read.
  */
@@ -126,10 +136,15 @@ export const titledStops = async () => {
     const world = createWorld({ [workers]: 0 });
     const { worker } = await joined(world);
     await world.run(spawnTitled, { from: 0, count: 50 });
-    await worker.ask({ kind: "pause", milliseconds: 300 });
-    await world.run(despawn, { serials: Array.from({ length: 50 }, (_, k) => k) });
-    await world.run(spawnTitled, { from: 100, count: 50 });
-    for (let round = 0; round < 6; round++) await world.run(retitle, { round });
+    const release = await hold(worker);
+    try {
+        await world.run(despawn, { serials: Array.from({ length: 50 }, (_, k) => k) });
+        await world.run(spawnTitled, { from: 100, count: 50 });
+        for (let round = 0; round < 6; round++) await world.run(retitle, { round });
+    }
+    finally {
+        release();
+    }
     let seen: readonly { readonly serial: number; readonly title: string }[] = [];
     for (let k = 0; k < 200 && seen.length < 50; k++) {
         const reply = await worker.ask({ kind: "entitled" });
@@ -138,4 +153,65 @@ export const titledStops = async () => {
     await worker.terminate();
     await world.dispose();
     return [...seen].sort((a, b) => a.serial - b.serial);
+};
+
+/**
+ * Headed rows despawned with the heading "h0" while the worker is held, then the world's thread writing the heading
+ * and subheading six times, so the records of "h0" and "sh0" are freed and reused before the worker finalizes them,
+ * and the rest despawned once it goes on: what its finalizers of one and two string resources read.
+ */
+export const headedStops = async () => {
+    const world = createWorld({ [workers]: 0 });
+    const { worker } = await joined(world);
+    await world.run(rehead, { heading: "h0" });
+    await world.run(spawnHeaded, { from: 0, count: 20 });
+    const release = await hold(worker);
+    try {
+        await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => k) });
+        for (let round = 1; round <= 6; round++) await world.run(rehead, { heading: `h${round}` });
+    }
+    finally {
+        release();
+    }
+    await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => 10 + k) });
+    let seen: readonly { readonly serial: number; readonly heading: string }[] = [];
+    let both: readonly { readonly serial: number; readonly heading: string; readonly subheading: string }[] = [];
+    for (let k = 0; k < 200 && (seen.length < 20 || both.length < 20); k++) {
+        const reply = await worker.ask({ kind: "headlined" });
+        seen = reply.kind === "headlined" ? reply.headlined : [];
+        both = reply.kind === "headlined" ? reply.both : [];
+    }
+    await worker.terminate();
+    await world.dispose();
+    return { one: [...seen].sort((a, b) => a.serial - b.serial), two: [...both].sort((a, b) => a.serial - b.serial) };
+};
+
+/**
+ * Headed rows despawned at level 0 while the worker is held, then the world's thread writing the level and origin six
+ * times, with resources of mixed widths, and the rest despawned once it goes on: what its finalizers read.
+ */
+export const gaugedStops = async () => {
+    const world = createWorld({ [workers]: 0 });
+    const { worker } = await joined(world);
+    await world.run(regauge, { level: 0 });
+    await world.run(spawnHeaded, { from: 0, count: 20 });
+    const release = await hold(worker);
+    try {
+        await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => k) });
+        for (let round = 1; round <= 6; round++) await world.run(regauge, { level: round });
+    }
+    finally {
+        release();
+    }
+    await world.run(despawn, { serials: Array.from({ length: 10 }, (_, k) => 10 + k) });
+    let seen: readonly { readonly serial: number; readonly level: number; readonly origin: readonly number[] }[] = [];
+    let mixed: readonly Surveyed[] = [];
+    for (let k = 0; k < 200 && (seen.length < 20 || mixed.length < 20); k++) {
+        const reply = await worker.ask({ kind: "gauged" });
+        seen = reply.kind === "gauged" ? reply.gauged : [];
+        mixed = reply.kind === "gauged" ? reply.surveyed : [];
+    }
+    await worker.terminate();
+    await world.dispose();
+    return { linear: [...seen].sort((a, b) => a.serial - b.serial), mixed: [...mixed].sort((a, b) => a.serial - b.serial) };
 };

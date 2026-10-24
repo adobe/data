@@ -1,6 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from '../../interface/archetype/archetype.js';
-import { Component } from '../../interface/component/component.js';
 
 /** Keys and lists another module's kernels import, in `imported-lists.test.ts`. */
 
@@ -15,9 +13,6 @@ declare module "@adobe/ecs" {
         [marked]: { type: true };
     }
 }
-Component.register(ember, { type: { type: "number" } });
-Component.register(glow, { type: { const: true } });
-Component.register(marked, { type: { const: true } });
 
-export const Spark = Archetype.create([ember, glow]);
+export const Spark = [ember, glow] as const;
 export const Marks = [ember, marked] as const;

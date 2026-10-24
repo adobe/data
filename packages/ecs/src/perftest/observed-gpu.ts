@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../interface/component/component.js";
 import type { Entity } from "../interface/entity/entity.js";
 import { gpuDevice } from "../interface/resources/gpu-device.js";
 import { workers } from "../interface/resources/workers.js";
@@ -7,6 +6,7 @@ import { System } from "../interface/system/system.js";
 import { createWorld } from "../implementation/world/create.js";
 import { Observe } from "../observe/index.js";
 import type { Benchmark } from "./benchmark.js";
+import type { F32 } from "../interface/math/index.js";
 
 // An entity observer factory of values a GPU kernel writes: each run reads back what the observer reads.
 
@@ -14,20 +14,18 @@ const heat = Symbol("observedGpu/heat");
 const rate = Symbol("observedGpu/rate");
 declare module "@adobe/ecs" {
     export interface Components {
-        [heat]: { type: number };
-        [rate]: { type: number };
+        [heat]: { type: F32 };
+        [rate]: { type: F32 };
     }
 }
-Component.register(heat, { type: { type: "number", precision: 1 } });
-Component.register(rate, { type: { type: "number", precision: 1 } });
 
 const heated = 100_000;
 let spawned: Entity[] = [];
-const spawn = System.create({ name: "observedGpu/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     spawned = [];
     for (let i = 0; i < heated; i++) spawned.push(commands.spawn([heat, rate])({ [heat]: 0, [rate]: 1 }));
 });
-const warm = System.create({ name: "observedGpu/warm", kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
+const warm = System.create({ kernel: "gpu", components: { with: [rate, heat] } }, row => {
     row[heat] = row[heat] + row[rate];
 });
 

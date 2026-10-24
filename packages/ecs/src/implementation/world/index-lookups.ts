@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Scalar } from '../../interface/registry/layout.js';
 import { encodeScalar, encodeValue, hashWords, orderF32, orderF64, partWords, type KeyPart } from './index-keys.js';
-import { entryWords, findBucket, lengthOf, recordKey, recordLength, recordStart, startOf, type HashView } from './index-hash.js';
+import { entryWords, findBucket, isHashTable, lengthOf, recordKey, recordLength, recordStart, sortBucket, startOf, type HashView } from './index-hash.js';
 import { blockAt, blockBase, bound, firstPosition, treeMaximum, type SortedView } from './index-sorted.js';
 import { sharedRows, type Row, type RowArchetype, type RowHost } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
@@ -41,10 +41,10 @@ export type IndexLookup = {
     readonly watched: readonly number[];
     readonly since: Since;
     /**
-     * How many times the world's archetypes' arrays were replaced, while which rows bound to them stay current: on the
-     * world's thread. Null on a joined thread, whose rows check their archetype's version each time.
+     * How many times archetypes' arrays were replaced, while which rows bound to them stay current: the world's count on
+     * its thread; on a joined thread, its directory's, moved on once a run finds any archetype's views changed.
      */
-    readonly replaced: { readonly count: number } | null;
+    readonly replaced: { readonly count: number };
 };
 
 /** The lookup behind each function bodies are given, for the plugin's call sites. */
@@ -59,6 +59,8 @@ type Pool = {
     readonly rows: (Row | undefined)[];
     readonly archetypes: number[];
     readonly versions: number[];
+    /** By position: the archetype it was bound to, since a joined thread's view of one is made again when it changes. */
+    readonly bound: (LookupArchetype | undefined)[];
     readonly make: (archetype: RowArchetype) => Row;
     /** The lookup's `replaced` count when every row was last checked against its archetype's version. */
     replaced: number;
@@ -72,7 +74,7 @@ const makers = new WeakMap<IndexLookup, (archetype: RowArchetype) => Row>();
 const poolOf = (lookup: IndexLookup): Pool => {
     let make = makers.get(lookup);
     if (make === undefined) makers.set(lookup, make = sharedRows(lookup.rows, lookup.reads, lookup.readIds));
-    return { rows: [], archetypes: [], versions: [], make, replaced: lookup.replaced?.count ?? 0, ahead: 0 };
+    return { rows: [], archetypes: [], versions: [], bound: [], make, replaced: lookup.replaced.count, ahead: 0 };
 };
 
 /** Binds row `n` of a pool to an archetype, making it first if the pool has none there yet. */
@@ -83,12 +85,14 @@ const bindRow = (pool: Pool, n: number, archetypeId: number, archetype: LookupAr
         rows.push(undefined);
         pool.archetypes.push(-1);
         pool.versions.push(-1);
+        pool.bound.push(undefined);
     }
     let found = rows[n];
     if (found === undefined) found = rows[n] = pool.make(archetype);
     else found.bind(archetype);
     pool.archetypes[n] = archetypeId;
     pool.versions[n] = archetype.version;
+    pool.bound[n] = archetype;
     return found;
 };
 
@@ -101,18 +105,22 @@ const madeAhead = 256;
  * body inlines.
  */
 const growPool = (lookup: IndexLookup, pool: Pool, length: number, archetypeId: number): void => {
-    pool.ahead = length;
+    // A first entry that's an unsorted bucket's hole, archetype -1, names none: a later lookup makes them.
     const archetype = lookup.archetypeAt(archetypeId);
     if (archetype === undefined) return;
+    pool.ahead = length;
     const end = Math.min(length, madeAhead);
     for (let n = pool.rows.length; n < end; n++) bindRow(pool, n, archetypeId, archetype);
 };
 
-/** Binds again the rows whose archetype's arrays were replaced since the pool last checked, on the world's thread. */
+/** Whether row `n` of a pool is bound to an archetype as it is now: the same view, its arrays not replaced since. */
+const boundTo = (pool: Pool, n: number, archetype: LookupArchetype): boolean => pool.bound[n] === archetype && pool.versions[n] === archetype.version;
+
+/** Binds again the rows whose archetype's arrays were replaced since the pool last checked. */
 const refreshPool = (lookup: IndexLookup, pool: Pool, replaced: { readonly count: number }): void => {
     for (let n = 0; n < pool.rows.length; n++) {
         const archetype = pool.rows[n] === undefined ? undefined : lookup.archetypeAt(pool.archetypes[n]);
-        if (archetype !== undefined && archetype.version !== pool.versions[n]) bindRow(pool, n, pool.archetypes[n], archetype);
+        if (archetype !== undefined && !boundTo(pool, n, archetype)) bindRow(pool, n, pool.archetypes[n], archetype);
     }
     pool.replaced = replaced.count;
 };
@@ -120,27 +128,22 @@ const refreshPool = (lookup: IndexLookup, pool: Pool, replaced: { readonly count
 /** Binds row `n` again to an entry's archetype, or makes it, when its archetype or that's arrays changed. */
 const reboundAt = (lookup: IndexLookup, pool: Pool, n: number, archetypeId: number, row: number): object | undefined => {
     const { replaced } = lookup;
-    if (replaced !== null && pool.replaced !== replaced.count) refreshPool(lookup, pool, replaced);
+    if (pool.replaced !== replaced.count) refreshPool(lookup, pool, replaced);
     const archetype = lookup.archetypeAt(archetypeId);
     if (archetype === undefined) return undefined;
     const current = pool.rows[n];
-    const found = current !== undefined && pool.archetypes[n] === archetypeId && pool.versions[n] === archetype.version ? current : bindRow(pool, n, archetypeId, archetype);
+    const found = current !== undefined && pool.archetypes[n] === archetypeId && boundTo(pool, n, archetype) ? current : bindRow(pool, n, archetypeId, archetype);
     found.index = row;
     return found.value;
 };
 
-/** Whether row `n` of a pool is bound to its archetype's current arrays, on a joined thread. */
-const currentVersion = (lookup: IndexLookup, pool: Pool, n: number, archetypeId: number): boolean =>
-    pool.versions[n] === lookup.archetypeAt(archetypeId)?.version;
-
 /**
- * Points row `n` of a pool at an entry's archetype and row, binding it again only when its archetype or that's arrays
- * changed: on the world's thread, when any archetype's were replaced since the pool last checked.
+ * Points row `n` of a pool at an entry's archetype and row, binding it again only when its archetype changed, or any
+ * archetype's arrays were replaced since the pool last checked.
  */
 const rowAt = (lookup: IndexLookup, pool: Pool, n: number, archetypeId: number, row: number): object | undefined => {
     const found = pool.rows[n];
-    const { replaced } = lookup;
-    if (found === undefined || pool.archetypes[n] !== archetypeId || (replaced === null ? !currentVersion(lookup, pool, n, archetypeId) : pool.replaced !== replaced.count)) return reboundAt(lookup, pool, n, archetypeId, row);
+    if (found === undefined || pool.archetypes[n] !== archetypeId || pool.replaced !== lookup.replaced.count) return reboundAt(lookup, pool, n, archetypeId, row);
     found.index = row;
     return found.value;
 };
@@ -192,6 +195,8 @@ const hashAt = function (this: HashList, position: number): object | undefined {
     const { bucket, hash } = found;
     const record = bucket * hash.stride;
     if (bucket < 0 || !(position >= 0 && position < hash.records[record + recordLength])) return undefined;
+    // On the world's thread, a bucket a change left unsorted is sorted by the first read by position.
+    if (hash.unsorted !== 0 && isHashTable(hash) && hash.tails[bucket] >= 0) sortBucket(hash, bucket);
     const at = (hash.records[record + recordStart] + position) * entryWords;
     return rowAt(found.lookup, found.pool, position, hash.entries[at + 1], hash.entries[at + 2]);
 };
@@ -308,8 +313,8 @@ const generatedFind = (lookup: IndexLookup, hash: HashView, shape: Shape, list: 
         ...lookup.unique ? [
             `if (bucket < 0 || records[bucket * ${hash.stride} + ${recordLength}] === 0) return null;`,
             `const at = records[bucket * ${hash.stride} + ${recordStart}] * ${entryWords};`,
-            "const archetypeId = table.entries[at + 1], archetype = archetypeAt(archetypeId), row = pool.rows[0];",
-            "if (row === undefined || archetype === undefined || pool.archetypes[0] !== archetypeId || pool.versions[0] !== archetype.version) return rowAt(lookup, pool, 0, archetypeId, table.entries[at + 2]);",
+            "const archetypeId = table.entries[at + 1], row = pool.rows[0];",
+            "if (row === undefined || pool.archetypes[0] !== archetypeId || pool.replaced !== replaced.count) return rowAt(lookup, pool, 0, archetypeId, table.entries[at + 2]);",
             "row.index = table.entries[at + 2];",
             "return row.value;",
         ] : [
@@ -320,9 +325,9 @@ const generatedFind = (lookup: IndexLookup, hash: HashView, shape: Shape, list: 
         "};",
     ].join("\n");
     try {
-        const factory = new Function("key", "table", "found", "list", "pool", "lookup", "rowAt", "growPool", "encodeValue", "parts", "orderF32", "orderF64", "f32", "f64", "u32", "u8", "archetypeAt", body);
+        const factory = new Function("key", "table", "found", "list", "pool", "lookup", "rowAt", "growPool", "encodeValue", "parts", "orderF32", "orderF64", "f32", "f64", "u32", "u8", "replaced", body);
         // The factory returns the function its body above makes.
-        const made: (...values: unknown[]) => unknown = factory(new Uint32Array(Math.max(1, words)), hash, found, list, found.pool, lookup, rowAt, growPool, encodeValue, index.parts, orderF32, orderF64, f32, f64, u32, u8, lookup.archetypeAt);
+        const made: (...values: unknown[]) => unknown = factory(new Uint32Array(Math.max(1, words)), hash, found, list, found.pool, lookup, rowAt, growPool, encodeValue, index.parts, orderF32, orderF64, f32, f64, u32, u8, lookup.replaced);
         return made;
     }
     catch {

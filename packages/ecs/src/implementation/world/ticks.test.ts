@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Resource, System, clock, workers } from "../../index.js";
+import { System, clock, workers } from "../../index.js";
 import { createWorld } from "./create.js";
 
 // The cases of ticks that read through observers are in `observe-ticks-cases.test.ts`.
@@ -11,14 +11,13 @@ declare module "@adobe/ecs" {
         [frames]: { type: number };
     }
 }
-Resource.register(frames, { type: { type: "number", default: 0 } });
 
-const count = System.create({ name: "ticksTest/count", resources: { write: [frames] } }, ({ resources }) => { resources[frames] += 1; });
+const count = System.create({}, ({ resources }) => { resources[frames] += 1; });
 
 describe("ticks", () => {
     it("reject a system that conflicts with one added with no order between them, and one with input", async () => {
-        const other = System.create({ name: "ticksTest/other", resources: { write: [frames] } }, ({ resources }) => { resources[frames] = 0; });
-        const withInput = System.create({ name: "ticksTest/withInput", input: { type: "object", properties: { by: { type: "number" } } } }, () => {});
+        const other = System.create({}, ({ resources }) => { resources[frames] = 0; });
+        const withInput = System.create({}, (_context, input: { readonly by: number }) => {});
         await using world = createWorld({ [workers]: 0 });
         world.add(count);
         expect(() => world.add(other)).toThrow('both access "ticksTest/frames"');

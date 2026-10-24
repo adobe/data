@@ -1,11 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from "../interface/archetype/archetype.js";
-import { Component } from "../interface/component/component.js";
-import { Resource } from "../interface/resource/resource.js";
 import { Entity } from "../interface/entity/entity.js";
+import type { I32 } from "../interface/math/i32/index.js";
 import type { Schema } from "../interface/schema/schema.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
+import type { F32, U32 } from "../interface/math/index.js";
 
 // One fixture per optimization area: structural changes, change filters, lookups, commands, dispatch and main-thread
 // paths.
@@ -23,13 +22,13 @@ export const hits = Symbol("suite/hits");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number, number] };
-        [velocity]: { type: readonly [number, number, number] };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }> };
+        [velocity]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }> };
         [target]: { type: Entity };
-        [index]: { type: number };
+        [index]: { type: U32 };
         [tag]: { type: true };
         [unused]: { type: true };
-        [hits]: { type: number };
+        [hits]: { type: F32 };
     }
 }
 
@@ -41,22 +40,13 @@ declare module "@adobe/ecs" {
         [highest]: { type: number; reduce: "max" };
     }
 }
-Resource.register(indexSum, { type: { type: "number", default: 0 }, reduce: "+" });
-Resource.register(highest, { type: { type: "number", default: 0 }, reduce: "max" });
 
-Component.register(position, { type: vec3 });
-Component.register(velocity, { type: vec3 });
-Component.register(target, { type: Entity.schema });
-Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(tag, { type: { const: true } });
-Component.register(unused, { type: { const: true } });
-Component.register(hits, { type: { type: "number", precision: 1 } });
 
-const moving = Archetype.create([position, velocity, index]);
-const following = Archetype.create([position, velocity, index, target]);
+const moving = [position, velocity, index] as const;
+const following = [position, velocity, index, target] as const;
 
 /** `count` entities, each targeting the one spawned before it. */
-export const seed = System.create({ name: "suite/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+export const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     let previous = commands.spawn(moving)({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
     for (let i = 1; i < input.count; i++) {
         previous = commands.spawn(following)({ [position]: [i, i * 0.5, -i], [velocity]: [1, 0, 0], [index]: i, [target]: previous });
@@ -64,14 +54,14 @@ export const seed = System.create({ name: "suite/seed", input: { type: "object",
 });
 
 /** Despawns a tenth of the entities and spawns as many replacements. */
-export const churn = System.create({ name: "suite/churn", input: { type: "object", properties: { group: { type: "integer" } } }, components: { read: [index, position] } }, (row, { input, commands }) => {
+export const churn = System.create({ components: { with: [index, position] } }, (row, { commands }, input: { readonly group: number }) => {
     if (row[index] % 10 !== input.group) return;
     commands.despawn(row.entity);
     commands.spawn(moving)({ [position]: row[position], [velocity]: [0, 0, 0], [index]: row[index] });
 });
 
 /** Adds the tag to one tenth and removes it from another: a fifth of the entities move archetype. */
-export const retag = System.create({ name: "suite/retag", input: { type: "object", properties: { group: { type: "integer" } } }, components: { read: [index] } }, (row, { input, commands }) => {
+export const retag = System.create({ components: { with: [index] } }, (row, { commands }, input: { readonly group: number }) => {
     const group = row[index] % 10;
     if (group === input.group) commands.add(row.entity, tag);
     else if (group === (input.group + 5) % 10) commands.remove(row.entity, tag);
@@ -79,11 +69,9 @@ export const retag = System.create({ name: "suite/retag", input: { type: "object
 
 /** Writes 1% of positions. */
 export const poke = System.create({
-    name: "suite/poke",
-    kernel: "cpu",
-    input: { type: "object", properties: { group: { type: "integer" } } },
-    components: { read: [index], write: [position] },
-}, (row, { input }) => {
+    kernel: true,
+    components: { with: [index, position] },
+}, (row, _context, input: { readonly group: I32 }) => {
     if (row[index] % 100 === input.group) {
         const [x, y, z] = row[position];
         row[position] = [x + 1, y, z];
@@ -92,11 +80,9 @@ export const poke = System.create({
 
 /** Writes 1% of positions, clustered in one contiguous run of rows. */
 export const pokeCluster = System.create({
-    name: "suite/pokeCluster",
-    kernel: "cpu",
-    input: { type: "object", properties: { group: { type: "integer" } } },
-    components: { read: [index], write: [position] },
-}, (row, { input }) => {
+    kernel: true,
+    components: { with: [index, position] },
+}, (row, _context, input: { readonly group: I32 }) => {
     const group = row[index] - input.group * 10_000;
     if (group >= 0 && group < 10_000) {
         const [x, y, z] = row[position];
@@ -106,9 +92,8 @@ export const pokeCluster = System.create({
 
 /** Sees only what changed since it last ran. */
 export const observe = System.create({
-    name: "suite/observe",
-    kernel: "cpu",
-    components: { read: [position], write: [velocity], changed: [position] },
+    kernel: true,
+    components: { with: [position, velocity], changed: [position] },
 }, row => {
     const [x, y, z] = row[position];
     row[velocity] = [x * 0.5, y * 0.5, z * 0.5];
@@ -116,10 +101,9 @@ export const observe = System.create({
 
 /** Steers toward the target: one lookup per row. */
 export const follow = System.create({
-    name: "suite/follow",
-    kernel: "cpu",
-    components: { read: [position, target], write: [velocity] },
-    lookup: { targets: { read: [position] } },
+    kernel: true,
+    components: { with: [position, target, velocity] },
+    lookup: { targets: { with: [position] } },
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     if (other !== null) {
@@ -131,9 +115,8 @@ export const follow = System.create({
 
 /** Issues commands from a kernel: a tenth of the rows record a hit. */
 export const emit = System.create({
-    name: "suite/emit",
-    kernel: "cpu",
-    components: { read: [index, position] },
+    kernel: true,
+    components: { with: [index, position] },
 }, (row, { commands }) => {
     if (row[index] % 10 === 0) {
         const [x] = row[position];
@@ -142,37 +125,36 @@ export const emit = System.create({
 });
 
 /** Six dependent kernels: one tier each, so dispatch cost shows. */
-export const chain1 = System.create({ name: "suite/chain1", kernel: "cpu", components: { write: [velocity] } }, row => {
+export const chain1 = System.create({ kernel: true, components: { with: [velocity] } }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain2 = System.create({ name: "suite/chain2", kernel: "cpu", components: { write: [velocity] }, after: [chain1] }, row => {
+export const chain2 = System.create({ kernel: true, components: { with: [velocity] }, after: [chain1] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain3 = System.create({ name: "suite/chain3", kernel: "cpu", components: { write: [velocity] }, after: [chain2] }, row => {
+export const chain3 = System.create({ kernel: true, components: { with: [velocity] }, after: [chain2] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain4 = System.create({ name: "suite/chain4", kernel: "cpu", components: { write: [velocity] }, after: [chain3] }, row => {
+export const chain4 = System.create({ kernel: true, components: { with: [velocity] }, after: [chain3] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain5 = System.create({ name: "suite/chain5", kernel: "cpu", components: { write: [velocity] }, after: [chain4] }, row => {
+export const chain5 = System.create({ kernel: true, components: { with: [velocity] }, after: [chain4] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain6 = System.create({ name: "suite/chain6", kernel: "cpu", components: { write: [velocity] }, after: [chain5] }, row => {
+export const chain6 = System.create({ kernel: true, components: { with: [velocity] }, after: [chain5] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain = System.create({ name: "suite/chain", systems: [chain1, chain2, chain3, chain4, chain5, chain6] });
+export const chain = System.create({ systems: [chain1, chain2, chain3, chain4, chain5, chain6] });
 
 /** Fifty small main-thread systems in one tier, each reading every row. */
 let total = 0;
 export const smalls = System.create({
-    name: "suite/smalls",
-    systems: Array.from({ length: 50 }, (_, i) => System.create({ name: `suite/small${i}`, components: { read: [position] } }, row => {
+    systems: Array.from({ length: 50 }, (_, i) => System.create({ components: { with: [position] } }, row => {
         total += row[position][0];
     })),
 });
@@ -204,30 +186,29 @@ export const seeded = async (create: () => World, count: number): Promise<World>
 };
 
 /** Folds every row's index into a sum and a maximum. */
-export const reduce = System.create({ name: "suite/reduce", kernel: "cpu", components: { read: [index] }, reduce: { [indexSum]: "+", [highest]: "max" } }, (row, { reduce }) => {
+export const reduce = System.create({ kernel: true, components: { with: [index] } }, (row, { reduce }) => {
     reduce[indexSum](row[index]);
     reduce[highest](row[index]);
 });
 
 /** A system no entity matches: what a run costs with nothing to do. */
-export const idle = System.create({ name: "suite/idle", components: { has: [unused] } }, () => {});
+export const idle = System.create({ components: { with: [unused] } }, () => {});
 /** A system that throws, so each run of it has a report to spawn. */
-export const failing = System.create({ name: "suite/failing" }, () => { throw new Error("suite: failing"); });
+export const failing = System.create({}, () => { throw new Error("suite: failing"); });
 /** An observer system no entity matches: a run of it alone has no tiers. */
-export const idleObserver = System.create({ name: "suite/idleObserver", observer: true, components: { has: [unused] } }, () => {});
+export const idleObserver = System.create({ observer: true, components: { with: [unused] } }, () => {});
 
 /** Fifty systems no entity matches, in one tier. */
 export const idles = System.create({
-    name: "suite/idles",
-    systems: Array.from({ length: 50 }, (_, i) => System.create({ name: `suite/idle${i}`, components: { has: [unused] } }, () => {})),
+    systems: Array.from({ length: 50 }, (_, i) => System.create({ components: { with: [unused] } }, () => {})),
 });
 
 /** Spawns one entity: a run with a sync point that applies one command. */
-export const spawnOne = System.create({ name: "suite/spawnOne" }, ({ commands }) => {
+export const spawnOne = System.create({}, ({ commands }) => {
     commands.spawn(moving)({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
 });
 
 /** One main-thread system reading every row. */
-export const small = System.create({ name: "suite/small", components: { read: [position] } }, row => {
+export const small = System.create({ components: { with: [position] } }, row => {
     total += row[position][0];
 });

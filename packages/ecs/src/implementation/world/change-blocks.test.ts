@@ -1,0 +1,270 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import { describe, expect, it } from "vitest";
+import { Entity } from "../../interface/entity/entity.js";
+import { Index } from "../../interface/indexes/index-type.js";
+import type { I32 } from "../../interface/math/i32/index.js";
+import { workers } from "../../interface/resources/workers.js";
+import { System } from "../../interface/system/system.js";
+import type { World } from "../../interface/world/world.js";
+import { createWorld, join } from "./create.js";
+import { blockShift, chunkShift } from "./kernel.js";
+import { readEach, select } from "./reads.test-helper.js";
+import type { U32 } from "../../interface/math/index.js";
+
+// Change filters skip chunks and blocks whose ticks aren't newer than their `lastRun`, so every writer of a row's tick
+// raises its chunk's and block's. Each case writes a few rows far apart in an archetype of many chunks, through one
+// writer, and every kind of reader must find exactly those rows.
+
+const value = Symbol("changeBlocksTest/value");
+const at = Symbol("changeBlocksTest/at");
+const seen = Symbol("changeBlocksTest/seen");
+const group = Symbol("changeBlocksTest/group");
+const tagged = Symbol("changeBlocksTest/tagged");
+const note = Symbol("changeBlocksTest/note");
+const parent = Symbol("changeBlocksTest/parent");
+const extra = Symbol("changeBlocksTest/extra");
+const height = Symbol("changeBlocksTest/height");
+
+declare module "@adobe/ecs" {
+    interface Threads {
+        changeBlocksTest: true;
+    }
+    interface Components {
+        [value]: { type: number };
+        [at]: { type: U32 };
+        [seen]: { type: number };
+        [group]: { type: U32 };
+        [tagged]: { type: true };
+        [note]: { type: { readonly text: string } | null; thread: "changeBlocksTest"; default: { text: "none" } };
+        [parent]: { type: Entity; reference: "owner" };
+        [extra]: { type: number };
+        [height]: { type: number };
+    }
+}
+const text = { type: "object", properties: { text: { type: "string" } } } as const;
+
+/** Rows in the archetype: five chunks, the last partial. */
+const rows = 4500;
+const plain = [value, at, seen, group] as const;
+const marked = [value, at, seen, group, tagged] as const;
+const noted = [value, at, note] as const;
+
+let entities: Entity[] = [];
+const seed = System.create({}, ({ commands }) => {
+    entities = [];
+    for (let i = 0; i < rows; i++) entities.push(commands.spawn(plain)({ [value]: 0, [at]: i, [seen]: 0, [group]: 0 }));
+    // Rows an entity tagged later moves after, so it lands far into that archetype.
+    for (let i = rows; i < 2 * rows; i++) entities.push(commands.spawn(marked)({ [value]: 0, [at]: i, [seen]: 0, [group]: 0, [tagged]: true }));
+});
+
+// Writers.
+const setValue = System.create({ target: "entity", components: { with: [value] } }, (row, _context, input: { readonly entity: Entity }) => {
+    row[value] += 1;
+});
+const replace = System.create({}, ({ commands }, input: { readonly entities: readonly Entity[] }) => {
+    for (const entity of input.entities) commands.add(entity, value, 7);
+});
+const despawn = System.create({}, ({ commands }, input: { readonly entities: readonly Entity[] }) => {
+    for (const entity of input.entities) commands.despawn(entity);
+});
+const tag = System.create({}, ({ commands }, input: { readonly entities: readonly Entity[] }) => {
+    for (const entity of input.entities) commands.add(entity, tagged);
+});
+const spawnOne = System.create({}, ({ commands }, input: { readonly at: number }) => {
+    commands.spawn(plain)({ [value]: 0, [at]: input.at, [seen]: 0, [group]: 0 });
+});
+/** Writes the rows whose `at` is in a list of up to four, which stamps row by row. */
+const writeSome = System.create({ kernel: true, components: { with: [at, value] } }, (row, _context, input: { readonly a: I32; readonly b: I32; readonly c: I32; readonly d: I32 }) => {
+    const here = row[at];
+    if (here === input.a || here === input.b || here === input.c || here === input.d) row[value] += 1;
+});
+/** Writes every row, which stamps chunks and blocks once per call. */
+const writeAll = System.create({ kernel: true, components: { with: [value] } }, row => {
+    row[value] += 1;
+});
+const setGroup = System.create({ target: "entity", components: { with: [group] } }, (row, _context, input: { readonly entity: Entity }) => {
+    row[group] = 1;
+});
+
+// Readers.
+let found: number[] = [];
+const onMain = System.create({ components: { with: [at], changed: [value] } }, row => { found.push(row[at]); });
+const observed = System.create({ observer: true, components: { with: [at], changed: [value] } }, row => { found.push(row[at]); });
+const ofTwo = System.create({ components: { with: [at], changed: [group, value] } }, row => { found.push(row[at]); });
+const inKernel = System.create({ kernel: true, components: { with: [seen], changed: [value] } }, row => { row[seen] += 1; });
+const inUp = System.create({ components: { with: [at], changed: [value] }, up: { through: parent } }, row => { found.push(row[at]); });
+const byGroup = Index.create({ key: [group] });
+let grouped: number[] = [];
+const inGroup = System.create({ lookup: { byGroup: { index: byGroup } } }, ({ lookup }) => {
+    const list = lookup.byGroup(1);
+    grouped = Array.from({ length: list.length }, (_, i) => list.at(i).entity);
+});
+
+// On a joined thread, by the object they read: a writer, and readers of its writes and of the world's thread's.
+const seedNoted = System.create({}, ({ commands }) => {
+    entities = [];
+    for (let i = 0; i < rows; i++) entities.push(commands.spawn(noted)({ [value]: 0, [at]: i }));
+});
+const noteSome = System.create({ components: { with: [at, note] } }, (row, _context, input: { readonly ats: readonly number[] }) => {
+    if (input.ats.includes(row[at])) row[note] = { text: "noted" };
+});
+const notesThere = System.create({ components: { with: [at, note], changed: [note] } }, row => { if (row[note] !== undefined) found.push(row[at]); });
+const valuesThere = System.create({ components: { with: [at, note], changed: [value] } }, row => { if (row[note] !== undefined) found.push(row[at]); });
+
+/** The `at` of the rows a main-thread reader ran, in order. */
+const ranOn = async (world: World, reader: System): Promise<number[]> => {
+    found = [];
+    await world.run(reader);
+    return [...found].sort((a, b) => a - b);
+};
+
+/** The `at` of the rows the kernel reader ran, by the `seen` it raised. */
+const ranInKernel = async (world: World): Promise<number[]> => {
+    const all = await select(world, { required: [seen] });
+    const before = await readEach(world, all, seen);
+    await world.run(inKernel);
+    const after = await readEach(world, all, seen);
+    const ats = await readEach(world, all, at);
+    return all.flatMap((_, k) => after[k] !== before[k] ? [ats[k] ?? -1] : []).sort((a, b) => a - b);
+};
+
+const readers = { onMain, observed, ofTwo, inUp } as const;
+
+/** Every reader's rows after `write`, each having run once before, so each sees only what `write` changed. */
+const seenAfter = async (world: World, write: () => Promise<unknown>): Promise<{ readonly [reader: string]: readonly number[] }> => {
+    for (const reader of Object.values(readers)) await world.run(reader);
+    await world.run(inKernel);
+    await write();
+    const result: { [reader: string]: readonly number[] } = {};
+    for (const [name, reader] of Object.entries(readers)) result[name] = await ranOn(world, reader);
+    result.inKernel = await ranInKernel(world);
+    return result;
+};
+
+const every = (expected: readonly number[]) => ({ onMain: expected, observed: expected, ofTwo: expected, inUp: expected, inKernel: expected });
+
+/** Rows far apart: in the first block, a middle block of a middle chunk, and the last chunk's last block. */
+const spread = [5, (2 << chunkShift) + (5 << blockShift) + 9, rows - 1] as const;
+
+describe("chunk and block ticks", () => {
+    for (const wasm of [false, true]) {
+        const label = wasm ? "WASM" : "JS";
+        const inline = () => createWorld({ [workers]: 0 }, { wasm });
+
+        it(`let readers find rows a main-thread system wrote (${label} kernels)`, async () => {
+            await using world = inline();
+            await world.run(seed);
+            expect(await seenAfter(world, async () => {
+                for (const row of spread) await world.run(setValue, { entity: entities[row] });
+            })).toEqual(every(spread));
+        });
+
+        it(`let readers find rows a kernel wrote, row by row and once per call (${label} kernels)`, async () => {
+            await using world = inline();
+            await world.run(seed);
+            expect(await seenAfter(world, () => world.run(writeSome, { a: spread[0], b: spread[1], c: spread[2], d: -1 }))).toEqual(every(spread));
+            const all = Array.from({ length: 2 * rows }, (_, k) => k);
+            expect(await seenAfter(world, () => world.run(writeAll))).toEqual(every(all));
+        });
+
+        it(`let readers find rows commands wrote, moved, swapped into and spawned (${label} kernels)`, async () => {
+            await using world = inline();
+            await world.run(seed);
+            expect(await seenAfter(world, () => world.run(replace, { entities: spread.map(row => entities[row]) }))).toEqual(every(spread));
+            // The last row, changed, is swapped into the first block's despawned row.
+            const last = rows - 1;
+            expect(await seenAfter(world, async () => {
+                await world.run(setValue, { entity: entities[last] });
+                await world.run(despawn, { entities: [entities[3]] });
+            })).toEqual(every([last]));
+            // A changed row moves to the end of another archetype, past its first chunks.
+            const moved = spread[1];
+            expect(await seenAfter(world, async () => {
+                await world.run(setValue, { entity: entities[moved] });
+                await world.run(tag, { entities: [entities[moved]] });
+            })).toEqual(every([moved]));
+            expect(await seenAfter(world, () => world.run(spawnOne, { at: 9999 }))).toEqual(every([9999]));
+        });
+    }
+
+    it("let a filter of two components find a row only the other component changed in", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(seed);
+        await world.run(ofTwo);
+        await world.run(setGroup, { entity: entities[spread[1]] });
+        expect(await ranOn(world, ofTwo)).toEqual([spread[1]]);
+    });
+
+    it("let systems on a joined thread find rows written there and on the world's thread", async () => {
+        const world = createWorld({ [workers]: 0 });
+        const channel = new MessageChannel();
+        world.share(channel.port1);
+        const remote = join(channel.port2, { threads: ["changeBlocksTest"] });
+        try {
+            await new Promise<void>(resolve => {
+                const stop = world.threads(threads => {
+                    if (threads.at(-1)?.status !== "joined") return;
+                    queueMicrotask(() => stop());
+                    resolve();
+                });
+            });
+            await world.run(seedNoted);
+            await world.run(valuesThere);
+            await world.run(notesThere);
+            for (const row of spread) await world.run(setValue, { entity: entities[row] });
+            expect(await ranOn(world, valuesThere)).toEqual(spread);
+            await world.run(noteSome, { ats: [spread[1], spread[2]] });
+            expect(await ranOn(world, notesThere)).toEqual([spread[1], spread[2]]);
+        }
+        finally {
+            await remote.dispose();
+            await world.dispose();
+        }
+    });
+
+    it("let an index refresh find a key written in a block of a chunk", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(seed);
+        await world.run(inGroup);
+        expect(grouped).toEqual([]);
+        await world.run(setGroup, { entity: entities[spread[1]] });
+        await world.run(inGroup);
+        expect(grouped).toEqual([entities[spread[1]]]);
+    });
+
+    it("let an added filter find a component a command added, and that row once swapped into an old block", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(seedExtra);
+        await world.run(addedExtra);
+        // Rows `rows` and `rows + 1` gain the component and land after the archetype's rows, in its last block.
+        await world.run(addExtra, { entity: entities[rows] });
+        expect(await ranOn(world, addedExtra)).toEqual([rows]);
+        // Its last row, just added, moves into the first block's despawned row.
+        await world.run(addExtra, { entity: entities[rows + 1] });
+        await world.run(despawn, { entities: [entities[3]] });
+        expect(await ranOn(world, addedExtra)).toEqual([rows + 1]);
+    });
+
+    it("let filters find what a JS kernel reading up wrote on every row", async () => {
+        await using world = createWorld({ [workers]: 0 }, { wasm: false });
+        await world.run(seedExtra);
+        await world.run(heights);
+        await world.run(raiseHeights);
+        expect((await ranOn(world, heights)).length).toBe(rows + 2);
+    });
+});
+
+// Rows that have `extra` from the start, then two that gain it; and a JS `up` kernel writing every row's height.
+const seedExtra = System.create({}, ({ commands }) => {
+    entities = [];
+    for (let i = 0; i < rows; i++) entities.push(commands.spawn([at, extra, height])({ [at]: i, [extra]: 0, [height]: 0 }));
+    for (let i = rows; i < rows + 2; i++) entities.push(commands.spawn([at, height])({ [at]: i, [height]: 0 }));
+});
+const addExtra = System.create({}, ({ commands }, input: { readonly entity: Entity }) => {
+    commands.add(input.entity, extra, 1);
+});
+const addedExtra = System.create({ components: { with: [at], added: [extra] } }, row => { found.push(row[at]); });
+const raiseHeights = System.create({ kernel: true, components: { with: [height] }, up: { through: parent } }, (row, { up }) => {
+    row[height] = up === null ? 1 : up[height] + 1;
+});
+const heights = System.create({ components: { with: [at], changed: [height] } }, row => { found.push(row[at]); });

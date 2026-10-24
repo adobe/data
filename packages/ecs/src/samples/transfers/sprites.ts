@@ -1,15 +1,15 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component, Resource, System, Vec2, clock } from '../../index.js';
+import { clock, System, type U32, Vec2 } from '../../index.js';
 
 // The transfers sample's keys and systems, which every thread imports: the world, on a worker, draws sprites into the
 // canvas main moved to it, each with a texture a loader worker decoded and moved to it. Values move through runs whose
-// input holds them; an input field's schema `{ allOf: [] }` takes any value, typed `unknown`, which bodies narrow.
+// input holds them.
 
-export const texture = Symbol("transferSprites/texture");
-export const position = Symbol("transferSprites/position");
-export const velocity = Symbol("transferSprites/velocity");
-export const surface = Symbol("transferSprites/surface");
-export const stats = Symbol("transferSprites/stats");
+export const texture = Symbol();
+export const position = Symbol();
+export const velocity = Symbol();
+export const surface = Symbol();
+export const stats = Symbol();
 
 declare module '@adobe/ecs' {
     interface Components {
@@ -19,26 +19,17 @@ declare module '@adobe/ecs' {
     }
     interface Resources {
         [surface]: { type: OffscreenCanvas | null; transfer: true };
-        [stats]: { type: { readonly sprites: number; readonly frames: number } };
+        [stats]: { type: { readonly sprites: U32; readonly frames: U32 }; default: { sprites: 0; frames: 0 } };
     }
 }
 
 /** A decoded texture, moved to the world's thread, where sprites are drawn. */
-Component.register(texture, { transfer: true });
 /** In pixels, and pixels per second. */
-Component.register(position, { type: Vec2.schema });
-Component.register(velocity, { type: Vec2.schema });
 /** The canvas main moved to the world's thread. */
-Resource.register(surface, { transfer: true });
-Resource.register(stats, {
-    type: { type: "object", properties: { sprites: { type: "integer" }, frames: { type: "integer" } }, default: { sprites: 0, frames: 0 } },
-});
-
-const any = { allOf: [] } as const;
 
 /** From main: the canvas the world draws into. */
-export const attachSurface = System.create({ name: "transferSprites/attachSurface", input: { type: "object", properties: { canvas: any } }, resources: { write: [surface] } }, ({ input, resources }) => {
-    if (typeof OffscreenCanvas === "function" && input.canvas instanceof OffscreenCanvas) resources[surface] = input.canvas;
+export const attachSurface = System.create({}, ({ resources }, input: { readonly canvas: OffscreenCanvas }) => {
+    resources[surface] = input.canvas;
 });
 
 /** A deterministic number in [0, 1) for each seed. */
@@ -48,11 +39,9 @@ const random = (seed: number): number => {
 };
 
 /** From the loader: a sprite with the texture it decoded, somewhere on the canvas, moving. */
-export const addSprite = System.create({
-    name: "transferSprites/addSprite", input: { type: "object", properties: { bitmap: any, seed: { type: "integer" } } }, resources: { read: [surface], write: [stats] },
-}, ({ input, resources, commands }) => {
+export const addSprite = System.create({}, ({ resources, commands }, input: { readonly bitmap: ImageBitmap; readonly seed: number }) => {
     const canvas = resources[surface];
-    if (canvas === null || typeof ImageBitmap !== "function" || !(input.bitmap instanceof ImageBitmap)) return;
+    if (canvas === null) return;
     const angle = random(input.seed) * Math.PI * 2;
     const speed = 60 + random(input.seed + 1) * 120;
     commands.spawn([texture, position, velocity])({
@@ -64,7 +53,7 @@ export const addSprite = System.create({
 });
 
 /** Clears the canvas, once a frame. */
-const clear = System.create({ name: "transferSprites/clear", resources: { read: [surface], write: [stats] } }, ({ resources }) => {
+const clear = System.create({}, ({ resources }) => {
     const canvas = resources[surface];
     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     resources[stats] = { sprites: resources[stats].sprites, frames: resources[stats].frames + 1 };
@@ -72,7 +61,7 @@ const clear = System.create({ name: "transferSprites/clear", resources: { read: 
 
 /** Moves each sprite, bouncing off the canvas's edges. */
 const move = System.create({
-    name: "transferSprites/move", components: { read: [texture], write: [position, velocity] }, resources: { read: [surface, clock] },
+    components: { with: [texture, position, velocity] },
 }, (row, { resources }) => {
     const canvas = resources[surface];
     if (canvas === null) return;
@@ -88,10 +77,10 @@ const move = System.create({
 });
 
 /** Draws each sprite's texture where it is. */
-const draw = System.create({ name: "transferSprites/draw", components: { read: [texture, position] }, resources: { read: [surface] }, after: [clear, move] }, (row, { resources }) => {
+const draw = System.create({ components: { with: [texture, position] }, after: [clear, move] }, (row, { resources }) => {
     const [x, y] = row[position];
     resources[surface]?.getContext("2d")?.drawImage(row[texture], x, y);
 });
 
 /** Every frame on the world's thread. */
-export const frame = System.create({ name: "transferSprites/frame", systems: [clear, move, draw] });
+export const frame = System.create({ systems: [clear, move, draw] });

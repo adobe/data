@@ -10,7 +10,8 @@ import { commandIdOf, idOf, type Key, type State } from './state.js';
 import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
 import { createDirectory, lookupParameters, type Directory } from './directories.js';
 import { generateWgsl, type WgslKernel } from './wgsl.js';
-import { labelOf, labelOfItem } from '../../interface/registry/index.js';
+import { labelOf } from '../../interface/registry/index.js';
+import { absentColumn, emptyViews } from './arrays.js';
 import type { WorldIndex } from './indexes.js';
 import { kernelIndexesOf, refreshSource, writeIndexParameters, type KernelIndex } from './kernel-indexes.js';
 import { createIndexReader, createIndexSource, type IndexReaderSetup } from './index-readers.js';
@@ -40,6 +41,8 @@ export type BoundKernel = {
         /** By lookup through an index: its lookup, how its JS reader reads it, and how many components it watches. */
         readonly indexes: readonly { readonly lookup: number; readonly reader: IndexReaderSetup; readonly watched: number }[];
         readonly keys: readonly number[];
+        readonly labels: readonly string[];
+        readonly optional: readonly number[];
         readonly starts: readonly unknown[];
         /** The component ids of each list the kernel spawns, in the order its spawner takes values. */
         readonly spawns: readonly (readonly number[])[];
@@ -68,6 +71,8 @@ export type BoundKernel = {
     wasm: WasmKernel | null;
     /** The compiled module and the main thread's instance, once loaded. */
     readonly compiled: () => { readonly module: WebAssembly.Module; readonly run: WasmRun } | null;
+    /** Whether an archetype has every optional component, the only archetypes its WASM runs: JS runs the rest. */
+    readonly allPresent: (archetype: Archetype) => boolean;
     /** For a WASM kernel with lookups: the entity table and directories, passed ahead of the scalars. */
     readonly lookupParameters: () => readonly number[];
     /** The kernel as a compute shader for the components observed at the last load, or why it can't run on the GPU. */
@@ -87,7 +92,7 @@ const leafType = (layout: Layout, path: readonly (number | string)[]): Type | nu
  */
 export const bindKernel = (state: State, leaf: Leaf, description: KernelDescription, byName: ReadonlyMap<string, WorldIndex> = new Map(), since: Since = { value: 0 }): BoundKernel => {
     const { lookup, components: query } = leaf.declaration;
-    const fail = (message: string): never => { throw new Error(`Kernel "${labelOfItem(leaf)}": ${message}`); };
+    const fail = (message: string): never => { throw new Error(`Kernel "${leaf.name}": ${message}`); };
     const booleans: boolean[] = [];
     // Per column, in elements of its view: entity and tick columns are dense.
     const strides: number[] = [];
@@ -105,7 +110,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             return column;
         }
         const id = idOf(state, column.component);
-        if (column.kind === "changed" || column.kind === "chunks") {
+        if (column.kind === "changed" || column.kind === "chunks" || column.kind === "blocks" || column.kind === "present") {
             dense();
             return { kind: column.kind, id, leaf: 0 };
         }
@@ -150,11 +155,14 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         strides,
         offsets,
         lookups: declaredLookups.map((declared): LookupSetup => ({
-            read: ids(declared.read), has: ids("has" in declared ? declared.has : undefined), not: ids("not" in declared ? declared.not : undefined),
+            read: ids(declared.read), has: ids("has" in declared ? declared.has : undefined), optional: ids("optional" in declared ? declared.optional : undefined), not: ids("not" in declared ? declared.not : undefined),
             changed: "index" in declared || declared.changed === undefined ? null : ids(declared.changed),
         })),
         indexes: indexes.flatMap(bound => bound === null ? [] : [{ lookup: bound.lookup, reader: bound.reader, watched: bound.watched.length }]),
         keys,
+        labels: keys.map(id => labelOf(state.keys[id])),
+        // Only those its body uses: one it declares and never touches doesn't keep an archetype lacking it off WASM.
+        optional: ids(leaf.declaration.components?.optional).filter(id => sources.some(source => source.kind !== "entity" && source.id === id)),
         starts: keys.map(id => state.starts[id]),
         spawns,
     };
@@ -177,16 +185,22 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         }
         return value;
     };
+    const optional = new Set(setup.optional);
     const cache = new Map<Archetype, { version: number; columns: readonly TypedArray[] }>();
     const columnsOf = (archetype: Archetype): readonly TypedArray[] => {
         const cached = cache.get(archetype);
         if (cached !== undefined && cached.version === archetype.version) return cached.columns;
         const columns = sources.map(source => {
             if (source.kind === "entity") return archetype.entities;
+            // An optional component's presence: any column that has rows where the archetype has it, empty where it doesn't.
+            if (source.kind === "present") return archetype.storageOf.has(source.id) ? archetype.entities : emptyViews.f64;
             const storage = archetype.storageOf.get(source.id);
+            // An optional component's columns are empty where the archetype lacks it: reads give undefined.
+            if (storage === undefined && optional.has(source.id)) return absentColumn(state.layouts[source.id], source);
             if (storage === undefined) return fail(`column of "${labelOf(state.keys[source.id])}" isn't in its components.`);
             if (source.kind === "changed") return storage.changed;
             if (source.kind === "chunks") return storage.chunkChanged;
+            if (source.kind === "blocks") return storage.blockChanged;
             const layout = state.layouts[source.id];
             return layout.kind === "linear" ? storage.views[layout.leaves[source.leaf].view] : fail("a field column isn't linear.");
         });
@@ -219,7 +233,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         upCache.set(archetype, { version: archetype.version, columns });
         return columns;
     };
-    const argsLayout = leaf.declaration.input === undefined ? null : layoutOf(leaf.declaration.input);
+    const argsLayout = leaf.input === undefined ? null : layoutOf(leaf.input);
     const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;
@@ -238,12 +252,12 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         },
     }));
     /**
-     * Changed and chunk columns of components no registered system filters on are muted: nothing reads those ticks,
-     * so the WASM drops their stamps and the JS kernel stamps one dummy element. Chunk columns of components held on
-     * the GPU stay, since uploads read them.
+     * Changed, chunk and block columns of components no registered system filters on are muted: nothing reads those
+     * ticks, so the WASM drops their stamps and the JS kernel stamps one dummy element. Chunk columns of components
+     * held on the GPU stay, since uploads read them; block columns, which only filters read, go with the row ticks.
      */
     const stamped = (source: Extract<Source, { readonly id: number }>): boolean => state.observed.has(source.id) || (source.kind === "chunks" && state.resident.has(source.id));
-    const mutedNow = (): boolean[] => sources.map(source => (source.kind === "changed" || source.kind === "chunks") && !stamped(source));
+    const mutedNow = (): boolean[] => sources.map(source => (source.kind === "changed" || source.kind === "chunks" || source.kind === "blocks") && !stamped(source));
     const upWasmColumns: WasmColumn[] = upSources.map(source => {
         const layout = state.layouts[source.id];
         return { view: source.leaf.view, stride: layout.kind === "linear" ? layout.stride : 0, offset: source.leaf.offset, boolean: source.leaf.scalar === "boolean", component: source.id };
@@ -252,7 +266,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     const filterCount = up !== undefined ? 0 : (query?.added?.length ?? 0) + (query?.changed?.length ?? 0);
     const generate = (muted: readonly boolean[]): WasmKernel | null => useWasm && description.program !== null
         ? generateWasm(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, state.simd, filterCount, wasmLookups, upWasmColumns,
-            description.reductions.map(reduction => reduction.operator), indexes.map(bound => bound?.wasm ?? null), (description.probes ?? []).map(probe => probe.lookup))
+            description.reductions.map(reduction => reduction.operator), indexes.map(bound => bound?.wasm ?? null), (description.probes ?? []).map(probe => probe.lookup),
+            description.storagePrecision === true)
         : null;
     let muted = mutedNow();
     let index = state.kernelIndexes.get(description.url);
@@ -275,6 +290,10 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         },
         upColumnsOf,
         wasm: generate(muted),
+        allPresent: archetype => {
+            for (const id of setup.optional) if (!archetype.storageOf.has(id)) return false;
+            return true;
+        },
         compiled: () => compiled,
         kernel: () => loaded ?? fail("its module isn't loaded."),
         stale: () => {
@@ -294,7 +313,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             bound.setup = { ...setup, muted, up: upSetup };
             loadedFor = muted.join();
             const module: KernelModule = await import(/* @vite-ignore */ description.url);
-            loaded = module.create(booleans, strides.map((stride, k) => muted[k] ? 0 : stride), offsets.map((offset, k) => muted[k] ? 0 : offset), upSetup.booleans, upSetup.strides, upSetup.offsets);
+            loaded = module.create(booleans, strides.map((stride, k) => muted[k] ? 0 : stride), offsets.map((offset, k) => muted[k] ? 0 : offset), upSetup.booleans, upSetup.strides, upSetup.offsets, setup.labels);
             compiled = null;
             if (bound.wasm === null) return;
             try {

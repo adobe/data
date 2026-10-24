@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { defineConfig } from "vite";
-import { kernelPlugin } from "./src/implementation/compiler/index.ts";
+import { Compiler } from "./src/implementation/compiler/index.ts";
 
 /**
  * Bundles the benchmarks for plain node, with kernels compiled into their own chunks as in a production build, and
@@ -8,7 +8,7 @@ import { kernelPlugin } from "./src/implementation/compiler/index.ts";
  * the thread the joining benchmarks join their worlds from.
  */
 export default defineConfig({
-    plugins: [kernelPlugin()],
+    plugins: [Compiler.plugin()],
     build: {
         ssr: true,
         outDir: "dist/perf",

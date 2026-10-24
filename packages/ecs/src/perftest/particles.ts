@@ -1,8 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from "../interface/archetype/archetype.js";
-import { Component } from "../interface/component/component.js";
 import type { Schema } from "../interface/schema/schema.js";
 import { System } from "../interface/system/system.js";
+import type { F32, U32 } from "../interface/math/index.js";
 
 // Mirrors adobe/data's ecs1/ecs2 perftests (packages/data/src/perftest): 1M particles split evenly across
 // 4 archetypes by visible/enabled; move adds velocity to position for the visible and enabled quarter.
@@ -19,31 +18,25 @@ export const enabled = Symbol("perf/enabled");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [color]: { type: number };
-        [mass]: { type: number };
-        [position]: { type: readonly [number, number, number] };
-        [velocity]: { type: readonly [number, number, number] };
+        [color]: { type: U32 };
+        [mass]: { type: F32 };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }> };
+        [velocity]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }> };
         [visible]: { type: true };
         [enabled]: { type: true };
     }
 }
 
-Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(mass, { type: { type: "number", precision: 1 } });
-Component.register(position, { type: vec3 });
-Component.register(velocity, { type: vec3 });
-Component.register(visible, { type: { const: true } });
-Component.register(enabled, { type: { const: true } });
 
 /** Interleaved like ecs2's seedSingle: entity i goes to archetype i % 4. */
 const archetypes = [
-    Archetype.create([color, mass, position, velocity, visible, enabled]),
-    Archetype.create([color, mass, position, velocity, visible]),
-    Archetype.create([color, mass, position, velocity, enabled]),
-    Archetype.create([color, mass, position, velocity]),
+    [color, mass, position, velocity, visible, enabled] as const,
+    [color, mass, position, velocity, visible] as const,
+    [color, mass, position, velocity, enabled] as const,
+    [color, mass, position, velocity] as const,
 ] as const;
 
-export const spawn = System.create({ name: "perf/spawn", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+export const spawn = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) {
         const p = [i + 1, i + 1, i + 1] as const;
         const v = [-i, -i, -i] as const;
@@ -52,9 +45,8 @@ export const spawn = System.create({ name: "perf/spawn", input: { type: "object"
 });
 
 export const move = System.create({
-    name: "perf/move",
-    kernel: "cpu",
-    components: { read: [velocity], write: [position], has: [visible, enabled] },
+    kernel: true,
+    components: { with: [velocity, position, visible, enabled] },
 }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ECS Samples</title>
+    <link rel="icon" href="data:,">
+    <style>
+        :root { --line: #d1d5db; --muted: #6b7280; --page: #f3f4f6; --surface: #fff; --text: #111827; --accent: #2563eb; }
+        @media (prefers-color-scheme: dark) {
+            :root { --line: #374151; --muted: #9ca3af; --page: #111827; --surface: #1f2937; --text: #f3f4f6; --accent: #60a5fa; }
+        }
+        html, body { margin: 0; height: 100%; }
+        body { display: flex; flex-direction: column; background: var(--page); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+        nav { display: flex; align-items: stretch; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--surface); overflow-x: auto; }
+        nav a { padding: 10px 12px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; white-space: nowrap; }
+        nav a:hover { color: var(--text); }
+        nav a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+        nav #alone { margin-left: auto; }
+        iframe { flex: 1; width: 100%; border: 0; }
+    </style>
+</head>
+<body>
+    <nav>
+        <!-- One tab per folder in src/samples; browser.test.ts checks the list. -->
+        <a href="#particles">GPU Particles</a>
+        <a href="#todo">Todos</a>
+        <a href="#transfers">Transferred Sprites</a>
+        <a id="alone" target="_blank" title="Open this sample in a tab of its own">Open alone ↗</a>
+    </nav>
+    <iframe title="Sample"></iframe>
+    <script type="module" src="./browser.ts"></script>
+</body>
+</html>

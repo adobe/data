@@ -7,6 +7,13 @@ export const idsName = "@adobe/ecs/ids@1";
 
 const ids = Symbol.for(idsName);
 
+/**
+ * The `Symbol.for` name of the global `Map` code the plugin generates fills, from each key a module declares to its
+ * kind and declaration, `{ kind, declaration }`, in the order modules evaluate. Every copy of the package reads it and
+ * none changes it. Its version changes with the format.
+ */
+export const declarationsName = "@adobe/ecs/declarations@1";
+
 const idsMap = (): Map<unknown, unknown> | undefined => {
     const map: unknown = Reflect.get(globalThis, ids);
     return map instanceof Map ? map : undefined;
@@ -28,4 +35,42 @@ export const takeIdOfDeclaration = (declaration: object): string | undefined => 
     if (id === undefined) return undefined;
     map?.delete(declaration);
     return typeof id === "string" ? id : undefined;
+};
+
+/**
+ * The `Symbol.for` name of the global `WeakMap` from a declaration to the label the plugin gave a constructor call that
+ * isn't a top-level binding's, by the binding or function it's in, or an internal factory gave its declaration. Weak,
+ * so a declaration whose constructor threw before taking its label isn't kept.
+ */
+export const labelsName = "@adobe/ecs/labels@1";
+
+const labels = Symbol.for(labelsName);
+
+/** The label given the declaration a constructor call passes, if any, taken out of the map. */
+export const takeLabelOfDeclaration = (declaration: object): string | undefined => {
+    const map: unknown = Reflect.get(globalThis, labels);
+    if (!(map instanceof WeakMap || map instanceof Map)) return undefined;
+    const label: unknown = map.get(declaration);
+    if (label === undefined) return undefined;
+    map.delete(declaration);
+    return typeof label === "string" ? label : undefined;
+};
+
+/**
+ * The `Symbol.for` name of the global `WeakMap` from a declaration, or the body of a system declaring nothing, to what
+ * the build inferred its body uses (`Access` in `system/resolve.ts`), which the plugin fills where it calls a
+ * constructor; an internal factory making declarations at runtime gives its own first, which the plugin's doesn't
+ * replace. Its version changes with the format.
+ */
+export const accessName = "@adobe/ecs/access@1";
+
+const access = Symbol.for(accessName);
+
+/** What the build inferred the body a declaration or body is made with uses, if it inferred it, taken out of the map. */
+export const takeAccessOf = (declaration: object): unknown => {
+    const map: unknown = Reflect.get(globalThis, access);
+    if (!(map instanceof WeakMap)) return undefined;
+    const found: unknown = map.get(declaration);
+    map.delete(declaration);
+    return found;
 };

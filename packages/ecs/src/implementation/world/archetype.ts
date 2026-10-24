@@ -2,7 +2,7 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Layout, Views } from '../../interface/registry/layout.js';
 import { allocateArray, allocateViews, emptyViews, freeArray, freeViews, growArray } from './arrays.js';
-import { chunkShift } from './kernel.js';
+import { blockShift, chunkShift } from './kernel.js';
 import type { Memory } from './memory.js';
 import { nullTag, startTag, type MoveLog } from './move-log.js';
 import type { StringStore } from './strings.js';
@@ -41,6 +41,12 @@ export type Storage = {
     chunkAdded: Float64Array;
     chunkChanged: Float64Array;
     /**
+     * The newest `added` and `changed` tick in each block of `2 ** blockShift` rows, so change filters skip the
+     * unchanged blocks of a chunk that changed: a filter's scan costs what changed, not the chunk.
+     */
+    blockAdded: Float64Array;
+    blockChanged: Float64Array;
+    /**
      * The newest tick at which every row may have changed, as a GPU kernel's writes do, so stamping them costs
      * nothing per row: change filters pass the whole column when it's newer than their `lastRun`.
      */
@@ -73,21 +79,32 @@ export const writeOf = (layout: Layout): { readonly write: number; readonly unit
 
 /** Chunks covering `capacity` rows. */
 const chunksFor = (capacity: number): number => Math.max(1, Math.ceil(capacity / 2 ** chunkShift));
+/** Blocks covering those chunks, so every row of a chunk has a block. */
+const blocksFor = (capacity: number): number => chunksFor(capacity) << (chunkShift - blockShift);
 
 /** What stamping a row's ticks writes: a storage's, or a joined thread's view of one. */
-export type Stamped = Pick<Storage, "ticked" | "added" | "changed" | "chunkAdded" | "chunkChanged">;
+export type Stamped = Pick<Storage, "ticked" | "added" | "changed" | "chunkAdded" | "chunkChanged" | "blockAdded" | "blockChanged">;
 
-/** Stamps a row's `changed` tick and its chunk's. Ticks only increase, so the chunk's is the newest. */
+/**
+ * Stamps a row's `changed` tick, its block's and its chunk's. Ticks only increase, so theirs are the newest. Every
+ * writer stores the row, then the block, then the chunk, the reverse of the order filters read them, so a filter on
+ * another thread that finds a chunk newer finds its block and row newer too.
+ */
 export const stampChanged = (storage: Stamped, row: number, tick: number): void => {
     if (!storage.ticked) return;
     storage.changed[row] = tick;
+    storage.blockChanged[row >> blockShift] = tick;
     storage.chunkChanged[row >> chunkShift] = tick;
 };
 
-export const stampAdded = (storage: Stamped, row: number, tick: number): void => {
-    if (!storage.ticked) return;
-    storage.added[row] = tick;
-    storage.chunkAdded[row >> chunkShift] = tick;
+/**
+ * Raises the block and chunk ticks over rows `start` to `end - 1` to at least `tick`: for ticks written to those rows
+ * in bulk, or copied in from rows of other chunks.
+ */
+export const raiseRange = (chunks: Float64Array, blocks: Float64Array, start: number, end: number, tick: number): void => {
+    if (start >= end) return;
+    for (let block = start >> blockShift, last = (end - 1) >> blockShift; block <= last; block++) if (blocks[block] < tick) blocks[block] = tick;
+    for (let chunk = start >> chunkShift, last = (end - 1) >> chunkShift; chunk <= last; chunk++) if (chunks[chunk] < tick) chunks[chunk] = tick;
 };
 
 /** A table of the entities that have exactly `components`. Rows are dense: `0` to `count`. */
@@ -156,6 +173,8 @@ const allocateTicks = (memory: Memory, storage: Storage, capacity: number, tick:
     storage.changed = storage.layout.kind === "constant" ? storage.added : allocateArray(memory, Float64Array, capacity).fill(tick);
     storage.chunkAdded = allocateArray(memory, Float64Array, chunksFor(capacity)).fill(tick);
     storage.chunkChanged = storage.layout.kind === "constant" ? storage.chunkAdded : allocateArray(memory, Float64Array, chunksFor(capacity)).fill(tick);
+    storage.blockAdded = allocateArray(memory, Float64Array, blocksFor(capacity)).fill(tick);
+    storage.blockChanged = storage.layout.kind === "constant" ? storage.blockAdded : allocateArray(memory, Float64Array, blocksFor(capacity)).fill(tick);
 };
 
 /** Views of a new column, for a linear layout's or a string's `capacity` rows; a string's handles start at 0. */
@@ -181,6 +200,8 @@ const createStorage = (memory: Memory, strings: StringStore | null, component: n
         changed: noTicks,
         chunkAdded: noTicks,
         chunkChanged: noTicks,
+        blockAdded: noTicks,
+        blockChanged: noTicks,
         columnChanged: 0,
         remote: null,
         tags: noTags,
@@ -262,6 +283,10 @@ const grow = (memory: Memory, archetype: Archetype, capacity = archetype.capacit
             const used = storage.chunkAdded.length;
             storage.chunkAdded = growArray(memory, storage.chunkAdded, Float64Array, chunks, used).fill(0, used);
             storage.chunkChanged = shared ? storage.chunkAdded : growArray(memory, storage.chunkChanged, Float64Array, chunks, used).fill(0, used);
+            const blocks = blocksFor(capacity);
+            const usedBlocks = storage.blockAdded.length;
+            storage.blockAdded = growArray(memory, storage.blockAdded, Float64Array, blocks, usedBlocks).fill(0, usedBlocks);
+            storage.blockChanged = shared ? storage.blockAdded : growArray(memory, storage.blockChanged, Float64Array, blocks, usedBlocks).fill(0, usedBlocks);
         }
     }
     archetype.entities = growArray(memory, archetype.entities, Float64Array, capacity, count);
@@ -330,7 +355,10 @@ export const copyCell = (from: Storage, fromRow: number, to: Storage, toRow: num
     const changed = from.changed[fromRow];
     to.added[toRow] = added;
     to.changed[toRow] = changed;
-    // A chunk's tick is the newest of its rows, so a row moving in can raise it.
+    // A block's and a chunk's tick are the newest of their rows, so a row moving in can raise them.
+    const block = toRow >> blockShift;
+    if (added > to.blockAdded[block]) to.blockAdded[block] = added;
+    if (changed > to.blockChanged[block]) to.blockChanged[block] = changed;
     const chunk = toRow >> chunkShift;
     if (added > to.chunkAdded[chunk]) to.chunkAdded[chunk] = added;
     if (changed > to.chunkChanged[chunk]) to.chunkChanged[chunk] = changed;

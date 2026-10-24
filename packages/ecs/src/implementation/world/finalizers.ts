@@ -15,8 +15,9 @@ import type { Queued } from './synchronize.js';
 import type { Essential, ReadonlyValue } from '../../interface/component/value.js';
 import type { Leaf } from '../../interface/finalizer/created.js';
 import { newestKeyOf, threadOf } from '../../interface/registry/index.js';
+import type { Layout } from '../../interface/registry/layout.js';
 import type { TaskChannel } from './remote-systems.js';
-import { writeStops, type StopsOf } from './stop-lists.js';
+import { resourceOffsetsOf, writeStops, type StopsOf } from './stop-lists.js';
 import { acquireLookups, refreshUses, type IndexLookups } from './indexes.js';
 import { indexWatchesOf } from './lookup-keys.js';
 
@@ -34,6 +35,8 @@ export type FinalizerRunner = {
     readonly target: { buffer: CommandBuffer };
     readonly commands: Commands;
     readonly reads: readonly Key[];
+    /** Its optional components, which its row reads where the entity had them. */
+    readonly optional: readonly Key[];
     /** The indexes its lookups go through, held for the world's life. */
     readonly indexes: IndexLookups;
     /** Where a joined thread fills its thread: its stops go to that thread's stop lists, and it runs there. */
@@ -73,7 +76,7 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
     for (const key of indexWatchesOf(declaration.lookup)) state.watchesPending.push(idOf(state, key));
     return {
         finalizer,
-        required: [...new Set([...reads, ...query?.has ?? []])].map(key => idOf(state, key)),
+        required: [...new Set([...reads, ...query?.has ?? []])].filter(key => !(query?.optional ?? []).includes(key)).map(key => idOf(state, key)),
         excluded: (query?.not ?? []).map(key => idOf(state, key)),
         watches,
         matches: [],
@@ -81,6 +84,7 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
         target,
         commands,
         reads,
+        optional: query?.optional ?? [],
         indexes,
         remote: null,
     };
@@ -112,8 +116,30 @@ export const placeFinalizer = (state: State, runner: FinalizerRunner, channel: T
             copies.push(layout.kind === "string");
         }
     }
+    // Its string and linear resources, in the order the thread's context reads them, copied as of before apply.
+    const stringResources: number[] = [];
+    const linearResources: number[] = [];
+    const resourceStrides: number[] = [];
+    const stringStarts: unknown[] = [];
+    const linearStarts: unknown[] = [];
+    const resourceLayouts: Layout[] = [];
+    for (const key of new Set<Key>(finalizer.declaration.resources?.read ?? [])) {
+        const id = idOf(state, key);
+        const layout = state.layouts[id];
+        if (layout.kind === "string") {
+            stringResources.push(id);
+            stringStarts.push(state.starts[id]);
+        }
+        else if (layout.kind === "linear") {
+            linearResources.push(id);
+            resourceStrides.push(layout.stride);
+            linearStarts.push(state.starts[id]);
+            resourceLayouts.push(layout);
+        }
+    }
+    const resourceOffsets = resourceOffsetsOf(stringResources.length, resourceStrides);
     const index = channel.placeFinalizer(state, finalizer);
-    runner.remote = { finalizer, index, objects, linear, strides, copies, entries: [], channel };
+    runner.remote = { finalizer, index, objects, linear, strides, copies, stringResources, linearResources, resourceStrides, resourceOffsets, stringStarts, linearStarts, resourceLayouts, entries: [], channel };
 };
 
 const matches = (runner: FinalizerRunner, archetype: Archetype): boolean => {
@@ -182,7 +208,7 @@ const finalizeStops = (state: State, runner: FinalizerRunner, leaf: Leaf, errors
         if (entries === undefined) byArchetype.set(from, entries = []);
         entries.push(entry);
     }
-    const bind = rowBinder(state, runner.reads, []);
+    const bind = rowBinder(state, runner.reads, [], runner.optional);
     for (const [archetype, stopped] of byArchetype) {
         const row = bind(archetype);
         for (const entry of stopped) {
@@ -382,7 +408,11 @@ export const runFinalizers = (state: State, queued: readonly Queued[], born: Map
         }
         if (state.claimed && staged(state)) {
             const { plan } = state;
-            const source = { entity: plan.entity, from: plan.from, despawned: plan.despawned, archetypes: state.archetypes, row: state.entities.row, holds: state.holds };
+            const resource = state.resourceEntity < 0 ? -1 : indexOf(state.resourceEntity);
+            const source = {
+                entity: plan.entity, from: plan.from, despawned: plan.despawned, archetypes: state.archetypes, row: state.entities.row, holds: state.holds,
+                resourceArchetype: resource < 0 ? -1 : state.entities.archetype[resource], resourceRow: resource < 0 ? 0 : state.entities.row[resource],
+            };
             for (const channel of state.channels) writeStops(channel.stops, tick, source);
         }
     }
@@ -406,7 +436,7 @@ export const finalizeAll = (state: State): Thrown[] => {
         if (leaf.kind !== "finalizer" || runner.remote !== null) continue;
         const finalizer: Untyped = leaf;
         runner.context.bind();
-        const bind = rowBinder(state, runner.reads, []);
+        const bind = rowBinder(state, runner.reads, [], runner.optional);
         for (const archetype of state.archetypes) {
             if (archetype.count === 0 || !matches(runner, archetype)) continue;
             const row = bind(archetype);

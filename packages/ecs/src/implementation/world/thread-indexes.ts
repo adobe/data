@@ -39,19 +39,20 @@ const u32From = (buffer: ArrayBufferLike, at: number): Uint32Array => new Uint32
 const i32From = (buffer: ArrayBufferLike, at: number): Int32Array => new Int32Array(buffer, at);
 const f64From = (buffer: ArrayBufferLike, at: number): Float64Array => new Float64Array(buffer, at);
 
-export const createThreadIndex = (rows: RowHost, archetypeAt: (id: number) => LookupArchetype | undefined, setup: ThreadIndexSetup): ThreadIndex => {
+export const createThreadIndex = (rows: RowHost, archetypeAt: (id: number) => LookupArchetype | undefined, replaced: { readonly count: number }, setup: ThreadIndexSetup): ThreadIndex => {
     const { parts, words } = keyPartsOf(setup.layouts);
     const watchedPositions = Array.from({ length: setup.watched }, (_, k) => k);
     const hashWatched = new Map<number, Float64Array>();
     const sortedWatched = new Map<number, { tree: Float64Array }>();
-    const hash: HashView | null = setup.sorted ? null : { words, stride: recordKey + words, slots: none32, records: none32, ticks: none64, cleared: 0, entries: noneI32, watched: hashWatched };
+    // The world sorts a hash index's buckets before writing its record, so this view has none unsorted.
+    const hash: HashView | null = setup.sorted ? null : { words, stride: recordKey + words, slots: none32, records: none32, ticks: none64, cleared: 0, entries: noneI32, unsorted: 0, watched: hashWatched };
     const sorted: SortedView | null = !setup.sorted ? null : {
         words, stride: sortedStride(words), parts, objects: false, entries: none32, lengths: noneI32, order: noneI32, blocks: 0, counts: noneI32, tree: none64, leaves: 1,
         fences: none32, size: 0, cleared: 0, watched: sortedWatched,
     };
     const index: IndexView = { parts, words, unique: setup.unique, hash, sorted };
     const since: Since = { value: 0 };
-    const lookup = lookupFunction({ rows, archetypeAt, index, unique: setup.unique, reads: setup.reads, readIds: setup.readIds, watched: watchedPositions, since, replaced: null });
+    const lookup = lookupFunction({ rows, archetypeAt, index, unique: setup.unique, reads: setup.reads, readIds: setup.readIds, watched: watchedPositions, since, replaced });
     const count = recordWordsOf(setup.sorted, setup.watched);
     let record: Float64Array = none64;
     const refresh = (buffer: ArrayBufferLike): void => {

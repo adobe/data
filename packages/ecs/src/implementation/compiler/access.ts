@@ -50,9 +50,8 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
             if (name === "lookup") return { kind: "lookups" };
             if (name === "reduce") return { kind: "reducers" };
             if (name === "commands") return { kind: "commands" };
-            if (name === "input" && signature.input) return { kind: "dynamic", expression: { kind: "args", path: [] } };
             if (name === "up" && scope.unit.up !== null) return { kind: "found", lookup: signature.lookups.length, expression: local(scope.unit.up) };
-            return fail(node, "the context holds the declared resources, lookup, reduce, input and up, and commands");
+            return fail(node, "the context holds the declared resources, lookup, reduce and up, and commands");
         case "resources": {
             const index = key.kind === "binding" ? signature.resources.indexOf(key.name) : -1;
             if (key.kind !== "binding" || index < 0) return fail(node, `${key.kind === "binding" ? key.name : "resources"} is not in resources read`);
@@ -61,7 +60,7 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
         }
         case "reducers": {
             const reduced = key.kind === "binding" ? signature.reduced.findIndex(entry => entry.resource === key.name) : -1;
-            return reduced >= 0 ? { kind: "reducer", reduced } : fail(node, "reduce is indexed by a resource in the declaration's reduce");
+            return reduced >= 0 ? { kind: "reducer", reduced } : fail(node, "reduce is indexed by a resource in the declaration's resources.reduce");
         }
         case "lookups": {
             const lookup = signature.lookups.findIndex(entry => entry.name === name);

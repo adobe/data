@@ -7,6 +7,7 @@ import type { Module } from './module-scope.js';
 import type { Out } from './out.js';
 import type { Scope } from './scope.js';
 import type { Signature } from './signature.js';
+import type { PerCall } from './stamps.js';
 import type { Value } from './value.js';
 
 export type ExpressionCompiler = (node: Node, scope: Scope, out: Out) => Value;
@@ -26,15 +27,28 @@ export type Unit = {
     readonly link: Link | null;
     /** GPU kernels emit intrinsic regions for calls to functions that match WGSL builtins. */
     readonly target: "cpu" | "gpu";
+    /** Whether the body is only tried, unflagged: then module data, which may change, isn't inlined. */
+    readonly tried: boolean;
     /** Column descriptions as source text, in `columns` order, indexed by an identity key. */
     readonly columns: string[];
     readonly columnIndex: Map<string, number>;
     /** Chunk columns: dense, indexed by `i >> chunkShift` rather than a strided row index. */
     readonly chunks: Set<number>;
-    /** Chunk columns stamped once per call before the row loop, so their per-row stamps are dropped. */
-    readonly stampedPerCall: Set<number>;
+    /** Block columns: dense, indexed by `i >> blockShift`. */
+    readonly blocks: Set<number>;
+    /**
+     * Chunk columns stamped once per call before the row loop, with their block columns, so their per-row stamps are
+     * dropped.
+     */
+    readonly stampedPerCall: Map<number, PerCall>;
     /** Columns read where a boolean's identity is observable, so they need conversion. */
     readonly booleans: Set<number>;
+    /** Columns of optional components, each by the index in `keys` of its component, which an archetype may lack. */
+    readonly optionalColumns: Map<number, number>;
+    /** Each optional component's presence column, by its binding name. */
+    readonly presences: Map<string, number>;
+    /** While a loop specialized for every optional component present, or every one absent, is printed: which; else null. */
+    presentAs: boolean | null;
     /** Every value assigned to each local, to propagate observation. */
     readonly assignments: Map<number, Expression[]>;
     /** Locals whose value reaches an observable position. */
@@ -74,13 +88,13 @@ export type Unit = {
     readonly statement: StatementCompiler;
 };
 
-export const createUnit = (signature: Signature, module: Module, lists: Lists, expression: ExpressionCompiler, statement: StatementCompiler, link: Link | null = null, target: "cpu" | "gpu" = "cpu"): Unit => {
+export const createUnit = (signature: Signature, module: Module, lists: Lists, expression: ExpressionCompiler, statement: StatementCompiler, link: Link | null = null, target: "cpu" | "gpu" = "cpu", tried = false): Unit => {
     let counter = 0;
     const names = new Map<number, string>();
     const up = signature.up === null ? null : counter++;
     if (up !== null) names.set(up, "up");
     return {
-        signature, module, lists, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
+        signature, module, lists, link, target, tried, columns: [], columnIndex: new Map(), chunks: new Set(), blocks: new Set(), stampedPerCall: new Map(), booleans: new Set(), optionalColumns: new Map(), presences: new Map(), presentAs: null, assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
         used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map(), up: new Set() },
         up, upColumns: [], upColumnIndex: new Map(), upBooleans: new Set(), probes: [], rowLeaves: [], handles: new Set(),
         next: () => counter++, expression, statement,

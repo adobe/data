@@ -5,10 +5,10 @@ import type { WasmScalar } from './wasm.js';
 import type { IndexReaderSetup } from './index-readers.js';
 
 /** Where a kernel column comes from in any archetype it matches. */
-export type Source = { readonly kind: "entity" } | { readonly kind: "field" | "changed" | "chunks"; readonly id: number; readonly leaf: number };
+export type Source = { readonly kind: "entity" } | { readonly kind: "field" | "changed" | "chunks" | "blocks" | "present"; readonly id: number; readonly leaf: number };
 
 /** Component ids of one lookup, and for a lookup by entity with `changed`, those it watches. */
-export type LookupSetup = { readonly read: readonly number[]; readonly has: readonly number[]; readonly not: readonly number[]; readonly changed: readonly number[] | null };
+export type LookupSetup = { readonly read: readonly number[]; readonly has: readonly number[]; readonly optional: readonly number[]; readonly not: readonly number[]; readonly changed: readonly number[] | null };
 
 export type KernelSetup = {
     readonly index: number;
@@ -24,6 +24,10 @@ export type KernelSetup = {
     readonly indexes: readonly { readonly lookup: number; readonly reader: IndexReaderSetup; readonly watched: number }[];
     /** Component ids, used as `keys` so command values name components by id. */
     readonly keys: readonly number[];
+    /** By key index, each component's label, which a failing write of an optional component names. */
+    readonly labels: readonly string[];
+    /** Optional components' ids: an archetype without one gives its columns empty. */
+    readonly optional: readonly number[];
     /** By key index: what each component stored in linear memory starts at, for a spawn leaving it out; null for the rest, whose start the world resolves. */
     readonly starts: readonly unknown[];
     /** The component ids of each list the kernel spawns, in the order its spawner takes values. */

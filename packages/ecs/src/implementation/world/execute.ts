@@ -19,7 +19,7 @@ import type { RunReport } from './failures.js';
 import { liftColumnStamps, type RemoteSystem, type TaskChannel } from './remote-systems.js';
 import { failureOf } from './failures.js';
 import { checkCommands } from './remote.js';
-import { firstKeyOf, labelOfItem } from '../../interface/registry/index.js';
+import { firstKeyOf } from '../../interface/registry/index.js';
 import { mergeUses, refreshUses, type IndexUse } from './indexes.js';
 
 /** Shared by every report without failures or skipped systems: they're read-only, so none needs its own. */
@@ -59,7 +59,7 @@ export const execute = async (context: ExecuteContext, schedule: Schedule, args:
     // An earlier run's GPU work reports its errors to this run: waiting for them there would hold every run until the
     // GPU process catches up.
     const earlier = gpu.takeError();
-    const failures = earlier === null ? null : [failureOf("gpu", earlier.name, earlier.message)];
+    const failures = earlier === null ? null : [failureOf("gpu", earlier, earlier.message)];
     gpu.device.pushErrorScope("out-of-memory");
     gpu.device.pushErrorScope("validation");
     try {
@@ -252,14 +252,14 @@ const isResults = (result: ChunkResult | readonly ChunkResult[]): result is read
  */
 const settled = (state: State, folds: ReadonlyMap<unknown, Fold> | null, outcome: Outcome, runner: Runner, leaf: { readonly name: string }, error: unknown): boolean => {
     if (error === gone) {
-        const label = labelOfItem(leaf);
-        (outcome.failures ??= []).push(failureOf("thread", label, runner.remote?.channel.goneError()));
+        const label = leaf.name;
+        (outcome.failures ??= []).push(failureOf("thread", leaf, runner.remote?.channel.goneError()));
         (outcome.skipped ??= []).push(label);
         if (folds !== null && runner.targets.length > 0) contribute(state, folds, runner, null, true);
         return false;
     }
     const failed = error !== undefined;
-    if (failed) (outcome.failures ??= []).push(failureOf("system", labelOfItem(leaf), error));
+    if (failed) (outcome.failures ??= []).push(failureOf("system", leaf, error));
     if (folds !== null && runner.targets.length > 0) contribute(state, folds, runner, runner.finish(failed), failed);
     return failed;
 };
@@ -338,7 +338,7 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
         }
         if (gpu !== null) markWrites(state, gpu, runners);
         if (failed) {
-            for (let later = v + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (outcome.skipped ??= []).push(labelOfItem(leaf));
+            for (let later = v + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (outcome.skipped ??= []).push(leaf.name);
             return -1;
         }
     }
@@ -435,7 +435,7 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
                 started[i] = noChunks;
                 const failed = error !== undefined;
                 if (failed) {
-                    (outcome.failures ??= []).push(failureOf("system", labelOfItem(tier[i]), error));
+                    (outcome.failures ??= []).push(failureOf("system", tier[i], error));
                     tierFailed = true;
                 }
                 if (folds !== null && runner.targets.length > 0) contribute(state, folds, runner, runner.finish(failed), failed);
@@ -444,7 +444,7 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
             countRan(state, runners);
             if (gpu !== null) markWrites(state, gpu, runners);
             if (tierFailed) {
-                for (let later = t + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (outcome.skipped ??= []).push(labelOfItem(leaf));
+                for (let later = t + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (outcome.skipped ??= []).push(leaf.name);
                 break;
             }
         }
@@ -485,7 +485,7 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
                         // Applied even when the readback fails, which only a lost device makes it do: the CPU state
                         // stays whole.
                         dropped = state.plan.dropped;
-                        for (const { finalizer, error, kind } of applySync(state)) (outcome.failures ??= []).push(failureOf(kind ?? "finalizer", labelOfItem(finalizer), error));
+                        for (const { finalizer, error, kind } of applySync(state)) (outcome.failures ??= []).push(failureOf(kind ?? "finalizer", finalizer, error));
                     }
                 }
             }

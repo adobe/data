@@ -1,9 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
-import { labelOfItem } from "../../interface/registry/index.js";
 import { Observe } from "../../observe/index.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -28,37 +25,30 @@ declare module "@adobe/ecs" {
     }
     export interface Resources {
         [total]: { type: number };
-        [names]: { type: readonly string[] };
+        [names]: { type: readonly string[]; default: [] };
         [counts]: { type: ReadonlyMap<string, number> };
     }
 }
-Component.register(point, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
-Component.register(label, { type: { type: "string" } });
-Component.register(marked, { type: { const: true } });
-Resource.register(total, { type: { type: "number", default: 0 } });
-Resource.register(names, { type: { type: "array", items: { type: "string" }, default: [] } });
-Component.register(words, { type: { type: "set", items: { type: "string" } } });
-Resource.register(counts, { type: { type: "map", keys: { type: "string" }, values: { type: "number" } }, default: new Map() });
 
 /** Adds its struct input to `total`, and its object input's names to `names`. */
-const add = System.create({ name: "joinTest/add", input: { type: "object", properties: { amount: { type: "number" } } }, resources: { write: [total] } }, ({ input, resources }) => {
+const add = System.create({}, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
-const append = System.create({ name: "joinTest/append", input: { type: "object", properties: { name: { type: "string" } } }, resources: { write: [names] } }, ({ input, resources }) => {
+const append = System.create({}, ({ resources }, input: { readonly name: string }) => {
     resources[names] = [...resources[names], input.name];
 });
-const spawn = System.create({ name: "joinTest/spawn", input: { type: "object", properties: { x: { type: "number" } } } }, ({ input, commands }) => {
+const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, label, marked])({ [point]: [input.x, -input.x], [label]: `p${input.x}` });
 });
 /** Counts each word of its input's set in `counts`, and spawns an entity holding the set. */
-const tally = System.create({ name: "joinTest/tally", input: { type: "object", properties: { words: { type: "set", items: { type: "string" } } } }, resources: { write: [counts] } }, ({ input, resources, commands }) => {
+const tally = System.create({}, ({ resources, commands }, input: { readonly words: ReadonlySet<string> }) => {
     const next = new Map(resources[counts]);
     for (const word of input.words) next.set(word, (next.get(word) ?? 0) + 1);
     resources[counts] = next;
     commands.spawn([words])({ [words]: input.words });
 });
-const fail = System.create({ name: "joinTest/fail" }, () => { throw new Error("joinTest failure"); });
-const idle = System.create({ name: "joinTest/idle" }, () => {});
+const fail = System.create({}, () => { throw new Error("joinTest failure"); });
+const idle = System.create({}, () => {});
 
 /** A world shared with a thread joined through a channel, and the joined world. */
 const joined = (threads: readonly ("main")[] = []): { readonly world: CreatedWorld; readonly remote: World; readonly channel: MessageChannel } => {
@@ -141,7 +131,7 @@ describe("joining", () => {
         const report = await reportOf(world, await remote.run(fail));
         expect(report.failures.map(failure => failure.message)).toEqual(["joinTest failure"]);
         const local = System.create(() => {});
-        await expect(remote.run(local)).rejects.toThrow(`System "${labelOfItem(local)}" has no id, so it can't run from another thread`);
+        await expect(remote.run(local)).rejects.toThrow(`has no id, so it can't run from another thread`);
         expect(await reportOf(world, await remote.run(idle))).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         await remote.dispose();
         await world.dispose();

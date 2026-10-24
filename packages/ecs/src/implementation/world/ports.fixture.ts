@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { Component } from "../../interface/component/component.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
@@ -17,14 +16,13 @@ declare module "@adobe/ecs" {
         [value]: { type: number };
     }
 }
-Component.register(value, { type: { type: "number" } });
 
-const seed = System.create({ name: "portsTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < 100_000; i++) commands.spawn([value])({ [value]: i });
 });
 
 /** Long enough per row that a task over 100,000 rows is still running when its worker is killed. */
-const heavy = System.create({ name: "portsTest/heavy", kernel: "cpu", components: { write: [value] } }, row => {
+const heavy = System.create({ kernel: true, components: { with: [value] } }, row => {
     let total = row[value];
     for (let k = 0; k < 2000; k++) total = total * 0.5 + k;
     row[value] = total;

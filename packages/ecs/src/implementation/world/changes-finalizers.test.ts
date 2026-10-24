@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Finalizer, Resource, System, World } from "../../index.js";
+import { Finalizer, System, World } from "../../index.js";
 import { Observe } from "../../observe/index.js";
 import { createWorld } from "../index.js";
 
@@ -14,24 +14,21 @@ declare module "@adobe/ecs" {
         [score]: { type: number };
     }
     interface Resources {
-        [journal]: { type: readonly string[] };
+        [journal]: { type: readonly string[]; default: [] };
     }
 }
 
-Component.register(name, { type: { type: "string" } });
-Component.register(score, { type: { type: "number" } });
-Resource.register(journal, { type: { type: "array", items: { type: "string" }, default: [] } });
 
 // A changes finalizer sees each sync point's structural changes to the components it watches, grouped by how
 // they changed, with values before and after: for persistence, replication and undo.
-Finalizer.changes({ name: "changesFinalizers/save", watch: [name, score], resources: { write: [journal] } }, (changes, { resources }) => {
+Finalizer.changes({ watch: [name, score] }, (changes, { resources }) => {
     const lines = changes.groups.flatMap(group => group.entities.map(entity =>
         `${changes.previous(entity, name) ?? changes.next(entity, name)}: +${group.added.length} -${group.removed.length} score ${changes.previous(entity, score)} → ${changes.next(entity, score)}`));
     resources[journal] = [...resources[journal], ...lines];
 });
 
-const spawn = System.create({ name: "changesFinalizers/spawn" }, ({ commands }) => { commands.spawn([name, score])({ [name]: "ada", [score]: 3 }); });
-const retire = System.create({ name: "changesFinalizers/retire", components: { has: [score] } }, (row, { commands }) => { commands.remove(row.entity, score); });
+const spawn = System.create({}, ({ commands }) => { commands.spawn([name, score])({ [name]: "ada", [score]: 3 }); });
+const retire = System.create({ components: { with: [score] } }, (row, { commands }) => { commands.remove(row.entity, score); });
 
 it("records each sync point's structural changes", async () => {
     await using world = createWorld();

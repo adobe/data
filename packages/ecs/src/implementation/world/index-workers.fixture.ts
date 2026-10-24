@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { workers } from "../../interface/resources/workers.js";
@@ -7,6 +6,7 @@ import { System } from "../../interface/system/system.js";
 import { readEntity, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { countingWorkers } from "./platforms.test-helper.js";
+import type { U32, Vec2 } from "../../interface/math/index.js";
 
 /** Scenarios of kernels looking up through indexes across workers, run built in node and from source in chromium. */
 
@@ -21,44 +21,39 @@ const seen = Symbol("indexWorkersTest/seen");
 const serial = Symbol("indexWorkersTest/serial");
 const target = Symbol("indexWorkersTest/target");
 const tally = Symbol("indexWorkersTest/tally");
+const band = Symbol("indexWorkersTest/band");
+const bandSum = Symbol("indexWorkersTest/bandSum");
+const bandSumByHand = Symbol("indexWorkersTest/bandSumByHand");
 
 declare module "@adobe/ecs" {
     interface Components {
-        [cell]: { type: readonly [number, number] };
+        [cell]: { type: Vec2.I32 };
         [weight]: { type: number };
         [total]: { type: number };
         [count]: { type: number };
         [changes]: { type: number };
-        [lane]: { type: number };
+        [lane]: { type: U32 };
         [rank]: { type: number };
         [seen]: { type: Entity };
-        [serial]: { type: number };
-        [target]: { type: number };
+        [serial]: { type: U32 };
+        [target]: { type: U32 };
         [tally]: { type: number };
+        [band]: { type: U32 };
+        [bandSum]: { type: number };
+        [bandSumByHand]: { type: number };
     }
 }
-Component.register(cell, { type: { type: "array", items: { type: "integer", minimum: -1000, maximum: 1000 }, minItems: 2, maxItems: 2 } });
-Component.register(weight, { type: { type: "number" } });
-Component.register(total, { type: { type: "number" } });
-Component.register(count, { type: { type: "number" } });
-Component.register(changes, { type: { type: "number" } });
-Component.register(lane, { type: { type: "integer", minimum: 0, maximum: 1000 } });
-Component.register(rank, { type: { type: "number" } });
-Component.register(seen, { type: Entity.schema });
-Component.register(serial, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
-Component.register(target, { type: { type: "integer", minimum: 0, maximum: 1000000 } });
-Component.register(tally, { type: { type: "number" } });
 
-const grid = Index.create({ name: "indexWorkersTest/grid", key: [cell], components: { has: [weight] } });
-const lanes = Index.create({ name: "indexWorkersTest/lanes", key: [lane, rank], sorted: true });
-const serials = Index.create({ name: "indexWorkersTest/serials", key: [serial], unique: true, components: { has: [weight] } });
-const weighted = Index.create({ name: "indexWorkersTest/weighted", key: [], components: { has: [weight] } });
+const grid = Index.create({ key: [cell], components: { with: [weight] } });
+const lanes = Index.create({ key: [lane, rank], sorted: true });
+const serials = Index.create({ key: [serial], unique: true, components: { with: [weight] } });
+const weighted = Index.create({ key: [], components: { with: [weight] } });
 
 /** Each row's neighbors in the 3 by 3 cells around its own: how many, and their weights' sum. */
 const neighbors = System.create({
-    name: "indexWorkersTest/neighbors", kernel: "cpu",
-    components: { read: [cell], write: [total, count] },
-    lookup: { near: { index: grid, read: [weight] } },
+    kernel: true,
+    components: { with: [cell, total, count] },
+    lookup: { near: { index: grid } },
 }, (row, { lookup }) => {
     const [x, y] = row[cell];
     let sum = 0;
@@ -78,8 +73,8 @@ const neighbors = System.create({
 
 /** Counts runs whose list of the row's own cell changed. */
 const watch = System.create({
-    name: "indexWorkersTest/watch", kernel: "cpu",
-    components: { read: [cell], write: [changes] },
+    kernel: true,
+    components: { with: [cell, changes] },
     lookup: { near: { index: grid, changed: [weight] } },
     after: [neighbors],
 }, (row, { lookup }) => {
@@ -89,8 +84,8 @@ const watch = System.create({
 
 /** How many rows of the row's lane have a rank within 5 of its own, and the first of them. */
 const window = System.create({
-    name: "indexWorkersTest/window", kernel: "cpu",
-    components: { read: [lane, rank], write: [count, seen] },
+    kernel: true,
+    components: { with: [lane, rank, count, seen] },
     lookup: { inLane: { index: lanes } },
     after: [watch],
 }, (row, { lookup }) => {
@@ -102,9 +97,9 @@ const window = System.create({
 
 /** The weight of the entity whose serial is the row's target, or -1. */
 const follow = System.create({
-    name: "indexWorkersTest/follow", kernel: "cpu",
-    components: { read: [target], write: [total] },
-    lookup: { bySerial: { index: serials, read: [weight] } },
+    kernel: true,
+    components: { with: [target, total] },
+    lookup: { bySerial: { index: serials } },
     after: [window],
 }, (row, { lookup }) => {
     const found = lookup.bySerial(row[target]);
@@ -113,9 +108,9 @@ const follow = System.create({
 
 /** Through an index without a key: how many entities it holds, a stride of their weights, and whether it changed. */
 const census = System.create({
-    name: "indexWorkersTest/census", kernel: "cpu",
-    components: { read: [target], write: [tally] },
-    lookup: { weighted: { index: weighted, read: [weight], changed: [weight] } },
+    kernel: true,
+    components: { with: [target, tally] },
+    lookup: { weighted: { index: weighted, changed: [weight] } },
     after: [follow],
 }, (row, { lookup }) => {
     const all = lookup.weighted();
@@ -124,9 +119,9 @@ const census = System.create({
     row[tally] = all.length * 1000000 + sum * 2 + (all.changed ? 1 : 0);
 });
 
-const tick = System.create({ name: "indexWorkersTest/tick", systems: [neighbors, watch, window, follow, census] });
+const tick = System.create({ systems: [neighbors, watch, window, follow, census] });
 
-const seed = System.create({ name: "indexWorkersTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     for (let k = 0; k < 3000; k++) {
         commands.spawn([cell, weight, total, count, changes, serial])({ [cell]: [(k * 7) % 31, (k * 3) % 29], [weight]: k % 9, [total]: 0, [count]: 0, [changes]: 0, [serial]: k });
     }
@@ -137,15 +132,16 @@ const seed = System.create({ name: "indexWorkersTest/seed" }, ({ commands }) => 
 });
 
 /** Moves some cells, changes some weights and ranks, despawns some serials and spawns more: a different input each time. */
-const stir = System.create({ name: "indexWorkersTest/stir", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [cell, weight] } }, (row, { input }) => {
+const stir = System.create({ components: { with: [cell, weight] } }, (row, _context, input: { readonly round: number }) => {
     const [x, y] = row[cell];
     if ((x + y + input.round) % 11 === 0) row[cell] = [(x + 1) % 31, y];
     if ((x * y + input.round) % 13 === 0) row[weight] = row[weight] + 1;
 });
-const rerank = System.create({ name: "indexWorkersTest/rerank", input: { type: "object", properties: { round: { type: "integer" } } }, components: { write: [rank] } }, (row, { input }) => {
+const rerank = System.create({ components: { with: [rank] } }, (row, _context, input: { readonly round: number }) => {
     if ((row[rank] + input.round) % 7 === 0) row[rank] = (row[rank] * 3 + 1) % 1009;
 });
-const churn = System.create({ name: "indexWorkersTest/churn", input: { type: "object", properties: { round: { type: "integer" } } }, components: { read: [serial] } }, (row, { input, commands }) => {
+// As written: spawned on workers, entities would take ids in an order that depends on the pool, which the census samples by.
+const churn = System.create({ kernel: false, components: { with: [serial] } }, (row, { commands }, input: { readonly round: number }) => {
     if ((row[serial] + input.round) % 17 === 0) commands.despawn(row.entity);
     if (row[serial] % 101 === input.round) {
         commands.spawn([cell, weight, total, count, changes, serial])({ [cell]: [input.round, row[serial] % 29], [weight]: 4, [total]: 0, [count]: 0, [changes]: 0, [serial]: 3000 + row[serial] + input.round });
@@ -185,6 +181,68 @@ export const simulate = async (threads: number, wasm: boolean): Promise<{ readon
         }));
         const rows = [...cells, ...ranked, ...targets].map(row => JSON.stringify(row));
         return { rows: rows.sort(), tasks };
+    }
+    finally {
+        await ecs.dispose();
+    }
+};
+
+/** Two long buckets, which changes leave unsorted until something reads them by position. */
+const bands = Index.create({ key: [band], components: { with: [serial] } });
+
+/** Each row's band's serials, each times its position plus one: a sum that tells the order. */
+const bandOrder = System.create({
+    kernel: true,
+    components: { with: [target, bandSum] },
+    lookup: { inBand: { index: bands } },
+}, (row, { lookup }) => {
+    const list = lookup.inBand(row[target] % 2);
+    let sum = 0;
+    for (let i = 0; i < list.length; i++) sum += (i + 1) * list.at(i)[serial];
+    row[bandSum] = sum;
+});
+const bandOrderByHand = System.create({
+    components: { with: [target, bandSumByHand] },
+    lookup: { inBand: { index: bands } },
+}, (row, { lookup }) => {
+    const list = lookup.inBand(row[target] % 2);
+    let sum = 0;
+    for (let i = 0; i < list.length; i++) sum += (i + 1) * list.at(i)[serial];
+    row[bandSumByHand] = sum;
+});
+const seedBands = System.create({}, ({ commands }) => {
+    for (let k = 0; k < 600; k++) commands.spawn([band, serial])({ [band]: k % 2, [serial]: k });
+    for (let k = 0; k < 512; k++) commands.spawn([target, bandSum, bandSumByHand])({ [target]: k, [bandSum]: 0, [bandSumByHand]: 0 });
+});
+/** Moves some entities to the other band, despawns some and spawns others. */
+const stirBands = System.create({ components: { with: [serial, band] } }, (row, { commands }, input: { readonly round: number }) => {
+    if ((row[serial] + input.round) % 7 === 0) row[band] = 1 - row[band];
+    if ((row[serial] + input.round) % 29 === 0) commands.despawn(row.entity);
+    if (row[serial] % 31 === input.round) commands.spawn([band, serial])({ [band]: row[serial] % 2, [serial]: 1000 + row[serial] * 10 + input.round });
+});
+
+/**
+ * Over rounds of changes, what a kernel reading the bands in order wrote, and what a main-thread system reading them
+ * after it wrote, each round's sorted; and the run tasks posted to workers.
+ */
+export const bandOrders = async (threads: number, wasm: boolean): Promise<{ readonly kernel: readonly (readonly number[])[]; readonly byHand: readonly (readonly number[])[]; readonly tasks: number }> => {
+    const counting = countingWorkers();
+    const ecs = createWorld({ [workers]: threads }, { minimumChunk: 64, wasm, pool: counting.platform });
+    try {
+        await ecs.run(seedBands);
+        const posted = (): number => counting.posted("run") + counting.posted("window");
+        const before = posted();
+        const kernel: number[][] = [];
+        const byHand: number[][] = [];
+        for (let round = 0; round < 6; round++) {
+            await ecs.run(stirBands, { round });
+            await ecs.run(bandOrder);
+            await ecs.run(bandOrderByHand);
+            const values = await Promise.all((await select(ecs, { required: [target] })).map(entity => readEntity(ecs, entity, [bandSum, bandSumByHand])));
+            kernel.push(values.map(found => found?.[bandSum] ?? -1).sort((a, b) => a - b));
+            byHand.push(values.map(found => found?.[bandSumByHand] ?? -1).sort((a, b) => a - b));
+        }
+        return { kernel, byHand, tasks: posted() - before };
     }
     finally {
         await ecs.dispose();

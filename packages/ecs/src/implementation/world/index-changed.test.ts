@@ -1,13 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
+import { giveAccess } from "../../interface/registry/ids.test-helper.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Index } from "../../interface/indexes/index-type.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
+import type { U32 } from "../../interface/math/index.js";
 
 // An index lookup's `changed: true`: the index's entries changing is a change filter of its system.
 
@@ -18,7 +18,7 @@ const paused = Symbol("indexChangedTest/paused");
 
 declare module "@adobe/ecs" {
     interface Components {
-        [group]: { type: number };
+        [group]: { type: U32 };
         [weight]: { type: number };
         [total]: { type: number };
     }
@@ -26,40 +26,35 @@ declare module "@adobe/ecs" {
         [paused]: { type: boolean };
     }
 }
-Component.register(group, { type: { type: "integer", minimum: 0, maximum: 1000 } });
-Component.register(weight, { type: { type: "number" } });
-Component.register(total, { type: { type: "number" } });
-Resource.register(paused, { type: { type: "boolean", default: false } });
 
-const byGroup = Index.create({ name: "indexChangedTest/byGroup", key: [group], components: { has: [weight] } });
-const inOrder = Index.create({ name: "indexChangedTest/inOrder", key: [group], sorted: true });
-const weighted = Index.create({ name: "indexChangedTest/weighted", key: [], components: { has: [weight] } });
+const byGroup = Index.create({ key: [group], components: { with: [weight] } });
+const inOrder = Index.create({ key: [group], sorted: true });
+const weighted = Index.create({ key: [], components: { with: [weight] } });
 
 const one = { type: "object", properties: { entity: Entity.schema, value: { type: "number" } } } as const;
-const entityOnly = { type: "object", properties: { entity: Entity.schema } } as const;
 let spawned: Entity[] = [];
-const spawn = System.create({ name: "indexChangedTest/spawn", input: { type: "object", properties: { groups: { type: "array", items: { type: "integer" } } } } }, ({ input, commands }) => {
+const spawn = System.create({}, ({ commands }, input: { readonly groups: readonly number[] }) => {
     for (const value of input.groups) spawned.push(commands.spawn([group, weight, total])({ [group]: value, [weight]: 1, [total]: 0 }));
 });
-const setGroup = System.create({ name: "indexChangedTest/setGroup", input: one, target: "entity", components: { write: [group] } }, (row, { input }) => {
+const setGroup = System.create({ target: "entity", components: { with: [group] } }, (row, _context, input: { readonly entity: Entity; readonly value: number }) => {
     row[group] = input.value;
 });
-const setWeight = System.create({ name: "indexChangedTest/setWeight", input: one, target: "entity", components: { write: [weight] } }, (row, { input }) => {
+const setWeight = System.create({ target: "entity", components: { with: [weight] } }, (row, _context, input: { readonly entity: Entity; readonly value: number }) => {
     row[weight] = input.value;
 });
-const despawn = System.create({ name: "indexChangedTest/despawn", input: entityOnly, target: "entity", components: { has: [group] } }, (row, { commands }) => {
+const despawn = System.create({ target: "entity", components: { with: [group] } }, (row, { commands }, _input: { readonly entity: Entity }) => {
     commands.despawn(row.entity);
 });
-const dropWeight = System.create({ name: "indexChangedTest/dropWeight", input: entityOnly, target: "entity", components: { has: [weight] } }, (row, { commands }) => {
+const dropWeight = System.create({ target: "entity", components: { with: [weight] } }, (row, { commands }, _input: { readonly entity: Entity }) => {
     commands.remove(row.entity, weight);
 });
-const pause = System.create({ name: "indexChangedTest/pause", input: { type: "object", properties: { paused: { type: "boolean" } } }, resources: { write: [paused] } }, ({ input, resources }) => {
+const pause = System.create({}, ({ resources }, input: { readonly paused: boolean }) => {
     resources[paused] = input.paused;
 });
 
 /** What each run of a gated system saw: its lists' lengths and `changed` for groups 1 and 2. */
 let seen: string[] = [];
-const counting = System.create({ name: "indexChangedTest/counting", lookup: { byGroup: { index: byGroup, changed: true } } }, ({ lookup }) => {
+const counting = System.create({ lookup: { byGroup: { index: byGroup, changed: true } } }, ({ lookup }) => {
     const first = lookup.byGroup(1);
     const second = lookup.byGroup(2);
     seen.push(`${first.length}${first.changed ? "*" : ""} ${second.length}${second.changed ? "*" : ""}`);
@@ -67,8 +62,8 @@ const counting = System.create({ name: "indexChangedTest/counting", lookup: { by
 
 /** Each row's total: how many rows share its group, by hundreds, and its weight; run only when the groups changed. */
 const tally = System.create({
-    name: "indexChangedTest/tally", kernel: "cpu",
-    components: { read: [group, weight], write: [total] },
+    kernel: true,
+    components: { with: [group, weight, total] },
     lookup: { byGroup: { index: byGroup, changed: true } },
 }, (row, { lookup }) => {
     row[total] = lookup.byGroup(row[group]).length * 100 + row[weight];
@@ -114,7 +109,7 @@ describe("an index lookup's changed: true", () => {
         await using world = inline();
         spawned = [];
         const orders: string[] = [];
-        const ordering = System.create({ name: "indexChangedTest/ordering", observer: true, lookup: { inOrder: { index: inOrder, changed: true } } }, ({ lookup }) => {
+        const ordering = System.create({ observer: true, lookup: { inOrder: { index: inOrder, changed: true } } }, ({ lookup }) => {
             const all = lookup.inOrder();
             const groups: number[] = [];
             for (let i = 0; i < all.length; i++) groups.push(all.at(i).entity === spawned[0] ? -1 : 0);
@@ -137,8 +132,7 @@ describe("an index lookup's changed: true", () => {
         spawned = [];
         const flags: boolean[] = [];
         const watching = System.create({
-            name: "indexChangedTest/watching",
-            lookup: { byGroup: { index: byGroup, changed: true }, weights: { read: [weight], changed: [weight] } },
+            lookup: { byGroup: { index: byGroup, changed: true }, weights: { with: [weight], changed: [weight] } },
         }, ({ lookup }) => {
             flags.push(lookup.weights(spawned[0])?.changed ?? false);
         });
@@ -158,8 +152,7 @@ describe("an index lookup's changed: true", () => {
         spawned = [];
         const rows: number[] = [];
         const filtering = System.create({
-            name: "indexChangedTest/filtering",
-            components: { read: [weight], changed: [weight] },
+            components: { with: [weight], changed: [weight] },
             lookup: { byGroup: { index: byGroup, changed: true } },
         }, row => {
             rows.push(row[weight]);
@@ -185,7 +178,6 @@ describe("an index lookup's changed: true", () => {
         spawned = [];
         let runs = 0;
         const both = System.create({
-            name: "indexChangedTest/both",
             resources: { not: [paused] },
             lookup: { byGroup: { index: byGroup, changed: true }, weighted: { index: weighted, changed: true } },
         }, () => {
@@ -213,7 +205,7 @@ describe("an index lookup's changed: true", () => {
         await using world = inline();
         spawned = [];
         const totals: number[] = [];
-        const readTotals = System.create({ name: "indexChangedTest/readTotals", observer: true, components: { read: [total] } }, row => {
+        const readTotals = System.create({ observer: true, components: { with: [total] } }, row => {
             totals.push(row[total]);
         });
         const totalsOf = async (): Promise<number[]> => {
@@ -233,11 +225,11 @@ describe("an index lookup's changed: true", () => {
     });
 
     it("is only for a system's index lookups", () => {
-        const untypedSystem = (declaration: object): unknown => Reflect.apply(System.create, undefined, [declaration, () => {}]);
-        const untypedFinalizer = (declaration: object): unknown => Reflect.apply(Finalizer.create, undefined, [declaration, () => {}]);
-        expect(() => untypedSystem({ name: "indexChangedTest/byEntity", lookup: { weights: { read: [weight], changed: true } } }))
-            .toThrow(`System "indexChangedTest/byEntity": lookup "weights"'s changed is true, which only an index lookup takes; name the components it watches.`);
-        expect(() => untypedFinalizer({ name: "indexChangedTest/finalizer", components: { read: [group] }, lookup: { byGroup: { index: byGroup, changed: true } } }))
-            .toThrow(`Finalizer "indexChangedTest/finalizer": lookup "byGroup"'s changed is true, which only a system's index lookup takes; a finalizer runs on each entity that stops matching.`);
+        const untypedSystem = (declaration: object): unknown => Reflect.apply(System.create, undefined, [giveAccess(declaration), () => {}]);
+        const untypedFinalizer = (declaration: object): unknown => Reflect.apply(Finalizer.create, undefined, [giveAccess(declaration), () => {}]);
+        expect(() => untypedSystem({ lookup: { weights: { with: [weight], changed: true } } }))
+            .toThrow(`lookup "weights"'s changed is true, which only an index lookup takes; name the components it watches.`);
+        expect(() => untypedFinalizer({ components: { with: [group] }, lookup: { byGroup: { index: byGroup, changed: true } } }))
+            .toThrow(`lookup "byGroup"'s changed is true, which only a system's index lookup takes; a finalizer runs on each entity that stops matching.`);
     });
 });

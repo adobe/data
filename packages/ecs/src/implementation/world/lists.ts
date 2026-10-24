@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
-import { archetypeIndexOf, labelOf } from '../../interface/registry/index.js';
+import { archetypeIndexKey, internArchetype, labelOf, type Interned } from '../../interface/registry/index.js';
 import { batchOf } from './batches.js';
 import { reserve } from './entities.js';
 import { claim, generated, openRow, writerOf, type Column, type Positional, type SpawnBatch, type Writer } from './staging.js';
@@ -37,8 +37,8 @@ export type ListShape = {
     spawner: Spawner | null;
 };
 
-/** A plain list named recently, found by its keys, copied, since it may change. */
-export type Recent = { readonly keys: readonly unknown[]; readonly shape: ListShape };
+/** A plain list named recently, found by its keys, copied once for its shape, since it may change. */
+export type Recent = { keys: readonly unknown[]; shape: ListShape };
 
 const recentCount = 8;
 
@@ -61,17 +61,26 @@ const resolve = (state: State, list: readonly unknown[]): ListShape => {
 };
 
 /**
- * The shape of a list of components: an archetype `Archetype.create` indexed, which never changes, by its index; any
- * other list by its keys among the recent plain lists, else resolved and made recent. Lists of the same components in
- * any order share a shape.
+ * The index a list has: the program-wide one the plugin gave it, which never changes; for one made at runtime, the
+ * one it keeps while its keys are those it was resolved with; else -1. Both are read from one property, so a list of
+ * either kind is one lookup.
+ */
+export const listIndexOf = (list: readonly unknown[]): number => {
+    const index: unknown = Reflect.get(list, archetypeIndexKey);
+    return typeof index === "number" ? index : isKept(index) && sameKeys(index.keys, list) ? index.index : -1;
+};
+
+/**
+ * The shape of a list of components, by its index (`listIndexOf`); for a list made at runtime without one, by its keys
+ * among the recent ones, else resolved, given an index it keeps and made recent. Lists of the same components in any
+ * order share a shape.
  */
 export const listShapeOf = (state: State, list: readonly unknown[]): ListShape => {
-    const index = archetypeIndexOf(list);
-    // Kept small, so it inlines into the systems spawning and adding: the rest is outlined.
+    const index = listIndexOf(list);
     return (index >= 0 ? state.byIndex[index] : undefined) ?? shapeOfList(state, list, index);
 };
 
-/** A list's shape, other than an archetype's already resolved. */
+/** A list's shape, other than one already resolved by its index. */
 const shapeOfList = (state: State, list: readonly unknown[], index: number): ListShape => {
     if (index >= 0) {
         const shape = resolve(state, list);
@@ -79,19 +88,38 @@ const shapeOfList = (state: State, list: readonly unknown[], index: number): Lis
         return shape;
     }
     const { recent } = state;
-    const length = list.length;
-    for (let r = 0; r < recent.length; r++) {
-        const { keys } = recent[r];
-        if (keys.length !== length) continue;
-        let same = true;
-        for (let k = 0; k < length && same; k++) same = keys[k] === list[k];
-        if (same) return recent[r].shape;
+    for (let r = 0; r < recent.length; r++) if (sameKeys(recent[r].keys, list)) return recent[r].shape;
+    // Lists of these keys made on every call share one index, so a shape seen before allocates nothing here.
+    const interned = internArchetype(list);
+    const shape = state.byIndex[interned.index] ?? (state.byIndex[interned.index] = resolve(state, list));
+    if (recent.length < recentCount) recent.push({ keys: interned.keys, shape });
+    else {
+        const slot = recent[state.nextRecent = (state.nextRecent + 1) % recentCount];
+        slot.keys = interned.keys;
+        slot.shape = shape;
     }
-    const shape = resolve(state, list);
-    const entry: Recent = { keys: [...list], shape };
-    if (recent.length < recentCount) recent.push(entry);
-    else recent[state.nextRecent = (state.nextRecent + 1) % recentCount] = entry;
+    // A list keeps the record of its keys' index, so naming it again is one lookup while it holds them.
+    const kept: unknown = Reflect.get(list, archetypeIndexKey);
+    if (kept === undefined && Object.isExtensible(list)) {
+        record.value = interned;
+        Object.defineProperty(list, archetypeIndexKey, record);
+    }
+    else if (isKept(kept)) Reflect.set(list, archetypeIndexKey, interned);
     return shape;
+};
+
+/** The descriptor a list's record is defined by, its value set for each: writable, since the list may change. */
+const record: PropertyDescriptor = { value: null, writable: true };
+
+/** Whether an index property holds a list's record: only this module puts an object there, and indexes are numbers. */
+const isKept = (value: unknown): value is Interned => typeof value === "object" && value !== null;
+
+/** Whether a list holds exactly the keys copied from one before. */
+const sameKeys = (keys: readonly unknown[], list: readonly unknown[]): boolean => {
+    const length = list.length;
+    if (keys.length !== length) return false;
+    for (let k = 0; k < length; k++) if (keys[k] !== list[k]) return false;
+    return true;
 };
 
 /** Where a shape's spawns go, resolved once. A constant's column holds nothing, so nothing is written or read for it. */

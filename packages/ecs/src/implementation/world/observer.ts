@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Failure } from '../../interface/report/failure.js';
-import { labelOfItem } from '../../interface/registry/index.js';
 import { readAhead, type ExecuteContext } from './execute.js';
 import { failureOf } from './failures.js';
 import { refreshUses } from './indexes.js';
@@ -133,7 +132,7 @@ const runOne = (leaf: Leaf, runner: Runner, failures: Failure[] | null): Failure
         const chunk = chunks[c];
         // An observer system runs here, as no kernel, so its chunks are settled.
         if (chunk instanceof Promise || chunk.error === undefined) continue;
-        (failures ??= []).push(failureOf("system", labelOfItem(leaf), chunk.error));
+        (failures ??= []).push(failureOf("system", leaf, chunk.error));
         break;
     }
     return failures;

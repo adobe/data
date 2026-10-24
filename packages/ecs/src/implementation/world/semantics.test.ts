@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
@@ -17,28 +16,23 @@ const score = Symbol("semanticsTest/score");
 const tag = Symbol("semanticsTest/tag");
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number] };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 2; maxItems: 2 }> };
         [target]: { type: Entity };
         [score]: { type: number };
         [tag]: { type: true };
     }
 }
-Component.register(position, { type: vec2 });
-Component.register(target, { type: Entity.schema });
-Component.register(score, { type: { type: "number" } });
-Component.register(tag, { type: { const: true } });
 
-const seed = System.create({ name: "semanticsTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     // @ts-expect-error untyped callers can store any number as an entity
     commands.spawn([position, target, score])({ [position]: [5, 6], [target]: -1, [score]: 0 });
     // @ts-expect-error untyped callers can store any number as an entity
     commands.spawn([position, target, score])({ [position]: [7, 8], [target]: Number.NaN, [score]: 0 });
 });
 const chase = System.create({
-    name: "semanticsTest/chase",
-    kernel: "cpu",
-    components: { read: [target], write: [score] },
-    lookup: { targets: { read: [position] } },
+    kernel: true,
+    components: { with: [target, score] },
+    lookup: { targets: { with: [position] } },
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     if (other === null) {
@@ -61,7 +55,7 @@ const run = async (wasm: boolean) => {
 describe("semantics", () => {
     it("a throwing sync point doesn't poison the next one or another world", async () => {
         let poison = false;
-        const spawn = System.create({ name: "semanticsTest/seed/2" }, ({ commands }) => {
+        const spawn = System.create({}, ({ commands }) => {
             commands.spawn([score])({ [score]: 1 });
             commands.spawn([score])({ [score]: poison ? Symbol("x") as unknown as number : 2 });
         });
@@ -87,9 +81,9 @@ describe("semantics", () => {
     it("re-adding an existing tag keeps its added tick", async () => {
         const seen: number[] = [];
         let entity = Entity.none;
-        const spawn = System.create({ name: "semanticsTest/seed/3" }, ({ commands }) => { entity = commands.spawn([tag, score])({ [tag]: true, [score]: 0 }); });
-        const retag = System.create({ name: "semanticsTest/retag" }, ({ commands }) => { commands.add(entity, tag, true); });
-        const watch = System.create({ name: "semanticsTest/watch", components: { has: [score], added: [tag] } }, row => { seen.push(row.entity); });
+        const spawn = System.create({}, ({ commands }) => { entity = commands.spawn([tag, score])({ [tag]: true, [score]: 0 }); });
+        const retag = System.create({}, ({ commands }) => { commands.add(entity, tag, true); });
+        const watch = System.create({ components: { with: [score], added: [tag] } }, row => { seen.push(row.entity); });
         const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(watch);

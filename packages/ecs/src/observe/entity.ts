@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Index, System, type Component, type Entity, type World } from '../interface/index.js';
 import type { Observe } from './observe.js';
-import { createEntry, give, giveFirst, keysId, labelOf, none, noDelivery, ownName, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
+import { createEntry, give, giveFirst, keysId, labelOf, labelled, none, noDelivery, ownName, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
 
 /** An observed entity's value, shared by its observers, and by optional component whether it had it last. */
 type EntityEntry = Entry<object | null> & { readonly entity: Entity; readonly present: boolean[] };
@@ -27,12 +27,12 @@ type EntityShape = Shape & {
 const shapes = new WeakMap<WorldState, Map<string, EntityShape>>();
 
 /** Indexes of the entities with every component of a list, by its id: one per list in the program. */
-const memberIndexes = new Map<string, Index<{ readonly key: readonly []; readonly components: { readonly has: readonly Component.Key[] } }>>();
+const memberIndexes = new Map<string, Index<{ readonly key: readonly []; readonly components: { readonly with: readonly Component.Key[] } }>>();
 
 const membersOf = (required: readonly Component.Key[]) => {
     const id = keysId(required);
     let index = memberIndexes.get(id);
-    if (index === undefined) memberIndexes.set(id, index = Index.create({ name: `Observe.entity(${labelOf(required)})`, key: [], components: { has: [...required] } }));
+    if (index === undefined) memberIndexes.set(id, index = Index.create(labelled({ key: [], components: { with: [...required] } }, `Observe.entity(${labelOf(required)})`)));
     return index;
 };
 
@@ -129,14 +129,14 @@ const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: s
     let finders: Finders | null = null;
     let source: object | null = null;
     const system = optional.length === 0
-        ? System.create({ name, observer: true, lookup: { presence: { has: required, changed: required }, values: { read: required }, members: { index: membersOf(required), changed: required } } }, ({ lookup }) => {
+        ? System.create(labelled({ observer: true, lookup: { presence: { with: required, changed: required }, values: { with: required }, members: { index: membersOf(required), changed: required } } }, name, { lookup: { values: required } }), ({ lookup }) => {
             if (source !== lookup || finders === null) {
                 source = lookup;
                 finders = { presence: lookup.presence, values: lookup.values, optional: noOptional };
             }
             pass(lookup.members().changed, finders);
         })
-        : System.create({ name, observer: true, lookup: optionalLookups(required, optional) }, ({ lookup }) => {
+        : System.create(labelled({ observer: true, lookup: optionalLookups(required, optional) }, name, { lookup: optionalReads(required, optional) }), ({ lookup }) => {
             if (source !== lookup || finders === null) {
                 source = lookup;
                 finders = { presence: lookup.presence, values: lookup.values, optional: (index, entity) => lookup[index](entity) };
@@ -173,20 +173,27 @@ const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: s
 
 const noOptional = (): null => null;
 
-type Watched = { readonly read: readonly Component.Key[]; readonly changed: readonly Component.Key[] };
+type Watched = { readonly with: readonly Component.Key[]; readonly changed: readonly Component.Key[] };
 
 /** Lookups of an entity's required components, whether and what, and one of each optional one, by its position. */
 const optionalLookups = (required: readonly Component.Key[], optional: readonly Component.Key[]): {
-    readonly presence: { readonly has: readonly Component.Key[]; readonly changed: readonly Component.Key[] };
-    readonly values: { readonly read: readonly Component.Key[] };
+    readonly presence: { readonly with: readonly Component.Key[]; readonly changed: readonly Component.Key[] };
+    readonly values: { readonly with: readonly Component.Key[] };
     readonly [index: number]: Watched;
 } => {
-    const lookups: { presence: { readonly has: readonly Component.Key[]; readonly changed: readonly Component.Key[] }; values: { readonly read: readonly Component.Key[] }; [index: number]: Watched } = {
-        presence: { has: required, changed: required },
-        values: { read: required },
+    const lookups: { presence: { readonly with: readonly Component.Key[]; readonly changed: readonly Component.Key[] }; values: { readonly with: readonly Component.Key[] }; [index: number]: Watched } = {
+        presence: { with: required, changed: required },
+        values: { with: required },
     };
-    for (let i = 0; i < optional.length; i++) lookups[i] = { read: [optional[i]], changed: [optional[i]] };
+    for (let i = 0; i < optional.length; i++) lookups[i] = { with: [optional[i]], changed: [optional[i]] };
     return lookups;
+};
+
+/** What the optional shape's body reads of its lookups' rows: the required values, and each optional one. */
+const optionalReads = (required: readonly Component.Key[], optional: readonly Component.Key[]): { readonly [name: string]: readonly Component.Key[] } => {
+    const reads: { [name: string]: readonly Component.Key[] } = { values: required };
+    for (let i = 0; i < optional.length; i++) reads[i] = [optional[i]];
+    return reads;
 };
 
 export const observeEntity = <T>(world: World, entity: Entity, components: { readonly required?: readonly Component.Key[]; readonly optional?: readonly Component.Key[] }): Observe<T | null> => {

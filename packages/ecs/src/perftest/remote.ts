@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { Component } from "../interface/component/component.js";
 import { Index } from "../interface/indexes/index-type.js";
-import { Resource } from "../interface/resource/resource.js";
 import { always } from "../interface/resources/always.js";
 import { eachTick } from "./observer.js";
 import { workers } from "../interface/resources/workers.js";
@@ -29,25 +27,19 @@ declare module "@adobe/ecs" {
     }
     export interface Resources {
         [counter]: { type: number };
-        [sign]: { type: number };
+        [sign]: { type: number; default: 1 };
     }
 }
-Resource.register(counter, { type: { type: "number", default: 0 } });
-Resource.register(sign, { type: { type: "number", default: 1 } });
-Component.register(rank, { type: { type: "number" } });
-Component.register(order, { type: { type: "number" } });
-Component.register(caption, { type: { type: "string" } });
-Component.register(amount, { type: { type: "number" } });
 
 /** An empty transaction. */
-export const empty = System.create({ name: "remote/empty" }, () => {});
+export const empty = System.create({}, () => {});
 /** Changes the observed resource every tick. */
-export const count = System.create({ name: "remote/count", resources: { write: [counter] } }, ({ resources }) => { resources[counter] += 1; });
-export const seedRanks = System.create({ name: "remote/seedRanks", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+export const count = System.create({}, ({ resources }) => { resources[counter] += 1; });
+export const seedRanks = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([rank, order])({ [rank]: i, [order]: i });
 });
-const flip = System.create({ name: "remote/flip", resources: { write: [sign] } }, ({ resources }) => { resources[sign] = -resources[sign]; });
-const reverse = System.create({ name: "remote/reverse", kernel: "cpu", components: { read: [rank], write: [order] }, resources: { read: [sign] }, after: [flip] }, (row, { resources }) => {
+const flip = System.create({}, ({ resources }) => { resources[sign] = -resources[sign]; });
+const reverse = System.create({ kernel: true, components: { with: [rank, order] }, after: [flip] }, (row, { resources }) => {
     row[order] = row[rank] * resources[sign];
 });
 /** Reverses the entities' order every tick. */
@@ -57,19 +49,19 @@ export const reorder = System.create([flip, reverse]);
 export const observerSeen = { last: 0, notified: 0 };
 
 /** On a joined thread, after each sync point that changed it: the observed resource. */
-export const observerCounter = System.create({ name: "remote/observerCounter", observer: true, resources: { read: [counter], changed: [counter] } }, ({ resources }) => {
+export const observerCounter = System.create({ observer: true, resources: { changed: [counter] } }, ({ resources }) => {
     observerSeen.last = resources[counter];
     observerSeen.notified++;
 });
 
 /** Every entity with a rank, in entity order. */
-const ranked = Index.create({ name: "remote/ranked", key: [], components: { has: [rank, order] } });
+const ranked = Index.create({ key: [], components: { with: [rank, order] } });
 const sortedKeys = { keys: new Float64Array(0), entities: new Float64Array(0), positions: new Uint32Array(0) };
 /**
  * On a joined thread, after each sync point: the entities in `order`, sorted from a scan of the index of every ranked
  * entity into reused arrays.
  */
-export const observerSelect = System.create({ name: "remote/observerSelect", observer: true, lookup: { all: { index: ranked, read: [order] } } }, ({ lookup }) => {
+export const observerSelect = System.create({ observer: true, lookup: { all: { index: ranked } } }, ({ lookup }) => {
     const list = lookup.all();
     const count = list.length;
     if (sortedKeys.keys.length < count) {
@@ -92,13 +84,13 @@ export const observerSelect = System.create({ name: "remote/observerSelect", obs
 });
 
 /** Rows with a caption and an amount, a todo's label and a number, which `retext` and `reamount` rewrite 1% of a tick. */
-export const seedCaptions = System.create({ name: "remote/seedCaptions", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+export const seedCaptions = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([rank, caption, amount])({ [rank]: i, [caption]: `Buy milk and bread #${i}`, [amount]: i });
 });
-const recaption = System.create({ name: "remote/recaption", components: { read: [rank], write: [caption] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
+const recaption = System.create({ components: { with: [rank, caption] }, after: [count] }, (row, { resources }) => {
     if (row[rank] % 100 === resources[counter] % 100) row[caption] = `Buy milk and bread #${row[rank]}.${resources[counter]}`;
 });
-const reamount = System.create({ name: "remote/reamount", components: { read: [rank], write: [amount] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
+const reamount = System.create({ kernel: false, components: { with: [rank, amount] }, after: [count] }, (row, { resources }) => {
     if (row[rank] % 100 === resources[counter] % 100) row[amount] = row[rank] + resources[counter];
 });
 /** Rewrites 1% of the captions a tick. */
@@ -107,12 +99,12 @@ export const retext = System.create([count, recaption]);
 export const reamounted = System.create([count, reamount]);
 
 /** On a joined thread, after each sync point: every row's caption, out of its record. */
-export const observerCaptions = System.create({ name: "remote/observerCaptions", observer: true, components: { read: [caption] } }, row => {
+export const observerCaptions = System.create({ observer: true, components: { with: [caption] } }, row => {
     observerSeen.last += row[caption].length;
     observerSeen.notified++;
 });
 /** On a joined thread, after each sync point: every row's amount. */
-export const observerAmounts = System.create({ name: "remote/observerAmounts", observer: true, components: { read: [amount] } }, row => {
+export const observerAmounts = System.create({ observer: true, components: { with: [amount] } }, row => {
     observerSeen.last += row[amount];
     observerSeen.notified++;
 });
@@ -137,7 +129,7 @@ const joinedFile = "./joined.js";
 /** The observed resource, read by an observer run. */
 const counterOf = async (world: World): Promise<number> => {
     let value = 0;
-    await world.run(System.create({ observer: true, resources: { read: [counter] } }, ({ resources }) => { value = resources[counter]; }));
+    await world.run(System.create({ observer: true }, ({ resources }) => { value = resources[counter]; }));
     return value;
 };
 

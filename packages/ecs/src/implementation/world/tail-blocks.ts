@@ -6,10 +6,11 @@ import { lineWords } from './protocol.js';
 //
 // A tail's work is numbered: position 0 is its head, which checks its conditions and resolves its resources, and
 // positions from 1 are the rows of its matched archetypes in order. The tail claims positions in chunks by adding to
-// its progress word; the world exchanges that word for `snapshotted` once it copied the passing rows from the position
-// it read, so a claim that returns `snapshotted` or more reads the rest from the copy.
+// its progress word; the world adds `snapshotted` to that word once it copied the passing rows from the position it
+// read, so a claim that returns `snapshotted` or more reads the rest from the copy, and the word still says whether a
+// claim came before the copy.
 
-/** The positions the tail claimed, which it adds to and the world exchanges; and the end of its work, 1 plus its rows. */
+/** The positions the tail claimed, which it and the world add to; and the end of its work, 1 plus its rows. */
 export const progressWord = 0;
 export const endWord = 1;
 /** The position the tail finished reading through, which it stores after each chunk; whether the world waits for it. */
@@ -28,7 +29,10 @@ export const snapshotCapacityWord = 2 * lineWords + 6;
 export const tailBlockWords = 3 * lineWords;
 export const tailBlockBytes = tailBlockWords * 4;
 
-/** What the progress word holds once the world copied the rest: claims add to it and stay past it. */
+/**
+ * What the world adds to the progress word once it copied the rest, `snapshotted` itself when no claim came first:
+ * claims add to it and stay past it.
+ */
 export const snapshotted = 0x40000000;
 /** Positions a claim takes: the most the world waits for once a writer is ready. */
 export const tailChunk = 64;

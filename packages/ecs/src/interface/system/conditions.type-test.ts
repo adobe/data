@@ -25,45 +25,33 @@ declare module '@adobe/ecs' {
         [position]: { type: number };
     }
 }
-Resource.register(handle, { default: new Map() });
-Resource.register(level, { type: { anyOf: [{ type: "object", properties: { size: { type: "number" } } }, { type: "null" }], default: null } });
-Resource.register(paused, { type: { type: "boolean", default: false } });
-Resource.register(cache, {});
-Resource.register(count, { type: { type: "number", default: 0 } });
-Component.register(position, { type: { type: "number" } });
 
 // `is`: runs while each is neither null nor false, and reads it narrowed so.
-System.create({ name: "conditionsTypeTest/loaded", resources: { is: [level, cache] } }, ({ resources }) => {
+System.create({ resources: { is: [level, cache] } }, ({ resources }) => {
     check<Equal<typeof resources[typeof level], { readonly size: number }>>();
     check<Equal<typeof resources[typeof cache], Map<string, number>>>();
     // @ts-expect-error a condition is read-only
     resources[level] = null;
 });
-System.create({ name: "conditionsTypeTest/playing", resources: { is: [paused] } }, ({ resources }) => {
+System.create({ resources: { is: [paused] } }, ({ resources }) => {
     check<Equal<typeof resources[typeof paused], true>>();
 });
 
-// `not`: runs while each is null or false; its value is known, so it isn't readable.
-System.create({ name: "conditionsTypeTest/running", components: { write: [position] }, resources: { not: [paused] } }, (row, context) => {
+// `not`: runs while each is null or false.
+System.create({ components: { with: [position] }, resources: { not: [paused] } }, row => {
     row[position] += 1;
-    // @ts-expect-error a `not` condition isn't readable
-    void context.resources;
 });
 
 // Only a resource whose type allows null or false is a condition.
 // @ts-expect-error a number is never null or false
-System.create({ name: "conditionsTypeTest/counted", resources: { is: [count] } }, () => {});
+System.create({ resources: { is: [count] } }, () => {});
 // @ts-expect-error a value that isn't data and doesn't allow null is never null
-System.create({ name: "conditionsTypeTest/handled", resources: { not: [handle] } }, () => {});
+System.create({ resources: { not: [handle] } }, () => {});
 
-// A condition is listed once: `is` already makes it readable, and a written value would have two types.
+// A condition is listed once.
 // @ts-expect-error both is and not
-System.create({ name: "conditionsTypeTest/both", resources: { is: [paused], not: [paused] } }, () => {});
-// @ts-expect-error is already makes it readable
-System.create({ name: "conditionsTypeTest/read", resources: { is: [level], read: [level] } }, () => {});
-// @ts-expect-error a condition isn't written
-System.create({ name: "conditionsTypeTest/write", resources: { is: [level], write: [level] } }, () => {});
+System.create({ resources: { is: [paused], not: [paused] } }, () => {});
 
 // Kernels and render systems take conditions too.
-System.create({ name: "conditionsTypeTest/kernel", kernel: "cpu", components: { write: [position] }, resources: { not: [paused] } }, row => { row[position] += 1; });
-System.render({ name: "conditionsTypeTest/draw", resources: { is: [level] }, shader: { accessors: { place: position } } }, () => {});
+System.create({ kernel: true, components: { with: [position] }, resources: { not: [paused] } }, row => { row[position] += 1; });
+System.render({ resources: { is: [level] }, shader: { accessors: { place: position } } }, () => {});

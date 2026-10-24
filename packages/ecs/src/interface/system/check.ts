@@ -1,17 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { layoutOf } from '../registry/layout.js';
-import { declarationOf, kindOf, labelOf } from '../registry/names.js';
+import { declarationOf, kindOf, labelOf, whyUnregistered } from '../registry/names.js';
 import { definitionOf } from '../registry/program.js';
 import { reducedBy, scheduleOf } from '../registry/schedule.js';
 import { conditional } from '../registry/schemas.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
 import { checkLookup, indexDefinitionOf, lookupKeysOf, orderKeysOf } from '../registry/indexes.js';
-import { labelOfItem } from '../registry/items.js';
 import type { Schema } from '../schema/schema.js';
 import type { Composite } from './composite.js';
 import type { Definition } from './definition.js';
-import type { Leaf } from './leaf.js';
+import type { InputSchema, Leaf } from './leaf.js';
 
 type Key = symbol;
 
@@ -23,18 +22,15 @@ const checkLists = (name: string, what: string, lists: { readonly read?: readonl
 };
 
 /**
- * Throws if a leaf reduces into a resource with an operator its `reduce` trait doesn't declare, or also reads, writes
- * or filters on it, or writes a resource that's reduced, which only its contributors' fold sets.
+ * Throws if a leaf reduces into a resource without a `reduce` trait, which gives the operator it folds with, or also
+ * reads, writes or filters on it, or writes a resource that's reduced, which only its contributors' fold sets.
  */
 const checkReductions = (leaf: Leaf): void => {
     const { name } = leaf;
-    const { reduce, resources } = leaf.declaration;
+    const { resources } = leaf.declaration;
     const others = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? []]);
     for (const key of reducedBy(leaf)) {
-        const declared = declarationOf(key)?.reduce;
-        const operator: unknown = Reflect.get(reduce ?? {}, key);
-        if (declared === undefined) throw new Error(`System "${name}" reduces "${labelOf(key)}", which has no reduce trait.`);
-        if (declared !== operator) throw new Error(`System "${name}" reduces "${labelOf(key)}" with "${labelOf(operator)}", but it's declared reduce: "${labelOf(declared)}".`);
+        if (declarationOf(key)?.reduce === undefined) throw new Error(`System "${name}" reduces "${labelOf(key)}", which has no reduce trait.`);
         if (others.has(key)) throw new Error(`System "${name}" reduces "${labelOf(key)}", so it can't also read, write or filter on it.`);
     }
     for (const key of resources?.write ?? []) {
@@ -54,7 +50,7 @@ const checkConditions = (leaf: Leaf): void => {
     const listed = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? []]);
     for (const key of [...is, ...not]) {
         const declaration = declarationOf(key);
-        if (kindOf(key) !== "resource" || declaration === undefined) throw new Error(`System "${name}" runs on the condition of "${labelOf(key)}", which isn't a registered resource.`);
+        if (kindOf(key) !== "resource" || declaration === undefined) throw new Error(`System "${name}" runs on the condition of "${labelOf(key)}", which isn't a registered resource: ${whyUnregistered(key)}.`);
         const { type } = declaration;
         if (type !== undefined && !conditional(type)) throw new Error(`System "${name}" runs on the condition of "${labelOf(key)}", which is never null or false.`);
     }
@@ -71,6 +67,30 @@ const unreadByKernels = (key: symbol): string | null => {
 };
 
 /**
+ * What of a leaf's ordering index and lookups a kernel can't read, or null: workers read them from shared memory, so
+ * their values must be linear there too.
+ */
+export const unreadByKernel = (leaf: Leaf): string | null => {
+    const { lookup, order } = leaf.declaration;
+    if (order !== undefined) {
+        for (const key of orderKeysOf(leaf.declaration)) {
+            const unread = unreadByKernels(key);
+            if (unread !== null) return `its rows are ordered by an index keyed by "${labelOf(key)}", ${unread}`;
+        }
+    }
+    const lookups = Object.values(lookup ?? {});
+    for (const key of lookups.flatMap(found => found.read ?? [])) {
+        const unread = unreadByKernels(key);
+        if (unread !== null) return `a lookup reads "${labelOf(key)}", ${unread}`;
+    }
+    for (const key of lookups.flatMap(lookupKeysOf)) {
+        const unread = unreadByKernels(key);
+        if (unread !== null) return `a lookup goes through an index keyed by "${labelOf(key)}", ${unread}`;
+    }
+    return null;
+};
+
+/**
  * Throws for what a leaf's kind and placement rule out: `up` without components or through a key that isn't a reference
  * component, `order` by anything but a sorted index, without components, with `up` or on the GPU, a kernel's lookup of
  * a value outside linear memory, a GPU kernel's change filters, lookups and reductions, and a render system's
@@ -83,16 +103,10 @@ const checkPlacement = (leaf: Leaf): void => {
     if (order !== undefined) {
         const index = indexDefinitionOf(order);
         if (index === undefined) fail("orders its rows by a value Index.create didn't return");
-        else if (index.declaration.sorted !== true) fail(`orders its rows by index "${labelOfItem(index)}", which isn't sorted`);
+        else if (index.declaration.sorted !== true) fail(`orders its rows by index "${index.name}", which isn't sorted`);
         if (components === undefined) fail("orders its rows without components, so it runs once");
         if (up !== undefined) fail("uses both up and order, which both decide the order of its rows");
         if (kernel === "gpu") fail("can't run on the GPU: GPU kernels have no order yet");
-        if (kernel !== undefined) {
-            for (const key of orderKeysOf(leaf.declaration)) {
-                const unread = unreadByKernels(key);
-                if (unread !== null) throw new Error(`Kernel "${name}": its rows are ordered by an index keyed by "${labelOf(key)}", ${unread}.`);
-            }
-        }
     }
     if (up !== undefined) {
         if (components === undefined) fail("uses up, which orders rows, without components");
@@ -101,16 +115,9 @@ const checkPlacement = (leaf: Leaf): void => {
         }
     }
     const lookups = Object.values(lookup ?? {});
-    if (kernel !== undefined) {
-        // Workers read lookups from shared memory, so their values must be linear there too.
-        for (const key of lookups.flatMap(found => found.read ?? [])) {
-            const unread = unreadByKernels(key);
-            if (unread !== null) throw new Error(`Kernel "${name}": a lookup reads "${labelOf(key)}", ${unread}.`);
-        }
-        for (const key of lookups.flatMap(lookupKeysOf)) {
-            const unread = unreadByKernels(key);
-            if (unread !== null) throw new Error(`Kernel "${name}": a lookup goes through an index keyed by "${labelOf(key)}", ${unread}.`);
-        }
+    if (kernel === true || kernel === "gpu") {
+        const unread = unreadByKernel(leaf);
+        if (unread !== null) throw new Error(`Kernel "${name}": ${unread}.`);
     }
     const reduces = reducedBy(leaf).length > 0;
     if (kernel === "gpu") {
@@ -133,23 +140,22 @@ const checkObserver = (leaf: Leaf): void => {
     const fail = (message: string): never => { throw new Error(`System "${name}" is an observer, so it ${message}.`); };
     if (observer !== true) throw new Error(`System "${name}": observer is true or left out.`);
     if (leaf.kind === "render") fail("records no GPU work");
-    if (declaration.kernel !== undefined) fail("isn't a kernel");
+    if (declaration.kernel === true || declaration.kernel === "gpu") fail("isn't a kernel");
     if ((declaration.components?.write?.length ?? 0) + (declaration.resources?.write?.length ?? 0) > 0) fail("writes nothing");
     if (reducedBy(leaf).length > 0) fail("reduces into nothing");
-    if (declaration.input !== undefined) fail("takes no input");
+    if (leaf.input !== undefined) fail("takes no input");
     if (declaration.up !== undefined) fail("has no up");
     if ((declaration.before?.length ?? 0) + (declaration.after?.length ?? 0) + (declaration.during?.length ?? 0) > 0) fail("is ordered with nothing");
 };
 
 /**
  * Throws for a leaf that names a component or resource that isn't registered as one, lists a key in both `read` and
- * `write`, writes a reference, has a lookup reading a component it writes, takes input that isn't an object schema,
- * uses object components and resources of different threads, declares what an observer system can't, or whose
+ * `write`, writes a reference, has a lookup reading a component it writes, uses object components and resources of different threads, declares what an observer system can't, or whose
  * reductions, conditions, `up` or placement can't hold.
  */
 export const checkLeaf = (leaf: Leaf): void => {
     const { name, declaration } = leaf;
-    const { components, resources, lookup, input } = declaration;
+    const { components, resources, lookup } = declaration;
     checkLists(name, "components", components);
     checkLists(name, "resources", resources);
     checkWorldWritten(`System "${name}"`, resources?.write);
@@ -165,12 +171,6 @@ export const checkLeaf = (leaf: Leaf): void => {
     }
     for (const key of orderKeysOf(declaration)) {
         if (writes.has(key)) throw new Error(`System "${name}": its rows are ordered by an index keyed by "${labelOf(key)}", which the system writes.`);
-    }
-    if (input !== undefined) {
-        const schema: Schema = input;
-        if (!("type" in schema) || schema.type !== "object" || typeof schema.properties !== "object" || schema.properties === null) {
-            throw new Error(`System "${name}": input is an object schema of named fields.`);
-        }
     }
     checkTarget(leaf);
     threadOf(declaration, "System", name);
@@ -190,21 +190,39 @@ export const checkLeaf = (leaf: Leaf): void => {
     checkPlacement(leaf);
 };
 
+const isInputSchema = (value: unknown): value is InputSchema =>
+    typeof value === "object" && value !== null && Reflect.get(value, "type") === "object"
+    && typeof Reflect.get(value, "properties") === "object" && Reflect.get(value, "properties") !== null;
+
+/**
+ * The schema of a body's input, which the plugin passes from the type of its parameter after the `before` before it.
+ * Throws for a body taking input without one, as one not built with the plugin does, and for a schema that isn't an
+ * object of named fields.
+ */
+export const inputSchemaOf = (name: string, body: (...parameters: never[]) => void, before: number, input: unknown): InputSchema | undefined => {
+    if (input === undefined) {
+        if (body.length > before) throw new Error(`System "${name}" takes input, whose schema the plugin gives from the type of its body's parameter: write its body in place and build it with Compiler.plugin().`);
+        return undefined;
+    }
+    if (!isInputSchema(input)) throw new Error(`System "${name}": input is an object schema of named fields.`);
+    return input;
+};
+
 /**
  * Throws if a system on one entity takes it from what isn't an entity field of its input, has no components, or is a
  * kernel, has `up` or `order`, or reduces.
  */
 const checkTarget = (leaf: Leaf): void => {
-    const { name, declaration } = leaf;
-    const { target, input, components, kernel, up, order, reduce } = declaration;
+    const { name, declaration, input } = leaf;
+    const { target, components, kernel, up, order, resources } = declaration;
     if (target === undefined) return;
     const fail = (message: string): never => { throw new Error(`System "${name}" runs on one entity, so it ${message}.`); };
     const field: Schema | undefined = input !== undefined && "properties" in input ? Reflect.get(input.properties, target) : undefined;
     if (field === undefined || !("format" in field) || field.format !== "entity") fail(`takes it from an input field "${target}" holding an entity`);
     if (components === undefined) fail("needs components");
-    if (kernel !== undefined) fail("isn't a kernel");
+    if (kernel === true || kernel === "gpu") fail("isn't a kernel");
     if (up !== undefined || order !== undefined) fail("has no up or order");
-    if (reduce !== undefined) fail("reduces into nothing");
+    if ((resources?.reduce?.length ?? 0) > 0) fail("reduces into nothing");
 };
 
 /** Every leaf under a system, each once. Throws for a member no System constructor returned. */

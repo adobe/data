@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type Tables } from "./create.js";
@@ -9,6 +7,7 @@ import { collector, freshKernel, tablesAfterCollecting } from "./lifetime.test-h
 import { readResource } from "./reads.test-helper.js";
 import { fillReports, runOf } from "./reports.test-helper.js";
 import { Report } from "../../interface/report/report.js";
+import type { F32 } from "../../interface/math/index.js";
 
 /** Scenarios of what kernels hold across the pool, run built in node and from source in chromium. */
 
@@ -19,34 +18,28 @@ const total = Symbol("lifetimeFixture/total");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [value]: { type: number };
+        [value]: { type: F32 };
         [target]: { type: Entity };
-        [out]: { type: number };
+        [out]: { type: F32 };
     }
     export interface Resources {
         [total]: { type: number; reduce: "+" };
     }
 }
 
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(target, { type: Entity.schema });
-Component.register(out, { type: { type: "number", precision: 1 } });
-Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
 
 export const rows = 4_096;
 
-const seed = System.create({ name: "lifetimeFixture/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     let previous = commands.spawn([value])({ [value]: 0 });
     for (let i = 1; i < rows; i++) previous = commands.spawn([value, target, out])({ [value]: i, [target]: previous, [out]: 0 });
 });
 
 /** A kernel that holds what kernels can: a lookup's directory, reduction partials and its load on each worker. */
 const measure = System.create({
-    name: "lifetimeFixture/measure",
-    kernel: "cpu",
-    components: { read: [value, target], write: [out] },
-    lookup: { targets: { read: [value] } },
-    reduce: { [total]: "+" },
+    kernel: true,
+    components: { with: [value, target, out] },
+    lookup: { targets: { with: [value] } },
 }, (row, { lookup: { targets }, reduce }) => {
     const other = targets(row[target]);
     row[out] = other === null ? -1 : row[value] - other[value];

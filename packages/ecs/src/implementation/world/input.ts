@@ -3,7 +3,7 @@ import type { Leaf } from '../../interface/system/leaf.js';
 
 /** The fields of a run's input that a leaf declares, so other members' fields aren't copied to its workers. */
 export const inputFor = (leaf: Leaf): (input: unknown) => unknown => {
-    const { input } = leaf.declaration;
+    const { input } = leaf;
     if (input === undefined) return () => undefined;
     const fields = Object.keys(input.properties);
     return value => {

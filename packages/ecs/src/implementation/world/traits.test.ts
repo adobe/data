@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import { count, read } from "./reads.test-helper.js";
@@ -21,15 +20,11 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(score, { type: { type: "number" } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Component.register(ready, { type: { const: true }, within: slot });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
 
 describe("traits", () => {
     it("keep derived components out of commands, for untyped callers too", async () => {
         const errors: string[] = [];
-        const derived = System.create({ name: "traitsTest/derived" }, ({ commands }) => {
+        const derived = System.create({}, ({ commands }) => {
             const entity = commands.spawn([score])({ [score]: 1 });
             const attempts = [
                 // @ts-expect-error derived components are added only by rules
@@ -54,8 +49,8 @@ describe("traits", () => {
     it("leave index 0 to Entity.none, which no lookup finds", async () => {
         let first = Entity.none;
         let found: unknown = undefined;
-        const spawn = System.create({ name: "traitsTest/spawn" }, ({ commands }) => { first = commands.spawn([score])({ [score]: 1 }); });
-        const lookup = System.create({ name: "traitsTest/lookup", lookup: { scores: { read: [score] } } }, ({ lookup: { scores } }) => { found = scores(Entity.none); });
+        const spawn = System.create({}, ({ commands }) => { first = commands.spawn([score])({ [score]: 1 }); });
+        const lookup = System.create({ lookup: { scores: { with: [score] } } }, ({ lookup: { scores } }) => { found = scores(Entity.none); });
         const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(lookup);

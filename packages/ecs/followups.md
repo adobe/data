@@ -1,11 +1,93 @@
 # ecs follow-ups
 
-Open items awaiting a decision or work. Remove an item once it's decided or done.
+Open items awaiting a decision or work, by priority: the API is the focus while it's being finalized; then
+correctness, then optimization. Remove an item once it's decided or done.
 
-## Queued (decided, not started)
+## API changes
 
+- **Run results: a run resolves to its body's value; reports leave the public API** (agreed in design, not started).
+  `run(system, input): Promise<R>`, R the per-run body's return type (`void` for row systems, composites and bodies
+  returning nothing), so one-off reads are observer systems returning a value. A run whose systems failed rejects
+  after its sync point applies, with a useful error naming each failure; its exact shape is no contract. Ticks'
+  failures are rethrown out of band. `Report`, its archetype and types, and run numbers leave the public API; the
+  implementation keeps or drops reports as performance dictates. A later `World.create` options parameter may take
+  instrumentation (timing, failure logs, debugging); nothing until it's designed.
+- **Nothing tells the world's thread a join finished.** After `World.join`, a run from the world's own thread can run
+  before the joined thread has claimed its threads, so that thread's observers miss it; the guide's threads section
+  runs from the joined world instead. Options: `World.join` resolving once claimed (already true on the joined side?),
+  or `world.share` returning a promise of the claim. Smallest form to be decided. A refused claim, such as one of a
+  thread an id-less finalizer runs on, shows the world's thread only `"gone"` and the joined thread only a rejected
+  first run, so a helper waiting for `"joined"` waits forever.
+- **Optional components in GPU kernels:** each dispatch's record could carry a presence word, but WGSL has no
+  `undefined` to read where an archetype lacks one, and a GPU kernel can't fail its system for one row; supporting
+  them means a presence expression through the WASM and WGSL backends and a GPU semantics for absent reads and writes.
+- **Optional groups:** components always present together (boards' text's four, path's three) must each be tested
+  for `undefined` before building one object. Possible: an optional group, present or absent as a whole, narrowed by
+  one test. Boards isn't asking for it; record usage before deciding.
+- **Iterable lists:** `for (const row of list)` on index lookups' lists, binding each row as the loop reaches it with
+  no allocation (the list is its own iterator, reset per loop), lowered by kernels to the indexed loop. `list[i]` and
+  array methods stay out: indexing can't bind lazily without a Proxy, and the methods would widen the surface.
+- **`watch` by trait on changes finalizers:** `Finalizer.changes({ watch: "persist" }, …)`, `watch` taking a trait name as
+  well as a list of keys, typed as `Component.With<…>`, computed once per component id as `watches` already is. The
+  hook external persistence would build on.
+- **Observer systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities
+   don't work as bindings. Proposal: allow `up` in observer systems, since it only reads; let `order` take an index over
+   the entity a reference names. (from the todo sample)
+- **Per-row CPU values in render systems:** a render body's tables are `{ count, bind }`, so it can't draw with a
+  per-row object such as a texture's bind group, and a row body can't learn its GPU row. A consumer drawing an image
+  per row keeps its own instance buffer, 4,000 draws in 2.1 ms a tick. Possible: tables giving their entities in GPU
+  row order. Not needed until a consumer's profile says so.
+- **Descending sorted indexes:** an ordered render reads its index front to back, so a consumer painting back to front
+  maps `instance_index` to `ecs_count() - 1u - instance_index`, which costs nothing. Possible: a `descending` option on
+  sorted indexes. Not needed until a consumer's profile or readability says so.
+- **Report retention:** the last 256 runs keep their reports (`retainedRuns` in `reports.ts`), a fixed internal
+  constant; a later run takes the oldest one's entity. Recommended: keep it internal until a consumer needs another; then
+  a world option or resource.
+- **Report components are writable:** systems may write or despawn reports, which are ordinary entities; a despawned
+  one is spawned again for a later run. Recommended: accept, as with any entity; or make them world-written as `clock`
+  is.
+- **Computed index keys:** an index keyed on a value computed from a component, such as a struct field
+  (`position.x`, `Report.run.number`), instead of only whole components. Two possible forms:
+  `key: [[Report.run, "number"]]` (a field path) or `keyOf: run => run.number` (a function). Open questions:
+  - how key words are laid out in shared memory;
+  - lookups on workers, on joined threads and in kernels (JS and WASM);
+  - change tracking that follows the field, not the whole component;
+  - whether a function form can run anywhere but the world's thread.
+- **Discriminated struct unions:** unions of structs with a number, boolean or string-literal discriminant, stored in
+  fixed size (a tag column plus the variants' fields) so they live in shared memory. Today `isStruct`
+  (`interface/registry/schemas.ts`) treats every `anyOf` as an object. The work covers row readers and writers,
+  narrowing on the tag in the kernel compiler, WGSL layouts, and snapshots. Check first whether the type-level
+  `IsStruct` already calls numeric-tagged unions structs while the runtime doesn't.
+- **The `Finalizer` namespace** (from earlier open work; to be restated before it's discussed).
 
-## Decisions for the maintainers
+## Correctness
+
+- **Transactions, future:** never by default, since they would cost every run. An explicit declarative option on a
+  one-off system, making its run all or nothing.
+
+## Optimization
+
+- **A run allocates about 3.6 KB even for an empty system,** in node: the run path's async functions (`executeTiers`,
+  `perform`, `execute`, `runWith`), their promises and a few small objects. Make the path allocate nothing when nothing
+  waits, and measure with a sampling heap profile.
+- **`transfer`, chromium:** three runs on a quiet machine gave 19.9, 22.5 and 16.1 ms, so its spread of about 20% is
+  its own, not the machine's. Find what varies (likely the time a worker takes to wake) before treating its changes
+  as signal.
+- Index step 5 items.
+- Starting the pool for large index builds.
+- `order` on workers.
+- Chromium timer clamps.
+- The `transfer` cost.
+- The perf.md "Next" items.
+
+## External utilities
+
+- **Persistence,** never part of the core: provided externally through custom traits (e.g. `persist: string`, the stable
+  name saved data maps through, independent of thread ids) and changes finalizers watching by trait.
+- **A test helper awaiting the next tick.** Tests watch `clock` with an observer system today; a helper in
+  `src/observe` would do it (from the todo sample).
+
+## Decisions awaiting confirmation
 
 - **An index lookup's `changed: true` is a change filter,** as a resource in `changed` is: when the index changed every
   row passes, and otherwise rows pass by the system's other change filters, so with `components.changed` it runs the
@@ -29,31 +111,13 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 - **Filtering in the todo sample:** it writes `hidden` on each row (about 2 ms of script at 10K) rather than setting one
   attribute on the list and hiding rows with CSS. The attribute version is slower once laid out (25 ms against 17 ms
   at 10K) and puts the filter's meaning in the list element.
-- **One-off reads:** `world.run` returns no value, so a one-off read needs an observer system that writes into an outer
-  variable.
-- **Per-row CPU values in render systems:** a render body's tables are `{ count, bind }`, so it can't draw with a
-  per-row object such as a texture's bind group, and a row body can't learn its GPU row. A consumer drawing an image
-  per row keeps its own instance buffer, 4,000 draws in 2.1 ms a tick. Possible: tables giving their entities in GPU
-  row order. Not needed until a consumer's profile says so.
-- **Paint order across render tables:** a render system draws each matching archetype as its own table in row order,
-  so 2D content of several kinds (shapes, images, paths) can't be blended back to front without the consumer keeping
-  its own sorted instance list. Proposal: `order: index` on `System.render`, giving one table spanning its archetypes
-  whose `bind` sets a buffer of the index's rows in sorted order with each archetype's column base addresses; every
-  column already lives in one heap, so accessors resolve a sorted instance to its row. Not needed while consumers draw
-  every kind with one shader from their own list.
-- **Report retention:** the last 256 runs keep their reports (`retainedRuns` in `reports.ts`), a fixed internal
-  constant; a later run takes the oldest one's entity. Recommended: keep it internal until a consumer needs another; then
-  a world option or resource.
 - **The cost of a report for every run:** a clean run costs about 125 ns more in node (`run idle` 333 to 458 ns, `run
   observer` 166 to 291), half of it the two clock reads `elapsed` takes. Decided: timing stays on. Check again if runs
   get cheap enough for it to matter: a `Report.timing` resource, off by default with `elapsed` NaN, measured `run idle`
   416 ns and `run observer` 208.
 - **Reports are hidden from queries that require no component,** as the resource entity is: an index or system with no
-  `has` or `read`, and changes finalizers watching everything, don't see them. Recommended: accept, since they're the
+  `with`, and changes finalizers watching everything, don't see them. Recommended: accept, since they're the
   world's own.
-- **Report components are writable:** systems may write or despawn reports, which are ordinary entities; a despawned
-  one is spawned again for a later run. Recommended: accept, as with any entity; or make them world-written as `clock`
-  is.
 - **Errors while tails run:** an add or removal of `Report.errors` found after a run's sync point waits for the next
   sync point while tails run on a joined thread, an earlier run's errors emptied meanwhile. Recommended: accept; errors
   known before the sync point, system failures, skipped systems and warnings, are in place when the run resolves.
@@ -82,65 +146,3 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 - **An observer system on a joined thread that reads a string resource doesn't post copies of its resources:** nothing
   waits for such posts, and a handle there could outlive its record, so it posts as row systems do. Recommended: accept.
 
-## Findings from the todo sample (`src/samples/todo/README.md`)
-
-2. **Observer systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities
-   don't work as bindings. Proposal: allow `up` in observer systems, since it only reads; let `order` take an index over
-   the entity a reference names.
-4. **Low-cardinality hash indexes cost O(bucket) per change.** Buckets are kept in entity order and shifted on removal:
-   one toggle costs 26, 62 and 400 µs at 1K, 10K and 100K. Proposal: unordered buckets with swap-remove and a position
-   map, or a count-only index.
-5. **Change filters scan the whole dirty chunk** (1,024 row ticks), once per system that filters on `changed`.
-   Proposal: a second level of change ticks, one per 32–64 rows.
-6. **Nothing awaits the next tick.** Tests watch `clock` with an observer system. Proposal: a test helper in
-   `src/observe`.
-
-## Findings from strings in shared memory
-
-- **A joined finalizer read a resource of its thread as undefined:** in `remote-finalizers.test.ts`, "that throw are in
-  a later run's report", the finalizer's `resources[tone]`, an object of its thread, is undefined for the stops of a
-  sync point soon after the thread joined, where the same finalizer reads it in the other cases; the fixture reads it
-  optionally now. The test checks no tone, so whether it was undefined before, as a string, wasn't seen. Worth finding
-  out whether a remote finalizer can run before its thread's resources reach its mirror.
-
-## Features to discuss
-
-- **Computed index keys:** an index keyed on a value computed from a component, such as a struct field
-  (`position.x`, `Report.run.number`), instead of only whole components. Two possible forms:
-  `key: [[Report.run, "number"]]` (a field path) or `keyOf: run => run.number` (a function). Open questions:
-  - how key words are laid out in shared memory;
-  - lookups on workers, on joined threads and in kernels (JS and WASM);
-  - change tracking that follows the field, not the whole component;
-  - whether a function form can run anywhere but the world's thread.
-- **Discriminated struct unions:** unions of structs with a number, boolean or string-literal discriminant, stored in
-  fixed size (a tag column plus the variants' fields) so they live in shared memory. Today `isStruct`
-  (`interface/registry/schemas.ts`) treats every `anyOf` as an object. The work covers row readers and writers,
-  narrowing on the tag in the kernel compiler, WGSL layouts, and snapshots. Check first whether the type-level
-  `IsStruct` already calls numeric-tagged unions structs while the runtime doesn't.
-
-## Performance
-
-- **The filtered `up` benchmarks are slower than this machine's record at `e3c30aa1`:** `up one root changed` +49%,
-  `up filtered after a reparent` +45%, `up small tree in a big world` +79%. They're the same at `c6bb3c83`, before
-  strings, so the drift is older. Worth bisecting from `e3c30aa1`.
-
-- **A joined thread's first tail task once never finished,** under heavy machine load (two test suites at once): the
-  world waited on `channel.idle()` with task 1 posted and not done (`threads.browser.test.ts`, tails "see one tick's
-  values"). It didn't recur in 25 runs without the extra load, and the base failed once on another threads test in the
-  same comparison. Worth a stress run of the joined-thread suites under load.
-
-- **`transfer`, chromium:** its median varied with machine load. Check it alone on a quiet machine before the next
-  record.
-- **`joined observer 10K`:** checking archetype versions once per post instead of per row would save some of the
-  thread's run (see perf.md "Next").
-
-## Earlier open work
-
-- Index step 5 items.
-- Starting the pool for large index builds.
-- `order` on workers.
-- Typed transfers (Phase 7).
-- The `Finalizer` namespace.
-- Chromium timer clamps.
-- The `transfer` cost.
-- The perf.md "Next" items.

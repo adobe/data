@@ -1,11 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Failure } from '../../interface/report/failure.js';
-import { declarationOf, firstKeyOf, labelOfItem } from '../../interface/registry/index.js';
+import { declarationOf, firstKeyOf } from '../../interface/registry/index.js';
 import { layoutOf, type Layout } from '../../interface/registry/layout.js';
 import { accessOf, type Schedule } from '../../interface/registry/schedule.js';
 import { stampChanged, type Archetype } from './archetype.js';
 import { readCell } from './cells.js';
+import { kernelOf } from './attach-kernel.js';
 import { indexOf, locate } from './entities.js';
 import { failureOf } from './failures.js';
 import { ownTag } from './move-log.js';
@@ -38,9 +39,9 @@ export const isTerminal = (leaf: Leaf): boolean => {
     const known = terminalLeaves.get(leaf);
     if (known !== undefined) return known;
     const { declaration } = leaf;
-    const terminal = leaf.kind === "system" && declaration.kernel === undefined && declaration.up === undefined && provenTerminal(leaf.body)
+    const terminal = leaf.kind === "system" && kernelOf(leaf) === undefined && declaration.up === undefined && provenTerminal(leaf.body)
         && Object.keys(declaration.lookup ?? {}).length === 0
-        && (declaration.reduce === undefined || Object.getOwnPropertySymbols(declaration.reduce).length === 0)
+        && (declaration.resources?.reduce?.length ?? 0) === 0
         && objectsOnly(declaration.components?.write) && objectsOnly(declaration.resources?.write);
     terminalLeaves.set(leaf, terminal);
     return terminal;
@@ -130,7 +131,7 @@ const isStruct = (state: State, id: number): boolean => state.layouts[id].kind !
 /** A runner's tail, made the first time it runs as one; its block is the channel's, freed with it. */
 export const tailOf = (state: State, runner: Runner, leaf: Leaf): Tail => {
     const remote = runner.remote;
-    if (remote === null) throw new Error(`System "${labelOfItem(leaf)}" runs as a tail only on a joined thread.`);
+    if (remote === null) throw new Error(`System "${leaf.name}" runs as a tail only on a joined thread.`);
     if (remote.tail !== null) return remote.tail;
     const { components, resources } = leaf.declaration;
     const ids = (keys: readonly Key[] | undefined): number[] => [...new Set((keys ?? []).map(key => idOf(state, key)))];
@@ -222,10 +223,10 @@ const outcomeOf = async (tasks: readonly Promise<{ readonly done: boolean; reado
     for (const { done, systems } of await Promise.all(tasks)) {
         for (const system of systems) {
             if (!done) {
-                (failures ??= []).push(failureOf("thread", system.label, system.channel.goneError()));
+                (failures ??= []).push(failureOf("thread", { name: system.label, id: system.id }, system.channel.goneError()));
                 (skipped ??= []).push(system.label);
             }
-            else if (system.result.error !== undefined) (failures ??= []).push(failureOf("system", system.label, system.result.error));
+            else if (system.result.error !== undefined) (failures ??= []).push(failureOf("system", { name: system.label, id: system.id }, system.result.error));
         }
     }
     return { failures, skipped };
@@ -287,11 +288,11 @@ const filtersOf = (tail: Copied, archetype: Archetype): Filter[] => {
     const filters: Filter[] = [];
     for (const id of tail.added) {
         const storage = archetype.storageById[id];
-        if (storage !== undefined) filters.push({ ticks: storage.added, chunks: storage.chunkAdded });
+        if (storage !== undefined) filters.push({ ticks: storage.added, chunks: storage.chunkAdded, blocks: storage.blockAdded });
     }
     for (const id of tail.changed) {
         const storage = archetype.storageById[id];
-        if (storage !== undefined) filters.push({ ticks: storage.changed, chunks: storage.chunkChanged });
+        if (storage !== undefined) filters.push({ ticks: storage.changed, chunks: storage.chunkChanged, blocks: storage.blockChanged });
     }
     return filters;
 };
@@ -399,7 +400,7 @@ const markOwn = (state: State, tail: Copied, claimed: number): void => {
 
 /**
  * Before a writer of what a tail reads: unless it read everything, copies the rest from the position it reached,
- * exchanges its progress for `snapshotted`, and waits for the chunk it claimed. Null when nothing is left to wait for.
+ * adds `snapshotted` to its progress, and waits for the chunk it claimed. Null when nothing is left to wait for.
  */
 const resolve = (state: State, tail: Tail): Promise<void> | null => {
     settledTail(state, tail);
@@ -407,8 +408,8 @@ const resolve = (state: State, tail: Tail): Promise<void> | null => {
 };
 
 /**
- * Unless the reader read everything, copies the rest of what it reads from the position it reached, exchanges its
- * progress for `snapshotted`, and waits for the chunk it claimed. Null when nothing is left to wait for.
+ * Unless the reader read everything, copies the rest of what it reads from the position it reached, adds `snapshotted`
+ * to its progress, and waits for the chunk it claimed. Null when nothing is left to wait for.
  */
 export const copyRest = (state: State, tail: Copied): Promise<void> | null => {
     const { control, end } = tail;
@@ -417,7 +418,10 @@ export const copyRest = (state: State, tail: Copied): Promise<void> | null => {
     const from = Atomics.load(control, progressWord);
     runs.length = 0;
     if (from < end) writeSnapshot(state, tail, from);
-    const claimed = Atomics.exchange(control, progressWord, snapshotted);
+    // Added rather than exchanged, so a claim before the copy stays in the word: a post a claim reached is never taken
+    // for one none did (`cancel` in joined-observer.ts). Claims past it, a chunk at a time, keep the word below
+    // `cancelled` there, `snapshotted` plus at most the end and a chunk, as ends are far below their difference.
+    const claimed = Atomics.add(control, progressWord, snapshotted);
     tailWriters.copies++;
     // Rows the tail claimed while this copied it reads where they are.
     if (claimed < end) markOwn(state, tail, claimed);

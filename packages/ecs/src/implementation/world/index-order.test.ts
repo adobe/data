@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component } from "../../interface/component/component.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
@@ -9,6 +8,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
+import type { U32 } from "../../interface/math/index.js";
 
 const rank = Symbol("indexOrderTest/rank");
 const lane = Symbol("indexOrderTest/lane");
@@ -19,45 +19,40 @@ const marker = Symbol("indexOrderTest/marker");
 declare module "@adobe/ecs" {
     interface Components {
         [rank]: { type: number };
-        [lane]: { type: number };
+        [lane]: { type: U32 };
         [weight]: { type: number };
         [extra]: { type: true };
         [marker]: { type: number };
     }
 }
-Component.register(rank, { type: { type: "number" } });
-Component.register(lane, { type: { type: "integer", minimum: 0, maximum: 100 } });
-Component.register(weight, { type: { type: "number" } });
-Component.register(extra, { type: { const: true } });
-Component.register(marker, { type: { type: "number" } });
 
 /** By lane, then rank, of the entities that have a weight. */
-const ranked = Index.create({ name: "indexOrderTest/ranked", key: [lane, rank], sorted: true, components: { has: [weight] } });
+const ranked = Index.create({ key: [lane, rank], sorted: true, components: { with: [weight] } });
 
 /** Each row's lane and rank as one number, in the order rows ran. */
 let order: number[] = [];
-const visit = System.create({ name: "indexOrderTest/visit", components: { read: [lane, rank] }, order: ranked }, row => {
+const visit = System.create({ components: { with: [lane, rank] }, order: ranked }, row => {
     order.push(row[lane] * 1000 + row[rank]);
 });
-const visitChanged = System.create({ name: "indexOrderTest/visitChanged", components: { read: [lane, rank], changed: [weight] }, order: ranked }, row => {
+const visitChanged = System.create({ components: { with: [lane, rank], changed: [weight] }, order: ranked }, row => {
     order.push(row[lane] * 1000 + row[rank]);
 });
 /** A kernel spawning a marker for each row in turn, so the markers' entities, in order, are the rows' order. */
-const markEach = System.create({ name: "indexOrderTest/markEach", kernel: "cpu", components: { read: [lane, rank] }, order: ranked }, (row, { commands }) => {
+const markEach = System.create({ kernel: true, components: { with: [lane, rank] }, order: ranked }, (row, { commands }) => {
     commands.spawn([marker])({ [marker]: row[lane] * 1000 + row[rank] });
 });
-const markChanged = System.create({ name: "indexOrderTest/markChanged", kernel: "cpu", components: { read: [lane, rank], changed: [weight] }, order: ranked }, (row, { commands }) => {
+const markChanged = System.create({ kernel: true, components: { with: [lane, rank], changed: [weight] }, order: ranked }, (row, { commands }) => {
     commands.spawn([marker])({ [marker]: row[lane] * 1000 + row[rank] });
 });
-const keepTicking = System.create({ name: "indexOrderTest/keepTicking" }, () => {});
+const keepTicking = System.create({}, () => {});
 
 /** Changes the weight of every row whose weight ends in 3, a tenth of them. */
-const nudge = System.create({ name: "indexOrderTest/nudge", components: { write: [weight] } }, row => {
+const nudge = System.create({ components: { with: [weight] } }, row => {
     if (row[weight] % 10 === 3) row[weight] = row[weight] + 1;
 });
 
 /** Entities in two archetypes, interleaved in the index's order, some without the weight the index requires. */
-const seed = System.create({ name: "indexOrderTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) {
         const values = { [lane]: k % 3, [rank]: (k * 37) % 101, [weight]: k };
         if (k % 5 === 4) commands.spawn([lane, rank])({ [lane]: k % 3, [rank]: (k * 37) % 101 });
@@ -77,7 +72,7 @@ const expected = async (world: CreatedWorld, only?: (weighed: number) => boolean
 };
 
 const markerValues: number[] = [];
-const readMarkers = System.create({ name: "indexOrderTest/readMarkers", observer: true, components: { read: [marker] } }, row => { markerValues.push(row[marker]); });
+const readMarkers = System.create({ observer: true, components: { with: [marker] } }, row => { markerValues.push(row[marker]); });
 
 /** Markers' values in the order they were spawned: their archetype's rows', in storage order. */
 const markers = async (world: CreatedWorld): Promise<number[]> => {
@@ -105,7 +100,7 @@ describe("systems ordering their rows by a sorted index", () => {
         expect(order).toEqual(await expected(world, weighed => weighed % 10 === 4));
         expect(order.length).toBeGreaterThan(100);
         // Most rows change: the index is scanned rather than the rows' positions sorted.
-        await world.run(System.create({ components: { write: [weight] } }, row => { row[weight] = row[weight] + 2; }));
+        await world.run(System.create({ components: { with: [weight] } }, row => { row[weight] = row[weight] + 2; }));
         order = [];
         await world.run(visitChanged);
         expect(order).toEqual(await expected(world));

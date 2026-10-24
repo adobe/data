@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Created } from '../indexes/created.js';
-import { labelOfItem, recordItem, registeredAs } from './items.js';
+import { recordItem, registeredAs } from './items.js';
 import { firstKeyOf, labelOf, sameDeclaration } from './names.js';
 
 /**
@@ -63,7 +63,7 @@ export const checkLookup = (what: "System" | "Finalizer", name: string, lookupNa
     const held = new Set<Key>([...index.declaration.key, ...index.declaration.components?.has ?? []].map(firstKeyOf));
     const check = (verb: string, keys: readonly Key[] | undefined): void => {
         for (const key of keys ?? []) {
-            if (!held.has(firstKeyOf(key))) throw new Error(`${what} "${name}": lookup "${lookupName}" ${verb} "${labelOf(key)}", which not every entity index "${labelOfItem(index)}" holds has; name its key parts or its has.`);
+            if (!held.has(firstKeyOf(key))) throw new Error(`${what} "${name}": lookup "${lookupName}" ${verb} "${labelOf(key)}", which not every entity index "${index.name}" holds has; name its key parts or its has.`);
         }
     };
     check("reads", lookup.read);

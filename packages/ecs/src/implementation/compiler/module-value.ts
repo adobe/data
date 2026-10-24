@@ -4,7 +4,7 @@ import type { Program } from '../world/kernel.js';
 import { isValueType } from '../world/intrinsics.js';
 import { fail, within, type Frame } from './failure.js';
 import { resolveBinding, type Resolved } from './link.js';
-import { isIntrinsicModule } from './paths.js';
+import { isIntrinsicModule, packagePathOf } from './paths.js';
 import type { Module, ModuleBinding } from './module-scope.js';
 import type { Out } from './out.js';
 import { rootScope, type Scope } from './scope.js';
@@ -13,7 +13,7 @@ import type { Value } from './value.js';
 /** Whether `name` is one of the kernel's component or resource keys. */
 export const isKey = (scope: Scope, name: string): boolean => {
     const signature = scope.unit.signature;
-    return signature.read.has(name) || signature.write.has(name) || signature.resources.includes(name)
+    return signature.read.has(name) || signature.write.has(name) || signature.has.has(name) || signature.resources.includes(name)
         || signature.lookups.some(lookup => lookup.read.includes(name));
 };
 
@@ -71,6 +71,16 @@ const intrinsicDefinition = (init: SourceExpression, module: Module, scope: Scop
     return { implementation, intrinsic: intrinsicDeclaration(declaration) };
 };
 
+/** Whether a value holds data rather than only functions and namespaces. */
+const holdsData = (value: Value): boolean => {
+    switch (value.kind) {
+        case "tuple": return value.items.some(holdsData);
+        case "struct": return value.fields.some(([, field]) => holdsData(field));
+        case "function": case "namespace": case "method": return false;
+        default: return true;
+    }
+};
+
 /** A definition in `module`: a function to inline, or a constant compiled in its own module. */
 const definition = (node: Node, name: string, binding: ModuleBinding, module: Module, scope: Scope, out: Out): Value => {
     const unit = scope.unit;
@@ -94,6 +104,11 @@ const definition = (node: Node, name: string, binding: ModuleBinding, module: Mo
             const compile = (): Value => unit.expression(init, rootScope(unit, true, module), out);
             const value = module === unit.module ? compile() : within(node, frameIn(module, display), compile);
             unit.active.delete(identity);
+            // An object or array holding data may be written after the build, whatever made it, and a kernel would have
+            // inlined it; a primitive const can't change, and the interface's own objects are fixed.
+            if (unit.tried && value.kind !== "scalar" && holdsData(value) && packagePathOf(module.file)?.startsWith("interface/") !== true) {
+                return fail(node, `${display} holds values that may change, which a kernel would inline`);
+            }
             return value;
         }
         case "import": case "importNamespace":

@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Entity, System, World } from "../index.js";
+import { Entity, System, World } from "../index.js";
 
-const health = Symbol("health");
+const health = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -10,30 +10,26 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(health, { type: { type: "number" } });
-
 let player = Entity.none;
 const spawn = System.create(({ commands }) => { player = commands.spawn([health])({ [health]: 10 }); });
 
-// input is an object schema of named fields; each run passes a value of it.
+// A body's input is its parameter after its context, an object of named fields; each run passes a value of it.
 const hit = System.create({
-    components: { write: [health] },
-    input: { type: "object", properties: { amount: { type: "number" } } },
-}, (row, { input }) => {
+    components: { with: [health] },
+}, (row, _context, input: { readonly amount: number }) => {
     row[health] -= input.amount;
 });
 
 // target names an input field holding an entity: the system runs on that entity's row alone, or on none once it's gone.
 const heal = System.create({
-    components: { write: [health] },
-    input: { type: "object", properties: { entity: Entity.schema, amount: { type: "number" } } },
+    components: { with: [health] },
     target: "entity",
-}, (row, { input }) => {
+}, (row, _context, input: { readonly entity: Entity; readonly amount: number }) => {
     row[health] += input.amount;
 });
 
 const healths: number[] = [];
-const read = System.create({ observer: true, components: { read: [health] } }, row => {
+const read = System.create({ observer: true, components: { with: [health] } }, row => {
     healths.push(row[health]);
 });
 

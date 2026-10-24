@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { register } from '../component/register.js';
+import { registerComponent } from '../registry/declarations.js';
 import type { Failure, Warning } from './failure.js';
 
 /**
@@ -38,7 +38,7 @@ declare module '@adobe/ecs' {
 const text = { type: "string" } as const;
 const count = { type: "integer", minimum: 0 } as const;
 
-register(run, {
+registerComponent(run, {
     type: {
         type: "object",
         properties: {
@@ -47,7 +47,7 @@ register(run, {
         },
     },
 });
-register(errors, {
+registerComponent(errors, {
     type: {
         type: "object",
         properties: {
@@ -58,13 +58,14 @@ register(errors, {
                     properties: {
                         kind: { anyOf: [{ const: "system" }, { const: "finalizer" }, { const: "gpu" }, { const: "thread" }, { const: "index" }] },
                         name: text,
+                        id: { anyOf: [text, { type: "null" }] },
                         message: text,
                         stack: { anyOf: [text, { type: "null" }] },
                     },
                 },
             },
             skipped: { type: "array", items: text },
-            warnings: { type: "array", items: { type: "object", properties: { kind: { const: "blocking" }, name: text, message: text } } },
+            warnings: { type: "array", items: { type: "object", properties: { kind: { const: "blocking" }, name: text, id: { anyOf: [text, { type: "null" }] }, message: text } } },
         },
     },
 });

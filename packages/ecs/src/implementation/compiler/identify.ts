@@ -2,10 +2,10 @@
 /// <reference types="node" />
 import type { Expression, Node, Program } from 'estree';
 import { posix } from 'node:path';
-import { idsName } from '../../interface/registry/ids.js';
+import { idsName, labelsName } from '../../interface/registry/ids.js';
 import { children, isFunction } from './estree.js';
 import { moduleScope } from './module-scope.js';
-import { attachKernelPath } from './paths.js';
+import { isAttachKernelModule } from './paths.js';
 import { insertInto, type Insertion, type SourceMap } from './source-map.js';
 
 export type Parse = (code: string) => Program;
@@ -16,25 +16,40 @@ export type Identified = { readonly code: string; readonly map: SourceMap };
 /** A dependency's path inside the last `node_modules`: its package name and subpath. */
 const dependency = /\/node_modules\/(?!.*\/node_modules\/)(.+)$/;
 
-/** The name a directory's package.json gives: undefined without one, null for one without a name. */
-export type PackageNameOf = (directory: string) => string | null | undefined;
+/** What a directory's package.json gives: undefined without one, null for one without a name. */
+export type PackageOf = (directory: string) => { readonly name: string; readonly version?: string } | null | undefined;
+
+/** A module's file without a query, with forward slashes. */
+const pathOf = (file: string): string => (file.split("?")[0] ?? file).replace(/\\/g, "/");
+
+/** The nearest package.json above a module that has a name, with the module's path in it. */
+const packageAbove = (file: string, packageOf: PackageOf): { readonly name: string; readonly version?: string; readonly path: string } | null => {
+    const path = pathOf(file);
+    for (let directory = posix.dirname(path); ; directory = posix.dirname(directory)) {
+        const found = packageOf(directory);
+        if (found !== null && found !== undefined) return { ...found, path: posix.relative(directory, path) };
+        // A filesystem's root, `/` or a drive's `C:`, whose parent posix paths give as itself or as `.`.
+        const parent = posix.dirname(directory);
+        if (parent === directory || parent === ".") return null;
+    }
+};
 
 /**
- * A module's id: the name of the nearest package.json above it that has one and its path in that package, else for a
- * dependency its package name and subpath, else its path from `root`. Without a query and with forward slashes, so it's
- * the same on every machine and names no directory outside its package.
+ * A module's id: the name and version of the nearest package.json above it that has a name, and its path in that
+ * package, else for a dependency its package name and subpath; null outside both. Without a query and with forward
+ * slashes, so it's the same on every machine and names no directory outside its package. Copies of one package at
+ * different versions have different ids.
  */
-export const moduleIdOf = (file: string, root: string, packageNameOf: PackageNameOf): string => {
-    const path = (file.split("?")[0] ?? file).replace(/\\/g, "/");
-    for (let directory = posix.dirname(path); ; directory = posix.dirname(directory)) {
-        const name = packageNameOf(directory);
-        if (typeof name === "string") return `${name}/${posix.relative(directory, path)}`;
-        if (posix.dirname(directory) === directory) break;
-    }
-    const found = dependency.exec(path)?.[1];
-    if (found !== undefined) return found;
-    const relative = posix.relative(root.replace(/\\/g, "/"), path);
-    return posix.isAbsolute(relative) ? posix.basename(path) : relative;
+export const moduleIdOf = (file: string, packageOf: PackageOf): string | null => {
+    const found = packageAbove(file, packageOf);
+    if (found !== null) return `${found.name}${found.version === undefined ? "" : `@${found.version}`}/${found.path}`;
+    return dependency.exec(pathOf(file))?.[1] ?? null;
+};
+
+/** How messages name a module: its package's name and its path there, as its id has them, else the file's name. */
+export const moduleLabelOf = (file: string, packageOf: PackageOf): string => {
+    const found = packageAbove(file, packageOf);
+    return found !== null ? `${found.name}/${found.path}` : dependency.exec(pathOf(file))?.[1] ?? posix.basename(pathOf(file));
 };
 
 /** Whether a binding named `name` is declared in the module's scope: at top level, or as a `var` in any of its blocks. */
@@ -76,7 +91,7 @@ const localsOf = async (program: Program, resolve: ResolveNamespace): Promise<{ 
         for (const specifier of statement.specifiers) {
             if (specifier.type !== "ImportSpecifier" || specifier.imported.type !== "Identifier") continue;
             const imported = specifier.imported.name;
-            if (statement.source.value === attachKernelPath && imported === "attachKernel") attach.add(specifier.local.name);
+            if (imported === "attachKernel" && isAttachKernelModule(statement.source.value)) attach.add(specifier.local.name);
             else if (isNamespace(imported) && await resolve(statement.source.value, imported)) namespaces.set(specifier.local.name, imported);
         }
     }
@@ -120,9 +135,10 @@ const mayDeclare = /\.(create|render|changes)\(/;
  *
  * The same bindings initialized by a constructor call of the package's `System`, `Rule`, `Finalizer` or `Index`, imported under
  * any local name, give the call's declaration their id, which the constructor takes from the map: a kernel's call as
- * the kernel transform wrapped it too. Returns null when nothing is identified.
+ * the kernel transform wrapped it too. Returns null when nothing is identified, and a failure when something is but the
+ * module has no id (`moduleIdOf`).
  */
-export const identify = async (code: string, id: string, parse: Parse, resolve: ResolveNamespace): Promise<Identified | null> => {
+export const identify = async (code: string, id: string | null, parse: Parse, resolve: ResolveNamespace): Promise<Identified | { readonly failure: string } | null> => {
     const symbols = code.includes("Symbol(");
     const items = mayDeclare.test(code);
     if (!symbols && !items) return null;
@@ -144,13 +160,54 @@ export const identify = async (code: string, id: string, parse: Parse, resolve: 
             consider(statement.declaration, "default");
         }
     }
-    if (found.length === 0 || declaresInModule(program, "Symbol") || declaresInModule(program, "globalThis")) return null;
-    const identifier = uniqueName(code, "identify$");
+    const labeled = namespaces.size > 0 ? labelsOf(program, namespaces, attach, new Set(found.map(({ value }) => value))) : [];
+    if ((found.length === 0 && labeled.length === 0) || declaresInModule(program, "Symbol") || declaresInModule(program, "globalThis")) return null;
     const insertions: Insertion[] = [];
-    for (const { value, binding } of found) {
-        insertions.push({ at: value.start, text: `${identifier}(` }, { at: value.end, text: `, ${JSON.stringify(`${id}#${binding}`)})` });
+    if (found.length > 0) {
+        if (id === null) return { failure: "this module's keys and systems need ids, which name its package, but no package.json above it gives a name: give its package one" };
+        const identifier = uniqueName(code, "identify$");
+        for (const { value, binding } of found) {
+            insertions.push({ at: value.start, text: `${identifier}(` }, { at: value.end, text: `, ${JSON.stringify(`${id}#${binding}`)})` });
+        }
+        const ids = JSON.stringify(idsName);
+        insertions.push({ at: code.length, text: `\nfunction ${identifier}(value, id) { const ids = Symbol.for(${ids}); (globalThis[ids] || (globalThis[ids] = new Map())).set(value, id); return value; }\n` });
     }
-    const ids = JSON.stringify(idsName);
-    insertions.push({ at: code.length, text: `\nfunction ${identifier}(value, id) { const ids = Symbol.for(${ids}); (globalThis[ids] || (globalThis[ids] = new Map())).set(value, id); return value; }\n` });
-    return insertInto(code, insertions, id);
+    if (labeled.length > 0) {
+        const identifier = uniqueName(code, "label$");
+        for (const { value, label } of labeled) insertions.push({ at: value.start, text: `${identifier}(` }, { at: value.end, text: `, ${JSON.stringify(label)})` });
+        const labels = JSON.stringify(labelsName);
+        // A label already given, as an internal factory gives its own, stands.
+        insertions.push({ at: code.length, text: `\nfunction ${identifier}(value, label) { const labels = Symbol.for(${labels}); const map = globalThis[labels] || (globalThis[labels] = new WeakMap()); if (!map.has(value)) map.set(value, label); return value; }\n` });
+    }
+    return insertInto(code, insertions, id ?? "");
+};
+
+/** The name a node gives what's declared in it: a variable's, a function's, a property's or a method's. */
+const nameIn = (node: Node): string | null => {
+    switch (node.type) {
+        case "VariableDeclarator": return node.id.type === "Identifier" ? node.id.name : null;
+        case "FunctionDeclaration": case "FunctionExpression": return node.id?.name ?? null;
+        case "Property": case "MethodDefinition": case "PropertyDefinition": return !node.computed && node.key.type === "Identifier" ? node.key.name : null;
+        case "AssignmentExpression": return node.left.type === "Identifier" ? node.left.name : null;
+        default: return null;
+    }
+};
+
+/**
+ * The declarations of constructor calls that `identified` leaves out, each with a label: the name of the nearest
+ * variable, function, property or method it's made in, as `mover` for one made in `const mover = (speed) => ...`.
+ */
+const labelsOf = (program: Program, namespaces: ReadonlyMap<string, Namespace>, attach: ReadonlySet<string>, identified: ReadonlySet<Expression>): readonly { readonly value: Expression; readonly label: string }[] => {
+    const labeled: { readonly value: Expression; readonly label: string }[] = [];
+    const visit = (node: Node, names: readonly string[]): void => {
+        const declaration = declarationOf(node, namespaces, attach);
+        const label = names.at(-1);
+        // Calls in its arguments are labeled too, by the names nearest them.
+        if (declaration !== undefined && !identified.has(declaration) && label !== undefined) labeled.push({ value: declaration, label });
+        const name = nameIn(node);
+        const inner = name === null ? names : [...names, name];
+        for (const child of children(node)) visit(child, inner);
+    };
+    visit(program, []);
+    return labeled;
 };

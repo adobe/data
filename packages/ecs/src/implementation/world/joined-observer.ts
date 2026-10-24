@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
-import type { SystemLookup } from '../../interface/system/access.js';
-import { idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';
+import type { SystemLookupLists } from '../../interface/system/access.js';
+import { idOfItem, idOfKey, idOrNull, indexOfLookup, labelOf, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import type { Archetype } from './archetype.js';
 import { readCell } from './cells.js';
 import { indexOf } from './entities.js';
@@ -88,6 +88,8 @@ export type JoinedObserver = Copied & {
     readonly target: ObserverTarget;
     readonly index: number;
     readonly label: string;
+    /** The id the plugin gave it, which reports give beside its label. */
+    readonly id: string | null;
     readonly runner: Runner;
     /** Struct components its lookups read or watch, and the key parts of the indexes they go through. */
     readonly lookupReads: readonly number[];
@@ -171,7 +173,7 @@ export const createObserverTarget = (thread: number, label: string, post: (messa
 
 const unique = (ids: readonly number[]): readonly number[] => [...new Set(ids)];
 
-const lookupReadsOf = (state: State, lookup: { readonly [name: string]: SystemLookup } | undefined): { readonly reads: readonly number[]; readonly watched: readonly number[] } => {
+const lookupReadsOf = (state: State, lookup: { readonly [name: string]: SystemLookupLists } | undefined): { readonly reads: readonly number[]; readonly watched: readonly number[] } => {
     const reads: number[] = [];
     const watched: number[] = [];
     for (const name in lookup) {
@@ -200,20 +202,20 @@ const startCounting = (state: State): void => {
 export const createJoinedObserverRunner = (state: State, leaf: Leaf, target: ObserverTarget, since = 0): Runner => {
     for (const lookup of Object.values(leaf.declaration.lookup ?? {})) {
         const index = indexOfLookup(lookup);
-        if (index !== undefined && watchesEntries(lookup)) throw new Error(entriesOnJoined(leaf, threadOf(leaf.declaration, "System", leaf.name) ?? target.label, labelOfItem(index)));
+        if (index !== undefined && watchesEntries(lookup)) throw new Error(entriesOnJoined(leaf, threadOf(leaf.declaration, "System", leaf.name) ?? target.label, index.name));
     }
     // One placed there by the objects it names, rather than the thread's own, is named there by its id and its keys'.
     if (!state.observer.proxies.has(leaf)) {
         if (idOfItem(leaf) === undefined) {
             const thread = threadOf(leaf.declaration, "System", leaf.name) ?? target.label;
-            throw new Error(`System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level systems one.`);
+            throw new Error(`System "${leaf.name}" runs on thread "${thread}", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level systems one.`);
         }
         const unnamed = unnamedKey(leaf);
         if (unnamed !== null) throw new Error(unnamed);
     }
-    const base = createRunner(state, leaf, since);
     const { declaration } = leaf;
     const { components, resources } = declaration;
+    const base = createRunner(state, leaf, since);
     const ids = (keys: readonly Key[] | undefined): number[] => [...new Set((keys ?? []).map(key => idOf(state, key)))];
     // Strings live in shared memory, as structs do.
     const isStruct = (id: number): boolean => state.layouts[id].kind !== "object";
@@ -261,7 +263,7 @@ export const createJoinedObserverRunner = (state: State, leaf: Leaf, target: Obs
     const index = target.free.pop() ?? target.placed.length;
     const proxy = state.observer.proxies.get(leaf);
     const observer: JoinedObserver = {
-        target, index, label: proxy?.label ?? labelOfItem(leaf), runner: base,
+        target, index, label: proxy?.label ?? leaf.name, id: proxy === undefined ? idOrNull(leaf) : null, runner: base,
         matched: base.matched,
         reads: ids([...components?.read ?? [], ...components?.added ?? [], ...components?.changed ?? []]).filter(isStruct),
         resourceReads: resourceIds.filter(isStruct),
@@ -793,7 +795,7 @@ export const settleObserverKeys = (state: State, components: readonly number[], 
 /** Why an observer system's key can't cross to a joined thread, or null when every one can. */
 export const unnamedKey = (leaf: Leaf): string | null => {
     const unnamed = keysOf(leaf).find(key => idOfKey(key) === undefined);
-    return unnamed === undefined ? null : `System "${labelOfItem(leaf)}" names "${labelOf(unnamed)}", which has no id, so a joined thread can't name it; the build gives top-level keys one.`;
+    return unnamed === undefined ? null : `System "${leaf.name}" names "${labelOf(unnamed)}", which has no id, so a joined thread can't name it; the build gives top-level keys one.`;
 };
 
 /** Runs of observer systems from joined threads, by the value standing for their input: the run's sequence there. */

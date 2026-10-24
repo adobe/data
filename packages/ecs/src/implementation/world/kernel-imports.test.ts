@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Entity, System, Vec3, World } from "../../index.js";
+import { Entity, System, Vec3, World } from "../../index.js";
 import { Observe } from "../../observe/index.js";
 import { position, spark, sparks } from "./kernel-imports-sparks.test-helper.js";
 import { steer } from "./kernel-imports-steer.test-helper.js";
@@ -17,25 +17,22 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(velocity, { type: Vec3.schema });
-Component.register(target, { type: Entity.schema });
 
-const spawn = System.create({ name: "kernelImports/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     const leader = commands.spawn([position, velocity])({ [position]: [10, 0, 0], [velocity]: [0, 0, 0] });
     commands.spawn([position, velocity, target])({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [target]: leader });
 });
 
-// `kernel: "cpu"` compiles the body at build time, to run in chunks across workers as WASM where it can.
-const integrate = System.create({ name: "kernelImports/integrate", kernel: "cpu", components: { read: [velocity], write: [position] } }, row => {
+// `kernel: true` compiles the body at build time, to run in chunks across workers as WASM where it can.
+const integrate = System.create({ kernel: true, components: { with: [velocity, position] } }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
 
 // Kernels use lookups, imported pure functions, commands and imported lists too.
 const chase = System.create({
-    name: "kernelImports/chase",
-    kernel: "cpu",
-    components: { read: [position, target], write: [velocity] },
-    lookup: { targets: { read: [position] } },
+    kernel: true,
+    components: { with: [position, target, velocity] },
+    lookup: { targets: { with: [position] } },
 }, (row, { lookup, commands }) => {
     const other = lookup.targets(row[target]);
     if (other === null) return;
@@ -58,10 +55,10 @@ it("runs systems compiled as kernels", async () => {
 });
 
 // A kernel's `add` and `remove` take an imported `Symbol(...)` as one key, and an imported list as a list.
-const ignite = System.create({ name: "kernelImports/ignite" }, ({ commands }) => {
+const ignite = System.create({}, ({ commands }) => {
     commands.spawn(sparks)({ [position]: [0, 0, 0] });
 });
-const settle = System.create({ name: "kernelImports/settle", kernel: "cpu", components: { has: [spark] } }, (row, { commands }) => {
+const settle = System.create({ kernel: true, components: { with: [spark] } }, (row, { commands }) => {
     commands.remove(row.entity, spark);
 });
 

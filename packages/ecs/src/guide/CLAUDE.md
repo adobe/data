@@ -13,22 +13,21 @@ code it shows: every excerpt comes from a file here that runs as a test, so the 
   compile-time checks prevent most mistakes.
 - Never mention `@adobe/data` or any other package that isn't this one. It means nothing to a consumer.
 - Describe only the current API, with no history.
-- Keep it small. Write sections for the basics and intermediate topics; advanced topics are placeholders until the
-  API settles.
+- Keep it small. Advanced sections are as short as the rest: each shows the common case of its topic and stops.
 
 ## Structure
 
-- **Setup:** its own short section before the basics: the build plugin and how keys are registered and declared.
+- **Setup:** its own short section before the basics: the build plugin and how keys are declared.
 - **Basics:** resources, then entities, components and archetypes, which together are the whole data model, then
   systems, and ticks and cadence: everything needed to build and run a world and its loop. Topics that belong together
   share a section; entities are taught with components, and archetypes, named lists of components, with them.
 - **Intermediate:** scheduling and composites, sync points, change filters and conditions, input, rules, finalizers
   and change sets, and traits with within and references.
-- **Advanced:** placeholders only.
+- **Advanced:** lookups, indexes, kernels, reductions, GPU kernels and render systems, hierarchies, identity and ids,
+  and threads.
 
 ## Code conventions
 
-- Keys are short: `Symbol("position")`, never a path like `"guide/components/position"`. A resource's description says
-  nothing about components.
-- Archetypes are types, so their names are PascalCase: `const Particle = Archetype.create([position, velocity])`.
+- Keys are `Symbol()` with no description: the build's id names each by its binding.
+- Archetypes are types, so their names are PascalCase: `const Particle = [position, velocity] as const`.
 - Use the public API only, as a consumer imports it, not internal modules. Read a world through observer systems.

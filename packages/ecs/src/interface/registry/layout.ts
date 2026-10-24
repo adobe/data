@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from '../schema/schema.js';
-import { isString } from './schemas.js';
+import { isString, numberConstants } from './schemas.js';
 
 /** A path from a value to one scalar leaf: `[]` for a scalar, `[1]` for a tuple element, `["x"]` for a struct field. */
 export type Path = readonly (number | string)[];
@@ -83,6 +83,12 @@ const integerScalar = ({ minimum, maximum }: { readonly minimum?: number; readon
 
 /** `null` if the schema isn't linear: numbers, booleans, fixed-length tuples and structs of those. */
 const shapeOf = (schema: Schema): Shape | null => {
+    // A union of number constants is a number: integers at the narrowest width holding them, and with -0, which an
+    // integer can't hold, f64.
+    const constants = numberConstants(schema);
+    if (constants !== null) {
+        return { kind: "scalar", scalar: constants.every(constant => Number.isInteger(constant) && !Object.is(constant, -0)) ? integerScalar({ minimum: Math.min(...constants), maximum: Math.max(...constants) }) : "f64" };
+    }
     if (!("type" in schema)) return null;
     switch (schema.type) {
         case "number": return { kind: "scalar", scalar: schema.precision === 1 ? "f32" : "f64" };

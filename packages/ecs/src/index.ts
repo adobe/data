@@ -1,4 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+/**
+ * A high-performance, multithreaded Entity Component System.
+ * @module @adobe/ecs
+ */
 import { create, join } from './implementation/index.js';
 import type { Create } from './interface/world/create.js';
 import type { Join } from './interface/world/join.js';

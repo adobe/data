@@ -11,7 +11,7 @@ afterEach(() => {
 const twoEntities = async (): Promise<readonly [Entity, Entity]> => {
     const spawned: Entity[] = [];
     await using world = World.create({ [workers]: 0 });
-    await world.run(System.create({ name: "attachTest/spawn" }, ({ commands }) => {
+    await world.run(System.create({}, ({ commands }) => {
         spawned.push(commands.spawn([])({}), commands.spawn([])({}));
     }));
     const [first, second] = spawned;

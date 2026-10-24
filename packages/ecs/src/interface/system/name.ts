@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
- * The label reports and errors give it, which needn't be unique: the value its constructor returns is its identity, so
- * separately written code can't collide by name. Namespacing it (`"physics/integrate"`) keeps labels short. Without
- * one, it's labeled by its binding and the id the plugin gave it, or else by its kind numbered.
+ * The label reports and errors give it, for display: its binding, from the id the plugin gave it; for one made in a
+ * function, the binding or function the plugin found it in; else its kind numbered. The value its constructor returns
+ * is its identity, so labels needn't be unique.
  */
 export type Name = string;

@@ -1,14 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Entity, System, World } from "../index.js";
+import { Entity, System, World } from "../index.js";
 
-const ship = Symbol("ship");
-const parent = Symbol("parent");
-const target = Symbol("target");
-const selected = Symbol("selected");
-const outline = Symbol("outline");
+const ship = Symbol();
+const parent = Symbol();
+const target = Symbol();
+const selected = Symbol();
+const outline = Symbol();
 
-// Traits are the fields of a key's declaration; type is one. Registration repeats them.
+// Traits are the fields of a key's declaration; type is one.
 declare module "@adobe/ecs" {
     interface Components {
         [ship]: { type: true };
@@ -22,27 +22,21 @@ declare module "@adobe/ecs" {
     }
 }
 
-Component.register(ship, { type: { const: true } });
-Component.register(parent, { type: Entity.schema, reference: "owner" });
-Component.register(target, { type: Entity.schema, reference: "weak" });
-Component.register(selected, { type: { const: true } });
-Component.register(outline, { type: { type: "number" }, within: selected });
-
 const spawn = System.create(({ commands }) => {
     const mothership = commands.spawn([ship, selected, outline])({ [outline]: 2 });
     commands.spawn([parent])({ [parent]: mothership });
     commands.spawn([target])({ [target]: mothership });
 });
-const deselect = System.create({ components: { has: [selected] } }, (row, { commands }) => {
+const deselect = System.create({ components: { with: [selected] } }, (row, { commands }) => {
     commands.remove(row.entity, selected);
 });
-const destroy = System.create({ components: { has: [ship] } }, (row, { commands }) => {
+const destroy = System.create({ components: { with: [ship] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 
 const counts = { outlined: 0, targeting: 0, all: 0 };
-const countOutlined = System.create({ observer: true, components: { has: [outline] } }, () => { counts.outlined += 1; });
-const countTargeting = System.create({ observer: true, components: { has: [target] } }, () => { counts.targeting += 1; });
+const countOutlined = System.create({ observer: true, components: { with: [outline] } }, () => { counts.outlined += 1; });
+const countTargeting = System.create({ observer: true, components: { with: [target] } }, () => { counts.targeting += 1; });
 const countAll = System.create({ observer: true, components: {} }, () => { counts.all += 1; });
 
 it("removes components with their host, and follows references", async () => {

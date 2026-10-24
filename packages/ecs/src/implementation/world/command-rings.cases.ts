@@ -19,7 +19,7 @@ export const commandRingsCases = (load: () => Promise<typeof Fixture>) => descri
         const fixture = await load();
         const alone = await fixture.failed(0);
         const { failures, weights, extents, spawned } = alone;
-        expect(failures).toEqual(["commandRingsTest/failing"]);
+        expect(failures).toEqual(["failing"]);
         // Every row but the first, which has no target, added its weight and spawned before reading its target; only
         // the last one's target is none.
         expect(weights).toEqual([null, ...Array.from({ length: 999 }, (_, i) => i + 1)]);

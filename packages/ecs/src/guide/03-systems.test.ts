@@ -1,12 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Component, Report, Resource, System, Vec3, World } from "../index.js";
+import { Report, System, Vec3, World } from "../index.js";
 
-const position = Symbol("position");
-const velocity = Symbol("velocity");
-const frozen = Symbol("frozen");
-const delta = Symbol("delta");
-const frames = Symbol("frames");
+const position = Symbol();
+const velocity = Symbol();
+const frozen = Symbol();
+const delta = Symbol();
+const frames = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -15,35 +15,27 @@ declare module "@adobe/ecs" {
         [frozen]: { type: true };
     }
     interface Resources {
-        [delta]: { type: number };
+        [delta]: { type: number; default: 0.5 };
         [frames]: { type: number };
     }
 }
-
-Component.register(position, { type: Vec3.schema });
-Component.register(velocity, { type: Vec3.schema });
-Component.register(frozen, { type: { const: true } });
-Resource.register(delta, { type: { type: "number", default: 0.5 } });
-Resource.register(frames, { type: { type: "number", default: 0 } });
 
 const spawn = System.create(({ commands }) => {
     commands.spawn([position, velocity])({ [position]: [0, 0, 0], [velocity]: [2, 0, 0] });
     commands.spawn([position, velocity, frozen])({ [position]: [0, 0, 0], [velocity]: [2, 0, 0] });
 });
 
-// Runs once per entity with every component in read and write, and none in not.
+// Runs once per entity with every component in with, and none in not. What its body reads and writes the build
+// infers.
 const move = System.create({
-    // Optional: labels the system in reports.
-    name: "physics/move",
-    components: { read: [velocity], write: [position], not: [frozen] },
-    resources: { read: [delta] },
+    components: { with: [velocity, position], not: [frozen] },
 }, (row, { resources }) => {
     // Values are replaced whole, never edited in place.
     row[position] = Vec3.add(row[position], Vec3.scale(row[velocity], resources[delta]));
 });
 
 // Without components, a system runs once per run.
-const count = System.create({ resources: { write: [frames] } }, ({ resources }) => {
+const count = System.create({}, ({ resources }) => {
     resources[frames] += 1;
 });
 
@@ -51,7 +43,7 @@ const count = System.create({ resources: { write: [frames] } }, ({ resources }) 
 // react to it.
 const moved: Vec3[] = [];
 let counted = 0;
-const read = System.create({ observer: true, components: { read: [position], not: [frozen] }, resources: { read: [frames] } }, (row, { resources }) => {
+const read = System.create({ observer: true, components: { with: [position], not: [frozen] } }, (row, { resources }) => {
     moved.push(row[position]);
     counted = resources[frames];
 });
@@ -67,7 +59,26 @@ it("runs a system once per entity, or once", async () => {
     expect(counted).toBe(1);
 });
 
-const fail = System.create({ name: "fail" }, () => {
+const spawnStill = System.create(({ commands }) => {
+    commands.spawn([position])({ [position]: [5, 0, 0] });
+    commands.spawn([position, velocity])({ [position]: [0, 0, 0], [velocity]: [2, 0, 0] });
+});
+
+// An optional component is in a row where its entity has it, and undefined where it doesn't: it never narrows which
+// entities a system runs on. Commands add and remove it; assigning undefined removes nothing.
+const speeds: (Vec3 | undefined)[] = [];
+const readSpeeds = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => {
+    speeds.push(row[velocity]);
+});
+
+it("reads optional components where entities have them", async () => {
+    await using world = World.create();
+    await world.run(spawnStill);
+    await world.run(readSpeeds);
+    expect(speeds).toEqual([undefined, [2, 0, 0]]);
+});
+
+const fail = System.create(() => {
     throw new Error("broken");
 });
 
@@ -75,7 +86,7 @@ const fail = System.create({ name: "fail" }, () => {
 // it took, and `Report.errors` is there only when something went wrong. An observer system added to follow errors as
 // they change logs them; what observer systems throw is in the next run's report.
 const logged: string[] = [];
-const logFailures = System.create({ observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
+const logFailures = System.create({ observer: true, components: { with: [Report.errors], changed: [Report.errors] } }, row => {
     for (const failure of row[Report.errors].failures) logged.push(`${failure.name}: ${failure.message}`);
 });
 

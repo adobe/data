@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Archetype } from "../../interface/archetype/archetype.js";
-import { Component } from "../../interface/component/component.js";
 import { System } from "../../interface/system/system.js";
 import { workers } from "../../interface/resources/workers.js";
 import { count, read, readEach, select } from "./reads.test-helper.js";
@@ -9,6 +7,7 @@ import { createWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import { retainedRuns } from "./reports.js";
 import { fillReports } from "./reports.test-helper.js";
+import type { F32, U32, Vec2 } from "../../interface/math/index.js";
 
 const index = Symbol("kernelSpawnsTest/index");
 const value = Symbol("kernelSpawnsTest/value");
@@ -20,60 +19,53 @@ const position = Symbol("kernelSpawnsTest/position");
 
 declare module "@adobe/ecs" {
     export interface Components {
-        [index]: { type: number };
-        [value]: { type: number };
-        [extra]: { type: number };
+        [index]: { type: U32 };
+        [value]: { type: F32 };
+        [extra]: { type: F32 };
         [flag]: { type: true };
         [made]: { type: true };
         [name]: { type: string | null };
-        [position]: { type: readonly [number, number] };
+        [position]: { type: Vec2 };
     }
 }
 
-Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
-Component.register(value, { type: { type: "number", precision: 1 } });
-Component.register(extra, { type: { type: "number", precision: 1 } });
-Component.register(flag, { type: { const: true } });
-Component.register(made, { type: { const: true } });
-Component.register(name, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Component.register(position, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } });
 
-const spawned = Archetype.create([value, made]);
+const spawned = [value, made] as const;
 
-const seed = System.create({ name: "kernelSpawnsTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([index])({ [index]: i });
 });
 
 /** One spawn per row, from a kernel. */
-const fromKernel = System.create({ name: "kernelSpawnsTest/fromKernel", kernel: "cpu", components: { read: [index] } }, (row, { commands }) => {
+const fromKernel = System.create({ kernel: true, components: { with: [index] } }, (row, { commands }) => {
     commands.spawn(spawned)({ [value]: row[index] });
 });
 
 /** The same archetype from a main-thread system, before the kernel. */
-const fromMain = System.create({ name: "kernelSpawnsTest/fromMain", before: [fromKernel] }, ({ commands }) => {
+const fromMain = System.create({ before: [fromKernel] }, ({ commands }) => {
     for (let i = 0; i < 3; i++) commands.spawn(spawned)({ [value]: 100 + i });
 });
 
 /** Spawns, then adds to and removes from what it spawned, in the same kernel and tick. */
-const spawnAndEdit = System.create({ name: "kernelSpawnsTest/spawnAndEdit", kernel: "cpu", components: { read: [index] } }, (row, { commands }) => {
+const spawnAndEdit = System.create({ kernel: true, components: { with: [index] } }, (row, { commands }) => {
     const entity = commands.spawn([value, flag, made])({ [value]: row[index] });
     commands.add(entity, extra, row[index] * 10);
     commands.remove(entity, flag);
 });
 
 /** A spawn with a tuple, and an object component left to its start. */
-const withObjects = System.create({ name: "kernelSpawnsTest/withObjects", kernel: "cpu", components: { read: [index] } }, (row, { commands }) => {
+const withObjects = System.create({ kernel: true, components: { with: [index] } }, (row, { commands }) => {
     commands.spawn([value, position, name, made])({ [value]: row[index], [position]: [row[index], -row[index]] });
 });
 
-const despawnMade = System.create({ name: "kernelSpawnsTest/despawnMade", components: { has: [made] } }, (row, { commands }) => { commands.despawn(row.entity); });
+const despawnMade = System.create({ components: { with: [made] } }, (row, { commands }) => { commands.despawn(row.entity); });
 
 const added = { seen: 0 };
-const countAdded = System.create({ name: "kernelSpawnsTest/countAdded", components: { added: [value], has: [made] } }, () => { added.seen++; });
+const countAdded = System.create({ components: { added: [value], with: [made] } }, () => { added.seen++; });
 
 /** Each made entity's value, in storage order. */
 const madeValues: number[] = [];
-const readMade = System.create({ name: "kernelSpawnsTest/readMade", observer: true, components: { read: [value], has: [made] } }, row => { madeValues.push(row[value]); });
+const readMade = System.create({ observer: true, components: { with: [value, made] } }, row => { madeValues.push(row[value]); });
 const valuesOf = async (world: ReturnType<typeof createWorld>): Promise<number[]> => {
     madeValues.length = 0;
     await world.run(readMade);
@@ -96,7 +88,7 @@ describe("kernel spawns", () => {
     it("join main-thread spawns of the same archetype: the main thread's first, then the kernel's in row order", async () => {
         const world = createWorld({ [workers]: 0 });
         await world.run(seed, { count: 4 });
-        const frame = System.create({ name: "kernelSpawnsTest/mixed", systems: [fromKernel, fromMain] });
+        const frame = System.create({ systems: [fromKernel, fromMain] });
         await world.run(frame);
         expect(await valuesOf(world)).toEqual([100, 101, 102, 0, 1, 2, 3]);
         await world.run(frame);

@@ -585,12 +585,16 @@ const split = (table: SortedTable, k: number, tick: number): void => {
     reindexFrom(table, k, table.blocks);
 };
 
-/** Updates where entity index `entity` is: its archetype and row, at its entry. */
-export const relocateSorted = (table: SortedTable, entity: number, archetype: number, row: number): void => {
+/** Updates where entity index `entity` is: its archetype and row, at its entry. Returns whether either changed. */
+export const relocateSorted = (table: SortedTable, entity: number, archetype: number, row: number): boolean => {
     const base = entryOf(table, entity);
-    if (base < 0) return;
-    table.entries[base + table.words + 1] = archetype;
-    table.entries[base + table.words + 2] = row;
+    if (base < 0) return false;
+    const at = base + table.words;
+    const { entries } = table;
+    if (entries[at + 1] === archetype && entries[at + 2] === row) return false;
+    entries[at + 1] = archetype;
+    entries[at + 2] = row;
+    return true;
 };
 
 /**

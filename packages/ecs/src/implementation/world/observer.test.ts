@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Component, Index, Report, Resource, System, workers } from "../../index.js";
+import { giveAccess } from "../../interface/registry/ids.test-helper.js";
+import { Index, Report, System, workers } from "../../index.js";
 import { isObserver, requireDefinition } from "../../interface/registry/index.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld } from "./create.js";
@@ -21,11 +22,8 @@ declare module "@adobe/ecs" {
         [level]: { type: number };
     }
 }
-Component.register(amount, { type: { type: "number" } });
-Component.register(cell, { type: { type: "number" } });
-Resource.register(level, { type: { type: "number", default: 0 } });
 
-const byCell = Index.create({ name: "observerTest/byCell", key: [cell] });
+const byCell = Index.create({ key: [cell] });
 
 /** What observer bodies saw, by system, reset by each test. */
 const seen: { levels: number[]; amounts: number[]; counted: number[]; cells: number[]; reports: number[]; removals: number[]; contexts: object[] } = { levels: [], amounts: [], counted: [], cells: [], reports: [], removals: [], contexts: [] };
@@ -33,41 +31,42 @@ const reset = (): void => {
     for (const list of Object.values(seen)) list.length = 0;
 };
 
-const raise = System.create({ name: "observerTest/raise", resources: { write: [level] } }, ({ resources }) => { resources[level] += 1; });
-const spawn = System.create({ name: "observerTest/spawn" }, ({ commands }) => { commands.spawn([amount, cell])({ [amount]: 1, [cell]: 7 }); });
-const grow = System.create({ name: "observerTest/grow", components: { write: [amount] } }, row => { row[amount] += 1; });
-const nothing = System.create({ name: "observerTest/nothing" }, () => {});
+const raise = System.create({}, ({ resources }) => { resources[level] += 1; });
+const spawn = System.create({}, ({ commands }) => { commands.spawn([amount, cell])({ [amount]: 1, [cell]: 7 }); });
+const grow = System.create({ components: { with: [amount] } }, row => { row[amount] += 1; });
+const nothing = System.create({}, () => {});
 
-const watchLevel = System.create({ name: "observerTest/watchLevel", observer: true, resources: { read: [level] } }, context => {
+// It keeps its context, which the build can't follow, so it's given what it reads.
+const watchLevel = System.create(giveAccess({ observer: true }, { resources: { read: [level] } }), context => {
     seen.levels.push(context.resources[level]);
     seen.contexts.push(context);
 });
-const watchAmounts = System.create({ name: "observerTest/watchAmounts", observer: true, components: { read: [amount], changed: [amount] } }, row => { seen.amounts.push(row[amount]); });
-const count = System.create({ name: "observerTest/count", observer: true, components: { has: [amount] } }, () => { seen.counted.push(1); });
-const inCell = System.create({ name: "observerTest/inCell", observer: true, lookup: { found: { index: byCell } } }, ({ lookup }) => {
+const watchAmounts = System.create({ observer: true, components: { with: [amount], changed: [amount] } }, row => { seen.amounts.push(row[amount]); });
+const count = System.create({ observer: true, components: { with: [amount] } }, () => { seen.counted.push(1); });
+const inCell = System.create({ observer: true, lookup: { found: { index: byCell } } }, ({ lookup }) => {
     seen.cells.push(lookup.found(7).length);
 });
-const failing = System.create({ name: "observerTest/failing", observer: true, resources: { read: [level] } }, ({ resources }) => {
+const failing = System.create({ observer: true }, ({ resources }) => {
     if (resources[level] > 0) throw new Error("observer failed");
 });
-const watchReport = System.create({ name: "observerTest/watchReport", observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
+const watchReport = System.create({ observer: true, components: { with: [Report.errors], changed: [Report.errors] } }, row => {
     seen.reports.push(row[Report.errors].failures.length);
 });
 const raiseThenWatch = System.create([raise, watchLevel]);
-const watchLevelChanges = System.create({ name: "observerTest/watchLevelChanges", observer: true, resources: { read: [level], changed: [level] } }, ({ resources }) => {
+const watchLevelChanges = System.create({ observer: true, resources: { changed: [level] } }, ({ resources }) => {
     seen.levels.push(resources[level]);
 });
 
 /** The world a removing body acts on. */
 let current: World | null = null;
-const removeLevel = System.create({ name: "observerTest/removeLevel", observer: true }, () => {
+const removeLevel = System.create({ observer: true }, () => {
     seen.removals.push(1);
     current?.remove(watchLevel);
 });
 
 /** Adds `watchLevel` to the world the test runs, during a run. */
-const addWatch = System.create({ name: "observerTest/addWatch" }, () => { current?.add(watchLevel); });
-const addLevel = System.create({ name: "observerTest/addLevel", observer: true }, () => {
+const addWatch = System.create({}, () => { current?.add(watchLevel); });
+const addLevel = System.create({ observer: true }, () => {
     current?.add(watchLevel);
 });
 
@@ -135,7 +134,7 @@ describe("observer systems", () => {
         expect((await reportOf(world, raised)).failures).toEqual([]);
         // Read by a run of its own, the next one, whose report holds them.
         const { failures } = await reportOf(world, raised + 2);
-        expect(failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "observerTest/failing", "observer failed"]]);
+        expect(failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "failing", "observer failed"]]);
     });
 
     it("don't make the loop tick, and runs of them alone don't wake it", async () => {
@@ -167,7 +166,7 @@ describe("observer systems", () => {
         expect(counted).toBe(ran + 2);
         expect(seen.reports).toEqual([1]);
         expect((await reportOf(world, ran + 1)).failures).toEqual([]);
-        expect((await reportOf(world, counted)).failures.map(({ name }) => name)).toEqual(["observerTest/failing"]);
+        expect((await reportOf(world, counted)).failures.map(({ name }) => name)).toEqual(["failing"]);
     });
 
     it("leave the composite ticks run as it is when one added alone is removed, and release what it held", async () => {

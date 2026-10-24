@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Resource } from "../../interface/resource/resource.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
 import { System } from "../../interface/system/system.js";
@@ -14,10 +13,9 @@ declare module "@adobe/ecs" {
         [frames]: { type: number };
     }
 }
-Resource.register(frames, { type: { type: "number", default: 0 } });
 
-const count = System.create({ name: "ticksBrowserTest/count", resources: { write: [frames] } }, ({ resources }) => { resources[frames] += 1; });
-const start = System.create({ name: "ticksBrowserTest/start", resources: { write: [always] } }, ({ resources }) => { resources[always] = true; });
+const count = System.create({}, ({ resources }) => { resources[frames] += 1; });
+const start = System.create({}, ({ resources }) => { resources[always] = true; });
 
 describe("a frame cadence", () => {
     it("ticks on animation frames, with their time", async () => {

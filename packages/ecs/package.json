@@ -1,11 +1,14 @@
 {
   "name": "@adobe/ecs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Adobe ECS",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
   "private": false,
+  "pages": [
+    { "from": "docs", "to": "ecs" }
+  ],
   "independentVersion": true,
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
@@ -30,14 +33,15 @@
   ],
   "scripts": {
     "build": "cp ../../LICENSE . && tsc -b",
-    "dev": "tsc -b -w --preserveWatchOutput",
+    "dev": "tsc -b -w --preserveWatchOutput & vite --config vite.sample.config.ts",
     "typecheck": "tsc -b",
     "test": "pnpm exec playwright install chromium && vitest --run",
     "test:perf": "pnpm exec playwright install chromium && vitest --run --config vitest.perf.config.ts",
     "perf": "node scripts/perf.mjs",
     "perf:browser": "node scripts/perf.mjs --browser",
     "perf:report": "node scripts/perf.mjs --report",
-    "sample": "vite --config vite.sample.config.ts"
+    "sample": "vite --config vite.sample.config.ts",
+    "docs": "typedoc"
   },
   "devDependencies": {
     "@types/estree": "^1.0.5",
@@ -45,6 +49,7 @@
     "@vitest/browser-playwright": "^5.0.5",
     "@webgpu/types": "^0.1.61",
     "playwright": "^1.64.1",
+    "typedoc": "^0.28.9",
     "typescript": "^5.8.3",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"

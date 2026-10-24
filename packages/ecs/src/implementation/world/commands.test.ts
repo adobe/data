@@ -1,11 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Archetype } from "../../interface/archetype/archetype.js";
 import { Report } from "../../interface/report/report.js";
-import { Component } from "../../interface/component/component.js";
 import type { Essential } from "../../interface/component/value.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Resource } from "../../interface/resource/resource.js";
 import { Rule } from "../../interface/rule/rule.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import type { Commands } from "../../interface/system/commands.js";
@@ -16,6 +13,8 @@ import { Observe } from "../../observe/index.js";
 import { count, read, readEntity, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { runReported } from "./reports.test-helper.js";
+import { recordDeclaration } from "../../interface/registry/ids.test-helper.js";
+import type { F32 } from "../../interface/math/index.js";
 
 type Vec3 = readonly [number, number, number];
 const vec3 = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } as const satisfies Schema;
@@ -26,6 +25,7 @@ const label = Symbol("commandsTest/label");
 const tag = Symbol("commandsTest/tag");
 const other = Symbol("commandsTest/other");
 const slot = Symbol("commandsTest/slot");
+// Never declared, so never registered.
 const unregistered = Symbol("commandsTest/unregistered");
 const level = Symbol("commandsTest/level");
 const bit0 = Symbol("commandsTest/bit0");
@@ -35,14 +35,13 @@ const bit3 = Symbol("commandsTest/bit3");
 const bits = [bit0, bit1, bit2, bit3] as const;
 declare module "@adobe/ecs" {
     export interface Components {
-        [position]: { type: readonly [number, number, number] };
-        [score]: { type: number };
+        [position]: { type: Schema.Type<{ type: "array"; items: { type: "number"; precision: 1 }; minItems: 3; maxItems: 3 }> };
+        [score]: { type: F32 };
         [health]: { type: number };
         [label]: { type: string | null };
         [tag]: { type: true };
         [other]: { type: true };
         [slot]: { type: number; derived: true };
-        [unregistered]: { type: number };
         [bit0]: { type: true };
         [bit1]: { type: true };
         [bit2]: { type: true };
@@ -52,23 +51,11 @@ declare module "@adobe/ecs" {
         [level]: { type: number };
     }
 }
-Component.register(position, { type: vec3 });
-Component.register(score, { type: { type: "number", precision: 1 } });
-Component.register(health, { type: { type: "number" } });
-Component.register(label, { type: { anyOf: [{ type: "string" }, { type: "null" }] } });
-Component.register(tag, { type: { const: true } });
-Component.register(other, { type: { const: true } });
-Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
-Component.register(bit0, { type: { const: true } });
-Component.register(bit1, { type: { const: true } });
-Component.register(bit2, { type: { const: true } });
-Component.register(bit3, { type: { const: true } });
-Resource.register(level, { type: { type: "number", default: 0 } });
-Rule.create({ name: "commandsTest/slots", components: { has: [other, score] }, derive: [slot] });
+Rule.create({ components: { with: [other, score] }, derive: [slot] });
 
-const unit = Archetype.create([position, score, tag]);
-const made = Archetype.create([score, tag]);
-const marks = Archetype.create([other, label]);
+const unit = [position, score, tag] as const;
+const made = [score, tag] as const;
+const marks = [other, label] as const;
 
 /** Every component of these tests an entity has, or `null` if it is dead. */
 const components = (world: World, entity: Entity) =>
@@ -76,29 +63,29 @@ const components = (world: World, entity: Entity) =>
 
 /** Spawns and adds with literal values, which the plugin passes positionally, from one site over several lists. */
 const literals: Entity[] = [];
-const spawnLiterals = System.create({ name: "commandsTest/spawnLiterals" }, ({ commands }) => {
+const spawnLiterals = System.create({}, ({ commands }) => {
     for (let i = 0; i < 6; i++) literals.push(commands.spawn(i % 3 === 0 ? defaulted : i % 3 === 1 ? made : [score, label])({ [score]: i }));
 });
-const addLiterals = System.create({ name: "commandsTest/addLiterals", components: { has: [score], not: [health] } }, (row, { commands }) => {
+const addLiterals = System.create({ components: { with: [score], not: [health] } }, (row, { commands }) => {
     commands.add(row.entity, [health, label], { [label]: "x", [health]: 5 });
 });
 
-const spawnFrom = System.create({ name: "commandsTest/spawnFrom", kernel: "cpu", components: { read: [score], not: [tag, other] } }, (row, { commands }) => {
+const spawnFrom = System.create({ kernel: true, components: { with: [score], not: [tag, other] } }, (row, { commands }) => {
     commands.spawn(made)({ [score]: row[score] + 10 });
 });
-const mark = System.create({ name: "commandsTest/mark", kernel: "cpu", components: { has: [tag], not: [other] } }, (row, { commands }) => {
+const mark = System.create({ kernel: true, components: { with: [tag], not: [other] } }, (row, { commands }) => {
     commands.add(row.entity, marks, {});
 });
-const unmark = System.create({ name: "commandsTest/unmark", kernel: "cpu", components: { has: [other] } }, (row, { commands }) => {
+const unmark = System.create({ kernel: true, components: { with: [other] } }, (row, { commands }) => {
     commands.remove(row.entity, marks);
 });
-const defaulted = Archetype.create([score, label, tag]);
+const defaulted = [score, label, tag] as const;
 
 /** A world, and a function running `body` once in a system with the world's commands, rejecting with what it threw. */
 const withCommands = () => {
     const world = createWorld({ [workers]: 0 });
     let body: (commands: Commands) => void = () => {};
-    const issue = System.create({ name: "commandsTest/issue" }, ({ commands }) => body(commands));
+    const issue = System.create({}, ({ commands }) => body(commands));
     const run = async (next: (commands: Commands) => void): Promise<void> => {
         body = next;
         const [failure] = (await runReported(world, issue)).failures;
@@ -108,7 +95,7 @@ const withCommands = () => {
 };
 
 describe("spawn", () => {
-    it("spawns exactly the components listed, through Archetype.create, plain and inline lists", async () => {
+    it("spawns exactly the components listed, through lists declared as const, made at runtime and inline", async () => {
         const { world, run } = withCommands();
         const plain: readonly Essential[] = [score, tag];
         const spawned: Entity[] = [];
@@ -121,6 +108,60 @@ describe("spawn", () => {
         expect(await components(world, spawned[1])).toEqual({ [score]: 5, [tag]: true });
         expect(await components(world, spawned[2])).toEqual({ [position]: [6, 6, 6], [score]: 6 });
         await world.dispose();
+    });
+    it("spawns a list made at runtime as it is at each spawn, though it changed since the last", async () => {
+        const { world, run } = withCommands();
+        const changing: Essential[] = [score];
+        const spawned: Entity[] = [];
+        await run(commands => { spawned.push(commands.spawn(changing)({ [score]: 1 })); });
+        changing.push(tag);
+        await run(commands => { spawned.push(commands.spawn(changing)({ [score]: 2 })); });
+        expect(await components(world, spawned[0])).toEqual({ [score]: 1 });
+        expect(await components(world, spawned[1])).toEqual({ [score]: 2, [tag]: true });
+        await world.dispose();
+    });
+    it("gives lists made at runtime on every call one index per set of components, however many are made", async () => {
+        const { world, run } = withCommands();
+        const count = (): number => {
+            const value: unknown = Reflect.get(globalThis, Symbol.for("@adobe/ecs/archetypes@1"));
+            return typeof value === "number" ? value : 0;
+        };
+        // Fifteen subsets of four bits, more than are kept as recent, each list made afresh at every spawn.
+        const spawnAll = (commands: Commands): void => {
+            for (let subset = 1; subset < 16; subset++) commands.spawn(bits.filter((_, bit) => (subset & (1 << bit)) !== 0))({});
+        };
+        await run(spawnAll);
+        const before = count();
+        for (let round = 0; round < 20; round++) await run(spawnAll);
+        expect(count() - before).toBe(0);
+        await world.dispose();
+    });
+    it("fails only the systems using a key whose declaration failed, each time, never another key's", async () => {
+        const { world, run } = withCommands();
+        await run(() => {});
+        // As a module imported after the world exists records it.
+        const broken = Symbol("commandsTest/broken");
+        recordDeclaration(broken, "component", { type: { type: "number" }, reduce: "+" });
+        await run(commands => { commands.spawn([bit0])({}); });
+        for (let round = 0; round < 2; round++) {
+            // Undeclared to the types, so spawned as an untyped caller would.
+            await expect(run(commands => { Reflect.apply(Reflect.apply(commands.spawn, commands, [[broken]]), undefined, [{}]); })).rejects.toThrow("only a resource is reduced");
+        }
+        await world.dispose();
+    });
+    it("spawns a list made at runtime in each world that uses it", async () => {
+        const first = withCommands();
+        const second = withCommands();
+        const shared: readonly Essential[] = [score, tag];
+        const spawned: Entity[] = [];
+        for (let round = 0; round < 2; round++) {
+            await first.run(commands => { spawned.push(commands.spawn(shared)({ [score]: 1 })); });
+            await second.run(commands => { spawned.push(commands.spawn(shared)({ [score]: 2 })); });
+        }
+        expect(await components(first.world, spawned[2])).toEqual({ [score]: 1, [tag]: true });
+        expect(await components(second.world, spawned[3])).toEqual({ [score]: 2, [tag]: true });
+        await first.world.dispose();
+        await second.world.dispose();
     });
     it("starts a tag or a component whose type allows null, left out or given undefined, at true or null, never leaving it out", async () => {
         const { world, run } = withCommands();
@@ -166,7 +207,7 @@ describe("spawn", () => {
     it("spawns into more archetypes than spawns cache, each with its values", async () => {
         const { world, run } = withCommands();
         const lists = Array.from({ length: 16 }, (_, set): (typeof score | (typeof bits)[number])[] => [score, ...bits.filter((_, bit) => (set & (1 << bit)) !== 0)]);
-        const archetypes = lists.map(list => Archetype.create([...list]));
+        const archetypes = lists.map(list => [...list] as const);
         const spawned: Entity[] = [];
         await run(commands => {
             for (let i = 0; i < 64; i++) spawned.push(commands.spawn(i % 2 === 0 ? archetypes[i % 16] : [...lists[i % 16]])({ [score]: i }));
@@ -205,14 +246,14 @@ describe("literal values in a system's body", () => {
 });
 
 /** Three adds of one component to each row, by systems ordered first to third, the second adding twice. */
-const first = System.create({ name: "commandsTest/firstAdd", kernel: "cpu", components: { has: [position] } }, (row, { commands }) => {
+const first = System.create({ kernel: true, components: { with: [position] } }, (row, { commands }) => {
     commands.add(row.entity, score, 1);
 });
-const second = System.create({ name: "commandsTest/secondAdd", components: { has: [position] }, after: [first] }, (row, { commands }) => {
+const second = System.create({ components: { with: [position] }, after: [first] }, (row, { commands }) => {
     commands.add(row.entity, score, 2);
     commands.add(row.entity, score, 3);
 });
-const third = System.create({ name: "commandsTest/thirdAdd", kernel: "cpu", components: { has: [position] }, after: [second] }, (row, { commands }) => {
+const third = System.create({ kernel: true, components: { with: [position] }, after: [second] }, (row, { commands }) => {
     commands.add(row.entity, score, 4);
 });
 
@@ -271,9 +312,9 @@ describe("add and remove", () => {
         });
         const added: Entity[] = [];
         const changed: Entity[] = [];
-        const watchAdded = System.create({ name: "commandsTest/watchAdded", components: { has: [score], added: [tag] } }, row => { added.push(row.entity); });
-        const watchChanged = System.create({ name: "commandsTest/watchChanged", components: { has: [score], changed: [position] } }, row => { changed.push(row.entity); });
-        const watch = System.create({ name: "commandsTest/watch", systems: [watchAdded, watchChanged] });
+        const watchAdded = System.create({ components: { with: [score], added: [tag] } }, row => { added.push(row.entity); });
+        const watchChanged = System.create({ components: { with: [score], changed: [position] } }, row => { changed.push(row.entity); });
+        const watch = System.create({ systems: [watchAdded, watchChanged] });
         await world.run(watch);
         added.length = changed.length = 0;
         await run(commands => {
@@ -311,7 +352,7 @@ describe("spawners where code can't be generated", () => {
                 spawned.push(commands.spawn([score, label])(values));
             });
             // A spawn with literal values in a system's body, which the plugin passes positionally.
-            const literal = System.create({ name: "commandsTest/literal" }, ({ commands }) => {
+            const literal = System.create({}, ({ commands }) => {
                 spawned.push(commands.spawn([score, bit2, label])({ [label]: "b", [score]: 8 }));
             });
             await world.run(literal);
@@ -329,7 +370,7 @@ describe("spawners where code can't be generated", () => {
 });
 
 describe("kernels", () => {
-    it("spawn, add and remove through Archetype.create bindings", async () => {
+    it("spawn, add and remove through lists declared as const", async () => {
         const { world, run } = withCommands();
         await run(commands => { for (let i = 0; i < 3; i++) commands.spawn([score])({ [score]: i }); });
         await world.run(spawnFrom);

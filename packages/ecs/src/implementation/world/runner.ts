@@ -14,6 +14,7 @@ import { createBlock, endBlock, indexOf, locate, reserveFrom } from './entities.
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, parentBinder, rowBinder } from './rows.js';
+import { requiredOf } from './required.js';
 import { scalarValue, scalarValues, type WasmKernel } from './wasm.js';
 import { idOf, type State } from './state.js';
 import { accessorsOf } from '../../interface/gpu/accessors.js';
@@ -24,7 +25,7 @@ import { combine, identityOf, reductionTargets, type ReductionTarget } from './r
 import { samePath, type TypedArray } from '../../interface/registry/layout.js';
 import { inputFor } from './input.js';
 import { createUp, type Run } from './up.js';
-import { labelOf, labelOfItem } from '../../interface/registry/index.js';
+import { labelOf } from '../../interface/registry/index.js';
 import type { RemoteSystem } from './remote-systems.js';
 import type { JoinedObserver } from './joined-observer.js';
 import { releaseDirectory, type Directory } from './directories.js';
@@ -33,6 +34,7 @@ import { acquireLookups, type IndexLookups, type IndexUse } from './indexes.js';
 import { createOrdered, type Ordered, type Passing } from './index-order.js';
 import { blockBase, type SortedTable } from './index-sorted.js';
 import type { Since } from './index-lookups.js';
+import { createOrderedRender } from './render-order.js';
 
 /**
  * One unit of a system's work for a run: the commands it issued, or for a worker's chunk its segment of the worker's
@@ -168,7 +170,7 @@ export const releaseHoldings = (state: State, holdings: Holdings): void => {
 
 /** The resources a declaration writes or reduces into, by id. */
 export const resourceWritesOf = (state: State, declaration: Leaf["declaration"]): readonly number[] =>
-    [...new Set([...declaration.resources?.write ?? [], ...declaration.reduce === undefined ? [] : Object.getOwnPropertySymbols(declaration.reduce)].map(key => idOf(state, key)))];
+    [...new Set([...declaration.resources?.write ?? [], ...declaration.resources?.reduce ?? []].map(key => idOf(state, key)))];
 
 /** A number for each leaf, so the GPU records of every runner made for it are its own, whatever its name. */
 const leafNumbers = new WeakMap<Leaf, number>();
@@ -183,11 +185,11 @@ const numberOf = (leaf: Leaf): number => {
 export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const { declaration } = leaf;
     const leafNumber = numberOf(leaf);
-    const label = labelOfItem(leaf);
+    const label = leaf.name;
     // Method parameters are bivariant, so the runtime can see any leaf's body with erased parameter types.
-    const system: { body(subject: unknown, context?: unknown): void } = leaf;
+    const system: { body(subject: unknown, context?: unknown, input?: unknown): void } = leaf;
     const { components: query, resources } = declaration;
-    const required = [...new Set([...query?.read ?? [], ...query?.write ?? [], ...query?.has ?? [], ...query?.added ?? [], ...query?.changed ?? []])].map(key => idOf(state, key));
+    const required = requiredOf(query).map(key => idOf(state, key));
     const excluded = (query?.not ?? []).map(key => idOf(state, key));
     const addedIds = (query?.added ?? []).map(key => idOf(state, key));
     const changedIds = (query?.changed ?? []).map(key => idOf(state, key));
@@ -200,12 +202,12 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     /** Its `lastRun` while it runs, which its lookups' lists and rows compare with. */
     const lookupSince: Since = { value: since };
     let kernel: BoundKernel | null = null;
-    if (declaration.kernel !== undefined) {
-        const description = kernelOf(leaf);
-        if (description === undefined) {
-            indexLookups.release();
-            throw new Error(`System "${label}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
-        }
+    const description = kernelOf(leaf);
+    if (description === undefined && (declaration.kernel === true || declaration.kernel === "gpu")) {
+        indexLookups.release();
+        throw new Error(`System "${label}" is a kernel but wasn't compiled; add Compiler.plugin() to the Vite config.`);
+    }
+    if (description !== undefined) {
         try {
             kernel = bindKernel(state, leaf, description, indexLookups.byName, lookupSince);
         }
@@ -223,7 +225,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const up = declaration.up === undefined ? null : createUp(state, declaration.up, filtered);
     /** Its rows in its `order` index's order, run by run. */
     const ordered = indexLookups.ordered === null ? null : createOrdered(state.memory);
-    const targets = reductionTargets(state, declaration);
+    const targets = reductionTargets(state, label, declaration);
     /** For each partial of the kernel, the target and leaf it folds into. */
     const partialLeaves = (kernel?.description.reductions ?? []).map(reduced => {
         const index = targets.findIndex(target => target.key === reduced.resource);
@@ -232,6 +234,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     });
     const accessors = declaration.shader === undefined ? [] : accessorsOf(declaration.shader);
     if (typeof accessors === "string") return failPlacement(`can't render: ${accessors}`);
+    /** A render system's one table in its `order` index's order. */
+    const orderedRender = leaf.kind !== "render" || indexLookups.ordered === null || ordered === null ? null
+        : createOrderedRender(indexLookups.ordered, ordered, accessors.map(accessor => idOf(state, accessor.component)), declaration.shader?.group ?? 0, `${leafNumber}:`);
     const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
     const writes = (query?.write ?? []).map(key => idOf(state, key));
     const looks = [...new Set([...Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []), ...declaration.up?.read ?? []])].map(key => idOf(state, key));
@@ -309,10 +314,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     // A kernel's reductions fold in its partials, so only a body that runs as written gets reducer functions. Render
     // bodies, GPU kernels and observer systems issue no commands.
     const ownInput = inputFor(leaf);
+    /** The current run's input, which the body takes after its context; kept until the next run, as its context is. */
+    let runInput: unknown;
     const context = createContext(state, declaration, {
         targets: kernel === null ? targets : [],
         commands: leaf.kind === "render" || declaration.kernel === "gpu" || declaration.observer === true ? undefined : commands,
-        input: declaration.input !== undefined,
         indexes: indexLookups.byName,
         since: lookupSince,
     });
@@ -355,7 +361,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const partialAddress = (slot: number): number => partialCount === 0 ? -1 : slots.byteOffset + slot * partialCount * 8;
     const matches: Archetype[] = [];
     let checked = 0;
-    const bindRow = rowBinder(state, query?.read ?? [], query?.write ?? []);
+    const bindRow = rowBinder(state, query?.read ?? [], query?.write ?? [], query?.optional);
+    /** Whether its rows have optional components, so which an archetype has picks its row. */
+    const optional = (query?.optional?.length ?? 0) > 0;
     const bindParent = parentBinder(state, declaration.up?.read ?? []);
     let lastRun = since;
 
@@ -374,7 +382,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     };
 
     /**
-     * By archetype: its change filters, `added` then `changed`, rows and chunks, kept until its arrays are replaced;
+     * By archetype: its change filters, `added` then `changed`, rows, chunks and blocks, kept until its arrays are replaced;
      * and the WASM addresses of its columns and filters, for the WASM kernel `addressed` they were taken for, since a
      * kernel loaded again may stamp a tick column the last one muted.
      */
@@ -387,11 +395,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const filters = addedIds.length + changedIds.length === 0 ? noFilters : [
             ...addedIds.flatMap(id => {
                 const storage = archetype.storageById[id];
-                return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded }];
+                return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded, blocks: storage.blockAdded }];
             }),
             ...changedIds.flatMap(id => {
                 const storage = archetype.storageById[id];
-                return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged }];
+                return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged, blocks: storage.blockChanged }];
             }),
         ];
         const entry: Filtered = { version: archetype.version, filters, addresses: noAddresses, addressed: null };
@@ -411,27 +419,28 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         if (archetype === undefined || !matches.includes(archetype)) return;
         const row = bindRow(archetype);
         row.index = state.entities.row[index];
-        system.body(row.value, context.value);
+        system.body(row.value, context.value, runInput);
     };
 
     const runBody = (archetype: Archetype, since: number): void => {
         const row = bindRow(archetype);
         const { value } = row;
         const values = context.value;
+        const input = runInput;
         const filters = filtersOf(archetype);
         // Every row passes, so nothing is filtered.
         // A body may remove its own system, after which no row of it runs.
         if (since < 0 || filters.length === 0) {
             for (let index = 0, count = archetype.count; index < count && !holdings.removed; index++) {
                 row.index = index;
-                system.body(value, values);
+                system.body(value, values, input);
             }
             return;
         }
         forEachPassingRange(filters, since, 0, archetype.count, (start, end) => {
             for (let index = start; index < end && !holdings.removed; index++) {
                 row.index = index;
-                system.body(value, values);
+                system.body(value, values, input);
             }
         });
     };
@@ -450,6 +459,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 ...bound.columnsOf(archetype).map(column => column.byteOffset),
                 ...entry.filters.map(filter => filter.ticks.byteOffset),
                 ...entry.filters.map(filter => filter.chunks.byteOffset),
+                ...entry.filters.map(filter => filter.blocks.byteOffset),
             ];
             entry.addressed = bound.wasm;
         }
@@ -473,7 +483,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
 
     const runKernelLocally = (bound: BoundKernel, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): void => {
         const slot = partialCount === 0 ? 0 : takeSlots(1);
-        if (bound.compiled() !== null && bound.wasm !== null) return runWasm(bound, archetype, 0, archetype.count, since, values, args, tick, partialAddress(slot));
+        if (bound.compiled() !== null && bound.wasm !== null && bound.allPresent(archetype)) return runWasm(bound, archetype, 0, archetype.count, since, values, args, tick, partialAddress(slot));
         const columns = bound.columnsOf(archetype);
         const filters = filtersOf(archetype);
         const run = bound.kernel();
@@ -511,11 +521,12 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         // The parent's row is bound after the system's own, for the archetype both may share.
         const parentRow = parentArchetype < 0 ? null : bindParent(state.archetypes[parentArchetype]);
         const upContext = context.value;
+        const input = runInput;
         upContext.up = parentRow === null ? null : parentRow.value;
         for (let n = start; n < end && !holdings.removed; n++) {
             row.index = rows[n];
             if (parentRow !== null) parentRow.index = parents[n];
-            system.body(row.value, upContext);
+            system.body(row.value, upContext, input);
         }
     };
 
@@ -535,6 +546,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const runs = order.runs(sorted, matches, since < 0 ? null : orderPassing);
         const slot = partialCount === 0 ? 0 : takeSlots(1);
         const contextValue = context.value;
+        const input = runInput;
         for (let k = 0; k < runs.length && !holdings.removed; k++) {
             const run = runs[k];
             const archetype = matches[run.owner];
@@ -546,7 +558,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             const { value } = row;
             for (let n = run.start; n < run.end && !holdings.removed; n++) {
                 row.index = run.rows[n];
-                system.body(value, contextValue);
+                system.body(value, contextValue, input);
             }
         }
     };
@@ -556,6 +568,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const owners = order.owners(matches);
         const { entries, stride, words, lengths, blocks } = sorted;
         const contextValue = context.value;
+        const input = runInput;
         let current = -1;
         let row: ReturnType<typeof bindRow> | null = null;
         let value: object | null = null;
@@ -568,12 +581,15 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 const owner = archetype < owners.length ? owners[archetype] : -1;
                 if (owner < 0) continue;
                 if (owner !== current || row === null || value === null) {
-                    row = bindRow(matches[owner]);
+                    // The row is found once; after, it's bound in place, as often as every row when archetypes interleave,
+                    // unless which optional components an archetype has picks another row.
+                    if (row === null || optional) row = bindRow(matches[owner]);
+                    else row.bind(matches[owner]);
                     value = row.value;
                     current = owner;
                 }
                 row.index = entries[at + 2];
-                system.body(value, contextValue);
+                system.body(value, contextValue, input);
             }
         }
     };
@@ -607,28 +623,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const runUp = (since: number, values: readonly unknown[], args: unknown, tick: number, workers: Workers | null, index: number): Promise<readonly ChunkResult[]> | null => {
         if (up === null) return null;
         const slot = partialCount === 0 ? 0 : takeSlots(1);
-        let next: () => readonly Run[] | null;
-        let clear = (): void => {};
-        if (since < 0) {
-            const order = up.levels(matches);
-            let depth = 0;
-            next = () => {
-                if (depth >= order.levels) return null;
-                const runs: Run[] = [];
-                for (let group = order.depthGroups[depth]; group < order.depthGroups[depth + 1]; group++) {
-                    if (order.groupEnds[group] === order.groupStarts[group]) continue;
-                    runs.push({ owner: order.groupOwners[group], parent: order.groupParents[group], rows: order.rows, parents: order.parents, start: order.groupStarts[group], end: order.groupEnds[group] });
-                }
-                depth++;
-                return runs;
-            };
-        }
-        else {
-            const pass = up.filtered(matches, addedIds, changedIds, since);
-            if (pass === null) return null;
-            next = pass.next;
-            clear = pass.clear;
-        }
+        const pass = since < 0 ? up.wholePass(up.levels(matches)) : up.filtered(matches, addedIds, changedIds, since);
+        if (pass === null) return null;
+        const { next, clear } = pass;
         const runLocally = (run: Run): void => runUpRows(matches[run.owner], run.parent, run.rows, run.parents, run.start, run.end, values, args, tick, slot);
         const parallel = workers !== null && kernel !== null && kernel.wasm !== null && kernel.compiled() !== null && partialCount === 0
             && kernel.lookupParameters().length + indexParameters.length + 3 + (kernel.description.upColumns?.length ?? 0) + kernel.wasm.scalars.length <= maximumScalars;
@@ -684,7 +681,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const { pool } = workers;
         const bound = kernel;
         const scalars = bound !== null && bound.wasm !== null ? [...bound.lookupParameters(), ...indexParameters, ...scalarValues(bound.wasm.scalars, values, args)] : [];
-        const fast = isFast(bound);
+        const fast = isFast(bound) && bound !== null && bound.allPresent(archetype);
         const participants = Math.min(pool.size, Math.ceil(count / minimumFor(workers)));
         const aligned = (rows: number): number => Math.ceil(rows / chunkAlignment) * chunkAlignment;
         // WASM chunks go through shared memory. The main thread doesn't take one: measured, it finishes later than an
@@ -831,6 +828,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         if (gpu === null) return failPlacement("needs a world with a gpu device");
         if (typeof accessors === "string") return;
         holdings.gpu = gpu;
+        if (orderedRender !== null) return runOrderedRender(gpu, tick, orderedRender);
         const group = declaration.shader?.group ?? 0;
         const tables = matches.filter(archetype => archetype.count > 0).map(archetype => {
             words[0] = archetype.count;
@@ -845,6 +843,20 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         gpu.submit();
         try {
             system.body({ device: gpu.device, encoder: gpu.encoder(), tables }, context.value);
+        }
+        catch (error) {
+            gpu.discard();
+            throw error;
+        }
+    };
+
+    /** A render system with `order`: one table, nothing allocated while nothing it reads changed. */
+    const runOrderedRender = (gpu: GpuEngine, tick: number, render: NonNullable<typeof orderedRender>): void => {
+        const failure = render.prepare(gpu, matches, tick);
+        if (failure !== null) return failPlacement(`can't render: ${failure}`);
+        gpu.submit();
+        try {
+            system.body(render.context(gpu), context.value);
         }
         catch (error) {
             gpu.discard();
@@ -924,7 +936,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             /** -1 passes every row. */
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             context.bind();
-            if (declaration.input !== undefined) context.value.input = args;
+            runInput = args;
             if (indexed && kernel !== null) indexParameters = kernel.refreshIndexes(lastRun);
             if (placement === "render") {
                 refreshMatches();
@@ -933,7 +945,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             }
             if (query === undefined) {
                 ran = since < 0;
-                if (ran) system.body(context.value);
+                if (ran) system.body(context.value, args);
                 return chunks;
             }
             // Only resource and index filters, none of which changed: no row passes, unless its parent changed.
@@ -954,6 +966,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 return chunks;
             }
             if (up !== null) {
+                if (workers === null && kernel !== null) for (const archetype of matches) if (archetype.count >= state.poolThreshold) state.poolWanted = true;
                 const parallel = runUp(since, values, args, tick, workers, index);
                 if (parallel !== null) chunks.push(parallel);
                 return chunks;
@@ -970,7 +983,10 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                     chunks.push(...postChunks(workers, index, archetype, from, values, args, tick));
                     chunks.push(nextChunk());
                 }
-                else runKernelLocally(kernel, archetype, from, values, args, tick);
+                else {
+                    if (archetype.count >= state.poolThreshold) state.poolWanted = true;
+                    runKernelLocally(kernel, archetype, from, values, args, tick);
+                }
             }
             return chunks;
         }

@@ -2,7 +2,7 @@
 import { indexOf } from './entities.js';
 import {
     cursorField, entitiesWord, recordCount, recordEntities, recordStorages, recordWords,
-    remoteFlag, storageAdded, storageChanged, storageColumn, storageComponent, storageFlags, storageWords, structureWaitersWord,
+    remoteFlag, resourceEntityWord, storageAdded, storageChanged, storageColumn, storageComponent, storageFlags, storageWords, structureWaitersWord,
     structureWord, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
 } from './layout-directory.js';
 import {
@@ -39,6 +39,12 @@ type Staged = { readonly slot: number; readonly entity: number; readonly compone
 /** Whether replaying is done, waits for a component's key to be named, or found the log lapped or replaced. */
 export type Replayed = "current" | "held" | "lapped";
 
+/**
+ * Whether rebuilding is done; found a sync point applying before or during it, so it can rebuild once the structure
+ * epoch is even; or waits for a component's key to be named or a finalizer to be set up.
+ */
+export type Rebuilt = "rebuilt" | "moved" | "held";
+
 /** A joined thread's mirror of the world's rows holding its objects. */
 export type Mirror = {
     readonly memory: WebAssembly.Memory;
@@ -74,6 +80,8 @@ export type Mirror = {
     nextSlot: number;
     /** Times it rebuilt, for tests. */
     rebuilds: number;
+    /** The archetype last found holding the resource entity, or -1. */
+    resourceArchetype: number;
     /**
      * How many values of components declared `transfer` are staged and not yet settled, so the thread replays to
      * release those whose commands dropped once it's woken.
@@ -97,7 +105,7 @@ export const createMirror = (memory: WebAssembly.Memory, block: number, thread: 
         memory, thread, block, buffer: memory.buffer, words: new Uint32Array(0), signed: new Int32Array(0), header: new Int32Array(0),
         ring: new Uint32Array(0), ringEntities: new Float64Array(0), version: -1, mask: 0, position: 0, through: 0, tick: 0,
         keys: new Map(), starts: new Map(), archetypes: [], scratch: new Uint32Array(1024), scratchEntities: new Float64Array(0),
-        staged: [], head: 0, nextSlot: 0, rebuilds: 0, stagedTransfers: 0, finalize: null,
+        staged: [], head: 0, nextSlot: 0, rebuilds: 0, resourceArchetype: -1, stagedTransfers: 0, finalize: null,
     };
     refresh(mirror);
     return mirror;
@@ -478,14 +486,14 @@ const previousValue = (old: readonly (Mirrored | null | undefined)[], entity: nu
 /**
  * Rebuilds every column from the layout directory, as of the last published sync, under the structure epoch: rows
  * from each archetype's `entities` and count, values by the tag each row's storage holds, a staged slot's taken, any
- * other the thread's own kept by entity, and ticks from the world's. Returns false while a sync point applies, or a
- * component it holds has no key named yet, having changed nothing.
+ * other the thread's own kept by entity, and ticks from the world's. Short of `"rebuilt"`, its columns are as they
+ * were, though the finalizers of stops through the sync it read may have run first.
  */
-export const rebuild = (mirror: Mirror): boolean => {
+export const rebuild = (mirror: Mirror): Rebuilt => {
     refresh(mirror);
     const { words, signed, header, buffer } = mirror;
     const epoch = Atomics.load(signed, structureWord);
-    if ((epoch & 1) === 1) return false;
+    if ((epoch & 1) === 1) return "moved";
     const version = Atomics.load(header, logVersionWord);
     const sync = Atomics.load(header, logSyncWord) >>> 0;
     const published = Atomics.load(header, logPublishedWord) >>> 0;
@@ -500,7 +508,7 @@ export const rebuild = (mirror: Mirror): boolean => {
             indexed = true;
         }
         return previousValue(old, entity, component, start);
-    })) return false;
+    })) return "held";
     const archetypes: (Mirrored | null)[] = [];
     /** Staged slots the rebuild takes, settled only once it's complete. */
     const taken: number[] = [];
@@ -512,7 +520,7 @@ export const rebuild = (mirror: Mirror): boolean => {
             continue;
         }
         const columns = columnsOf(mirror, record);
-        if (columns === undefined) return false;
+        if (columns === undefined) return "held";
         if (columns === null) {
             archetypes.push(null);
             continue;
@@ -551,7 +559,7 @@ export const rebuild = (mirror: Mirror): boolean => {
         archetypes.push(archetype);
     }
     // An exchange, so every read above completes before it.
-    if (Atomics.add(signed, structureWord, 0) !== epoch) return false;
+    if (Atomics.add(signed, structureWord, 0) !== epoch) return "moved";
     for (const slot of taken) {
         const staged = stagedOf(mirror, slot);
         if (staged !== undefined) staged.live = false;
@@ -564,7 +572,7 @@ export const rebuild = (mirror: Mirror): boolean => {
     viewRing(mirror);
     settle(mirror);
     mirror.rebuilds++;
-    return true;
+    return "rebuilt";
 };
 
 /** A storage's first word in a record, by its component. */
@@ -574,6 +582,32 @@ const storageOf = (words: Uint32Array, record: number, component: number): numbe
         if (words[base + storageComponent] === component) return base;
     }
     return -1;
+};
+
+/**
+ * The value this thread holds for its object resource `component`, as replayed so far, which may be behind the entity
+ * table; its start while no row holds it. The resource entity is alone in its archetype, so at row 0, and never
+ * despawned, so its index, which the directory's header holds, names no other entity.
+ */
+export const resourceValueOf = (mirror: Mirror, component: number, start: unknown): unknown => {
+    const word = Atomics.load(mirror.words, resourceEntityWord);
+    if (word === 0) return start;
+    const index = word - 1;
+    const { archetypes } = mirror;
+    let archetype = mirror.resourceArchetype < 0 ? undefined : archetypes[mirror.resourceArchetype];
+    if (archetype === null || archetype === undefined || archetype.count === 0 || indexOf(archetype.entities[0]) !== index) {
+        archetype = undefined;
+        mirror.resourceArchetype = -1;
+        for (let id = 0; id < archetypes.length; id++) {
+            const candidate = archetypes[id];
+            if (candidate === null || candidate === undefined || candidate.count === 0 || indexOf(candidate.entities[0]) !== index) continue;
+            archetype = candidate;
+            mirror.resourceArchetype = id;
+            break;
+        }
+    }
+    const column = archetype?.byComponent[component];
+    return column === undefined ? start : column.values[0];
 };
 
 /** A staged slot's value while no sync applied it, else `settled`. */

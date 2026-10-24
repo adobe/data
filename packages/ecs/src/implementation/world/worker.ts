@@ -207,7 +207,7 @@ const createChangedLookup = (lookup: LookupSetup, watched: readonly number[], si
         if (index < 0) return null;
         const archetype = archetypeAt(table.archetype[index]);
         if (archetype === undefined) return null;
-        for (const id of lookup.read) if (!archetype.storages.has(id)) return null;
+        for (const id of lookup.read) if (!archetype.storages.has(id) && !lookup.optional.includes(id)) return null;
         for (const id of lookup.has) if (!archetype.storages.has(id)) return null;
         for (const id of lookup.not) if (archetype.storages.has(id)) return null;
         const row = table.row[index];
@@ -215,7 +215,7 @@ const createChangedLookup = (lookup: LookupSetup, watched: readonly number[], si
         for (let i = 0; i < read.length; i++) {
             const layout = layouts[read[i]];
             const storage = archetype.storages.get(read[i]);
-            values[i] = layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
+            values[i] = storage === undefined && !archetype.storages.has(read[i]) ? undefined : layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
         }
         let changed = since.value < 0;
         for (let i = 0; i < watched.length && !changed; i++) {
@@ -233,14 +233,15 @@ const createLookup = (lookup: LookupSetup) => (entity: Entity): readonly unknown
     if (index < 0) return null;
     const archetype = archetypeAt(table.archetype[index]);
     if (archetype === undefined) return null;
-    for (const id of lookup.read) if (!archetype.storages.has(id)) return null;
+    for (const id of lookup.read) if (!archetype.storages.has(id) && !lookup.optional.includes(id)) return null;
     for (const id of lookup.has) if (!archetype.storages.has(id)) return null;
     for (const id of lookup.not) if (archetype.storages.has(id)) return null;
     const row = table.row[index];
     return lookup.read.map(id => {
         const layout = layouts[id];
         const storage = archetype.storages.get(id);
-        return layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
+        // An optional component the entity lacks reads undefined.
+        return !archetype.storages.has(id) ? undefined : layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
     });
 };
 

@@ -113,8 +113,10 @@ export const lookupLists = (lookup: SystemLookup | Lookup, reads: readonly Key[]
         const { changed } = lookup;
         return changed === true ? { index: lookup.index, read, changed } : compact({ index: lookup.index, read, changed });
     }
-    const read = reads ?? lookup.with ?? [];
-    return compact({ read, has: without(lookup.with ?? [], read), not: lookup.not, changed: lookup.changed });
+    // Its optional components are read where an entity has them and never required.
+    const optional = without(lookup.optional ?? [], lookup.with ?? []);
+    const read = reads ?? [...lookup.with ?? [], ...optional];
+    return compact({ read, has: without(lookup.with ?? [], read), optional, not: lookup.not, changed: lookup.changed });
 };
 
 /** Each lookup's lists, by name. */

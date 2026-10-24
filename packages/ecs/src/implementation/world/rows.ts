@@ -326,6 +326,9 @@ const createMatcher = (state: State, lookup: SystemLookupLists) => {
     const read = ids(lookup.read);
     const has = ids("has" in lookup ? lookup.has : undefined);
     const not = ids("not" in lookup ? lookup.not : undefined);
+    // What it reads but its optional components, which an entity it finds may lack.
+    const optional = ids("optional" in lookup ? lookup.optional : undefined);
+    const required = read.filter(id => !optional.includes(id));
     const matcher = {
         read,
         archetype: null as Archetype | null,
@@ -335,7 +338,7 @@ const createMatcher = (state: State, lookup: SystemLookupLists) => {
             const archetype = state.archetypes[state.entities.archetype[index]];
             if (archetype.resource) return -1;
             const { storageById } = archetype;
-            for (let i = 0; i < read.length; i++) if (storageById[read[i]] === undefined) return -1;
+            for (let i = 0; i < required.length; i++) if (storageById[required[i]] === undefined) return -1;
             for (let i = 0; i < has.length; i++) if (storageById[has[i]] === undefined) return -1;
             for (let i = 0; i < not.length; i++) if (storageById[not[i]] !== undefined) return -1;
             const row = state.entities.row[index];

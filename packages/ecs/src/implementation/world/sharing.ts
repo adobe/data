@@ -543,7 +543,7 @@ export const createSharing = (host: SharingHost) => {
             const lookup: { [name: string]: SystemLookupLists } = {};
             for (const each of declared.lookup) {
                 if (each.index === null) {
-                    lookup[each.name] = listed([["read", each.read], ["has", each.has], ["not", each.not], ["changed", each.changed]]);
+                    lookup[each.name] = listed([["read", each.read], ["has", each.has], ["optional", each.optional], ["not", each.not], ["changed", each.changed]]);
                     continue;
                 }
                 const index = typeof each.index === "string" ? indexDefinitionOf(itemOfId(each.index)) : madeIndex(thread, each.index);

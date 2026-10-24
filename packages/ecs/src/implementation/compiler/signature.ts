@@ -10,7 +10,7 @@ import type { ModuleScope } from './module-scope.js';
  * A lookup by entity, or through an index (`index`), whose calls take a key and give a list of rows. A lookup by
  * entity that `watches` declares `changed`: its result has `changed` after what it reads.
  */
-export type Lookup = { readonly name: string; readonly read: readonly string[]; readonly index: boolean; readonly watches: boolean };
+export type Lookup = { readonly name: string; readonly read: readonly string[]; readonly index: boolean; readonly watches: boolean; readonly optional: boolean };
 
 /** The reference rows run down, and what the context's `up` reads of the entity it names. */
 export type Up = { readonly through: string; readonly read: readonly string[] };
@@ -154,13 +154,13 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
                     const index = fields.some(([field]) => field === "index");
                     const listed = fields.filter(([field]) => field !== "index");
                     const read = listed.flatMap(([field, item]) => {
-                        if (index ? field !== "read" && field !== "changed" : field !== "read" && field !== "with" && field !== "not" && field !== "changed") return fail(item, `lookup.${lookup}.${field} is not allowed in a kernel declaration`);
+                        if (index ? field !== "read" && field !== "changed" : field !== "read" && field !== "with" && field !== "optional" && field !== "not" && field !== "changed") return fail(item, `lookup.${lookup}.${field} is not allowed in a kernel declaration`);
                         // An index lookup's `changed: true` filters the system's runs, which the world does before calling it.
                         if (index && field === "changed" && item.value.type === "Literal" && item.value.value === true) return [];
                         const names = identifiers(item.value, `lookup.${lookup}.${field}`, lists);
                         return field === "read" ? names : [];
                     });
-                    lookups.push({ name: lookup, read, index, watches: !index && listed.some(([field]) => field === "changed") });
+                    lookups.push({ name: lookup, read, index, watches: !index && listed.some(([field]) => field === "changed"), optional: listed.some(([field]) => field === "optional") });
                 }
                 break;
             case "up": {

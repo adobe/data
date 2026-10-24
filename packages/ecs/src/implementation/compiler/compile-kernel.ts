@@ -75,7 +75,8 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     /** Whether it runs a list of rows, which needn't be consecutive: `up`'s depth order, or an index's. */
     const listed = up !== null || ordered;
     // WASM doesn't read components an archetype may lack yet, so such a kernel runs as JS.
-    const program = unit.optionalColumns.size + unit.presences.size > 0 && listed ? null : toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators, unit.up, listed);
+    // WASM reads a lookup's rows only where every component it reads is there.
+    const program = (unit.optionalColumns.size + unit.presences.size > 0 && listed) || unit.signature.lookups.some(lookup => lookup.optional) ? null : toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators, unit.up, listed);
     if (target === "gpu") {
         if (lookups.length > 0) fail(declaration, "a GPU kernel can't use lookups yet");
         if (filtered) fail(declaration, "a GPU kernel can't use change filters yet");

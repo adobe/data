@@ -155,7 +155,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         strides,
         offsets,
         lookups: declaredLookups.map((declared): LookupSetup => ({
-            read: ids(declared.read), has: ids("has" in declared ? declared.has : undefined), not: ids("not" in declared ? declared.not : undefined),
+            read: ids(declared.read), has: ids("has" in declared ? declared.has : undefined), optional: ids("optional" in declared ? declared.optional : undefined), not: ids("not" in declared ? declared.not : undefined),
             changed: "index" in declared || declared.changed === undefined ? null : ids(declared.changed),
         })),
         indexes: indexes.flatMap(bound => bound === null ? [] : [{ lookup: bound.lookup, reader: bound.reader, watched: bound.watched.length }]),

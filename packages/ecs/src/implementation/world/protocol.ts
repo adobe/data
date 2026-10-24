@@ -8,7 +8,7 @@ import type { IndexReaderSetup } from './index-readers.js';
 export type Source = { readonly kind: "entity" } | { readonly kind: "field" | "changed" | "chunks" | "blocks" | "present"; readonly id: number; readonly leaf: number };
 
 /** Component ids of one lookup, and for a lookup by entity with `changed`, those it watches. */
-export type LookupSetup = { readonly read: readonly number[]; readonly has: readonly number[]; readonly not: readonly number[]; readonly changed: readonly number[] | null };
+export type LookupSetup = { readonly read: readonly number[]; readonly has: readonly number[]; readonly optional: readonly number[]; readonly not: readonly number[]; readonly changed: readonly number[] | null };
 
 export type KernelSetup = {
     readonly index: number;

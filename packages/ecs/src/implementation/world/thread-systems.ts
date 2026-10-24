@@ -1176,8 +1176,15 @@ const localStorage = (component: number, layout: Layout, views: Views, values: u
 };
 
 /** A lookup returning `read` values keyed by component, from this thread's views. */
+/** What a lookup reads and requires: its reads but its optional components, which an entity it finds may lack. */
+const requiredReads = (host: RunnerHost, lookup: SystemLookupLists): readonly number[] => {
+    const optional = "optional" in lookup ? lookup.optional ?? [] : [];
+    return (lookup.read ?? []).filter(key => !optional.includes(key)).map(host.numberOf);
+};
+
 const lookupOf = (host: RunnerHost, lookup: SystemLookupLists) => {
     const read = (lookup.read ?? []).map(host.numberOf);
+    const required = requiredReads(host, lookup);
     const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
     const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
     const keys = lookup.read ?? [];
@@ -1188,7 +1195,7 @@ const lookupOf = (host: RunnerHost, lookup: SystemLookupLists) => {
         const archetype = host.archetypeAt(table.archetype[index]);
         if (archetype === undefined || archetype.resource) return null;
         const { components } = archetype;
-        for (const id of read) if (!components.includes(id)) return null;
+        for (const id of required) if (!components.includes(id)) return null;
         for (const id of has) if (!components.includes(id)) return null;
         for (const id of not) if (components.includes(id)) return null;
         const row = table.row[index];
@@ -1225,6 +1232,7 @@ const emptyLookupOf = (host: RunnerHost, lookup: SystemLookupLists) => {
  */
 const changedLookupOf = (host: RunnerHost, lookup: SystemLookupLists, watched: readonly Key[], since: Since) => {
     const read = (lookup.read ?? []).map(host.numberOf);
+    const required = requiredReads(host, lookup);
     const has = ("has" in lookup ? lookup.has ?? [] : []).map(host.numberOf);
     const not = ("not" in lookup ? lookup.not ?? [] : []).map(host.numberOf);
     const ids = watched.map(host.numberOf);
@@ -1237,7 +1245,7 @@ const changedLookupOf = (host: RunnerHost, lookup: SystemLookupLists, watched: r
         const archetype = host.archetypeAt(table.archetype[index]);
         if (archetype === undefined || archetype.resource) return null;
         const { components, storageById } = archetype;
-        for (const id of read) if (!components.includes(id)) return null;
+        for (const id of required) if (!components.includes(id)) return null;
         for (const id of has) if (!components.includes(id)) return null;
         for (const id of not) if (components.includes(id)) return null;
         const row = table.row[index];

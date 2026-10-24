@@ -62,9 +62,9 @@ export const unrequired = (used: Used, declaration: ObjectExpression): { readonl
             const parts = fields(valueOf(lookup));
             const read = used.lookups.get(name);
             if (parts.has("index") || read === null || read === undefined) continue;
-            const required = literal([valueOf(parts.get("with")), valueOf(parts.get("changed"))]);
+            const required = literal([valueOf(parts.get("with")), valueOf(parts.get("optional")), valueOf(parts.get("changed"))]);
             const key = required === null ? undefined : [...read].find(key => !required.includes(key));
-            if (key !== undefined) return { key, list: `lookup.${name}.with` };
+            if (key !== undefined) return { key, list: `lookup.${name}.with or optional` };
         }
     }
     return null;
@@ -167,7 +167,7 @@ export const resolvedDeclaration = (declaration: ObjectExpression, used: Used): 
                     const withList = valueOf(lookupParts.get("with"));
                     // Rows the build didn't follow read everything the lookup requires.
                     const read = reads === null ? withList ?? array([]) : array(reads);
-                    return property(name, object([property("read", read), ...keep(lookupParts, ["with", "not", "changed"])]));
+                    return property(name, object([property("read", read), ...keep(lookupParts, ["with", "optional", "not", "changed"])]));
                 }))));
                 continue;
             }

@@ -558,7 +558,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 };
             }
             lookups.push({
-                name, read, has: present("has" in declared ? declared.has : undefined), not: present("not" in declared ? declared.not : undefined),
+                name, read, has: present("has" in declared ? declared.has : undefined), optional: present("optional" in declared ? declared.optional : undefined), not: present("not" in declared ? declared.not : undefined),
                 changed: "changed" in declared && declared.changed !== undefined ? readable(watchedBy(declared)) : null, index: indexed,
             });
         }

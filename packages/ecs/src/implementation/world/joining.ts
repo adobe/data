@@ -26,6 +26,7 @@ export type ObserverLookup = {
     readonly name: string;
     readonly read: readonly number[];
     readonly has: readonly number[];
+    readonly optional: readonly number[];
     readonly not: readonly number[];
     /** Null where it doesn't declare `changed`. */
     readonly changed: readonly number[] | null;

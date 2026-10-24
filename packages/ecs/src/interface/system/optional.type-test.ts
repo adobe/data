@@ -41,3 +41,11 @@ System.create({ observer: true, components: { with: [position], optional: [veloc
     // @ts-expect-error an observer system's row is read-only
     row[velocity] = 1;
 });
+
+// A lookup by entity's optional component is its value, or undefined where the entity lacks it.
+System.create({ components: { with: [pilot] }, lookup: { pilots: { with: [position], optional: [velocity] } } }, (row, { lookup }) => {
+    const found = lookup.pilots(row[pilot]);
+    if (found === null) return;
+    check<Equal<typeof found[typeof position], number>>();
+    check<Equal<typeof found[typeof velocity], number | undefined>>();
+});

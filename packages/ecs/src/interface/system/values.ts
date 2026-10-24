@@ -63,7 +63,9 @@ type IndexLookup<D> =
  * and true on a system's first run and in finalizers. With `changed`, valid until the lookup is called again.
  */
 type EntityRow<L> = {
-    readonly [K in (Listed<L, "with"> & Component.Key) | (L extends { readonly changed: readonly Component.Key[] } ? "changed" : never)]: K extends Component.Key ? Component.Value<K> : boolean
+    readonly [K in (Listed<L, "with"> & Component.Key) | (Exclude<Listed<L, "optional">, Listed<L, "with">> & Component.Key) | (L extends { readonly changed: readonly Component.Key[] } ? "changed" : never)]:
+        // Its `optional` components are their values where the entity has them, `undefined` where it doesn't.
+        K extends Component.Key ? K extends Listed<L, "with"> ? Component.Value<K> : Component.Value<K> | undefined : boolean
 };
 
 export type LookupFunction<L> = L extends { readonly index: Index<infer D> }

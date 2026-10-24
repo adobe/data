@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Index, System, workers } from "../../index.js";
+import { Entity, Index, System, workers } from "../../index.js";
 import { kernelOf } from "./attach-kernel.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { runReported } from "./reports.test-helper.js";
@@ -45,6 +45,36 @@ const writeKernel = System.create({ kernel: true, components: { with: [position]
     row[velocity] = row[position];
 });
 
+/** Rows naming another entity, whose optional velocity a lookup reads. */
+const other = Symbol("optionalTest/other");
+declare module "@adobe/ecs" {
+    interface Components {
+        [other]: { type: Entity };
+    }
+}
+let pointed: Entity[] = [];
+const spawnPointing = System.create(({ commands }) => {
+    const still = commands.spawn([position])({ [position]: 1 });
+    const moving = commands.spawn([position, velocity])({ [position]: 2, [velocity]: 7 });
+    pointed = [still, moving];
+    commands.spawn([other, order])({ [other]: still, [order]: 0 });
+    commands.spawn([other, order])({ [other]: moving, [order]: 0 });
+});
+const copySpeed = System.create({
+    kernel: false, components: { with: [other, order] }, lookup: { target: { with: [position], optional: [velocity] } },
+}, (row, { lookup }) => {
+    const found = lookup.target(row[other]);
+    if (found !== null) row[order] = found[velocity] === undefined ? -found[position] : found[velocity];
+});
+const copySpeedKernel = System.create({
+    kernel: true, components: { with: [other, order] }, lookup: { target: { with: [position], optional: [velocity] } },
+}, (row, { lookup }) => {
+    const found = lookup.target(row[other]);
+    if (found !== null) row[order] = found[velocity] === undefined ? -found[position] : found[velocity];
+});
+const speeds: number[] = [];
+const readSpeeds = System.create({ observer: true, components: { with: [other, order] } }, row => { speeds.push(row[order]); });
+
 let seen: (readonly [number, number | undefined, string | undefined])[] = [];
 const read = System.create({ observer: true, components: { with: [position], optional: [velocity, label] } }, row => {
     seen.push([row[position], row[velocity], row[label]]);
@@ -62,6 +92,10 @@ const there = System.create({ components: { with: [position, marker], optional: 
     if (row[marker] === null) row[position] = row[velocity] ?? -1;
 });
 
+// On the markers' thread too, reading the row's own entity through a lookup with an optional component.
+const lookedThere = System.create({ components: { with: [position, marker] }, lookup: { self: { with: [position], optional: [velocity] } } }, (row, { lookup }) => {
+    if (row[marker] === null) row[position] = lookup.self(row.entity)?.[velocity] ?? -1;
+});
 // An observer system there reads copies of rows across archetypes, which tell which have the optional component.
 let watched: (readonly [number, number | undefined])[] = [];
 const watchThere = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => {
@@ -158,6 +192,17 @@ describe("optional components", () => {
         await world.dispose();
     });
 
+    it("are read by lookups on a joined thread, undefined where the entity lacks one", async () => {
+        const { world, remote } = await joined();
+        await world.run(spawnMarked);
+        await world.run(lookedThere);
+        seen = [];
+        await world.run(read);
+        expect(sorted()).toEqual([[-1, undefined, undefined], [5, 5, undefined]]);
+        await remote.dispose();
+        await world.dispose();
+    });
+
     it("are read by observer systems on a joined thread, undefined where an archetype lacks one", async () => {
         const { world, remote } = await joined();
         await world.run(spawnMarked);
@@ -190,6 +235,17 @@ describe("optional components", () => {
             seen = [];
             await world.run(read);
             expect(sorted()).toEqual([[1, undefined, undefined], [15, 5, undefined], [150, 50, "c"]]);
+        }
+    });
+
+    it("are read by lookups by entity, undefined where the entity lacks one, as written and in kernels", async () => {
+        for (const system of [copySpeed, copySpeedKernel]) {
+            await using world = inline();
+            await world.run(spawnPointing);
+            await world.run(system);
+            speeds.length = 0;
+            await world.run(readSpeeds);
+            expect(speeds.sort((a, b) => a - b)).toEqual([-1, 7]);
         }
     });
 

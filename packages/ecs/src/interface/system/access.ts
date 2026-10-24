@@ -20,14 +20,14 @@ export type ComponentAccess = {
 };
 
 /**
- * Read-only access to other entities: by entity, matching `with` and `not`, or through an index by key, whose rows
- * hold what every entity the index holds has. What the body reads of them the build infers. A lookup by entity's
+ * Read-only access to other entities: by entity, matching `with` and `not`, its `optional` components read where an
+ * entity has them, or through an index by key, whose rows hold what every entity the index holds has. What the body reads of them the build infers. A lookup by entity's
  * `changed` names components in `with`, whose changes its row's `changed` reports, and an index lookup's those of its
  * rows. Both report as a system's `changed` filter does; its system can't write a key part or what it reads.
  */
 export type Lookup =
-    | { readonly with?: readonly Component.Key[]; readonly not?: readonly Component.Key[]; readonly changed?: readonly Component.Key[]; readonly index?: never }
-    | { readonly index: Index; readonly changed?: readonly Component.Key[]; readonly with?: never; readonly not?: never };
+    | { readonly with?: readonly Component.Key[]; readonly optional?: readonly Component.Key[]; readonly not?: readonly Component.Key[]; readonly changed?: readonly Component.Key[]; readonly index?: never }
+    | { readonly index: Index; readonly changed?: readonly Component.Key[]; readonly with?: never; readonly optional?: never; readonly not?: never };
 
 /**
  * A system's lookup. An index lookup's `changed: true` makes the index a change filter, as a resource in `changed` is:
@@ -75,7 +75,7 @@ export type ComponentLists = {
 
 /** A lookup as the world takes it, with what its body reads of its rows in `read`. */
 export type LookupLists =
-    | { readonly read?: readonly Key[]; readonly has?: readonly Key[]; readonly not?: readonly Key[]; readonly changed?: readonly Key[] }
+    | { readonly read?: readonly Key[]; readonly has?: readonly Key[]; readonly optional?: readonly Key[]; readonly not?: readonly Key[]; readonly changed?: readonly Key[] }
     | { readonly index: Index; readonly read?: readonly Key[]; readonly changed?: readonly Key[] };
 
 export type SystemLookupLists = LookupLists | { readonly index: Index; readonly read?: readonly Key[]; readonly changed: true };

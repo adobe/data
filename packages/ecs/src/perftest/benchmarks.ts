@@ -26,6 +26,7 @@ import { editorBenchmarks } from "./editor.js";
 import { stringBenchmarks } from "./strings.js";
 import { structReplace, valueBenchmarks } from "./values.js";
 import { filterBenchmarks } from "./filters.js";
+import { optionalBenchmarks } from "./optional.js";
 import { createWorld } from "../implementation/index.js";
 import { workers } from "../interface/resources/workers.js";
 // Last, so the bundle orders the modules the benchmarks share as it did before these imports.
@@ -700,4 +701,5 @@ export const benchmarks: readonly Benchmark[] = [
     ...valueBenchmarks,
     structReplace("main", 0),
     ...filterBenchmarks,
+    ...optionalBenchmarks,
 ];

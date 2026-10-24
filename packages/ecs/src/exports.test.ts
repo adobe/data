@@ -75,7 +75,7 @@ const internal = (path: string): boolean =>
     || path.startsWith("interface/gpu/record");
 
 /** Compiles a consumer's `index.ts` against the installed package, emitting its declarations. */
-const compile = (source: string): { readonly messages: string[] } => {
+const compile = (source: string): { readonly messages: string[]; readonly lines: number[] } => {
     writeFileSync(join(temporary, "index.ts"), source);
     const program = ts.createProgram([join(temporary, "index.ts")], {
         target: ts.ScriptTarget.ESNext,
@@ -89,8 +89,17 @@ const compile = (source: string): { readonly messages: string[] } => {
         outDir: join(temporary, "out"),
     });
     const result = program.emit();
-    return { messages: messages([...ts.getPreEmitDiagnostics(program), ...result.diagnostics]) };
+    const diagnostics = [...ts.getPreEmitDiagnostics(program), ...result.diagnostics];
+    // Each diagnostic's line in the consumer, 1-based; 0 for one outside it.
+    const lines = diagnostics.map(diagnostic => diagnostic.file === undefined || diagnostic.start === undefined || !diagnostic.file.fileName.endsWith("index.ts")
+        ? 0
+        : diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start).line + 1);
+    return { messages: messages(diagnostics), lines };
 };
+
+/** The 1-based lines of `source` holding `text`. */
+const linesWith = (source: string, text: string): number[] =>
+    source.split("\n").flatMap((line, index) => line.includes(text) ? [index + 1] : []);
 
 /** A consumer with a system whose declaration lists a key in both read and write, and composites of conflicting inputs. */
 const misdeclared = `
@@ -107,19 +116,38 @@ export const listed = System.create([near, far]);
 export const declared = System.create({ systems: [near, far], after: [both] });
 `;
 
-/** A consumer whose declarations give traits values their types don't allow, and a default not of its type. */
-const misdeclaredTraits = `
-import { World } from "@adobe/ecs";
-export const count = Symbol();
-export const mark = Symbol();
+/** A consumer creating two worlds and using them, with `declarations` augmenting the package. */
+const creating = (declarations: string): string => `
+import { World, workers, type Component } from "@adobe/ecs";
+${declarations}
+export const world: World = World.create();
+export const other: World = World.create({ [workers]: 0 });
+export const typed: World = world;
+export const disposed = other.dispose();
+`;
+
+/** A trait of your own on a key its type doesn't allow. */
+const customTrait = creating(`
+export const instanced = Symbol();
+export const foo = Symbol();
+declare module "@adobe/ecs" {
+    interface Traits<N> { readonly [instanced]: N extends Component.Key ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never }
+    interface Components { [foo]: { type: string; [instanced]: true } }
+}`);
+
+/** A built-in trait on a key its type doesn't allow: a thread on a struct. */
+const builtInTrait = creating(`
+export const spot = Symbol();
+declare module "@adobe/ecs" {
+    interface Components { [spot]: { type: number; thread: "main" } }
+}`);
+
+/** A default that isn't of the declared type. */
+const wrongDefault = creating(`
 export const label = Symbol();
 declare module "@adobe/ecs" {
-    interface Traits<N> { readonly [mark]: N extends Component.Key ? (Component.Value<N> extends string ? true : never) : never }
-    interface Components { [count]: { type: number; thread: "main"; [mark]: true } }
-    interface Resources { [label]: { type: string; default: 1; transfer: true } }
-}
-export const world: World = World.create();
-`;
+    interface Resources { [label]: { type: string; default: 1 } }
+}`);
 
 describe("package exports", () => {
     beforeAll(() => {
@@ -143,14 +171,22 @@ describe("package exports", () => {
 }>;`);
         expect([...emitted.matchAll(/import\("([^"]+)"\)/g)].map(match => match[1]).filter(path => path !== "@adobe/ecs")).toEqual([]);
     }, 60_000);
-    it("fail World.create to compile while a declaration gives a trait a value its type doesn't allow, naming it", () => {
-        const reported = compile(misdeclaredTraits.replace('import { World } from "@adobe/ecs";', 'import { World, type Component } from "@adobe/ecs";')).messages.join("\n");
-        expect(reported).toContain("declarations give traits values their types don't allow");
-        // Each declaration by its key, with the members that don't hold: a trait of your own's among them.
-        expect(reported).toContain(`[count]: unique symbol | "thread"`);
-        expect(reported).toContain("[label]:");
-        expect(reported).toContain(`"default"`);
-        expect(reported).toContain(`"transfer"`);
+    it("report a declaration that doesn't hold once at each World.create call, naming the key, the member and the problem", () => {
+        const cases = [
+            { source: customTrait, named: `readonly [foo]: { readonly [instanced]: "isn't allowed on this key"; }` },
+            { source: builtInTrait, named: `readonly [spot]: { readonly thread: "isn't allowed on this key"; }` },
+            { source: wrongDefault, named: `readonly [label]: { readonly default: "isn't of the declared type"; }` },
+        ];
+        for (const { source, named } of cases) {
+            const { messages: reported, lines } = compile(source);
+            // One error per call, on the call; uses of the worlds type-check.
+            expect(lines).toEqual(linesWith(source, "World.create("));
+            for (const message of reported) {
+                expect(message).toContain("declarations don't hold");
+                expect(message).toContain(named);
+            }
+        }
+        expect(compile(creating("")).messages).toEqual([]);
     }, 60_000);
     it("report a misdeclared system, and a composite of conflicting members, at the mistake rather than as no overload matching", () => {
         const reported = compile(misdeclared).messages;

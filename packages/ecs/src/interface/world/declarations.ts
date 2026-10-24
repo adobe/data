@@ -15,12 +15,19 @@ type Invalid<K extends Component.Key | Resource.Key, Entry, Value> =
     | { readonly [T in Exclude<keyof Entry, "type" | "default">]-?: T extends TraitKey ? ([Entry[T]] extends [Traits<K>[T]] ? never : T) : T }[Exclude<keyof Entry, "type" | "default">]
     | (Entry extends { readonly default: infer D } ? ([D] extends [Value] ? never : "default") : never);
 
-// `infer` resolves the members, so errors print them rather than the alias that computes them.
-type Reported<K, Members> = [Members] extends [never] ? never : Members extends infer Resolved ? { readonly key: K; readonly members: Resolved } : never;
+/**
+ * Key `K` with what's wrong with each member that doesn't hold, keyed by member so an error prints a trait by its
+ * key's binding; written in place, as an alias would print by its name.
+ */
+type Reported<K, Members extends PropertyKey> = [Members] extends [never] ? never : {
+    readonly key: K;
+    readonly members: { readonly [M in Members]: M extends "default" ? "isn't of the declared type" : M extends TraitKey ? "isn't allowed on this key" : "isn't a trait" };
+};
 
 /**
- * Every declaration in `Components` and `Resources` with members that don't hold, each as its key and those members;
- * `never` when all hold. The build registers declarations without a type checker, so `World.create` reports these.
+ * Every declaration in `Components` and `Resources` with members that don't hold, each as its key and what's wrong
+ * with those members; `never` when all hold. The build registers declarations without a type checker, so
+ * `World.create` reports these.
  */
 export type InvalidDeclarations =
     | { readonly [K in Component.Key]: Reported<K, Invalid<K, Components[K], Component.Value<K>>> }[Component.Key]

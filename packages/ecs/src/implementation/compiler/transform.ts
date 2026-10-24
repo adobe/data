@@ -2,7 +2,7 @@
 import type { FunctionDeclaration, MaybeNamedFunctionDeclaration, Node, ObjectExpression, Program, SimpleCallExpression } from 'estree';
 import { posix } from 'node:path';
 import { compileKernel, type CompiledKernel } from './compile-kernel.js';
-import { children, isFunction } from './estree.js';
+import { children, declaredIn, isFunction } from './estree.js';
 import { fail, failureOf, type Failure } from './failure.js';
 import { isPending, type Link, type Linker } from './link.js';
 import { createModule, locateIn, type Module, type ModuleBinding } from './module-scope.js';
@@ -246,7 +246,13 @@ export const transformKernels = async (
     const prepared: string[] = [];
     let adding = false;
     let spawning = false;
-    const visit = (node: Node, nested: boolean): void => {
+    /** The names `outermost`, the outermost function around a node, declares anywhere: any may shadow a module's key there. */
+    const shadowedBy = (outermost: Node | null): ReadonlySet<string> => {
+        const names = new Set<string>();
+        if (outermost !== null) declaredIn(outermost, name => names.add(name));
+        return names;
+    };
+    const visit = (node: Node, nested: boolean, outermost: Node | null = null): void => {
         const created = node.type === "CallExpression" ? createdBy(node, locals) : null;
         const [first, second] = node.type === "CallExpression" ? node.arguments : [];
         /** Whether `node` is a function, written in place or bound by name at module scope. */
@@ -265,7 +271,7 @@ export const transformKernels = async (
             // A declaration not written in place, or a body that isn't a function written in place, is one the build can't
             // read: it takes what it uses from an internal factory, or fails where it's made.
             if (positions === null || first === undefined || first.type === "SpreadElement" || body === undefined || body.type === "SpreadElement" || !isFunction(body)) {
-                for (const child of children(node)) visit(child, nested || isFunction(node));
+                for (const child of children(node)) visit(child, nested || isFunction(node), outermost ?? (isFunction(node) ? node : null));
                 return;
             }
             // A row is bound to each entity in turn, so a body resuming later would read and write another's.
@@ -307,13 +313,15 @@ export const transformKernels = async (
                 edits.push({ start: first.start, end: first.start, text: `${accessName}(` }, { start: first.end, end: first.end, text: `, ${access})` });
                 if (terminalBody) edits.push({ start: body.start, end: body.start, text: `${terminal}(` }, { start: body.end, end: body.end, text: ")" });
             }
-            const spawns = spawnSites(body, module.bindings, positions.context);
+            // Names declared around the body may shadow a module's keys, so only the module's own are hoisted.
+            const shadowed = shadowedBy(outermost);
+            const spawns = spawnSites(body, module.bindings, positions.context, shadowed);
             // Index lookups pass their key positionally, through a list of their own (`world/prepared-lookup.ts`).
             const lookups = declaration?.type !== "ObjectExpression" ? [] : lookupSites(body, declaration, positions.context);
             const spawned = spawns?.sites ?? [];
             // Lists of keys its commands take are made once, with an index, rather than on every call.
             const made = new Map<number, { readonly end: number; readonly text: string }>();
-            const listed = listSites(body, module.bindings, positions.context);
+            const listed = listSites(body, module.bindings, positions.context, shadowed);
             for (const site of listed) {
                 const inside = [...spawned, ...lookups].some(other => other.start <= site.start && site.end <= other.end && !("components" in other && other.components.start === site.start));
                 if (inside) continue;
@@ -350,7 +358,7 @@ export const transformKernels = async (
             for (const [start, { end, text }] of made) edits.push({ start, end, text });
         }
         const inner = nested || isFunction(node);
-        for (const child of children(node)) visit(child, inner);
+        for (const child of children(node)) visit(child, inner, outermost ?? (isFunction(node) ? node : null));
     };
     try {
         for (const { node, declaration, body, request, used } of kernelSites(program, locals, automatic, module)) {

@@ -1067,6 +1067,14 @@ describe("commands in main-thread systems", () => {
             expect(transformed).toContain("commands.spawn([a, c]); commands.remove(1, [a, 2]);");
             expect(transformed).not.toContain("archetype$");
         });
+        test("leave a list naming a key shadowed around the body, or by its parameters, as written", async () => {
+            const result = await transform(`${keys}const make = (a) => System.create(({ commands }) => { commands.spawn([a]); });
+const remove = System.create(({ commands }, b) => { commands.remove(1, [a, b]); });`);
+            const transformed = result !== null && "code" in result ? result.code : "";
+            expect(transformed).toContain("commands.spawn([a]);");
+            expect(transformed).toContain("commands.remove(1, [a, b]);");
+            expect(transformed).not.toContain("archetype$");
+        });
         test("fail the build for a list naming a key twice", async () => {
             const result = await transform(`${keys}const system = System.create(({ commands }) => { commands.remove(1, [a, b, a]); });`);
             expect(result !== null && "failure" in result ? result.failure.message : null).toBe("this list names a twice; a list of components names each once");

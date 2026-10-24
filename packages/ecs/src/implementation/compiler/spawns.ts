@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Expression, Node, Property, SpreadElement } from 'estree';
-import { children, declaredIn } from './estree.js';
+import { children, declaredIn, patternNames } from './estree.js';
 import { fail } from './failure.js';
 import type { ModuleScope } from './module-scope.js';
 
@@ -62,13 +62,16 @@ const commandsOf = (parameter: Node | undefined): { readonly name: string; reado
  * an object literal of computed keys, each a module-scope constant. A body that redeclares the context or its commands anywhere is left alone, and so is a
  * key it shadows.
  */
-export const spawnSites = (body: Node, module: ModuleScope, context: number): { readonly commands: string; readonly sites: readonly SpawnSite[] } | null => {
+export const spawnSites = (body: Node, module: ModuleScope, context: number, shadowed: ReadonlySet<string> = new Set()): { readonly commands: string; readonly sites: readonly SpawnSite[] } | null => {
     if (body.type !== "ArrowFunctionExpression" && body.type !== "FunctionExpression") return null;
     const reached = commandsOf(body.params[context]);
     if (reached === null) return null;
     const declared = new Set<string>();
     declaredIn(body.body, name => declared.add(name));
     if (declared.has(reached.name)) return null;
+    // Names declared around the body, and its other parameters, shadow a module's keys too.
+    for (const name of shadowed) declared.add(name);
+    for (const name of body.params.flatMap(parameter => parameter === body.params[context] ? [] : patternNames(parameter))) declared.add(name);
     const isCommands = (node: Node): boolean => reached.viaContext
         ? node.type === "MemberExpression" && !node.computed && !node.optional && node.object.type === "Identifier" && node.object.name === reached.name
             && node.property.type === "Identifier" && node.property.name === "commands"
@@ -130,13 +133,16 @@ const isKeyName = (name: string, module: ModuleScope, declared: ReadonlySet<stri
  * `add(entity, [...], ...)` and `remove(entity, [...])`, which the transform makes once, with an index, rather than on
  * every call. A list naming a key twice fails.
  */
-export const listSites = (body: Node, module: ModuleScope, context: number): readonly ListSite[] => {
+export const listSites = (body: Node, module: ModuleScope, context: number, shadowed: ReadonlySet<string> = new Set()): readonly ListSite[] => {
     if (body.type !== "ArrowFunctionExpression" && body.type !== "FunctionExpression") return [];
     const reached = commandsOf(body.params[context]);
     if (reached === null) return [];
     const declared = new Set<string>();
     declaredIn(body.body, name => declared.add(name));
     if (declared.has(reached.name)) return [];
+    // Names declared around the body, and its other parameters, shadow a module's keys too.
+    for (const name of shadowed) declared.add(name);
+    for (const name of body.params.flatMap(parameter => parameter === body.params[context] ? [] : patternNames(parameter))) declared.add(name);
     const isCommands = (node: Node): boolean => reached.viaContext
         ? node.type === "MemberExpression" && !node.computed && !node.optional && node.object.type === "Identifier" && node.object.name === reached.name
             && node.property.type === "Identifier" && node.property.name === "commands"

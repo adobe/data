@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from "../interface/archetype/archetype.js";
 import { Entity } from "../interface/entity/entity.js";
 import { Index } from "../interface/indexes/index-type.js";
 import { workers } from "../interface/resources/workers.js";
@@ -38,10 +37,10 @@ declare module "@adobe/ecs" {
 }
 
 const node = [localX, localY, worldX, worldY, opacity, worldOpacity, paintDepth] as const;
-const Document = Archetype.create([...node, group]);
-const Group = Archetype.create([...node, parent, group]);
-const Shape = Archetype.create([...node, parent, shape]);
-const Image = Archetype.create([...node, parent, image]);
+const Document = [...node, group] as const;
+const Group = [...node, parent, group] as const;
+const Shape = [...node, parent, shape] as const;
+const Image = [...node, parent, image] as const;
 
 const byPaintDepth = Index.create({ key: [paintDepth], sorted: true });
 const childrenOf = Index.create({ key: [parent] });

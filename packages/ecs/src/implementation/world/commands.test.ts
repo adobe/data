@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Archetype } from "../../interface/archetype/archetype.js";
 import { Report } from "../../interface/report/report.js";
 import type { Essential } from "../../interface/component/value.js";
 import { Entity } from "../../interface/entity/entity.js";
@@ -53,9 +52,9 @@ declare module "@adobe/ecs" {
 }
 Rule.create({ components: { with: [other, score] }, derive: [slot] });
 
-const unit = Archetype.create([position, score, tag]);
-const made = Archetype.create([score, tag]);
-const marks = Archetype.create([other, label]);
+const unit = [position, score, tag] as const;
+const made = [score, tag] as const;
+const marks = [other, label] as const;
 
 /** Every component of these tests an entity has, or `null` if it is dead. */
 const components = (world: World, entity: Entity) =>
@@ -79,7 +78,7 @@ const mark = System.create({ kernel: true, components: { with: [tag], not: [othe
 const unmark = System.create({ kernel: true, components: { with: [other] } }, (row, { commands }) => {
     commands.remove(row.entity, marks);
 });
-const defaulted = Archetype.create([score, label, tag]);
+const defaulted = [score, label, tag] as const;
 
 /** A world, and a function running `body` once in a system with the world's commands, rejecting with what it threw. */
 const withCommands = () => {
@@ -95,7 +94,7 @@ const withCommands = () => {
 };
 
 describe("spawn", () => {
-    it("spawns exactly the components listed, through Archetype.create, plain and inline lists", async () => {
+    it("spawns exactly the components listed, through lists declared as const, made at runtime and inline", async () => {
         const { world, run } = withCommands();
         const plain: readonly Essential[] = [score, tag];
         const spawned: Entity[] = [];
@@ -108,6 +107,31 @@ describe("spawn", () => {
         expect(await components(world, spawned[1])).toEqual({ [score]: 5, [tag]: true });
         expect(await components(world, spawned[2])).toEqual({ [position]: [6, 6, 6], [score]: 6 });
         await world.dispose();
+    });
+    it("spawns a list made at runtime as it is at each spawn, though it changed since the last", async () => {
+        const { world, run } = withCommands();
+        const changing: Essential[] = [score];
+        const spawned: Entity[] = [];
+        await run(commands => { spawned.push(commands.spawn(changing)({ [score]: 1 })); });
+        changing.push(tag);
+        await run(commands => { spawned.push(commands.spawn(changing)({ [score]: 2 })); });
+        expect(await components(world, spawned[0])).toEqual({ [score]: 1 });
+        expect(await components(world, spawned[1])).toEqual({ [score]: 2, [tag]: true });
+        await world.dispose();
+    });
+    it("spawns a list made at runtime in each world that uses it", async () => {
+        const first = withCommands();
+        const second = withCommands();
+        const shared: readonly Essential[] = [score, tag];
+        const spawned: Entity[] = [];
+        for (let round = 0; round < 2; round++) {
+            await first.run(commands => { spawned.push(commands.spawn(shared)({ [score]: 1 })); });
+            await second.run(commands => { spawned.push(commands.spawn(shared)({ [score]: 2 })); });
+        }
+        expect(await components(first.world, spawned[2])).toEqual({ [score]: 1, [tag]: true });
+        expect(await components(second.world, spawned[3])).toEqual({ [score]: 2, [tag]: true });
+        await first.world.dispose();
+        await second.world.dispose();
     });
     it("starts a tag or a component whose type allows null, left out or given undefined, at true or null, never leaving it out", async () => {
         const { world, run } = withCommands();
@@ -153,7 +177,7 @@ describe("spawn", () => {
     it("spawns into more archetypes than spawns cache, each with its values", async () => {
         const { world, run } = withCommands();
         const lists = Array.from({ length: 16 }, (_, set): (typeof score | (typeof bits)[number])[] => [score, ...bits.filter((_, bit) => (set & (1 << bit)) !== 0)]);
-        const archetypes = lists.map(list => Archetype.create([...list]));
+        const archetypes = lists.map(list => [...list] as const);
         const spawned: Entity[] = [];
         await run(commands => {
             for (let i = 0; i < 64; i++) spawned.push(commands.spawn(i % 2 === 0 ? archetypes[i % 16] : [...lists[i % 16]])({ [score]: i }));
@@ -316,7 +340,7 @@ describe("spawners where code can't be generated", () => {
 });
 
 describe("kernels", () => {
-    it("spawn, add and remove through Archetype.create bindings", async () => {
+    it("spawn, add and remove through lists declared as const", async () => {
         const { world, run } = withCommands();
         await run(commands => { for (let i = 0; i < 3; i++) commands.spawn([score])({ [score]: i }); });
         await world.run(spawnFrom);

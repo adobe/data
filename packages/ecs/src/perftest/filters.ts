@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from "../interface/archetype/archetype.js";
 import type { I32 } from "../interface/math/i32/index.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
@@ -32,7 +31,7 @@ declare module "@adobe/ecs" {
 }
 
 const rows = 100_000;
-const filtered = Archetype.create([value, other, at, out0, out1, out2, out3]);
+const filtered = [value, other, at, out0, out1, out2, out3] as const;
 
 const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn(filtered)({ [value]: 0, [other]: 0, [at]: i, [out0]: 0, [out1]: 0, [out2]: 0, [out3]: 0 });

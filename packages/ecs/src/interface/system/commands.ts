@@ -2,7 +2,7 @@
 import type { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import type { Essential } from '../component/value.js';
-import type { ValuesOf } from '../archetype/values-of.js';
+import type { ValuesOf } from './values-of.js';
 
 /** The value an `add` of one component takes: none for a tag. */
 type ValueArgument<K extends Essential> = Component.Value<K> extends true ? [value?: true] : [value: Component.Value<K>];

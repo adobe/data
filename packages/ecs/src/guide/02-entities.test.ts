@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Archetype, System, Vec3, World } from "../index.js";
+import { System, Vec3, World } from "../index.js";
 
 // A component is a key whose values entities hold, declared as a resource is.
 export const position = Symbol();
@@ -16,8 +16,9 @@ declare module "@adobe/ecs" {
     }
 }
 
-// An archetype names a list of components, once at module scope; it goes wherever a list of components does.
-export const Particle = Archetype.create([position, velocity]);
+// An archetype is a list of components declared `as const` at module scope, which the build indexes; it goes wherever
+// a list of components does.
+export const Particle = [position, velocity] as const;
 
 // Systems spawn entities: name the components, then give their values.
 export const spawn = System.create(({ commands }) => {

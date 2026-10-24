@@ -9,6 +9,7 @@ import { describeFailure } from './failure.js';
 import { identify as identifyModule, moduleIdOf, type PackageOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
+import { archetypeInsertions } from './archetypes.js';
 import { augmentationInsertions, reductionsIn, registeredReductionsIn, type AugmentationHost } from './augmentations.js';
 import { inputInsertions, type InputHost } from './input-schemas.js';
 import { copyForImporter, namespaceCopyOf, packagePathOf, typesFileOf } from './paths.js';
@@ -127,9 +128,10 @@ const inlineKernels = (code: string, kernels: readonly string[], hashes: readonl
 const typed = /\.[cm]?tsx?$/;
 
 /**
- * Registers the keys `declare module "@adobe/ecs"` blocks declare (`augmentations.ts`), and passes each system's
+ * Registers the keys `declare module "@adobe/ecs"` blocks declare (`augmentations.ts`), passes each system's
  * `create` the schema of its body's input, from the type of the body's parameter after its context
- * (`input-schemas.ts`). It runs before TypeScript is stripped, which both read.
+ * (`input-schemas.ts`), and gives lists of keys declared `as const` their indexes (`archetypes.ts`). It runs before
+ * TypeScript is stripped, which all three read.
  */
 const inputPlugin = (): Plugin => {
     let repeated = false;
@@ -166,8 +168,8 @@ const inputPlugin = (): Plugin => {
         async transform(code, id) {
             const file = id.split("?")[0] ?? id;
             if (repeated || id.includes("\0") || !typed.test(file)) return null;
-            // Only a module declaring keys, or creating systems, has anything for either pass.
-            if (!(code.includes("declare module") && code.includes("@adobe/ecs")) && !(code.includes("System") && code.includes(".create("))) return null;
+            // Only a module declaring keys, creating systems or listing keys `as const` has anything for the passes.
+            if (!(code.includes("declare module") && code.includes("@adobe/ecs")) && !(code.includes("System") && code.includes(".create(")) && !code.includes("as const")) return null;
             const { parseAst } = await import("vite");
             const resolved = async (specifier: string, importer: string) => await this.resolve(specifier, importer, { skipSelf: true });
             const host: InputHost & AugmentationHost = {
@@ -193,7 +195,7 @@ const inputPlugin = (): Plugin => {
                 },
             };
             const module = moduleOf(file, code, host.parse(code, file));
-            const results = [await augmentationInsertions(module, host), await inputInsertions(module, host)].filter(result => result !== null);
+            const results = [await augmentationInsertions(module, host), await inputInsertions(module, host), archetypeInsertions(module)].filter(result => result !== null);
             const read = [...new Set(results.flatMap(result => result.dependencies))].filter(dependency => dependency !== file);
             for (const dependency of read) this.addWatchFile(dependency);
             depend(file, read);

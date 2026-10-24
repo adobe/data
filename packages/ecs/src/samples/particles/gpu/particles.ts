@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype, type F32, Gpu, System, type U32, Vec3 } from '../../../index.js';
+import { type F32, Gpu, System, type U32, Vec3 } from '../../../index.js';
 
 // The perf particles (src/perftest/particles.ts) on screen: 1M particles over four archetypes by visible and
 // enabled, with screen-space positions and velocities in pixels per frame. `move` is the perf move kernel, on the GPU.
@@ -24,10 +24,10 @@ declare module '@adobe/ecs' {
 
 /** Entity i goes to archetype i % 4. */
 const archetypes = [
-    Archetype.create([color, mass, position, velocity, visible, enabled]),
-    Archetype.create([color, mass, position, velocity, visible]),
-    Archetype.create([color, mass, position, velocity, enabled]),
-    Archetype.create([color, mass, position, velocity]),
+    [color, mass, position, velocity, visible, enabled] as const,
+    [color, mass, position, velocity, visible] as const,
+    [color, mass, position, velocity, enabled] as const,
+    [color, mass, position, velocity] as const,
 ] as const;
 
 /** A deterministic sequence in [0, 1), so every mode starts from the same particles. */

@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from "../interface/archetype/archetype.js";
 import type { Entity } from "../interface/entity/entity.js";
 import { System } from "../interface/system/system.js";
 import type { F32, U32 } from "../interface/math/index.js";
@@ -39,16 +38,16 @@ declare module "@adobe/ecs" {
 
 
 const seeded = [
-    Archetype.create([index, value]),
-    Archetype.create([index, value, source1]),
-    Archetype.create([index, value, source2]),
-    Archetype.create([index, value, source1, source2]),
+    [index, value] as const,
+    [index, value, source1] as const,
+    [index, value, source2] as const,
+    [index, value, source1, source2] as const,
 ] as const;
-const made = Archetype.create([index, value, spawned]);
+const made = [index, value, spawned] as const;
 /** Every set of the four tags `t0` to `t3`, by its bits. */
 const tags = [t0, t1, t2, t3] as const;
-const sixteen = Array.from({ length: 16 }, (_, bits) => Archetype.create([index, value, spawned, ...tags.filter((_, bit) => (bits & (1 << bit)) !== 0)]));
-const several = Archetype.create([flag, amount, extra]);
+const sixteen = Array.from({ length: 16 }, (_, bits) => [index, value, spawned, ...tags.filter((_, bit) => (bits & (1 << bit)) !== 0)] as const);
+const several = [flag, amount, extra] as const;
 
 const counted = { type: "object", properties: { count: { type: "integer" } } } as const;
 

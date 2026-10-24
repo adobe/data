@@ -712,9 +712,9 @@ describe("context", () => {
         ]);
     });
 
-    test("commands name lists through module constants: array literals and Archetype.create", async () => {
-        const kernel = await compile(`import { Archetype } from "ecs";
-        const unit = Archetype.create([position, alive, score]);
+    test("commands name lists through module constants: array literals, and lists the build gave an index", async () => {
+        const kernel = await compile(`function archetype$(list) { return list; }
+        const unit = archetype$([position, alive, score]);
         const pair = [mass, score];
         const kernel = System.create({ kernel: true, components: { with: [position] } }, (row, { commands }) => {
             const spawned = commands.spawn(unit)({ [score]: 2, [position]: [row[position][0], 1] });
@@ -731,8 +731,8 @@ describe("context", () => {
     });
 
     test("kernel declarations list components through module constants", async () => {
-        const kernel = await compile(`import { Archetype } from "ecs";
-        const moving = Archetype.create([position, velocity]);
+        const kernel = await compile(`
+        const moving = [position, velocity];
         const kernel = System.create({ kernel: true, components: { with: [score, ...moving] } }, row => {
             row[score] = row[position] + row[velocity];
         });`);
@@ -1051,6 +1051,25 @@ describe("commands in main-thread systems", () => {
         expect(calls.every(call => Array.isArray(call) && call[0] === "spawn")).toBe(true);
         expect(calls.length).toBe(1);
     });
+    describe("lists of keys", () => {
+        const keys = "const a = Symbol(); const b = Symbol();\n";
+        test("are made once, with an index, for spawns, adds and removes", async () => {
+            const result = await transform(`${keys}const system = System.create(({ commands }) => { commands.spawn([a, b])({ [a]: 1, [b]: 2 }); commands.add(1, [b], { [b]: 3 }); commands.remove(1, [a, b]); commands.spawn([a]); });`);
+            const transformed = result !== null && "code" in result ? result.code : "";
+            expect(transformed.match(/\(list\$\d+ \?\?= archetype\$\(\[[ab, ]+\]\)\)/g)).toEqual([
+                "(list$0 ??= archetype$([a, b]))", "(list$1 ??= archetype$([b]))", "(list$2 ??= archetype$([a, b]))", "(list$3 ??= archetype$([a]))",
+            ]);
+            expect(transformed).toContain("function archetype$(list)");
+        });
+        test("leave a list naming anything but module keys as written", async () => {
+            const result = await transform(`${keys}const system = System.create(({ commands }) => { const c = a; commands.spawn([a, c]); commands.remove(1, [a, 2]); });`);
+            expect(result).toBe(null);
+        });
+        test("fail the build for a list naming a key twice", async () => {
+            const result = await transform(`${keys}const system = System.create(({ commands }) => { commands.remove(1, [a, b, a]); });`);
+            expect(result !== null && "failure" in result ? result.failure.message : null).toBe("this list names a twice; a list of components names each once");
+        });
+    });
     describe("adds", () => {
         test("pass literal values positionally, after the entity, in source order", async () => {
             const { code, calls } = await spawned("let i = 0; commands.add(++i, [score, mass, ++i], { [score]: ++i, [mass]: ++i });");
@@ -1227,10 +1246,10 @@ describe("imported lists", () => {
     const files = {
         "/components.js": `export const health = "health";\nexport const armor = "armor";\nexport const tagged = "tagged";\n`,
         "/archetypes.js": [
-            `import { Archetype } from "ecs";`,
             `import { health, armor, tagged } from "./components.js";`,
             `export const shield = "shield";`,
-            `export const Unit = Archetype.create([health, armor, tagged]);`,
+            `export const Unit = archetype$([health, armor, tagged]);`,
+            `function archetype$(list) { return list; }`,
             `export const Guard = [shield, armor];`,
             `export const Alias = Unit;`,
             `export const Computed = [health].concat([armor]);`,
@@ -1291,7 +1310,7 @@ const kernel = System.create({ kernel: true, components: { with: [score, ...Guar
     });
 
     test.each([
-        ["computed when its module runs", "commands.spawn(Computed)({});", "commands.spawn: Computed is computed when /archetypes.js runs, so the compiler can't read its components; declare it as an array literal, or Archetype.create of one"],
+        ["computed when its module runs", "commands.spawn(Computed)({});", "commands.spawn: Computed is computed when /archetypes.js runs, so the compiler can't read its components; declare it as an array literal, `as const`"],
         ["not a const", "commands.spawn(Changing)({});", "commands.spawn: Changing isn't a module-scope const, so the compiler can't read its components"],
         ["holding a spread", "commands.spawn(Spread)({});", "commands.spawn: Spread names a key by something other than an identifier bound at the scope of /archetypes.js"],
         ["not exported", "commands.spawn(Missing)({});", "commands.spawn: Missing isn't exported by /archetypes.js"],
@@ -1322,7 +1341,7 @@ const kernel = System.create({ kernel: true, components: { with: [score, ...Guar
     });
 
     test.each([
-        ["computed when its module runs", "commands.add(row.entity, Computed, {});", "commands.add: Computed is computed when /archetypes.js runs, so the compiler can't tell whether it's a key or a list; declare a key as Symbol(...), or a list as an array literal or Archetype.create of one"],
+        ["computed when its module runs", "commands.add(row.entity, Computed, {});", "commands.add: Computed is computed when /archetypes.js runs, so the compiler can't tell whether it's a key or a list; declare a key as Symbol(...), or a list as an array literal, `as const`"],
         ["not a const", "commands.remove(row.entity, Changing);", "commands.remove: Changing isn't a module-scope const, so the compiler can't tell whether it's a key or a list"],
         ["not exported", "commands.remove(row.entity, Missing);", "commands.remove: Missing isn't exported by /archetypes.js"],
         ["a namespace", "commands.add(row.entity, Archetypes, 1);", "commands.add: Archetypes is a module namespace, not a key or a list of components"],
@@ -1339,7 +1358,7 @@ const kernel = System.create({ kernel: true, components: { with: [score, ...Guar
     test("fail the build for a declaration's list computed when its module runs", async () => {
         expect(await failure(`import { Computed } from "./archetypes.js";
 const kernel = System.create({ kernel: true, components: { with: Computed } }, (row) => { void row.entity; });`, files))
-            .toBe("components.with: Computed is computed when /archetypes.js runs, so the compiler can't read its components; declare it as an array literal, or Archetype.create of one");
+            .toBe("components.with: Computed is computed when /archetypes.js runs, so the compiler can't read its components; declare it as an array literal, `as const`");
     });
 });
 

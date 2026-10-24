@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from "../interface/archetype/archetype.js";
 import { System } from "../interface/system/system.js";
 import type { F32 } from "../interface/math/index.js";
 
@@ -30,7 +29,7 @@ declare module "@adobe/ecs" {
 
 const tags = [g0, g1, g2, g3, g4, g5, g6] as const;
 /** `value` with each of the first 100 sets of the seven tags, by their bits. */
-const hundred = Array.from({ length: 100 }, (_, bits) => Archetype.create([value, ...tags.filter((_, bit) => (bits & (1 << bit)) !== 0)]));
+const hundred = Array.from({ length: 100 }, (_, bits) => [value, ...tags.filter((_, bit) => (bits & (1 << bit)) !== 0)] as const);
 
 /** Spawns `count` entities into each of the hundred archetypes. */
 export const fillEach = System.create({}, ({ commands }, input: { readonly count: number }) => {

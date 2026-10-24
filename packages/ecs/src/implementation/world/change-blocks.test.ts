@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Archetype } from "../../interface/archetype/archetype.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import type { I32 } from "../../interface/math/i32/index.js";
@@ -46,9 +45,9 @@ const text = { type: "object", properties: { text: { type: "string" } } } as con
 
 /** Rows in the archetype: five chunks, the last partial. */
 const rows = 4500;
-const plain = Archetype.create([value, at, seen, group]);
-const marked = Archetype.create([value, at, seen, group, tagged]);
-const noted = Archetype.create([value, at, note]);
+const plain = [value, at, seen, group] as const;
+const marked = [value, at, seen, group, tagged] as const;
+const noted = [value, at, note] as const;
 
 let entities: Entity[] = [];
 const seed = System.create({}, ({ commands }) => {

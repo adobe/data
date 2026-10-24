@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Archetype } from "../../interface/archetype/archetype.js";
 import { System } from "../../interface/system/system.js";
 import { workers } from "../../interface/resources/workers.js";
 import { count, read, readEach, select } from "./reads.test-helper.js";
@@ -31,7 +30,7 @@ declare module "@adobe/ecs" {
 }
 
 
-const spawned = Archetype.create([value, made]);
+const spawned = [value, made] as const;
 
 const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([index])({ [index]: i });

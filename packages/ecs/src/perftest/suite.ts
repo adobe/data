@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from "../interface/archetype/archetype.js";
 import { Entity } from "../interface/entity/entity.js";
 import type { I32 } from "../interface/math/i32/index.js";
 import type { Schema } from "../interface/schema/schema.js";
@@ -43,8 +42,8 @@ declare module "@adobe/ecs" {
 }
 
 
-const moving = Archetype.create([position, velocity, index]);
-const following = Archetype.create([position, velocity, index, target]);
+const moving = [position, velocity, index] as const;
+const following = [position, velocity, index, target] as const;
 
 /** `count` entities, each targeting the one spawned before it. */
 export const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {

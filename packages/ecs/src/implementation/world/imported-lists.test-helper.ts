@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from '../../interface/archetype/archetype.js';
 
 /** Keys and lists another module's kernels import, in `imported-lists.test.ts`. */
 
@@ -15,5 +14,5 @@ declare module "@adobe/ecs" {
     }
 }
 
-export const Spark = Archetype.create([ember, glow]);
+export const Spark = [ember, glow] as const;
 export const Marks = [ember, marked] as const;

@@ -24,7 +24,7 @@ export type { Leaf } from '../system/leaf.js';
 export type { Composite } from '../system/composite.js';
 export type { Rule } from '../rule/created.js';
 export type { Finalizer } from '../finalizer/created.js';
-export { archetypeIndexOf } from './archetypes.js';
+export { archetypeIndexKey, archetypeIndexOf, nextArchetypeIndex } from './archetypes.js';
 export { indexDefinitionOf, indexOfLookup, lookupKeysOf, orderKeysOf, watchedBy, watchesEntries } from './indexes.js';
 export type { Created as IndexDefinition } from '../indexes/created.js';
 export type { Declaration as IndexDeclaration } from '../indexes/declaration.js';

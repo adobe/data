@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from "../interface/archetype/archetype.js";
 import type { Schema } from "../interface/schema/schema.js";
 import { System } from "../interface/system/system.js";
 import type { F32, U32 } from "../interface/math/index.js";
@@ -31,10 +30,10 @@ declare module "@adobe/ecs" {
 
 /** Interleaved like ecs2's seedSingle: entity i goes to archetype i % 4. */
 const archetypes = [
-    Archetype.create([color, mass, position, velocity, visible, enabled]),
-    Archetype.create([color, mass, position, velocity, visible]),
-    Archetype.create([color, mass, position, velocity, enabled]),
-    Archetype.create([color, mass, position, velocity]),
+    [color, mass, position, velocity, visible, enabled] as const,
+    [color, mass, position, velocity, visible] as const,
+    [color, mass, position, velocity, enabled] as const,
+    [color, mass, position, velocity] as const,
 ] as const;
 
 export const spawn = System.create({}, ({ commands }, input: { readonly count: number }) => {

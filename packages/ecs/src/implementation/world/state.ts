@@ -139,8 +139,9 @@ export type State = {
     readonly batches: SpawnBatch[];
     readonly batchByKey: Map<string, SpawnBatch>;
     /**
-     * Lists of components commands named, by their sorted ids; archetypes by their program-wide index, and the last
-     * eight plain lists, which find them first.
+     * Lists of components commands named, by their sorted ids; lists the build gave indexes, and those made at runtime
+     * that keep one while their keys stay the same, by their index; and the last eight made at runtime, by their keys,
+     * which find copies of them before they keep their own (`lists.ts`).
      */
     readonly lists: Map<string, readonly ListShape[]>;
     readonly byIndex: ListShape[];

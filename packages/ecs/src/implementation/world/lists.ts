@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
-import { archetypeIndexOf, labelOf } from '../../interface/registry/index.js';
+import { archetypeIndexKey, labelOf, nextArchetypeIndex } from '../../interface/registry/index.js';
 import { batchOf } from './batches.js';
 import { reserve } from './entities.js';
 import { claim, generated, openRow, writerOf, type Column, type Positional, type SpawnBatch, type Writer } from './staging.js';
@@ -61,17 +61,26 @@ const resolve = (state: State, list: readonly unknown[]): ListShape => {
 };
 
 /**
- * The shape of a list of components: an archetype `Archetype.create` indexed, which never changes, by its index; any
- * other list by its keys among the recent plain lists, else resolved and made recent. Lists of the same components in
- * any order share a shape.
+ * The index a list has: the program-wide one the plugin gave it, which never changes; for one made at runtime, the
+ * one it keeps while its keys are those it was resolved with; else -1. Both are read from one property, so a list of
+ * either kind is one lookup.
+ */
+export const listIndexOf = (list: readonly unknown[]): number => {
+    const index: unknown = Reflect.get(list, archetypeIndexKey);
+    return typeof index === "number" ? index : isKept(index) && sameKeys(index.keys, list) ? index.index : -1;
+};
+
+/**
+ * The shape of a list of components, by its index (`listIndexOf`); for a list made at runtime without one, by its keys
+ * among the recent ones, else resolved, given an index it keeps and made recent. Lists of the same components in any
+ * order share a shape.
  */
 export const listShapeOf = (state: State, list: readonly unknown[]): ListShape => {
-    const index = archetypeIndexOf(list);
-    // Kept small, so it inlines into the systems spawning and adding: the rest is outlined.
+    const index = listIndexOf(list);
     return (index >= 0 ? state.byIndex[index] : undefined) ?? shapeOfList(state, list, index);
 };
 
-/** A list's shape, other than an archetype's already resolved. */
+/** A list's shape, other than one already resolved by its index. */
 const shapeOfList = (state: State, list: readonly unknown[], index: number): ListShape => {
     if (index >= 0) {
         const shape = resolve(state, list);
@@ -79,19 +88,35 @@ const shapeOfList = (state: State, list: readonly unknown[], index: number): Lis
         return shape;
     }
     const { recent } = state;
-    const length = list.length;
-    for (let r = 0; r < recent.length; r++) {
-        const { keys } = recent[r];
-        if (keys.length !== length) continue;
-        let same = true;
-        for (let k = 0; k < length && same; k++) same = keys[k] === list[k];
-        if (same) return recent[r].shape;
-    }
+    for (let r = 0; r < recent.length; r++) if (sameKeys(recent[r].keys, list)) return recent[r].shape;
     const shape = resolve(state, list);
     const entry: Recent = { keys: [...list], shape };
     if (recent.length < recentCount) recent.push(entry);
     else recent[state.nextRecent = (state.nextRecent + 1) % recentCount] = entry;
+    // Only a list resolved keeps an index, so copies made on every call stay among the recent ones and allocate nothing.
+    const kept: unknown = Reflect.get(list, archetypeIndexKey);
+    const own: Kept | null = isKept(kept) ? kept : kept === undefined && Object.isExtensible(list) ? { keys: entry.keys, index: -1 } : null;
+    if (own === null) return shape;
+    if (kept === undefined) Object.defineProperty(list, archetypeIndexKey, { value: own });
+    // A list that changed takes a new index, since its shape may differ.
+    own.keys = entry.keys;
+    own.index = nextArchetypeIndex();
+    state.byIndex[own.index] = shape;
     return shape;
+};
+
+/** What a list made at runtime keeps: the keys it was last resolved with, and the index it has while it holds them. */
+type Kept = { keys: readonly unknown[]; index: number };
+
+/** Whether an index property holds a list's record: only this module puts an object there, and indexes are numbers. */
+const isKept = (value: unknown): value is Kept => typeof value === "object" && value !== null;
+
+/** Whether a list holds exactly the keys copied from one before. */
+const sameKeys = (keys: readonly unknown[], list: readonly unknown[]): boolean => {
+    const length = list.length;
+    if (keys.length !== length) return false;
+    for (let k = 0; k < length; k++) if (keys[k] !== list[k]) return false;
+    return true;
 };
 
 /** Where a shape's spawns go, resolved once. A constant's column holds nothing, so nothing is written or read for it. */

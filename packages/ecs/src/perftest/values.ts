@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from "../interface/archetype/archetype.js";
 import { Finalizer } from "../interface/finalizer/finalizer.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
@@ -28,7 +27,7 @@ declare module "@adobe/ecs" {
 const number = { type: "number" } as const;
 const poseSchema = { type: "object", properties: { tx: number, ty: number, rotation: number, sx: number, sy: number }, required: ["tx", "ty", "rotation", "sx", "sy"] } as const;
 
-const Node = Archetype.create([pose, shown, extent, order]);
+const Node = [pose, shown, extent, order] as const;
 
 const rows = 100_000;
 

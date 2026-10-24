@@ -7,7 +7,8 @@ import { fail, failureOf, type Failure } from './failure.js';
 import { isPending, type Link, type Linker } from './link.js';
 import { createModule, locateIn, type Module, type ModuleBinding } from './module-scope.js';
 import type { PackageCopy } from './paths.js';
-import { spawnSites } from './spawns.js';
+import { archetypeFunction } from './archetypes.js';
+import { listSites, spawnSites } from './spawns.js';
 import { kernelOf, type KernelRequest } from './signature.js';
 import { usedBy, type Used } from './body-access.js';
 import { accessText, followsAll, inOrder, resolvedDeclaration, unrequired } from './inferred.js';
@@ -232,6 +233,9 @@ export const transformKernels = async (
     const terminal = uniqueName(code, "terminal$");
     const prepareLookupName = uniqueName(code, "prepareLookup$");
     const lookupName = uniqueName(code, "lookup$");
+    const listName = uniqueName(code, "list$");
+    const archetypeName = uniqueName(code, "archetype$");
+    let indexing = false;
     let looking = false;
     let terminals = false;
     const edits: Edit[] = [];
@@ -303,6 +307,17 @@ export const transformKernels = async (
             // Index lookups pass their key positionally, through a list of their own (`world/prepared-lookup.ts`).
             const lookups = declaration?.type !== "ObjectExpression" ? [] : lookupSites(body, declaration, positions.context);
             const spawned = spawns?.sites ?? [];
+            // Lists of keys its commands take are made once, with an index, rather than on every call.
+            const made = new Map<number, { readonly end: number; readonly text: string }>();
+            const listed = listSites(body, module.bindings, positions.context);
+            for (const site of listed) {
+                const inside = [...spawned, ...lookups].some(other => other.start <= site.start && site.end <= other.end && !("components" in other && other.components.start === site.start));
+                if (inside) continue;
+                const name = `${listName}${prepared.length}`;
+                prepared.push(`var ${name};`);
+                indexing = true;
+                made.set(site.start, { end: site.end, text: `(${name} ??= ${archetypeName}([${site.names.join(", ")}]))` });
+            }
             for (const site of lookups) {
                 if (spawned.some(other => other.start < site.end && site.start < other.end)) continue;
                 const name = `${lookupName}${prepared.length}`;
@@ -317,11 +332,18 @@ export const transformKernels = async (
                     prepared.push(site.kind === "spawn" ? spawnFunction(name, prepare, site.keys) : addFunction(name, prepareAddName, site.keys));
                     if (site.kind === "add") adding = true;
                     else spawning = true;
-                    const values = [...site.entity === null ? [] : [site.entity], site.components, ...site.values].map(value => code.slice(value.start, value.end));
+                    const values = [...site.entity === null ? [] : [site.entity], site.components, ...site.values].map(value => {
+                        const list = made.get(value.start);
+                        if (list === undefined || list.end !== value.end) return code.slice(value.start, value.end);
+                        made.delete(value.start);
+                        return list.text;
+                    });
                     edits.push({ start: site.start, end: site.end, text: `${name}(${[spawns.commands, ...values].join(", ")})` });
                 }
+                for (const [start, { end, text }] of made) edits.push({ start, end, text });
                 return;
             }
+            for (const [start, { end, text }] of made) edits.push({ start, end, text });
         }
         const inner = nested || isFunction(node);
         for (const child of children(node)) visit(child, inner);
@@ -358,5 +380,6 @@ export const transformKernels = async (
     const marking = terminals ? [`function ${terminal}(body) { const set = Symbol.for(${JSON.stringify(terminalBodiesName)}); (globalThis[set] || (globalThis[set] = new WeakSet())).add(body); return body; }`] : [];
     // An internal factory may have given its declaration what its body uses first, which stands.
     const giving = accessing ? [`function ${accessName}(made, uses) { const key = Symbol.for(${JSON.stringify(accessName$)}); const map = globalThis[key] || (globalThis[key] = new WeakMap()); if (!map.has(made)) map.set(made, uses); return made; }`] : [];
-    return { code: [...imports, result, ...prepared, ...marking, ...giving].join("\n"), kernels, dependencies: [...dependencies], warnings };
+    const indexed = indexing ? [archetypeFunction(archetypeName)] : [];
+    return { code: [...imports, result, ...prepared, ...marking, ...giving, ...indexed].join("\n"), kernels, dependencies: [...dependencies], warnings };
 };

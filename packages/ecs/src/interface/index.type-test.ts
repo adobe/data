@@ -40,7 +40,7 @@ export type NoThread = Ecs.Thread;
 export type NoCadence = Ecs.Cadence;
 // @ts-expect-error a rule is the value Rule.create returns: ReturnType<typeof Rule.create>
 export const noRule: Rule = Rule.create({ components: { with: [position] }, derive: [slot] });
-// @ts-expect-error an archetype is a readonly list of components
+// @ts-expect-error an archetype is a list of components declared as const
 export const noArchetype: Ecs.Archetype = [position];
 // @ts-expect-error a trait's key is keyof Traits<never, never>
 export type NoTraitKey = Ecs.Trait.Key;

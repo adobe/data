@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype } from "../interface/archetype/archetype.js";
 import { Entity } from "../interface/entity/entity.js";
 import { System } from "../interface/system/system.js";
 import type { F32 } from "../interface/math/index.js";
@@ -19,9 +18,9 @@ declare module "@adobe/ecs" {
 }
 
 
-const root = Archetype.create([local, world]);
-const child = Archetype.create([local, world, parent]);
-const taggedChild = Archetype.create([local, world, parent, leaf]);
+const root = [local, world] as const;
+const child = [local, world, parent] as const;
+const taggedChild = [local, world, parent, leaf] as const;
 
 /** Each row's world value is its parent's plus its own. */
 export const propagate = System.create({
@@ -94,8 +93,8 @@ declare module "@adobe/ecs" {
 }
 
 
-const gpuRoot = Archetype.create([offset, placed]);
-const gpuChild = Archetype.create([offset, placed, parent]);
+const gpuRoot = [offset, placed] as const;
+const gpuChild = [offset, placed, parent] as const;
 
 /** `propagate` in 4-byte values, on the GPU. */
 export const place = System.create({

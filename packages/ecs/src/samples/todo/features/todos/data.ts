@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Archetype, Index } from "../../../../index.js";
+import { Index } from "../../../../index.js";
 
 /** A todo's text. */
 export const label = Symbol();
@@ -17,7 +17,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-export const Todo = Archetype.create([todo, label, done, order]);
+export const Todo = [todo, label, done, order] as const;
 
 /** Every todo, in list order. */
 export const ordered = Index.create({ key: [order], sorted: true, components: { with: [todo] } });

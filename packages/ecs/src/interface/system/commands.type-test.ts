@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Resource } from '../resource/resource.js';
 import { Component } from '../component/component.js';
-import { Archetype } from '../archetype/archetype.js';
 import type { Entity } from '../entity/entity.js';
 import type { Commands } from './commands.js';
 
@@ -27,7 +26,7 @@ declare module '@adobe/ecs' {
     }
 }
 
-const particle = Archetype.create([position, velocity, label, player]);
+const particle = [position, velocity, label, player] as const;
 
 export const issue = (commands: Commands, entity: Entity): void => {
     // `spawn` is curried: the components first, then their values, giving an entity.

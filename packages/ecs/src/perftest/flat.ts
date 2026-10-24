@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System } from "../interface/system/system.js";
-import { Archetype } from '../interface/archetype/archetype.js';
 import type { F32, U32 } from '../interface/math/index.js';
 
 // Mirrors adobe/data's ecs2 `create` perftest (packages/data/src/perftest/ecs2-perf.ts): 1M particles of eight scalar
@@ -36,10 +35,10 @@ declare module "@adobe/ecs" {
 const scalars = [color, mass, positionX, positionY, positionZ, velocityX, velocityY, velocityZ] as const;
 /** Entity i goes to archetype i % 4, like ecs2's seedSingle. */
 const archetypes = [
-    Archetype.create([...scalars, visible, enabled]),
-    Archetype.create([...scalars, visible]),
-    Archetype.create([...scalars, enabled]),
-    Archetype.create(scalars),
+    [...scalars, visible, enabled] as const,
+    [...scalars, visible] as const,
+    [...scalars, enabled] as const,
+    scalars,
 ] as const;
 
 /** Spawns with values passed inline. */

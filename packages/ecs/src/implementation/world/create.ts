@@ -219,12 +219,36 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         return false;
     };
 
+    /** Whether kernels failed to load on the workers a run started: then they run here, and no pool starts again. */
+    let workersFailed = false;
+
+    /**
+     * Starts the pool for a run once it's warranted. Kernels failing to load on it are a `"thread"` failure in the run's
+     * report, and the pool ends, so kernels run here from then on rather than every run trying again.
+     */
+    const startWorkers = async (): Promise<void> => {
+        try {
+            await loadOnWorkers();
+        }
+        catch (error) {
+            workersFailed = true;
+            workersBehind = false;
+            const failed = pool;
+            pool = null;
+            context.workers = null;
+            context.publish = () => {};
+            for (const runner of registrar.kernels()) runner.kernel?.unloadedOnWorkers();
+            if (failed !== null) void failed.terminate();
+            (observerFailures ??= []).push(failureOf("thread", { name: "workers", id: null }, error));
+        }
+    };
+
     /**
      * Gives workers every kernel whose main-thread load is newer than theirs, including ones a failed registration
      * reloaded, starting the pool once it's warranted.
      */
     const loadOnWorkers = async (): Promise<void> => {
-        if (workerCount === 0 || !workersBehind || (pool === null && !warranted())) return;
+        if (workerCount === 0 || !workersBehind || (pool === null && (workersFailed || !warranted()))) return;
         const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);
         if (behind.length === 0) {
             workersBehind = false;
@@ -347,6 +371,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         const wanted = platform === null ? 0 : workersOf(platform, readResource(workers));
         if (wanted === workerCount) return;
         workerCount = wanted;
+        workersFailed = false;
         state.workers = wanted;
         const old = pool;
         pool = null;
@@ -443,7 +468,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         ensureProgramResources(state, ensured);
         if (startWatches(state)) await reloadStamped();
         if (workersChanged()) await followWorkers();
-        if (pool === null && workersBehind && workerCount > 0 && warranted()) await loadOnWorkers();
+        if (pool === null && workersBehind && !workersFailed && workerCount > 0 && warranted()) await startWorkers();
         if (deviceChanged()) await followDevice();
         const schedule = registrar.registered(definition) ?? registered;
         if (schedule === undefined) throw new Error(`System "${definition.name}" didn't register.`);

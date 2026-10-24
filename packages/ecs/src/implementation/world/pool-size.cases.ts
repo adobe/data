@@ -20,6 +20,14 @@ export const poolSizeCases = (load: () => Promise<typeof Fixture>) => describe("
         expect(started).toEqual([0, fixture.platformCount()]);
         expect(values).toEqual([0, 4, 8, 12]);
     });
+    it("reports a kernel that fails to load on workers as the pool starts, and runs it here from then on", async () => {
+        const fixture = await load();
+        const { failures, loads, values } = await fixture.failedLoad();
+        expect(failures[0]).toEqual([expect.stringMatching(/^thread: .*no kernel here/)]);
+        expect(failures[1]).toEqual([]);
+        expect(loads[1]).toBe(loads[0]);
+        expect(values).toEqual([0, 4, 8, 12]);
+    });
     it("sizes the kernel pool at the next sync point, with the same results", async () => {
         const fixture = await load();
         const { started, values } = await fixture.resized(2, [3, 0]);

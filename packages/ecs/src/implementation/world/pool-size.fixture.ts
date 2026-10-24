@@ -5,6 +5,8 @@ import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { Observe } from "../../observe/index.js";
 import { countingWorkers } from "./platforms.test-helper.js";
+import { reportOf } from "./reports.test-helper.js";
+import type { WorkerPlatform } from "./worker-platform.js";
 import type { F32 } from "../../interface/math/index.js";
 
 /** Scenarios of the `workers` resource sizing the pool, run built in node and from source in chromium. */
@@ -83,6 +85,43 @@ export const whenWarranted = async (): Promise<{ readonly started: readonly numb
         await world.run(double);
         started.push(counting.started());
         return { started, values: (await readEach(world, await select(world, { required: [value] }), value)).slice(0, 4) };
+    }
+    finally {
+        await world.dispose();
+    }
+};
+
+/** The platform's workers, failing every kernel load: each kernel's module is one that throws. */
+const failingLoads = (): { readonly platform: WorkerPlatform; readonly loads: () => number } => {
+    const counting = countingWorkers();
+    const broken = "data:text/javascript,throw new Error('no kernel here')";
+    const start = () => {
+        const port = counting.platform.start();
+        if (port === null) return null;
+        return { ...port, post: ((message, transfer) => port.post(message.kind === "kernels" ? { ...message, kernels: message.kernels.map(kernel => ({ ...kernel, url: broken })) } : message, transfer)) satisfies typeof port.post };
+    };
+    return { platform: { count: counting.platform.count, start }, loads: () => counting.posted("kernels") };
+};
+
+/**
+ * A kernel whose load fails on workers when the pool starts: the failures of that run's report and of the next, the
+ * kernel loads posted after each, and the values its runs doubled, here.
+ */
+export const failedLoad = async (): Promise<{ readonly failures: readonly (readonly string[])[]; readonly loads: readonly number[]; readonly values: readonly (number | null)[] }> => {
+    const failing = failingLoads();
+    const world = createWorld({ [workers]: 2 }, { minimumChunk: 64, pool: failing.platform });
+    try {
+        // Registered while no archetype warrants workers, so the pool starts in a later run.
+        await world.run(double);
+        await world.run(seed);
+        const failures: string[][] = [];
+        const loads: number[] = [];
+        for (let i = 0; i < 2; i++) {
+            const run = await world.run(double);
+            failures.push((await reportOf(world, run)).failures.map(failure => `${failure.kind}: ${failure.message}`));
+            loads.push(failing.loads());
+        }
+        return { failures, loads, values: (await readEach(world, await select(world, { required: [value] }), value)).slice(0, 4) };
     }
     finally {
         await world.dispose();

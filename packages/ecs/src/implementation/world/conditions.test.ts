@@ -34,10 +34,10 @@ const pause = System.create({ resources: { write: [paused] } }, ({ resources }) 
 const tick = System.create({ resources: { not: [paused], write: [ticks] } }, ({ resources }) => { resources[ticks] += 1; });
 const afterTick = System.create({ resources: { write: [after] }, after: [tick] }, ({ resources }) => { resources[after] += 1; });
 const frame = System.create({ systems: [tick, afterTick] });
-const grow = System.create({ kernel: "cpu", components: { write: [value] }, resources: { not: [paused] } }, row => {
+const grow = System.create({ kernel: true, components: { write: [value] }, resources: { not: [paused] } }, row => {
     row[value] = row[value] + 1;
 });
-const growWhilePaused = System.create({ kernel: "cpu", components: { write: [value] }, resources: { is: [paused] } }, row => {
+const growWhilePaused = System.create({ kernel: true, components: { write: [value] }, resources: { is: [paused] } }, row => {
     row[value] = row[value] + 1;
 });
 

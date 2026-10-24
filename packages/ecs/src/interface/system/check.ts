@@ -67,6 +67,30 @@ const unreadByKernels = (key: symbol): string | null => {
 };
 
 /**
+ * What of a leaf's ordering index and lookups a kernel can't read, or null: workers read them from shared memory, so
+ * their values must be linear there too.
+ */
+export const unreadByKernel = (leaf: Leaf): string | null => {
+    const { lookup, order } = leaf.declaration;
+    if (order !== undefined) {
+        for (const key of orderKeysOf(leaf.declaration)) {
+            const unread = unreadByKernels(key);
+            if (unread !== null) return `its rows are ordered by an index keyed by "${labelOf(key)}", ${unread}`;
+        }
+    }
+    const lookups = Object.values(lookup ?? {});
+    for (const key of lookups.flatMap(found => found.read ?? [])) {
+        const unread = unreadByKernels(key);
+        if (unread !== null) return `a lookup reads "${labelOf(key)}", ${unread}`;
+    }
+    for (const key of lookups.flatMap(lookupKeysOf)) {
+        const unread = unreadByKernels(key);
+        if (unread !== null) return `a lookup goes through an index keyed by "${labelOf(key)}", ${unread}`;
+    }
+    return null;
+};
+
+/**
  * Throws for what a leaf's kind and placement rule out: `up` without components or through a key that isn't a reference
  * component, `order` by anything but a sorted index, without components, with `up` or on the GPU, a kernel's lookup of
  * a value outside linear memory, a GPU kernel's change filters, lookups and reductions, and a render system's
@@ -83,12 +107,6 @@ const checkPlacement = (leaf: Leaf): void => {
         if (components === undefined) fail("orders its rows without components, so it runs once");
         if (up !== undefined) fail("uses both up and order, which both decide the order of its rows");
         if (kernel === "gpu") fail("can't run on the GPU: GPU kernels have no order yet");
-        if (kernel !== undefined) {
-            for (const key of orderKeysOf(leaf.declaration)) {
-                const unread = unreadByKernels(key);
-                if (unread !== null) throw new Error(`Kernel "${name}": its rows are ordered by an index keyed by "${labelOf(key)}", ${unread}.`);
-            }
-        }
     }
     if (up !== undefined) {
         if (components === undefined) fail("uses up, which orders rows, without components");
@@ -97,16 +115,9 @@ const checkPlacement = (leaf: Leaf): void => {
         }
     }
     const lookups = Object.values(lookup ?? {});
-    if (kernel !== undefined) {
-        // Workers read lookups from shared memory, so their values must be linear there too.
-        for (const key of lookups.flatMap(found => found.read ?? [])) {
-            const unread = unreadByKernels(key);
-            if (unread !== null) throw new Error(`Kernel "${name}": a lookup reads "${labelOf(key)}", ${unread}.`);
-        }
-        for (const key of lookups.flatMap(lookupKeysOf)) {
-            const unread = unreadByKernels(key);
-            if (unread !== null) throw new Error(`Kernel "${name}": a lookup goes through an index keyed by "${labelOf(key)}", ${unread}.`);
-        }
+    if (kernel === true || kernel === "gpu") {
+        const unread = unreadByKernel(leaf);
+        if (unread !== null) throw new Error(`Kernel "${name}": ${unread}.`);
     }
     const reduces = reducedBy(leaf).length > 0;
     if (kernel === "gpu") {
@@ -129,7 +140,7 @@ const checkObserver = (leaf: Leaf): void => {
     const fail = (message: string): never => { throw new Error(`System "${name}" is an observer, so it ${message}.`); };
     if (observer !== true) throw new Error(`System "${name}": observer is true or left out.`);
     if (leaf.kind === "render") fail("records no GPU work");
-    if (declaration.kernel !== undefined) fail("isn't a kernel");
+    if (declaration.kernel === true || declaration.kernel === "gpu") fail("isn't a kernel");
     if ((declaration.components?.write?.length ?? 0) + (declaration.resources?.write?.length ?? 0) > 0) fail("writes nothing");
     if (reducedBy(leaf).length > 0) fail("reduces into nothing");
     if (leaf.input !== undefined) fail("takes no input");
@@ -190,7 +201,7 @@ const isInputSchema = (value: unknown): value is InputSchema =>
  */
 export const inputSchemaOf = (name: string, body: (...parameters: never[]) => void, before: number, input: unknown): InputSchema | undefined => {
     if (input === undefined) {
-        if (body.length > before) throw new Error(`System "${name}" takes input, whose schema the plugin gives from the type of its body's parameter: write its body in place and build it with the kernel plugin.`);
+        if (body.length > before) throw new Error(`System "${name}" takes input, whose schema the plugin gives from the type of its body's parameter: write its body in place and build it with Compiler.plugin().`);
         return undefined;
     }
     if (!isInputSchema(input)) throw new Error(`System "${name}": input is an object schema of named fields.`);
@@ -209,7 +220,7 @@ const checkTarget = (leaf: Leaf): void => {
     const field: Schema | undefined = input !== undefined && "properties" in input ? Reflect.get(input.properties, target) : undefined;
     if (field === undefined || !("format" in field) || field.format !== "entity") fail(`takes it from an input field "${target}" holding an entity`);
     if (components === undefined) fail("needs components");
-    if (kernel !== undefined) fail("isn't a kernel");
+    if (kernel === true || kernel === "gpu") fail("isn't a kernel");
     if (up !== undefined || order !== undefined) fail("has no up or order");
     if ((resources?.reduce?.length ?? 0) > 0) fail("reduces into nothing");
 };

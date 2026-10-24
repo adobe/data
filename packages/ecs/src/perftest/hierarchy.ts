@@ -25,7 +25,7 @@ const taggedChild = Archetype.create([local, world, parent, leaf]);
 
 /** Each row's world value is its parent's plus its own. */
 export const propagate = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [local], write: [world] },
     up: { through: parent, read: [world] },
 }, (row, { up }) => {
@@ -34,7 +34,7 @@ export const propagate = System.create({
 
 /** The same, only for rows whose own or parent's values changed since it last ran. */
 export const propagateChanged = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [local], write: [world], changed: [local] },
     up: { through: parent, read: [world] },
 }, (row, { up }) => {

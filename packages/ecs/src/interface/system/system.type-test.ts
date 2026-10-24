@@ -189,31 +189,32 @@ declare module '@adobe/ecs' {
 
 // Kernels: linear values (numbers, booleans, entities, fixed tuples), read-only resources.
 System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [velocity, vector, player, target], write: [position], has: [label] },
     resources: { read: [time] },
 }, () => {});
 
 System.create({
-    kernel: "cpu",
+    kernel: true,
     // @ts-expect-error kernel values must be linear
     components: { read: [label] },
 }, () => {});
 
 System.create({
-    kernel: "cpu",
+    kernel: true,
     // @ts-expect-error kernel values can't be variable-length arrays
     components: { write: [path] },
 }, () => {});
 
 System.create({
-    kernel: "cpu",
+    kernel: true,
     // @ts-expect-error kernel values can't be sets or maps
     components: { read: [marks] },
 }, () => {});
 
 System.create({
-    kernel: "cpu",
+    kernel: true,
+    components: { read: [velocity] },
     // @ts-expect-error kernel lookups must read linear values
     lookup: { labels: { read: [label] } },
 }, () => {});
@@ -222,7 +223,7 @@ declare const byTarget: Index<{ readonly key: readonly [typeof target] }>;
 
 // A kernel's lookup by entity matches has and not, as any system's does.
 System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [target], write: [position] },
     lookup: { players: { read: [position], has: [player], not: [velocity] } },
 }, (row, { lookup }) => {
@@ -231,13 +232,15 @@ System.create({
 });
 
 System.create({
-    kernel: "cpu",
+    kernel: true,
+    components: { read: [velocity] },
     // @ts-expect-error an index lookup matches what its index holds, so it takes no has
     lookup: { byTarget: { index: byTarget, read: [position], has: [player] } },
 }, () => {});
 
 System.create({
-    kernel: "cpu",
+    kernel: true,
+    components: { read: [velocity] },
     // @ts-expect-error kernels can't write resources
     resources: { write: [score] },
 }, () => {});
@@ -279,8 +282,18 @@ System.create({
 });
 
 System.create({
-    // @ts-expect-error a kernel is "cpu" or "gpu"
+    // @ts-expect-error a kernel is true, false or "gpu"
+    kernel: "cpu",
+}, () => {});
+
+// Without the flag a body compiles when it can; false runs it as written, whatever it uses.
+System.create({ components: { read: [label] } }, () => {});
+System.create({ kernel: false, components: { read: [label], write: [path] }, resources: { write: [score] } }, () => {});
+
+System.create({
+    // @ts-expect-error a system without components runs once, so there's nothing to compile
     kernel: true,
+    resources: { read: [time] },
 }, () => {});
 
 // Reductions: each reduced resource is a function contributing a value of its type, with its trait's operator repeated.
@@ -423,7 +436,8 @@ System.create({ observer: true, components: { read: [velocity] }, resources: { r
 // @ts-expect-error an observer system takes no input
 System.create({ observer: true, resources: { read: [time] } }, (_context, input: { readonly count: number }) => { void input; });
 // @ts-expect-error an observer system isn't a kernel
-System.create({ observer: true, kernel: "cpu", components: { read: [position] } }, () => {});
+System.create({ observer: true, kernel: true, components: { read: [position] } }, () => {});
+System.create({ observer: true, kernel: false, components: { read: [position] } }, () => {});
 // @ts-expect-error an observer system is ordered with nothing
 System.create({ observer: true, resources: { read: [time] }, after: [integrate] }, () => {});
 // @ts-expect-error an observer system is ordered with nothing
@@ -444,4 +458,4 @@ System.create({ target: "entity", components: { write: [position] } }, row => { 
 // @ts-expect-error it runs on a row, so it needs components
 System.create({ target: "entity" }, (_context, input: OnOne) => { void input; });
 // @ts-expect-error not a kernel
-System.create({ target: "entity", kernel: "cpu", components: { write: [position] } }, (_row, _context, input: OnOne) => { void input; });
+System.create({ target: "entity", kernel: true, components: { write: [position] } }, (_row, _context, input: OnOne) => { void input; });

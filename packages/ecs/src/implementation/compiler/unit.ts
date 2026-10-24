@@ -26,6 +26,8 @@ export type Unit = {
     readonly link: Link | null;
     /** GPU kernels emit intrinsic regions for calls to functions that match WGSL builtins. */
     readonly target: "cpu" | "gpu";
+    /** Whether the body is only tried, unflagged: then module data, which may change, isn't inlined. */
+    readonly tried: boolean;
     /** Column descriptions as source text, in `columns` order, indexed by an identity key. */
     readonly columns: string[];
     readonly columnIndex: Map<string, number>;
@@ -79,13 +81,13 @@ export type Unit = {
     readonly statement: StatementCompiler;
 };
 
-export const createUnit = (signature: Signature, module: Module, lists: Lists, expression: ExpressionCompiler, statement: StatementCompiler, link: Link | null = null, target: "cpu" | "gpu" = "cpu"): Unit => {
+export const createUnit = (signature: Signature, module: Module, lists: Lists, expression: ExpressionCompiler, statement: StatementCompiler, link: Link | null = null, target: "cpu" | "gpu" = "cpu", tried = false): Unit => {
     let counter = 0;
     const names = new Map<number, string>();
     const up = signature.up === null ? null : counter++;
     if (up !== null) names.set(up, "up");
     return {
-        signature, module, lists, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), blocks: new Set(), stampedPerCall: new Map(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
+        signature, module, lists, link, target, tried, columns: [], columnIndex: new Map(), chunks: new Set(), blocks: new Set(), stampedPerCall: new Map(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
         used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map(), up: new Set() },
         up, upColumns: [], upColumnIndex: new Map(), upBooleans: new Set(), probes: [], rowLeaves: [], handles: new Set(),
         next: () => counter++, expression, statement,

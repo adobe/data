@@ -1,6 +1,6 @@
 # Kernel subset
 
-What a kernel body (`kernel: "cpu"` or `"gpu"`) may contain. The build rejects anything else with a message at the
+What a kernel body (`kernel: true` or `"gpu"`) may contain. The build rejects anything else with a message at the
 offending code. It is plain TypeScript; types are stripped before compiling.
 
 ```

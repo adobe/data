@@ -6,6 +6,7 @@ import { layoutOf, type Layout } from '../../interface/registry/layout.js';
 import { accessOf, type Schedule } from '../../interface/registry/schedule.js';
 import { stampChanged, type Archetype } from './archetype.js';
 import { readCell } from './cells.js';
+import { kernelOf } from './attach-kernel.js';
 import { indexOf, locate } from './entities.js';
 import { failureOf } from './failures.js';
 import { ownTag } from './move-log.js';
@@ -38,7 +39,7 @@ export const isTerminal = (leaf: Leaf): boolean => {
     const known = terminalLeaves.get(leaf);
     if (known !== undefined) return known;
     const { declaration } = leaf;
-    const terminal = leaf.kind === "system" && declaration.kernel === undefined && declaration.up === undefined && provenTerminal(leaf.body)
+    const terminal = leaf.kind === "system" && kernelOf(leaf) === undefined && declaration.up === undefined && provenTerminal(leaf.body)
         && Object.keys(declaration.lookup ?? {}).length === 0
         && (declaration.resources?.reduce?.length ?? 0) === 0
         && objectsOnly(declaration.components?.write) && objectsOnly(declaration.resources?.write);

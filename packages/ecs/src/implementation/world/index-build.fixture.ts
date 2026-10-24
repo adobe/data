@@ -41,7 +41,7 @@ const shuffle = System.create({ components: { write: [cell] } }, row => {
 });
 
 /** A kernel, so the pool starts, as it does with a world's first kernel. */
-const warm = System.create({ kernel: "cpu", components: { read: [serial], write: [weight] } }, row => {
+const warm = System.create({ kernel: true, components: { read: [serial], write: [weight] } }, row => {
     row[weight] = row[serial] % 13;
 });
 

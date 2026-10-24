@@ -28,7 +28,7 @@ export const spawn = System.create({
 
 // Kernels: linear components and read-only resources, so they can run in chunks across workers.
 export const gravity = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { write: [velocity] },
     resources: { read: [delta] },
 }, (row, { resources }) => {
@@ -37,7 +37,7 @@ export const gravity = System.create({
 });
 
 export const integrate = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [velocity], write: [position] },
     resources: { read: [delta] },
     after: [gravity],

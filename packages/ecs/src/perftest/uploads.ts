@@ -31,7 +31,7 @@ const drag = System.create({
 /** Draws nothing: its run uploads what it reads. */
 const draw = System.render({ shader: { accessors: { place } }, after: [drag] }, () => {});
 const frame = System.create({ systems: [drag, draw] });
-const slide = System.create({ kernel: "cpu", components: { write: [place] } }, row => {
+const slide = System.create({ kernel: true, components: { write: [place] } }, row => {
     const [x, y, z] = row[place];
     row[place] = [x + 1, y, z];
 });

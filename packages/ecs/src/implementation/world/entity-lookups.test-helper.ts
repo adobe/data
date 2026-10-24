@@ -93,7 +93,7 @@ export const bump = System.create({ components: { write: [value] } }, row => {
 });
 
 /** The same as a kernel, whose stamps are muted unless something watches `value`. */
-export const bumpKernel = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
+export const bumpKernel = System.create({ kernel: true, components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 

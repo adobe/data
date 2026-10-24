@@ -81,11 +81,11 @@ type GpuKernel = {
 };
 
 /**
- * An observer system only reads, after a sync point: it writes and reduces into nothing, isn't a kernel, has no `up`,
+ * An observer system only reads, after a sync point: it writes and reduces into nothing, never compiles to a kernel, has no `up`,
  * and is ordered with nothing. That it takes no input is checked at its body.
  */
 type Observer = {
-    readonly kernel?: never;
+    readonly kernel?: false;
     readonly components?: { readonly write?: never };
     readonly resources?: { readonly write?: never; readonly reduce?: never };
     readonly up?: never;
@@ -96,7 +96,7 @@ type Observer = {
 
 /** A system on one entity runs on its row, in no order; that its target is an entity field of its input is checked at its body. */
 type Targeted = {
-    readonly kernel?: never;
+    readonly kernel?: false;
     readonly up?: never;
     readonly order?: never;
     readonly resources?: { readonly reduce?: never };
@@ -106,10 +106,14 @@ type Validate<D extends Declaration> =
     Lists<D>
     & IndexLookups<D>
     & Order<D>
-    & (D extends { readonly kernel: "cpu" | "gpu" } ? Kernel : {})
+    & (D extends { readonly kernel: true | "gpu" } ? Kernel : {})
     & (D extends { readonly kernel: "gpu" } ? GpuKernel : {})
     // `up` and `order` order rows, so a system without them has neither, and one has at most one of them.
-    & (Property<D, "components"> extends undefined ? { readonly up?: { readonly [key: string]: never }; readonly order?: { readonly "error: a system without components runs once, in no order": true } } : {})
+    & (Property<D, "components"> extends undefined ? {
+        readonly up?: { readonly [key: string]: never };
+        readonly order?: { readonly "error: a system without components runs once, in no order": true };
+        readonly kernel?: false | "gpu" | { readonly "error: a system without components runs once, so there's nothing to compile": true };
+    } : {})
     & (D extends { readonly up: object } ? { readonly order?: { readonly "error: up and order both decide the order of its rows": true } } : {})
     & (D extends { readonly observer: true } ? Observer : {})
     & (D extends { readonly target: string } ? Targeted : {})

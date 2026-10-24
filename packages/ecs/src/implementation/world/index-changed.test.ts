@@ -61,7 +61,7 @@ const counting = System.create({ lookup: { byGroup: { index: byGroup, changed: t
 
 /** Each row's total: how many rows share its group, by hundreds, and its weight; run only when the groups changed. */
 const tally = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [group, weight], write: [total] },
     lookup: { byGroup: { index: byGroup, changed: true } },
 }, (row, { lookup }) => {

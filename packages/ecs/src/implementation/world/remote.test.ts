@@ -56,10 +56,10 @@ const spawnCaptioned = System.create({}, ({ commands }) => {
     commands.spawn([point, caption])({ [point]: 1, [caption]: { text: "a caption only the thread gives" } });
 });
 /** A kernel giving the thread's objects null, which they take, and a number, which they don't. */
-const nullCaptionsKernel = System.create({ kernel: "cpu", components: { has: [caption], read: [point] } }, (row, { commands }) => {
+const nullCaptionsKernel = System.create({ kernel: true, components: { has: [caption], read: [point] } }, (row, { commands }) => {
     if (row[point] > 0) commands.add(row.entity, caption, null);
 });
-const numberHandlesKernel = System.create({ kernel: "cpu", components: { read: [point] } }, (row, { commands }) => {
+const numberHandlesKernel = System.create({ kernel: true, components: { read: [point] } }, (row, { commands }) => {
     commands.add(row.entity, handle, row[point]);
 });
 /** Reaches its commands, so it isn't terminal: its tier blocks rather than running as a tail. */

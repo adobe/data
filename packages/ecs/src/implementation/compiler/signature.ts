@@ -71,16 +71,31 @@ const reductions = (node: Expression | Pattern, lists: Lists): readonly Reduced[
     }).map((entry, index, all) => all.findIndex(other => other.resource === entry.resource) === index ? entry : fail(node, `${entry.resource} is reduced twice`));
 };
 
-/** What kind of kernel a `System.create` declaration compiles to, or null when it isn't a kernel. */
-export const kernelOf = (declaration: ObjectExpression): "cpu" | "gpu" | null => {
+/** How a `System.create` declaration's body compiles: to `target`, and whether its `kernel` requires it or it's tried. */
+export type KernelRequest = { readonly target: "cpu" | "gpu"; readonly required: boolean };
+
+/** Whether a declaration has property `name`, written out. */
+const declares = (declaration: ObjectExpression, name: string): boolean => declaration.properties.some(property =>
+    property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === name);
+
+/**
+ * How a `System.create` declaration compiles to a kernel, or null when it doesn't: `kernel: true` or `"gpu"` requires
+ * it, `false` rules it out, and without it a system with components is tried, unless it observes, runs on one entity
+ * or spreads what the build can't read.
+ */
+export const kernelOf = (declaration: ObjectExpression): KernelRequest | null => {
     for (const property of declaration.properties) {
         if (property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === "kernel") {
             const { value } = property;
-            if (value.type === "Literal" && (value.value === "cpu" || value.value === "gpu")) return value.value;
-            return fail(value, `kernel must be the literal "cpu" or "gpu"`);
+            if (value.type === "Literal" && value.value === true) return { target: "cpu", required: true };
+            if (value.type === "Literal" && value.value === "gpu") return { target: "gpu", required: true };
+            if (value.type === "Literal" && value.value === false) return null;
+            return fail(value, `kernel must be the literal true, false or "gpu"`);
         }
     }
-    return null;
+    if (declaration.properties.some(property => property.type === "SpreadElement")) return null;
+    if (!declares(declaration, "components") || declares(declaration, "observer") || declares(declaration, "target")) return null;
+    return { target: "cpu", required: false };
 };
 
 /** Reads and validates a kernel declaration; `lists` reads its lists of keys. */
@@ -147,7 +162,7 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
                 fail(property, `${name} is not allowed in a kernel declaration`);
         }
     }
-    if (components === undefined) return fail(declaration, "a kernel needs components");
+    if (components === undefined) return fail(declaration, "a system without components runs once, so there's nothing to compile");
     for (const { resource } of reduced) {
         if (resources.includes(resource) || changedResources.includes(resource)) fail(declaration, `${resource} is reduced, so it can't also be read or filtered on`);
     }

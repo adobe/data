@@ -19,7 +19,10 @@ declare module "@adobe/ecs" {
 const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < 4096; i++) commands.spawn([value])({ [value]: i });
 });
-const double = System.create({ kernel: "cpu", components: { write: [value] } }, row => { row[value] = row[value] * 2; });
+const few = System.create({}, ({ commands }) => {
+    for (let i = 0; i < 16; i++) commands.spawn([value])({ [value]: i });
+});
+const double = System.create({ kernel: true, components: { write: [value] } }, row => { row[value] = row[value] * 2; });
 const resize = System.create({ resources: { write: [workers] } }, ({ resources }, input: { readonly size: number | null }) => {
     resources[workers] = input.size;
 });
@@ -59,6 +62,27 @@ export const resized = async (initial: number, sizes: readonly (number | null)[]
             started.push(counting.started());
         }
         return { started, values: await readEach(world, await select(world, { required: [value] }), value) };
+    }
+    finally {
+        await world.dispose();
+    }
+};
+
+/**
+ * Workers started after a kernel runs over fewer rows than a piece for a worker, then after it runs over enough, and
+ * the first values it doubled.
+ */
+export const whenWarranted = async (): Promise<{ readonly started: readonly number[]; readonly values: readonly (number | null)[] }> => {
+    const counting = countingWorkers();
+    const world = createWorld({}, { minimumChunk: 64, pool: counting.platform });
+    try {
+        await world.run(few);
+        await world.run(double);
+        const started = [counting.started()];
+        await world.run(seed);
+        await world.run(double);
+        started.push(counting.started());
+        return { started, values: (await readEach(world, await select(world, { required: [value] }), value)).slice(0, 4) };
     }
     finally {
         await world.dispose();

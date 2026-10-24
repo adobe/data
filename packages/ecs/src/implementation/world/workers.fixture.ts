@@ -73,7 +73,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 });
 
 const integrate = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [velocity], write: [position] },
     resources: { read: [seconds] },
 }, (row, { resources }) => {
@@ -84,7 +84,7 @@ const integrate = System.create({
 
 /** Structural commands from workers: rows past a threshold spawn a marker and lose their velocity. */
 const split = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [position], has: [velocity] },
     after: [integrate],
 }, (row, { commands }) => {
@@ -97,7 +97,7 @@ const split = System.create({
 
 /** Lookups from workers: offset by the distance to the target. */
 const follow = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [position, target], write: [offset] },
     lookup: { targets: { read: [position] } },
     after: [split],
@@ -111,7 +111,7 @@ const main = System.create({ systems: [integrate, split, follow] });
 
 /** Every row writes the same entity, so only merge order decides which value survives. */
 const stamp = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [position] },
 }, (row, { commands }, input: { readonly entity: Entity }) => {
     const [x, y] = row[position];
@@ -120,7 +120,7 @@ const stamp = System.create({
 
 /** Despawns entity 1, the resource entity, since index 0 is never an entity and registration reserves the next first. */
 const unlink = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { has: [target] },
 }, (_, { commands }) => {
     // @ts-expect-error an untyped caller can pass any number
@@ -136,7 +136,7 @@ const sources = System.create({}, ({ commands }) => {
 
 /** A spawn per row, from wherever its chunk runs; with `edit`, each spawn is also added to and removed from. */
 const emit = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [offset], not: [spawned] },
 }, (row, { commands }, input: { readonly edit: boolean }) => {
     const entity = commands.spawn([position, spawned, tagC])({ [position]: [row[offset], -row[offset]] });
@@ -229,8 +229,9 @@ export const unlinked = (): Promise<number> => using(createWorld({ [workers]: 2 
 /** Workers ended by `dispose`, and what a run after it rejects with. */
 export const disposed = async (): Promise<{ readonly started: number; readonly terminated: number; readonly after: string }> => {
     const counting = countingWorkers();
-    const world = createWorld({ [workers]: 2 }, { pool: counting.platform });
-    // Workers start with the first kernel.
+    const world = createWorld({ [workers]: 2 }, { minimumChunk: 64, pool: counting.platform });
+    // Workers start with the first kernel run over rows enough for them.
+    await world.run(seed, { count: 64 });
     await world.run(main);
     await world.dispose();
     const after = await world.run(main).then(() => "resolved", (error: unknown) => String(error));

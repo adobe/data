@@ -40,7 +40,7 @@ const readAll = System.create({ observer: true, components: { read: [p, c, l, s,
 
 // A kernel whose module constant and locals are named as the kernel emitter's bindings.
 const i = 100;
-const grow = System.create({ kernel: "cpu", components: { read: [c, l], write: [p, s] } }, row => {
+const grow = System.create({ kernel: true, components: { read: [c, l], write: [p, s] } }, row => {
     const n = row[c];
     const x0 = row[l];
     const s0 = n + x0;

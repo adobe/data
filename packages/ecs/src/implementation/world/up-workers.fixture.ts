@@ -22,7 +22,7 @@ declare module "@adobe/ecs" {
 
 
 const propagate = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [local], write: [world], changed: [local] },
     up: { through: parent, read: [world] },
 }, (row, { up }) => {

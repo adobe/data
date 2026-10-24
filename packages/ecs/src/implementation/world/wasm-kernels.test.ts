@@ -60,7 +60,7 @@ const cull = System.create({ components: { read: [position], has: [bounces] } },
 const halve = (value: number) => value * 0.5;
 
 const integrate = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { write: [position, velocity] },
     resources: { read: [seconds] },
 }, (row, { resources }) => {
@@ -72,7 +72,7 @@ const integrate = System.create({
 });
 
 const bounce = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { write: [position, velocity, bounces, flipped] },
     resources: { read: [floor] },
     after: [integrate],
@@ -91,7 +91,7 @@ const bounce = System.create({
 });
 
 const tally = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [bounces, flipped, position], write: [score] },
     after: [bounce],
 }, row => {
@@ -106,7 +106,7 @@ const tally = System.create({
 });
 
 const scale = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { write: [score] },
 }, (row, _context, input: { readonly factor: number }) => {
     row[score] = row[score] * input.factor;
@@ -114,7 +114,7 @@ const scale = System.create({
 
 /** Component-wise vector math: one f32x4 operation per row. */
 const drift = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [velocity], write: [position] },
     resources: { read: [seconds] },
     after: [tally],
@@ -127,7 +127,7 @@ const drift = System.create({
 
 /** Runs only for rows whose bounces changed since it last ran. */
 const react = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { write: [score], changed: [bounces] },
     after: [tally],
 }, row => {
@@ -136,7 +136,7 @@ const react = System.create({
 
 /** A lookup per row: found targets pull, missing or stale ones cost a point. */
 const chase = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [target], write: [score] },
     lookup: { targets: { read: [position, flipped] } },
     after: [react, drift],
@@ -176,7 +176,7 @@ const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
 };
 
 /** Counts the runs of rows whose score changed. */
-const recount = System.create({ kernel: "cpu", components: { write: [bounces], changed: [score] } }, row => {
+const recount = System.create({ kernel: true, components: { write: [bounces], changed: [score] } }, row => {
     row[bounces] += 1;
 });
 const chosen = new Set<Entity>();
@@ -186,7 +186,7 @@ const rescore = System.create({ components: { write: [score] } }, row => {
 
 /** Keeps ticks of `score` without observing its changes, so kernels writing it mute their stamps. */
 const scoreAdded = System.create({ components: { added: [score] } }, () => {});
-const raise = System.create({ kernel: "cpu", components: { write: [score] } }, row => {
+const raise = System.create({ kernel: true, components: { write: [score] } }, row => {
     row[score] += 1;
 });
 let raised = 0;

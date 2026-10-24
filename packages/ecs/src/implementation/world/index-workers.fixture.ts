@@ -51,7 +51,7 @@ const weighted = Index.create({ key: [], components: { has: [weight] } });
 
 /** Each row's neighbors in the 3 by 3 cells around its own: how many, and their weights' sum. */
 const neighbors = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [cell], write: [total, count] },
     lookup: { near: { index: grid, read: [weight] } },
 }, (row, { lookup }) => {
@@ -73,7 +73,7 @@ const neighbors = System.create({
 
 /** Counts runs whose list of the row's own cell changed. */
 const watch = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [cell], write: [changes] },
     lookup: { near: { index: grid, changed: [weight] } },
     after: [neighbors],
@@ -84,7 +84,7 @@ const watch = System.create({
 
 /** How many rows of the row's lane have a rank within 5 of its own, and the first of them. */
 const window = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [lane, rank], write: [count, seen] },
     lookup: { inLane: { index: lanes } },
     after: [watch],
@@ -97,7 +97,7 @@ const window = System.create({
 
 /** The weight of the entity whose serial is the row's target, or -1. */
 const follow = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [target], write: [total] },
     lookup: { bySerial: { index: serials, read: [weight] } },
     after: [window],
@@ -108,7 +108,7 @@ const follow = System.create({
 
 /** Through an index without a key: how many entities it holds, a stride of their weights, and whether it changed. */
 const census = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [target], write: [tally] },
     lookup: { weighted: { index: weighted, read: [weight], changed: [weight] } },
     after: [follow],
@@ -140,7 +140,8 @@ const stir = System.create({ components: { write: [cell, weight] } }, (row, _con
 const rerank = System.create({ components: { write: [rank] } }, (row, _context, input: { readonly round: number }) => {
     if ((row[rank] + input.round) % 7 === 0) row[rank] = (row[rank] * 3 + 1) % 1009;
 });
-const churn = System.create({ components: { read: [serial] } }, (row, { commands }, input: { readonly round: number }) => {
+// As written: spawned on workers, entities would take ids in an order that depends on the pool, which the census samples by.
+const churn = System.create({ kernel: false, components: { read: [serial] } }, (row, { commands }, input: { readonly round: number }) => {
     if ((row[serial] + input.round) % 17 === 0) commands.despawn(row.entity);
     if (row[serial] % 101 === input.round) {
         commands.spawn([cell, weight, total, count, changes, serial])({ [cell]: [input.round, row[serial] % 29], [weight]: 4, [total]: 0, [count]: 0, [changes]: 0, [serial]: 3000 + row[serial] + input.round });
@@ -191,7 +192,7 @@ const bands = Index.create({ key: [band], components: { has: [serial] } });
 
 /** Each row's band's serials, each times its position plus one: a sum that tells the order. */
 const bandOrder = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [target], write: [bandSum] },
     lookup: { inBand: { index: bands, read: [serial] } },
 }, (row, { lookup }) => {

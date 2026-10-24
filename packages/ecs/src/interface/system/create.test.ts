@@ -107,7 +107,7 @@ describe("System.create", () => {
             [{ observer: true, components: { write: [position] } }, "is an observer, so it writes nothing"],
             [{ observer: true, resources: { write: [time] } }, "is an observer, so it writes nothing"],
             [{ observer: true, components: { has: [position] }, resources: { reduce: [total] } }, "is an observer, so it reduces into nothing"],
-            [{ observer: true, kernel: "cpu", components: { read: [position] } }, "is an observer, so it isn't a kernel"],
+            [{ observer: true, kernel: true, components: { read: [position] } }, "is an observer, so it isn't a kernel"],
             [{ observer: true, components: { read: [position] }, up: { through: parent } }, "is an observer, so it has no up"],
             [{ observer: true, resources: { read: [time] }, after: [System.create(() => {})] }, "is an observer, so it is ordered with nothing"],
             [{ observer: true, resources: { read: [time] }, before: [System.create(() => {})] }, "is an observer, so it is ordered with nothing"],

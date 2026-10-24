@@ -30,7 +30,7 @@ const seed = System.create({}, ({ commands }) => {
     commands.spawn([position, target, score])({ [position]: [7, 8], [target]: Number.NaN, [score]: 0 });
 });
 const chase = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [target], write: [score] },
     lookup: { targets: { read: [position] } },
 }, (row, { lookup: { targets } }) => {

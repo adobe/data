@@ -75,12 +75,12 @@ const spawnOne = System.create({}, ({ commands }, input: { readonly at: number }
     commands.spawn(plain)({ [value]: 0, [at]: input.at, [seen]: 0, [group]: 0 });
 });
 /** Writes the rows whose `at` is in a list of up to four, which stamps row by row. */
-const writeSome = System.create({ kernel: "cpu", components: { read: [at], write: [value] } }, (row, _context, input: { readonly a: I32; readonly b: I32; readonly c: I32; readonly d: I32 }) => {
+const writeSome = System.create({ kernel: true, components: { read: [at], write: [value] } }, (row, _context, input: { readonly a: I32; readonly b: I32; readonly c: I32; readonly d: I32 }) => {
     const here = row[at];
     if (here === input.a || here === input.b || here === input.c || here === input.d) row[value] += 1;
 });
 /** Writes every row, which stamps chunks and blocks once per call. */
-const writeAll = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
+const writeAll = System.create({ kernel: true, components: { write: [value] } }, row => {
     row[value] += 1;
 });
 const setGroup = System.create({ target: "entity", components: { write: [group] } }, (row, _context, input: { readonly entity: Entity }) => {
@@ -92,7 +92,7 @@ let found: number[] = [];
 const onMain = System.create({ components: { read: [at], changed: [value] } }, row => { found.push(row[at]); });
 const observed = System.create({ observer: true, components: { read: [at], changed: [value] } }, row => { found.push(row[at]); });
 const ofTwo = System.create({ components: { read: [at], changed: [group, value] } }, row => { found.push(row[at]); });
-const inKernel = System.create({ kernel: "cpu", components: { write: [seen], changed: [value] } }, row => { row[seen] += 1; });
+const inKernel = System.create({ kernel: true, components: { write: [seen], changed: [value] } }, row => { row[seen] += 1; });
 const inUp = System.create({ components: { read: [at], changed: [value] }, up: { through: parent, read: [value] } }, row => { found.push(row[at]); });
 const byGroup = Index.create({ key: [group] });
 let grouped: number[] = [];
@@ -265,7 +265,7 @@ const addExtra = System.create({}, ({ commands }, input: { readonly entity: Enti
     commands.add(input.entity, extra, 1);
 });
 const addedExtra = System.create({ components: { read: [at], added: [extra] } }, row => { found.push(row[at]); });
-const raiseHeights = System.create({ kernel: "cpu", components: { write: [height] }, up: { through: parent, read: [height] } }, (row, { up }) => {
+const raiseHeights = System.create({ kernel: true, components: { write: [height] }, up: { through: parent, read: [height] } }, (row, { up }) => {
     row[height] = up === null ? 1 : up[height] + 1;
 });
 const heights = System.create({ components: { read: [at], changed: [height] } }, row => { found.push(row[at]); });

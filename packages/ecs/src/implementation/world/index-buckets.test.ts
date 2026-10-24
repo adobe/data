@@ -53,7 +53,7 @@ const readRows = System.create({ lookup: { byGroup: { index: byGroup, read: [ser
 
 /** Each reader row's bucket's serials, each times its position plus one: a sum that tells the order. */
 const orderSum = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [reads], write: [sum] },
     lookup: { byGroup: { index: byGroup, read: [serial] } },
 }, (row, { lookup }) => {

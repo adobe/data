@@ -324,7 +324,7 @@ const foldOf = (bucket: readonly number[]): number => bucket.reduce((sum, entity
 
 /** A kernel folding the entities of its row's own cell's list, so kernels' lookups are checked against the same index. */
 const foldNear = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [cell], write: [folded] },
     lookup: { near: { index: grid } },
 }, (row, { lookup }) => {
@@ -564,7 +564,7 @@ const rerank = System.create({
 
 /** A kernel folding the entities of its row's lane's range of ranks within 50 of its own, so kernels' sorted lookups are checked against the same index. */
 const foldLane = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [lane, rank], write: [folded] },
     lookup: { lanes: { index: byLaneRank } },
 }, (row, { lookup }) => {

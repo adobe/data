@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { System } from "../../interface/system/system.js";
 import { World } from "../../interface/world/world.js";
 import { definitionOf } from "../../interface/registry/index.js";
-import { attachKernel } from "./attach-kernel.js";
+import { attachKernel, kernelOf } from "./attach-kernel.js";
 import { bindKernel } from "./kernels.js";
 import type { KernelDescription } from "./kernel.js";
 import { createState } from "./state.js";
@@ -26,12 +26,12 @@ declare module "@adobe/ecs" {
 const label = Symbol("kernelsTest/label");
 
 /** Reads `value` and `other`, writes nothing, reads no resources. */
-const system = System.create({ kernel: "cpu", components: { read: [value, other] } }, row => {
+const system = System.create({ kernel: true, components: { read: [value, other] } }, row => {
     if (row[value] > row[other]) return;
 });
 
 const spawn = System.create({}, ({ commands }) => { commands.spawn([value, other])({ [value]: 3, [other]: 0 }); });
-const double = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
+const double = System.create({ kernel: true, components: { write: [value] } }, row => {
     row[value] = row[value] * 2;
 });
 
@@ -66,6 +66,15 @@ describe("attachKernel", () => {
     it("rejects at registration a tuple or struct given to a component without a linear layout", () => {
         expect(() => attachKernel(system, describing({ keys: [value, label], structuredValues: [1] }))).toThrow('gives "kernelsTest/label" a tuple or struct, which only a component stored in linear memory takes.');
         expect(() => attachKernel(system, describing({ keys: [value, label], structuredValues: [0] }))).not.toThrow();
+    });
+    it("attaches nothing, and throws nothing, for a kernel the build tried that doesn't match", () => {
+        const tried = System.create({ components: { read: [value, other] } }, row => {
+            if (row[value] > row[other]) return;
+        });
+        expect(attachKernel(tried, describing({ keys: [value, label], structuredValues: [1] }), true)).toBe(tried);
+        expect(kernelOf(tried)).toBeUndefined();
+        expect(attachKernel(tried, describing({}), true)).toBe(tried);
+        expect(kernelOf(tried)).toBeDefined();
     });
     it("rejects at registration a spawn site naming a component outside its keys", () => {
         expect(() => attachKernel(system, describing({ keys: [value], spawns: [[0, 1]] }))).toThrow('spawns a list naming component 1 of its 1 keys.');

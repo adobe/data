@@ -7,7 +7,7 @@ import { isPending, type Link, type Linker } from './link.js';
 import { createModule, locateIn, type Module } from './module-scope.js';
 import type { PackageCopy } from './paths.js';
 import { spawnSites } from './spawns.js';
-import { kernelOf } from './signature.js';
+import { kernelOf, type KernelRequest } from './signature.js';
 import { usedBy } from './body-access.js';
 import { requireExact } from './exact.js';
 import { createLists } from './lists.js';
@@ -110,10 +110,10 @@ const uniqueName = (code: string, base: string): string => {
 };
 
 /** Compiles a kernel, loading what it imports as compiling reaches it. */
-const compileLinked = async (declaration: ObjectExpression, body: Node, module: Module, target: "cpu" | "gpu", link: Link | null): Promise<CompiledKernel> => {
+const compileLinked = async (declaration: ObjectExpression, body: Node, module: Module, request: KernelRequest, link: Link | null): Promise<CompiledKernel> => {
     for (;;) {
         try {
-            return compileKernel(declaration, body, module, target, link);
+            return compileKernel(declaration, body, module, request.target, link, !request.required);
         } catch (error) {
             if (!isPending(error)) throw error;
             await error.pending;
@@ -121,7 +121,32 @@ const compileLinked = async (declaration: ObjectExpression, body: Node, module: 
     }
 };
 
-type KernelSite = { readonly node: SimpleCallExpression; readonly declaration: ObjectExpression; readonly body: Node; readonly target: "cpu" | "gpu" };
+type KernelSite = { readonly node: SimpleCallExpression; readonly declaration: ObjectExpression; readonly body: Node; readonly request: KernelRequest };
+
+/**
+ * The module's `System.create` calls that compile to kernels, required or tried: at module scope, with an inline
+ * body. Throws for a required one elsewhere or without one; a tried one there runs as written.
+ */
+const kernelSites = (program: Program, locals: ReadonlyMap<string, "System" | "Finalizer">): readonly KernelSite[] => {
+    const sites: KernelSite[] = [];
+    const visit = (node: Node, nested: boolean): void => {
+        if (node.type === "CallExpression" && createdBy(node, locals) === "system") {
+            const [declaration, body] = node.arguments;
+            // One argument makes a composite, or a system from its body alone: never a kernel.
+            const request = declaration?.type === "ObjectExpression" && body !== undefined ? kernelOf(declaration) : null;
+            if (declaration?.type === "ObjectExpression" && request !== null) {
+                const inline = body !== undefined && isFunction(body);
+                if (request.required && nested) fail(node, "kernel systems must be declared at module scope");
+                if (request.required && !inline) fail(node, "a kernel needs an inline body");
+                if (!nested && inline) sites.push({ node, declaration, body, request });
+            }
+        }
+        const inner = nested || isFunction(node);
+        for (const child of children(node)) visit(child, inner);
+    };
+    visit(program, false);
+    return sites;
+};
 
 /**
  * Wraps each kernel `System.create(declaration, body)` call as `attachKernel(call, description)`, and returns each
@@ -162,7 +187,8 @@ export const transformKernels = async (
     let terminals = false;
     const edits: Edit[] = [];
     const kernels: string[] = [];
-    const sites: KernelSite[] = [];
+    /** Each compiled kernel's description, by its call, and whether its declaration required it. */
+    const compiled = new Map<Node, { readonly description: string; readonly required: boolean }>();
     /** Module-scope declarations of prepared spawns, appended after everything they name is declared. */
     const prepared: string[] = [];
     let adding = false;
@@ -177,11 +203,9 @@ export const transformKernels = async (
             const alone = created === "system" && first !== undefined && isFunction(first) && second === undefined;
             const declaration = alone ? undefined : first;
             const body = alone ? first : second;
-            const target = declaration?.type === "ObjectExpression" ? kernelOf(declaration) : null;
-            if (declaration?.type === "ObjectExpression" && target !== null) {
-                if (nested) fail(node, "kernel systems must be declared at module scope");
-                if (body === undefined || body.type === "SpreadElement") return fail(node, "a kernel needs an inline body");
-                sites.push({ node, declaration, body, target });
+            const kernel = compiled.get(node);
+            if (kernel !== undefined) {
+                edits.push({ start: node.start, end: node.end, text: `${attach}(${code.slice(node.start, node.end)}, ${kernel.description}${kernel.required ? "" : ", true"})` });
                 return;
             }
             const positions = alone ? { row: -1, context: 0 } : declaration?.type === "ObjectExpression" ? positionsOf(created, declaration) : null;
@@ -221,14 +245,20 @@ export const transformKernels = async (
         for (const child of children(node)) visit(child, inner);
     };
     try {
-        visit(program, false);
-        for (const { node, declaration, body, target } of sites) {
-            const compiled = await compileLinked(declaration, body, module, target, link);
-            const source = `export const create = ${compiled.create};\n`;
-            const description = compiled.description(kernelUrl(kernels.length, `${compiled.description("")}\n${source}`));
+        for (const { node, declaration, body, request } of kernelSites(program, locals)) {
+            let kernel: CompiledKernel;
+            try {
+                kernel = await compileLinked(declaration, body, module, request, link);
+            } catch (error) {
+                // A body tried unflagged that leaves the subset runs as written.
+                if (!request.required && failureOf(error) !== undefined) continue;
+                throw error;
+            }
+            const source = `export const create = ${kernel.create};\n`;
+            compiled.set(node, { description: kernel.description(kernelUrl(kernels.length, `${kernel.description("")}\n${source}`)), required: request.required });
             kernels.push(source);
-            edits.push({ start: node.start, end: node.end, text: `${attach}(${code.slice(node.start, node.end)}, ${description})` });
         }
+        visit(program, false);
     } catch (error) {
         const failure = failureOf(error);
         if (failure === undefined) throw error;

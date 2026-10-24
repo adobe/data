@@ -43,6 +43,6 @@ export const spawnEach = System.create({}, ({ commands }) => {
 });
 
 /** A kernel over every row of the hundred archetypes. */
-export const bumpEach = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
+export const bumpEach = System.create({ kernel: true, components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });

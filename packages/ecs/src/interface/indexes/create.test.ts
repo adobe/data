@@ -106,7 +106,7 @@ describe("systems and finalizers looking up through an index", () => {
         expect(() => untypedSystem({ name: "bad", lookup: { near: { index: grid, changed: [name] } } })).toThrow(`lookup "near" watches "indexCreateTest/name"`);
         expect(() => untypedSystem({ name: "bad", components: { write: [cell] }, lookup: { near: { index: grid } } })).toThrow(`goes through an index keyed by "indexCreateTest/cell", which the system writes`);
         expect(() => untypedSystem({ name: "bad", components: { write: [amount] }, lookup: { near: { index: grid, read: [amount] } } })).toThrow(`reads "indexCreateTest/amount", which the system writes`);
-        expect(() => untypedSystem({ name: "bad", kernel: "cpu", components: { write: [amount] }, lookup: { near: { index: Index.create({ key: [name] }) } } })).toThrow(`keyed by "indexCreateTest/name", a string, which kernels don't read yet`);
+        expect(() => untypedSystem({ name: "bad", kernel: true, components: { write: [amount] }, lookup: { near: { index: Index.create({ key: [name] }) } } })).toThrow(`keyed by "indexCreateTest/name", a string, which kernels don't read yet`);
         expect(() => Reflect.apply(Finalizer.create, undefined, [{ name: "bad", components: { read: [amount] }, lookup: { near: { index: grid, read: [name] } } }, () => {}])).toThrow(`lookup "near" reads`);
         expect(grid.name).toBe("grid");
     });
@@ -131,7 +131,7 @@ describe("systems ordering their rows by an index", () => {
         expect(() => untypedSystem({ name: "bad", components: { read: [cell] }, up: { through: parent }, order: ranked })).toThrow("uses both up and order");
         expect(() => untypedSystem({ name: "bad", kernel: "gpu", components: { write: [cell] }, order: ranked })).toThrow("GPU kernels have no order yet");
         expect(() => untypedSystem({ name: "bad", components: { write: [amount] }, order: ranked })).toThrow(`its rows are ordered by an index keyed by "indexCreateTest/amount", which the system writes`);
-        expect(() => untypedSystem({ name: "bad", kernel: "cpu", components: { write: [amount] }, order: Index.create({ key: [name], sorted: true }) })).toThrow(`ordered by an index keyed by "indexCreateTest/name", a string, which kernels don't read yet`);
+        expect(() => untypedSystem({ name: "bad", kernel: true, components: { write: [amount] }, order: Index.create({ key: [name], sorted: true }) })).toThrow(`ordered by an index keyed by "indexCreateTest/name", a string, which kernels don't read yet`);
     });
     it("throw for a render system's order by what isn't a sorted index", () => {
         const untypedRender = (order: object): unknown => Reflect.apply(System.render, undefined, [{ name: "bad", order, shader: { accessors: { amount } } }, () => {}]);

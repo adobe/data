@@ -178,6 +178,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     let disposed = false;
     const ensured = { version: -1 };
 
+    const minimumChunk = options.minimumChunk ?? defaultMinimumChunk;
+
     /** Starts the pool with as many of the wanted workers as the platform has, or none: then kernels run here. */
     const startPool = (): Pool | null => {
         const ports: WorkerPort[] = [];
@@ -190,7 +192,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (ports.length === 0) return null;
         const started = createPool(ports, state.memory);
         pool = started;
-        context.workers = { pool: started, minimumChunk: options.minimumChunk ?? defaultMinimumChunk, next: 0 };
+        context.workers = { pool: started, minimumChunk, next: 0 };
         context.publish = createPublisher(state, started);
         return started;
     };
@@ -208,9 +210,21 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         return loadAll(runners);
     };
 
-    /** Gives workers every kernel whose main-thread load is newer than theirs, including ones a failed registration reloaded. */
+    /**
+     * Whether some archetype has rows enough for a kernel to run on workers, half a piece as the fastest kernels split
+     * at: until then kernels run here, and the pool isn't started.
+     */
+    const warranted = (): boolean => {
+        for (const archetype of state.archetypes) if (archetype.count >= minimumChunk / 2) return true;
+        return false;
+    };
+
+    /**
+     * Gives workers every kernel whose main-thread load is newer than theirs, including ones a failed registration
+     * reloaded, starting the pool once it's warranted.
+     */
     const loadOnWorkers = async (): Promise<void> => {
-        if (workerCount === 0 || !workersBehind) return;
+        if (workerCount === 0 || !workersBehind || (pool === null && !warranted())) return;
         const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);
         if (behind.length === 0) {
             workersBehind = false;
@@ -429,6 +443,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         ensureProgramResources(state, ensured);
         if (startWatches(state)) await reloadStamped();
         if (workersChanged()) await followWorkers();
+        if (pool === null && workersBehind && workerCount > 0 && warranted()) await loadOnWorkers();
         if (deviceChanged()) await followDevice();
         const schedule = registrar.registered(definition) ?? registered;
         if (schedule === undefined) throw new Error(`System "${definition.name}" didn't register.`);

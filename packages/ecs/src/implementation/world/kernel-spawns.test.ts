@@ -38,7 +38,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 });
 
 /** One spawn per row, from a kernel. */
-const fromKernel = System.create({ kernel: "cpu", components: { read: [index] } }, (row, { commands }) => {
+const fromKernel = System.create({ kernel: true, components: { read: [index] } }, (row, { commands }) => {
     commands.spawn(spawned)({ [value]: row[index] });
 });
 
@@ -48,14 +48,14 @@ const fromMain = System.create({ before: [fromKernel] }, ({ commands }) => {
 });
 
 /** Spawns, then adds to and removes from what it spawned, in the same kernel and tick. */
-const spawnAndEdit = System.create({ kernel: "cpu", components: { read: [index] } }, (row, { commands }) => {
+const spawnAndEdit = System.create({ kernel: true, components: { read: [index] } }, (row, { commands }) => {
     const entity = commands.spawn([value, flag, made])({ [value]: row[index] });
     commands.add(entity, extra, row[index] * 10);
     commands.remove(entity, flag);
 });
 
 /** A spawn with a tuple, and an object component left to its start. */
-const withObjects = System.create({ kernel: "cpu", components: { read: [index] } }, (row, { commands }) => {
+const withObjects = System.create({ kernel: true, components: { read: [index] } }, (row, { commands }) => {
     commands.spawn([value, position, name, made])({ [value]: row[index], [position]: [row[index], -row[index]] });
 });
 

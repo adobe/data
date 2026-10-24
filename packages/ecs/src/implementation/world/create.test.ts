@@ -62,7 +62,7 @@ const watch = System.create({
 
 /** A kernel whose module can't be imported. */
 const missing = attachKernel(
-    System.create({ kernel: "cpu", components: { has: [velocity] } }, () => {}),
+    System.create({ kernel: true, components: { has: [velocity] } }, () => {}),
     { columns: [], shapes: [], resources: [], lookups: [], keys: [], spawns: [], structuredValues: [], url: "/@missing/kernel.js", program: null, reductions: [], reducedShapes: [] },
 );
 

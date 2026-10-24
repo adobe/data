@@ -70,7 +70,7 @@ export const retag = System.create({ components: { read: [index] } }, (row, { co
 
 /** Writes 1% of positions. */
 export const poke = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [index], write: [position] },
 }, (row, _context, input: { readonly group: I32 }) => {
     if (row[index] % 100 === input.group) {
@@ -81,7 +81,7 @@ export const poke = System.create({
 
 /** Writes 1% of positions, clustered in one contiguous run of rows. */
 export const pokeCluster = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [index], write: [position] },
 }, (row, _context, input: { readonly group: I32 }) => {
     const group = row[index] - input.group * 10_000;
@@ -93,7 +93,7 @@ export const pokeCluster = System.create({
 
 /** Sees only what changed since it last ran. */
 export const observe = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [position], write: [velocity], changed: [position] },
 }, row => {
     const [x, y, z] = row[position];
@@ -102,7 +102,7 @@ export const observe = System.create({
 
 /** Steers toward the target: one lookup per row. */
 export const follow = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [position, target], write: [velocity] },
     lookup: { targets: { read: [position] } },
 }, (row, { lookup: { targets } }) => {
@@ -116,7 +116,7 @@ export const follow = System.create({
 
 /** Issues commands from a kernel: a tenth of the rows record a hit. */
 export const emit = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [index, position] },
 }, (row, { commands }) => {
     if (row[index] % 10 === 0) {
@@ -126,27 +126,27 @@ export const emit = System.create({
 });
 
 /** Six dependent kernels: one tier each, so dispatch cost shows. */
-export const chain1 = System.create({ kernel: "cpu", components: { write: [velocity] } }, row => {
+export const chain1 = System.create({ kernel: true, components: { write: [velocity] } }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain2 = System.create({ kernel: "cpu", components: { write: [velocity] }, after: [chain1] }, row => {
+export const chain2 = System.create({ kernel: true, components: { write: [velocity] }, after: [chain1] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain3 = System.create({ kernel: "cpu", components: { write: [velocity] }, after: [chain2] }, row => {
+export const chain3 = System.create({ kernel: true, components: { write: [velocity] }, after: [chain2] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain4 = System.create({ kernel: "cpu", components: { write: [velocity] }, after: [chain3] }, row => {
+export const chain4 = System.create({ kernel: true, components: { write: [velocity] }, after: [chain3] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain5 = System.create({ kernel: "cpu", components: { write: [velocity] }, after: [chain4] }, row => {
+export const chain5 = System.create({ kernel: true, components: { write: [velocity] }, after: [chain4] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain6 = System.create({ kernel: "cpu", components: { write: [velocity] }, after: [chain5] }, row => {
+export const chain6 = System.create({ kernel: true, components: { write: [velocity] }, after: [chain5] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
@@ -187,7 +187,7 @@ export const seeded = async (create: () => World, count: number): Promise<World>
 };
 
 /** Folds every row's index into a sum and a maximum. */
-export const reduce = System.create({ kernel: "cpu", components: { read: [index] }, resources: { reduce: [indexSum, highest] } }, (row, { reduce }) => {
+export const reduce = System.create({ kernel: true, components: { read: [index] }, resources: { reduce: [indexSum, highest] } }, (row, { reduce }) => {
     reduce[indexSum](row[index]);
     reduce[highest](row[index]);
 });

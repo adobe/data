@@ -54,14 +54,14 @@ const propagateAdded = System.create({
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
 const propagateChangedKernel = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [local], write: [world], changed: [local] },
     up: { through: parent, read: [world] },
 }, (row, { up }) => {
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
 const propagateKernel = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [local], write: [world] },
     up: { through: parent, read: [world] },
 }, (row, { up }) => {
@@ -99,7 +99,7 @@ const worlds = async (value: (entity: Entity) => Promise<number | null>): Promis
     Object.fromEntries(await Promise.all(Object.entries(entities).map(async ([name, entity]) => [name, await value(entity)])));
 
 const show = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [visible], write: [shown] },
     up: { through: parent, read: [shown] },
 }, (row, { up }) => {

@@ -87,7 +87,7 @@ const weigh = System.create({ components: { write: [weight], not: [filler] } }, 
     row[weight] += 1;
 });
 const warm = System.create({ components: { write: [heat] } }, row => { row[heat] += 1; });
-const double = System.create({ kernel: "cpu", components: { write: [heat] } }, row => { row[heat] = row[heat] * 2 + 1; });
+const double = System.create({ kernel: true, components: { write: [heat] } }, row => { row[heat] = row[heat] * 2 + 1; });
 const addTag = System.create({}, ({ commands }) => { commands.add(target, tag, true); });
 const removeTag = System.create({}, ({ commands }) => { commands.remove(target, tag); });
 const removeWeight = System.create({}, ({ commands }) => { commands.remove(target, weight); });
@@ -123,7 +123,7 @@ const leave = System.create({}, ({ commands }) => { commands.despawn(roster[1]);
 const score10 = System.create({ components: { write: [score] } }, row => { row[score] += 10; });
 const nudge = System.create({ components: { write: [score] } }, row => { row[score] += 0; });
 const invert = System.create({ components: { write: [score] } }, row => { row[score] = -row[score]; });
-const invertKernel = System.create({ kernel: "cpu", components: { write: [score] } }, row => { row[score] = 0 - row[score]; });
+const invertKernel = System.create({ kernel: true, components: { write: [score] } }, row => { row[score] = 0 - row[score]; });
 /** Swaps the bench like `swap`, then despawns more entities than the journal holds, so it drops the swap's entries. */
 const swapAndCrowd = System.create({}, ({ commands }) => {
     commands.add(roster[0], benched, true);

@@ -35,7 +35,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 const nudge = System.create({ components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
 
 /** A kernel writing every row's rank, whose stamps it keeps only while something watches ranks change. */
-const advance = System.create({ kernel: "cpu", components: { write: [rank] } }, row => { row[rank] += 1; });
+const advance = System.create({ kernel: true, components: { write: [rank] } }, row => { row[rank] += 1; });
 
 /** The entities `look` and `lookChanged` look up, each run. */
 let looked: readonly Entity[] = [];

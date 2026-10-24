@@ -70,13 +70,13 @@ const addLiterals = System.create({ components: { has: [score], not: [health] } 
     commands.add(row.entity, [health, label], { [label]: "x", [health]: 5 });
 });
 
-const spawnFrom = System.create({ kernel: "cpu", components: { read: [score], not: [tag, other] } }, (row, { commands }) => {
+const spawnFrom = System.create({ kernel: true, components: { read: [score], not: [tag, other] } }, (row, { commands }) => {
     commands.spawn(made)({ [score]: row[score] + 10 });
 });
-const mark = System.create({ kernel: "cpu", components: { has: [tag], not: [other] } }, (row, { commands }) => {
+const mark = System.create({ kernel: true, components: { has: [tag], not: [other] } }, (row, { commands }) => {
     commands.add(row.entity, marks, {});
 });
-const unmark = System.create({ kernel: "cpu", components: { has: [other] } }, (row, { commands }) => {
+const unmark = System.create({ kernel: true, components: { has: [other] } }, (row, { commands }) => {
     commands.remove(row.entity, marks);
 });
 const defaulted = Archetype.create([score, label, tag]);
@@ -192,14 +192,14 @@ describe("literal values in a system's body", () => {
 });
 
 /** Three adds of one component to each row, by systems ordered first to third, the second adding twice. */
-const first = System.create({ kernel: "cpu", components: { has: [position] } }, (row, { commands }) => {
+const first = System.create({ kernel: true, components: { has: [position] } }, (row, { commands }) => {
     commands.add(row.entity, score, 1);
 });
 const second = System.create({ components: { has: [position] }, after: [first] }, (row, { commands }) => {
     commands.add(row.entity, score, 2);
     commands.add(row.entity, score, 3);
 });
-const third = System.create({ kernel: "cpu", components: { has: [position] }, after: [second] }, (row, { commands }) => {
+const third = System.create({ kernel: true, components: { has: [position] }, after: [second] }, (row, { commands }) => {
     commands.add(row.entity, score, 4);
 });
 

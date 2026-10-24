@@ -42,14 +42,14 @@ const loops = (statements: readonly Program.Statement[]): boolean => statements.
 });
 
 /** `target` "gpu" also checks, before anything runs, what only a GPU kernel can't do; schemas are checked at registration. */
-export const compileKernel = (declaration: ObjectExpression, body: Node, module: Module, target: "cpu" | "gpu" = "cpu", link: Link | null = null): CompiledKernel => {
+export const compileKernel = (declaration: ObjectExpression, body: Node, module: Module, target: "cpu" | "gpu" = "cpu", link: Link | null = null, tried = false): CompiledKernel => {
     if (body.type !== "ArrowFunctionExpression" && body.type !== "FunctionExpression") {
         return fail(body, "a kernel body must be an inline function");
     }
     if (body.async || body.generator) return fail(body, "a kernel body can't be async or a generator");
     if (body.params.length > 3) return fail(body, "a kernel body takes its row, context and input");
     const lists = createLists(module, link, [declaration, body]);
-    const unit = createUnit(signature(declaration, module.bindings, lists), module, lists, expression, statement, link, target);
+    const unit = createUnit(signature(declaration, module.bindings, lists), module, lists, expression, statement, link, target, tried);
     const scope = rootScope(unit, false);
     const prelude: Out = [];
     const rows: Out = [];

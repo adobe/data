@@ -12,13 +12,17 @@ import type { System } from './system.js';
  */
 export type Declaration = {
     /**
-     * Compiled to a kernel, which the build rejects if the body leaves the kernel subset. Values in `components` and
-     * `lookup` must be structs and resources read-only. Without it, the system runs as written, on its thread.
-     * - `"cpu"`: runs on the kernel pool. - `"gpu"`: also has no lookups, change filters, commands or loops, and only
-     *   4-byte scalar values, its `up` included. It runs as a   compute shader in a world with a GPU, and as a `"cpu"`
-     *   kernel in one without. Every matched row counts as   changed in what it writes.
+     * Whether its body compiles to a kernel, a function the build compiles to run on every matched row, in parallel, on
+     * the kernel pool. Values in `components` and `lookup` must be structs and resources read-only.
+     * - Without it, a system with components compiles when its body is in the kernel subset and its declaration allows
+     *   it, and otherwise runs as written. A system without components runs once, as written.
+     * - `true`: compiles, or the build fails saying why.
+     * - `false`: runs as written, on its thread.
+     * - `"gpu"`: also has no lookups, change filters, commands or loops, and only 4-byte scalar values, its `up`
+     *   included. It runs as a compute shader in a world with a GPU, and as a kernel on the pool in one without. Every
+     *   matched row counts as changed in what it writes.
      */
-    readonly kernel?: "cpu" | "gpu";
+    readonly kernel?: boolean | "gpu";
     /** The entities it runs over, and what it reads and writes of theirs. Omitted for a system that runs once per run. */
     readonly components?: ComponentAccess;
     readonly lookup?: { readonly [name: string]: SystemLookup };

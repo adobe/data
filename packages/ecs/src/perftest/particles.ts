@@ -46,7 +46,7 @@ export const spawn = System.create({}, ({ commands }, input: { readonly count: n
 });
 
 export const move = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [velocity], write: [position], has: [visible, enabled] },
 }, row => {
     const [px, py, pz] = row[position];

@@ -19,7 +19,7 @@ const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < 10; i++) commands.spawn([value])({ [value]: i });
 });
 
-const double = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
+const double = System.create({ kernel: true, components: { write: [value] } }, row => {
     row[value] = row[value] * 2;
 });
 

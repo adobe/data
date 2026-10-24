@@ -48,7 +48,7 @@ const fill = System.create({}, ({ commands }, input: { readonly count: number })
     for (const list of lists) for (let i = 0; i < input.count; i++) commands.spawn(list)({ [value]: 0 });
 });
 
-const bump = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
+const bump = System.create({ kernel: true, components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
@@ -78,7 +78,7 @@ const despawnValues = System.create({ components: { has: [value], not: [child] }
 });
 /** Lookups from workers. */
 const look = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [target], write: [seen] },
     lookup: { targets: { read: [value] } },
 }, (row, { lookup: { targets } }) => {
@@ -86,7 +86,7 @@ const look = System.create({
     row[seen] = other === null ? -1 : other[value];
 });
 /** Spawns from workers: a child per looker. */
-const breed = System.create({ kernel: "cpu", components: { read: [seen] } }, (row, { commands }) => {
+const breed = System.create({ kernel: true, components: { read: [seen] } }, (row, { commands }) => {
     commands.spawn([value, child])({ [value]: row[seen] });
 });
 
@@ -112,7 +112,8 @@ export const rounds: readonly number[] = [16, 32, 64, 128, 256];
 /** 100 archetypes grown over `rounds`, each round bumped by workers: layout messages after the first round, and the totals. */
 export const grown = async (wasm: boolean): Promise<{ readonly messages: number; readonly totals: { sum: number; count: number } }> => {
     const counting = countingWorkers();
-    return using(createWorld({ [workers]: 3 }, { minimumChunk: 16, wasm, pool: counting.platform }), async world => {
+    // Pieces of two rows, so the first round's single rows start the pool and its layout message is before the count.
+    return using(createWorld({ [workers]: 3 }, { minimumChunk: 2, wasm, pool: counting.platform }), async world => {
         await world.run(fill, { count: 1 });
         await world.run(bump);
         const before = counting.posted("layout");
@@ -153,7 +154,7 @@ export const tableGrown = async (): Promise<{ readonly messages: number; readonl
 /** Workers' kernels once memory grows between runs: how often it grew, layout messages meanwhile, and the totals. */
 export const memoryGrown = async (wasm: boolean): Promise<{ readonly grows: number; readonly messages: number; readonly totals: { sum: number; count: number } }> => {
     const counting = countingWorkers();
-    return using(createWorld({ [workers]: 2 }, { minimumChunk: 16, wasm, pool: counting.platform }), async world => {
+    return using(createWorld({ [workers]: 2 }, { minimumChunk: 2, wasm, pool: counting.platform }), async world => {
         await world.run(fill, { count: 1 });
         await world.run(bump);
         let grows = 0;

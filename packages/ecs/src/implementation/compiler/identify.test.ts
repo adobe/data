@@ -108,8 +108,8 @@ describe("identify, for systems, rules and finalizers", () => {
         expect(typeof declaration === "object" && declaration !== null ? [Reflect.get(declaration, "tag"), takeIdOfDeclaration(declaration), takeIdOfDeclaration(declaration)] : declaration).toEqual(["move", "src/keys.ts#move", undefined]);
     });
     test("identifies a kernel's call the kernel transform wrapped", async () => {
-        const result = await identify(`import { attachKernel as attachKernel$ } from ${JSON.stringify(ownCopy.attachKernel)};\nimport { System } from "@adobe/ecs";\nconst grow = attachKernel$(System.create({ tag: "grow", kernel: "cpu" }, () => {}), {});`);
-        expect(declared(result?.code)).toEqual([[`{ tag: "grow", kernel: "cpu" }`, "src/keys.ts#grow"]]);
+        const result = await identify(`import { attachKernel as attachKernel$ } from ${JSON.stringify(ownCopy.attachKernel)};\nimport { System } from "@adobe/ecs";\nconst grow = attachKernel$(System.create({ tag: "grow", kernel: true }, () => {}), {});`);
+        expect(declared(result?.code)).toEqual([[`{ tag: "grow", kernel: true }`, "src/keys.ts#grow"]]);
     });
     test("follows the namespace to the module that exports it, under any local name", async () => {
         const result = await identify(`import { System as Systems, Rule } from "./system.js";\nconst a = Systems.create({ tag: "a" });\nconst b = Rule.create({});`);

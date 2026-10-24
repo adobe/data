@@ -38,10 +38,10 @@ const visitChanged = System.create({ components: { read: [lane, rank], changed: 
     order.push(row[lane] * 1000 + row[rank]);
 });
 /** A kernel spawning a marker for each row in turn, so the markers' entities, in order, are the rows' order. */
-const markEach = System.create({ kernel: "cpu", components: { read: [lane, rank] }, order: ranked }, (row, { commands }) => {
+const markEach = System.create({ kernel: true, components: { read: [lane, rank] }, order: ranked }, (row, { commands }) => {
     commands.spawn([marker])({ [marker]: row[lane] * 1000 + row[rank] });
 });
-const markChanged = System.create({ kernel: "cpu", components: { read: [lane, rank], changed: [weight] }, order: ranked }, (row, { commands }) => {
+const markChanged = System.create({ kernel: true, components: { read: [lane, rank], changed: [weight] }, order: ranked }, (row, { commands }) => {
     commands.spawn([marker])({ [marker]: row[lane] * 1000 + row[rank] });
 });
 const keepTicking = System.create({}, () => {});

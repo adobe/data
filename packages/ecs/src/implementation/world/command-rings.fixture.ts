@@ -49,7 +49,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
  * of every seventh spawn's row, so a run of a few thousand rows overflows a worker's ring.
  */
 const burst = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [index] },
 }, (row, { commands }, input: { readonly shift: number }) => {
     const i = row[index];
@@ -102,7 +102,7 @@ const targets = System.create({}, ({ commands }, input: { readonly count: number
 
 /** A spawn and an add for each row, then a read through its target, which throws at the last row, whose target is none. */
 const failing = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [index, target] },
     lookup: { targets: { read: [index] } },
 }, (row, { lookup, commands }) => {
@@ -131,7 +131,7 @@ export const failed = (count: number): Promise<Failed> => using(createWorld({ [w
 
 /** A spawn for every 64th row: each chunk uses one position of its block of eight and returns the rest. */
 const sparse = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [index], not: [made] },
 }, (row, { commands }) => {
     if (row[index] % 64 === 0) commands.spawn([made])({ [made]: row[index] });
@@ -155,7 +155,7 @@ export const returned = (count: number): Promise<{ readonly spawned: number; rea
 
 /** Object components from a kernel: left out, null, and a number, by add and by spawn. */
 const objects = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [index] },
 }, (row, { commands }) => {
     const i = row[index];

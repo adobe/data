@@ -46,7 +46,7 @@ const fill = System.create({}, ({ commands }, input: { readonly count: number })
     for (const list of lists) for (let i = 0; i < input.count; i++) commands.spawn(list)({ [value]: 0 });
 });
 
-const bump = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
+const bump = System.create({ kernel: true, components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
@@ -76,7 +76,7 @@ const despawnValues = System.create({ components: { has: [value], not: [child] }
 });
 /** Lookups from workers. */
 const look = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [target], write: [seen] },
     lookup: { targets: { read: [value] } },
 }, (row, { lookup: { targets } }) => {
@@ -84,7 +84,7 @@ const look = System.create({
     row[seen] = other === null ? -1 : other[value];
 });
 /** Spawns from workers: a child per looker. */
-const breed = System.create({ kernel: "cpu", components: { read: [seen] } }, (row, { commands }) => {
+const breed = System.create({ kernel: true, components: { read: [seen] } }, (row, { commands }) => {
     commands.spawn([value, child])({ [value]: row[seen] });
 });
 
@@ -119,7 +119,8 @@ const totals = async (world: World): Promise<{ sum: number; count: number }> => 
 describe("the layout directory", () => {
     for (const wasm of [true, false]) {
         it(`lets workers' ${wasm ? "WASM" : "JS"} kernels see every row of 100 archetypes grown across sync points, with no layout message after the one creating them`, async () => {
-            const world = createWorld({ [workers]: 3 }, { minimumChunk: 16, wasm });
+            // Pieces of two rows, so the first round's single rows start the pool and its layout message is before the count.
+            const world = createWorld({ [workers]: 3 }, { minimumChunk: 2, wasm });
             disposals.push(world);
             await world.run(fill, { count: 1 });
             await world.run(bump);
@@ -166,7 +167,7 @@ describe("the layout directory", () => {
 
     for (const wasm of [true, false]) {
         it(`lets workers' ${wasm ? "WASM" : "JS"} kernels rebuild their views once memory grows between runs`, async () => {
-            const world = createWorld({ [workers]: 2 }, { minimumChunk: 16, wasm });
+            const world = createWorld({ [workers]: 2 }, { minimumChunk: 2, wasm });
             disposals.push(world);
             await world.run(fill, { count: 1 });
             await world.run(bump);

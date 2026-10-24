@@ -23,7 +23,7 @@ declare module '@adobe/ecs' {
 // `up` reads what `read` lists of the entity `through` names, or null for a row without one; it may read what the
 // system writes.
 System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [local], write: [world] },
     up: { through: parent, read: [world] },
 }, (row, { up }) => {
@@ -47,7 +47,7 @@ System.create({
 }, () => {});
 
 System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { write: [world] },
     // @ts-expect-error a kernel's up reads linear values
     up: { through: parent, read: [name] },

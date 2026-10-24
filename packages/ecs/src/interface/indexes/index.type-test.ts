@@ -144,7 +144,7 @@ export const census = System.create({
     void lookup.all().at(0)[health];
 });
 System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { write: [velocity] },
     lookup: { living: { index: living, read: [health] } },
 }, () => {});
@@ -188,19 +188,19 @@ System.create({
 }, () => {});
 
 System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [cell], write: [velocity] },
     lookup: { near: { index: grid, read: [position] } },
 }, () => {});
 
 System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [cell], write: [velocity] },
     lookup: { near: { index: grid, changed: [position] } },
 }, () => {});
 
 System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { write: [velocity] },
     // @ts-expect-error kernels look up only through indexes of struct keys
     lookup: { names: { index: named } },
@@ -217,7 +217,7 @@ System.create({
 System.create({ components: { read: [start], write: [playhead] }, order: clips }, row => {
     row[playhead] = row[start];
 });
-System.create({ kernel: "cpu", components: { read: [start], write: [playhead] }, order: clips }, row => {
+System.create({ kernel: true, components: { read: [start], write: [playhead] }, order: clips }, row => {
     row[playhead] = row[start];
 });
 // A sorted index typed by its declaration is one of `Index<{ readonly sorted: true }>`.
@@ -248,7 +248,7 @@ System.create({
     order: clips,
 }, () => {});
 System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { write: [velocity] },
     // @ts-expect-error kernels are ordered only by indexes of struct keys
     order: named,
@@ -265,7 +265,7 @@ System.create({ components: { read: [cell] }, lookup: { near: { index: grid, rea
     void lookup.near(row[cell]).at(0)[position];
 });
 System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [cell], write: [velocity] },
     lookup: { near: { index: grid, changed: true } },
 }, () => {});

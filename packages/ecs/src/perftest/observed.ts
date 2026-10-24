@@ -37,7 +37,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 const nudge = System.create({ components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
 
 /** A kernel writing every row's rank. */
-const advance = System.create({ kernel: "cpu", components: { write: [rank] } }, row => { row[rank] += 1; });
+const advance = System.create({ kernel: true, components: { write: [rank] } }, row => { row[rank] += 1; });
 
 /** A system no entity matches: a run that changes nothing. */
 const idle = System.create({ components: { has: [unmatched] } }, () => {});

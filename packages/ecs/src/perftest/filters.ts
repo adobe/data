@@ -40,7 +40,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
 
 /** Writes the value of the rows whose `at` is `first` plus a multiple of `stride`. */
 const write = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [at], write: [value] },
 }, (row, _context, input: { readonly first: I32; readonly stride: I32 }) => {
     const offset = row[at] - input.first;
@@ -63,10 +63,10 @@ const readersOfTwo = System.create({
 /** Kernels each filtering on `value`'s changes, writing an output of its own. */
 const kernels = System.create({
     systems: [
-        System.create({ kernel: "cpu", components: { read: [value], write: [out0], changed: [value] } }, row => { row[out0] = row[value] * 2; }),
-        System.create({ kernel: "cpu", components: { read: [value], write: [out1], changed: [value] } }, row => { row[out1] = row[value] * 3; }),
-        System.create({ kernel: "cpu", components: { read: [value], write: [out2], changed: [value] } }, row => { row[out2] = row[value] * 4; }),
-        System.create({ kernel: "cpu", components: { read: [value], write: [out3], changed: [value] } }, row => { row[out3] = row[value] * 5; }),
+        System.create({ kernel: true, components: { read: [value], write: [out0], changed: [value] } }, row => { row[out0] = row[value] * 2; }),
+        System.create({ kernel: true, components: { read: [value], write: [out1], changed: [value] } }, row => { row[out1] = row[value] * 3; }),
+        System.create({ kernel: true, components: { read: [value], write: [out2], changed: [value] } }, row => { row[out2] = row[value] * 4; }),
+        System.create({ kernel: true, components: { read: [value], write: [out3], changed: [value] } }, row => { row[out3] = row[value] * 5; }),
     ],
 });
 

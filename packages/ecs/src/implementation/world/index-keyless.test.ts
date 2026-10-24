@@ -202,7 +202,7 @@ describe("an incrementally refreshed index without a key", () => {
 
 /** Each row's tally of the rows of `shown`: how many, and the sum of a window of their weights. */
 const tally = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [color], write: [total, count] },
     lookup: { shown: { index: shown, read: [weight] } },
 }, (row, { lookup }) => {
@@ -221,7 +221,7 @@ const tallyByHand = System.create({ components: { read: [color], write: [total, 
 });
 /** Counts runs whose list changed, `weight` watched. */
 const visit = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { write: [visited] },
     lookup: { shown: { index: shown, changed: [weight] } },
 }, (row, { lookup }) => {

@@ -43,7 +43,7 @@ const serials = Index.create({ key: [serial], unique: true, components: { has: [
 
 /** Each row's neighbors in the 3 by 3 cells around its own: how many, and their weights' sum. */
 const neighbors = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [cell], write: [total, count] },
     lookup: { near: { index: grid, read: [weight] } },
 }, (row, { lookup }) => {
@@ -81,7 +81,7 @@ const neighborsByHand = System.create({ components: { read: [cell], write: [tota
 
 /** How many rows of the row's lane have a rank within 5 of its own, and the first of them, through a sorted range. */
 const window = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [lane, rank], write: [count, seen] },
     lookup: { inLane: { index: lanes } },
 }, (row, { lookup }) => {
@@ -100,7 +100,7 @@ const windowByHand = System.create({ components: { read: [lane, rank], write: [c
 
 /** The weight of the entity whose serial is the row's target, or -1. */
 const follow = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [target], write: [total] },
     lookup: { bySerial: { index: serials, read: [weight] } },
 }, (row, { lookup }) => {
@@ -110,7 +110,7 @@ const follow = System.create({
 
 /** Counts runs whose list of the row's cell changed. */
 const watch = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [cell], write: [changes] },
     lookup: { near: { index: grid, changed: [weight] } },
 }, (row, { lookup }) => {
@@ -178,7 +178,7 @@ describe.each([[true], [false]])("kernels looking up through indexes, WASM %s", 
 
 /** A comparison on a hash index. */
 const compared = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [serial], write: [count] },
     lookup: { bySerial: { index: serials } },
 }, (row, { lookup }) => {

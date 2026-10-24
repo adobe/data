@@ -59,5 +59,5 @@ System.create({ resources: { is: [level], read: [level] } }, () => {});
 System.create({ resources: { is: [level], write: [level] } }, () => {});
 
 // Kernels and render systems take conditions too.
-System.create({ kernel: "cpu", components: { write: [position] }, resources: { not: [paused] } }, row => { row[position] += 1; });
+System.create({ kernel: true, components: { write: [position] }, resources: { not: [paused] } }, row => { row[position] += 1; });
 System.render({ resources: { is: [level] }, shader: { accessors: { place: position } } }, () => {});

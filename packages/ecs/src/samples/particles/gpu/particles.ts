@@ -63,7 +63,7 @@ export const move = System.create({
 
 /** The same move on the CPU, for comparison. */
 export const moveOnCpu = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [velocity], write: [position], has: [visible, enabled] },
 }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);

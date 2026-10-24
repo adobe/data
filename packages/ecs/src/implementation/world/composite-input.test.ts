@@ -27,7 +27,7 @@ describe("composite input", () => {
 
     it("rejects a body taking input without the schema the plugin gives from its type, as one not written in place has", () => {
         const counting = (_context: unknown, input: { readonly count: number }): void => { void input.count; };
-        expect(() => System.create({}, counting)).toThrow('takes input, whose schema the plugin gives from the type of its body\'s parameter: write its body in place and build it with the kernel plugin.');
+        expect(() => System.create({}, counting)).toThrow('takes input, whose schema the plugin gives from the type of its body\'s parameter: write its body in place and build it with Compiler.plugin().');
     });
 
     it("rejects an input schema that isn't an object of named fields", () => {

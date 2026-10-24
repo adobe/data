@@ -55,7 +55,7 @@ const spawn = System.create({}, ({ commands }) => {
     }
 });
 
-const kernel = System.create({ kernel: "cpu", components: { read: [position, mass] }, resources: { reduce: [total, low, bits, least] } }, (row, { reduce }) => {
+const kernel = System.create({ kernel: true, components: { read: [position, mass] }, resources: { reduce: [total, low, bits, least] } }, (row, { reduce }) => {
     const [x, y, z] = row[position];
     reduce[total](row[mass]);
     reduce[total](0.5);
@@ -74,17 +74,17 @@ const body = System.create({ components: { read: [position, mass] }, resources: 
     reduce[least](row[mass]);
 });
 
-const filtered = System.create({ kernel: "cpu", components: { read: [mass], has: [heavy] }, resources: { changed: [level], reduce: [total, least] } }, (row, { reduce }) => {
+const filtered = System.create({ kernel: true, components: { read: [mass], has: [heavy] }, resources: { changed: [level], reduce: [total, least] } }, (row, { reduce }) => {
     reduce[total](row[mass]);
     reduce[least](row[mass]);
 });
 
-const flags = System.create({ kernel: "cpu", components: { read: [mass] }, resources: { reduce: [any] } }, (row, { reduce }) => {
+const flags = System.create({ kernel: true, components: { read: [mass] }, resources: { reduce: [any] } }, (row, { reduce }) => {
     reduce[any](row[mass] > 4000);
 });
 
 /** Two contributors to `total`, the heavy rows and the light ones, and a reader of the finished fold. */
-const heavyMass = System.create({ kernel: "cpu", components: { read: [mass], has: [heavy] }, resources: { reduce: [total] } }, (row, { reduce }) => {
+const heavyMass = System.create({ kernel: true, components: { read: [mass], has: [heavy] }, resources: { reduce: [total] } }, (row, { reduce }) => {
     reduce[total](row[mass]);
 });
 const lightMass = System.create({ components: { read: [mass], not: [heavy] }, resources: { reduce: [total] } }, (row, { reduce }) => {
@@ -96,7 +96,7 @@ const reader = System.create({ resources: { read: [total], write: [seen] } }, ({
 const frame = System.create({ systems: [reader, heavyMass, lightMass] });
 
 const weigh = System.create({ components: { write: [mass], has: [heavy] } }, row => { row[mass] = 1; });
-const kernelChanged = System.create({ kernel: "cpu", components: { read: [mass], changed: [mass] }, resources: { reduce: [total] } }, (row, { reduce }) => {
+const kernelChanged = System.create({ kernel: true, components: { read: [mass], changed: [mass] }, resources: { reduce: [total] } }, (row, { reduce }) => {
     reduce[total](row[mass]);
 });
 
@@ -249,7 +249,7 @@ describe("reductions", () => {
         const state = createState(true);
         const registrar = createRegistrar(state);
         // A declaration the build doesn't see is a kernel it didn't compile, which only a world's registration finds.
-        const uncompiled = { name: "reductionsTest/other/6", kernel: "cpu", components: { read: [mass] } } as const;
+        const uncompiled = { name: "reductionsTest/other/6", kernel: true, components: { read: [mass] } } as const;
         const both = System.create({ systems: [kernel, System.create(uncompiled, row => { void row[mass]; })] });
         const definition = (system: System<unknown>) => {
             const found = definitionOf(system);

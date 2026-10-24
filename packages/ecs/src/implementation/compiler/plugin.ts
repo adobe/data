@@ -89,7 +89,7 @@ const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
 });
 
 /**
- * Compiles kernel systems (`kernel: "cpu"` or `"gpu"`). Runs after TypeScript is stripped and before minification, so it sees plain JS
+ * Compiles kernel systems (`kernel: true` or `"gpu"`). Runs after TypeScript is stripped and before minification, so it sees plain JS
  * with source names. Each kernel's `create` becomes its own module at `description.url`: served from a
  * root-absolute url in dev, and emitted as a chunk in a build.
  *
@@ -202,7 +202,7 @@ const inputPlugin = (): Plugin => {
 };
 
 /**
- * The kernel plugin's two parts: registrations and input schemas, before TypeScript is stripped, and kernels and ids,
+ * The plugin's two parts: registrations and input schemas, before TypeScript is stripped, and kernels and ids,
  * after. A library's build takes `{ library: true }`, the first part alone: its build then ships the registrations and
  * schemas its types give, which an application's build, reading only JavaScript there, can't make, and leaves its
  * kernels as source and its keys without ids, which the application's plugin compiles and gives.
@@ -258,8 +258,12 @@ const compilePlugin = (): Plugin => {
     const instance: Plugin = {
         name: `${packageName}/kernel`,
         enforce: "post",
-        // Dep pre-bundling breaks the runtime's `new Worker(new URL("./worker.js", import.meta.url))`.
-        config: () => ({ optimizeDeps: { exclude: [packageName] }, worker: { plugins: () => plugin() } }),
+        // Dep pre-bundling breaks the runtime's `new Worker(new URL("./worker.js", import.meta.url))`. Kernels are chunks
+        // of their own, so a worker bundle holding one is a module, unless the configuration says otherwise.
+        config: user => ({
+            optimizeDeps: { exclude: [packageName] },
+            worker: { plugins: () => plugin(), ...user.worker?.format === undefined ? { format: "es" as const } : {} },
+        }),
         configResolved: config => {
             serve = config.command === "serve";
             repeated = config.plugins.find(other => other.name === instance.name) !== instance;

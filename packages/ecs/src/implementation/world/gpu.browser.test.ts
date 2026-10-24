@@ -629,7 +629,7 @@ const nudgeRow = System.create({ components: { write: [position] } }, row => {
     if (px === nudged) row[position] = [px, py + 1, pz];
 });
 
-const nudgeKernel = System.create({ kernel: "cpu", components: { write: [position] } }, row => {
+const nudgeKernel = System.create({ kernel: true, components: { write: [position] } }, row => {
     const [px, py, pz] = row[position];
     if (px === nudged) row[position] = [px, py + 1, pz];
 });

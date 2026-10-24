@@ -81,7 +81,7 @@ export const spawnSixteen = System.create({}, ({ commands }, input: { readonly c
 });
 
 /** A spawn per row, from a kernel. */
-export const spawnKernel = System.create({ kernel: "cpu", components: { read: [index], not: [spawned] } }, (row, { commands }) => {
+export const spawnKernel = System.create({ kernel: true, components: { read: [index], not: [spawned] } }, (row, { commands }) => {
     commands.spawn(made)({ [index]: row[index], [value]: 0 });
 });
 
@@ -96,7 +96,7 @@ export const despawnAll = System.create({ components: { has: [index], not: [spaw
 });
 
 /** The same, from a kernel. */
-export const despawnKernel = System.create({ kernel: "cpu", components: { has: [index], not: [spawned] } }, (row, { commands }) => {
+export const despawnKernel = System.create({ kernel: true, components: { has: [index], not: [spawned] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 
@@ -121,11 +121,11 @@ export const removeFlag = System.create({ components: { has: [flag] } }, (row, {
     commands.remove(row.entity, flag);
 });
 
-export const addFlagKernel = System.create({ kernel: "cpu", components: { has: [index], not: [flag, spawned] } }, (row, { commands }) => {
+export const addFlagKernel = System.create({ kernel: true, components: { has: [index], not: [flag, spawned] } }, (row, { commands }) => {
     commands.add(row.entity, flag);
 });
 
-export const removeFlagKernel = System.create({ kernel: "cpu", components: { has: [flag] } }, (row, { commands }) => {
+export const removeFlagKernel = System.create({ kernel: true, components: { has: [flag] } }, (row, { commands }) => {
     commands.remove(row.entity, flag);
 });
 

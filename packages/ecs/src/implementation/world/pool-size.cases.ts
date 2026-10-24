@@ -14,6 +14,12 @@ export const poolSizeCases = (load: () => Promise<typeof Fixture>) => describe("
         const fixture = await load();
         expect((await fixture.resized(1, [null])).started).toEqual([1, 1 + fixture.platformCount()]);
     });
+    it("starts the pool only once a kernel has rows enough for workers", async () => {
+        const fixture = await load();
+        const { started, values } = await fixture.whenWarranted();
+        expect(started).toEqual([0, fixture.platformCount()]);
+        expect(values).toEqual([0, 4, 8, 12]);
+    });
     it("sizes the kernel pool at the next sync point, with the same results", async () => {
         const fixture = await load();
         const { started, values } = await fixture.resized(2, [3, 0]);

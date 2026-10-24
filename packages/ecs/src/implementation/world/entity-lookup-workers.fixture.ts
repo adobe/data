@@ -31,7 +31,7 @@ declare module "@adobe/ecs" {
  * whether its mark changed in the next digit, then whether it has a mark and isn't banned.
  */
 const watchKernel = System.create({
-    kernel: "cpu",
+    kernel: true,
     components: { read: [follows], write: [kernelSeen] },
     lookup: { found: { read: [weight], changed: [weight] }, marked: { read: [mark], changed: [mark] }, eligible: { has: [mark], not: [banned] } },
 }, (row, { lookup }) => {

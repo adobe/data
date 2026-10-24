@@ -39,7 +39,7 @@ export const seedRanks = System.create({}, ({ commands }, input: { readonly coun
     for (let i = 0; i < input.count; i++) commands.spawn([rank, order])({ [rank]: i, [order]: i });
 });
 const flip = System.create({ resources: { write: [sign] } }, ({ resources }) => { resources[sign] = -resources[sign]; });
-const reverse = System.create({ kernel: "cpu", components: { read: [rank], write: [order] }, resources: { read: [sign] }, after: [flip] }, (row, { resources }) => {
+const reverse = System.create({ kernel: true, components: { read: [rank], write: [order] }, resources: { read: [sign] }, after: [flip] }, (row, { resources }) => {
     row[order] = row[rank] * resources[sign];
 });
 /** Reverses the entities' order every tick. */

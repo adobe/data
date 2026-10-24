@@ -75,7 +75,7 @@ const threads = navigator.hardwareConcurrency - 1;
 const pooled = (): World => createWorld({ [workers]: threads });
 
 /** A kernel touching nothing, so a world's pool starts, as it does with its first kernel. */
-const startPool = System.create({ kernel: "cpu", components: { has: [marked] } }, () => {});
+const startPool = System.create({ kernel: true, components: { has: [marked] } }, () => {});
 
 /** Indexes `index idle` keeps, each over its own thousand entities. */
 const idleIndexes = 1000;
@@ -124,7 +124,7 @@ const seedParticles = System.create({}, ({ commands }) => {
     }
 });
 /** The same on a kernel: on the pool, each row's 27 probes in straight-line code. */
-const neighborsKernel = System.create({ kernel: "cpu", components: { read: [place, cell], write: [amount] }, lookup: { near: { index: grid, read: [place] } } }, (row, { lookup }) => {
+const neighborsKernel = System.create({ kernel: true, components: { read: [place, cell], write: [amount] }, lookup: { near: { index: grid, read: [place] } } }, (row, { lookup }) => {
     const [cx, cy, cz] = row[cell];
     const [x] = row[place];
     let push = 0;
@@ -152,12 +152,12 @@ const seedKernelParticles = System.create({}, ({ commands }) => {
 
 /** Particles of `rekey 1M`, drifting through cells of 4 units. */
 const drifting = million;
-const drift = System.create({ kernel: "cpu", components: { write: [place] } }, row => {
+const drift = System.create({ kernel: true, components: { write: [place] } }, row => {
     const [x, y, z] = row[place];
     row[place] = [x + 0.25, y, z];
 });
 /** The cell a particle is in, written only when it crosses into another, so the index's work is the crossings. */
-const rekeyCells = System.create({ kernel: "cpu", components: { read: [place], write: [cell], changed: [place] }, after: [drift] }, row => {
+const rekeyCells = System.create({ kernel: true, components: { read: [place], write: [cell], changed: [place] }, after: [drift] }, row => {
     const [x, y, z] = row[place];
     const [cx, cy, cz] = row[cell];
     const nx = Math.floor(x / 4);
@@ -281,7 +281,7 @@ const spawnAndDespawn = System.create({}, ({ commands }) => {
     spawnedLast = spawned;
 });
 /** Writes every entity's amount, which the index holds by but doesn't watch. */
-const writeAmounts = System.create({ kernel: "cpu", components: { write: [amount] } }, row => { row[amount] = row[amount] + 1; });
+const writeAmounts = System.create({ kernel: true, components: { write: [amount] } }, row => { row[amount] = row[amount] + 1; });
 /** Reads the index's length and whether it changed, as a count kept by a system would. */
 const lengthReads = 100_000;
 const readLengths = System.create({ lookup: { untagged: { index: untagged } } }, ({ lookup }) => {

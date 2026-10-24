@@ -36,7 +36,7 @@ const spawn = System.create({}, ({ commands }) => {
     }
 });
 
-const reduce = System.create({ kernel: "cpu", components: { read: [weight] }, resources: { reduce: [count, sum, largest] } }, (row, { reduce }) => {
+const reduce = System.create({ kernel: true, components: { read: [weight] }, resources: { reduce: [count, sum, largest] } }, (row, { reduce }) => {
     reduce[count](1);
     reduce[sum](row[weight]);
     reduce[largest](row[weight]);

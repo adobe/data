@@ -43,10 +43,10 @@ const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn([value, watched])({ [value]: i, [watched]: 0 });
 });
 /** Writes every value: until something observes `value`, its stamps are muted. */
-const bump = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
+const bump = System.create({ kernel: true, components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
-const watchChanged = System.create({ kernel: "cpu", components: { write: [watched], changed: [value] }, after: [bump] }, row => {
+const watchChanged = System.create({ kernel: true, components: { write: [watched], changed: [value] }, after: [bump] }, row => {
     row[watched] = row[watched] + 1;
 });
 /** Counts rows whose `value` was added since it last ran. */

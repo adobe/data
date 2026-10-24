@@ -201,12 +201,12 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     /** Its `lastRun` while it runs, which its lookups' lists and rows compare with. */
     const lookupSince: Since = { value: since };
     let kernel: BoundKernel | null = null;
-    if (declaration.kernel !== undefined) {
-        const description = kernelOf(leaf);
-        if (description === undefined) {
-            indexLookups.release();
-            throw new Error(`System "${label}" is a kernel but wasn't compiled; add Compiler.plugin() to the Vite config.`);
-        }
+    const description = kernelOf(leaf);
+    if (description === undefined && (declaration.kernel === true || declaration.kernel === "gpu")) {
+        indexLookups.release();
+        throw new Error(`System "${label}" is a kernel but wasn't compiled; add Compiler.plugin() to the Vite config.`);
+    }
+    if (description !== undefined) {
         try {
             kernel = bindKernel(state, leaf, description, indexLookups.byName, lookupSince);
         }

@@ -44,6 +44,8 @@ describe("layoutOf", () => {
         expect(views({ anyOf: [{ const: 1 }, { const: -1 }] })).toEqual(["i32"]);
         expect(views({ anyOf: [{ const: 0.5 }, { const: 1 }] })).toEqual(["f64"]);
         expect(views({ anyOf: [{ const: 0 }, { const: 2 ** 40 }] })).toEqual(["f64"]);
+        // An integer column would store -0 as 0.
+        expect(views({ anyOf: [{ const: -0 }, { const: 1 }] })).toEqual(["f64"]);
         expect(views({ type: "object", properties: { mode: { anyOf: [{ const: 0 }, { const: 1 }] }, at: f32 } })).toEqual(["u32", "f32"]);
         expect(views({ anyOf: [{ const: 0 }, { const: "a" }] })).toBe("object");
         expect(views({ anyOf: [{ const: 0 }, { type: "null" }] })).toBe("object");

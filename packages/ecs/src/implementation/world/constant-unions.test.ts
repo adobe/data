@@ -4,6 +4,8 @@ import { System } from "../../interface/system/system.js";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld } from "./create.js";
 import { readEach, select } from "./reads.test-helper.js";
+import { declareResource$ } from "../../interface/registry/declare.js";
+import { defaultOf } from "./state.js";
 
 const Frame = { fixed: 0, autoHeight: 1, autoWidth: 2 } as const;
 type Frame = (typeof Frame)[keyof typeof Frame];
@@ -30,4 +32,12 @@ it("stores a union of number constants as a number in shared memory, read beside
     await world.run(spawn);
     await world.run(show);
     expect(await readEach(world, await select(world, { required: [frame] }), frame)).toEqual([2]);
+});
+
+// Registered by hand without a default, as only code the build didn't generate can.
+const mode = Symbol("constantUnionsTest/mode");
+declareResource$(mode, { type: { anyOf: [{ const: 1 }, { const: 2 }, { const: 4 }] } });
+
+it("starts a resource of a union of number constants without a default at its first constant, a value of its type", () => {
+    expect(defaultOf(mode)).toBe(1);
 });

@@ -15,6 +15,7 @@ import type { FinalizerRunner, Thrown } from './finalizers.js';
 import { createPlan, type Plan } from './plan.js';
 import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
 import { layoutOf, objectLayout, type Layout } from '../../interface/registry/layout.js';
+import { numberConstants } from '../../interface/registry/schemas.js';
 import { createMemory, type Memory } from './memory.js';
 import { createStrings, type StringStore } from './strings.js';
 import { createLayoutDirectory, type LayoutDirectory } from './layout-directory.js';
@@ -429,7 +430,10 @@ export const defaultOf = (key: Key): unknown => {
     if (declaration === undefined) return null;
     if ("default" in declaration) return declaration.default;
     const { type } = declaration;
-    return type !== undefined && "default" in type ? type.default : null;
+    if (type === undefined) return null;
+    if ("default" in type) return type.default;
+    // A union of number constants starts at its first, so its value is always one of them.
+    return numberConstants(type)?.[0] ?? null;
 };
 
 /**

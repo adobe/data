@@ -83,10 +83,11 @@ const integerScalar = ({ minimum, maximum }: { readonly minimum?: number; readon
 
 /** `null` if the schema isn't linear: numbers, booleans, fixed-length tuples and structs of those. */
 const shapeOf = (schema: Schema): Shape | null => {
-    // A union of number constants is a number: integers at the narrowest width holding them.
+    // A union of number constants is a number: integers at the narrowest width holding them, and with -0, which an
+    // integer can't hold, f64.
     const constants = numberConstants(schema);
     if (constants !== null) {
-        return { kind: "scalar", scalar: constants.every(Number.isInteger) ? integerScalar({ minimum: Math.min(...constants), maximum: Math.max(...constants) }) : "f64" };
+        return { kind: "scalar", scalar: constants.every(constant => Number.isInteger(constant) && !Object.is(constant, -0)) ? integerScalar({ minimum: Math.min(...constants), maximum: Math.max(...constants) }) : "f64" };
     }
     if (!("type" in schema)) return null;
     switch (schema.type) {

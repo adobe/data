@@ -189,6 +189,8 @@ const after = 1;`);
         expect(await passed(`import { elsewhere } from "./keys.js";\n${block(`interface Components { [elsewhere]: { type: number } }`)}`, files)).toContain(`elsewhere is imported from "./keys.js": declare it in the module that declares the key`);
         expect(await passed(`import type { layer } from "./keys.js";\n${keys("key")}${block(`interface Components { [key]: { type: true; [layer]: true } }`)}`, files)).toContain("layer, imported as a type only");
         expect(await passed(`${keys("key")}${block(`interface Resources { [key]: { type: number } }`)}`)).toContain("default");
+        expect(await passed(`${keys("key")}${block(`interface Resources { [key]: { type: 1 | 2 | 4 } }`)}`)).toContain("declares the value it starts at");
+        expect(await passed(`const Mode = { a: 1, b: 2 } as const;\n${keys("key")}${block(`interface Resources { [key]: { type: (typeof Mode)[keyof typeof Mode] } }`)}`)).toContain("declares the value it starts at");
         expect(await passed(`${keys("key")}${block(`interface Resources { [key]: { type: U32; default: -1 } }`)}`)).toContain("isn't of its declared type");
         expect(await passed(`import type { Entity as E } from "@adobe/ecs";\n${keys("key")}${block(`interface Resources { [key]: { type: Entity; default: typeof E.none } }`)}`)).toContain("type only");
         expect(await passed(`${keys("key")}${block(`interface Components { [key]: { type: HTMLDivElement } }`)}`)).toContain(`thread: "main"`);

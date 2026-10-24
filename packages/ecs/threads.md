@@ -53,7 +53,7 @@ Referenced from `design.md`.
   the id once by message the first time; the world maps (thread, number) to its own. The world holds runs whose slots
   use a number it can't map yet, in order, until that message arrives. A run of an id the world never imported
   rejects.
-- **Archetypes are lists of keys.** The index `Archetype.create` gives a list is for its own thread's lookups;
+- **Archetypes are lists of keys.** The index the build or a world gives a list is for its own thread's lookups;
   threads agree on an archetype through the world's numbers for its components. Commands and staged spawn batches
   carry those numbers, never archetype indexes.
 - **Inline is the same layout.** With every logical thread filled by the world's thread, storage and code paths are

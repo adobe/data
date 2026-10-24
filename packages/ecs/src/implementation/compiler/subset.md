@@ -62,7 +62,7 @@ call        = Math-function | helper | lookup | command | reducer
 - **Commands:** `context.commands.spawn(components)({ [component]: value, ... })`, `despawn(entity)`,
   `add(entity, component, value)` or `add(entity, components, { ... })`, and `remove(entity, component)` or
   `remove(entity, components)`, with component keys bound at module scope. A list of components is an array literal of
-  them, or a constant holding one or `Archetype.create` of one, in the kernel's module or imported, also through
+  them, or a constant holding one (`as const`), in the kernel's module or imported, also through
   re-exports and namespaces, its keys read in the scope of the module that declares it; a component it lists that a
   command gives no value starts at its start. A list the build can't read, such as one computed when its module runs,
   fails the build at the command. `add` and `remove` take a name as one key when its definition is `Symbol(...)`, as a

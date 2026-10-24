@@ -306,6 +306,12 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 
 ## Tried and not kept
 
+- **Lists made at runtime finding their shape through a `WeakMap` by list, or through a record of their own beside the
+  index property:** with `Archetype.create` gone, `spawn sixteen archetypes`, whose lists are built by `Array.from`,
+  took 9.8 ms and 6.9 ms against 3.96 with them indexed by hand; a microbenchmark gave 43 ns a lookup for the second
+  property against 5.4 for an index. The record now lives in the index property itself, 12 ns checked: 4.37 ms, the
+  rest the check of the list's keys that a list made at runtime needs, since it may change. Worth revisiting if a way
+  to know a runtime list is unchanged without reading its keys appears.
 - **Observer posts without allocating per post** (a reused list of chosen posts, no closure for posting, the block's cleared words a constant list, settling over reused scratch rather than a copy of the posts): `joined observer resource` 7.2–7.6 µs a tick against 6.4–8.3 without, `joined observer 10K` 0.52–0.69 ms against 0.51–0.76, within noise. Worth revisiting once posting shows in a profile of a world with many observer systems on joined threads.
 - **Observer factories: a count or selection with `where` tracked through an index without a key,** every row read through `at` and tested after any change: `count 1M changed factory` 23.2 ms; a sorted index on the `where` key, each entry looking up its range, takes 42 µs. Kept for selections with a page and no `order`, which stop at the page's end in entity order.
 - **Observer factories: descending pages finding each run of equal keys by galloping back from its last row,** three reads of most rows: `select page 100K factory` 23 µs a change; reading each row once, holding a run until its key changes, 16 µs.

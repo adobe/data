@@ -29,5 +29,5 @@ code it shows: every excerpt comes from a file here that runs as a test, so the 
 ## Code conventions
 
 - Keys are `Symbol()` with no description: the build's id names each by its binding.
-- Archetypes are types, so their names are PascalCase: `const Particle = Archetype.create([position, velocity])`.
+- Archetypes are types, so their names are PascalCase: `const Particle = [position, velocity] as const`.
 - Use the public API only, as a consumer imports it, not internal modules. Read a world through observer systems.

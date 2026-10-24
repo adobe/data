@@ -129,8 +129,9 @@ declare module "@adobe/ecs" {
     }
 }
 
-// An archetype names a list of components, once at module scope; it goes wherever a list of components does.
-export const Particle = Archetype.create([position, velocity]);
+// An archetype is a list of components declared `as const` at module scope, which the build indexes; it goes wherever
+// a list of components does.
+export const Particle = [position, velocity] as const;
 
 // Systems spawn entities: name the components, then give their values.
 export const spawn = System.create(({ commands }) => {
@@ -162,7 +163,7 @@ it("spawns entities with components", async () => {
     expect(particles).toBe(1);
 ```
 
-[`02-entities.test.ts`](02-entities.test.ts#L6-L49)
+[`02-entities.test.ts`](02-entities.test.ts#L6-L50)
 
 ### 3. Systems
 

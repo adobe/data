@@ -372,7 +372,7 @@ describe("particles", () => {
 
         const integrate = await compile(`const kernel = System.create({
             kernel: true,
-            components: { read: [velocity], write: [position] }, resources: { read: [delta] }, after: [{ name: "particles/gravity" }],
+            components: { read: [velocity], write: [position] }, resources: { read: [delta] }, after: [{}],
         }, (row, { resources }) => {
             const [px, py, pz] = row[position];
             const [vx, vy, vz] = row[velocity];
@@ -881,24 +881,24 @@ describe("subset", () => {
 
     test("non-kernel systems that may reach their commands and other modules are left untouched", async () => {
         expect(await transform(`const s = System.create({ components: { read: [mass] } }, (row, context) => { const f = () => [row, context]; });`)).toBeNull();
-        expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: true }, () => {});`, "/x.js", parse, async () => null, () => "")).toBeNull();
+        expect(await transformKernels(`import { System } from "other";\nSystem.create({ kernel: true }, () => {});`, "/x.js", parse, async () => null, () => "")).toBeNull();
     });
 });
 
 describe("terminal bodies", () => {
     /** Whether the transform marks a main-thread system's body as one that never reaches its commands. */
-    const marked = async (parameters: string, body: string, declaration = `{ name: "a" }`): Promise<boolean> => {
+    const marked = async (parameters: string, body: string, declaration = `{}`): Promise<boolean> => {
         const result = await transform(`const system = System.create(${declaration}, ${parameters} => { ${body} });`);
         if (result !== null && "failure" in result) throw new Error(result.failure.message);
         const code = result?.code ?? "";
         return code.includes("terminal$((") && code.includes("function terminal$(body)");
     };
     test.each([
-        ["no context", "(row)", "console.log(row);", `{ name: "a", components: { has: [mass] } }`],
-        ["a context destructured without commands", "({ resources })", "console.log(resources);", `{ name: "a" }`],
-        ["a context used only through its other properties", "(context)", "console.log(context.resources);", `{ name: "a", resources: { read: [delta] } }`],
-        ["a context reaching resources and lookups", "(row, context)", "console.log(context.resources, context.lookup, row);", `{ name: "a", components: { has: [mass] } }`],
-        ["nested destructuring", "({ resources: { [delta]: d } })", "console.log(d);", `{ name: "a", resources: { read: [delta] } }`],
+        ["no context", "(row)", "console.log(row);", `{ components: { has: [mass] } }`],
+        ["a context destructured without commands", "({ resources })", "console.log(resources);", `{}`],
+        ["a context used only through its other properties", "(context)", "console.log(context.resources);", `{ resources: { read: [delta] } }`],
+        ["a context reaching resources and lookups", "(row, context)", "console.log(context.resources, context.lookup, row);", `{ components: { has: [mass] } }`],
+        ["nested destructuring", "({ resources: { [delta]: d } })", "console.log(d);", `{ resources: { read: [delta] } }`],
     ])("mark a body with %s", async (_, parameters, body, declaration) => {
         expect(await marked(parameters, body, declaration)).toBe(true);
     });
@@ -973,7 +973,7 @@ describe("index lookups in main-thread systems", () => {
 
 describe("commands in main-thread systems", () => {
     /** Runs the transformed system's body once, recording each spawn's and add's keys and values as the runtime hooks receive them. */
-    const spawned = async (body: string, parameters = "({ commands })", declaration = `{ name: "a" }`): Promise<{ readonly code: string; readonly calls: readonly unknown[] }> => {
+    const spawned = async (body: string, parameters = "({ commands })", declaration = `{}`): Promise<{ readonly code: string; readonly calls: readonly unknown[] }> => {
         const source = `const system = System.create(${declaration}, ${parameters} => { ${body} });`;
         const result = await transform(source);
         if (result !== null && "failure" in result) return { code: result.failure.message, calls: [] };
@@ -1017,10 +1017,10 @@ describe("commands in main-thread systems", () => {
     });
 
     test.each([
-        ["the context's commands", "context.commands.spawn([score])({ [score]: 1 });", "(context)", `{ name: "a" }`],
-        ["renamed commands", "issue.spawn([score])({ [score]: 1 });", "({ commands: issue })", `{ name: "a" }`],
-        ["a system with components", "commands.spawn([score])({ [score]: 1 });", "(row, { commands })", `{ name: "a", components: { has: [mass] } }`],
-        ["the context of a system with components", "context.commands.spawn([score])({ [score]: 1 });", "(row, context)", `{ name: "a", components: { has: [mass] } }`],
+        ["the context's commands", "context.commands.spawn([score])({ [score]: 1 });", "(context)", `{}`],
+        ["renamed commands", "issue.spawn([score])({ [score]: 1 });", "({ commands: issue })", `{}`],
+        ["a system with components", "commands.spawn([score])({ [score]: 1 });", "(row, { commands })", `{ kernel: false, components: { has: [mass] } }`],
+        ["the context of a system with components", "context.commands.spawn([score])({ [score]: 1 });", "(row, context)", `{ kernel: false, components: { has: [mass] } }`],
     ])("pass values positionally through %s", async (_, body, parameters, declaration) => {
         const { calls } = await spawned(body, parameters, declaration);
         expect(calls).toEqual([["prepared", ["score"], ["score"], [1]]]);

@@ -32,6 +32,6 @@ describe("composite input", () => {
 
     it("rejects an input schema that isn't an object of named fields", () => {
         const create: (...parameters: unknown[]) => unknown = System.create;
-        expect(() => create({ name: "scalar" }, (_context: unknown, _input: unknown) => {}, { type: "number" })).toThrow('input is an object schema of named fields.');
+        expect(() => create({}, (_context: unknown, _input: unknown) => {}, { type: "number" })).toThrow('input is an object schema of named fields.');
     });
 });

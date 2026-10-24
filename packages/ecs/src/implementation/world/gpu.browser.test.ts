@@ -567,10 +567,10 @@ describe("render systems", () => {
 
     it("name accessors anything WGSL allows, and only that", async () => {
         const own = await device();
-        const named = (name: "count" | "target", accessor: string) => System.render({ shader: { accessors: { [accessor]: position } } }, () => {});
-        const module = own.createShaderModule({ code: `${Gpu.wgsl(named("count", "count"))}\n@compute @workgroup_size(1) fn main() { _ = count(0u); }` });
+        const named = (accessor: string) => System.render({ shader: { accessors: { [accessor]: position } } }, () => {});
+        const module = own.createShaderModule({ code: `${Gpu.wgsl(named("count"))}\n@compute @workgroup_size(1) fn main() { _ = count(0u); }` });
         expect((await module.getCompilationInfo()).messages.filter(message => message.type === "error")).toEqual([]);
-        expect(() => Gpu.wgsl(named("target", "target"))).toThrow(/isn't usable as a WGSL function name/);
+        expect(() => Gpu.wgsl(named("target"))).toThrow(/isn't usable as a WGSL function name/);
     });
 
     it("read their components on the GPU through the generated accessors", async () => {

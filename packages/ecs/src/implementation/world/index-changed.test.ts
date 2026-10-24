@@ -226,9 +226,9 @@ describe("an index lookup's changed: true", () => {
     it("is only for a system's index lookups", () => {
         const untypedSystem = (declaration: object): unknown => Reflect.apply(System.create, undefined, [declaration, () => {}]);
         const untypedFinalizer = (declaration: object): unknown => Reflect.apply(Finalizer.create, undefined, [declaration, () => {}]);
-        expect(() => untypedSystem({ name: "byEntity", lookup: { weights: { read: [weight], changed: true } } }))
+        expect(() => untypedSystem({ lookup: { weights: { read: [weight], changed: true } } }))
             .toThrow(`lookup "weights"'s changed is true, which only an index lookup takes; name the components it watches.`);
-        expect(() => untypedFinalizer({ name: "finalizer", components: { read: [group] }, lookup: { byGroup: { index: byGroup, changed: true } } }))
+        expect(() => untypedFinalizer({ components: { read: [group] }, lookup: { byGroup: { index: byGroup, changed: true } } }))
             .toThrow(`lookup "byGroup"'s changed is true, which only a system's index lookup takes; a finalizer runs on each entity that stops matching.`);
     });
 });

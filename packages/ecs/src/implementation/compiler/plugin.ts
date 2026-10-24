@@ -9,7 +9,7 @@ import { describeFailure } from './failure.js';
 import { identify as identifyModule, moduleIdOf, type PackageOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
-import { augmentationInsertions, reductionsIn, type AugmentationHost } from './augmentations.js';
+import { augmentationInsertions, reductionsIn, registeredReductionsIn, type AugmentationHost } from './augmentations.js';
 import { inputInsertions, type InputHost } from './input-schemas.js';
 import { copyForImporter, isInPackageCopy, namespaceCopyOf, packagePathOf, typesFileOf } from './paths.js';
 import { moduleOf, type TypedProgram } from './type-schemas.js';
@@ -59,10 +59,14 @@ let parseTypes: typeof import("vite").parseAst | null = null;
 
 const noReductions: ReadonlyMap<string, string> = new Map();
 
-/** The `reduce` traits a TypeScript file's declarations give, read from its source. */
+/**
+ * The `reduce` traits a file's declarations give: read from a TypeScript file's source, and from the registrations a
+ * JavaScript file's build gave them, as a library's `dist` ships them.
+ */
 const reductionsOf = (file: string): ReadonlyMap<string, string> => {
-    const lang = loaders[file.slice(file.lastIndexOf(".") + 1)];
-    if (parseTypes === null || (lang !== "ts" && lang !== "tsx")) return noReductions;
+    const extension = file.slice(file.lastIndexOf(".") + 1);
+    const lang = loaders[extension] ?? (extension === "js" || extension === "mjs" ? "js" : undefined);
+    if (parseTypes === null || lang === undefined) return noReductions;
     let code: string;
     try {
         code = readFileSync(file, "utf8");
@@ -70,7 +74,9 @@ const reductionsOf = (file: string): ReadonlyMap<string, string> => {
     catch {
         return noReductions;
     }
-    return code.includes("reduce") && code.includes("declare module") ? reductionsIn(parseTypes(code, { lang }, file)) : noReductions;
+    if (!code.includes("reduce")) return noReductions;
+    if (lang === "ts" || lang === "tsx") return code.includes("declare module") ? reductionsIn(parseTypes(code, { lang }, file)) : noReductions;
+    return code.includes("declareResource$") ? registeredReductionsIn(parseTypes(code, { lang }, file)) : noReductions;
 };
 
 /** Resolves imports through the build, from whichever transform runs. */

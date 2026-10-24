@@ -351,6 +351,37 @@ export const description = kernelOf(kernel);
     expect(description === undefined ? [] : runs(module, description)).toEqual([6, 8]);
 });
 
+test("an application's build compiles a library's reducing kernel, with the operator the library's registration gives", async () => {
+    const project = join(directory, "reducing");
+    const copy = await installCopy(project);
+    writeFileSync(join(project, "package.json"), JSON.stringify({ name: "reducing-app", type: "module" }));
+    mkdirSync(join(project, "node_modules/reducing-library/dist"), { recursive: true });
+    writeFileSync(join(project, "node_modules/reducing-library/package.json"), JSON.stringify({ name: "reducing-library", type: "module", exports: "./dist/index.js" }));
+    // As its build in library mode left it: types stripped, the registrations it gave in their place.
+    writeFileSync(join(project, "node_modules/reducing-library/dist/index.js"), `import { System } from "@adobe/ecs";
+import { declareComponent$, declareResource$ } from "@adobe/ecs/declare";
+const score = Symbol();
+declareComponent$(score, { type: { type: "number" } });
+const largest = Symbol();
+declareResource$(largest, { type: { type: "number", default: 0 }, reduce: "max" });
+export const kernel = System.create({ kernel: true, components: { read: [score] }, resources: { reduce: [largest] } }, (row, { reduce }) => { reduce[largest](row[score]); });
+`);
+    const application = join(project, "application.js");
+    writeFileSync(application, `import { kernelOf } from ${JSON.stringify(join(copy, "dist/implementation/world/attach-kernel.js"))};
+import { kernel } from "reducing-library";
+export const description = kernelOf(kernel);
+`);
+    const outDir = join(project, "dist");
+    const output = await build({
+        configFile: false, logLevel: "silent", root: project, plugins: [plugin()],
+        build: { outDir, minify: false, lib: { entry: application, formats: ["es"], fileName: "main" } },
+    });
+    const main = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
+        .find((item): item is Rollup.OutputChunk => item.type === "chunk" && item.facadeModuleId === application);
+    const { description }: { description: KernelDescription | undefined } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
+    expect(description?.reductions.map(reduced => reduced.operator)).toEqual(["max"]);
+});
+
 test("a build registers the keys a module declares, through the copy of the package the module resolves", async () => {
     const project = join(directory, "declaring");
     const copy = await installCopy(project);

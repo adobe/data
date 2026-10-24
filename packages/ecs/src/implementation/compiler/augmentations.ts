@@ -56,6 +56,31 @@ export const reductionsIn = (program: TypedProgram): ReadonlyMap<string, string>
     return found;
 };
 
+/**
+ * The operator each resource a module's generated registrations, `declareResource$(key, { ..., reduce })`, give, by its
+ * key's binding: what a library's build in library mode leaves of its declarations in its JavaScript.
+ */
+export const registeredReductionsIn = (program: TypedProgram): ReadonlyMap<string, string> => {
+    const locals = new Set<string>();
+    for (const statement of program.body) {
+        if (statement.type !== "ImportDeclaration") continue;
+        for (const specifier of statement.specifiers) {
+            if (specifier.type === "ImportSpecifier" && specifier.imported.type === "Identifier" && specifier.imported.name === "declareResource$") locals.add(specifier.local.name);
+        }
+    }
+    const found = new Map<string, string>();
+    for (const statement of program.body) {
+        if (locals.size === 0 || statement.type !== "ExpressionStatement" || statement.expression.type !== "CallExpression") continue;
+        const { callee, arguments: [key, declaration] } = statement.expression;
+        if (callee.type !== "Identifier" || !locals.has(callee.name) || key?.type !== "Identifier" || declaration?.type !== "ObjectExpression") continue;
+        for (const property of declaration.properties) {
+            if (property.type !== "Property" || property.computed || property.key.type !== "Identifier" || property.key.name !== "reduce") continue;
+            if (property.value.type === "Literal" && typeof property.value.value === "string") found.set(key.name, property.value.value);
+        }
+    }
+    return found;
+};
+
 type QueryName = Exclude<Extract<TypeNode, { readonly type: "TSTypeQuery" }>["exprName"], { readonly type: "TSImportType" }>;
 
 type TypeName = Extract<TypeNode, { readonly type: "TSTypeReference" }>["typeName"];

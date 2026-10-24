@@ -4,6 +4,11 @@ Open items awaiting a decision or work. Remove an item once it's decided or done
 
 ## Queued (decided, not started)
 
+- **Generated API reference, once the API work is done.** typedoc over the public entry points (`src/index.ts` and
+  `@adobe/ecs/compiler`), from a uniform `docs` script, linked from the README beside the guide. Publishing: today
+  `.github/workflows/deploy-docs.yml` names each package; make it run `pnpm -r run docs` and collect every package's
+  output into Pages instead of adding another named step (a monorepo change, `packages/data` included).
+
 ## Decisions for the maintainers
 
 - **An index lookup's `changed: true` is a change filter,** as a resource in `changed` is: when the index changed every

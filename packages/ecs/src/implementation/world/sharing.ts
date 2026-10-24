@@ -554,7 +554,7 @@ export const createSharing = (host: SharingHost) => {
             // Unnamed, so other systems' labels stay as they are; its own is the thread's.
             const declaration: Resolved = {
                 observer: true,
-                ...components === null ? {} : { components: listed([["read", components.read], ["has", components.has], ["not", components.not], ["added", components.added], ["changed", components.changed]]) },
+                ...components === null ? {} : { components: listed([["read", components.read], ["has", components.has], ["optional", components.optional], ["not", components.not], ["added", components.added], ["changed", components.changed]]) },
                 ...resources === null ? {} : { resources: listed([["read", resources.read], ["changed", resources.changed], ["is", resources.is], ["not", resources.not]]) },
                 ...declared.lookup.length === 0 ? {} : { lookup },
             };

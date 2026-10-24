@@ -81,6 +81,8 @@ const summary = async (worker: Worker) => {
         runs: seen.length,
         wrong: seen.reduce((sum, run) => sum + run.wrong, 0),
         labels: seen.reduce((sum, run) => sum + run.labels, 0),
+        // Rows of the archetype without `extra`, which every run reads as undefined.
+        lacking: seen.every(run => run.lacking * 2 === run.rows),
         fewest: Math.min(...seen.map(run => run.rows)),
         most: Math.max(...seen.map(run => run.rows)),
         late: reply.late,

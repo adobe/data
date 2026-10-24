@@ -15,6 +15,8 @@ export const spawning = Symbol("tailsTest/spawning");
 export const failAt = Symbol("tailsTest/failAt");
 export const canvas = Symbol("tailsTest/canvas");
 export const word = Symbol("tailsTest/word");
+/** On every other row: rows without it are in an archetype of their own, so a tail's optional read of it tells them apart. */
+export const extra = Symbol("tailsTest/extra");
 declare module "@adobe/ecs" {
     export interface Threads {
         tailsTest: true;
@@ -24,6 +26,7 @@ declare module "@adobe/ecs" {
         [spot]: { type: Vec3 };
         [label]: { type: { readonly text: string } | null; thread: "tailsTest"; default: null };
         [word]: { type: string };
+        [extra]: { type: Schema.Type<{ type: "integer" }> };
     }
     export interface Resources {
         [counter]: { type: Schema.Type<{ type: "integer" }>; default: 0 };
@@ -59,9 +62,10 @@ export const count = System.create({}, ({ resources }) => {
 export const wordOf = (value: number): string => `${"·".repeat(value % 37)}${value}`;
 
 /** On the world's thread: every row's stamp, spot and word take the counter. */
-export const advance = System.create({ components: { with: [stamp, spot, word] }, after: [count] }, (row, { resources }) => {
+export const advance = System.create({ components: { with: [stamp, spot, word], optional: [extra] }, after: [count] }, (row, { resources }) => {
     const value = resources[counter];
     row[stamp] = value;
+    if (row[extra] !== undefined) row[extra] = value;
     row[spot] = [value, -value, value];
     row[word] = wordOf(value);
 });
@@ -72,12 +76,18 @@ export const reword = System.create({ components: { with: [word] } }, (row, _con
 /** On the world's thread: spawns rows stamped with this tick's counter, `spawning` of them, then no more. */
 export const grow = System.create({ after: [count] }, ({ resources, commands }) => {
     const value = resources[counter];
-    for (let k = 0; k < resources[spawning]; k++) commands.spawn([stamp, spot, label, word])({ [stamp]: value, [spot]: [value, -value, value], [word]: wordOf(value) });
+    for (let k = 0; k < resources[spawning]; k++) {
+        if (k % 2 === 0) commands.spawn([stamp, spot, label, word, extra])({ [stamp]: value, [spot]: [value, -value, value], [word]: wordOf(value), [extra]: value });
+        else commands.spawn([stamp, spot, label, word])({ [stamp]: value, [spot]: [value, -value, value], [word]: wordOf(value) });
+    }
     resources[spawning] = 0;
 });
 /** Spawns `count` rows. */
 export const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
-    for (let k = 0; k < input.count; k++) commands.spawn([stamp, spot, label, word])({ [stamp]: 0, [spot]: [0, 0, 0], [word]: wordOf(0) });
+    for (let k = 0; k < input.count; k++) {
+        if (k % 2 === 0) commands.spawn([stamp, spot, label, word, extra])({ [stamp]: 0, [spot]: [0, 0, 0], [word]: wordOf(0), [extra]: 0 });
+        else commands.spawn([stamp, spot, label, word])({ [stamp]: 0, [spot]: [0, 0, 0], [word]: wordOf(0) });
+    }
 });
 export const setStall = System.create({}, ({ resources }, input: { readonly mode: number; readonly pause: number }) => {
     resources[stall] = { mode: input.mode, pause: input.pause };
@@ -90,7 +100,7 @@ export const setFailAt = System.create({}, ({ resources }, input: { readonly at:
 });
 
 /** What each run of the watcher saw, by the counter it read: rows, and those whose structs, word or label weren't that tick's. */
-export type Seen = { counter: number; rows: number; wrong: number; labels: number };
+export type Seen = { counter: number; rows: number; wrong: number; labels: number; lacking: number };
 export const seen: Seen[] = [];
 
 /** On the tail's thread, ahead of the watcher: stalls it while `stall` says so, so it's late. */
@@ -103,11 +113,14 @@ export const lead = System.create({}, ({ resources }) => {
  * must be the last tick's where it wrote one.
  */
 export const watch = System.create({
-    components: { with: [stamp, spot, word, label] }, after: [advance, grow, lead],
+    components: { with: [stamp, spot, word, label], optional: [extra] }, after: [advance, grow, lead],
 }, (row, { resources }) => {
     const value = resources[counter];
     let last = seen.at(-1);
-    if (last === undefined || last.counter !== value) seen.push(last = { counter: value, rows: 0, wrong: 0, labels: 0 });
+    if (last === undefined || last.counter !== value) seen.push(last = { counter: value, rows: 0, wrong: 0, labels: 0, lacking: 0 });
+    const more = row[extra];
+    if (more === undefined) last.lacking++;
+    else if (more !== value) last.wrong++;
     if (resources[failAt] === value) throw new Error(`tailsTest failure at ${value}`);
     const [x, y, z] = row[spot];
     if (row[stamp] !== value || x !== value || y !== -value || z !== value || row[word] !== wordOf(value)) last.wrong++;

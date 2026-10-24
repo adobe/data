@@ -215,8 +215,6 @@ export const createJoinedObserverRunner = (state: State, leaf: Leaf, target: Obs
     }
     const { declaration } = leaf;
     const { components, resources } = declaration;
-    // Its posts copy rows across archetypes, which don't tell an absent optional component from a present one.
-    if ((components?.optional?.length ?? 0) > 0) throw new Error(`Observer system "${leaf.name}" has optional components, which observer systems on joined threads don't support yet: run it on the world's thread, or use two systems.`);
     const base = createRunner(state, leaf, since);
     const ids = (keys: readonly Key[] | undefined): number[] => [...new Set((keys ?? []).map(key => idOf(state, key)))];
     // Strings live in shared memory, as structs do.

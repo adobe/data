@@ -7,7 +7,7 @@ export const tailsCases = (load: () => Promise<typeof Fixture>) => describe("tai
     it("see one tick's values in every run while the world ticks on: in place, from a snapshot when late, and both across a switch at a chunk", async () => {
         const fixture = await load();
         const seen = await fixture.continuous();
-        expect({ wrong: seen.wrong, labels: seen.labels, fewest: seen.fewest, most: seen.most }).toEqual({ wrong: 0, labels: 0, fewest: 1000, most: 1000 });
+        expect({ wrong: seen.wrong, labels: seen.labels, fewest: seen.fewest, most: seen.most, lacking: seen.lacking }).toEqual({ wrong: 0, labels: 0, fewest: 1000, most: 1000, lacking: true });
         expect(seen.late).toBeGreaterThan(0);
         expect(seen.switched).toBeGreaterThan(0);
     }, 30000);

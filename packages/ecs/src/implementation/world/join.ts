@@ -563,7 +563,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             });
         }
         return {
-            components: components === undefined ? null : { read: readable(components.read), has: present(components.has), not: present(components.not), added: present(components.added), changed: readable(components.changed) },
+            components: components === undefined ? null : { read: readable(components.read), has: present(components.has), optional: present(components.optional), not: present(components.not), added: present(components.added), changed: readable(components.changed) },
             resources: resources === undefined ? null : { read: readable(resources.read), changed: present(resources.changed), is: readable(resources.is), not: readable(resources.not) },
             lookup: lookups,
         };
@@ -573,8 +573,6 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
     const localOf = (leaf: Leaf): Local => {
         const known = localsByLeaf.get(leaf);
         if (known !== undefined) return known;
-        // Its posts copy rows across archetypes, which don't tell an absent optional component from a present one.
-        if ((leaf.declaration.components?.optional?.length ?? 0) > 0) throw new Error(`Observer system "${leaf.name}" has optional components, which observer systems on joined threads don't support yet: run it on the world's thread, or use two systems.`);
         const declaration = describe(leaf);
         // A number of this thread's, never posted as a name: the declaration names it.
         const number = numbers.size;

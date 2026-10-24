@@ -865,6 +865,8 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
     // thread's, which it reads from its mirror at the snapshot's rows.
     const readKeys = query?.read ?? [];
     const writeKeys = query?.write ?? [];
+    /** Its optional components, which rows from a snapshot have only where their archetype does. */
+    const optionalNumbers = (query?.optional ?? []).map(numberOf);
     const linearReads: { readonly number: number; readonly layout: Columned }[] = [];
     const constantReads: { readonly number: number; readonly layout: Layout }[] = [];
     for (const key of readKeys) {
@@ -1016,13 +1018,42 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         }
         let first = 0;
         while (first < rows && positions[first] < position) first++;
-        const row = bindRow({ id: -1, entities, storageById, record: -1, version: -1, mirrored: null, components: [], resource: false, meta: false });
-        const subject = row.value;
+        const copied = (storages: readonly (ThreadStorage | undefined)[]): ThreadArchetype =>
+            ({ id: -1, entities, storageById: storages, record: -1, version: -1, mirrored: null, components: [], resource: false, meta: false });
         const ownedInput = runInput;
         try {
-            for (let index = first; index < rows && !halted; index++) {
-                row.index = index;
-                system.body(subject, tailValue, ownedInput);
+            if (optionalNumbers.length === 0) {
+                const row = bindRow(copied(storageById));
+                const subject = row.value;
+                for (let index = first; index < rows && !halted; index++) {
+                    row.index = index;
+                    system.body(subject, tailValue, ownedInput);
+                }
+            }
+            else {
+                // Rows of archetypes that lack optional components run in a row without them, a run of one archetype's rows
+                // at a time, and every archetype with the same ones shares its copy of the snapshot's columns.
+                const byPattern = new Map<number, ThreadArchetype>();
+                for (let index = first; index < rows && !halted;) {
+                    const id = archetypeIds[index];
+                    let end = index + 1;
+                    while (end < rows && archetypeIds[end] === id) end++;
+                    const components = host.archetypeAt(id)?.components ?? [];
+                    let pattern = 0;
+                    for (let k = 0; k < optionalNumbers.length; k++) if (components.includes(optionalNumbers[k])) pattern |= 1 << k;
+                    let archetype = byPattern.get(pattern);
+                    if (archetype === undefined) {
+                        const storages: (ThreadStorage | undefined)[] = [...storageById];
+                        optionalNumbers.forEach((number, k) => { if ((pattern & (1 << k)) === 0) storages[number] = undefined; });
+                        byPattern.set(pattern, archetype = copied(storages));
+                    }
+                    const row = bindRow(archetype);
+                    const subject = row.value;
+                    for (; index < end && !halted; index++) {
+                        row.index = index;
+                        system.body(subject, tailValue, ownedInput);
+                    }
+                }
             }
         }
         finally {

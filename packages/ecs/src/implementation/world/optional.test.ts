@@ -62,8 +62,17 @@ const there = System.create({ components: { with: [position, marker], optional: 
     if (row[marker] === null) row[position] = row[velocity] ?? -1;
 });
 
-// An observer system there posts copies of rows, which optional components aren't in yet.
-const watchThere = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => { void row[velocity]; });
+// An observer system there reads copies of rows across archetypes, which tell which have the optional component.
+let watched: (readonly [number, number | undefined])[] = [];
+const watchThere = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => {
+    watched.push([row[position], row[velocity]]);
+});
+// A tail there: it writes only its thread's objects, so it runs after the sync point, reading copies of rows.
+const labelThere = System.create({ components: { with: [position, marker], optional: [velocity] } }, row => {
+    row[marker] = { text: `${row[position]}:${row[velocity] ?? "none"}` };
+});
+const labels: string[] = [];
+const readLabels = System.create({ components: { with: [marker] } }, row => { labels.push(row[marker]?.text ?? "null"); });
 
 /** A world shared with a thread on this one, which claims the thread markers live on. */
 const joined = async (): Promise<{ readonly world: CreatedWorld; readonly remote: ReturnType<typeof join> }> => {
@@ -149,9 +158,24 @@ describe("optional components", () => {
         await world.dispose();
     });
 
-    it("aren't supported yet in observer systems on a joined thread", async () => {
+    it("are read by observer systems on a joined thread, undefined where an archetype lacks one", async () => {
         const { world, remote } = await joined();
-        expect(() => remote.add(watchThere)).toThrow(`has optional components, which observer systems on joined threads don't support yet`);
+        await world.run(spawnMarked);
+        watched = [];
+        await remote.run(watchThere);
+        expect([...watched].sort((a, b) => a[0] - b[0])).toEqual([[1, undefined], [10, 5]]);
+        await remote.dispose();
+        await world.dispose();
+    });
+
+    it("are read by tails on a joined thread, undefined where an archetype lacks one", async () => {
+        const { world, remote } = await joined();
+        await world.run(spawnMarked);
+        const report = await runReported(world, labelThere);
+        expect(report.warnings).toEqual([]);
+        labels.length = 0;
+        await world.run(readLabels);
+        expect(labels.sort()).toEqual(["10:5", "1:none"]);
         await remote.dispose();
         await world.dispose();
     });

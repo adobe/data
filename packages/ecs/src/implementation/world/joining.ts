@@ -34,7 +34,7 @@ export type ObserverLookup = {
 
 /** What an observer system a joined thread declares reads, by that thread's numbers for its keys. */
 export type ObserverDeclaration = {
-    readonly components: { readonly read: readonly number[]; readonly has: readonly number[]; readonly not: readonly number[]; readonly added: readonly number[]; readonly changed: readonly number[] } | null;
+    readonly components: { readonly read: readonly number[]; readonly has: readonly number[]; readonly optional: readonly number[]; readonly not: readonly number[]; readonly added: readonly number[]; readonly changed: readonly number[] } | null;
     readonly resources: { readonly read: readonly number[]; readonly changed: readonly number[]; readonly is: readonly number[]; readonly not: readonly number[] } | null;
     readonly lookup: readonly ObserverLookup[];
 };

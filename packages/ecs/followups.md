@@ -5,6 +5,13 @@ correctness, then optimization. Remove an item once it's decided or done.
 
 ## API changes
 
+- **Run results: a run resolves to its body's value; reports leave the public API** (agreed in design, not started).
+  `run(system, input): Promise<R>`, R the per-run body's return type (`void` for row systems, composites and bodies
+  returning nothing), so one-off reads are observer systems returning a value. A run whose systems failed rejects
+  after its sync point applies, with a useful error naming each failure; its exact shape is no contract. Ticks'
+  failures are rethrown out of band. `Report`, its archetype and types, and run numbers leave the public API; the
+  implementation keeps or drops reports as performance dictates. A later `World.create` options parameter may take
+  instrumentation (timing, failure logs, debugging); nothing until it's designed.
 - **Nothing tells the world's thread a join finished.** After `World.join`, a run from the world's own thread can run
   before the joined thread has claimed its threads, so that thread's observers miss it; the guide's threads section
   runs from the joined world instead. Options: `World.join` resolving once claimed (already true on the joined side?),
@@ -18,8 +25,6 @@ correctness, then optimization. Remove an item once it's decided or done.
 - **Observer systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities
    don't work as bindings. Proposal: allow `up` in observer systems, since it only reads; let `order` take an index over
    the entity a reference names. (from the todo sample)
-- **One-off reads:** `world.run` returns no value, so a one-off read needs an observer system that writes into an outer
-  variable.
 - **Per-row CPU values in render systems:** a render body's tables are `{ count, bind }`, so it can't draw with a
   per-row object such as a texture's bind group, and a row body can't learn its GPU row. A consumer drawing an image
   per row keeps its own instance buffer, 4,000 draws in 2.1 ms a tick. Possible: tables giving their entities in GPU
@@ -49,7 +54,8 @@ correctness, then optimization. Remove an item once it's decided or done.
 
 ## Correctness
 
-None open.
+- **Transactions, future:** never by default, since they would cost every run. An explicit declarative option on a
+  one-off system, making its run all or nothing.
 
 ## Optimization
 

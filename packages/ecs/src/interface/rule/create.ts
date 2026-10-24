@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { declarationOf, kindOf, labelOf } from '../registry/names.js';
+import { declarationOf, kindOf, labelOf, whyUnregistered } from '../registry/names.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
 import { nameOf } from '../registry/items.js';
 import { addRule } from '../registry/program.js';
@@ -16,7 +16,7 @@ export const create = <const D extends Declaration>(declaration: D): { readonly 
     const name = nameOf(declaration, id, "rule");
     const { components, derive } = declaration;
     for (const key of [...components.has ?? [], ...components.not ?? [], ...derive]) {
-        if (kindOf(key) !== "component") throw new Error(`Rule "${name}" uses "${labelOf(key)}", which isn't a registered component.`);
+        if (kindOf(key) !== "component") throw new Error(`Rule "${name}" uses "${labelOf(key)}", which isn't a registered component: ${whyUnregistered(key)}.`);
     }
     for (const key of derive) {
         if (declarationOf(key)?.derived !== true) throw new Error(`Rule "${name}" derives "${labelOf(key)}", which isn't declared derived.`);

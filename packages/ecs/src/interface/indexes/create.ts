@@ -5,7 +5,7 @@ import { takeIdOfDeclaration } from '../registry/ids.js';
 import { addIndex } from '../registry/indexes.js';
 import { nameOf } from '../registry/items.js';
 import { layoutOf } from '../registry/layout.js';
-import { declarationOf, firstKeyOf, kindOf, labelOf } from '../registry/names.js';
+import { declarationOf, firstKeyOf, kindOf, labelOf, whyUnregistered } from '../registry/names.js';
 import type { Schema } from '../schema/schema.js';
 import type { Listed, Property } from '../system/property.js';
 import type { Created } from './created.js';
@@ -55,7 +55,7 @@ export const create = <const D extends Declaration>(declaration: D & Validate<D>
     for (const part of key) {
         const found = declarationOf(part);
         const type = found?.type;
-        if (kindOf(part) !== "component" || type === undefined) fail(`has key part "${labelOf(part)}", which isn't a registered component of data`);
+        if (kindOf(part) !== "component" || type === undefined) fail(`has key part "${labelOf(part)}", which isn't a registered component of data: ${whyUnregistered(part)}`);
         else {
             if (parts.has(firstKeyOf(part))) fail(`lists key part "${labelOf(part)}" twice`);
             parts.add(firstKeyOf(part));
@@ -69,11 +69,11 @@ export const create = <const D extends Declaration>(declaration: D & Validate<D>
     if (threads.size > 1) fail(`has key parts on threads ${[...threads].map(thread => `"${thread}"`).join(" and ")}; its object parts live on one thread, the world's beside a string`);
     const held = new Set<symbol>(parts);
     for (const component of components?.has ?? []) {
-        if (kindOf(component) !== "component") fail(`has "${labelOf(component)}", which isn't a registered component`);
+        if (kindOf(component) !== "component") fail(`has "${labelOf(component)}", which isn't a registered component: ${whyUnregistered(component)}`);
         held.add(firstKeyOf(component));
     }
     for (const component of components?.not ?? []) {
-        if (kindOf(component) !== "component") fail(`excludes "${labelOf(component)}", which isn't a registered component`);
+        if (kindOf(component) !== "component") fail(`excludes "${labelOf(component)}", which isn't a registered component: ${whyUnregistered(component)}`);
         if (held.has(firstKeyOf(component))) fail(`excludes "${labelOf(component)}", which it holds by`);
     }
     const index: Created = { kind: "index", name, declaration };

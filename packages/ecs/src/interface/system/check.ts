@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { layoutOf } from '../registry/layout.js';
-import { declarationOf, kindOf, labelOf } from '../registry/names.js';
+import { declarationOf, kindOf, labelOf, whyUnregistered } from '../registry/names.js';
 import { definitionOf } from '../registry/program.js';
 import { reducedBy, scheduleOf } from '../registry/schedule.js';
 import { conditional } from '../registry/schemas.js';
@@ -50,7 +50,7 @@ const checkConditions = (leaf: Leaf): void => {
     const listed = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? []]);
     for (const key of [...is, ...not]) {
         const declaration = declarationOf(key);
-        if (kindOf(key) !== "resource" || declaration === undefined) throw new Error(`System "${name}" runs on the condition of "${labelOf(key)}", which isn't a registered resource.`);
+        if (kindOf(key) !== "resource" || declaration === undefined) throw new Error(`System "${name}" runs on the condition of "${labelOf(key)}", which isn't a registered resource: ${whyUnregistered(key)}.`);
         const { type } = declaration;
         if (type !== undefined && !conditional(type)) throw new Error(`System "${name}" runs on the condition of "${labelOf(key)}", which is never null or false.`);
     }

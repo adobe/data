@@ -6,9 +6,21 @@ const isStructValue = (value: unknown): boolean =>
     typeof value === "number" || typeof value === "boolean"
     || (Array.isArray(value) ? value.every(isStructValue) : typeof value === "object" && value !== null && Object.values(value).every(isStructValue));
 
+/** The values of a union of number constants, which is stored as a number, or null for any other schema. */
+export const numberConstants = (schema: Schema): readonly number[] | null => {
+    if (!("anyOf" in schema) || schema.anyOf.length === 0) return null;
+    const values: number[] = [];
+    for (const option of schema.anyOf) {
+        if (!("const" in option) || typeof option.const !== "number") return null;
+        values.push(option.const);
+    }
+    return values;
+};
+
 /** Whether a schema describes a struct: numbers, booleans, entities, fixed-length tuples and structs of those. */
 export const isStruct = (schema: Schema): boolean => {
     if ("const" in schema) return isStructValue(schema.const);
+    if (numberConstants(schema) !== null) return true;
     if (!("type" in schema)) return false;
     switch (schema.type) {
         case "number":

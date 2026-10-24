@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { createHolds, type Holds } from './stop-lists.js';
 import type { Entity } from '../../interface/entity/entity.js';
-import { declarationOf, firstKeyOf, kindOf, labelOf } from '../../interface/registry/index.js';
+import { declarationOf, firstKeyOf, kindOf, labelOf, whyUnregistered } from '../../interface/registry/index.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
 import type { SpawnBatch } from './staging.js';
 import type { CommandBuffer } from './buffer.js';
@@ -367,7 +367,7 @@ export const idOf = (state: State, key: Key): number => {
         return id;
     }
     const declaration = declarationOf(key);
-    if (declaration === undefined) throw new Error(`"${labelOf(key)}" has no registered schema: declare it beside its key, in a module the plugin builds.`);
+    if (declaration === undefined) throw new Error(`"${labelOf(key)}" has no registered schema: ${whyUnregistered(key)}.`);
     const { structure } = state;
     // A host gets its id first, so stratifying with the new edge can name it; a cycle throws before anything is
     // recorded.

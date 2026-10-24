@@ -35,6 +35,23 @@ describe("layoutOf", () => {
         expect(placement({ type: "object", properties: { flag: { type: "boolean" }, weight: { type: "number" }, mass: f32 } })).toEqual({ stride: 24, offsets: [0, 8, 16] });
     });
 
+    it("stores a union of number constants as a number column: integers at the narrowest width holding them", () => {
+        const views = (schema: Schema) => {
+            const layout = layoutOf(schema);
+            return layout.kind === "linear" ? layout.leaves.map(leaf => leaf.view) : layout.kind;
+        };
+        expect(views({ anyOf: [{ const: 0 }, { const: 1 }, { const: 2 }] })).toEqual(["u32"]);
+        expect(views({ anyOf: [{ const: 1 }, { const: -1 }] })).toEqual(["i32"]);
+        expect(views({ anyOf: [{ const: 0.5 }, { const: 1 }] })).toEqual(["f64"]);
+        expect(views({ anyOf: [{ const: 0 }, { const: 2 ** 40 }] })).toEqual(["f64"]);
+        expect(views({ type: "object", properties: { mode: { anyOf: [{ const: 0 }, { const: 1 }] }, at: f32 } })).toEqual(["u32", "f32"]);
+        expect(views({ anyOf: [{ const: 0 }, { const: "a" }] })).toBe("object");
+        expect(views({ anyOf: [{ const: 0 }, { type: "null" }] })).toBe("object");
+        // A struct, so it lives in shared memory, on no thread.
+        expect(isStruct({ anyOf: [{ const: 0 }, { const: 1 }] })).toBe(true);
+        expect(threadOfDeclaration({ type: { anyOf: [{ const: 0 }, { const: 1 }] } })).toBe(null);
+    });
+
     it("stores sets and maps as objects, even of numbers, and nothing in them as a struct", () => {
         const set: Schema = { type: "set", items: { type: "number" } };
         const map: Schema = { type: "map", keys: { type: "integer", minimum: 0, maximum: 9 }, values: { type: "boolean" } };

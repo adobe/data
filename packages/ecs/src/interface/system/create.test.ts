@@ -133,6 +133,13 @@ describe("System.create", () => {
         expect(() => create({ components: { read: [unregistered] } })).toThrow(`uses component "typesSystemTest/unregistered", which isn't a registered component`);
         expect(() => create({ components: { read: [time] } })).toThrow(`uses component "typesSystemTest/time", which isn't a registered component`);
     });
+    it("says why a key isn't registered: undeclared, or its module not built with the plugin", () => {
+        const create = (declaration: unknown) => Reflect.apply(System.create, undefined, [declaration, () => {}]);
+        expect(() => create({ components: { read: [unregistered] } })).toThrow("declare it beside its key, in interface Components or Resources");
+        // Made in a function, so the build gave it no id, as one made in a module the plugin didn't build has none.
+        const unbuilt = Symbol("unbuilt");
+        expect(() => create({ components: { read: [unbuilt] } })).toThrow("Compiler.plugin() registers keys from their declarations, and didn't build the module making it");
+    });
 });
 
 describe("System.create of a composite", () => {

@@ -3,7 +3,7 @@
 export type { AnyDeclaration } from './declarations.js';
 export { schemaOf, threadOfDeclaration } from './declarations.js';
 export type { Kind } from './names.js';
-export { declarationOf, firstKeyOf, keyOfId, kindOf, labelOf, newestKeyOf } from './names.js';
+export { declarationOf, firstKeyOf, keyOfId, kindOf, labelOf, newestKeyOf, whyUnregistered } from './names.js';
 export type { Item } from './program.js';
 export { definitionOf, programFinalizers, programRules, programVersion, requireDefinition } from './program.js';
 export type { Schedule } from './schedule.js';

@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { declarationOf, kindOf, labelOf } from '../registry/names.js';
+import { declarationOf, kindOf, labelOf, whyUnregistered } from '../registry/names.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
 import { firstItemOf, nameOf } from '../registry/items.js';
 import { addFinalizer, programFinalizers } from '../registry/program.js';
@@ -119,7 +119,7 @@ export const changes = <const D extends ChangesDeclaration>(
         for (const keys of [lookup.read, "has" in lookup ? lookup.has : undefined, "not" in lookup ? lookup.not : undefined]) requireRegistered("Finalizer", name, "component", keys);
     }
     for (const key of declaration.watch ?? []) {
-        if (kindOf(key) !== "component") throw new Error(`Finalizer "${name}" watches "${labelOf(key)}", which isn't a registered component.`);
+        if (kindOf(key) !== "component") throw new Error(`Finalizer "${name}" watches "${labelOf(key)}", which isn't a registered component: ${whyUnregistered(key)}.`);
         if (declarationOf(key)?.derived === true) throw new Error(`Finalizer "${name}" watches "${labelOf(key)}", which is derived; it sees only components user code adds and removes.`);
     }
     const thread = threadOf({ components: { read: declaration.watch }, resources: declaration.resources, lookup: declaration.lookup }, "Finalizer", name);

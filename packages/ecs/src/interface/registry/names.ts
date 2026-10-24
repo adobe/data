@@ -135,3 +135,11 @@ export const claimKey = (key: unknown, kind: Kind, declaration?: AnyDeclaration)
 
 /** The symbol last registered under an id, by which a world gives values, or undefined where none was. */
 export const keyOfId = (id: string): symbol | undefined => identified.get(id)?.newest;
+
+/**
+ * Why a key isn't registered, for errors: the build registers keys from their declarations, so either its module
+ * wasn't built with the plugin, which gives keys ids, or it isn't declared.
+ */
+export const whyUnregistered = (key: unknown): string => typeof key === "symbol" && idOfKey(key) === undefined
+    ? "the build's Compiler.plugin() registers keys from their declarations, and didn't build the module making it"
+    : "declare it beside its key, in interface Components or Resources";

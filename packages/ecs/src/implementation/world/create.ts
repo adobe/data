@@ -49,7 +49,7 @@ import { createState, defaultOf, idOf, reside, startTicking, type Key } from './
 import { indexOf } from './entities.js';
 import { isHeld } from './transfers.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
-import { labelOf } from '../../interface/registry/index.js';
+import { labelOf, whyUnregistered } from '../../interface/registry/index.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
 
@@ -148,7 +148,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     const initial = new Map<Key, unknown>();
     // String keys are never a resource's, so they're ignored, as commands ignore them.
     for (const key of Object.getOwnPropertySymbols(resources)) {
-        if (kindOf(key) !== "resource") throw new Error(`"${labelOf(key)}" isn't a registered resource.`);
+        if (kindOf(key) !== "resource") throw new Error(`"${labelOf(key)}" isn't a registered resource: ${whyUnregistered(key)}.`);
         if (isWorldWritten(key)) throw new Error(`"${labelOf(key)}" is written only by the world.`);
         initial.set(key, Reflect.get(resources, key));
     }

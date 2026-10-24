@@ -3,7 +3,8 @@ import type { Node, ObjectExpression, Pattern } from 'estree';
 import { children, declaredIn, patternNames } from './estree.js';
 import type { ModuleScope } from './module-scope.js';
 
-type Access = { readonly read: ReadonlySet<string>; readonly write: ReadonlySet<string> };
+/** Keys read and written, and those changed inside their values (`row[k].a = 1`), which registration judges by kind. */
+type Access = { readonly read: ReadonlySet<string>; readonly write: ReadonlySet<string>; readonly mutate: ReadonlySet<string> };
 
 /** The keys a body reads, writes and contributes to, by module-scope binding name; null where the body doesn't show every use. */
 export type Used = {
@@ -29,10 +30,11 @@ const isName = (node: Node, parent: Node | undefined): boolean => {
     }
 };
 
-type Use = { readonly read: boolean; readonly write: boolean };
+type Use = { readonly read: boolean; readonly write: boolean; readonly mutate?: true };
 
 const read: Use = { read: true, write: false };
 const written: Use = { read: false, write: true };
+const mutated: Use = { read: true, write: false, mutate: true };
 
 /**
  * How `member`, a `name[key]` expression, is used: read, written, or both; null when it's deleted. A target of a
@@ -53,9 +55,9 @@ const useOf = (member: Node, parent: Node | undefined, grandparent: Node | undef
 };
 
 /**
- * How `member`, a `name[key]` expression, is used where `ancestors` ends with its parent: as `useOf` says, and written
- * too when something inside its value is (`row[key].a.b = 1`, `delete row[key].a`, `[row[key][0]] = pair`), which
- * replaces nothing but changes the value all the same.
+ * How `member`, a `name[key]` expression, is used where `ancestors` ends with its parent: as `useOf` says, and changed
+ * in place when something inside its value is written (`row[key].a.b = 1`, `delete row[key].a`, `[row[key][0]] = pair`):
+ * an object changes so, while a data value, replaced whole, can't, which registration tells apart by its kind.
  */
 const deepUseOf = (member: Node, ancestors: readonly Node[], at: number): Use | null => {
     let inner = member;
@@ -66,7 +68,7 @@ const deepUseOf = (member: Node, ancestors: readonly Node[], at: number): Use | 
     }
     const use = useOf(inner, ancestors[index], ancestors[index - 1]);
     if (inner === member) return use;
-    return use === null || use.write ? { read: true, write: true } : read;
+    return use === null || use.write ? mutated : read;
 };
 
 /** Whether a lookup result `value`, a child of `parent`, is only tested: compared with null, or used as a condition. */
@@ -143,8 +145,8 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     const lookups = lookupNames(declaration);
     const indexed = indexLookupNames(declaration);
 
-    const query = { read: new Set<string>(), write: new Set<string>() };
-    const resources = { read: new Set<string>(), write: new Set<string>(), reduce: new Set<string>() };
+    const query = { read: new Set<string>(), write: new Set<string>(), mutate: new Set<string>() };
+    const resources = { read: new Set<string>(), write: new Set<string>(), mutate: new Set<string>(), reduce: new Set<string>() };
     const up = new Set<string>();
     let upKnown = true;
     const lookupReads = new Map<string, Set<string> | null>((lookups ?? []).map(name => [name, new Set<string>()]));
@@ -332,7 +334,7 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
         }
         if (group === "up") {
             const use = deepUseOf(parent, ancestors, at - 1);
-            if (use === null || use.write) upKnown = false;
+            if (use === null || use.write || use.mutate) upKnown = false;
             else up.add(key);
             return;
         }
@@ -340,6 +342,7 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
         if (use === null) return unknownGroup(group);
         if (use.read) resources.read.add(key);
         if (use.write) resources.write.add(key);
+        if (use.mutate) resources.mutate.add(key);
     };
 
     /** Classifies a reference; `ancestors` ends with its parent. */
@@ -361,6 +364,7 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
                 else {
                     if (use.read) query.read.add(key);
                     if (use.write) query.write.add(key);
+                    if (use.mutate) query.mutate.add(key);
                 }
             }
             else if (!(parent?.type === "VariableDeclarator" && parent.init === node && destructure(parent.id, rowNamed, key => query.read.add(key)))) queryKnown = false;

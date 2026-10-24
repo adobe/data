@@ -1462,13 +1462,15 @@ describe("inferred access", () => {
             .toContain("components: { read: [position], write: [] }");
     });
 
-    test("a change inside a value, at any depth, as a write of it", async () => {
+    test("a change inside a value, at any depth, as a change in place, for registration to judge by its kind", async () => {
         expect(await inferred(system("components: { with: [position] }", "(row) => { row[position].a.b = 1; }")))
-            .toContain("components: { read: [], write: [position] }");
+            .toContain("components: { read: [position], write: [], mutate: [position] }");
         expect(await inferred(system("components: { with: [position] }", "(row) => { delete row[position].a; }")))
-            .toContain("components: { read: [], write: [position] }");
+            .toContain("components: { read: [position], write: [], mutate: [position] }");
         expect(await inferred(system("components: { with: [position] }", "(row) => { [row[position][0]] = pair; }")))
-            .toContain("components: { read: [], write: [position] }");
+            .toContain("components: { read: [position], write: [], mutate: [position] }");
+        expect(await inferred(system("", "(context) => { context.resources[score].a = 1; }")))
+            .toContain("resources: { read: [score], write: [], reduce: [], mutate: [score] }");
     });
 
     test("a body mentioning eval as one it can't follow", async () => {

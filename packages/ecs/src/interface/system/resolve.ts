@@ -1,13 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { takeAccessOf } from '../registry/ids.js';
 import { indexDefinitionOf } from '../registry/indexes.js';
-import { declarationOf } from '../registry/names.js';
+import { declarationOf, labelOf } from '../registry/names.js';
+import { isString, isStruct } from '../registry/schemas.js';
 import type { ComponentAccess, ComponentLists, Lookup, SystemLookup, SystemLookupLists } from './access.js';
 
 type Key = symbol;
 
-/** What a body reads and writes of a group of keys. */
-type Used = { readonly read: readonly Key[]; readonly write: readonly Key[] };
+/** What a body reads and writes of a group of keys, and those it changes inside their values, read as well. */
+type Used = { readonly read: readonly Key[]; readonly write: readonly Key[]; readonly mutate?: readonly Key[] };
 
 /**
  * What the build infers a body uses, which the plugin gives the declaration or body a constructor is called with: what
@@ -26,7 +27,8 @@ export type Access = {
 const isKeys = (value: unknown): value is readonly Key[] => Array.isArray(value) && value.every(key => typeof key === "symbol");
 
 const isUsed = (value: unknown): value is Used => typeof value === "object" && value !== null
-    && isKeys(Reflect.get(value, "read")) && isKeys(Reflect.get(value, "write"));
+    && isKeys(Reflect.get(value, "read")) && isKeys(Reflect.get(value, "write"))
+    && (Reflect.get(value, "mutate") === undefined || isKeys(Reflect.get(value, "mutate")));
 
 const isAccess = (value: unknown): value is Access => {
     if (typeof value !== "object" || value === null) return false;
@@ -48,6 +50,21 @@ export const accessOf = (what: string, made: object): Access => {
     const access = takeAccessOf(made);
     if (!isAccess(access)) throw new Error(`${what} has no access the build inferred from its body: the build reads what a body uses where the constructor is called with its declaration written in place, as an object literal, and its body as a function, in a module built with Compiler.plugin().`);
     return access;
+};
+
+/**
+ * Throws for a body changing something inside a data value, a struct or a string, which a row or the resources give
+ * as a copy and take only whole, so the change would be lost. An object, changed in place, is read.
+ */
+const checkChanges = (what: string, access: Access): void => {
+    for (const [group, keys] of [["its row's", access.components?.mutate], ["resources'", access.resources?.mutate]] as const) {
+        for (const key of keys ?? []) {
+            const type = declarationOf(key)?.type;
+            if (type !== undefined && (isStruct(type) || isString(type))) {
+                throw new Error(`${what}'s body (${access.at}) changes something inside ${group} "${labelOf(key)}", a value given as a copy and taken only whole: assign it a new value instead.`);
+            }
+        }
+    }
 };
 
 /** Throws for a group the build couldn't follow, naming what the body did instead. */
@@ -116,6 +133,7 @@ export const lookupsLists = <L extends SystemLookup | Lookup>(lookups: { readonl
  * into stays, for registration to reject.
  */
 export const resourceUses = (what: string, access: Access, is: readonly Key[] | undefined): { readonly read: Key[]; readonly write: readonly Key[]; readonly reduce: readonly Key[] } => {
+    checkChanges(what, access);
     const used = followed(what, access.resources, "its resources", access);
     return { read: without(used.read, used.write, is), write: used.write, reduce: used.reduce };
 };

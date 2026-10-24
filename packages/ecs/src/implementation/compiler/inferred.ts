@@ -32,7 +32,7 @@ export const inOrder = (used: Used, declaration: ObjectExpression): Used => {
     const lookups = fields(valueOf(declared.get("lookup")));
     return {
         ...used,
-        query: used.query === null ? null : { read: ordered(used.query.read, members), write: ordered(used.query.write, members) },
+        query: used.query === null ? null : { read: ordered(used.query.read, members), write: ordered(used.query.write, members), mutate: ordered(used.query.mutate, members) },
         lookups: used.lookups === null ? null : new Map([...used.lookups].map(([name, read]) =>
             [name, read === null ? null : ordered(read, namesIn(valueOf(fields(valueOf(lookups.get(name))).get("with"))))])),
     };
@@ -77,8 +77,10 @@ const list = (names: Iterable<string>): string => `[${[...names].join(", ")}]`;
  */
 export const accessText = (used: Used, at: string): string => {
     const { query, resources, lookups, up } = used;
-    const components = query === null ? "null" : `{ read: ${list([...query.read].filter(key => !query.write.has(key)))}, write: ${list(query.write)} }`;
-    const resourceText = resources === null ? "null" : `{ read: ${list(resources.read)}, write: ${list(resources.write)}, reduce: ${list(resources.reduce)} }`;
+    // Keys changed inside their values are listed only when there are some, for registration to judge by kind.
+    const mutate = (keys: ReadonlySet<string>): string => keys.size === 0 ? "" : `, mutate: ${list(keys)}`;
+    const components = query === null ? "null" : `{ read: ${list([...query.read].filter(key => !query.write.has(key)))}, write: ${list(query.write)}${mutate(query.mutate)} }`;
+    const resourceText = resources === null ? "null" : `{ read: ${list(resources.read)}, write: ${list(resources.write)}, reduce: ${list(resources.reduce)}${mutate(resources.mutate)} }`;
     const lookupText = lookups === null ? "null" : `{ ${[...lookups].map(([name, read]) => `${JSON.stringify(name)}: ${read === null ? "null" : list(read)}`).join(", ")} }`;
     return `{ components: ${components}, resources: ${resourceText}, lookup: ${lookupText}, up: ${up === null ? "null" : list(up)}, at: ${JSON.stringify(at)} }`;
 };
@@ -133,10 +135,12 @@ export const resolvedDeclaration = (declaration: ObjectExpression, used: Used): 
         switch (original.key.name) {
             case "components": {
                 if (value?.type !== "ObjectExpression" || used.query === null) break;
-                const { read, write } = used.query;
+                const { read, write, mutate } = used.query;
+                // A change inside a value is a write to the compiler, which rejects it for values written whole.
+                const written = new Set([...write, ...mutate]);
                 properties.push(property("components", object([
-                    property("read", array([...read].filter(key => !write.has(key)))),
-                    property("write", array(write)),
+                    property("read", array([...read].filter(key => !written.has(key)))),
+                    property("write", array(written)),
                     ...keep(parts, ["with", "not", "added", "changed"]),
                 ])));
                 continue;

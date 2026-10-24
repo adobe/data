@@ -24,7 +24,7 @@ declare module "@adobe/ecs" {
 /** Lists the build gives indexes: top-level lists of components declared as const. */
 const Particle = [position, velocity] as const;
 const Moving = [velocity] as const;
-/** A list naming a resource isn't a list of components, so it has no index. */
+/** A list naming a resource takes an index too: where it's used, it's found not to be a list of components. */
 const WithResource = [position, gravity] as const;
 
 describe("archetype indexes", () => {
@@ -34,9 +34,9 @@ describe("archetype indexes", () => {
         expect(archetypeIndexOf(Moving)).not.toBe(archetypeIndexOf(Particle));
         expect(Object.keys(Particle)).toEqual(["0", "1"]);
     });
-    it("aren't given to a list made at runtime, or one naming anything but components", () => {
+    it("aren't given to a list made at runtime, and are to one of symbols whatever they key", () => {
         expect(archetypeIndexOf([position, velocity])).toBe(-1);
-        expect(archetypeIndexOf(WithResource)).toBe(-1);
+        expect(archetypeIndexOf(WithResource)).toBeGreaterThanOrEqual(0);
     });
     it("are given to the package's own lists once, and never twice", () => {
         const list = [position];

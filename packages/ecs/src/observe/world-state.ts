@@ -97,8 +97,8 @@ const labels = Symbol.for("@adobe/ecs/labels@1");
 /** Labels a declaration of a system or index the factories make, and returns it. */
 export const labelled = <const D extends object>(declaration: D, label: string): D => {
     let map: unknown = Reflect.get(globalThis, labels);
-    if (!(map instanceof Map)) Reflect.set(globalThis, labels, map = new Map<object, string>());
-    if (map instanceof Map) map.set(declaration, label);
+    if (!(map instanceof WeakMap || map instanceof Map)) Reflect.set(globalThis, labels, map = new WeakMap<object, string>());
+    if (map instanceof WeakMap || map instanceof Map) map.set(declaration, label);
     return declaration;
 };
 

@@ -134,14 +134,23 @@ describe("identify, for systems, rules and finalizers", () => {
         ]);
         expect(result?.code).not.toContain("identify$");
     });
-    test("keeps a label already given, as an internal factory gives its own", async () => {
-        const result = await identify(`import { System } from "@adobe/ecs";\nfunction make(given) { return System.create(given); }`);
+    test("labels a call made in another's arguments by the name nearest it", async () => {
+        const result = await identify(`import { System } from "@adobe/ecs";\nfunction make() { return System.create({ systems: [System.create({ tag: "nested" })] }); }`);
+        expect([...(result?.code ?? "").matchAll(/label\$\((\{ tag[^}]*\}), "(\w+)"\)/g)].map(match => [match[1], match[2]])).toEqual([[`{ tag: "nested" }`, "systems"]]);
+    });
+    test("keeps a label already given, as an internal factory gives its own, in a map holding declarations weakly", async () => {
+        const result = await identify(`import { System } from "@adobe/ecs";\nfunction make(given) { return System.create(given); }\nfunction fresh() { return System.create({}); }`);
         const evaluated = (result?.code ?? "").replace(/^import .*$/m, "const System = { create: (declaration) => declaration };");
-        const labels = new Map([[{}, "given"]]);
-        const [declaration] = labels.keys();
+        const declaration = {};
+        const labels = new WeakMap([[declaration, "given"]]);
         Reflect.set(globalThis, Symbol.for("@adobe/ecs/labels@1"), labels);
-        new Function(`${evaluated}\nreturn make;`)()(declaration);
+        const [make] = new Function(`${evaluated}\nreturn [make, fresh];`)();
+        make(declaration);
         expect(labels.get(declaration)).toBe("given");
+        // A declaration whose constructor throws before taking its label isn't kept alive by it.
+        Reflect.deleteProperty(globalThis, Symbol.for("@adobe/ecs/labels@1"));
+        new Function(`${evaluated}\nreturn fresh;`)()();
+        expect(Reflect.get(globalThis, Symbol.for("@adobe/ecs/labels@1"))).toBeInstanceOf(WeakMap);
     });
     test("fails for a module outside a named package, which has nothing to name its ids by", async () => {
         const result = await identifyModule(`export const position = Symbol();`, null, parse, resolve);

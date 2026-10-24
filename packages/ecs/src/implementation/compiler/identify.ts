@@ -162,7 +162,7 @@ export const identify = async (code: string, id: string | null, parse: Parse, re
         for (const { value, label } of labeled) insertions.push({ at: value.start, text: `${identifier}(` }, { at: value.end, text: `, ${JSON.stringify(label)})` });
         const labels = JSON.stringify(labelsName);
         // A label already given, as an internal factory gives its own, stands.
-        insertions.push({ at: code.length, text: `\nfunction ${identifier}(value, label) { const labels = Symbol.for(${labels}); const map = globalThis[labels] || (globalThis[labels] = new Map()); if (!map.has(value)) map.set(value, label); return value; }\n` });
+        insertions.push({ at: code.length, text: `\nfunction ${identifier}(value, label) { const labels = Symbol.for(${labels}); const map = globalThis[labels] || (globalThis[labels] = new WeakMap()); if (!map.has(value)) map.set(value, label); return value; }\n` });
     }
     return insertInto(code, insertions, id ?? "");
 };
@@ -187,10 +187,8 @@ const labelsOf = (program: Program, namespaces: ReadonlyMap<string, Namespace>, 
     const visit = (node: Node, names: readonly string[]): void => {
         const declaration = declarationOf(node, namespaces, attach);
         const label = names.at(-1);
-        if (declaration !== undefined && !identified.has(declaration) && label !== undefined) {
-            labeled.push({ value: declaration, label });
-            return;
-        }
+        // Calls in its arguments are labeled too, by the names nearest them.
+        if (declaration !== undefined && !identified.has(declaration) && label !== undefined) labeled.push({ value: declaration, label });
         const name = nameIn(node);
         const inner = name === null ? names : [...names, name];
         for (const child of children(node)) visit(child, inner);

@@ -31,8 +31,9 @@ export const takeIdOfDeclaration = (declaration: object): string | undefined => 
 };
 
 /**
- * The `Symbol.for` name of the global `Map` from a declaration to the label the plugin gave a constructor call that
- * isn't a top-level binding's, by the binding or function it's in, or an internal factory gave its declaration.
+ * The `Symbol.for` name of the global `WeakMap` from a declaration to the label the plugin gave a constructor call that
+ * isn't a top-level binding's, by the binding or function it's in, or an internal factory gave its declaration. Weak,
+ * so a declaration whose constructor threw before taking its label isn't kept.
  */
 export const labelsName = "@adobe/ecs/labels@1";
 
@@ -41,7 +42,7 @@ const labels = Symbol.for(labelsName);
 /** The label given the declaration a constructor call passes, if any, taken out of the map. */
 export const takeLabelOfDeclaration = (declaration: object): string | undefined => {
     const map: unknown = Reflect.get(globalThis, labels);
-    if (!(map instanceof Map)) return undefined;
+    if (!(map instanceof WeakMap || map instanceof Map)) return undefined;
     const label: unknown = map.get(declaration);
     if (label === undefined) return undefined;
     map.delete(declaration);

@@ -16,8 +16,8 @@ declare module "@adobe/ecs" {
     }
 }
 
-// A lookup reads another entity's components by its id: its row, or null when the entity doesn't have every component
-// in with, or has one in not.
+// The entity's row, or null when it doesn't have every component in with, or has one in not. The row holds only what
+// with lists.
 const track = System.create({
     components: { with: [target, aim] },
     lookup: { enemy: { with: [health], not: [frozen] } },

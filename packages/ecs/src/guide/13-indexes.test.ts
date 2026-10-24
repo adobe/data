@@ -18,7 +18,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-// An index finds entities by their components' values: here, those with a crowded count, by their cell.
+// Here, entities with a crowded count, by their cell.
 const grid = Index.create({ key: [cell], components: { with: [crowded] } });
 
 // A lookup through it gives the rows with a key, in entity order.

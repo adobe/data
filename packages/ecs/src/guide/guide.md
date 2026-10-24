@@ -533,9 +533,12 @@ check<Equal<Extract<Component.With<typeof instanced>, typeof transform | typeof 
 
 ### 12. Lookups
 
+A lookup reads other entities from a system: by id, as here, or by value through an index (next section). It's named in
+the declaration and called from the body, it's read-only, and it doesn't change which entities the system runs on.
+
 ```ts
-// A lookup reads another entity's components by its id: its row, or null when the entity doesn't have every component
-// in with, or has one in not.
+// The entity's row, or null when it doesn't have every component in with, or has one in not. The row holds only what
+// with lists.
 const track = System.create({
     components: { with: [target, aim] },
     lookup: { enemy: { with: [health], not: [frozen] } },
@@ -566,8 +569,16 @@ To find entities by their values rather than their ids, look up through an index
 
 ### 13. Indexes
 
+An index is a declared map from component values to the entities holding them, which every world keeps current. A
+lookup through it finds entities by value, as a lookup by entity finds one by id.
+
+- A hash index, the default, gives the rows with a key.
+- `sorted: true` also takes ranges, and orders a system's rows with `order`.
+- `unique: true` gives one row, or null.
+- `key: []` holds every entity it matches.
+
 ```ts
-// An index finds entities by their components' values: here, those with a crowded count, by their cell.
+// Here, entities with a crowded count, by their cell.
 const grid = Index.create({ key: [cell], components: { with: [crowded] } });
 
 // A lookup through it gives the rows with a key, in entity order.
@@ -621,9 +632,10 @@ const countPlayers = System.create({ observer: true, lookup: { players: { index:
 
 [`13-indexes.test.ts`](13-indexes.test.ts#L52-L58)
 
-A list stays valid until its call site runs again. Rows hold what every entity in the index has: its key and its
-`with`. `list.changed` tells whether an entity entered, left or moved in it since the system last ran. A
-lookup's `changed: true` runs its system only when that happened anywhere in the index.
+A list has `length`, `changed` and `at(i)`. It's reused, valid until its call site runs again, each row as long as its
+list, and costs only what the body reads. Rows hold what every entity in the index has: its key and its `with`.
+`list.changed` says whether an entity entered, left or moved in the list since the system last ran; a lookup's
+`changed: true` runs its system only when that happened anywhere in the index.
 
 ### 14. Kernels
 
@@ -793,6 +805,16 @@ const listen = System.create({ observer: true }, ({ resources }) => {
 [`19-threads.test.ts`](19-threads.test.ts#L8-L31)
 
 ```ts
+const spawn = System.create(({ commands }) => {
+    commands.spawn([volume])({ [volume]: 0.8 });
+    commands.spawn([volume])({ [volume]: 0.3 });
+});
+
+/** Waits a turn of the event loop at a time until `done`. */
+const until = async (done: () => boolean): Promise<void> => {
+    while (!done()) await new Promise(resolve => setTimeout(resolve, 1));
+};
+
 it("shares a world with another thread", async () => {
     // Usually one end of the channel goes to a worker, `new Worker(...)`, which joins with the other.
     const channel = new MessageChannel();
@@ -808,4 +830,4 @@ it("shares a world with another thread", async () => {
 });
 ```
 
-[`19-threads.test.ts`](19-threads.test.ts#L43-L55)
+[`19-threads.test.ts`](19-threads.test.ts#L33-L55)

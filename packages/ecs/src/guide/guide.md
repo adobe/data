@@ -45,7 +45,9 @@ Each component and resource is declared once, in the module that makes its key, 
 `Resources` in `@adobe/ecs` with its traits, `type` among them. The plugin registers each declaration: it reads the
 schema the value is stored by from `type`, so a type named by `Schema.Type`, such as `F32` or `U32`, gives its
 precision or width. Traits of your own augment `Traits`. A library builds with Vite and
-`Compiler.plugin({ library: true })`, so its build ships its registrations. The examples create worlds with
+`Compiler.plugin({ library: true })`, so its build ships its registrations. Kernels run on workers as separate
+chunks, so the plugin sets Vite's `worker.format` to `"es"` when the config doesn't set it, for every worker the app
+bundles, its own included, which then load as module workers (`{ type: "module" }`). The examples create worlds with
 `World.create()`.
 
 ## Basics

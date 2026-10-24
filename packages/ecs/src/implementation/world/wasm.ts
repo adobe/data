@@ -78,7 +78,7 @@ export type WasmKernel = {
     readonly scalars: readonly WasmScalar[];
     /** The JS functions it imports, by name. */
     readonly imports: readonly string[];
-    /** Whether it runs four rows at a time with SIMD, at storage precision. */
+    /** Whether it runs rows several at a time with SIMD: in f32 at storage precision, or in f64 as the body computes. */
     readonly vectorized: boolean;
 };
 
@@ -210,7 +210,10 @@ export const generateWasm = (
     indexLookups: readonly (WasmIndexLookup | null)[] = [],
     /** By probe, its lookup: `KernelDescription.probes[k].lookup`. */
     probeLookups: readonly number[] = [],
-    /** Whether SIMD lanes may compute at storage precision, as only an explicit kernel's may: f32 rounds each step. */
+    /**
+     * Whether SIMD lanes may compute at storage precision, as only an explicit kernel's may: f32 rounds each step.
+     * Without it lanes are f64, two values a vector, promoted from f32 and demoted only on store, as the body computes.
+     */
     storagePrecision = true,
 ): WasmKernel | null => {
     const program = withoutIntrinsics(source);
@@ -1299,7 +1302,7 @@ export const generateWasm = (
         }
     };
 
-    // ---- SIMD. Lanes compute in f32, at storage precision, so results may differ from the scalar path in the last bit. ----
+    // ---- SIMD. f32 lanes compute at storage precision, so results may differ from the scalar path; f64 lanes don't. ----
 
     const v128Type = 0x7b;
     const simd = (operation: number): number[] => [0xfd, ...unsigned(operation)];
@@ -1308,39 +1311,70 @@ export const generateWasm = (
         f32Eq: 65, f32Ne: 66, f32Lt: 67, f32Gt: 68, f32Le: 69, f32Ge: 70,
         f64Gt: 74, not: 77, and: 78, andNot: 79, or: 80, bitselect: 82, anyTrue: 83,
         store32Lane: 90, store64Lane: 91, load32Zero: 92, load64Zero: 93,
-        f32Ceil: 103, f32Floor: 104, f32Trunc: 105, i64ExtendLowS: 199, i64ExtendHighS: 200,
+        f64Eq: 71, f64Ne: 72, f64Lt: 73, f64Le: 75, f64Ge: 76, f32DemoteF64Zero: 94, f64PromoteLowF32: 95,
+        f32Ceil: 103, f32Floor: 104, f32Trunc: 105, f64Ceil: 116, f64Floor: 117, f64Trunc: 122, i64ExtendLowS: 199, i64ExtendHighS: 200,
         f32Abs: 224, f32Neg: 225, f32Sqrt: 227, f32Add: 228, f32Sub: 229, f32Mul: 230, f32Div: 231, f32Min: 232, f32Max: 233,
+        f64Abs: 236, f64Neg: 237, f64Sqrt: 239, f64Add: 240, f64Sub: 241, f64Mul: 242, f64Div: 243, f64Min: 244, f64Max: 245,
     } as const;
+    /** f64 lanes: each vector holds two values, each operation the f64 one, so lanes compute as the scalar path does. */
+    const wide = !storagePrecision;
+    /** Bytes of f32 storage one vector covers: four lanes, or two promoted to f64. */
+    const laneBytes = wide ? 8 : 16;
     const float32 = (value: number): number[] => [...new Uint8Array(new Float32Array([value]).buffer)];
-    const vectorConstant = (values: readonly number[]): number[] => [...simd(vop.const), ...[0, 1, 2, 3].flatMap(lane => float32(values[lane] ?? 0))];
+    const vectorConstant = (values: readonly number[]): number[] => wide
+        ? [...simd(vop.const), ...[0, 1].flatMap(lane => float64(values[lane] ?? 0))]
+        : [...simd(vop.const), ...[0, 1, 2, 3].flatMap(lane => float32(values[lane] ?? 0))];
     const splatConstant = (value: number): number[] => vectorConstant([value, value, value, value]);
-    const arithmeticVector = { "+": vop.f32Add, "-": vop.f32Sub, "*": vop.f32Mul, "/": vop.f32Div } as const;
-    const unaryVector: { readonly [name: string]: number | undefined } = { abs: vop.f32Abs, sqrt: vop.f32Sqrt, floor: vop.f32Floor, ceil: vop.f32Ceil, trunc: vop.f32Trunc };
+    const arithmeticVector = wide
+        ? { "+": vop.f64Add, "-": vop.f64Sub, "*": vop.f64Mul, "/": vop.f64Div }
+        : { "+": vop.f32Add, "-": vop.f32Sub, "*": vop.f32Mul, "/": vop.f32Div };
+    const unaryVector: { readonly [name: string]: number | undefined } = wide
+        ? { abs: vop.f64Abs, sqrt: vop.f64Sqrt, floor: vop.f64Floor, ceil: vop.f64Ceil, trunc: vop.f64Trunc }
+        : { abs: vop.f32Abs, sqrt: vop.f32Sqrt, floor: vop.f32Floor, ceil: vop.f32Ceil, trunc: vop.f32Trunc };
+    const negateVector = wide ? vop.f64Neg : vop.f32Neg;
+    const comparisonVector: { readonly [operator: string]: number | undefined } = wide
+        ? { "<": vop.f64Lt, ">": vop.f64Gt, "<=": vop.f64Le, ">=": vop.f64Ge, "==": vop.f64Eq, "!=": vop.f64Ne, "===": vop.f64Eq, "!==": vop.f64Ne }
+        : { "<": vop.f32Lt, ">": vop.f32Gt, "<=": vop.f32Le, ">=": vop.f32Ge, "==": vop.f32Eq, "!=": vop.f32Ne, "===": vop.f32Eq, "!==": vop.f32Ne };
+    /** Loads the vector of f32 storage at the address on the stack plus `offset`, as lanes. */
+    const loadLanes = (offset: number): void => {
+        if (wide) code.push(...simd(vop.load64Zero), 2, ...unsigned(offset), ...simd(vop.f64PromoteLowF32));
+        else code.push(...simd(vop.load), 2, ...unsigned(offset));
+    };
+    /** Stores lanes, on the stack after the address, to f32 storage at that address plus `offset`. */
+    const storeLanes = (offset: number): void => {
+        if (wide) code.push(...simd(vop.f32DemoteF64Zero), ...simd(vop.store64Lane), 2, ...unsigned(offset), 0);
+        else code.push(...simd(vop.store), 2, ...unsigned(offset));
+    };
 
     const isArithmetic = (operator: string): operator is keyof typeof arithmeticVector => operator in arithmeticVector;
-    /** A value that's the same for every lane, splatted: demoted to f32, as a lane computes. */
+    /** A value that's the same for every lane, splatted: demoted to f32 for f32 lanes, as a lane computes. */
     const emitSplat = (expression: Expression): void => {
         emit(expression);
-        code.push(op.f32DemoteF64, ...simd(vop.f32Splat));
+        if (wide) code.push(...simd(vop.f64Splat));
+        else code.push(op.f32DemoteF64, ...simd(vop.f32Splat));
     };
-    /** `Math` functions with an f32x4 equivalent; `fround` is the identity in f32. */
+    /** `Math` functions with a vector equivalent; `fround` is the identity in f32 and a demotion and promotion in f64. */
     const emitVectorMath = (functionName: string, count: number): void => {
         if (functionName === "min" || functionName === "max") {
-            for (let i = 1; i < count; i++) code.push(...simd(functionName === "min" ? vop.f32Min : vop.f32Max));
+            const operation = functionName === "min" ? (wide ? vop.f64Min : vop.f32Min) : (wide ? vop.f64Max : vop.f32Max);
+            for (let i = 1; i < count; i++) code.push(...simd(operation));
             return;
         }
+        if (functionName === "fround" && wide) return void code.push(...simd(vop.f32DemoteF64Zero), ...simd(vop.f64PromoteLowF32));
         const unary = unaryVector[functionName];
         if (unary !== undefined) code.push(...simd(unary));
     };
     const vectorMath = (functionName: string, count: number): boolean =>
         ((functionName === "min" || functionName === "max") && count > 0) || ((unaryVector[functionName] !== undefined || functionName === "fround") && count === 1);
 
-    // ---- Across rows: four rows at a time, for straight-line programs whose columns are all dense f32. ----
+    // ---- Across rows: four rows at a time in f32 lanes, two in f64, for programs whose columns are all dense f32. ----
 
     /** The mask of the enclosing `if`s, or null outside any. */
     let mask: number | null = null;
     const rowsLocals: number[] = [];
     const rowsLocal = (index: number): number => rowsLocals[index] ??= scratch(v128Type);
+    /** Rows a pass of the across-rows loops runs at once, which stamps cover. */
+    let groupRows = 4;
 
     const denseAddress = (column: number): void => {
         const { view, stride, boolean, component } = columns[column];
@@ -1350,12 +1384,12 @@ export const generateWasm = (
 
     const vectorTruthy = (type: Type): void => {
         if (type === "boolean") {
-            code.push(...splatConstant(0), ...simd(vop.f32Ne));
+            code.push(...splatConstant(0), ...simd(comparisonVector["!="] ?? vop.f32Ne));
             return;
         }
         const value = scratch(v128Type);
-        code.push(op.localTee, ...unsigned(value), ...splatConstant(0), ...simd(vop.f32Ne));
-        code.push(op.localGet, ...unsigned(value), op.localGet, ...unsigned(value), ...simd(vop.f32Eq), ...simd(vop.and));
+        code.push(op.localTee, ...unsigned(value), ...splatConstant(0), ...simd(comparisonVector["!="] ?? vop.f32Ne));
+        code.push(op.localGet, ...unsigned(value), op.localGet, ...unsigned(value), ...simd(comparisonVector["=="] ?? vop.f32Eq), ...simd(vop.and));
     };
     /** A lane mask as a value: 1 where set, 0 elsewhere. */
     const maskValue = (): void => {
@@ -1370,11 +1404,11 @@ export const generateWasm = (
             case "resource": case "args": return emitSplat(expression);
             case "column":
                 denseAddress(expression.column);
-                code.push(...simd(vop.load), 2, ...unsigned(columns[expression.column].offset));
+                loadLanes(columns[expression.column].offset);
                 return;
             case "unary":
                 rowsEmit(expression.operand);
-                if (expression.operator === "-") code.push(...simd(vop.f32Neg));
+                if (expression.operator === "-") code.push(...simd(negateVector));
                 else if (expression.operator === "!") {
                     vectorTruthy(typeOf(expression.operand));
                     code.push(...simd(vop.not));
@@ -1393,7 +1427,7 @@ export const generateWasm = (
                         return;
                     }
                 }
-                const comparison = { "<": vop.f32Lt, ">": vop.f32Gt, "<=": vop.f32Le, ">=": vop.f32Ge, "==": vop.f32Eq, "!=": vop.f32Ne, "===": vop.f32Eq, "!==": vop.f32Ne }[operator as string];
+                const comparison = comparisonVector[operator];
                 if (!isArithmetic(operator) && comparison === undefined) throw notVectorizable;
                 rowsEmit(left);
                 rowsEmit(right);
@@ -1465,29 +1499,33 @@ export const generateWasm = (
                 }
                 code.push(op.localSet, ...unsigned(value));
                 denseAddress(current.column);
-                code.push(op.localGet, ...unsigned(value), ...simd(vop.store), 2, ...unsigned(columns[current.column].offset));
+                code.push(op.localGet, ...unsigned(value));
+                storeLanes(columns[current.column].offset);
                 return;
             }
             case "stamp": {
-                // Ticks are dense f64: four rows are two f64x2 stores; a chunk column stays when its row column is muted.
+                // Ticks are dense f64: each two rows are an f64x2 store; a chunk column stays when its row column is muted.
+                // f64 lanes' masks are already a lane per row; f32 lanes' are extended, two rows a store.
                 if (columns[current.column].muted !== true) {
-                    for (let half = 0; half < 2; half++) {
+                    for (let half = 0; half < groupRows / 2; half++) {
                         const address = (): void => { code.push(op.localGet, ...unsigned(columnParameter(current.column)), op.localGet, ...unsigned(rowLocal), op.i32Const, 3, op.i32Shl, op.i32Add); };
                         address();
                         code.push(op.localGet, 2, ...simd(vop.f64Splat));
                         if (mask !== null) {
                             address();
                             code.push(...simd(vop.load), 3, ...unsigned(16 * half));
-                            code.push(op.localGet, ...unsigned(mask), ...simd(half === 0 ? vop.i64ExtendLowS : vop.i64ExtendHighS), ...simd(vop.bitselect));
+                            code.push(op.localGet, ...unsigned(mask));
+                            if (!wide) code.push(...simd(half === 0 ? vop.i64ExtendLowS : vop.i64ExtendHighS));
+                            code.push(...simd(vop.bitselect));
                         }
                         code.push(...simd(vop.store), 3, ...unsigned(16 * half));
                     }
                 }
                 // The group may straddle two chunks or blocks. Under a mask this can stamp one no lane changed, which only costs a scan.
                 stampDense(current.blocks, blockShift, 0);
-                stampDense(current.blocks, blockShift, 3);
+                stampDense(current.blocks, blockShift, groupRows - 1);
                 stampDense(current.chunks, chunkShift, 0);
-                stampDense(current.chunks, chunkShift, 3);
+                stampDense(current.chunks, chunkShift, groupRows - 1);
                 return;
             }
             case "if": {
@@ -1519,15 +1557,16 @@ export const generateWasm = (
         }
     };
 
-    /** Rows from `start` in groups of four, up to the last whole group; leaves the row local at the first row not done. */
+    /** Rows from `start` in groups of a vector's lanes, up to the last whole group; leaves the row local at the first row not done. */
     const rowsLoop = (): void => {
+        groupRows = laneBytes / 4;
         const vectorEnd = scratch(i32Type);
-        code.push(op.localGet, 1, op.localGet, 0, op.i32Sub, op.i32Const, ...signed(-4), op.i32And, op.localGet, 0, op.i32Add, op.localSet, ...unsigned(vectorEnd));
+        code.push(op.localGet, 1, op.localGet, 0, op.i32Sub, op.i32Const, ...signed(-groupRows), op.i32And, op.localGet, 0, op.i32Add, op.localSet, ...unsigned(vectorEnd));
         code.push(op.block, 0x40, op.loop, 0x40);
         code.push(op.localGet, ...unsigned(rowLocal), op.localGet, ...unsigned(vectorEnd), op.i32GeS, op.brIf, 1);
         mask = null;
         for (const current of program.body) rowsStatement(current);
-        code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, 4, op.i32Add, op.localSet, ...unsigned(rowLocal), op.br, 0);
+        code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(groupRows), op.i32Add, op.localSet, ...unsigned(rowLocal), op.br, 0);
         code.push(op.end, op.end);
     };
 
@@ -1771,7 +1810,7 @@ export const generateWasm = (
                 return;
             case "negate":
                 emitVectorExpression(expression.operand);
-                code.push(...simd(vop.f32Neg));
+                code.push(...simd(negateVector));
                 return;
             case "math":
                 for (const parameter of expression.arguments) emitVectorExpression(parameter);
@@ -1805,7 +1844,7 @@ export const generateWasm = (
         return groups.size > 0;
     };
 
-    // ---- Across rows for interleaved elements: four rows of a `stride`-byte element are `stride / 4` whole vectors. ----
+    // ---- Across rows for interleaved elements: four rows of a `stride`-byte element are `4 * stride / laneBytes` whole vectors. ----
 
     type LanePlan = ReturnType<typeof planLanes>;
     /** Whether a value is the same for every row. */
@@ -1863,9 +1902,9 @@ export const generateWasm = (
             }
             case "load":
                 elementAddress(expression.column);
-                code.push(...simd(vop.load), 2, ...unsigned(16 * vector));
+                loadLanes(laneBytes * vector);
                 return;
-            case "constant": code.push(...vectorConstant([0, 1, 2, 3].map(lane => expression.values[((16 * vector + 4 * lane) % stride) / 4]))); return;
+            case "constant": code.push(...vectorConstant([0, 1, 2, 3].map(lane => expression.values[((laneBytes * vector + 4 * lane) % stride) / 4] ?? 0))); return;
             case "splat": return emitSplat(expression.expression);
             case "binary":
                 emitElementExpression(expression.left, vector, stride, packVectors);
@@ -1874,7 +1913,7 @@ export const generateWasm = (
                 return;
             case "negate":
                 emitElementExpression(expression.operand, vector, stride, packVectors);
-                code.push(...simd(vop.f32Neg));
+                code.push(...simd(negateVector));
                 return;
             case "math":
                 for (const parameter of expression.arguments) emitElementExpression(parameter, vector, stride, packVectors);
@@ -1889,6 +1928,8 @@ export const generateWasm = (
      * and each vector's store only touches bytes no other vector reads.
      */
     const elementsLoop = ({ groups, packs }: LanePlan): void => {
+        groupRows = 4;
+        const vectors = (stride: number): number => 4 * stride / laneBytes;
         const vectorEnd = scratch(i32Type);
         code.push(op.localGet, 1, op.localGet, 0, op.i32Sub, op.i32Const, ...signed(-4), op.i32And, op.localGet, 0, op.i32Add, op.localSet, ...unsigned(vectorEnd));
         code.push(op.block, 0x40, op.loop, 0x40);
@@ -1899,23 +1940,25 @@ export const generateWasm = (
         for (let index = 0; index < body.length; index++) {
             const pack = packs.get(index);
             if (pack?.used === true) {
-                const vectors = Array.from({ length: columns[pack.column].stride / 4 }, (_, vector) => {
+                const locals = Array.from({ length: vectors(columns[pack.column].stride) }, (_, vector) => {
                     const local = scratch(v128Type);
                     elementAddress(pack.column);
-                    code.push(...simd(vop.load), 2, ...unsigned(16 * vector), op.localSet, ...unsigned(local));
+                    loadLanes(laneBytes * vector);
+                    code.push(op.localSet, ...unsigned(local));
                     return local;
                 });
-                packVectors.set(pack, vectors);
+                packVectors.set(pack, locals);
             }
             const group = groups.get(index);
             if (group !== undefined) {
                 const { stride } = columns[group.column];
-                for (let vector = 0; vector < stride / 4; vector++) {
+                for (let vector = 0; vector < vectors(stride); vector++) {
                     const value = scratch(v128Type);
                     emitElementExpression(group.value, vector, stride, packVectors);
                     code.push(op.localSet, ...unsigned(value));
                     elementAddress(group.column);
-                    code.push(op.localGet, ...unsigned(value), ...simd(vop.store), 2, ...unsigned(16 * vector));
+                    code.push(op.localGet, ...unsigned(value));
+                    storeLanes(laneBytes * vector);
                 }
                 index += group.length - 1;
             }
@@ -2055,9 +2098,11 @@ export const generateWasm = (
             stampRangeChunks();
             if (filters > 0) startChunksAndBlocks();
             if (mode === "rows") rowsLoop();
+            let across = false;
             if (mode === "lanes") {
                 const plan = planLanes();
-                if (acrossElements(plan)) elementsLoop(plan);
+                across = acrossElements(plan);
+                if (across) elementsLoop(plan);
             }
             // for (; row < end; row++) { block next { body } }, where with `up` the row and its parent's are rows[n] and parents[n].
             const slot = rowLocal;
@@ -2085,8 +2130,12 @@ export const generateWasm = (
             }
             labels.length = 0;
             labels.push("next");
-            if (mode === "lanes") fused = emitLaneBody();
-            else for (const current of program.body) statement(current);
+            // f64 lanes fuse only across rows: within a row the rest run as scalars, as the body computes.
+            if (mode === "lanes" && !wide) fused = emitLaneBody();
+            else {
+                if (mode === "lanes") fused = across;
+                for (const current of program.body) statement(current);
+            }
             labels.pop();
             code.push(op.end);
             accumulators.forEach((accumulator, k) => {
@@ -2119,8 +2168,9 @@ export const generateWasm = (
         // Across-rows mode doesn't filter rows, so filtered kernels fuse within rows instead.
         // Accumulators carry from row to row, which neither SIMD mode keeps.
         // Listed rows aren't consecutive, so `up` programs run one row at a time.
-        // Lanes compute in f32, so a kernel computing at the body's own precision runs one row at a time in f64.
-        let mode: "rows" | "lanes" | "scalar" = !simdEnabled || !storagePrecision || accumulators.length > 0 || upMode ? "scalar" : filters > 0 ? "lanes" : "rows";
+        // Within a row, f64 lanes would split a component's leaves across vectors, so filtered kernels at the body's
+        // precision run one row at a time.
+        let mode: "rows" | "lanes" | "scalar" = !simdEnabled || accumulators.length > 0 || upMode || (wide && filters > 0) ? "scalar" : filters > 0 ? "lanes" : "rows";
         try {
             generate(0, mode);
         }

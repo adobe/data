@@ -473,3 +473,87 @@ describe("generateWasm reductions", () => {
         }
     });
 });
+
+describe("generateWasm with f64 lanes, as kernels computing at the body's precision run", () => {
+    const column = (component: number, stride: number, offset: number): WasmColumn => ({ view: "f32", stride, offset, boolean: false, component });
+    const ticks = (component: number): WasmColumn => ({ view: "f64", stride: 8, offset: 0, boolean: false, component });
+    const read = (k: number): Expression => ({ kind: "column", column: k });
+    const number = (value: number): Expression => ({ kind: "number", value });
+    const binary = (operator: "+" | "-" | "*" | "/" | ">" | "<=", left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+    const math = (name: string, ...parameters: Expression[]): Expression => ({ kind: "math", name, arguments: parameters });
+
+    /**
+     * Runs `program` over rows `start` to `end` with f64 lanes, and as scalar WASM, which is JS's semantics; returns
+     * whether the lanes ran, and each run's memory as bits, so NaN and -0 compare exactly.
+     */
+    const both = (program: Program, columns: readonly WasmColumn[], fill: (floats: readonly Float32Array[]) => void, start: number, end: number) => {
+        const results = [true, false].map(simd => {
+            const kernel = generateWasm(program, columns, () => "number", simd, 0, [], [], [], [], [], false);
+            if (kernel === null) throw new Error("expected a kernel");
+            const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+            // f32 components at 4096 × (component + 1); ticks, then their chunks, then their blocks, after them.
+            const baseOf = (info: WasmColumn): number => info.view === "f64" ? 4096 * (8 - info.component) : 4096 * (info.component + 1);
+            const floats = [0, 1, 2].map(component => new Float32Array(memory.buffer, 4096 * (component + 1), 1024));
+            new Float64Array(memory.buffer, 4096 * 9, 1536).fill(1);
+            fill(floats);
+            const run: unknown = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+            if (typeof run !== "function") throw new Error("no run export");
+            run(start, end, 7, -1, ...columns.map(baseOf), 0.75);
+            return { vectorized: kernel.vectorized, bits: [...new Uint32Array(memory.buffer, 4096, 4096 * 3)] };
+        });
+        return { vectorized: results[0].vectorized, same: results[0].bits.every((bits, i) => bits === results[1].bits[i]) };
+    };
+    /** Values where f32 arithmetic loses what f64 keeps: cancellation, rounding at each step, NaN, infinities and -0. */
+    const hard = (i: number): number => [1 + 2 ** -23, 1 + 2 ** -22, 3.4e38, -0, NaN, Infinity, 1e-45, 0.1, -7.25, 16777217][i % 10] * (1 + (i % 7) * 2 ** -20);
+
+    it("computes dense f32 columns two rows at a time in f64, as the body does, through the tail", () => {
+        // out = a * a - b, which cancels in f32; and out2 = sqrt(|a|) / b + min(a, args) * fround(b) - floor(a).
+        const program: Program = {
+            locals: 0,
+            body: [
+                { kind: "store", column: 2, value: binary("-", binary("*", read(0), read(0)), read(1)) },
+                { kind: "store", column: 3, value: binary("-", binary("+", binary("/", math("sqrt", math("abs", read(0))), read(1)), binary("*", math("min", read(0), { kind: "args", path: [] }), math("fround", read(1)))), math("floor", read(0))) },
+            ],
+        };
+        const columns = [column(0, 4, 0), column(1, 4, 0), column(2, 4, 0), column(2, 4, 2048)];
+        for (const [start, end] of [[0, 300], [3, 22], [1, 2]] as const) {
+            expect([start, end, both(program, columns, ([a, b]) => { for (let i = 0; i < 1024; i++) { a[i] = hard(i); b[i] = hard(i + 1); } }, start, end)]).toEqual([start, end, { vectorized: true, same: true }]);
+        }
+    });
+
+    it("blends stores and stamps under an if per lane, in f64", () => {
+        const program: Program = {
+            locals: 1,
+            body: [
+                { kind: "set", local: 0, value: binary("*", read(0), read(0)) },
+                { kind: "if", test: binary(">", { kind: "local", local: 0 }, read(1)), consequent: [{ kind: "store", column: 2, value: binary("-", { kind: "local", local: 0 }, read(1)) }, { kind: "stamp", column: 3, chunks: 4, blocks: 5 }], alternate: [{ kind: "store", column: 2, value: { kind: "conditional", test: binary("<=", read(0), number(0)), consequent: number(-1), alternate: read(1) } }] },
+            ],
+        };
+        const columns = [column(0, 4, 0), column(1, 4, 0), column(2, 4, 0), ticks(-1), ticks(-2), ticks(-3)];
+        expect(both(program, columns, ([a, b]) => { for (let i = 0; i < 1024; i++) { a[i] = hard(i); b[i] = hard(i + 3); } }, 5, 133)).toEqual({ vectorized: true, same: true });
+    });
+
+    // A padded vec3's elements aren't whole vectors, and f64 lanes don't fuse within a row, so it runs a row at a time.
+    for (const [name, stride, leaves, vectorized] of [["vec2", 8, 2, true], ["tight vec3", 12, 3, true], ["padded vec3", 16, 3, false]] as const) {
+        it(`computes ${name} elements ${vectorized ? "in f64 lanes" : "a row at a time"}, as the body does`, () => {
+            // p = p * v - v * args, leaf by leaf, with p.x and v.x reading cancelling values.
+            const all = Array.from({ length: leaves }, (_, leaf) => leaf);
+            const program: Program = { locals: 0, body: all.map(leaf => ({ kind: "store", column: leaf, value: binary("-", binary("*", read(leaf), read(leaves + leaf)), binary("*", read(leaves + leaf), { kind: "args", path: [] })) })) };
+            const columns = [...all.map(leaf => column(0, stride, 4 * leaf)), ...all.map(leaf => column(1, stride, 4 * leaf))];
+            expect(both(program, columns, ([p, v]) => { for (let i = 0; i < 1024; i++) { p[i] = hard(i); v[i] = hard(i + 1); } }, 1, 63)).toEqual({ vectorized, same: true });
+        });
+    }
+
+    it("leaves explicit kernels' f32 lanes, which round each step", () => {
+        const program: Program = { locals: 0, body: [{ kind: "store", column: 2, value: binary("-", binary("*", read(0), read(0)), read(1)) }] };
+        const columns = [column(0, 4, 0), column(1, 4, 0), column(2, 4, 0)];
+        const kernel = generateWasm(program, columns, () => "number", true, 0, [], [], [], [], [], true);
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        new Float32Array(memory.buffer, 4096, 4).fill(1 + 2 ** -23);
+        new Float32Array(memory.buffer, 8192, 4).fill(1 + 2 ** -22);
+        const run: unknown = kernel === null ? null : new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, 4, 7, -1, 4096, 8192, 12288);
+        expect([kernel?.vectorized, new Float32Array(memory.buffer, 12288, 1)[0]]).toEqual([true, 0]);
+    });
+});

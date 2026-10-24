@@ -204,6 +204,24 @@ it("runs a system once per entity, or once", async () => {
 [`03-systems.test.ts`](03-systems.test.ts#L28-L58)
 
 ```ts
+// An optional component is in a row where its entity has it, and undefined where it doesn't: it never narrows which
+// entities a system runs on.
+const speeds: (Vec3 | undefined)[] = [];
+const readSpeeds = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => {
+    speeds.push(row[velocity]);
+});
+
+it("reads optional components where entities have them", async () => {
+    await using world = World.create();
+    await world.run(spawnStill);
+    await world.run(readSpeeds);
+    expect(speeds).toEqual([undefined, [2, 0, 0]]);
+});
+```
+
+[`03-systems.test.ts`](03-systems.test.ts#L67-L79)
+
+```ts
 const fail = System.create(() => {
     throw new Error("broken");
 });
@@ -224,7 +242,7 @@ it("reports what failed as entities", async () => {
     expect(logged).toEqual(["fail: broken"]);
 ```
 
-[`03-systems.test.ts`](03-systems.test.ts#L62-L79)
+[`03-systems.test.ts`](03-systems.test.ts#L81-L98)
 
 ### 4. Ticks and cadence
 

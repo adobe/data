@@ -59,6 +59,25 @@ it("runs a system once per entity, or once", async () => {
     expect(counted).toBe(1);
 });
 
+const spawnStill = System.create(({ commands }) => {
+    commands.spawn([position])({ [position]: [5, 0, 0] });
+    commands.spawn([position, velocity])({ [position]: [0, 0, 0], [velocity]: [2, 0, 0] });
+});
+
+// An optional component is in a row where its entity has it, and undefined where it doesn't: it never narrows which
+// entities a system runs on.
+const speeds: (Vec3 | undefined)[] = [];
+const readSpeeds = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => {
+    speeds.push(row[velocity]);
+});
+
+it("reads optional components where entities have them", async () => {
+    await using world = World.create();
+    await world.run(spawnStill);
+    await world.run(readSpeeds);
+    expect(speeds).toEqual([undefined, [2, 0, 0]]);
+});
+
 const fail = System.create(() => {
     throw new Error("broken");
 });

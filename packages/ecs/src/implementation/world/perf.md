@@ -200,6 +200,9 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 - Commands as parallel typed arrays, a reusable typed plan, and cached archetype edges: create 198 → 68 ms, churn 22 → 10 ms, retag 24 → 11.7 ms, emit 7.3 → 3.1 ms (vitest).
 - `Object.keys` instead of `for…in`, and buffers reused across runs: small gains.
 - Allocation-free kernel commands (`begin`/`value`/`component`/`spawn`): emit 3.2 → 1.98 ms (vitest).
+- Kernel commands write the buffer themselves, not through `pushCommand` and `pushComponent`: once V8 reoptimized a
+  kernel, the second call stayed a call and boxed each entity, a double past 2^32. `despawn bulk kernel` 4.60 → 4.12 ms;
+  `despawn bulk` compiled 4.55 ms against 4.32 as written before, 4.10 after.
 - Inline value writes instead of closures, an 8-shape spawn cache, edges indexed by component id, archetypes grown once per sync point: create 38 → 27.6 ms.
 
 **Change filters.**

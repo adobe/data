@@ -101,8 +101,13 @@ export const pushCommand = (buffer: CommandBuffer, kind: number, entity: number)
     buffer.count++;
 };
 
+/** Room for more component ids, outlined as `growCommands` is. */
+const growIds = (buffer: CommandBuffer): void => {
+    buffer.ids = grown(buffer.ids, length => new Int32Array(length));
+};
+
 export const pushComponent = (buffer: CommandBuffer, id: number, value: unknown): void => {
-    if (buffer.named === buffer.ids.length) buffer.ids = grown(buffer.ids, length => new Int32Array(length));
+    if (buffer.named === buffer.ids.length) growIds(buffer);
     buffer.ids[buffer.named] = id;
     buffer.values[buffer.named] = value;
     buffer.named++;
@@ -140,7 +145,32 @@ export const endOf = (buffer: CommandBuffer, command: number): number =>
  */
 export const createKernelCommands = (target: { readonly buffer: CommandBuffer }, ids: readonly number[], starts: readonly unknown[], spawners: readonly Positional[]): KernelCommands => ({
     spawners,
-    begin: (kind, entity) => pushCommand(target.buffer, kind, entity),
-    value: (key, value) => pushComponent(target.buffer, ids[key], value === undefined ? starts[key] : value),
-    component: key => pushComponent(target.buffer, ids[key], undefined),
+    // Each writes the buffer itself rather than through pushCommand and pushComponent: a kernel's row loop inlines one
+    // call, and a second one left as a call boxes every entity, which ids past 2^32 make a double.
+    begin: (kind, entity) => {
+        const buffer = target.buffer;
+        const count = buffer.count;
+        if (count === buffer.kinds.length) growCommands(buffer);
+        buffer.kinds[count] = kind;
+        buffer.shapes[count] = -1;
+        buffer.entities[count] = entity;
+        buffer.starts[count] = buffer.named;
+        buffer.count = count + 1;
+    },
+    value: (key, value) => {
+        const buffer = target.buffer;
+        const named = buffer.named;
+        if (named === buffer.ids.length) growIds(buffer);
+        buffer.ids[named] = ids[key];
+        buffer.values[named] = value === undefined ? starts[key] : value;
+        buffer.named = named + 1;
+    },
+    component: key => {
+        const buffer = target.buffer;
+        const named = buffer.named;
+        if (named === buffer.ids.length) growIds(buffer);
+        buffer.ids[named] = ids[key];
+        buffer.values[named] = undefined;
+        buffer.named = named + 1;
+    },
 });

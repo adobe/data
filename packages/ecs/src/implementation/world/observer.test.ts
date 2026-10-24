@@ -31,7 +31,7 @@ const reset = (): void => {
     for (const list of Object.values(seen)) list.length = 0;
 };
 
-const raise = System.create({  }, ({ resources }) => { resources[level] += 1; });
+const raise = System.create({}, ({ resources }) => { resources[level] += 1; });
 const spawn = System.create({}, ({ commands }) => { commands.spawn([amount, cell])({ [amount]: 1, [cell]: 7 }); });
 const grow = System.create({ components: { with: [amount] } }, row => { row[amount] += 1; });
 const nothing = System.create({}, () => {});

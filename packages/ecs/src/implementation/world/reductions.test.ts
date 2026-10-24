@@ -91,7 +91,7 @@ const heavyMass = System.create({ kernel: true, components: { with: [mass, heavy
 const lightMass = System.create({ components: { with: [mass], not: [heavy] } }, (row, { reduce }) => {
     reduce[total](row[mass]);
 });
-const reader = System.create({  }, ({ resources }) => {
+const reader = System.create({}, ({ resources }) => {
     resources[seen] = resources[total];
 });
 const frame = System.create({ systems: [reader, heavyMass, lightMass] });
@@ -239,7 +239,7 @@ describe("reductions", () => {
         // @ts-expect-error only a resource with a reduce trait is reduced
         expect(() => System.create({ components: { with: [mass] } }, (_, { reduce }) => { reduce[level](1); })).toThrow(`reduces "reductionsTest/level", which has no reduce trait`);
         // @ts-expect-error a reduced resource is never written
-        expect(() => System.create({  }, ({ resources }) => { resources[total] = 1; })).toThrow(`writes "reductionsTest/total", which is reduced`);
+        expect(() => System.create({}, ({ resources }) => { resources[total] = 1; })).toThrow(`writes "reductionsTest/total", which is reduced`);
         // A contributor doesn't read what it reduces into.
         expect(() => System.create({ components: { with: [mass] } }, (_, { resources, reduce }) => { reduce[total](resources[total]); })).toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
         // Nor filters on it.

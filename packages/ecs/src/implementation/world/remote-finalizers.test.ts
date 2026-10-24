@@ -23,13 +23,13 @@ declare module "@adobe/ecs" {
         [third]: { type: number };
     }
 }
-const bump = System.create({  }, ({ resources }) => {
+const bump = System.create({}, ({ resources }) => {
     resources[later] += 1;
 });
-const bumpSecond = System.create({  }, ({ resources }) => {
+const bumpSecond = System.create({}, ({ resources }) => {
     resources[second] += 1;
 });
-const bumpThird = System.create({  }, ({ resources }) => {
+const bumpThird = System.create({}, ({ resources }) => {
     resources[third] += 1;
 });
 

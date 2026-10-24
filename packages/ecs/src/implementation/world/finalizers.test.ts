@@ -134,7 +134,7 @@ describe("finalizers", () => {
     it("leave their commands for the next run's sync point, even when that run first adds resources", async () => {
         let other = Entity.none;
         Finalizer.create({ components: { with: [pendingHandle] } }, (_, { commands }) => { commands.despawn(other); });
-        const reads = System.create({  }, ({ resources }) => { void resources[level]; });
+        const reads = System.create({}, ({ resources }) => { void resources[level]; });
         // Read after every run, as a read through a run of its own would apply the commands left for it.
         let seen: string | null = null;
         const watch = System.create({ observer: true, lookup: { labels: { with: [label] } } }, ({ lookup }) => {

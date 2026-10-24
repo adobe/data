@@ -81,7 +81,7 @@ export const hold = (): void => {
 export const wordOf = (value: number): string => `${"·".repeat(value % 37)}${value}`;
 
 /** On the world's thread: the counter moves on once a tick, then every row's stamp, spot and word take it. */
-export const count = System.create({  }, ({ resources }) => {
+export const count = System.create({}, ({ resources }) => {
     resources[counter] += 1;
 });
 export const advance = System.create({ components: { with: [stamp, spot, word] }, after: [count] }, (row, { resources }) => {
@@ -94,7 +94,7 @@ export const ticked = System.create({ systems: [count, advance] });
 export const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) commands.spawn([stamp, spot, word])({ [stamp]: 0, [spot]: [0, 0, 0], [word]: wordOf(0) });
 });
-export const setStall = System.create({  }, ({ resources }, input: { readonly pause: number }) => {
+export const setStall = System.create({}, ({ resources }, input: { readonly pause: number }) => {
     resources[stall] = input.pause;
 });
 
@@ -138,7 +138,7 @@ export const spawnHeated = System.create({}, ({ commands }) => {
 export const warm = System.create({ kernel: "gpu", components: { with: [rate, heat] } }, row => {
     row[heat] = row[heat] + row[rate] * 100;
 });
-export const nextPhase = System.create({  }, ({ resources }) => {
+export const nextPhase = System.create({}, ({ resources }) => {
     resources[phase] += 1;
 });
 
@@ -152,7 +152,7 @@ export const countHot = System.create({ observer: true, lookup: { hot: { index: 
 
 /** On the world's thread: the motto of a round, and the round, every motto of one size. */
 export const mottoOf = (round: number): string => `motto ${round % 10}`;
-export const setMotto = System.create({  }, ({ resources }, input: { readonly round: number }) => {
+export const setMotto = System.create({}, ({ resources }, input: { readonly round: number }) => {
     resources[motto] = mottoOf(input.round);
     resources[mottoRound] = input.round;
 });

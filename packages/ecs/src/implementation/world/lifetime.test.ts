@@ -36,7 +36,7 @@ let copied = 0;
 /** Fresh systems of each shape that holds something: a body alone, a resource read, a change filter, and `up`. */
 const freshSystems = (k: number): readonly System[] => [
     System.create(() => {}),
-    System.create({  }, ({ resources }) => { copied = resources[score] + k; }),
+    System.create({}, ({ resources }) => { copied = resources[score] + k; }),
     System.create({ components: { with: [count], changed: [count] } }, row => { row[count] += 1; }),
     System.create({ components: { with: [count] }, up: { through: parent } }, (row, { up }) => { copied = row[count] + (up?.[count] ?? 0); }),
 ];

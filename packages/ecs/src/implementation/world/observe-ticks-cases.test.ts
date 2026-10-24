@@ -25,17 +25,17 @@ declare module "@adobe/ecs" {
     }
 }
 
-const count = System.create({  }, ({ resources }) => { resources[frames] += 1; });
-const watch = System.create({  }, ({ resources }) => { resources[seen] = resources[clock].tick; });
+const count = System.create({}, ({ resources }) => { resources[frames] += 1; });
+const watch = System.create({}, ({ resources }) => { resources[seen] = resources[clock].tick; });
 const fail = System.create({}, () => { throw new Error("tick failed"); });
 const nothing = System.create({}, () => {});
 const idle = System.create({ observer: true }, () => {});
-const fast = System.create({  }, ({ resources }) => {
+const fast = System.create({}, ({ resources }) => {
     resources[cadence] = { kind: "fixed", step: 1 };
     resources[always] = true;
 });
-const calm = System.create({  }, ({ resources }) => { resources[always] = false; });
-const later = System.create({  }, ({ resources, reduce }) => {
+const calm = System.create({}, ({ resources }) => { resources[always] = false; });
+const later = System.create({}, ({ resources, reduce }) => {
     if (resources[clock].tick === 0) reduce[wake](resources[clock].now + 20);
 });
 

@@ -345,7 +345,7 @@ describe("World.create", () => {
         await using world = createWorld();
         expect(await readResource(world, gpuDevice)).toBeNull();
         let seen: unknown = undefined;
-        await world.run(System.create({  }, ({ resources }) => { seen = resources[gpuDevice]; }));
+        await world.run(System.create({}, ({ resources }) => { seen = resources[gpuDevice]; }));
         expect(seen).toBeNull();
     });
 

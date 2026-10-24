@@ -209,7 +209,7 @@ const positions = async (world: ReturnType<typeof createWorld>): Promise<Vec3[]>
     (await readEach(world, await select(world, { required: [position] }), position)).map(value => value ?? [NaN, NaN, NaN]);
 
 let nextDevice: GPUDevice | null = null;
-const setDevice = System.create({  }, ({ resources }) => { resources[gpuDevice] = nextDevice; });
+const setDevice = System.create({}, ({ resources }) => { resources[gpuDevice] = nextDevice; });
 
 describe("removing GPU systems", () => {
     it("releases the GPU records of a render system and a GPU kernel once they're removed", async () => {

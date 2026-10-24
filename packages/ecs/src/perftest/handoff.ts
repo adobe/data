@@ -36,7 +36,7 @@ const there4 = System.create({ after: [here4] }, ({ resources, commands }) => { 
 /** Ten tiers alternating the world's thread and the joined one, empty systems. */
 export const handoff = System.create({ systems: [here0, there0, here1, there1, here2, there2, here3, there3, here4, there4] });
 
-const fused0 = System.create({  }, ({ resources, commands }) => { void resources[token]; void commands; });
+const fused0 = System.create({}, ({ resources, commands }) => { void resources[token]; void commands; });
 const fused1 = System.create({ after: [fused0] }, ({ resources, commands }) => { void resources[token]; void commands; });
 const fused2 = System.create({ after: [fused1] }, ({ resources, commands }) => { void resources[token]; void commands; });
 const fused3 = System.create({ after: [fused2] }, ({ resources, commands }) => { void resources[token]; void commands; });

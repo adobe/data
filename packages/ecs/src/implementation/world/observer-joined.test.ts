@@ -40,7 +40,7 @@ const Label = { schema: { default: blank } };
 const byCell = Index.create({ key: [cell], components: { with: [amount] } });
 const allTagged = Index.create({ key: [], components: { with: [tagged] } });
 
-const raise = System.create({  }, ({ resources }) => { resources[level] += 1; });
+const raise = System.create({}, ({ resources }) => { resources[level] += 1; });
 const nothing = System.create({}, () => {});
 const spawn = System.create({}, ({ commands }, input: { readonly at: number }) => {
     commands.spawn([amount, cell, tagged])({ [amount]: input.at, [cell]: input.at });

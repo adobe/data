@@ -30,7 +30,7 @@ declare module "@adobe/ecs" {
 }
 
 
-const pause = System.create({  }, ({ resources }) => { resources[paused] = true; });
+const pause = System.create({}, ({ resources }) => { resources[paused] = true; });
 const tick = System.create({ resources: { not: [paused] } }, ({ resources }) => { resources[ticks] += 1; });
 const afterTick = System.create({ after: [tick] }, ({ resources }) => { resources[after] += 1; });
 const frame = System.create({ systems: [tick, afterTick] });
@@ -56,7 +56,7 @@ describe("resource conditions", () => {
         const measure = System.create({ resources: { is: [level] } }, ({ resources }) => { resources[sizes] = resources[level].size; });
         await world.run(measure);
         expect(await readResource(world, sizes)).toBe(0);
-        const load = System.create({  }, ({ resources }) => { resources[level] = { size: 3 }; });
+        const load = System.create({}, ({ resources }) => { resources[level] = { size: 3 }; });
         await world.run(load);
         await world.run(measure);
         expect(await readResource(world, sizes)).toBe(3);
@@ -70,7 +70,7 @@ describe("resource conditions", () => {
         await world.run(spawn);
         await world.run(watch);
         expect(seen).toEqual([]);
-        await world.run(System.create({  }, ({ resources }) => { resources[level] = { size: 1 }; }));
+        await world.run(System.create({}, ({ resources }) => { resources[level] = { size: 1 }; }));
         await world.run(watch);
         expect(seen).toEqual([7]);
     });

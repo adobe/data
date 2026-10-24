@@ -67,7 +67,7 @@ const draw = System.create({ components: { with: [place] } }, (row, { resources 
 export const promptTick = System.create({ systems: [here, draw] });
 
 /** On the joined thread, ahead of the late tail: busy for a while, as a main thread is with layout. */
-const busy = System.create({  }, ({ resources }) => {
+const busy = System.create({}, ({ resources }) => {
     const until = performance.now() + 4;
     while (performance.now() < until && resources[surface] === surfaceStart);
 });
@@ -77,7 +77,7 @@ const copied = System.create({ components: { with: [place, pose] }, after: [busy
 });
 export const lateTick = System.create({ systems: [busy, copied] });
 /** On the world's thread: writes what the late tail reads, so it copies the rest of the tail's reads first. */
-const poke = System.create({  }, ({ resources }) => {
+const poke = System.create({}, ({ resources }) => {
     resources[poked] += 1;
 });
 const nothing = System.create({}, () => {});
@@ -105,7 +105,7 @@ const overlapDraw = System.create({ components: { with: [place, pose] }, after: 
     drawn.sum += sum;
 });
 export const overlapTick = System.create({ systems: [overlapWrite, overlapSimulate, overlapDraw] });
-const setOverlap = System.create({  }, ({ resources }) => {
+const setOverlap = System.create({}, ({ resources }) => {
     resources[rowWork] = overlapWork;
     resources[worldWork] = overlapWorldMilliseconds;
 });

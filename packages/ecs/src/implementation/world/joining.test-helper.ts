@@ -24,10 +24,10 @@ declare module "@adobe/ecs" {
 }
 
 /** Appends a digit to `total`, so the order of runs shows in it. */
-export const add = System.create({  }, ({ resources }, input: { readonly amount: number }) => {
+export const add = System.create({}, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
-export const append = System.create({  }, ({ resources }, input: { readonly name: string }) => {
+export const append = System.create({}, ({ resources }, input: { readonly name: string }) => {
     resources[names] = [...resources[names], input.name];
 });
 export const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {

@@ -108,7 +108,7 @@ export const readBenchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(10_000);
             copied = 0;
-            const best = await fastest(() => world.run(System.create({  }, ({ resources }) => { copied = resources[level]; })), 300);
+            const best = await fastest(() => world.run(System.create({}, ({ resources }) => { copied = resources[level]; })), 300);
             check(copied === 3, "read run: wrong value");
             await world.dispose();
             return best;

@@ -31,17 +31,17 @@ declare module "@adobe/ecs" {
 }
 
 /** Adds its struct input to `total`, and its object input's names to `names`. */
-const add = System.create({  }, ({ resources }, input: { readonly amount: number }) => {
+const add = System.create({}, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
-const append = System.create({  }, ({ resources }, input: { readonly name: string }) => {
+const append = System.create({}, ({ resources }, input: { readonly name: string }) => {
     resources[names] = [...resources[names], input.name];
 });
 const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, label, marked])({ [point]: [input.x, -input.x], [label]: `p${input.x}` });
 });
 /** Counts each word of its input's set in `counts`, and spawns an entity holding the set. */
-const tally = System.create({  }, ({ resources, commands }, input: { readonly words: ReadonlySet<string> }) => {
+const tally = System.create({}, ({ resources, commands }, input: { readonly words: ReadonlySet<string> }) => {
     const next = new Map(resources[counts]);
     for (const word of input.words) next.set(word, (next.get(word) ?? 0) + 1);
     resources[counts] = next;

@@ -32,7 +32,7 @@ const seed = System.create({}, ({ commands }, input: { readonly count: number })
     for (let i = 0; i < input.count; i++) spawned.push(commands.spawn([amount])({ [amount]: i }));
 });
 const grow = System.create({ components: { with: [amount] } }, row => { row[amount] += 1; });
-const raise = System.create({  }, ({ resources }) => { resources[level] += 1; });
+const raise = System.create({}, ({ resources }) => { resources[level] += 1; });
 const nothing = System.create({}, () => {});
 
 /** Counts passes: the observer passes after each run's sync point. */

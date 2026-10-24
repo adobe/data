@@ -31,14 +31,14 @@ declare module "@adobe/ecs" {
 }
 
 
-const raise = System.create({  }, ({ resources }, input: { readonly by: number }) => {
+const raise = System.create({}, ({ resources }, input: { readonly by: number }) => {
     resources[level] += input.by;
     resources[level] += input.by;
 });
-const touchOther = System.create({  }, ({ resources }) => { resources[other] += 1; });
+const touchOther = System.create({}, ({ resources }) => { resources[other] += 1; });
 const spawn = System.create({}, ({ commands }) => { commands.spawn([weight])({ [weight]: 2 }); });
 const sum = System.create({ components: { with: [weight] } }, (row, { reduce }) => { reduce[total](row[weight]); });
-const keep = System.create({  }, ({ resources }) => { resources[level] = resources[level] + 0; });
+const keep = System.create({}, ({ resources }) => { resources[level] = resources[level] + 0; });
 
 /** Errors thrown out of band while `catching` runs, as uncaught errors would be, caught instead. */
 const catching = async (run: () => Promise<void>): Promise<unknown[]> => {

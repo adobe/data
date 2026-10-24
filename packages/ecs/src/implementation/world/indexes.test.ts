@@ -409,7 +409,7 @@ const ranksOf = (list: { readonly length: number; readonly changed: boolean; at(
 });
 
 describe("sorted indexes on the main thread", () => {
-    const spawnRanks = System.create({  }, ({ commands }, input: { readonly ranks: readonly number[] }) => {
+    const spawnRanks = System.create({}, ({ commands }, input: { readonly ranks: readonly number[] }) => {
         for (const value of input.ranks) commands.spawn([rank])({ [rank]: value });
     });
     const query = System.create({

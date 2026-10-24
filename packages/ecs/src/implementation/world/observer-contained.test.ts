@@ -18,13 +18,13 @@ declare module "@adobe/ecs" {
 }
 /** Twelve f64s: more than a post's block holds, so its posts copy them into a snapshot of their own. */
 
-const widen = System.create({  }, ({ resources }) => {
+const widen = System.create({}, ({ resources }) => {
     const first = resources[wide][0] + 1;
     const base = first * 100;
     resources[wide] = [base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7, base + 8, base + 9, base + 10, base + 11];
 });
-const step = System.create({  }, ({ resources }) => { resources[steps] += 1; });
-const pause = System.create({  }, ({ resources }, input: { readonly paused: boolean }) => {
+const step = System.create({}, ({ resources }) => { resources[steps] += 1; });
+const pause = System.create({}, ({ resources }, input: { readonly paused: boolean }) => {
     resources[paused] = input.paused;
 });
 

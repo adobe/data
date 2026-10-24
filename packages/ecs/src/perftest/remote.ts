@@ -34,11 +34,11 @@ declare module "@adobe/ecs" {
 /** An empty transaction. */
 export const empty = System.create({}, () => {});
 /** Changes the observed resource every tick. */
-export const count = System.create({  }, ({ resources }) => { resources[counter] += 1; });
+export const count = System.create({}, ({ resources }) => { resources[counter] += 1; });
 export const seedRanks = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([rank, order])({ [rank]: i, [order]: i });
 });
-const flip = System.create({  }, ({ resources }) => { resources[sign] = -resources[sign]; });
+const flip = System.create({}, ({ resources }) => { resources[sign] = -resources[sign]; });
 const reverse = System.create({ kernel: true, components: { with: [rank, order] }, after: [flip] }, (row, { resources }) => {
     row[order] = row[rank] * resources[sign];
 });

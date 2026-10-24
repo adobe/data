@@ -48,7 +48,7 @@ const despawn = System.create({ target: "entity", components: { with: [group] } 
 const dropWeight = System.create({ target: "entity", components: { with: [weight] } }, (row, { commands }, _input: { readonly entity: Entity }) => {
     commands.remove(row.entity, weight);
 });
-const pause = System.create({  }, ({ resources }, input: { readonly paused: boolean }) => {
+const pause = System.create({}, ({ resources }, input: { readonly paused: boolean }) => {
     resources[paused] = input.paused;
 });
 

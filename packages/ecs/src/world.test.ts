@@ -14,7 +14,7 @@ declare module "@adobe/ecs" {
 }
 
 const spawn = System.create({}, ({ commands }) => { commands.spawn([count])({ [count]: 1 }); });
-const raise = System.create({  }, ({ resources }) => { resources[total] = 7; });
+const raise = System.create({}, ({ resources }) => { resources[total] = 7; });
 const add = System.create({ components: { with: [count] } }, row => { row[count] += 1; });
 
 describe("World.create", () => {

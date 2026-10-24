@@ -38,7 +38,7 @@ const spin = (milliseconds: number): void => {
 };
 
 /** Blocking, since its body reaches `commands`: a tier on the thread, and with `second`, one task. */
-export const first = System.create({  }, ({ resources, commands }) => {
+export const first = System.create({}, ({ resources, commands }) => {
     void commands;
     calls.first += resources[mark].text.length;
     spin(resources[pause]);
@@ -52,14 +52,14 @@ export const second = System.create({ after: [first] }, ({ resources, commands }
 });
 
 /** Terminal, so a tail, run with `secondTail` as one task after the tick's sync point. */
-export const firstTail = System.create({  }, ({ resources }) => {
+export const firstTail = System.create({}, ({ resources }) => {
     calls.firstTail += resources[mark].text.length;
     spin(resources[pause]);
     if (removal.armed) removal.world?.remove(secondTail);
 });
 
 /** Terminal, so a tail: removes `removal.target`, once, when it's set. */
-export const removerTail = System.create({  }, ({ resources }) => {
+export const removerTail = System.create({}, ({ resources }) => {
     void resources[mark];
     const { target } = removal;
     removal.target = null;
@@ -77,6 +77,6 @@ export const secondTail = System.create({ after: [firstTail] }, ({ resources }) 
 export const ticking = System.create({ after: [second] }, () => {});
 
 /** Sets how long `first` and `firstTail` spin. */
-export const setPause = System.create({  }, ({ resources }, input: { readonly milliseconds: number }) => {
+export const setPause = System.create({}, ({ resources }, input: { readonly milliseconds: number }) => {
     resources[pause] = input.milliseconds;
 });

@@ -1,4 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { giveAccess } from "../../interface/registry/ids.test-helper.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -64,26 +65,32 @@ const seenOf = (subject: Entity, lookup: {
 };
 
 /** On the world's thread. */
-export const probe = System.create({
+/**
+ * What a probe's body reads: its lookups are passed to a helper, which the build can't follow, so they're given: only
+ * `found`'s rows are read, so the others keep the forms of lookups reading nothing.
+ */
+const probeReads = (read: readonly symbol[]) => ({ read, lookup: { found: [value], tagged: [], empty: [], has: [] } });
+
+export const probe = System.create(giveAccess({
     components: { with: [target] },
     lookup: { found: { with: [value], changed: [value] }, tagged: { with: [tag], changed: [tag] }, empty: {}, has: { with: [tag] } },
-}, (row, { lookup }) => {
+}, probeReads([target])), (row, { lookup }) => {
     scene.seen.push(seenOf(row[target], lookup));
 });
 
 /** The same, registered later, so its first run comes after every change. */
-export const lateProbe = System.create({
+export const lateProbe = System.create(giveAccess({
     components: { with: [target] },
     lookup: { found: { with: [value], changed: [value] }, tagged: { with: [tag], changed: [tag] }, empty: {}, has: { with: [tag] } },
-}, (row, { lookup }) => {
+}, probeReads([target])), (row, { lookup }) => {
     scene.seen.push(seenOf(row[target], lookup));
 });
 
 /** On thread "entityLookupsTest", as it reads the probe's label there. */
-export const threadProbe = System.create({
+export const threadProbe = System.create(giveAccess({
     components: { with: [target, label] },
     lookup: { found: { with: [value], changed: [value] }, tagged: { with: [tag], changed: [tag] }, empty: {}, has: { with: [tag] } },
-}, (row, { lookup }) => {
+}, probeReads([target, label])), (row, { lookup }) => {
     if (row[label]?.text === "probe") scene.seen.push(seenOf(row[target], lookup));
 });
 

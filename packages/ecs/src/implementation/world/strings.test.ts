@@ -69,7 +69,7 @@ const labelAgain = System.create({ components: { with: [order], not: [label] } }
     commands.add(row.entity, label, `${textOf(row[order])}${input.suffix}`);
 });
 
-const edit = System.create({  }, ({ resources }, input: { readonly title: string }) => {
+const edit = System.create({}, ({ resources }, input: { readonly title: string }) => {
     resources[mode] = "edit";
     resources[title] = input.title;
 });

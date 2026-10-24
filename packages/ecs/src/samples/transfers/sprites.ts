@@ -28,7 +28,7 @@ declare module '@adobe/ecs' {
 /** The canvas main moved to the world's thread. */
 
 /** From main: the canvas the world draws into. */
-export const attachSurface = System.create({  }, ({ resources }, input: { readonly canvas: OffscreenCanvas }) => {
+export const attachSurface = System.create({}, ({ resources }, input: { readonly canvas: OffscreenCanvas }) => {
     resources[surface] = input.canvas;
 });
 
@@ -53,7 +53,7 @@ export const addSprite = System.create({}, ({ resources, commands }, input: { re
 });
 
 /** Clears the canvas, once a frame. */
-const clear = System.create({  }, ({ resources }) => {
+const clear = System.create({}, ({ resources }) => {
     const canvas = resources[surface];
     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     resources[stats] = { sprites: resources[stats].sprites, frames: resources[stats].frames + 1 };

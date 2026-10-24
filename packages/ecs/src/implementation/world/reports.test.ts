@@ -18,7 +18,7 @@ declare module "@adobe/ecs" {
 
 const nothing = System.create({}, () => {});
 const fail = System.create({}, () => { throw new Error("run failed"); });
-const raise = System.create({  }, ({ resources }) => { resources[level] += 1; });
+const raise = System.create({}, ({ resources }) => { resources[level] += 1; });
 const idle = System.create({ observer: true }, () => {});
 const spawn = System.create({}, ({ commands }) => { commands.spawn([amount])({ [amount]: 1 }); });
 const despawnAll = System.create({ components: { with: [amount] } }, (row, { commands }) => {

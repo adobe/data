@@ -42,7 +42,8 @@ const failOnce = System.create(() => { throw new Error("unnamed"); });
 
 describe("systems, rules and finalizers of one label", () => {
     it("are distinct in schedules, both run, and are told apart in reports by their ids", async () => {
-        const linked = (after: readonly System[], body: (row: { [value]: number }) => void): System => System.create({ components: { with: [value] }, after }, body);
+        // Its body is written in place, calling what it's given with the row, which the build takes as writing every member.
+        const linked = (after: readonly System[], body: (row: { [value]: number }) => void): System => System.create({ components: { with: [value] }, after }, row => body(row));
         const a = linked([], row => { ran.push("a"); row[value] += 1; });
         const b = linked([a], row => { ran.push("b"); row[value] += 1; throw new Error("b failed"); });
         const c = linked([b], row => { ran.push(`c${row[value]}`); });

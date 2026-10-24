@@ -88,6 +88,8 @@ export const entitled: { readonly serial: number; readonly title: string }[] = [
 
 /** On the finalizers' thread: what each titled stop's title was before its sync point applied. */
 export const entitle = Finalizer.create({ components: { with: [serial, title, widget] } }, row => {
+    // Reading its widget places it on the widget's thread.
+    void row[widget];
     entitled.push({ serial: row[serial], title: row[title] });
 });
 
@@ -96,6 +98,7 @@ export const headlined: { readonly serial: number; readonly heading: string }[] 
 
 /** On the finalizers' thread: the heading as it was before each headed stop's sync point applied. */
 export const headline = Finalizer.create({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
+    void row[widget];
     headlined.push({ serial: row[serial], heading: resources[heading] });
 });
 
@@ -104,6 +107,7 @@ export const headlinedBoth: { readonly serial: number; readonly heading: string;
 
 /** On the finalizers' thread: two string resources as they were before each headed stop's sync point applied. */
 export const headlines = Finalizer.create({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
+    void row[widget];
     headlinedBoth.push({ serial: row[serial], heading: resources[heading], subheading: resources[subheading] });
 });
 
@@ -112,6 +116,7 @@ export const gauged: { readonly serial: number; readonly level: number; readonly
 
 /** On the finalizers' thread: a number and a struct resource as they were before each headed stop's sync point applied. */
 export const gauge = Finalizer.create({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
+    void row[widget];
     gauged.push({ serial: row[serial], level: resources[level], origin: [...resources[origin]] });
 });
 
@@ -121,6 +126,7 @@ export const surveyed: Surveyed[] = [];
 
 /** On the finalizers' thread: resources of mixed widths as they were before each headed stop's sync point applied. */
 export const survey = Finalizer.create({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
+    void row[widget];
     const { alpha, color, glossy } = resources[material];
     surveyed.push({
         serial: row[serial], caption: resources[caption], lit: resources[lit], tint: [...resources[tint]],
@@ -136,7 +142,7 @@ export const surveyOf = (at: number): Omit<Surveyed, "serial"> => ({
 });
 
 /** From the world's thread: the level, the origin at it, and the resources of mixed widths at it. */
-export const regauge = System.create({  }, ({ resources }, input: { readonly level: number }) => {
+export const regauge = System.create({}, ({ resources }, input: { readonly level: number }) => {
     resources[level] = input.level;
     resources[origin] = [input.level, input.level + 10];
     const values = surveyOf(input.level);
@@ -152,7 +158,7 @@ export const spawnHeaded = System.create({}, ({ commands }, input: { readonly fr
     for (let k = input.from; k < input.from + input.count; k++) commands.spawn([serial, headed, widget])({ [serial]: k, [widget]: null });
 });
 /** From the world's thread: the heading and subheading. */
-export const rehead = System.create({  }, ({ resources }, input: { readonly heading: string }) => {
+export const rehead = System.create({}, ({ resources }, input: { readonly heading: string }) => {
     resources[heading] = input.heading;
     resources[subheading] = `s${input.heading}`;
 });
@@ -181,7 +187,7 @@ export const relabel = System.create({ components: { with: [serial, label] } }, 
     if (row[serial] % 2 === 1) commands.add(row.entity, label, relabelled);
 });
 /** On the thread: its object resource. */
-export const retone = System.create({  }, ({ resources }, input: { readonly tone: string }) => {
+export const retone = System.create({}, ({ resources }, input: { readonly tone: string }) => {
     resources[tone] = { text: input.tone };
 });
 /** From the world's thread: places move, so a stop's values are those before the sync point applies. */

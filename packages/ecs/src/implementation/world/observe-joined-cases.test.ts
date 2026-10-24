@@ -44,7 +44,7 @@ const none = { text: "none" };
 type Caption = { readonly text: string } | null;
 const Caption = { schema: { default: none } };
 
-const add = System.create({  }, ({ resources }, input: { readonly amount: number }) => {
+const add = System.create({}, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
 const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {

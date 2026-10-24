@@ -25,9 +25,9 @@ export const gate: { words: Int32Array | null } = { words: null };
 /** What the watcher's runs saw, in order. */
 export const tallies: number[] = [];
 
-export const bump = System.create({  }, ({ resources }) => { resources[tally] += 1; });
+export const bump = System.create({}, ({ resources }) => { resources[tally] += 1; });
 export const nothing = System.create({}, () => {});
-export const setHolding = System.create({  }, ({ resources }, input: { readonly holding: number }) => {
+export const setHolding = System.create({}, ({ resources }, input: { readonly holding: number }) => {
     resources[holding] = input.holding;
 });
 

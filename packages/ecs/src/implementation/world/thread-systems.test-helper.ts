@@ -53,7 +53,7 @@ const text = { type: "object", properties: { text: { type: "string" } } } as con
 const makeNote = (text: string): Note => ({ text, read: () => text });
 
 /** Spawns from the world's thread: structs and its own object, the thread's objects at their starts. */
-export const seed = System.create({  }, ({ resources, commands }, input: { readonly count: number }) => {
+export const seed = System.create({}, ({ resources, commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) {
         const id = resources[nextUid]++;
         commands.spawn([uid, position, velocity, caption, kept])({ [uid]: id, [position]: [id, -id], [velocity]: id % 3, [kept]: `k${id}` });
@@ -136,7 +136,7 @@ export const stamp = System.create({ components: { with: [uid, caption] } }, (ro
 });
 
 /** Disables `repaint`, from the world's thread. */
-export const disable = System.create({  }, ({ resources }) => {
+export const disable = System.create({}, ({ resources }) => {
     resources[enabled] = false;
 });
 
@@ -265,16 +265,16 @@ export const giveKept = System.create({ components: { with: [caption] } }, (row,
     if (row[caption] !== undefined) commands.add(row.entity, kept, "given there");
 });
 /** On the thread: spawns giving an object of the world's thread a value, which throws when it's issued. */
-export const spawnKept = System.create({  }, ({ resources, commands }) => {
+export const spawnKept = System.create({}, ({ resources, commands }) => {
     commands.spawn([uid, kept])({ [uid]: resources[paint].text.length, [kept]: "spawned there" });
 });
 
 /** On the thread: runs until its thread ends, so its task never completes. */
-export const stall = System.create({  }, ({ resources }) => {
+export const stall = System.create({}, ({ resources }) => {
     while (resources[paint].text !== "never") { /* until the thread ends */ }
 });
 /** On the world's thread: counts its runs, ticking with nothing on the thread. */
-export const count = System.create({  }, ({ resources }) => {
+export const count = System.create({}, ({ resources }) => {
     resources[changes] += 1;
 });
 /**
@@ -294,12 +294,12 @@ const setQueued = (task: () => void): void => {
     ranHere.atDue = -1;
 };
 /** On the thread: counts its runs, so the world's ticks post it a task each. */
-export const countThere = System.create({  }, ({ resources }) => {
+export const countThere = System.create({}, ({ resources }) => {
     if (resources[paint].text !== "never") resources[changes] += 1;
 });
 
 /** On the thread: counts its runs there in `ranHere`; it reaches its commands, so it blocks its tier, a task a tick. */
-export const counted = System.create({  }, ({ resources, commands }) => {
+export const counted = System.create({}, ({ resources, commands }) => {
     void resources[paint];
     void commands;
     ranHere.runs++;

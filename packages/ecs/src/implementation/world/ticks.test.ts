@@ -12,11 +12,11 @@ declare module "@adobe/ecs" {
     }
 }
 
-const count = System.create({  }, ({ resources }) => { resources[frames] += 1; });
+const count = System.create({}, ({ resources }) => { resources[frames] += 1; });
 
 describe("ticks", () => {
     it("reject a system that conflicts with one added with no order between them, and one with input", async () => {
-        const other = System.create({  }, ({ resources }) => { resources[frames] = 0; });
+        const other = System.create({}, ({ resources }) => { resources[frames] = 0; });
         const withInput = System.create({}, (_context, input: { readonly by: number }) => {});
         await using world = createWorld({ [workers]: 0 });
         world.add(count);

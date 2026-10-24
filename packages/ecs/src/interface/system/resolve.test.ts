@@ -4,6 +4,12 @@ import { lookupsLists, type Access } from "./resolve.js";
 
 const mass = Symbol("resolveTest/mass");
 const position = Symbol("resolveTest/position");
+declare module "@adobe/ecs" {
+    interface Components {
+        [mass]: { type: number };
+        [position]: { type: number };
+    }
+}
 const access = (lookup: Access["lookup"]): Access => ({ components: null, resources: null, lookup, up: null, at: "a test" });
 
 describe("lookupsLists", () => {

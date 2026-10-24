@@ -26,23 +26,23 @@ declare module "@adobe/ecs" {
 }
 
 /** `count` entities with a value and a rank, the first of them marked. */
-const seed = System.create({ name: "reads/seed" }, ({ commands }, input: { readonly count: number }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     commands.spawn([value, rank, marked])({ [value]: 0, [rank]: 0, [marked]: true });
     for (let i = 1; i < input.count; i++) commands.spawn([value, rank])({ [value]: (i * 7919) % input.count, [rank]: i });
 });
 
 /** Writes the marked entity's value. */
-const nudge = System.create({ name: "reads/nudge", components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
+const nudge = System.create({ components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
 
 /** A kernel writing every row's rank, whose stamps it keeps only while something watches ranks change. */
-const advance = System.create({ name: "reads/advance", kernel: "cpu", components: { write: [rank] } }, row => { row[rank] += 1; });
+const advance = System.create({ kernel: "cpu", components: { write: [rank] } }, row => { row[rank] += 1; });
 
 /** The entities `look` and `lookChanged` look up, each run. */
 let looked: readonly Entity[] = [];
 let found = 0;
 
 /** Looks up every entity of `looked` by entity, reading its value, after `nudge` where both run. */
-const look = System.create({ name: "reads/look", lookup: { values: { read: [value] } }, after: [nudge] }, ({ lookup }) => {
+const look = System.create({ lookup: { values: { read: [value] } }, after: [nudge] }, ({ lookup }) => {
     for (let i = 0; i < looked.length; i++) {
         const row = lookup.values(looked[i]);
         if (row !== null && row[value] >= 0) found++;
@@ -50,15 +50,15 @@ const look = System.create({ name: "reads/look", lookup: { values: { read: [valu
 });
 
 /** The same, with `changed`: counts the entities whose value may have changed since it last ran. */
-const lookChanged = System.create({ name: "reads/lookChanged", lookup: { values: { read: [value], changed: [value] } }, after: [nudge] }, ({ lookup }) => {
+const lookChanged = System.create({ lookup: { values: { read: [value], changed: [value] } }, after: [nudge] }, ({ lookup }) => {
     for (let i = 0; i < looked.length; i++) {
         const row = lookup.values(looked[i]);
         if (row !== null && row[value] >= 0 && row.changed) found++;
     }
 });
 
-const nudgeThenLook = System.create({ name: "reads/nudgeThenLook", systems: [nudge, look] });
-const nudgeThenLookChanged = System.create({ name: "reads/nudgeThenLookChanged", systems: [nudge, lookChanged] });
+const nudgeThenLook = System.create({ systems: [nudge, look] });
+const nudgeThenLookChanged = System.create({ systems: [nudge, lookChanged] });
 
 /** A run of `system` over a world of `observedEntities` entities `looked` names, `found` after the last. */
 const lookups = async (system: System): Promise<{ readonly best: number; readonly found: number }> => {

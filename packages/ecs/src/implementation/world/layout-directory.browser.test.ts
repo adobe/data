@@ -42,41 +42,40 @@ declare module "@adobe/ecs" {
 const lists = Array.from({ length: 100 }, (_, i): (typeof value | (typeof tags)[number])[] => [value, ...tags.filter((_, bit) => (i & (1 << bit)) !== 0)]);
 
 /** Spawns `count` entities into each of the 100 archetypes. */
-const fill = System.create({ name: "layoutDirectoryTest/fill" }, ({ commands }, input: { readonly count: number }) => {
+const fill = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (const list of lists) for (let i = 0; i < input.count; i++) commands.spawn(list)({ [value]: 0 });
 });
 
-const bump = System.create({ name: "layoutDirectoryTest/bump", kernel: "cpu", components: { write: [value] } }, row => {
+const bump = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
 const total = { sum: 0, count: 0 };
 /** Sums every value on the world's thread, so it reads what workers wrote. */
-const sum = System.create({ name: "layoutDirectoryTest/sum", components: { read: [value] } }, row => {
+const sum = System.create({ components: { read: [value] } }, row => {
     total.sum += row[value];
     total.count++;
 });
 
 /** Entities whose values the lookups read, recorded as they spawn. */
 const spawned: Entity[] = [];
-const make = System.create({ name: "layoutDirectoryTest/make" }, ({ commands }) => {
+const make = System.create({}, ({ commands }) => {
     for (let i = 0; i < 64; i++) commands.spawn([target, seen])({ [target]: Entity.none, [seen]: 0 });
     commands.spawn([value])({ [value]: -1 });
 });
-const spawnMany = System.create({ name: "layoutDirectoryTest/spawnMany" }, ({ commands }, input: { readonly count: number }) => {
+const spawnMany = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) spawned.push(commands.spawn([value])({ [value]: i }));
 });
 /** Aims each looker at one of the last spawned entities. */
 let aimed = 0;
-const aim = System.create({ name: "layoutDirectoryTest/aim", components: { write: [target] } }, row => {
+const aim = System.create({ components: { write: [target] } }, row => {
     row[target] = spawned[spawned.length - 1 - aimed++];
 });
-const despawnValues = System.create({ name: "layoutDirectoryTest/despawnValues", components: { has: [value], not: [child] } }, (row, { commands }) => {
+const despawnValues = System.create({ components: { has: [value], not: [child] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 /** Lookups from workers. */
 const look = System.create({
-    name: "layoutDirectoryTest/look",
     kernel: "cpu",
     components: { read: [target], write: [seen] },
     lookup: { targets: { read: [value] } },
@@ -85,7 +84,7 @@ const look = System.create({
     row[seen] = other === null ? -1 : other[value];
 });
 /** Spawns from workers: a child per looker. */
-const breed = System.create({ name: "layoutDirectoryTest/breed", kernel: "cpu", components: { read: [seen] } }, (row, { commands }) => {
+const breed = System.create({ kernel: "cpu", components: { read: [seen] } }, (row, { commands }) => {
     commands.spawn([value, child])({ [value]: row[seen] });
 });
 

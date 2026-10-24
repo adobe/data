@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { World } from '../../interface/world/world.js';
 import type { Failure } from '../../interface/report/failure.js';
-import { definitionOf, idOfKey, indexDefinitionOf, itemOfId, keyOfId, labelOfItem, requireDefinition, type Definition } from '../../interface/registry/index.js';
+import { definitionOf, idOfKey, indexDefinitionOf, itemOfId, keyOfId, requireDefinition, type Definition } from '../../interface/registry/index.js';
 import type { Views } from '../../interface/registry/layout.js';
 import { failureOf } from './failures.js';
 import {
@@ -436,7 +436,7 @@ export const createSharing = (host: SharingHost) => {
                 if (tasks === null) return;
                 for (const [index, error] of message.errors) {
                     const finalizer = tasks.finalizerAt(index);
-                    if (finalizer !== undefined) host.defer(failureOf("finalizer", labelOfItem(finalizer), Object.assign(new Error(error.message), { name: error.name, stack: error.stack })));
+                    if (finalizer !== undefined) host.defer(failureOf("finalizer", finalizer, Object.assign(new Error(error.message), { name: error.name, stack: error.stack })));
                 }
                 return;
             }
@@ -472,7 +472,7 @@ export const createSharing = (host: SharingHost) => {
             case "observer failed": {
                 for (const [index, error] of message.errors) {
                     const placed = thread.observer?.placed[index];
-                    if (placed !== undefined) host.defer(failureOf("system", placed.label, Object.assign(new Error(error.message), { name: error.name, stack: error.stack })));
+                    if (placed !== undefined) host.defer(failureOf("system", { name: placed.label, id: placed.id }, Object.assign(new Error(error.message), { name: error.name, stack: error.stack })));
                 }
                 return;
             }
@@ -562,7 +562,7 @@ export const createSharing = (host: SharingHost) => {
             proxy = created;
         }
         catch (error) {
-            host.defer(failureOf("system", name, error));
+            host.defer(failureOf("system", { name, id: null }, error));
             // Its runs reject.
             thread.names.set(number, { id: `#observer:${number}`, value: null });
             drain(thread);

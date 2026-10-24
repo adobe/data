@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Entity } from "../entity/entity.js";
 import { Finalizer } from "../finalizer/finalizer.js";
 import { identify } from "../registry/ids.test-helper.js";
-import { isLeaf, labelOfItem, requireDefinition } from "../registry/index.js";
+import { isLeaf, requireDefinition } from "../registry/index.js";
 import { accessOf } from "../registry/schedule.js";
 import { threadOf } from "../registry/threads.js";
 import { System } from "../system/system.js";
@@ -42,22 +42,22 @@ const untyped = (declaration: object): unknown => Reflect.apply(Index.create, un
 
 describe("Index.create", () => {
     it("returns an index labeled by its name, its binding and id, or its kind numbered", () => {
-        const named = Index.create({ name: "indexCreateTest/named", key: [amount] });
-        expect(named.name).toBe("indexCreateTest/named");
+        const named = Index.create({ key: [amount] });
+        expect(named.name).toBe("named");
         const bound = Index.create(identify({ key: [amount], sorted: true }, "i.ts#bound"));
-        expect(bound.name).toBe("bound (i.ts#bound)");
+        expect(bound.name).toBe("bound");
         expect(Index.create({ key: [amount] }).name).toMatch(/^index #\d+$/);
     });
     it("is the index already recorded when declared again under its id the same, and throws for another declaration", () => {
-        const first = Index.create(identify({ name: "indexCreateTest/again", key: [cell], components: { has: [shown] } }, "i.ts#again"));
-        expect(Index.create(identify({ name: "indexCreateTest/again", key: [cell], components: { has: [shown] } }, "i.ts#again"))).toBe(first);
-        expect(() => Index.create(identify({ name: "indexCreateTest/again", key: [amount] }, "i.ts#again"))).toThrow("reload the page");
+        const first = Index.create(identify({ key: [cell], components: { has: [shown] } }, "i.ts#again"));
+        expect(Index.create(identify({ key: [cell], components: { has: [shown] } }, "i.ts#again"))).toBe(first);
+        expect(() => Index.create(identify({ key: [amount] }, "i.ts#again"))).toThrow("reload the page");
         // Another value is another index.
-        expect(Index.create({ name: "indexCreateTest/again", key: [cell], components: { has: [shown] } })).not.toBe(first);
+        expect(Index.create({ key: [cell], components: { has: [shown] } })).not.toBe(first);
     });
     it("throws for key parts that aren't components of data, are listed twice, or are sets", () => {
-        expect(() => untyped({ name: "bad" })).toThrow(`Index "bad" needs a key`);
-        expect(() => untyped({ name: "bad", key: amount })).toThrow(`Index "bad" needs a key`);
+        expect(() => untyped({ name: "bad" })).toThrow(`needs a key`);
+        expect(() => untyped({ name: "bad", key: amount })).toThrow(`needs a key`);
         expect(() => untyped({ name: "bad", key: [unregistered] })).toThrow(`key part "indexCreateTest/unregistered", which isn't a registered component of data`);
         expect(() => untyped({ name: "bad", key: [handle] })).toThrow("isn't a registered component of data");
         expect(() => untyped({ name: "bad", key: [amount, amount] })).toThrow(`lists key part "indexCreateTest/amount" twice`);
@@ -66,7 +66,7 @@ describe("Index.create", () => {
     it("takes an empty key, holding the entities with its has and not, and isn't unique then", () => {
         expect(() => Index.create({ key: [] })).not.toThrow();
         expect(() => Index.create({ key: [], sorted: true, components: { has: [amount], not: [shown] } })).not.toThrow();
-        expect(() => untyped({ name: "bad", key: [], unique: true })).toThrow(`Index "bad" is unique without a key`);
+        expect(() => untyped({ name: "bad", key: [], unique: true })).toThrow(`is unique without a key`);
         expect(() => untyped({ name: "bad", key: [], components: { has: [shown], not: [shown] } })).toThrow("which it holds by");
         expect(() => untyped({ name: "bad", key: [], components: { has: [unregistered] } })).toThrow("isn't a registered component");
     });
@@ -88,13 +88,13 @@ describe("Index.create", () => {
 });
 
 describe("systems and finalizers looking up through an index", () => {
-    const grid = Index.create({ name: "indexCreateTest/grid", key: [cell], components: { has: [amount] } });
+    const grid = Index.create({ key: [cell], components: { has: [amount] } });
     const untypedSystem = (declaration: object): unknown => Reflect.apply(System.create, undefined, [declaration, () => {}]);
     it("read the index's key parts, for ordering and conflicts, and are placed by them", () => {
-        const reader = System.create({ name: "indexCreateTest/reader", lookup: { near: { index: grid, read: [amount] } } }, ({ lookup }) => { void lookup.near([0, 0]).at(0)[amount]; });
+        const reader = System.create({ lookup: { near: { index: grid, read: [amount] } } }, ({ lookup }) => { void lookup.near([0, 0]).at(0)[amount]; });
         const leaf = requireDefinition(reader);
         expect(isLeaf(leaf) ? [...accessOf(leaf).reads] : null).toEqual([amount, cell]);
-        const writer = System.create({ name: "indexCreateTest/writer", components: { write: [cell] } }, row => { row[cell] = [0, 0]; });
+        const writer = System.create({ components: { write: [cell] } }, row => { row[cell] = [0, 0]; });
         expect(() => System.create([reader, writer])).toThrow(`both access "indexCreateTest/cell" and one writes it`);
         expect(() => System.create({ systems: [reader, writer], before: [] })).toThrow("order them");
         const names = Index.create({ key: [view] });
@@ -102,31 +102,31 @@ describe("systems and finalizers looking up through an index", () => {
     });
     it("throw for a lookup through what isn't an index, reading or watching what not every entity it holds has, or a system writing its key or reads", () => {
         expect(() => untypedSystem({ name: "bad", lookup: { near: { index: { name: "fake" } } } })).toThrow(`lookup "near" goes through a value Index.create didn't return`);
-        expect(() => untypedSystem({ name: "bad", lookup: { near: { index: grid, read: [name] } } })).toThrow(`lookup "near" reads "indexCreateTest/name", which not every entity index "indexCreateTest/grid" holds has`);
+        expect(() => untypedSystem({ name: "bad", lookup: { near: { index: grid, read: [name] } } })).toThrow(`lookup "near" reads "indexCreateTest/name", which not every entity index "grid" holds has`);
         expect(() => untypedSystem({ name: "bad", lookup: { near: { index: grid, changed: [name] } } })).toThrow(`lookup "near" watches "indexCreateTest/name"`);
         expect(() => untypedSystem({ name: "bad", components: { write: [cell] }, lookup: { near: { index: grid } } })).toThrow(`goes through an index keyed by "indexCreateTest/cell", which the system writes`);
         expect(() => untypedSystem({ name: "bad", components: { write: [amount] }, lookup: { near: { index: grid, read: [amount] } } })).toThrow(`reads "indexCreateTest/amount", which the system writes`);
         expect(() => untypedSystem({ name: "bad", kernel: "cpu", components: { write: [amount] }, lookup: { near: { index: Index.create({ key: [name] }) } } })).toThrow(`keyed by "indexCreateTest/name", a string, which kernels don't read yet`);
-        expect(() => Reflect.apply(Finalizer.create, undefined, [{ name: "bad", components: { read: [amount] }, lookup: { near: { index: grid, read: [name] } } }, () => {}])).toThrow(`Finalizer "bad": lookup "near" reads`);
-        expect(labelOfItem(grid)).toBe("indexCreateTest/grid");
+        expect(() => Reflect.apply(Finalizer.create, undefined, [{ name: "bad", components: { read: [amount] }, lookup: { near: { index: grid, read: [name] } } }, () => {}])).toThrow(`lookup "near" reads`);
+        expect(grid.name).toBe("grid");
     });
 });
 
 describe("systems ordering their rows by an index", () => {
-    const ranked = Index.create({ name: "indexCreateTest/ranked", key: [amount], sorted: true, components: { has: [cell] } });
+    const ranked = Index.create({ key: [amount], sorted: true, components: { has: [cell] } });
     const untypedSystem = (declaration: object): unknown => Reflect.apply(System.create, undefined, [declaration, () => {}]);
     it("read the index's key parts, for ordering and conflicts, and are placed by them", () => {
-        const ordered = System.create({ name: "indexCreateTest/ordered", components: { read: [cell] }, order: ranked }, row => { void row[cell]; });
+        const ordered = System.create({ components: { read: [cell] }, order: ranked }, row => { void row[cell]; });
         const leaf = requireDefinition(ordered);
         expect(isLeaf(leaf) ? [...accessOf(leaf).reads] : null).toEqual([cell, amount]);
-        const writer = System.create({ name: "indexCreateTest/rankWriter", components: { write: [amount] } }, row => { row[amount] = 0; });
+        const writer = System.create({ components: { write: [amount] } }, row => { row[amount] = 0; });
         expect(() => System.create([ordered, writer])).toThrow(`both access "indexCreateTest/amount" and one writes it`);
         // Every value a sorted index orders lives in shared memory, strings included, so its key places nothing.
         expect(threadOf({ order: Index.create({ key: [name], sorted: true }) }, "System", "unplaced")).toBe(null);
     });
     it("throw for an order by what isn't a sorted index, without components, with up, on the GPU, or writing its key", () => {
-        expect(() => untypedSystem({ name: "bad", components: { read: [cell] }, order: { name: "fake" } })).toThrow(`System "bad" orders its rows by a value Index.create didn't return`);
-        expect(() => untypedSystem({ name: "bad", components: { read: [cell] }, order: Index.create({ name: "indexCreateTest/hashed", key: [amount] }) })).toThrow(`orders its rows by index "indexCreateTest/hashed", which isn't sorted`);
+        expect(() => untypedSystem({ name: "bad", components: { read: [cell] }, order: { name: "fake" } })).toThrow(`orders its rows by a value Index.create didn't return`);
+        expect(() => untypedSystem({ name: "bad", components: { read: [cell] }, order: Index.create({ key: [amount] }) })).toThrow(`orders its rows by index "order", which isn't sorted`);
         expect(() => untypedSystem({ name: "bad", order: ranked })).toThrow("orders its rows without components");
         expect(() => untypedSystem({ name: "bad", components: { read: [cell] }, up: { through: parent }, order: ranked })).toThrow("uses both up and order");
         expect(() => untypedSystem({ name: "bad", kernel: "gpu", components: { write: [cell] }, order: ranked })).toThrow("GPU kernels have no order yet");
@@ -135,7 +135,7 @@ describe("systems ordering their rows by an index", () => {
     });
     it("throw for a render system's order by what isn't a sorted index", () => {
         const untypedRender = (order: object): unknown => Reflect.apply(System.render, undefined, [{ name: "bad", order, shader: { accessors: { amount } } }, () => {}]);
-        expect(() => untypedRender({ name: "fake" })).toThrow(`System "bad" orders its rows by a value Index.create didn't return`);
-        expect(() => untypedRender(Index.create({ name: "indexCreateTest/hashedForRender", key: [amount] }))).toThrow(`orders its rows by index "indexCreateTest/hashedForRender", which isn't sorted`);
+        expect(() => untypedRender({ name: "fake" })).toThrow(`orders its rows by a value Index.create didn't return`);
+        expect(() => untypedRender(Index.create({ key: [amount] }))).toThrow(/orders its rows by index "index #\d+", which isn't sorted/);
     });
 });

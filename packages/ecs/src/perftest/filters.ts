@@ -34,13 +34,12 @@ declare module "@adobe/ecs" {
 const rows = 100_000;
 const filtered = Archetype.create([value, other, at, out0, out1, out2, out3]);
 
-const seed = System.create({ name: "filters/seed" }, ({ commands }, input: { readonly count: number }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn(filtered)({ [value]: 0, [other]: 0, [at]: i, [out0]: 0, [out1]: 0, [out2]: 0, [out3]: 0 });
 });
 
 /** Writes the value of the rows whose `at` is `first` plus a multiple of `stride`. */
 const write = System.create({
-    name: "filters/write",
     kernel: "cpu",
     components: { read: [at], write: [value] },
 }, (row, _context, input: { readonly first: I32; readonly stride: I32 }) => {
@@ -51,26 +50,23 @@ const write = System.create({
 let seen = 0;
 /** Main-thread systems each filtering on `value`'s changes. */
 const readers = System.create({
-    name: "filters/readers",
-    systems: Array.from({ length: 8 }, (_, i) => System.create({ name: `filters/reader${i}`, components: { read: [value], changed: [value] } }, row => {
+    systems: Array.from({ length: 8 }, (_, i) => System.create({ components: { read: [value], changed: [value] } }, row => {
         seen += row[value];
     })),
 });
 /** The same filtering on `value`'s or `other`'s changes, of which only `value` is written. */
 const readersOfTwo = System.create({
-    name: "filters/readersOfTwo",
-    systems: Array.from({ length: 8 }, (_, i) => System.create({ name: `filters/readerOfTwo${i}`, components: { read: [value], changed: [value, other] } }, row => {
+    systems: Array.from({ length: 8 }, (_, i) => System.create({ components: { read: [value], changed: [value, other] } }, row => {
         seen += row[value];
     })),
 });
 /** Kernels each filtering on `value`'s changes, writing an output of its own. */
 const kernels = System.create({
-    name: "filters/kernels",
     systems: [
-        System.create({ name: "filters/kernel0", kernel: "cpu", components: { read: [value], write: [out0], changed: [value] } }, row => { row[out0] = row[value] * 2; }),
-        System.create({ name: "filters/kernel1", kernel: "cpu", components: { read: [value], write: [out1], changed: [value] } }, row => { row[out1] = row[value] * 3; }),
-        System.create({ name: "filters/kernel2", kernel: "cpu", components: { read: [value], write: [out2], changed: [value] } }, row => { row[out2] = row[value] * 4; }),
-        System.create({ name: "filters/kernel3", kernel: "cpu", components: { read: [value], write: [out3], changed: [value] } }, row => { row[out3] = row[value] * 5; }),
+        System.create({ kernel: "cpu", components: { read: [value], write: [out0], changed: [value] } }, row => { row[out0] = row[value] * 2; }),
+        System.create({ kernel: "cpu", components: { read: [value], write: [out1], changed: [value] } }, row => { row[out1] = row[value] * 3; }),
+        System.create({ kernel: "cpu", components: { read: [value], write: [out2], changed: [value] } }, row => { row[out2] = row[value] * 4; }),
+        System.create({ kernel: "cpu", components: { read: [value], write: [out3], changed: [value] } }, row => { row[out3] = row[value] * 5; }),
     ],
 });
 

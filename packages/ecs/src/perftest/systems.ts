@@ -19,7 +19,7 @@ declare module "@adobe/ecs" {
 /** Entities the added systems read. */
 const entities = 100;
 
-const seed = System.create({ name: "systems/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < entities; i++) commands.spawn([level])({ [level]: i });
 });
 
@@ -29,7 +29,7 @@ let read = 0;
 const fresh = (): System => System.create({ components: { read: [level], changed: [level] } }, row => { read += row[level]; });
 
 /** One module's system, added and removed again and again. */
-const again = System.create({ name: "systems/again", components: { read: [level], changed: [level] } }, row => { read += row[level]; });
+const again = System.create({ components: { read: [level], changed: [level] } }, row => { read += row[level]; });
 
 /** Ticks in each timed stretch. */
 export const churnTicks = 10_000;

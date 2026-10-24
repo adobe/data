@@ -40,8 +40,8 @@ declare module '@adobe/ecs' {
 }
 
 // An index is typed by its declaration, as written.
-const grid = Index.create({ name: "indexTest/grid", key: [cell], components: { has: [position] } });
-check<Equal<typeof grid, Index<{ readonly name: "indexTest/grid"; readonly key: readonly [typeof cell]; readonly components: { readonly has: readonly [typeof position] } }>>>();
+const grid = Index.create({ key: [cell], components: { has: [position] } });
+check<Equal<typeof grid, Index<{ readonly key: readonly [typeof cell]; readonly components: { readonly has: readonly [typeof position] } }>>>();
 const byServerId = Index.create({ key: [serverId], unique: true, components: { has: [health] } });
 const clips = Index.create({ key: [track, start], sorted: true, components: { has: [clip] } });
 const tasksOf = Index.create({ key: [owner], components: { not: [archived] } });

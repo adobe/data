@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { definitionOf } from '../registry/index.js';
-import type { Name } from '../system/name.js';
 import type { System } from '../system/system.js';
 import { accessorsOf, declarationsOf } from './accessors.js';
 

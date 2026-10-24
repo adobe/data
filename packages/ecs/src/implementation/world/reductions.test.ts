@@ -48,14 +48,14 @@ const positionAt = (i: number): Vec3 => [Math.sin(i) * 100, (i % 97) - 50, i / 7
 const massAt = (i: number): number => (i * 2654435761) >>> 20;
 
 /** Rows in two archetypes, so a run folds more than one call's partials. */
-const spawn = System.create({ name: "reductionsTest/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     for (let i = 0; i < rows; i++) {
         if (i % 3 === 0) commands.spawn([position, mass, heavy])({ [position]: positionAt(i), [mass]: massAt(i), [heavy]: true });
         else commands.spawn([position, mass])({ [position]: positionAt(i), [mass]: massAt(i) });
     }
 });
 
-const kernel = System.create({ name: "reductionsTest/kernel", kernel: "cpu", components: { read: [position, mass] }, reduce: { [total]: "+", [low]: "min", [bits]: "|", [least]: "min" } }, (row, { reduce }) => {
+const kernel = System.create({ kernel: "cpu", components: { read: [position, mass] }, resources: { reduce: [total, low, bits, least] } }, (row, { reduce }) => {
     const [x, y, z] = row[position];
     reduce[total](row[mass]);
     reduce[total](0.5);
@@ -65,7 +65,7 @@ const kernel = System.create({ name: "reductionsTest/kernel", kernel: "cpu", com
 });
 
 /** The same reductions, run as written on the main thread. */
-const body = System.create({ name: "reductionsTest/body", components: { read: [position, mass] }, reduce: { [total]: "+", [low]: "min", [bits]: "|", [least]: "min" } }, (row, { reduce }) => {
+const body = System.create({ components: { read: [position, mass] }, resources: { reduce: [total, low, bits, least] } }, (row, { reduce }) => {
     const [x, y, z] = row[position];
     reduce[total](row[mass]);
     reduce[total](0.5);
@@ -74,29 +74,29 @@ const body = System.create({ name: "reductionsTest/body", components: { read: [p
     reduce[least](row[mass]);
 });
 
-const filtered = System.create({ name: "reductionsTest/filtered", kernel: "cpu", components: { read: [mass], has: [heavy] }, resources: { changed: [level] }, reduce: { [total]: "+", [least]: "min" } }, (row, { reduce }) => {
+const filtered = System.create({ kernel: "cpu", components: { read: [mass], has: [heavy] }, resources: { changed: [level], reduce: [total, least] } }, (row, { reduce }) => {
     reduce[total](row[mass]);
     reduce[least](row[mass]);
 });
 
-const flags = System.create({ name: "reductionsTest/flags", kernel: "cpu", components: { read: [mass] }, reduce: { [any]: "|" } }, (row, { reduce }) => {
+const flags = System.create({ kernel: "cpu", components: { read: [mass] }, resources: { reduce: [any] } }, (row, { reduce }) => {
     reduce[any](row[mass] > 4000);
 });
 
 /** Two contributors to `total`, the heavy rows and the light ones, and a reader of the finished fold. */
-const heavyMass = System.create({ name: "reductionsTest/heavy", kernel: "cpu", components: { read: [mass], has: [heavy] }, reduce: { [total]: "+" } }, (row, { reduce }) => {
+const heavyMass = System.create({ kernel: "cpu", components: { read: [mass], has: [heavy] }, resources: { reduce: [total] } }, (row, { reduce }) => {
     reduce[total](row[mass]);
 });
-const lightMass = System.create({ name: "reductionsTest/light", components: { read: [mass], not: [heavy] }, reduce: { [total]: "+" } }, (row, { reduce }) => {
+const lightMass = System.create({ components: { read: [mass], not: [heavy] }, resources: { reduce: [total] } }, (row, { reduce }) => {
     reduce[total](row[mass]);
 });
-const reader = System.create({ name: "reductionsTest/reader", resources: { read: [total], write: [seen] } }, ({ resources }) => {
+const reader = System.create({ resources: { read: [total], write: [seen] } }, ({ resources }) => {
     resources[seen] = resources[total];
 });
-const frame = System.create({ name: "reductionsTest/frame", systems: [reader, heavyMass, lightMass] });
+const frame = System.create({ systems: [reader, heavyMass, lightMass] });
 
-const weigh = System.create({ name: "reductionsTest/weigh", components: { write: [mass], has: [heavy] } }, row => { row[mass] = 1; });
-const kernelChanged = System.create({ name: "reductionsTest/changed", kernel: "cpu", components: { read: [mass], changed: [mass] }, reduce: { [total]: "+" } }, (row, { reduce }) => {
+const weigh = System.create({ components: { write: [mass], has: [heavy] } }, row => { row[mass] = 1; });
+const kernelChanged = System.create({ kernel: "cpu", components: { read: [mass], changed: [mass] }, resources: { reduce: [total] } }, (row, { reduce }) => {
     reduce[total](row[mass]);
 });
 
@@ -157,7 +157,7 @@ describe("reductions", () => {
 
     it("keep the previous value when a contributor fails, or when every contributor skips the run", async () => {
         let fail = false;
-        const fails = System.create({ name: "reductionsTest/fails", components: { read: [mass], has: [heavy] }, reduce: { [total]: "+" } }, (row, { reduce }) => {
+        const fails = System.create({ components: { read: [mass], has: [heavy] }, resources: { reduce: [total] } }, (row, { reduce }) => {
             reduce[total](row[mass]);
             if (fail) throw new Error("contributor failed");
         });
@@ -200,7 +200,7 @@ describe("reductions", () => {
 
     it("stamp their resources changed only when the fold differs", async () => {
         let ran = 0;
-        const watcher = System.create({ name: "reductionsTest/reader/2", components: { has: [mass] }, resources: { changed: [total] } }, () => { ran++; });
+        const watcher = System.create({ components: { has: [mass] }, resources: { changed: [total] } }, () => { ran++; });
         const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(kernel);
@@ -214,7 +214,7 @@ describe("reductions", () => {
     });
 
     it("store an infinite sum as any write of it, and only an empty min or max as the integer type's extreme", async () => {
-        const infinite = System.create({ name: "reductionsTest/infinite", components: { has: [mass] }, reduce: { [wrapped]: "+" } }, (_, { reduce }) => {
+        const infinite = System.create({ components: { has: [mass] }, resources: { reduce: [wrapped] } }, (_, { reduce }) => {
             reduce[wrapped](Infinity);
         });
         const world = createWorld({ [workers]: 0 });
@@ -235,16 +235,14 @@ describe("reductions", () => {
     it("reject what can't be reduced", async () => {
         // Booleans reduce bitwise.
         expect(() => declareResource$(summed, { type: { type: "boolean", default: false }, reduce: "+" })).toThrow(`booleans reduce with "&", "|" or "^"`);
-        // @ts-expect-error a contributor repeats its resource's operator
-        expect(() => System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); })).toThrow(`reduces "reductionsTest/total" with "max", but it's declared reduce: "+"`);
         // @ts-expect-error only a resource with a reduce trait is reduced
-        expect(() => System.create({ name: "reductionsTest/other/2", components: { has: [mass] }, reduce: { [level]: "+" } }, (_, { reduce }) => { reduce[level](1); })).toThrow(`reduces "reductionsTest/level", which has no reduce trait`);
+        expect(() => System.create({ components: { has: [mass] }, resources: { reduce: [level] } }, (_, { reduce }) => { reduce[level](1); })).toThrow(`reduces "reductionsTest/level", which has no reduce trait`);
         // @ts-expect-error a reduced resource is never written
-        expect(() => System.create({ name: "reductionsTest/other/3", resources: { write: [total] } }, ({ resources }) => { resources[total] = 1; })).toThrow(`writes "reductionsTest/total", which is reduced`);
+        expect(() => System.create({ resources: { write: [total] } }, ({ resources }) => { resources[total] = 1; })).toThrow(`writes "reductionsTest/total", which is reduced`);
         // @ts-expect-error a contributor doesn't read what it reduces into
-        expect(() => System.create({ name: "reductionsTest/other/4", components: { has: [mass] }, resources: { read: [total] }, reduce: { [total]: "+" } }, (_, { resources, reduce }) => { reduce[total](resources[total]); })).toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
+        expect(() => System.create({ components: { has: [mass] }, resources: { read: [total], reduce: [total] } }, (_, { resources, reduce }) => { reduce[total](resources[total]); })).toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
         // @ts-expect-error nor filters on it
-        expect(() => System.create({ name: "reductionsTest/other/5", components: { has: [mass] }, resources: { changed: [total] }, reduce: { [total]: "+" } }, (_, { reduce }) => { reduce[total](1); })).toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
+        expect(() => System.create({ components: { has: [mass] }, resources: { changed: [total], reduce: [total] } }, (_, { reduce }) => { reduce[total](1); })).toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
     });
 
     it("leave nothing subscribed to sync points from a registration that failed", () => {
@@ -252,7 +250,7 @@ describe("reductions", () => {
         const registrar = createRegistrar(state);
         // A declaration the build doesn't see is a kernel it didn't compile, which only a world's registration finds.
         const uncompiled = { name: "reductionsTest/other/6", kernel: "cpu", components: { read: [mass] } } as const;
-        const both = System.create({ name: "reductionsTest/both", systems: [kernel, System.create(uncompiled, row => { void row[mass]; })] });
+        const both = System.create({ systems: [kernel, System.create(uncompiled, row => { void row[mass]; })] });
         const definition = (system: System<unknown>) => {
             const found = definitionOf(system);
             if (found === undefined) throw new Error("not a system");

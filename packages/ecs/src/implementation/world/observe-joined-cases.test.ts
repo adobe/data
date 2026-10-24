@@ -41,18 +41,18 @@ declare module "@adobe/ecs" {
 /** The caption's start, which a command here gives it by this value. */
 const none = { text: "none" };
 
-const add = System.create({ name: "observeJoinedTest/add", resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
+const add = System.create({ resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
-const spawn = System.create({ name: "observeJoinedTest/spawn" }, ({ commands }, input: { readonly x: number }) => {
+const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, label, marked])({ [point]: [input.x, -input.x], [label]: `p${input.x}` });
 });
-const spawnPlaced = System.create({ name: "observeJoinedTest/spawnPlaced" }, ({ commands }, input: { readonly x: number }) => {
+const spawnPlaced = System.create({}, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([place, caption, widget, kept])({ [place]: input.x, [widget]: null, [kept]: `k${input.x}` });
 });
-const nullCaptions = System.create({ name: "observeJoinedTest/nullCaptions", components: { has: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, null); });
-const restartCaptions = System.create({ name: "observeJoinedTest/restartCaptions", components: { has: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, none); });
-const dropCaptions = System.create({ name: "observeJoinedTest/dropCaptions", components: { has: [caption] } }, (row, { commands }) => { commands.remove(row.entity, caption); });
+const nullCaptions = System.create({ components: { has: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, null); });
+const restartCaptions = System.create({ components: { has: [caption, place] } }, (row, { commands }) => { commands.add(row.entity, caption, none); });
+const dropCaptions = System.create({ components: { has: [caption] } }, (row, { commands }) => { commands.remove(row.entity, caption); });
 
 /** A world shared with a thread joined through a channel claiming `threads`, and the joined world. */
 const joined = (threads: readonly "observeJoinedTest"[] = []): { readonly world: CreatedWorld; readonly remote: World } => {
@@ -210,9 +210,11 @@ describe("observer factories on a joined thread", () => {
             await new Promise(resolve => setTimeout(resolve, 10));
             for (const run of runs) for (const failure of (await reportOf(world, run)).failures) reported.push(failure.message);
         });
-        // The entity observer's system, added, fails in a run's report; the selection's scan, run, rejects, rethrown.
+        // The entity observer's system, added, fails in a run's report, which the factories, whose system it is, rethrow;
+        // the selection's scan, run, rejects, rethrown.
         expect([...reported, ...caught.map(String)]).toEqual([
             expect.stringMatching(/^System "Observe\.entity\(observeJoinedTest\/caption\).*runs on thread "observeJoinedTest", which a joined thread fills, and has no id/),
+            expect.stringMatching(/^Error: Observe\.entity\(observeJoinedTest\/caption\): System "Observe\.entity\(observeJoinedTest\/caption\)".*has no id/),
             expect.stringMatching(/System "Observe\.select\(observeJoinedTest\/place, observeJoinedTest\/caption\).*runs on thread "observeJoinedTest", which a joined thread fills, and has no id/),
         ]);
         expect(values).toEqual([]);

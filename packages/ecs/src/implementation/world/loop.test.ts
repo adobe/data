@@ -16,10 +16,10 @@ declare module "@adobe/ecs" {
     }
 }
 
-const increment = requireDefinition(System.create({ name: "loopTest/increment", components: { write: [count] } }, row => { row[count] += 1; }));
-const reader = requireDefinition(System.create({ name: "loopTest/reader", components: { read: [count] } }, row => { void row[count]; }));
-const ordered = requireDefinition(System.create({ name: "loopTest/ordered", components: { read: [count] }, after: [System.create({ name: "loopTest/phase" }, () => {})] }, row => { void row[count]; }));
-const takesInput = requireDefinition(System.create({ name: "loopTest/input" }, (_context, input: { readonly by: number }) => {}));
+const increment = requireDefinition(System.create({ components: { write: [count] } }, row => { row[count] += 1; }));
+const reader = requireDefinition(System.create({ components: { read: [count] } }, row => { void row[count]; }));
+const ordered = requireDefinition(System.create({ components: { read: [count] }, after: [System.create({}, () => {})] }, row => { void row[count]; }));
+const takesInput = requireDefinition(System.create({}, (_context, input: { readonly by: number }) => {}));
 
 /** A host whose frames and timers run only when the test says, at the times it gives. */
 const createHost = (settings: { cadence: Cadence; always: boolean; wake: number }) => {
@@ -143,7 +143,7 @@ describe("the loop", () => {
         const { host } = createHost({ cadence: { kind: "frame" }, always: false, wake: Infinity });
         const loop = createLoop(host);
         loop.add(increment);
-        expect(() => loop.add(reader)).toThrow('Systems "loopTest/increment" and "loopTest/reader" both access "loopTest/count" and one writes it');
+        expect(() => loop.add(reader)).toThrow('Systems "increment" and "reader" both access "loopTest/count" and one writes it');
         expect(() => loop.add(takesInput)).toThrow("takes input, which ticks don't pass");
         loop.add(increment);
         expect(() => loop.add(ordered)).toThrow("both access");
@@ -164,7 +164,7 @@ describe("a world's loop platform", () => {
     it("can be given, so a back-to-back driver ticks as fast as tasks run", async () => {
         const driver = backToBack();
         const world = createWorld({ [always]: true }, { loop: driver });
-        world.add(System.create({ name: "loopTest/idle", components: { has: [count] } }, () => {}));
+        world.add(System.create({ components: { has: [count] } }, () => {}));
         const start = performance.now();
         // At 60 frames a second, a timer's frames would take 1.6 s.
         await new Promise<void>(resolve => {

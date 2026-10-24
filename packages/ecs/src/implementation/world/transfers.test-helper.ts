@@ -49,21 +49,21 @@ const store = (value: unknown, resources: { [order]: number }): void => {
 };
 
 /** On "transfersTest": records the buffer it's given. */
-export const storeThere = System.create({ name: "transfersTest/storeThere", resources: { read: [anchor], write: [order] } }, ({ resources }, input: { readonly buffer: unknown }) => {
+export const storeThere = System.create({ resources: { read: [anchor], write: [order] } }, ({ resources }, input: { readonly buffer: unknown }) => {
     if (resources[anchor].text === "anchor") store(input.buffer, resources);
 });
 /** On the world's thread: records the buffer it's given. */
-export const storeHere = System.create({ name: "transfersTest/storeHere", resources: { write: [order] } }, ({ resources }, input: { readonly buffer: unknown }) => {
+export const storeHere = System.create({ resources: { write: [order] } }, ({ resources }, input: { readonly buffer: unknown }) => {
     store(input.buffer, resources);
 });
 /** On the world's thread: what a run from a joined thread saw of the order, by its value. */
 export const marks: { readonly value: number; readonly order: number }[] = [];
-export const mark = System.create({ name: "transfersTest/mark", resources: { write: [order] } }, ({ resources }, input: { readonly value: number }) => {
+export const mark = System.create({ resources: { write: [order] } }, ({ resources }, input: { readonly value: number }) => {
     marks.push({ value: input.value, order: resources[order]++ });
 });
 /** On "transfersTest": gives an entity the port or bitmap it's given. */
 export const attachThere = System.create({
-    name: "transfersTest/attachThere", resources: { read: [anchor] },
+    resources: { read: [anchor] },
 }, ({ resources, commands }, input: { readonly entity: Entity; readonly value: unknown }) => {
     if (resources[anchor].text !== "anchor") return;
     kept.push(input.value);
@@ -71,18 +71,18 @@ export const attachThere = System.create({
     else if (typeof ImageBitmap === "function" && input.value instanceof ImageBitmap) commands.add(input.entity, bitmap, input.value);
 });
 /** On the world's thread: gives an entity the port or bitmap it's given. */
-export const attachHere = System.create({ name: "transfersTest/attachHere" }, ({ commands }, input: { readonly entity: Entity; readonly value: unknown }) => {
+export const attachHere = System.create({}, ({ commands }, input: { readonly entity: Entity; readonly value: unknown }) => {
     kept.push(input.value);
     if (input.value instanceof MessagePort) commands.add(input.entity, portHere, input.value);
     else if (typeof ImageBitmap === "function" && input.value instanceof ImageBitmap) commands.add(input.entity, bitmapHere, input.value);
 });
 /** On "transfersTest": says hello through the port it's given, which only moving it there, not copying it, gives. */
-export const greetThere = System.create({ name: "transfersTest/greetThere", resources: { read: [anchor] } }, ({ resources }, input: { readonly port: unknown }) => {
+export const greetThere = System.create({ resources: { read: [anchor] } }, ({ resources }, input: { readonly port: unknown }) => {
     if (input.port instanceof MessagePort) input.port.postMessage(resources[anchor].text);
 });
 
 /** On the world's thread: spawns an entity holding the port it's given. */
-export const spawnHere = System.create({ name: "transfersTest/spawnHere" }, ({ commands }, input: { readonly value: unknown }) => {
+export const spawnHere = System.create({}, ({ commands }, input: { readonly value: unknown }) => {
     if (input.value instanceof MessagePort) commands.spawn([portHere])({ [portHere]: input.value });
 });
 
@@ -91,13 +91,13 @@ export const spawnHere = System.create({ name: "transfersTest/spawnHere" }, ({ c
  * "transfersTest", it fails to register, so a run of it never runs.
  */
 export const unregistered = System.create({
-    name: "transfersTest/unregistered", components: { read: [port], write: [depth] }, up: { through: parent, read: [depth] },
+    components: { read: [port], write: [depth] }, up: { through: parent, read: [depth] },
 }, (row, { up }, input: { readonly value: unknown }) => {
     row[depth] = (up === null ? 0 : up[depth]) + (row[port] === input.value ? 1 : 0);
 });
 
 /** On the world's thread: nothing, a run of its own. */
-export const idle = System.create({ name: "transfersTest/idle" }, () => {});
+export const idle = System.create({}, () => {});
 
 /** Every system the joined threads run or place, which they import so the world can place them there. */
 export const transferSystems: readonly { readonly name: string }[] = [storeThere, storeHere, mark, attachThere, attachHere, spawnHere, greetThere, unregistered];

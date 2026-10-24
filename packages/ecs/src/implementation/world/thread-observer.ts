@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
-import { definitionOf, isLeaf, itemOfId, labelOfItem } from '../../interface/registry/index.js';
+import { definitionOf, idOrNull, isLeaf, itemOfId } from '../../interface/registry/index.js';
 import { cancelled, notRun, opening, outcomeWord, postedWord, removedWord, runsWord, observerBlockWords, syncWord, tickSlot } from './joined-observer.js';
 import { protocolName, type ObserverSetup, type ToWorld } from './joining.js';
 import type { Mirror } from './mirror.js';
@@ -50,6 +50,8 @@ type Block = { readonly control: Int32Array; readonly ticks: Float64Array; handl
 type Placed = {
     readonly index: number;
     readonly label: string;
+    /** The id the plugin gave it, which reports give beside its label. */
+    readonly id: string | null;
     readonly blocks: readonly Block[];
     /** Whether its posts read only their blocks, never this thread's objects. */
     readonly contained: boolean;
@@ -92,13 +94,13 @@ export const createThreadObserver = (host: ThreadObserverHost) => {
                 if (own === undefined) continue;
                 own.runner = createThreadRunner(runnerHost, own.leaf, records);
                 own.placed = true;
-                placed[index] = { index, label: labelOfItem(own.leaf), blocks, contained, runner: null, local: new WeakRef(own), stopped: false };
+                placed[index] = { index, label: own.leaf.name, id: idOrNull(own.leaf), blocks, contained, runner: null, local: new WeakRef(own), stopped: false };
                 continue;
             }
             const item = id === null ? undefined : itemOfId(id);
             const definition = item === undefined ? undefined : definitionOf(item);
             const leaf = definition !== undefined && isLeaf(definition) ? definition : null;
-            placed[index] = { index, label: leaf === null ? String(id) : labelOfItem(leaf), blocks, contained, runner: leaf === null ? null : createThreadRunner(runnerHost, leaf, records), local: null, stopped: false };
+            placed[index] = { index, label: leaf === null ? String(id) : leaf.name, id: leaf === null ? null : idOrNull(leaf), blocks, contained, runner: leaf === null ? null : createThreadRunner(runnerHost, leaf, records), local: null, stopped: false };
         }
     };
 

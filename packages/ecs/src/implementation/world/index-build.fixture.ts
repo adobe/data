@@ -20,28 +20,28 @@ declare module "@adobe/ecs" {
     }
 }
 
-const grid = Index.create({ name: "indexBuildTest/grid", key: [cell], components: { has: [weight] } });
-const serials = Index.create({ name: "indexBuildTest/serials", key: [serial], unique: true });
+const grid = Index.create({ key: [cell], components: { has: [weight] } });
+const serials = Index.create({ key: [serial], unique: true });
 
 const width = 300;
 const height = 200;
 const count = 150_000;
 
 /** Spawns entities in cells, with serials of which a few repeat. */
-const seed = System.create({ name: "indexBuildTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     for (let k = 0; k < count; k++) {
         commands.spawn([cell, serial, weight])({ [cell]: [(k * 7919) % width, (k * 104729) % height], [serial]: k % 50_000 === 7 ? 7 : k, [weight]: k % 13 });
     }
 });
 
 /** Moves every entity to another cell, so the next refresh builds the index again. */
-const shuffle = System.create({ name: "indexBuildTest/shuffle", components: { write: [cell] } }, row => {
+const shuffle = System.create({ components: { write: [cell] } }, row => {
     const [x, y] = row[cell];
     row[cell] = [(x * 7 + 3) % width, (y + x) % height];
 });
 
 /** A kernel, so the pool starts, as it does with a world's first kernel. */
-const warm = System.create({ name: "indexBuildTest/warm", kernel: "cpu", components: { read: [serial], write: [weight] } }, row => {
+const warm = System.create({ kernel: "cpu", components: { read: [serial], write: [weight] } }, row => {
     row[weight] = row[serial] % 13;
 });
 
@@ -49,7 +49,6 @@ const seen = { grid: 0, rows: 0, serials: 0 };
 
 /** Every cell's rows, in order, folded into one number; and the unique index's row of each serial. */
 const read = System.create({
-    name: "indexBuildTest/read",
     lookup: { near: { index: grid, read: [weight] }, bySerial: { index: serials } },
 }, ({ lookup }) => {
     let fold = 0;
@@ -72,7 +71,7 @@ const read = System.create({
 });
 
 /** The same folds without an index: each cell's rows sorted by entity, and each serial's lowest entity. */
-const reference = System.create({ name: "indexBuildTest/reference", components: { read: [cell, serial, weight] } }, row => {
+const reference = System.create({ components: { read: [cell, serial, weight] } }, row => {
     const [x, y] = row[cell];
     const cellRows = byCell[x * height + y] ??= [];
     cellRows.push([row.entity, row[weight]]);

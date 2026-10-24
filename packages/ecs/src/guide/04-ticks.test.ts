@@ -50,7 +50,7 @@ it("runs added systems on every tick", async () => {
 
 // A system asks for another tick by contributing a time to wake: the first tick at or after it runs. Work that a tick's
 // commands start and a later tick finishes asks for the next one this way.
-const step = System.create({ resources: { read: [clock], write: [steps] }, reduce: { [wake]: "min" } }, ({ resources, reduce }) => {
+const step = System.create({ resources: { read: [clock], write: [steps], reduce: [wake] } }, ({ resources, reduce }) => {
     resources[steps] += 1;
     if (resources[steps] < 3) reduce[wake](resources[clock].now);
 });

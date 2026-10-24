@@ -4,7 +4,6 @@ import { Todo, done, label, order, orderAfter, ordered, todo } from "./data.js";
 
 /** Adds a todo at the end of the list, with its label trimmed; a blank label adds nothing. */
 export const addTodo = System.create({
-    name: "todos/add",
     lookup: { ordered: { index: ordered, read: [order] } },
 }, ({ lookup, commands }, input: { readonly label: string }) => {
     const trimmed = input.label.trim();
@@ -16,7 +15,6 @@ export const addTodo = System.create({
 type One = { readonly entity: Entity };
 
 export const toggleTodo = System.create({
-    name: "todos/toggle",
     target: "entity",
     components: { write: [done], has: [todo] },
 }, (row, _context, _input: One) => {
@@ -25,7 +23,6 @@ export const toggleTodo = System.create({
 
 /** Gives a todo a new label, trimmed; a blank one deletes it. */
 export const editTodo = System.create({
-    name: "todos/edit",
     target: "entity",
     components: { write: [label], has: [todo] },
 }, (row, { commands }, input: One & { readonly label: string }) => {
@@ -35,7 +32,6 @@ export const editTodo = System.create({
 });
 
 export const deleteTodo = System.create({
-    name: "todos/delete",
     target: "entity",
     components: { has: [todo] },
 }, (row, { commands }, _input: One) => {
@@ -47,7 +43,6 @@ export const deleteTodo = System.create({
  * neighbours'. When no number lies between them, every todo is numbered again.
  */
 export const moveTodo = System.create({
-    name: "todos/move",
     lookup: { todos: { read: [order], has: [todo] }, ordered: { index: ordered, read: [order] } },
 }, ({ lookup, commands }, input: { readonly entity: Entity; readonly before: Entity }) => {
     const { entity, before } = input;

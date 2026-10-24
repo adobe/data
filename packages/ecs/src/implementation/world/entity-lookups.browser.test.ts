@@ -7,7 +7,7 @@ import { createWorld, join, type CreatedWorld } from "./create.js";
 import { edit, probe, scene, threadProbe, value } from "./entity-lookups.test-helper.js";
 
 /** Writes every `value` on the GPU, which stamps its whole column at once. */
-const bumpOnGpu = System.create({ name: "entityLookupsTest/bumpOnGpu", kernel: "gpu", components: { write: [value] } }, row => {
+const bumpOnGpu = System.create({ kernel: "gpu", components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 

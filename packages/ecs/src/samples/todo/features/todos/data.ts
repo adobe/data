@@ -20,7 +20,7 @@ declare module "@adobe/ecs" {
 export const Todo = Archetype.create([todo, label, done, order]);
 
 /** Every todo, in list order. */
-export const ordered = Index.create({ name: "todos/ordered", key: [order], sorted: true, components: { has: [todo] } });
+export const ordered = Index.create({ key: [order], sorted: true, components: { has: [todo] } });
 
 /** The order just after the last of `ordered`'s todos, as a lookup through it gives them: 0 for none. */
 export const orderAfter = (todos: { readonly length: number; readonly at: (index: number) => { readonly [order]: number } }): number =>

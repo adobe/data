@@ -19,7 +19,7 @@ import { declareComponent$ } from ${source("../../interface/registry/declare.ts"
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
 const score = Symbol("score");
 declareComponent$(score, { type: { type: "number" } });
-const kernel = System.create({ name: "fixture", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+const kernel = System.create({ kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
 export const description = kernelOf(kernel);
 `);
 /** A kernel inlining a TypeScript helper and a function from a package's `dist`. */
@@ -41,7 +41,7 @@ import { scaled } from "./helper.ts";
 import { increment } from "fake-math";
 import { score } from "./linked-keys.js";
 // Serving evaluates this module again after an edit, declaring the same system again with the same keys.
-const kernel = System.create({ name: "linked", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
+const kernel = System.create({ kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
 export const description = kernelOf(kernel);
 `);
 /** Systems taking input, of a type another TypeScript module declares, which the test edits. */
@@ -51,8 +51,8 @@ const writeInputTypes = (field: string) => writeFileSync(inputTypes, `import typ
 writeInputTypes("by");
 writeFileSync(inputs, `import { System } from ${source("../../interface/system/system.ts")};
 import type { Push } from "./input-types.ts";
-const push = System.create({ name: "inputs/push" }, (_context, input: Push) => { void input; });
-const label = System.create({ name: "inputs/label" }, (_context, input: { readonly text?: string }) => { void input; });
+const push = System.create({}, (_context, input: Push) => { void input; });
+const label = System.create({}, (_context, input: { readonly text?: string }) => { void input; });
 export const schemas = [push, label].map(system => Reflect.get(system, "input"));
 `);
 /** A kernel spawning through a list another module declares, which the test edits. */
@@ -69,7 +69,7 @@ writeFileSync(listing, `import { System } from ${source("../../interface/system/
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
 import { score } from "./linked-keys.js";
 import { Listed } from "./listed.js";
-const kernel = System.create({ name: "listing", kernel: "cpu", components: { read: [score] } }, (row, { commands }) => { commands.spawn(Listed)({ [score]: row[score] }); });
+const kernel = System.create({ kernel: "cpu", components: { read: [score] } }, (row, { commands }) => { commands.spawn(Listed)({ [score]: row[score] }); });
 export const description = kernelOf(kernel);
 `);
 /** Two kernels in one module, writing different functions of the entity. */
@@ -79,8 +79,8 @@ import { declareComponent$ } from ${source("../../interface/registry/declare.ts"
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
 const score = Symbol("score");
 declareComponent$(score, { type: { type: "number" } });
-const doubled = System.create({ name: "doubled", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
-const tripled = System.create({ name: "tripled", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 3; });
+const doubled = System.create({ kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+const tripled = System.create({ kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 3; });
 export const descriptions = [kernelOf(doubled), kernelOf(tripled)];
 `);
 /** A module of keys and what it declares with them, which serving evaluates again under another query. */
@@ -93,10 +93,10 @@ export const score = Symbol("score");
 const shown = Symbol("shown");
 declareComponent$(score, ${declaration});
 declareComponent$(shown, { type: { const: true }, derived: true });
-export const rule = Rule.create({ name: "keys/shown", components: { has: [score] }, derive: [shown] });
-export const release = Finalizer.create({ name: "keys/release", components: { read: [${released}] } }, () => {});
-export const system = Systems.create({ name: "keys/write", components: { write: [score] } }, (row) => { row[score] = 1; });
-export const kernel = Systems.create({ name: "keys/write", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = 2; });
+export const rule = Rule.create({ components: { has: [score] }, derive: [shown] });
+export const release = Finalizer.create({ components: { read: [${released}] } }, () => {});
+export const system = Systems.create({ components: { write: [score] } }, (row) => { row[score] = 1; });
+export const kernel = Systems.create({ kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = 2; });
 export const label = labelOf(score);
 `;
 const evaluated = join(directory, "evaluated.js");
@@ -132,7 +132,7 @@ import { kernelOf } from ${source("../world/attach-kernel.ts")};
 import { ${added} } from "external-keys";
 const score = Symbol("score");
 declareComponent$(score, { type: { type: "number" } });
-const kernel = System.create({ name: "${name}", kernel: "cpu", components: { read: [score] } }, (row, { commands }) => { commands.add(row.entity, ${added}, row[score]); });
+const kernel = System.create({ kernel: "cpu", components: { read: [score] } }, (row, { commands }) => { commands.add(row.entity, ${added}, row[score]); });
 export const description = kernelOf(kernel);
 `;
 const externalKey = join(directory, "external-key.js");
@@ -330,7 +330,7 @@ test("an application's build compiles the kernels a library ships uncompiled", a
 import { declareComponent$ } from "@adobe/ecs/declare";
 const score = Symbol("score");
 declareComponent$(score, { type: { type: "number" } });
-export const kernel = System.create({ name: "library", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+export const kernel = System.create({ kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
 `);
     // The test hook comes from the installed copy, which the library's compiled kernel attaches to.
     const application = join(project, "application.js");
@@ -390,8 +390,8 @@ export const speed = Symbol();
 declare module "@adobe/ecs" {
     interface Components { [speed]: { type: F32 } }
 }
-export const push = System.create({ name: "push" }, (_context, input: { readonly by: number }) => { void input; });
-export const slow = System.create({ name: "slow", kernel: "cpu", components: { write: [speed] } }, row => { row[speed] = row[speed] / 2; });
+export const push = System.create({}, (_context, input: { readonly by: number }) => { void input; });
+export const slow = System.create({ kernel: "cpu", components: { write: [speed] } }, row => { row[speed] = row[speed] / 2; });
 `);
     const outDir = join(project, "dist");
     const output = await build({
@@ -413,15 +413,15 @@ test("serve accepts a module of keys evaluated again, which makes the same keys,
     await serve(async server => {
         const first = await server.ssrLoadModule(evaluated);
         const again = await server.ssrLoadModule(`${evaluated}?evaluated=again`);
-        const { labelOfItem, sameItem } = await server.ssrLoadModule(JSON.parse(source("../../interface/registry/items.ts")));
+        const { sameItem } = await server.ssrLoadModule(JSON.parse(source("../../interface/registry/items.ts")));
         expect(again.score).not.toBe(first.score);
         expect([first.label, again.label]).toEqual(["score", "score"]);
         expect(again.system).not.toBe(first.system);
         expect([sameItem(again.system, first.system), sameItem(again.kernel, first.kernel), sameItem(again.kernel, again.system)]).toEqual([true, true, false]);
         expect(again.rule).toBe(first.rule);
         expect(again.release).toBe(first.release);
-        // The two systems share a name, so each is labeled with its id.
-        expect([labelOfItem(again.system), labelOfItem(first.kernel)]).toEqual(["keys/write (fixture-app/evaluated.js#system)", "keys/write (fixture-app/evaluated.js#kernel)"]);
+        // Each is labeled by its binding.
+        expect([again.system.name, first.kernel.name]).toEqual(["system", "kernel"]);
     });
 });
 
@@ -429,7 +429,7 @@ test("serve reports a finalizer evaluated again under its id with another declar
     await serve(async server => {
         await server.ssrLoadModule(changedItems);
         writeFileSync(changedItems, keys(`{ type: { type: "number" } }`, "shown"));
-        await expect(server.ssrLoadModule(`${changedItems}?evaluated=changed`)).rejects.toThrow(`Cannot declare "keys/release" (fixture-app/changed-items.js#release): its id is another item's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.`);
+        await expect(server.ssrLoadModule(`${changedItems}?evaluated=changed`)).rejects.toThrow(`Cannot declare "release" (fixture-app/changed-items.js#release): its id is another item's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.`);
     });
 });
 
@@ -437,7 +437,7 @@ test("serve reports a key evaluated again with another declaration", async () =>
     await serve(async server => {
         await server.ssrLoadModule(changed);
         writeFileSync(changed, keys(`{ type: { type: "string" } }`));
-        await expect(server.ssrLoadModule(`${changed}?evaluated=changed`)).rejects.toThrow(`Cannot register component "fixture-app/changed.js#score": its id is another key's, with another declaration`);
+        await expect(server.ssrLoadModule(`${changed}?evaluated=changed`)).rejects.toThrow(`Cannot register component "score" (fixture-app/changed.js#score): its id is another key's, with another declaration`);
     });
 });
 
@@ -458,8 +458,8 @@ test("a build gives top-level symbols ids naming no absolute path, also in worke
     const ids = items.flatMap(item => idsIn(item.type === "chunk" ? item.code : String(item.source)));
     expect(ids.filter(id => id.startsWith("/") || id.includes(directory) || id.includes(tmpdir()))).toEqual([]);
     const { labels }: { labels: readonly string[] } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
-    // Keys sharing a description are labeled by their ids; a key whose description is its own, by its description.
-    expect(labels).toEqual(["fixture-app/identified.js#score", "fixture-app/identified.js#twin", "marker"]);
+    // Keys are labeled by their descriptions, however many share one.
+    expect(labels).toEqual(["score", "score", "marker"]);
 });
 
 test("a second instance of the plugin in one bundle does nothing, as when an application also lists it for workers", async () => {
@@ -488,7 +488,7 @@ test("a build takes a name from a package external to it as one key, and registr
     const url = (entry: string) => pathToFileURL(join(outDir, chunks.find(chunk => chunk.facadeModuleId === entry)?.fileName ?? "")).href;
     const { description }: { description: KernelDescription } = await import(/* @vite-ignore */ url(externalKey));
     expect(description.keys.map(String)).toEqual(["Symbol(heat)"]);
-    await expect(import(/* @vite-ignore */ url(externalList))).rejects.toThrow(`System "externalList" names a list of components where a command takes one component; its kernel's build couldn't read the list, so name it from a module the build reads, or as an array literal.`);
+    await expect(import(/* @vite-ignore */ url(externalList))).rejects.toThrow(`names a list of components where a command takes one component; its kernel's build couldn't read the list, so name it from a module the build reads, or as an array literal.`);
 });
 
 test("compiled code imports the runtime from the copy of the package its module imports, not the plugin's own", async () => {
@@ -500,8 +500,8 @@ test("compiled code imports the runtime from the copy of the package its module 
     writeFileSync(module, `import { System, Component } from "@adobe/ecs";
 const score = Symbol("score");
 declareComponent$(score, { type: { type: "number" } });
-export const kernel = System.create({ name: "copied", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
-export const spawner = System.create({ name: "copiedSpawner", components: { read: [score] } }, (row, { commands }) => { commands.spawn([score])({ [score]: row[score] }); });
+export const kernel = System.create({ kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+export const spawner = System.create({ components: { read: [score] } }, (row, { commands }) => { commands.spawn([score])({ [score]: row[score] }); });
 `);
     const server = await createServer({
         configFile: false, logLevel: "silent", root: project, plugins: [plugin()],

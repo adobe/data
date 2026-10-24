@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { labelOfItem } from "../../interface/registry/index.js";
 import { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
@@ -33,24 +32,24 @@ declare module "@adobe/ecs" {
 const countsStart = new Map();
 
 /** Adds its struct input to `total`, and its object input's names to `names`. */
-const add = System.create({ name: "joinTest/add", resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
+const add = System.create({ resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
-const append = System.create({ name: "joinTest/append", resources: { write: [names] } }, ({ resources }, input: { readonly name: string }) => {
+const append = System.create({ resources: { write: [names] } }, ({ resources }, input: { readonly name: string }) => {
     resources[names] = [...resources[names], input.name];
 });
-const spawn = System.create({ name: "joinTest/spawn" }, ({ commands }, input: { readonly x: number }) => {
+const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, label, marked])({ [point]: [input.x, -input.x], [label]: `p${input.x}` });
 });
 /** Counts each word of its input's set in `counts`, and spawns an entity holding the set. */
-const tally = System.create({ name: "joinTest/tally", resources: { write: [counts] } }, ({ resources, commands }, input: { readonly words: ReadonlySet<string> }) => {
+const tally = System.create({ resources: { write: [counts] } }, ({ resources, commands }, input: { readonly words: ReadonlySet<string> }) => {
     const next = new Map(resources[counts]);
     for (const word of input.words) next.set(word, (next.get(word) ?? 0) + 1);
     resources[counts] = next;
     commands.spawn([words])({ [words]: input.words });
 });
-const fail = System.create({ name: "joinTest/fail" }, () => { throw new Error("joinTest failure"); });
-const idle = System.create({ name: "joinTest/idle" }, () => {});
+const fail = System.create({}, () => { throw new Error("joinTest failure"); });
+const idle = System.create({}, () => {});
 
 /** A world shared with a thread joined through a channel, and the joined world. */
 const joined = (threads: readonly ("main")[] = []): { readonly world: CreatedWorld; readonly remote: World; readonly channel: MessageChannel } => {
@@ -133,7 +132,7 @@ describe("joining", () => {
         const report = await reportOf(world, await remote.run(fail));
         expect(report.failures.map(failure => failure.message)).toEqual(["joinTest failure"]);
         const local = System.create(() => {});
-        await expect(remote.run(local)).rejects.toThrow(`System "${labelOfItem(local)}" has no id, so it can't run from another thread`);
+        await expect(remote.run(local)).rejects.toThrow(`has no id, so it can't run from another thread`);
         expect(await reportOf(world, await remote.run(idle))).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         await remote.dispose();
         await world.dispose();

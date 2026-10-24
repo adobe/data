@@ -18,19 +18,19 @@ declare module "@adobe/ecs" {
 }
 
 
-const spawn = System.create({ name: "observerGpuTest/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     for (let i = 0; i < 100; i++) commands.spawn([heat, rate])({ [heat]: i, [rate]: 1 });
 });
-const warm = System.create({ name: "observerGpuTest/warm", kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
+const warm = System.create({ kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
     row[heat] = row[heat] + row[rate] * 100;
 });
 
 let total = 0;
-const sum = System.create({ name: "observerGpuTest/sum", observer: true, components: { read: [heat] } }, row => { total += row[heat]; });
+const sum = System.create({ observer: true, components: { read: [heat] } }, row => { total += row[heat]; });
 
-const byHeat = Index.create({ name: "observerGpuTest/byHeat", key: [heat], sorted: true });
+const byHeat = Index.create({ key: [heat], sorted: true });
 let hot = 0;
-const countHot = System.create({ name: "observerGpuTest/countHot", observer: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
+const countHot = System.create({ observer: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
     hot = lookup.hot({ ">=": 150 }).length;
 });
 

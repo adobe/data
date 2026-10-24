@@ -31,41 +31,41 @@ let current: World | null = null;
 /** What `selfRemoving` removes, once its body has been called this many times. */
 let removeAfter = Infinity;
 
-const seed = System.create({ name: "removeTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     const root = commands.spawn([value, shared])({ [value]: 0, [shared]: 0 });
     for (let i = 1; i < 10; i++) commands.spawn([value, parent, shared])({ [value]: i, [parent]: root, [shared]: 0 });
 });
 
 /** Run before tables are taken, so `value` and `parent` keep ticks then, as they do once any system filters on them. */
-const ticksValue = System.create({ name: "removeTest/ticksValue", components: { added: [value, parent] } }, () => {});
+const ticksValue = System.create({ components: { added: [value, parent] } }, () => {});
 
 /** Added for the whole of each test, so ticks go on. */
-const kept = System.create({ name: "removeTest/kept" }, () => { calls.kept++; });
+const kept = System.create({}, () => { calls.kept++; });
 
 /** Holds what systems can on the world's thread: an `up` order, a change filter's count, command buffers. */
-const held = System.create({ name: "removeTest/held", components: { read: [value], changed: [value] }, up: { through: parent, read: [value] } }, (row, { up }) => {
+const held = System.create({ components: { read: [value], changed: [value] }, up: { through: parent, read: [value] } }, (row, { up }) => {
     calls.held++;
     void (row[value] + (up?.[value] ?? 0));
 });
 
-const alone = System.create({ name: "removeTest/alone" }, () => { calls.alone++; });
-const other = System.create({ name: "removeTest/other" }, () => { calls.other++; });
-const pair = System.create({ name: "removeTest/pair", systems: [alone, other] });
+const alone = System.create({}, () => { calls.alone++; });
+const other = System.create({}, () => { calls.other++; });
+const pair = System.create({ systems: [alone, other] });
 
 /** In a later tier than `remover`, which removes it during the tick. */
-const late = System.create({ name: "removeTest/late", components: { read: [value] } }, row => { calls.late += row[value] >= 0 ? 1 : 0; });
-const remover = System.create({ name: "removeTest/remover", before: [late] }, () => { current?.remove(late); });
+const late = System.create({ components: { read: [value] } }, row => { calls.late += row[value] >= 0 ? 1 : 0; });
+const remover = System.create({ before: [late] }, () => { current?.remove(late); });
 
 /** Removes itself partway through its rows. */
-const selfRemoving = System.create({ name: "removeTest/selfRemoving", components: { read: [value] } }, row => {
+const selfRemoving = System.create({ components: { read: [value] } }, row => {
     calls.self += row[value] >= 0 ? 1 : 0;
     if (calls.self === removeAfter) current?.remove(selfRemoving);
 });
 
 /** Ordered only through `phase`: removing `phase` would leave them conflicting with no order between them. */
-const phase = System.create({ name: "removeTest/phase" }, () => {});
-const writer = System.create({ name: "removeTest/writer", components: { write: [shared] }, before: [phase] }, row => { calls.writer++; row[shared] += 1; });
-const reader = System.create({ name: "removeTest/reader", components: { read: [shared] }, after: [phase] }, row => { calls.reader++; void row[shared]; });
+const phase = System.create({}, () => {});
+const writer = System.create({ components: { write: [shared] }, before: [phase] }, row => { calls.writer++; row[shared] += 1; });
+const reader = System.create({ components: { read: [shared] }, after: [phase] }, row => { calls.reader++; void row[shared]; });
 
 /** A world ticking back to back once something is added, with `kept` added. */
 const ticking = async (): Promise<{ readonly world: CreatedWorld; readonly ticks: (count: number) => Promise<void>; readonly close: () => Promise<void> }> => {

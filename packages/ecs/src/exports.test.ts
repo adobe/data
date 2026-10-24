@@ -38,10 +38,10 @@ declare module "@adobe/ecs" {
 }
 export const Placed = Archetype.create([position, element]);
 export const showing = Rule.create({ components: { has: [element] }, derive: [shown] });
-export const move = System.create({ name: "exportsTest/move", components: { write: [position] } }, row => { row[position] += 1; });
-export const all = System.create({ name: "exportsTest/all", systems: [move] });
-export const draw = System.render({ name: "exportsTest/draw", shader: { accessors: {} } }, () => {});
-export const placed = Index.create({ name: "exportsTest/placed", key: [position], components: { has: [element] } });
+export const move = System.create({ components: { write: [position] } }, row => { row[position] += 1; });
+export const all = System.create({ systems: [move] });
+export const draw = System.render({ shader: { accessors: {} } }, () => {});
+export const placed = Index.create({ key: [position], components: { has: [element] } });
 export const ranked = Index.create({ key: [position], sorted: true });
 export const after = System.create({ components: { read: [position] }, lookup: { next: { index: ranked, read: [position] } } }, (row, { lookup }) => { void lookup.next({ ">": row[position] }).length; });
 export const sortedName = (index: Index<{ readonly sorted: true }>): string => index.name;
@@ -131,7 +131,6 @@ describe("package exports", () => {
         // An index's type reads as it was declared, naming only the package root.
         const emitted = readFileSync(join(temporary, "out", "index.d.ts"), "utf8");
         expect(emitted).toContain(`export declare const placed: Index<{
-    readonly name: "exportsTest/placed";
     readonly key: readonly [typeof position];
     readonly components: {
         readonly has: readonly [typeof element];

@@ -5,7 +5,7 @@ import { filter, type Filter } from "./data.js";
 import { setFilter } from "./model.js";
 
 let seen: Filter | null = null;
-const readFilter = System.create({ name: "test/readFilter", observer: true, resources: { read: [filter] } }, ({ resources }) => {
+const readFilter = System.create({ observer: true, resources: { read: [filter] } }, ({ resources }) => {
     seen = resources[filter];
 });
 

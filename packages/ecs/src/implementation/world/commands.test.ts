@@ -51,7 +51,7 @@ declare module "@adobe/ecs" {
         [level]: { type: number; default: 0 };
     }
 }
-Rule.create({ name: "commandsTest/slots", components: { has: [other, score] }, derive: [slot] });
+Rule.create({ components: { has: [other, score] }, derive: [slot] });
 
 const unit = Archetype.create([position, score, tag]);
 const made = Archetype.create([score, tag]);
@@ -63,20 +63,20 @@ const components = (world: World, entity: Entity) =>
 
 /** Spawns and adds with literal values, which the plugin passes positionally, from one site over several lists. */
 const literals: Entity[] = [];
-const spawnLiterals = System.create({ name: "commandsTest/spawnLiterals" }, ({ commands }) => {
+const spawnLiterals = System.create({}, ({ commands }) => {
     for (let i = 0; i < 6; i++) literals.push(commands.spawn(i % 3 === 0 ? defaulted : i % 3 === 1 ? made : [score, label])({ [score]: i }));
 });
-const addLiterals = System.create({ name: "commandsTest/addLiterals", components: { has: [score], not: [health] } }, (row, { commands }) => {
+const addLiterals = System.create({ components: { has: [score], not: [health] } }, (row, { commands }) => {
     commands.add(row.entity, [health, label], { [label]: "x", [health]: 5 });
 });
 
-const spawnFrom = System.create({ name: "commandsTest/spawnFrom", kernel: "cpu", components: { read: [score], not: [tag, other] } }, (row, { commands }) => {
+const spawnFrom = System.create({ kernel: "cpu", components: { read: [score], not: [tag, other] } }, (row, { commands }) => {
     commands.spawn(made)({ [score]: row[score] + 10 });
 });
-const mark = System.create({ name: "commandsTest/mark", kernel: "cpu", components: { has: [tag], not: [other] } }, (row, { commands }) => {
+const mark = System.create({ kernel: "cpu", components: { has: [tag], not: [other] } }, (row, { commands }) => {
     commands.add(row.entity, marks, {});
 });
-const unmark = System.create({ name: "commandsTest/unmark", kernel: "cpu", components: { has: [other] } }, (row, { commands }) => {
+const unmark = System.create({ kernel: "cpu", components: { has: [other] } }, (row, { commands }) => {
     commands.remove(row.entity, marks);
 });
 const defaulted = Archetype.create([score, label, tag]);
@@ -85,7 +85,7 @@ const defaulted = Archetype.create([score, label, tag]);
 const withCommands = () => {
     const world = createWorld({ [workers]: 0 });
     let body: (commands: Commands) => void = () => {};
-    const issue = System.create({ name: "commandsTest/issue" }, ({ commands }) => body(commands));
+    const issue = System.create({}, ({ commands }) => body(commands));
     const run = async (next: (commands: Commands) => void): Promise<void> => {
         body = next;
         const [failure] = (await runReported(world, issue)).failures;
@@ -192,14 +192,14 @@ describe("literal values in a system's body", () => {
 });
 
 /** Three adds of one component to each row, by systems ordered first to third, the second adding twice. */
-const first = System.create({ name: "commandsTest/firstAdd", kernel: "cpu", components: { has: [position] } }, (row, { commands }) => {
+const first = System.create({ kernel: "cpu", components: { has: [position] } }, (row, { commands }) => {
     commands.add(row.entity, score, 1);
 });
-const second = System.create({ name: "commandsTest/secondAdd", components: { has: [position] }, after: [first] }, (row, { commands }) => {
+const second = System.create({ components: { has: [position] }, after: [first] }, (row, { commands }) => {
     commands.add(row.entity, score, 2);
     commands.add(row.entity, score, 3);
 });
-const third = System.create({ name: "commandsTest/thirdAdd", kernel: "cpu", components: { has: [position] }, after: [second] }, (row, { commands }) => {
+const third = System.create({ kernel: "cpu", components: { has: [position] }, after: [second] }, (row, { commands }) => {
     commands.add(row.entity, score, 4);
 });
 
@@ -258,9 +258,9 @@ describe("add and remove", () => {
         });
         const added: Entity[] = [];
         const changed: Entity[] = [];
-        const watchAdded = System.create({ name: "commandsTest/watchAdded", components: { has: [score], added: [tag] } }, row => { added.push(row.entity); });
-        const watchChanged = System.create({ name: "commandsTest/watchChanged", components: { has: [score], changed: [position] } }, row => { changed.push(row.entity); });
-        const watch = System.create({ name: "commandsTest/watch", systems: [watchAdded, watchChanged] });
+        const watchAdded = System.create({ components: { has: [score], added: [tag] } }, row => { added.push(row.entity); });
+        const watchChanged = System.create({ components: { has: [score], changed: [position] } }, row => { changed.push(row.entity); });
+        const watch = System.create({ systems: [watchAdded, watchChanged] });
         await world.run(watch);
         added.length = changed.length = 0;
         await run(commands => {
@@ -298,7 +298,7 @@ describe("spawners where code can't be generated", () => {
                 spawned.push(commands.spawn([score, label])(values));
             });
             // A spawn with literal values in a system's body, which the plugin passes positionally.
-            const literal = System.create({ name: "commandsTest/literal" }, ({ commands }) => {
+            const literal = System.create({}, ({ commands }) => {
                 spawned.push(commands.spawn([score, bit2, label])({ [label]: "b", [score]: 8 }));
             });
             await world.run(literal);

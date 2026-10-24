@@ -25,7 +25,6 @@ import { workers } from "../../interface/resources/workers.js";
 import type { F32 } from "../../interface/math/index.js";
 
 const place = System.create({
-    name: "upBrowserTest/place",
     kernel: "gpu",
     components: { read: [offset], write: [placed] },
     up: { through: parent, read: [placed] },
@@ -33,7 +32,7 @@ const place = System.create({
     row[placed] = up === null ? row[offset] : up[placed] + row[offset];
 });
 /** Trees whose children are in two archetypes, so a depth's rows have parents in several. */
-const plant = System.create({ name: "upBrowserTest/plant" }, ({ commands }) => {
+const plant = System.create({}, ({ commands }) => {
     for (let tree = 0; tree < 50; tree++) {
         let level = [commands.spawn([offset, placed])({ [offset]: tree, [placed]: 0 })];
         for (let depth = 1; depth < 12; depth++) {

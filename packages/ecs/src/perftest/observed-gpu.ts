@@ -21,11 +21,11 @@ declare module "@adobe/ecs" {
 
 const heated = 100_000;
 let spawned: Entity[] = [];
-const spawn = System.create({ name: "observedGpu/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     spawned = [];
     for (let i = 0; i < heated; i++) spawned.push(commands.spawn([heat, rate])({ [heat]: 0, [rate]: 1 }));
 });
-const warm = System.create({ name: "observedGpu/warm", kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
+const warm = System.create({ kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
     row[heat] = row[heat] + row[rate];
 });
 

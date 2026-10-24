@@ -76,7 +76,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         else if (loops(program.body)) fail(body, "a GPU kernel can't use loops or labeled blocks yet");
     }
     const contributed = new Set(unit.accumulators.flatMap(entry => reduced[entry.reduced]?.resource ?? []));
-    requireExact(declaration, { query: unit.used, resources: { read: unit.used.resources, write: new Set(), reduce: contributed }, lookups: unit.used.lookups, up: unit.used.up }, module.bindings, lists);
+    requireExact(declaration, { query: unit.used, resources: { read: unit.used.resources, write: new Set(), reduce: contributed }, lookups: unit.used.lookups, up: unit.used.up }, lists);
     const strided = columns.flatMap((_, index) => unit.chunks.has(index) || unit.blocks.has(index) ? [] : [index]);
     const locals = [
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),

@@ -144,8 +144,6 @@ expect(particles).toBe(1);
 ```ts
 // Runs once per entity with every component in read and write, and none in not.
 const move = System.create({
-    // Optional: labels the system in reports.
-    name: "physics/move",
     components: { read: [velocity], write: [position], not: [frozen] },
     resources: { read: [delta] },
 }, (row, { resources }) => {
@@ -173,10 +171,10 @@ await world.run(read);
 expect(moved).toEqual([[1, 0, 0]]);
 ```
 
-[`03-systems.test.ts`](03-systems.test.ts#L28-L60)
+[`03-systems.test.ts`](03-systems.test.ts#L28-L58)
 
 ```ts
-const fail = System.create({ name: "fail" }, () => {
+const fail = System.create(() => {
     throw new Error("broken");
 });
 
@@ -194,7 +192,7 @@ expect(run).toBe(1);
 expect(logged).toEqual(["fail: broken"]);
 ```
 
-[`03-systems.test.ts`](03-systems.test.ts#L64-L81)
+[`03-systems.test.ts`](03-systems.test.ts#L62-L79)
 
 ### 4. Ticks and cadence
 
@@ -227,7 +225,7 @@ world.remove(advance);
 ```ts
 // A system asks for another tick by contributing a time to wake: the first tick at or after it runs. Work that a tick's
 // commands start and a later tick finishes asks for the next one this way.
-const step = System.create({ resources: { read: [clock], write: [steps] }, reduce: { [wake]: "min" } }, ({ resources, reduce }) => {
+const step = System.create({ resources: { read: [clock], write: [steps], reduce: [wake] } }, ({ resources, reduce }) => {
     resources[steps] += 1;
     if (resources[steps] < 3) reduce[wake](resources[clock].now);
 });
@@ -253,7 +251,7 @@ const heal = System.create({ components: { write: [health] }, after: [hit] }, ro
     row[health] = Math.min(row[health] * 2, 10);
 });
 // A list of systems is a composite: it runs its members as one system, in their order; members without an order
-// between them may run in parallel. { systems, after, ... } declares one with a name or constraints.
+// between them may run in parallel. { systems, after, ... } declares one with constraints.
 const frame = System.create([heal, hit]);
 ```
 

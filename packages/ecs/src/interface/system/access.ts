@@ -59,6 +59,8 @@ export type Up = { readonly through: Component.With<"reference">; readonly read?
 export type ResourceAccess = {
     readonly read?: readonly Resource.Key[];
     readonly write?: readonly Exclude<Resource.Key, Reduced | WorldWritten>[];
+    /** The resources its body contributes to, each folded with the operator its `reduce` trait declares. */
+    readonly reduce?: readonly Reduced[];
     /** Passes every row when any of these changed since the system last ran. */
     readonly changed?: readonly Resource.Key[];
     /** Runs only while each of these is neither `null` nor `false`, and reads it as such. Otherwise it's skipped, successfully. */

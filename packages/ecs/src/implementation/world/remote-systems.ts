@@ -3,7 +3,7 @@ import type { Leaf } from '../../interface/system/leaf.js';
 import { entityWatchesOf, lookupComponentsOf } from './lookup-keys.js';
 import type { Leaf as FinalizerLeaf } from '../../interface/finalizer/created.js';
 import type { Warning } from '../../interface/report/failure.js';
-import { declarationOf, idOfItem, idOfKey, indexOfLookup, labelOf, labelOfItem, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';
+import { declarationOf, idOfItem, idOfKey, idOrNull, indexOfLookup, labelOf, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import { unsharedKeyOf } from './index-keys.js';
 import { layoutOf } from '../../interface/registry/layout.js';
 import { raiseRange, type Archetype } from './archetype.js';
@@ -43,6 +43,8 @@ export type RemoteSystem = {
     readonly channel: TaskChannel;
     readonly index: number;
     readonly label: string;
+    /** The id the plugin gave it, which reports give beside its label. */
+    readonly id: string | null;
     /** Its warning, listed in each run's report its tier blocks. */
     readonly warning: Warning;
     readonly targets: readonly ReductionTarget[];
@@ -346,11 +348,11 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
     /** An item's setup there: its id, and the world's numbers for the keys it names, by their ids. Throws without them. */
     const setupOf = (state: State, item: Leaf | FinalizerLeaf, what: string, named: readonly symbol[]): { readonly id: string; readonly keys: readonly (readonly [number, string])[] } => {
         const id = idOfItem(item);
-        if (id === undefined) throw new Error(`${what} "${labelOfItem(item)}" runs on thread "${label}", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level ${what === "System" ? "systems" : "finalizers"} one.`);
+        if (id === undefined) throw new Error(`${what} "${item.name}" runs on thread "${label}", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level ${what === "System" ? "systems" : "finalizers"} one.`);
         const keys: (readonly [number, string])[] = [];
         for (const key of named) {
             const keyId = idOfKey(key);
-            if (keyId === undefined) throw new Error(`${what} "${labelOfItem(item)}" names "${labelOf(key)}", which has no id, so thread "${label}" can't name it; the build gives top-level keys one.`);
+            if (keyId === undefined) throw new Error(`${what} "${item.name}" names "${labelOf(key)}", which has no id, so thread "${label}" can't name it; the build gives top-level keys one.`);
             keys.push([idOf(state, key), keyId]);
         }
         return { id, keys };
@@ -471,13 +473,12 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
 
 /** Every key a leaf names in its declaration, so the thread finds the world's numbers for them. */
 export const keysOf = (leaf: Leaf): readonly symbol[] => {
-    const { components, lookup, resources, reduce } = leaf.declaration;
+    const { components, lookup, resources } = leaf.declaration;
     const keys = new Set<Key>([
         ...components?.read ?? [], ...components?.write ?? [], ...components?.has ?? [], ...components?.not ?? [], ...components?.added ?? [], ...components?.changed ?? [],
-        ...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? [],
+        ...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? [], ...resources?.reduce ?? [],
     ]);
     for (const name in lookup) for (const key of lookupComponentsOf(lookup[name])) keys.add(key);
-    if (reduce !== undefined) for (const key of Object.getOwnPropertySymbols(reduce)) keys.add(key);
     return [...keys].filter((key): key is symbol => typeof key === "symbol");
 };
 
@@ -494,22 +495,22 @@ export const finalizerKeysOf = (finalizer: FinalizerLeaf): readonly symbol[] => 
  */
 /** Why a leaf with an index as a change filter can't run on a joined thread. */
 export const entriesOnJoined = (leaf: Leaf, thread: string, index: string): string =>
-    `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and when index "${index}" changed, a lookup's changed being true, which runs only on the world's thread.`;
+    `System "${leaf.name}" runs on thread "${thread}", which a joined thread fills, and when index "${index}" changed, a lookup's changed being true, which runs only on the world's thread.`;
 
 export const unplaceable = (leaf: Leaf, thread: string): string | null => {
-    if (leaf.declaration.up !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and declares up, which runs only on the world's thread.`;
-    if (leaf.declaration.order !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and orders its rows by an index, which runs only on the world's thread.`;
-    if (leaf.declaration.target !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and on one entity, which runs only on the world's thread.`;
+    if (leaf.declaration.up !== undefined) return `System "${leaf.name}" runs on thread "${thread}", which a joined thread fills, and declares up, which runs only on the world's thread.`;
+    if (leaf.declaration.order !== undefined) return `System "${leaf.name}" runs on thread "${thread}", which a joined thread fills, and orders its rows by an index, which runs only on the world's thread.`;
+    if (leaf.declaration.target !== undefined) return `System "${leaf.name}" runs on thread "${thread}", which a joined thread fills, and on one entity, which runs only on the world's thread.`;
     const { components, resources } = leaf.declaration;
     const string = [...components?.write ?? [], ...resources?.write ?? []].find(key => layoutOf(declarationOf(key)?.type).kind === "string");
-    if (string !== undefined) return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and writes "${labelOf(string)}", a string, which only the world's thread writes.`;
+    if (string !== undefined) return `System "${leaf.name}" runs on thread "${thread}", which a joined thread fills, and writes "${labelOf(string)}", a string, which only the world's thread writes.`;
     for (const lookup of Object.values(leaf.declaration.lookup ?? {})) {
         const index = indexOfLookup(lookup);
         const object = index === undefined ? undefined : unsharedKeyOf(index.declaration.key);
         if (index !== undefined && object !== undefined) {
-            return `System "${labelOfItem(leaf)}" runs on thread "${thread}", which a joined thread fills, and looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object.key)}" is ${object.what}, so it runs only on the world's thread.`;
+            return `System "${leaf.name}" runs on thread "${thread}", which a joined thread fills, and looks up through index "${index.name}", whose key part "${labelOf(object.key)}" is ${object.what}, so it runs only on the world's thread.`;
         }
-        if (index !== undefined && watchesEntries(lookup)) return entriesOnJoined(leaf, thread, labelOfItem(index));
+        if (index !== undefined && watchesEntries(lookup)) return entriesOnJoined(leaf, thread, index.name);
     }
     return null;
 };
@@ -545,7 +546,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
     const { declaration } = leaf;
     const { components: query } = declaration;
     const thread = threadOf(declaration, "System", leaf.name) ?? "world";
-    const label = labelOfItem(leaf);
+    const label = leaf.name;
     const problem = unplaceable(leaf, thread);
     if (problem !== null) throw new Error(problem);
     const lookups = remoteIndexesOf(state, declaration.lookup, acquireLookups(state, declaration.lookup));
@@ -555,7 +556,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
     const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
     const writes = (query?.write ?? []).map(key => idOf(state, key));
     const looks = [...new Set(Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []))].map(key => idOf(state, key));
-    const targets = reductionTargets(state, declaration);
+    const targets = reductionTargets(state, label, declaration);
     const folds = targets.map(target => new Float64Array(target.leaves.length));
     const matches: Archetype[] = [];
     let checked = 0;
@@ -567,8 +568,8 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         return matches;
     };
     const remote: RemoteSystem = {
-        channel, index, label,
-        warning: { kind: "blocking", name: label, message: `System "${label}" runs on thread "${thread}", which a joined thread fills, so its tier waits for that thread.` },
+        channel, index, label, id: idOrNull(leaf),
+        warning: { kind: "blocking", name: label, id: idOrNull(leaf), message: `System "${label}" runs on thread "${thread}", which a joined thread fills, so its tier waits for that thread.` },
         targets, folds, foldCount: folds.reduce((sum, leaves) => sum + leaves.length, 0),
         changed: (query?.changed ?? []).map(key => idOf(state, key)),
         watched: entityWatchesOf(declaration.lookup).map(key => idOf(state, key)),

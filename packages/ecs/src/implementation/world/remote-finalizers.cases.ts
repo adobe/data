@@ -15,7 +15,7 @@ export const remoteFinalizersCases = (load: () => Promise<typeof Fixture>) => de
         const fixture = await load();
         expect(await fixture.diesHolding()).toEqual({
             held: 3, whileHeld: 0,
-            failures: [["thread", "remoteFinalizersTest/release", 'Thread "remoteFinalizersTest" is gone, so 3 stops of finalizer "remoteFinalizersTest/release" didn\'t run there.']],
+            failures: [["thread", "release", 'Thread "remoteFinalizersTest" is gone, so 3 stops of finalizer "release" didn\'t run there.']],
             after: 3,
         });
     }, 30000);

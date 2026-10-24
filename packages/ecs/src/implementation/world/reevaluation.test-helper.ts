@@ -11,6 +11,6 @@ declare module "@adobe/ecs" {
 }
 
 
-export const bump = System.create({ name: "reevaluation/bump", components: { write: [score] } }, row => {
+export const bump = System.create({ components: { write: [score] } }, row => {
     row[score] += 1;
 });

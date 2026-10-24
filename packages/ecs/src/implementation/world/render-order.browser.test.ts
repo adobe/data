@@ -30,7 +30,7 @@ declare module "@adobe/ecs" {
 }
 
 
-const byDepth = Index.create({ name: "renderOrderTest/byDepth", key: [depth], sorted: true });
+const byDepth = Index.create({ key: [depth], sorted: true });
 
 const device = async (): Promise<GPUDevice> => {
     const adapter = await navigator.gpu.requestAdapter();
@@ -45,7 +45,7 @@ const spawned: Entity[] = [];
  * Shapes and images interleaved in depth, spawned in reverse depth order, so neither spawn nor row order is paint
  * order. Every tenth is hidden or not visible, which the render system filters out, and plain depths match nothing.
  */
-const spawn = System.create({ name: "renderOrderTest/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     for (let i = count - 1; i >= 0; i--) {
         if (i % 10 === 3) spawned[i] = commands.spawn([depth, code, shape, visible, hidden])({ [depth]: i, [code]: i, [shape]: true, [visible]: true, [hidden]: true });
         else if (i % 10 === 7) spawned[i] = commands.spawn([depth, code, image])({ [depth]: i, [code]: i, [image]: true });
@@ -64,7 +64,6 @@ describe("render systems with an order", () => {
         const output = own.createBuffer({ size: (count + 16) * 8, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
         const tableCounts: number[][] = [];
         const draw = System.render({
-            name: "renderOrderTest/draw",
             components: { has: [visible], not: [hidden] },
             order: byDepth,
             shader: { accessors: { paintDepth: depth, paintCode: code } },
@@ -117,14 +116,14 @@ describe("render systems with an order", () => {
 
         // A despawn moves another shape into its row, a spawn adds an image between two others, and a key moves a shape
         // to the back; a frame after each draws the new order.
-        const despawn = System.create({ name: "renderOrderTest/despawn" }, ({ commands }) => commands.despawn(spawned[count - 2]));
+        const despawn = System.create({}, ({ commands }) => commands.despawn(spawned[count - 2]));
         await world.run(despawn);
         codes.delete(count - 2);
         await frame();
         expected = drawn(codes);
         expect(await read()).toEqual(expected.map(i => [i, i]));
 
-        const addImage = System.create({ name: "renderOrderTest/addImage" }, ({ commands }) => {
+        const addImage = System.create({}, ({ commands }) => {
             commands.spawn([depth, code, image, size, visible])({ [depth]: 500.5, [code]: 5001, [image]: true, [size]: [0, 0, 0], [visible]: true });
         });
         await world.run(addImage);
@@ -132,7 +131,7 @@ describe("render systems with an order", () => {
         const withImage = expected.flatMap(i => i === 500 ? [[i, i], [500, 5001]] : [[i, i]]);
         expect(await read()).toEqual(withImage);
 
-        const toBack = System.create({ name: "renderOrderTest/toBack", components: { read: [code], write: [depth] } }, row => {
+        const toBack = System.create({ components: { read: [code], write: [depth] } }, row => {
             if (row[code] === 10) row[depth] = count + 5;
         });
         await world.run(toBack);
@@ -141,7 +140,7 @@ describe("render systems with an order", () => {
         expect(await read()).toEqual(atBack);
 
         // Showing a hidden shape adds it to the one table, in its place.
-        const show = System.create({ name: "renderOrderTest/show" }, ({ commands }) => commands.remove(spawned[13], hidden));
+        const show = System.create({}, ({ commands }) => commands.remove(spawned[13], hidden));
         await world.run(show);
         await frame();
         const shown = atBack.flatMap(([d, c]) => d === 12 ? [[d, c], [13, 13]] : [[d, c]]);
@@ -152,7 +151,7 @@ describe("render systems with an order", () => {
 
     it("write their order only when the index's entries change or move", async () => {
         const own = await device();
-        const draw = System.render({ name: "renderOrderTest/writes", components: { has: [visible], not: [hidden] }, order: byDepth, shader: { accessors: { paintDepth: depth } } }, () => {});
+        const draw = System.render({ components: { has: [visible], not: [hidden] }, order: byDepth, shader: { accessors: { paintDepth: depth } } }, () => {});
         const world = createWorld({ [gpuDevice]: own });
         await world.run(spawn);
         await world.run(draw);
@@ -170,7 +169,7 @@ describe("render systems with an order", () => {
         await world.run(draw);
         expect([sizes, records]).toEqual([[], 0]);
         // A new key writes its chunk of the column and the order, in elements; the record stays.
-        const toBack = System.create({ name: "renderOrderTest/toBackOnce", components: { read: [code], write: [depth] } }, row => {
+        const toBack = System.create({ components: { read: [code], write: [depth] } }, row => {
             if (row[code] === 10) row[depth] = count + 5;
         });
         await world.run(toBack);
@@ -186,7 +185,7 @@ describe("render systems with an order", () => {
     it("give a shader one table when nothing matches", async () => {
         const own = await device();
         let tables: readonly System.RenderTable[] = [];
-        const draw = System.render({ name: "renderOrderTest/empty", components: { has: [hidden, image] }, order: byDepth, shader: { accessors: { paintDepth: depth } } }, context => { tables = context.tables; });
+        const draw = System.render({ components: { has: [hidden, image] }, order: byDepth, shader: { accessors: { paintDepth: depth } } }, context => { tables = context.tables; });
         const world = createWorld({ [gpuDevice]: own });
         await world.run(spawn);
         expect((await runReported(world, draw)).failures).toEqual([]);
@@ -196,7 +195,7 @@ describe("render systems with an order", () => {
 
     it("declare their ordered accessors, which compile", async () => {
         const own = await device();
-        const draw = System.render({ name: "renderOrderTest/declared", order: byDepth, shader: { group: 2, accessors: { paintDepth: depth, paintSize: size } } }, () => {});
+        const draw = System.render({ order: byDepth, shader: { group: 2, accessors: { paintDepth: depth, paintSize: size } } }, () => {});
         const code = Gpu.wgsl(draw);
         expect(code).toContain("fn paintDepth(row: u32) -> f32");
         expect(code).toContain("fn paintSize(row: u32) -> vec3<f32>");

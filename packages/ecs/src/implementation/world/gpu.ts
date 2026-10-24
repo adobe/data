@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { labelOfItem } from '../../interface/registry/index.js';
+import { idOrNull } from '../../interface/registry/index.js';
 import { layout } from '../../interface/gpu/layout.js';
 import { recordBytes } from '../../interface/gpu/record.js';
 import type { Archetype, Storage } from './archetype.js';
@@ -83,7 +83,7 @@ export type GpuEngine = {
     /** Keeps the first error of a run's GPU work, with the label of the system whose run submitted it. */
     readonly reportErrors: (system: { readonly name: string }, validation: Promise<GPUError | null>, memory: Promise<GPUError | null>) => void;
     /** The recorded error, cleared. */
-    readonly takeError: () => { readonly name: string; readonly message: string } | null;
+    readonly takeError: () => { readonly name: string; readonly id: string | null; readonly message: string } | null;
     readonly destroy: () => void;
 };
 
@@ -110,7 +110,7 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
     let groups: { render: GPUBindGroup; compute: GPUBindGroup } | null = null;
     let encoder: GPUCommandEncoder | null = null;
     let lostReason: string | null = null;
-    let recorded: { readonly name: string; readonly message: string } | null = null;
+    let recorded: { readonly name: string; readonly id: string | null; readonly message: string } | null = null;
     const residents = new Map<Storage, Resident>();
     const ahead = new Set<Resident>();
     void device.lost.then(info => { lostReason = info.message === "" ? info.reason : info.message; });
@@ -376,8 +376,8 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         reportErrors: (system, validation, memory) => {
             void (async () => {
                 const [invalid, exhausted] = await Promise.all([validation, memory]);
-                if (invalid !== null) recorded ??= { name: labelOfItem(system), message: `validation: ${invalid.message}` };
-                else if (exhausted !== null) recorded ??= { name: labelOfItem(system), message: `out of memory: ${exhausted.message}` };
+                if (invalid !== null) recorded ??= { name: system.name, id: idOrNull(system), message: `validation: ${invalid.message}` };
+                else if (exhausted !== null) recorded ??= { name: system.name, id: idOrNull(system), message: `out of memory: ${exhausted.message}` };
             })();
         },
         takeError: () => {

@@ -6,7 +6,7 @@ import { createJoinedObserverRunner, type ObserverTarget } from './joined-observ
 import { createRunner, releaseHoldings, removedRunner, stopHoldings, type Holdings, type Runner } from './runner.js';
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, observe, unobserve, type Key, type State } from './state.js';
-import { labelOfItem, orderKeysOf } from '../../interface/registry/index.js';
+import { orderKeysOf } from '../../interface/registry/index.js';
 import { entityWatchesOf, indexWatchesOf, lookupComponentsOf, orderComponentsOf } from './lookup-keys.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
@@ -378,7 +378,7 @@ export const createRegistrar = (state: State): Registrar => {
             if (problem !== null) return;
             const thread = threadOf(leaf.declaration, "System", leaf.name);
             if (thread === null || !threads.includes(thread)) return;
-            const label = labelOfItem(leaf);
+            const label = leaf.name;
             const id = idOfItem(leaf);
             if (id === undefined) problem = `System "${label}" runs on thread "${thread}" and has no id, so a joined thread can't run it; the build gives top-level systems one.`;
             else if (!imported.has(id)) problem = `System "${label}" runs on thread "${thread}", which the joined thread claiming it never imported.`;

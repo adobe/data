@@ -43,7 +43,7 @@ declare module "@adobe/ecs" {
 
 const secondsStart = 1 / 60;
 
-const seed = System.create({ name: "wasmTest/seed" }, ({ commands }, input: { readonly count: number }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     let previous = Entity.none;
     for (let i = 0; i < input.count; i++) {
         previous = commands.spawn([position, velocity, bounces, flipped, score, target])({ [position]: [i * 0.37, (i % 13) * 0.71], [velocity]: [Math.sin(i) * 3, Math.cos(i) * 5], [bounces]: 0, [flipped]: false, [score]: 0, [target]: previous });
@@ -51,7 +51,7 @@ const seed = System.create({ name: "wasmTest/seed" }, ({ commands }, input: { re
 });
 
 /** Despawns every seventh entity and spawns replacements, so some targets go stale and their indexes are reused. */
-const cull = System.create({ name: "wasmTest/cull", components: { read: [position], has: [bounces] } }, (row, { commands }, input: { readonly frame: number }) => {
+const cull = System.create({ components: { read: [position], has: [bounces] } }, (row, { commands }, input: { readonly frame: number }) => {
     if ((row.entity >>> 0) % 7 !== input.frame % 7) return;
     commands.despawn(row.entity);
     commands.spawn([position, velocity, bounces, flipped, score, target])({ [position]: row[position], [velocity]: [1, 1], [bounces]: 0, [flipped]: true, [score]: 0, [target]: row.entity });
@@ -60,7 +60,6 @@ const cull = System.create({ name: "wasmTest/cull", components: { read: [positio
 const halve = (value: number) => value * 0.5;
 
 const integrate = System.create({
-    name: "wasmTest/integrate",
     kernel: "cpu",
     components: { write: [position, velocity] },
     resources: { read: [seconds] },
@@ -73,7 +72,6 @@ const integrate = System.create({
 });
 
 const bounce = System.create({
-    name: "wasmTest/bounce",
     kernel: "cpu",
     components: { write: [position, velocity, bounces, flipped] },
     resources: { read: [floor] },
@@ -93,7 +91,6 @@ const bounce = System.create({
 });
 
 const tally = System.create({
-    name: "wasmTest/tally",
     kernel: "cpu",
     components: { read: [bounces, flipped, position], write: [score] },
     after: [bounce],
@@ -109,7 +106,6 @@ const tally = System.create({
 });
 
 const scale = System.create({
-    name: "wasmTest/scale",
     kernel: "cpu",
     components: { write: [score] },
 }, (row, _context, input: { readonly factor: number }) => {
@@ -118,7 +114,6 @@ const scale = System.create({
 
 /** Component-wise vector math: one f32x4 operation per row. */
 const drift = System.create({
-    name: "wasmTest/drift",
     kernel: "cpu",
     components: { read: [velocity], write: [position] },
     resources: { read: [seconds] },
@@ -132,7 +127,6 @@ const drift = System.create({
 
 /** Runs only for rows whose bounces changed since it last ran. */
 const react = System.create({
-    name: "wasmTest/react",
     kernel: "cpu",
     components: { write: [score], changed: [bounces] },
     after: [tally],
@@ -142,7 +136,6 @@ const react = System.create({
 
 /** A lookup per row: found targets pull, missing or stale ones cost a point. */
 const chase = System.create({
-    name: "wasmTest/chase",
     kernel: "cpu",
     components: { read: [target], write: [score] },
     lookup: { targets: { read: [position, flipped] } },
@@ -157,7 +150,7 @@ const chase = System.create({
     row[score] = row[score] + (other[flipped] ? x : y);
 });
 
-const main = System.create({ name: "wasmTest/main", systems: [integrate, bounce, tally, drift, react, chase] });
+const main = System.create({ systems: [integrate, bounce, tally, drift, react, chase] });
 
 const snapshotted = [position, velocity, bounces, flipped, score] as const;
 
@@ -183,21 +176,21 @@ const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
 };
 
 /** Counts the runs of rows whose score changed. */
-const recount = System.create({ name: "wasmTest/recount", kernel: "cpu", components: { write: [bounces], changed: [score] } }, row => {
+const recount = System.create({ kernel: "cpu", components: { write: [bounces], changed: [score] } }, row => {
     row[bounces] += 1;
 });
 const chosen = new Set<Entity>();
-const rescore = System.create({ name: "wasmTest/rescore", components: { write: [score] } }, row => {
+const rescore = System.create({ components: { write: [score] } }, row => {
     if (chosen.has(row.entity)) row[score] += 1;
 });
 
 /** Keeps ticks of `score` without observing its changes, so kernels writing it mute their stamps. */
-const scoreAdded = System.create({ name: "wasmTest/scoreAdded", components: { added: [score] } }, () => {});
-const raise = System.create({ name: "wasmTest/raise", kernel: "cpu", components: { write: [score] } }, row => {
+const scoreAdded = System.create({ components: { added: [score] } }, () => {});
+const raise = System.create({ kernel: "cpu", components: { write: [score] } }, row => {
     row[score] += 1;
 });
 let raised = 0;
-const countRaised = System.create({ name: "wasmTest/countRaised", components: { changed: [score] } }, () => { raised++; });
+const countRaised = System.create({ components: { changed: [score] } }, () => { raised++; });
 
 describe("WASM kernels", () => {
     it("stamp what they write once a change filter observes a component that already kept ticks", async () => {

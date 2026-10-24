@@ -9,7 +9,7 @@ import { score, shown } from "./ids-keys.test-helper.js";
 import { read } from "./reads.test-helper.js";
 
 const spawned: Entity[] = [];
-const spawn = System.create({ name: "worldIdsTest/spawn" }, ({ commands }) => { spawned.push(commands.spawn([score])({ [score]: 1 })); });
+const spawn = System.create({}, ({ commands }) => { spawned.push(commands.spawn([score])({ [score]: 1 })); });
 
 describe("a world given keys with ids", () => {
     it("stores the symbols of one id as one component, giving values by the newest", async () => {
@@ -18,8 +18,8 @@ describe("a world given keys with ids", () => {
         // The keys' module evaluated again, after the world met its first keys: a new module by its query, its ids the same.
         const again: typeof import("./ids-keys.test-helper.js") = await import(/* @vite-ignore */ `./ids-keys.test-helper.js?again=${Date.now()}`);
         expect(again.score).not.toBe(score);
-        const spawnAgain = System.create({ name: "worldIdsTest/spawnAgain" }, ({ commands }) => { spawned.push(commands.spawn([again.score])({ [again.score]: 2 })); });
-        const add = System.create({ name: "worldIdsTest/add", components: { write: [again.score] } }, row => { row[again.score] += 10; });
+        const spawnAgain = System.create({}, ({ commands }) => { spawned.push(commands.spawn([again.score])({ [again.score]: 2 })); });
+        const add = System.create({ components: { write: [again.score] } }, row => { row[again.score] += 10; });
         await world.run(spawnAgain);
         await world.run(add);
         const [first, second] = spawned;

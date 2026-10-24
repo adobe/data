@@ -60,7 +60,7 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
         }
         case "reducers": {
             const reduced = key.kind === "binding" ? signature.reduced.findIndex(entry => entry.resource === key.name) : -1;
-            return reduced >= 0 ? { kind: "reducer", reduced } : fail(node, "reduce is indexed by a resource in the declaration's reduce");
+            return reduced >= 0 ? { kind: "reducer", reduced } : fail(node, "reduce is indexed by a resource in the declaration's resources.reduce");
         }
         case "lookups": {
             const lookup = signature.lookups.findIndex(entry => entry.name === name);

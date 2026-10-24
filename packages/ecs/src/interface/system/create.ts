@@ -20,7 +20,7 @@ import type { System } from './system.js';
 import type { OneThread, ThreadedBy, ThreadsOf } from './threads.js';
 import type { HeldBy } from './values.js';
 
-type Reduced<D extends Declaration> = keyof Property<D, "reduce"> & Resource.Key;
+type Reduced<D extends Declaration> = Listed<Property<D, "resources">, "reduce"> & Resource.Key;
 type Written<D, K extends "components" | "resources"> = Listed<Property<D, K>, "write">;
 type Is<D> = Listed<Property<D, "resources">, "is">;
 type Lookups<D> = Property<D, "lookup">;
@@ -56,6 +56,7 @@ type Lists<D extends Declaration> = {
         readonly write?: readonly Exclude<Resource.Key, Is<D>>[];
         readonly changed?: readonly Exclude<Resource.Key, Reduced<D>>[];
         readonly not?: readonly Exclude<Resource.Key, Is<D>>[];
+        readonly reduce?: readonly Exclude<Resource.Key, Written<D, "resources"> | Is<D>>[];
     };
 };
 
@@ -75,8 +76,7 @@ type Kernel = {
 type GpuKernel = {
     readonly lookup?: { readonly [name: string]: never };
     readonly components?: { readonly added?: never; readonly changed?: never };
-    readonly resources?: { readonly changed?: never };
-    readonly reduce?: { readonly [K in Resource.Key]?: never };
+    readonly resources?: { readonly changed?: never; readonly reduce?: never };
     readonly order?: { readonly "error: GPU kernels have no order yet": true };
 };
 
@@ -87,8 +87,7 @@ type GpuKernel = {
 type Observer = {
     readonly kernel?: never;
     readonly components?: { readonly write?: never };
-    readonly resources?: { readonly write?: never };
-    readonly reduce?: never;
+    readonly resources?: { readonly write?: never; readonly reduce?: never };
     readonly up?: never;
     readonly before?: never;
     readonly after?: never;
@@ -100,7 +99,7 @@ type Targeted = {
     readonly kernel?: never;
     readonly up?: never;
     readonly order?: never;
-    readonly reduce?: never;
+    readonly resources?: { readonly reduce?: never };
 };
 
 type Validate<D extends Declaration> =
@@ -153,7 +152,7 @@ type Checked<C> = C extends Alone ? unknown : C extends CompositeDeclaration ? {
  * - `create(body)`: a system that declares nothing, whose body runs once per run with its commands.
  * - `create(declaration, body)`: a system.
  * - `create([move, collide])`: a composite of the systems listed, which may live on different threads.
- * - `create({ systems: [move, collide], after: [input] })`: a composite with a name or constraints.
+ * - `create({ systems: [move, collide], after: [input] })`: a composite with constraints.
  *
  * Each run passes a composite's members one input, with every field of theirs. Throws if a system names a key that
  * isn't registered as its kind, lists a key in both `read` and `write`, writes a reference, a lookup reads a component
@@ -174,12 +173,12 @@ export function create(first: Declaration | Leaf["body"] | readonly System<unkno
     // The plugin gives its id to the call's first argument: the declaration, the members, or the body made into a
     // system alone.
     const id = takeIdOfDeclaration(first);
-    if (isList(first)) return compose({ systems: first }, id);
-    if (typeof first !== "function" && second === undefined && "systems" in first) return compose(first, id);
+    if (isList(first)) return compose(first, { systems: first }, id);
+    if (typeof first !== "function" && second === undefined && "systems" in first) return compose(first, first, id);
     const declaration: Declaration = typeof first === "function" ? {} : first;
     const body = typeof first === "function" ? first : second;
     if (body === undefined) throw new Error("A system needs a body, and a composite its systems.");
-    const name = nameOf(declaration.name, id, "system");
+    const name = nameOf(first, id, "system");
     const schema = inputSchemaOf(name, body, declaration.components === undefined ? 1 : 2, input);
     const system: Leaf & System<unknown> = { kind: "system", name, declaration, input: schema, body };
     checkLeaf(system);
@@ -189,8 +188,9 @@ export function create(first: Declaration | Leaf["body"] | readonly System<unkno
 
 const isList = (value: unknown): value is readonly System<unknown>[] => Array.isArray(value);
 
-const compose = (declaration: CompositeDeclaration, id: string | undefined): System<unknown> => {
-    const system: Composite & System<unknown> = { kind: "composite", name: nameOf(declaration.name, id, "system"), declaration };
+/** A composite of `declaration`, labeled by `first`, the argument the plugin labeled. */
+const compose = (first: object, declaration: CompositeDeclaration, id: string | undefined): System<unknown> => {
+    const system: Composite & System<unknown> = { kind: "composite", name: nameOf(first, id, "system"), declaration };
     checkComposite(system);
     claimSystem(system, id);
     return system;

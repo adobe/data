@@ -29,3 +29,21 @@ export const takeIdOfDeclaration = (declaration: object): string | undefined => 
     map?.delete(declaration);
     return typeof id === "string" ? id : undefined;
 };
+
+/**
+ * The `Symbol.for` name of the global `Map` from a declaration to the label the plugin gave a constructor call that
+ * isn't a top-level binding's, by the binding or function it's in, or an internal factory gave its declaration.
+ */
+export const labelsName = "@adobe/ecs/labels@1";
+
+const labels = Symbol.for(labelsName);
+
+/** The label given the declaration a constructor call passes, if any, taken out of the map. */
+export const takeLabelOfDeclaration = (declaration: object): string | undefined => {
+    const map: unknown = Reflect.get(globalThis, labels);
+    if (!(map instanceof Map)) return undefined;
+    const label: unknown = map.get(declaration);
+    if (label === undefined) return undefined;
+    map.delete(declaration);
+    return typeof label === "string" ? label : undefined;
+};

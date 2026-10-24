@@ -37,38 +37,38 @@ type Widget = { readonly draw: () => string };
 const none = { text: "none" };
 /** A widget, or the number a kernel gives one, which only the world's thread could hold. */
 
-const spawn = System.create({ name: "remoteTest/spawn" }, ({ commands }, input: { readonly x: number }) => {
+const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, caption, widget, kept])({ [point]: input.x, [kept]: `k${input.x}`, [widget]: null });
 });
-const nullCaptions = System.create({ name: "remoteTest/nullCaptions", components: { has: [caption, point] } }, (row, { commands }) => {
+const nullCaptions = System.create({ components: { has: [caption, point] } }, (row, { commands }) => {
     commands.add(row.entity, caption, null);
 });
-const restartCaptions = System.create({ name: "remoteTest/restartCaptions", components: { has: [caption, point] } }, (row, { commands }) => {
+const restartCaptions = System.create({ components: { has: [caption, point] } }, (row, { commands }) => {
     commands.add(row.entity, caption, none);
 });
-const dropCaptions = System.create({ name: "remoteTest/dropCaptions", components: { has: [caption] } }, (row, { commands }) => {
+const dropCaptions = System.create({ components: { has: [caption] } }, (row, { commands }) => {
     commands.remove(row.entity, caption);
 });
-const giveCaption = System.create({ name: "remoteTest/giveCaption", components: { has: [point] } }, (row, { commands }) => {
+const giveCaption = System.create({ components: { has: [point] } }, (row, { commands }) => {
     commands.add(row.entity, caption, { text: "a caption only the thread gives" });
 });
-const spawnCaptioned = System.create({ name: "remoteTest/spawnCaptioned" }, ({ commands }) => {
+const spawnCaptioned = System.create({}, ({ commands }) => {
     commands.spawn([point, caption])({ [point]: 1, [caption]: { text: "a caption only the thread gives" } });
 });
 /** A kernel giving the thread's objects null, which they take, and a number, which they don't. */
-const nullCaptionsKernel = System.create({ name: "remoteTest/nullCaptionsKernel", kernel: "cpu", components: { has: [caption], read: [point] } }, (row, { commands }) => {
+const nullCaptionsKernel = System.create({ kernel: "cpu", components: { has: [caption], read: [point] } }, (row, { commands }) => {
     if (row[point] > 0) commands.add(row.entity, caption, null);
 });
-const numberHandlesKernel = System.create({ name: "remoteTest/numberHandlesKernel", kernel: "cpu", components: { read: [point] } }, (row, { commands }) => {
+const numberHandlesKernel = System.create({ kernel: "cpu", components: { read: [point] } }, (row, { commands }) => {
     commands.add(row.entity, handle, row[point]);
 });
 /** Reaches its commands, so it isn't terminal: its tier blocks rather than running as a tail. */
-const readCaptions = System.create({ name: "remoteTest/readCaptions", components: { read: [caption] } }, (row, { commands }) => {
+const readCaptions = System.create({ components: { read: [caption] } }, (row, { commands }) => {
     if (row[caption]?.text === "never") commands.despawn(row.entity);
 });
-const idle = System.create({ name: "remoteTest/idle" }, () => {});
-const after = System.create({ name: "remoteTest/after" }, () => {});
-Finalizer.create({ name: "remoteTest/releaseGuarded", components: { read: [guarded] } }, () => {});
+const idle = System.create({}, () => {});
+const after = System.create({}, () => {});
+Finalizer.create({ components: { read: [guarded] } }, () => {});
 
 /** A world shared with a thread on this one, which claims `threads`. */
 const joined = (threads: readonly ("remoteTest" | "remoteTestFinalized")[] = ["remoteTest"]): { readonly world: CreatedWorld; readonly remote: World } => {
@@ -123,7 +123,7 @@ describe("objects a joined thread fills", () => {
         expect((await runReported(world, nullCaptionsKernel)).failures).toEqual([]);
         expect(await until(listed, value => value?.[caption] === null)).toEqual({ [caption]: null, [widget]: null });
         const report = await runReported(world, numberHandlesKernel);
-        expect(report.failures.map(failure => [failure.name, failure.message])).toEqual([["remoteTest/numberHandlesKernel", '"remoteTest/handle" lives on thread "remoteTest", which a joined thread fills, so a command here gives it only its start or null.']]);
+        expect(report.failures.map(failure => [failure.name, failure.message])).toEqual([["numberHandlesKernel", '"remoteTest/handle" lives on thread "remoteTest", which a joined thread fills, so a command here gives it only its start or null.']]);
         expect(report.dropped).toBe(1);
         await remote.dispose();
         await world.dispose();
@@ -134,7 +134,7 @@ describe("objects a joined thread fills", () => {
         await spawnOne(world, 3);
         expect(await runReported(world, readCaptions)).toEqual({
             failures: [], skipped: [], dropped: 0,
-            warnings: [{ kind: "blocking", name: "remoteTest/readCaptions", message: 'System "remoteTest/readCaptions" runs on thread "remoteTest", which a joined thread fills, so its tier waits for that thread.' }],
+            warnings: [{ kind: "blocking", name: "readCaptions", id: "@adobe/ecs@0.1.1/src/implementation/world/remote.test.ts#readCaptions", message: 'System "readCaptions" runs on thread "remoteTest", which a joined thread fills, so its tier waits for that thread.' }],
         });
         await remote.dispose();
         await world.dispose();
@@ -158,21 +158,21 @@ describe("objects a joined thread fills", () => {
         await world.run(readCaptions);
         const taken = joined();
         await statusOf(taken.world, "joined");
-        expect((await runReported(taken.world, readCaptions)).warnings.map(warning => warning.name)).toEqual(["remoteTest/readCaptions"]);
+        expect((await runReported(taken.world, readCaptions)).warnings.map(warning => warning.name)).toEqual(["readCaptions"]);
         await taken.remote.dispose();
         await taken.world.dispose();
         // Declared in a function, so the build gives it no id, and another thread can't name it.
-        const unnamed = System.create({ name: "remoteTest/unnamed", components: { read: [caption] } }, row => { void row[caption]; });
+        const unnamed = System.create({ components: { read: [caption] } }, row => { void row[caption]; });
         await world.run(unnamed);
         const channel = new MessageChannel();
         world.share(channel.port1);
         const remote = join(channel.port2, { threads: ["remoteTest"] });
-        await expect(remote.run(idle)).rejects.toThrow('System "remoteTest/unnamed" runs on thread "remoteTest" and has no id, so a joined thread can\'t run it');
+        await expect(remote.run(idle)).rejects.toThrow('System "unnamed" runs on thread "remoteTest" and has no id, so a joined thread can\'t run it');
         await statusOf(world, "gone");
         await remote.dispose();
         const other = joined(["remoteTestFinalized"]);
         // Declared without a binding, so the build gives it no id.
-        await expect(other.remote.run(idle)).rejects.toThrow('Finalizer "remoteTest/releaseGuarded" runs on thread "remoteTestFinalized" and has no id, so a joined thread can\'t run it');
+        await expect(other.remote.run(idle)).rejects.toThrow(/Finalizer "finalizer #\d+" runs on thread "remoteTestFinalized" and has no id, so a joined thread can't run it/);
         await other.remote.dispose();
         await other.world.dispose();
         await world.dispose();

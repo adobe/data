@@ -38,35 +38,35 @@ const spin = (milliseconds: number): void => {
 };
 
 /** Blocking, since its body reaches `commands`: a tier on the thread, and with `second`, one task. */
-export const first = System.create({ name: "removeTest/first", resources: { read: [mark, pause] } }, ({ resources, commands }) => {
+export const first = System.create({ resources: { read: [mark, pause] } }, ({ resources, commands }) => {
     void commands;
     calls.first += resources[mark].text.length;
     spin(resources[pause]);
     if (removal.armed) removal.world?.remove(second);
 });
 
-export const second = System.create({ name: "removeTest/second", resources: { read: [mark], write: [secondRuns] }, after: [first] }, ({ resources, commands }) => {
+export const second = System.create({ resources: { read: [mark], write: [secondRuns] }, after: [first] }, ({ resources, commands }) => {
     void commands;
     calls.second += resources[mark].text.length;
     resources[secondRuns] += 1;
 });
 
 /** Terminal, so a tail, run with `secondTail` as one task after the tick's sync point. */
-export const firstTail = System.create({ name: "removeTest/firstTail", resources: { read: [mark, pause] } }, ({ resources }) => {
+export const firstTail = System.create({ resources: { read: [mark, pause] } }, ({ resources }) => {
     calls.firstTail += resources[mark].text.length;
     spin(resources[pause]);
     if (removal.armed) removal.world?.remove(secondTail);
 });
 
 /** Terminal, so a tail: removes `removal.target`, once, when it's set. */
-export const removerTail = System.create({ name: "removeTest/removerTail", resources: { read: [mark] } }, ({ resources }) => {
+export const removerTail = System.create({ resources: { read: [mark] } }, ({ resources }) => {
     void resources[mark];
     const { target } = removal;
     removal.target = null;
     if (target !== null) removal.world?.remove(target);
 });
 
-export const secondTail = System.create({ name: "removeTest/secondTail", resources: { read: [mark] }, after: [firstTail] }, ({ resources }) => {
+export const secondTail = System.create({ resources: { read: [mark] }, after: [firstTail] }, ({ resources }) => {
     calls.secondTail += resources[mark].text.length;
 });
 
@@ -74,9 +74,9 @@ export const secondTail = System.create({ name: "removeTest/secondTail", resourc
  * On the world's thread, added while the others come and go, so ticks go on; after `second`, so the tiers of `first` and
  * `second` are one task there.
  */
-export const ticking = System.create({ name: "removeTest/ticking", after: [second] }, () => {});
+export const ticking = System.create({ after: [second] }, () => {});
 
 /** Sets how long `first` and `firstTail` spin. */
-export const setPause = System.create({ name: "removeTest/setPause", resources: { write: [pause] } }, ({ resources }, input: { readonly milliseconds: number }) => {
+export const setPause = System.create({ resources: { write: [pause] } }, ({ resources }, input: { readonly milliseconds: number }) => {
     resources[pause] = input.milliseconds;
 });

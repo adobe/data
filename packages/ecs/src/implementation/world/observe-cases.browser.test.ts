@@ -25,15 +25,15 @@ declare module "@adobe/ecs" {
 
 
 let spawned: Entity[] = [];
-const spawn = System.create({ name: "observeCasesGpuTest/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     spawned = [];
     for (let i = 0; i < 100; i++) spawned.push(commands.spawn([heat, rate])({ [heat]: i, [rate]: 1 }));
 });
-const warm = System.create({ name: "observeCasesGpuTest/warm", kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
+const warm = System.create({ kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
     row[heat] = row[heat] + row[rate] * 100;
 });
 
-const idle = System.create({ name: "observeCasesGpuTest/idle" }, () => {});
+const idle = System.create({}, () => {});
 
 const device = async (): Promise<GPUDevice> => {
     const adapter = await navigator.gpu.requestAdapter();

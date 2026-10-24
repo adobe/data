@@ -56,7 +56,7 @@ declare module "@adobe/ecs" {
 
 
 /** 64 entities in each of the 512 archetypes the tags combine into. */
-const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) => {
+const scatter = System.create({}, ({ commands }) => {
     for (let i = 0; i < 512 * 64; i++) {
         const components: (typeof position | typeof velocity | (typeof tags)[number])[] = [position, velocity];
         tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) components.push(tag); });
@@ -65,7 +65,7 @@ const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) =>
 });
 
 /** Spawns `count` moving entities, each following the one before it. */
-const seed = System.create({ name: "workersTest/seed" }, ({ commands }, input: { readonly count: number }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     let previous = commands.spawn([position, velocity])({ [position]: [0, 0], [velocity]: [1, 0] });
     for (let i = 1; i < input.count; i++) {
         previous = commands.spawn([position, velocity, target])({ [position]: [i, 0], [velocity]: [1, i % 7], [target]: previous });
@@ -73,7 +73,6 @@ const seed = System.create({ name: "workersTest/seed" }, ({ commands }, input: {
 });
 
 const integrate = System.create({
-    name: "workersTest/integrate",
     kernel: "cpu",
     components: { read: [velocity], write: [position] },
     resources: { read: [seconds] },
@@ -85,7 +84,6 @@ const integrate = System.create({
 
 /** Structural commands from workers: rows past a threshold spawn a marker and lose their velocity. */
 const split = System.create({
-    name: "workersTest/split",
     kernel: "cpu",
     components: { read: [position], has: [velocity] },
     after: [integrate],
@@ -99,7 +97,6 @@ const split = System.create({
 
 /** Lookups from workers: offset by the distance to the target. */
 const follow = System.create({
-    name: "workersTest/follow",
     kernel: "cpu",
     components: { read: [position, target], write: [offset] },
     lookup: { targets: { read: [position] } },
@@ -110,11 +107,10 @@ const follow = System.create({
     row[offset] = other === null ? -1 : x - other[position][0];
 }, );
 
-const main = System.create({ name: "workersTest/main", systems: [integrate, split, follow] });
+const main = System.create({ systems: [integrate, split, follow] });
 
 /** Every row writes the same entity, so only merge order decides which value survives. */
 const stamp = System.create({
-    name: "workersTest/stamp",
     kernel: "cpu",
     components: { read: [position] },
 }, (row, { commands }, input: { readonly entity: Entity }) => {
@@ -124,7 +120,6 @@ const stamp = System.create({
 
 /** Despawns entity 1, the resource entity, since index 0 is never an entity and registration reserves the next first. */
 const unlink = System.create({
-    name: "workersTest/unlink",
     kernel: "cpu",
     components: { has: [target] },
 }, (_, { commands }) => {
@@ -133,7 +128,7 @@ const unlink = System.create({
 });
 
 /** Archetypes in this order: 5 rows the main thread runs, 1,000 that workers run, then 10 more on the main thread. */
-const sources = System.create({ name: "workersTest/sources" }, ({ commands }) => {
+const sources = System.create({}, ({ commands }) => {
     for (let i = 0; i < 5; i++) commands.spawn([offset, tagD])({ [offset]: i });
     for (let i = 5; i < 1_005; i++) commands.spawn([offset, tagA])({ [offset]: i });
     for (let i = 1_005; i < 1_015; i++) commands.spawn([offset, tagB])({ [offset]: i });
@@ -141,7 +136,6 @@ const sources = System.create({ name: "workersTest/sources" }, ({ commands }) =>
 
 /** A spawn per row, from wherever its chunk runs; with `edit`, each spawn is also added to and removed from. */
 const emit = System.create({
-    name: "workersTest/emit",
     kernel: "cpu",
     components: { read: [offset], not: [spawned] },
 }, (row, { commands }, input: { readonly edit: boolean }) => {
@@ -153,11 +147,11 @@ const emit = System.create({
 });
 
 const emitted = { seen: 0 };
-const countEmitted = System.create({ name: "workersTest/countEmitted", components: { added: [position], has: [spawned] } }, () => { emitted.seen++; });
+const countEmitted = System.create({ components: { added: [position], has: [spawned] } }, () => { emitted.seen++; });
 
 const gathered: Entity[] = [];
-const gatherPositioned = System.create({ name: "workersTest/gatherPositioned", observer: true, components: { has: [position] } }, row => { gathered.push(row.entity); });
-const gatherSpawned = System.create({ name: "workersTest/gatherSpawned", observer: true, components: { has: [spawned] } }, row => { gathered.push(row.entity); });
+const gatherPositioned = System.create({ observer: true, components: { has: [position] } }, row => { gathered.push(row.entity); });
+const gatherSpawned = System.create({ observer: true, components: { has: [spawned] } }, row => { gathered.push(row.entity); });
 
 /** The entities an observer row system passes, in storage order. */
 const storageOrder = async (world: World, gather: System<void>): Promise<Entity[]> => {

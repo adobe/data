@@ -15,7 +15,7 @@ const joined: World = join(channel.port2, { threads: ["main"] });
 join(worker);
 join(self, {});
 join(port, { threads: [] });
-const ran: Promise<number> = joined.run(System.create({ name: "joinTypeTest/idle" }, () => {}));
+const ran: Promise<number> = joined.run(System.create({}, () => {}));
 // @ts-expect-error a joined thread fills logical threads other than the world's
 join(port, { threads: ["world"] });
 // @ts-expect-error it claims declared threads

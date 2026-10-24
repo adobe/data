@@ -2,7 +2,6 @@
 import type { Expression, ObjectExpression, Pattern } from 'estree';
 import { fail } from './failure.js';
 import type { Lists } from './lists.js';
-import type { ModuleScope } from './module-scope.js';
 
 type Access = { readonly read: ReadonlySet<string>; readonly write: ReadonlySet<string> };
 
@@ -35,20 +34,11 @@ const requireUsed = (node: Expression | Pattern | undefined, used: ReadonlySet<s
     });
 };
 
-/** Requires `reduce` to name only resources in `contributed`, when it names each by a computed module-scope key. */
-const requireContributed = (reduce: Expression | Pattern | undefined, contributed: ReadonlySet<string>, module: ModuleScope): void => {
-    if (reduce?.type !== "ObjectExpression") return;
-    const keys = reduce.properties.map(property =>
-        property.type === "Property" && property.computed && property.key.type === "Identifier" && module.has(property.key.name) ? property.key : null);
-    for (const key of keys) if (key === null) return;
-    for (const key of keys) if (key !== null && !contributed.has(key.name)) fail(key, `${key.name} is in reduce but never contributed to; remove it`);
-};
-
 /**
- * Requires a system's declared `read`, `write` and `reduce` to be exactly what its body uses: a key it never uses
+ * Requires a system's declared `read`, `write` and `reduce` lists to be exactly what its body uses: a key it never uses
  * would still narrow which entities match, and hold back systems that could otherwise run alongside it.
  */
-export const requireExact = (declaration: ObjectExpression, used: Used, module: ModuleScope, lists: Lists): void => {
+export const requireExact = (declaration: ObjectExpression, used: Used, lists: Lists): void => {
     const declared = fields(declaration);
     const components = fields(declared.get("components"));
     const resources = fields(declared.get("resources"));
@@ -59,7 +49,7 @@ export const requireExact = (declaration: ObjectExpression, used: Used, module: 
     if (used.resources !== null) {
         requireUsed(resources.get("read"), used.resources.read, lists, name => `${name} is in resources read but never read; remove it`);
         requireUsed(resources.get("write"), used.resources.write, lists, name => `${name} is in resources write but never written; remove it, or move it to resources read if it's only read`);
-        requireContributed(declared.get("reduce"), used.resources.reduce, module);
+        requireUsed(resources.get("reduce"), used.resources.reduce, lists, name => `${name} is in resources reduce but never contributed to; remove it`);
     }
     if (used.up !== undefined) {
         requireUsed(fields(declared.get("up")).get("read"), used.up, lists,

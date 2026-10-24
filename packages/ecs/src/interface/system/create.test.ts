@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Entity } from "../entity/entity.js";
-import { definitionOf, firstItemOf, labelOfItem, requireDefinition, sameItem, scheduleOf, threadOf } from "../registry/index.js";
+import { definitionOf, firstItemOf, idOrNull, requireDefinition, sameItem, scheduleOf, threadOf } from "../registry/index.js";
 import { identify } from "../registry/ids.test-helper.js";
 import { clock, gpuDevice } from "../resources/index.js";
 import { System } from "./system.js";
@@ -46,59 +46,44 @@ const createTaking = (declaration: object, input: unknown): unknown => Reflect.a
 describe("System.create", () => {
     it("records the system, its value holding its declaration and body", () => {
         const body = (): void => {};
-        const move = System.create({ name: "typesSystemTest/move", components: { write: [position] }, resources: { read: [time] } }, body);
-        expect(definitionOf(move)).toEqual({ kind: "system", name: "typesSystemTest/move", declaration: { name: "typesSystemTest/move", components: { write: [position] }, resources: { read: [time] } }, body });
-        expect(labelOfItem(move)).toBe("typesSystemTest/move");
-        expect(definitionOf({ name: "typesSystemTest/move" })).toBe(undefined);
+        const move = System.create({ components: { write: [position] }, resources: { read: [time] } }, body);
+        expect(definitionOf(move)).toEqual({ kind: "system", name: "move", declaration: { components: { write: [position] }, resources: { read: [time] } }, body });
+        expect(move.name).toBe("move");
+        expect(definitionOf({ name: "move" })).toBe(undefined);
     });
-    it("keeps systems of one name apart, labeling each by its name numbered", () => {
-        const first = System.create({ name: "typesSystemTest/twice", components: { read: [position] } }, row => { void row[position]; });
-        expect(labelOfItem(first)).toBe("typesSystemTest/twice");
-        const again = System.create({ name: "typesSystemTest/twice", components: { read: [position] } }, row => { void row[position]; });
-        const other = System.create({ name: "typesSystemTest/twice", components: { write: [position] } }, row => { row[position] = 0; });
+    it("labels each system by the binding or function it's made in, however many share the label", () => {
+        const twice = (): System => System.create({ components: { read: [position] } }, row => { void row[position]; });
+        const [first, again] = [twice(), twice()];
         expect(sameItem(first, again)).toBe(false);
-        expect([first, again, other].map(labelOfItem)).toEqual(["typesSystemTest/twice", "typesSystemTest/twice#2", "typesSystemTest/twice#3"]);
-        expect(scheduleOf(requireDefinition(System.create({ name: "typesSystemTest/twice", systems: [first, again] }))).tiers.flat()).toEqual([first, again]);
+        expect([first.name, again.name, idOrNull(first)]).toEqual(["twice", "twice", null]);
+        expect(scheduleOf(requireDefinition(System.create({ systems: [first, again] }))).tiers.flat()).toEqual([first, again]);
     });
-    it("labels systems of one name by name and id, and takes a declaration of a registered id, the same, as the same system", () => {
-        const declare = (id: string, write: boolean) => System.create(identify({ name: "typesSystemTest/linked", components: write ? { write: [position] } : { read: [position] } }, id), () => {});
-        const first = declare("a.ts#linked", false);
-        const elsewhere = declare("b.ts#linked", false);
-        expect([labelOfItem(first), labelOfItem(elsewhere)]).toEqual(["typesSystemTest/linked (a.ts#linked)", "typesSystemTest/linked (b.ts#linked)"]);
-        const again = declare("a.ts#linked", false);
+    it("labels a system by the binding of its id, which reports give beside it, and takes a declaration of a registered id, the same, as the same system", () => {
+        const [first, elsewhere, again] = ["a.ts#linked", "b.ts#linked", "a.ts#linked"].map(id => System.create(identify({ components: { read: [position] } }, id), () => {}));
+        expect([first?.name, elsewhere?.name, first === undefined ? null : idOrNull(first)]).toEqual(["linked", "linked", "a.ts#linked"]);
         expect(again).not.toBe(first);
-        expect([sameItem(first, again), sameItem(first, elsewhere), firstItemOf(again)]).toEqual([true, false, first]);
-        expect(labelOfItem(again)).toBe("typesSystemTest/linked (a.ts#linked)");
-        const write = System.create({ name: "typesSystemTest/afterLinked", components: { write: [position] }, after: [again] }, row => { row[position] = 0; });
-        const tiers = scheduleOf(requireDefinition(System.create({ name: "typesSystemTest/linkedFrame", systems: [write, first, again] }))).tiers;
-        expect(tiers).toEqual([[first], [write]]);
-        expect(() => declare("a.ts#linked", true)).toThrow('Cannot declare "typesSystemTest/linked" (a.ts#linked): its id is another item\'s, with another declaration; if a module was evaluated again with a changed declaration, reload the page.');
-        expect(() => System.create(identify({ name: "typesSystemTest/linked", systems: [first] }, "a.ts#linked"))).toThrow("its id is a system's");
-        expect(labelOfItem(declare("c.ts#linked", false))).toBe("typesSystemTest/linked (c.ts#linked)");
+        expect(first !== undefined && again !== undefined && elsewhere !== undefined ? [sameItem(first, again), sameItem(first, elsewhere), firstItemOf(again)] : null).toEqual([true, false, first]);
+        expect(() => ["a.ts#linked"].map(id => System.create(identify({ components: { write: [position] } }, id), () => {}))).toThrow('Cannot declare "linked" (a.ts#linked): its id is another item\'s, with another declaration; if a module was evaluated again with a changed declaration, reload the page.');
+        expect(() => ["a.ts#linked"].map(id => first === undefined ? null : System.create(identify({ systems: [first] }, id)))).toThrow("its id is a system's");
     });
-    it("names a system declared without a name by its binding and id, or else by its kind numbered", () => {
+    it("labels a system made with neither an id nor a binding by its kind numbered", () => {
         const body = ({ commands }: { readonly commands: System.Commands }): void => { commands.spawn([position])({ [position]: 0 }); };
-        const alone = System.create(identify(body, "setup.ts#spawnOnce"));
-        expect(definitionOf(alone)).toEqual({ kind: "system", name: "spawnOnce (setup.ts#spawnOnce)", declaration: {}, body });
-        expect(labelOfItem(alone)).toBe("spawnOnce (setup.ts#spawnOnce)");
-        expect(sameItem(System.create(identify(body, "setup.ts#spawnOnce")), alone)).toBe(true);
-        const show = System.create(identify({ components: { read: [position] } }, "show.ts#show"), row => { void row[position]; });
-        expect(labelOfItem(show)).toBe("show (show.ts#show)");
-        const [first, second] = [System.create(() => {}), System.create({ systems: [show] })].map(labelOfItem);
+        const [alone] = [System.create(identify(body, "setup.ts#spawnOnce"))];
+        expect(definitionOf(alone)).toEqual({ kind: "system", name: "spawnOnce", declaration: {}, body });
+        const [first, second] = [System.create(() => {}), System.create({ systems: [alone] })].map(system => system.name);
         const number = Number(first?.slice("system #".length));
         expect([first, second]).toEqual([`system #${number}`, `system #${number + 1}`]);
-        expect(labelOfItem(System.render({ shader: { accessors: {} } }, () => {}))).toBe(`system #${number + 2}`);
-        expect(() => create({ components: { read: [position], write: [position] } })).toThrow(`System "system #${number + 3}" lists "typesSystemTest/position" in both components read and write`);
+        expect([System.render({ shader: { accessors: {} } }, () => {})].map(system => system.name)).toEqual([`system #${number + 2}`]);
+        expect(() => create({ components: { read: [position], write: [position] } })).toThrow(`lists "typesSystemTest/position" in both components read and write`);
     });
     it("rejects writing what only the world writes, for untyped callers", () => {
-        expect(() => create({ name: "typesSystemTest/clock", resources: { write: [clock] } })).toThrow(`writes "clock", which only the world writes`);
+        expect(() => create({ resources: { write: [clock] } })).toThrow(`writes "clock", which only the world writes`);
     });
     it("rejects what types reject, for untyped callers", () => {
-        expect(() => create({ name: "typesSystemTest/both", components: { read: [position], write: [position] } })).toThrow("in both components read and write");
-        expect(() => create({ name: "typesSystemTest/bothResources", resources: { read: [time], write: [time] } })).toThrow("in both resources read and write");
-        expect(() => create({ name: "typesSystemTest/lookup", components: { write: [position] }, lookup: { others: { read: [position] } } })).toThrow('lookup "others" reads "typesSystemTest/position", which the system writes');
-        expect(() => createTaking({ name: "typesSystemTest/input" }, { type: "number" })).toThrow("input is an object schema of named fields");
-        expect(labelOfItem(System.create({ name: "typesSystemTest/both" }, () => {}))).toBe("typesSystemTest/both");
+        expect(() => create({ components: { read: [position], write: [position] } })).toThrow("in both components read and write");
+        expect(() => create({ resources: { read: [time], write: [time] } })).toThrow("in both resources read and write");
+        expect(() => create({ components: { write: [position] }, lookup: { others: { read: [position] } } })).toThrow('lookup "others" reads "typesSystemTest/position", which the system writes');
+        expect(() => createTaking({}, { type: "number" })).toThrow("input is an object schema of named fields");
     });
     it("rejects at creation what the registry rules out, for untyped callers", () => {
         const rejected: readonly (readonly [object, string])[] = [
@@ -106,10 +91,9 @@ describe("System.create", () => {
             [{ components: { read: [position] }, lookup: { others: { read: [position], not: [unregistered] } } }, `uses component "typesSystemTest/unregistered", which isn't a registered component`],
             [{ components: { read: [position] }, lookup: { others: { read: [position], changed: [height] } } }, `lookup "others" watches "typesSystemTest/height", which it neither reads nor has`],
             [{ components: { write: [parent] } }, `writes "typesSystemTest/parent", a reference, which changes only through commands`],
-            [{ components: { has: [position] }, reduce: { [total]: "max" } }, `reduces "typesSystemTest/total" with "max", but it's declared reduce: "+"`],
-            [{ components: { has: [position] }, reduce: { [time]: "+" } }, `reduces "typesSystemTest/time", which has no reduce trait`],
+            [{ components: { has: [position] }, resources: { reduce: [time] } }, `reduces "typesSystemTest/time", which has no reduce trait`],
             [{ resources: { write: [total] } }, `writes "typesSystemTest/total", which is reduced`],
-            [{ components: { has: [position] }, resources: { read: [total] }, reduce: { [total]: "+" } }, `reduces "typesSystemTest/total", so it can't also read, write or filter on it`],
+            [{ components: { has: [position] }, resources: { read: [total], reduce: [total] } }, `reduces "typesSystemTest/total", so it can't also read, write or filter on it`],
             [{ resources: { is: [time] } }, `runs on the condition of "typesSystemTest/time", which is never null or false`],
             [{ resources: { not: [position] } }, `runs on the condition of "typesSystemTest/position", which isn't a registered resource`],
             [{ resources: { is: [paused], not: [paused] } }, `lists "typesSystemTest/paused" in both resources is and not`],
@@ -118,105 +102,100 @@ describe("System.create", () => {
             [{ up: { through: parent } }, "uses up, which orders rows, without components"],
             [{ kernel: "gpu", components: { write: [position], changed: [position] } }, "can't run on the GPU: GPU kernels don't support change filters yet"],
             [{ kernel: "gpu", components: { read: [position] }, lookup: { others: { read: [position] } } }, "can't run on the GPU: GPU kernels don't support lookups yet"],
-            [{ kernel: "gpu", components: { has: [position] }, reduce: { [total]: "+" } }, "can't run on the GPU: GPU kernels don't support reductions yet"],
+            [{ kernel: "gpu", components: { has: [position] }, resources: { reduce: [total] } }, "can't run on the GPU: GPU kernels don't support reductions yet"],
             [{ observer: false, resources: { read: [time] } }, "observer is true or left out"],
             [{ observer: true, components: { write: [position] } }, "is an observer, so it writes nothing"],
             [{ observer: true, resources: { write: [time] } }, "is an observer, so it writes nothing"],
-            [{ observer: true, components: { has: [position] }, reduce: { [total]: "+" } }, "is an observer, so it reduces into nothing"],
+            [{ observer: true, components: { has: [position] }, resources: { reduce: [total] } }, "is an observer, so it reduces into nothing"],
             [{ observer: true, kernel: "cpu", components: { read: [position] } }, "is an observer, so it isn't a kernel"],
             [{ observer: true, components: { read: [position] }, up: { through: parent } }, "is an observer, so it has no up"],
             [{ observer: true, resources: { read: [time] }, after: [System.create(() => {})] }, "is an observer, so it is ordered with nothing"],
             [{ observer: true, resources: { read: [time] }, before: [System.create(() => {})] }, "is an observer, so it is ordered with nothing"],
             [{ observer: true, resources: { read: [time] }, during: [System.create(() => {})] }, "is an observer, so it is ordered with nothing"],
         ];
-        expect(() => createTaking({ name: "typesSystemTest/observing", observer: true }, { type: "object", properties: {} })).toThrow("is an observer, so it takes no input");
+        expect(() => createTaking({ observer: true }, { type: "object", properties: {} })).toThrow("is an observer, so it takes no input");
         rejected.forEach(([declaration, message], index) => {
-            expect(() => create({ name: `typesSystemTest/rejected/${index}`, ...declaration })).toThrow(message);
-            // A rejected system records nothing, so its name labels only the next.
-            expect(labelOfItem(System.create({ name: `typesSystemTest/rejected/${index}` }, () => {}))).toBe(`typesSystemTest/rejected/${index}`);
+            expect(() => create({ ...declaration })).toThrow(message);
         });
     });
     it("derives its thread from its object components and resources, and rejects two", () => {
-        const show = System.create({ name: "typesSystemTest/show", components: { read: [position, node] }, resources: { read: [time, document] } }, (row, { resources }) => { row[node].textContent = `${row[position]} ${resources[time]} ${resources[document]?.title}`; });
-        const count = System.create({ name: "typesSystemTest/count", components: { read: [tags], has: [node] } }, row => { void row[tags]; });
-        const tick = System.create({ name: "typesSystemTest/tick", components: { write: [position] } }, row => { row[position] += 1; });
+        const show = System.create({ components: { read: [position, node] }, resources: { read: [time, document] } }, (row, { resources }) => { row[node].textContent = `${row[position]} ${resources[time]} ${resources[document]?.title}`; });
+        const count = System.create({ components: { read: [tags], has: [node] } }, row => { void row[tags]; });
+        const tick = System.create({ components: { write: [position] } }, row => { row[position] += 1; });
         const leaves = [show, count, tick].map(system => definitionOf(system));
         expect(leaves.map(leaf => leaf === undefined || leaf.kind === "composite" ? undefined : threadOf(leaf.declaration, "System", leaf.name))).toEqual(["main", "world", null]);
-        expect(() => create({ name: "typesSystemTest/span", components: { read: [tags], write: [node] } })).toThrow('System "typesSystemTest/span" uses "typesSystemTest/tags" on "world" and "typesSystemTest/node" on "main"');
-        expect(() => create({ name: "typesSystemTest/spanResource", components: { read: [tags] }, resources: { is: [document] } })).toThrow('uses "typesSystemTest/tags" on "world" and "typesSystemTest/document" on "main"');
+        expect(() => create({ components: { read: [tags], write: [node] } })).toThrow('uses "typesSystemTest/tags" on "world" and "typesSystemTest/node" on "main"');
+        expect(() => create({ components: { read: [tags] }, resources: { is: [document] } })).toThrow('uses "typesSystemTest/tags" on "world" and "typesSystemTest/document" on "main"');
         // A string lives in shared memory, so it goes with any thread's objects.
-        const caption = System.create({ name: "typesSystemTest/caption", components: { read: [label, node] } }, row => { row[node].textContent = row[label]; });
+        const caption = System.create({ components: { read: [label, node] } }, row => { row[node].textContent = row[label]; });
         const captionLeaf = definitionOf(caption);
         expect(captionLeaf === undefined || captionLeaf.kind === "composite" ? undefined : threadOf(captionLeaf.declaration, "System", captionLeaf.name)).toBe("main");
-        expect(() => create({ name: "typesSystemTest/unregistered", components: { read: [unregistered] } })).toThrow(`uses component "typesSystemTest/unregistered", which isn't a registered component`);
-        expect(() => create({ name: "typesSystemTest/wrongKind", components: { read: [time] } })).toThrow(`uses component "typesSystemTest/time", which isn't a registered component`);
+        expect(() => create({ components: { read: [unregistered] } })).toThrow(`uses component "typesSystemTest/unregistered", which isn't a registered component`);
+        expect(() => create({ components: { read: [time] } })).toThrow(`uses component "typesSystemTest/time", which isn't a registered component`);
     });
 });
 
 describe("System.create of a composite", () => {
     it("records a composite whose members may live on different threads, from its list or its declaration", () => {
-        const show = System.create({ name: "typesSystemTest/showMember", components: { read: [node] } }, row => { row[node].hidden = true; });
-        const name = System.create({ name: "typesSystemTest/nameMember", components: { write: [label] } }, row => { row[label] = ""; });
-        const frame = System.create({ name: "typesSystemTest/frame", systems: [show, name] });
+        const show = System.create({ components: { read: [node] } }, row => { row[node].hidden = true; });
+        const name = System.create({ components: { write: [label] } }, row => { row[label] = ""; });
+        const frame = System.create({ systems: [show, name] });
         expect(definitionOf(frame)?.kind).toBe("composite");
-        expect(definitionOf(System.create({ name: "typesSystemTest/frame", systems: [show] }))).not.toBe(definitionOf(frame));
+        expect(definitionOf(System.create({ systems: [show] }))).not.toBe(definitionOf(frame));
         const listed = System.create([show, name]);
         const listedDefinition = definitionOf(listed);
         expect(listedDefinition?.kind === "composite" ? listedDefinition.declaration.systems : undefined).toEqual([show, name]);
-        expect(listed.name).toMatch(/^system #\d+$/);
+        expect(listed.name).toBe("listed");
     });
     it("tells a composite's declaration from a system's by its body", () => {
         const untyped: (...parameters: never[]) => unknown = System.create;
-        expect(() => Reflect.apply(untyped, undefined, [{ name: "typesSystemTest/bodiless" }])).toThrow("A system needs a body, and a composite its systems.");
-        const leaf = Reflect.apply(untyped, undefined, [{ name: "typesSystemTest/leafWithSystems", systems: [] }, () => {}]);
+        expect(() => Reflect.apply(untyped, undefined, [{ name: "bodiless" }])).toThrow("A system needs a body, and a composite its systems.");
+        const leaf = Reflect.apply(untyped, undefined, [{ name: "leafWithSystems", systems: [] }, () => {}]);
         expect(definitionOf(leaf)?.kind).toBe("system");
     });
     it("rejects members ordered in a cycle, and conflicting members with no order between them", () => {
-        const first = System.create({ name: "typesSystemTest/first", components: { write: [position] } }, row => { row[position] += 1; });
-        const second = System.create({ name: "typesSystemTest/second", components: { read: [position] }, after: [first] }, row => { void row[position]; });
-        const third = System.create({ name: "typesSystemTest/third", components: { read: [position] } }, row => { void row[position]; });
-        expect(scheduleOf(requireDefinition(System.create({ name: "typesSystemTest/ordered", systems: [second, first] }))).tiers.map(tier => tier.map(leaf => leaf.name))).toEqual([["typesSystemTest/first"], ["typesSystemTest/second"]]);
-        expect(() => System.create({ name: "typesSystemTest/unordered", systems: [first, third] })).toThrow('Systems "typesSystemTest/first" and "typesSystemTest/third" both access "typesSystemTest/position" and one writes it');
-        const looped = System.create({ name: "typesSystemTest/looped", before: [first], after: [second] }, () => {});
-        expect(() => System.create({ name: "typesSystemTest/cycle", systems: [first, second, looped] })).toThrow("Ordering cycle");
-        expect(labelOfItem(System.create({ name: "typesSystemTest/unordered", systems: [first] }))).toBe("typesSystemTest/unordered");
+        const first = System.create({ components: { write: [position] } }, row => { row[position] += 1; });
+        const second = System.create({ components: { read: [position] }, after: [first] }, row => { void row[position]; });
+        const third = System.create({ components: { read: [position] } }, row => { void row[position]; });
+        expect(scheduleOf(requireDefinition(System.create({ systems: [second, first] }))).tiers.map(tier => tier.map(leaf => leaf.name))).toEqual([["first"], ["second"]]);
+        expect(() => System.create({ systems: [first, third] })).toThrow('Systems "first" and "third" both access "typesSystemTest/position" and one writes it');
+        const looped = System.create({ before: [first], after: [second] }, () => {});
+        expect(() => System.create({ systems: [first, second, looped] })).toThrow("Ordering cycle");
     });
     it("runs observer members after its sync point, in no tier, never conflicting and ignoring constraints naming them", () => {
-        const write = System.create({ name: "typesSystemTest/observerWriter", components: { write: [position] } }, row => { row[position] += 1; });
-        const watch = System.create({ name: "typesSystemTest/observer", observer: true, components: { read: [position] } }, row => { void row[position]; });
-        const later = System.create({ name: "typesSystemTest/afterObserver", components: { read: [position] }, after: [watch, write] }, row => { void row[position]; });
-        const free = System.create({ name: "typesSystemTest/afterObserverOnly", resources: { read: [time] }, after: [watch] }, ({ resources }) => { void resources[time]; });
+        const write = System.create({ components: { write: [position] } }, row => { row[position] += 1; });
+        const watch = System.create({ observer: true, components: { read: [position] } }, row => { void row[position]; });
+        const later = System.create({ components: { read: [position] }, after: [watch, write] }, row => { void row[position]; });
+        const free = System.create({ resources: { read: [time] }, after: [watch] }, ({ resources }) => { void resources[time]; });
         const schedule = scheduleOf(requireDefinition(System.create([write, watch, later, free])));
-        expect(schedule.tiers.map(tier => tier.map(leaf => leaf.name))).toEqual([["typesSystemTest/observerWriter", "typesSystemTest/afterObserverOnly"], ["typesSystemTest/afterObserver"]]);
-        expect(schedule.observer.map(leaf => leaf.name)).toEqual(["typesSystemTest/observer"]);
+        expect(schedule.tiers.map(tier => tier.map(leaf => leaf.name))).toEqual([["write", "free"], ["later"]]);
+        expect(schedule.observer.map(leaf => leaf.name)).toEqual(["watch"]);
         const alone = scheduleOf(requireDefinition(watch));
-        expect([alone.tiers.length, alone.observer.map(leaf => leaf.name)]).toEqual([0, ["typesSystemTest/observer"]]);
+        expect([alone.tiers.length, alone.observer.map(leaf => leaf.name)]).toEqual([0, ["watch"]]);
     });
     it("rejects a member no constructor returned, and an input field two members declare differently", () => {
-        expect(() => System.create({ name: "typesSystemTest/forged", systems: [{ name: "typesSystemTest/showMember" }] })).toThrow('member "typesSystemTest/showMember" isn\'t a system a System constructor returned');
-        const move = System.create({ name: "typesSystemTest/moveBy" }, (_context, input: { readonly distance: number }) => {});
-        const tag = System.create({ name: "typesSystemTest/tagBy" }, (_context, input: { readonly distance: string }) => {});
-        const nested = System.create({ name: "typesSystemTest/nested", systems: [tag] });
+        expect(() => System.create({ systems: [{ name: "showMember" }] })).toThrow('member "showMember" isn\'t a system a System constructor returned');
+        const move = System.create({}, (_context, input: { readonly distance: number }) => {});
+        const tag = System.create({}, (_context, input: { readonly distance: string }) => {});
+        const nested = System.create({ systems: [tag] });
         const untyped: (...parameters: never[]) => unknown = System.create;
         const composite = (declaration: object): unknown => Reflect.apply(untyped, undefined, [declaration]);
-        expect(() => composite({ name: "typesSystemTest/conflict", systems: [move, nested] })).toThrow('Systems "typesSystemTest/moveBy" and "typesSystemTest/tagBy" declare input field "distance" with different schemas.');
-        expect(labelOfItem(System.create({ name: "typesSystemTest/conflict", systems: [move] }))).toBe("typesSystemTest/conflict");
+        expect(() => composite({ systems: [move, nested] })).toThrow('Systems "move" and "tag" declare input field "distance" with different schemas.');
     });
 });
 
 describe("System.render", () => {
     it("reads the components its accessors name, once each, and runs only while gpuDevice is set", () => {
-        const draw = System.render({ name: "typesSystemTest/draw", shader: { accessors: { place: height, again: height } } }, () => {});
+        const draw = System.render({ shader: { accessors: { place: height, again: height } } }, () => {});
         const definition = definitionOf(draw);
         expect(definition?.kind === "render" ? [definition.declaration.components, definition.declaration.resources] : null).toEqual([{ read: [height] }, { is: [gpuDevice] }]);
         const render: (declaration: object) => unknown = declaration => Reflect.apply(System.render, undefined, [declaration, () => {}]);
-        expect(() => render({ name: "typesSystemTest/drawDocument", resources: { read: [document] }, shader: { accessors: {} } })).toThrow('uses "typesSystemTest/document" on "main" and "gpuDevice" on "world"');
+        expect(() => render({ resources: { read: [document] }, shader: { accessors: {} } })).toThrow('uses "typesSystemTest/document" on "main" and "gpuDevice" on "world"');
     });
     it("rejects at creation accessors its shader can't read, and reductions", () => {
         const render: (declaration: object) => unknown = declaration => Reflect.apply(System.render, undefined, [declaration, () => {}]);
-        expect(() => System.render({ name: "typesSystemTest/drawReserved", shader: { accessors: { loop: height } } }, () => {})).toThrow(`System "typesSystemTest/drawReserved" can't render: "loop" isn't usable as a WGSL function name.`);
-        expect(() => render({ name: "typesSystemTest/drawReduced", shader: { accessors: {} }, reduce: { [total]: "+" } })).toThrow("can't reduce: a render system records GPU work rather than running rows");
-        expect(() => render({ name: "typesSystemTest/drawObserver", shader: { accessors: {} }, observer: true })).toThrow("is an observer, so it records no GPU work");
-        expect(labelOfItem(System.render({ name: "typesSystemTest/drawReserved", shader: { accessors: {} } }, () => {}))).toBe("typesSystemTest/drawReserved");
+        expect(() => System.render({ shader: { accessors: { loop: height } } }, () => {})).toThrow(`can't render: "loop" isn't usable as a WGSL function name.`);
+        expect(() => render({ shader: { accessors: {} }, resources: { reduce: [total] } })).toThrow("can't reduce: a render system records GPU work rather than running rows");
+        expect(() => render({ shader: { accessors: {} }, observer: true })).toThrow("is an observer, so it records no GPU work");
     });
 });

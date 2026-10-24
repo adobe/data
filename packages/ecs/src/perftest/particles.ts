@@ -37,7 +37,7 @@ const archetypes = [
     Archetype.create([color, mass, position, velocity]),
 ] as const;
 
-export const spawn = System.create({ name: "perf/spawn" }, ({ commands }, input: { readonly count: number }) => {
+export const spawn = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) {
         const p = [i + 1, i + 1, i + 1] as const;
         const v = [-i, -i, -i] as const;
@@ -46,7 +46,6 @@ export const spawn = System.create({ name: "perf/spawn" }, ({ commands }, input:
 });
 
 export const move = System.create({
-    name: "perf/move",
     kernel: "cpu",
     components: { read: [velocity], write: [position], has: [visible, enabled] },
 }, row => {

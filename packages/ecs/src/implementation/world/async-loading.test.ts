@@ -38,11 +38,10 @@ const load = async (path: string): Promise<number> => {
 };
 
 // 1. A rule derives a slot for every visible entity with a mesh source.
-Rule.create({ name: "asyncLoading/slots", components: { has: [meshSource], not: [hidden] }, derive: [meshSlot] });
+Rule.create({ components: { has: [meshSource], not: [hidden] }, derive: [meshSlot] });
 
 // 2. Each new slot gets a fresh token, and its load is requested; the application starts requested loads.
 const request = System.create({
-    name: "asyncLoading/request",
     components: { read: [meshSource], write: [meshSlot], added: [meshSlot] },
     resources: { write: [nextToken, requests] },
 }, (row, { resources }) => {
@@ -54,7 +53,6 @@ const request = System.create({
 
 // 3. A completed load arrives as a run of its own. A slot whose token still matches gets the mesh; a stale one releases it.
 const apply = System.create({
-    name: "asyncLoading/apply",
     lookup: { slots: { read: [meshSlot] } },
 }, ({ lookup, commands }, input: { readonly entity: Entity; readonly token: number; readonly handle: number }) => {
     if (lookup.slots(input.entity)?.[meshSlot] === input.token) commands.add(input.entity, meshReady, input.handle);
@@ -62,13 +60,13 @@ const apply = System.create({
 });
 
 // 4. When the slot goes, its mesh goes with it, and the finalizer releases what was loaded.
-Finalizer.create({ name: "asyncLoading/release", components: { read: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
+Finalizer.create({ components: { read: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
 
-const spawn = System.create({ name: "asyncLoading/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     commands.spawn([meshSource])({ [meshSource]: "ship.glb" });
     commands.spawn([meshSource])({ [meshSource]: "rock.glb" });
 });
-const hide = System.create({ name: "asyncLoading/hide" }, ({ commands }, input: { readonly entity: Entity }) => {
+const hide = System.create({}, ({ commands }, input: { readonly entity: Entity }) => {
     commands.add(input.entity, hidden);
 });
 

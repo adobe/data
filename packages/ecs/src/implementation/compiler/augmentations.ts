@@ -4,7 +4,7 @@ import { isEntity, isString, isStruct } from '../../interface/registry/schemas.j
 import type { Schema } from '../../interface/schema/schema.js';
 import type { PassResult } from './input-schemas.js';
 import type { Insertion } from './source-map.js';
-import { createConverter, isNotData, isThrown, type Declarator, type Module, type Node, type Statement, type TypeHost, type TypeNode } from './type-schemas.js';
+import { createConverter, isNotData, isThrown, type Declarator, type Module, type Node, type Statement, type TypedProgram, type TypeHost, type TypeNode } from './type-schemas.js';
 
 /** The module emitted code imports its registry hooks from, for the module being transformed. */
 export type DeclareModuleOf = (file: string) => string;
@@ -21,7 +21,7 @@ const kinds = { Components: "component", Resources: "resource", Traits: "trait" 
 const isKind = (name: string): name is keyof typeof kinds => name in kinds;
 
 /** The interfaces of each top-level `declare module "@adobe/ecs"` block, with the block. */
-const augmentationsOf = (module: Module): readonly { readonly block: Block; readonly interfaces: readonly Interface[] }[] =>
+const augmentationsOf = (module: Pick<Module, "program">): readonly { readonly block: Block; readonly interfaces: readonly Interface[] }[] =>
     module.program.body.flatMap(statement => {
         if (statement.type !== "TSModuleDeclaration" || statement.global !== false || statement.id.type !== "Literal" || statement.id.value !== "@adobe/ecs") return [];
         const body = statement.body?.type === "TSModuleBlock" ? statement.body.body : [];
@@ -31,6 +31,30 @@ const augmentationsOf = (module: Module): readonly { readonly block: Block; read
         });
         return [{ block: statement, interfaces }];
     });
+
+/**
+ * The operator each resource a module's `declare module "@adobe/ecs"` blocks declare with a `reduce` trait reduces
+ * with, by its key's binding: what a kernel reducing into it folds with.
+ */
+export const reductionsIn = (program: TypedProgram): ReadonlyMap<string, string> => {
+    const found = new Map<string, string>();
+    for (const { interfaces } of augmentationsOf({ program })) {
+        for (const declared of interfaces) {
+            if (declared.id.name !== "Resources") continue;
+            for (const member of declared.body.body) {
+                if (member.type !== "TSPropertySignature" || !member.computed || member.key.type !== "Identifier") continue;
+                const declaration = member.typeAnnotation?.typeAnnotation;
+                if (declaration?.type !== "TSTypeLiteral") continue;
+                for (const trait of declaration.members) {
+                    if (trait.type !== "TSPropertySignature" || trait.computed || trait.key.type !== "Identifier" || trait.key.name !== "reduce") continue;
+                    const value = trait.typeAnnotation?.typeAnnotation;
+                    if (value?.type === "TSLiteralType" && value.literal.type === "Literal" && typeof value.literal.value === "string") found.set(member.key.name, value.literal.value);
+                }
+            }
+        }
+    }
+    return found;
+};
 
 type QueryName = Exclude<Extract<TypeNode, { readonly type: "TSTypeQuery" }>["exprName"], { readonly type: "TSImportType" }>;
 

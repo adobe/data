@@ -43,14 +43,14 @@ const archetypes = [
 ] as const;
 
 /** Spawns with values passed inline. */
-export const spawnFlat = System.create({ name: "flat/spawn" }, ({ commands }, input: { readonly count: number }) => {
+export const spawnFlat = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) {
         commands.spawn(archetypes[i % 4])({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i });
     }
 });
 
 /** The same spawns with each value object built first, as values from data or from another system's results are. */
-export const spawnFlatDynamic = System.create({ name: "flat/dynamic" }, ({ commands }, input: { readonly count: number }) => {
+export const spawnFlatDynamic = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) {
         const values = { [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i };
         commands.spawn(archetypes[i % 4])(values);

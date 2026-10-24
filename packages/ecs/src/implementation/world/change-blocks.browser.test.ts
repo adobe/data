@@ -28,18 +28,18 @@ const text = { type: "object", properties: { text: { type: "string" } } } as con
 
 const rows = 4500;
 let entities: Entity[] = [];
-const seed = System.create({ name: "changeBlocksGpuTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     entities = [];
     for (let i = 0; i < rows; i++) entities.push(commands.spawn([value, at, note])({ [value]: 0, [at]: i }));
 });
-const raise = System.create({ name: "changeBlocksGpuTest/raise", kernel: "gpu", components: { write: [value] } }, row => {
+const raise = System.create({ kernel: "gpu", components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
-const setValue = System.create({ name: "changeBlocksGpuTest/setValue", target: "entity", components: { write: [value] } }, (row, _context, input: { readonly entity: Entity }) => {
+const setValue = System.create({ target: "entity", components: { write: [value] } }, (row, _context, input: { readonly entity: Entity }) => {
     row[value] += 1;
 });
 let found: number[] = [];
-const there = System.create({ name: "changeBlocksGpuTest/there", components: { read: [at, note], changed: [value] } }, row => { if (row[note] !== undefined) found.push(row[at]); });
+const there = System.create({ components: { read: [at, note], changed: [value] } }, row => { if (row[note] !== undefined) found.push(row[at]); });
 
 const device = async (): Promise<GPUDevice> => {
     const adapter = await navigator.gpu.requestAdapter();

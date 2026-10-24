@@ -12,7 +12,7 @@ export const loopTicks = 10_000;
 export const observerIdles = 100;
 
 /** Observer systems no entity matches, each run after every tick. */
-const idleObserver = Array.from({ length: observerIdles }, (_, i) => System.create({ name: `loop/idleObserver${i}`, observer: true, components: { has: [unused] } }, () => {}));
+const idleObserver = Array.from({ length: observerIdles }, (_, i) => System.create({ observer: true, components: { has: [unused] } }, () => {}));
 
 /**
  * The fastest of `stretches` stretches of `loopTicks` ticks with nothing changed, after one to warm up: a world with

@@ -7,7 +7,6 @@ import { conditional } from '../registry/schemas.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
 import { checkLookup, indexDefinitionOf, lookupKeysOf, orderKeysOf } from '../registry/indexes.js';
-import { labelOfItem } from '../registry/items.js';
 import type { Schema } from '../schema/schema.js';
 import type { Composite } from './composite.js';
 import type { Definition } from './definition.js';
@@ -23,18 +22,15 @@ const checkLists = (name: string, what: string, lists: { readonly read?: readonl
 };
 
 /**
- * Throws if a leaf reduces into a resource with an operator its `reduce` trait doesn't declare, or also reads, writes
- * or filters on it, or writes a resource that's reduced, which only its contributors' fold sets.
+ * Throws if a leaf reduces into a resource without a `reduce` trait, which gives the operator it folds with, or also
+ * reads, writes or filters on it, or writes a resource that's reduced, which only its contributors' fold sets.
  */
 const checkReductions = (leaf: Leaf): void => {
     const { name } = leaf;
-    const { reduce, resources } = leaf.declaration;
+    const { resources } = leaf.declaration;
     const others = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? []]);
     for (const key of reducedBy(leaf)) {
-        const declared = declarationOf(key)?.reduce;
-        const operator: unknown = Reflect.get(reduce ?? {}, key);
-        if (declared === undefined) throw new Error(`System "${name}" reduces "${labelOf(key)}", which has no reduce trait.`);
-        if (declared !== operator) throw new Error(`System "${name}" reduces "${labelOf(key)}" with "${labelOf(operator)}", but it's declared reduce: "${labelOf(declared)}".`);
+        if (declarationOf(key)?.reduce === undefined) throw new Error(`System "${name}" reduces "${labelOf(key)}", which has no reduce trait.`);
         if (others.has(key)) throw new Error(`System "${name}" reduces "${labelOf(key)}", so it can't also read, write or filter on it.`);
     }
     for (const key of resources?.write ?? []) {
@@ -83,7 +79,7 @@ const checkPlacement = (leaf: Leaf): void => {
     if (order !== undefined) {
         const index = indexDefinitionOf(order);
         if (index === undefined) fail("orders its rows by a value Index.create didn't return");
-        else if (index.declaration.sorted !== true) fail(`orders its rows by index "${labelOfItem(index)}", which isn't sorted`);
+        else if (index.declaration.sorted !== true) fail(`orders its rows by index "${index.name}", which isn't sorted`);
         if (components === undefined) fail("orders its rows without components, so it runs once");
         if (up !== undefined) fail("uses both up and order, which both decide the order of its rows");
         if (kernel === "gpu") fail("can't run on the GPU: GPU kernels have no order yet");
@@ -207,7 +203,7 @@ export const inputSchemaOf = (name: string, body: (...parameters: never[]) => vo
  */
 const checkTarget = (leaf: Leaf): void => {
     const { name, declaration, input } = leaf;
-    const { target, components, kernel, up, order, reduce } = declaration;
+    const { target, components, kernel, up, order, resources } = declaration;
     if (target === undefined) return;
     const fail = (message: string): never => { throw new Error(`System "${name}" runs on one entity, so it ${message}.`); };
     const field: Schema | undefined = input !== undefined && "properties" in input ? Reflect.get(input.properties, target) : undefined;
@@ -215,7 +211,7 @@ const checkTarget = (leaf: Leaf): void => {
     if (components === undefined) fail("needs components");
     if (kernel !== undefined) fail("isn't a kernel");
     if (up !== undefined || order !== undefined) fail("has no up or order");
-    if (reduce !== undefined) fail("reduces into nothing");
+    if ((resources?.reduce?.length ?? 0) > 0) fail("reduces into nothing");
 };
 
 /** Every leaf under a system, each once. Throws for a member no System constructor returned. */

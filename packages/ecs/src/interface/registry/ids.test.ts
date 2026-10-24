@@ -53,10 +53,10 @@ const finalizer = untyped(Finalizer.create);
 type Row = { [key: symbol]: number };
 
 describe("keys with ids", () => {
-    it("labels a key by its description, and by its id once another registered key has its description", () => {
+    it("labels a key by its description, however many keys share it", () => {
         expect(labelOf(score)).toBe("score");
         declareComponent$(unnamed, { type: { type: "number" } });
-        expect([labelOf(score), labelOf(unnamed)]).toEqual(["idsTest/keys.ts#score", "idsTest/other.ts#score"]);
+        expect([labelOf(score), labelOf(unnamed)]).toEqual(["score", "score"]);
         expect(labelOf(Symbol("score"))).toBe("score");
     });
     it("accepts another symbol under a registered key's id with the same declaration, as the same key", () => {
@@ -66,45 +66,45 @@ describe("keys with ids", () => {
         declareTrait$(taggedAgain);
         expect([kindOf(scoreAgain), kindOf(levelAgain), kindOf(taggedAgain)]).toEqual(["component", "resource", "trait"]);
         expect(declarationOf(scoreAgain)).toBe(declarationOf(score));
-        expect(labelOf(scoreAgain)).toBe("idsTest/keys.ts#score");
+        expect(labelOf(scoreAgain)).toBe("score");
     });
     it("rejects another symbol under a registered key's id with another declaration, or as another kind", () => {
         expect(() => declareComponent$(changedAgain, { type: { type: "string" } })).toThrow(
-            `Cannot register component "idsTest/keys.ts#changed": its id is another key's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.`);
+            `Cannot register component "changed" (idsTest/keys.ts#changed): its id is another key's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.`);
         expect(() => declareResource$(crossedAgain, { type: { type: "number", default: 0 } })).toThrow(
-            `Cannot register resource "idsTest/keys.ts#crossed": its id is a component's.`);
+            `Cannot register resource "crossed" (idsTest/keys.ts#crossed): its id is a component's.`);
         expect([kindOf(changedAgain), kindOf(crossedAgain)]).toEqual([undefined, undefined]);
     });
     it("keeps keys of different ids apart, though their descriptions match", () => {
         declareComponent$(unnamed, { type: { type: "number" } });
-        system(identify({ name: "idsTest/unnamed", components: { write: [score] } }, "idsTest/systems.ts#unnamed"), (row: Row) => { row[score] = 1; });
-        expect(() => system(identify({ name: "idsTest/unnamed", components: { write: [unnamed] } }, "idsTest/systems.ts#unnamed"), (row: Row) => { row[unnamed] = 1; })).toThrow("reload the page");
+        system(identify({ components: { write: [score] } }, "idsTest/systems.ts#unnamed"), (row: Row) => { row[score] = 1; });
+        expect(() => system(identify({ components: { write: [unnamed] } }, "idsTest/systems.ts#unnamed"), (row: Row) => { row[unnamed] = 1; })).toThrow("reload the page");
     });
 });
 
 describe("declarations evaluated again", () => {
     it("accept a system whose keys match by id, as a new system", () => {
-        const first = system(identify({ name: "idsTest/system", components: { write: [score] }, resources: { read: [level] } }, "idsTest/systems.ts#system"), (row: Row, { resources }: { resources: Row }) => { row[score] = resources[level] ?? 0; });
-        const again = system(identify({ name: "idsTest/system", components: { write: [scoreAgain] }, resources: { read: [levelAgain] } }, "idsTest/systems.ts#system"), (row: Row, { resources }: { resources: Row }) => { row[scoreAgain] = resources[levelAgain] ?? 0; });
+        const first = system(identify({ components: { write: [score] }, resources: { read: [level] } }, "idsTest/systems.ts#system"), (row: Row, { resources }: { resources: Row }) => { row[score] = resources[level] ?? 0; });
+        const again = system(identify({ components: { write: [scoreAgain] }, resources: { read: [levelAgain] } }, "idsTest/systems.ts#system"), (row: Row, { resources }: { resources: Row }) => { row[scoreAgain] = resources[levelAgain] ?? 0; });
         expect(again).not.toBe(first);
         expect(sameItem(again, first)).toBe(true);
     });
     it("accept a rule whose keys match by id, which is already recorded", () => {
-        const created = rule(identify({ name: "idsTest/rule", components: { has: [score] }, derive: [shown] }, "idsTest/systems.ts#rule"));
+        const created = rule(identify({ components: { has: [score] }, derive: [shown] }, "idsTest/systems.ts#rule"));
         const rules = programRules().length;
-        expect(rule(identify({ name: "idsTest/rule", components: { has: [scoreAgain] }, derive: [shownAgain] }, "idsTest/systems.ts#rule"))).toBe(created);
+        expect(rule(identify({ components: { has: [scoreAgain] }, derive: [shownAgain] }, "idsTest/systems.ts#rule"))).toBe(created);
         expect(programRules()).toHaveLength(rules);
     });
     it("accept a finalizer whose keys match by id, keeping its place with the new body", () => {
-        const first = finalizer(identify({ name: "idsTest/finalizer", components: { read: [score] } }, "idsTest/systems.ts#finalizer"), () => {});
+        const first = finalizer(identify({ components: { read: [score] } }, "idsTest/systems.ts#finalizer"), () => {});
         const body = (): void => {};
-        expect(finalizer(identify({ name: "idsTest/finalizer", components: { read: [scoreAgain] } }, "idsTest/systems.ts#finalizer"), body)).toBe(first);
-        const found = programFinalizers().find(finalizer => finalizer.name === "idsTest/finalizer");
+        expect(finalizer(identify({ components: { read: [scoreAgain] } }, "idsTest/systems.ts#finalizer"), body)).toBe(first);
+        const found = programFinalizers().find(finalizer => finalizer.name === "finalizer");
         expect(found?.kind === "finalizer" ? found.body : null).toBe(body);
     });
     it("schedule symbols of one id as one key", () => {
-        const write = system({ name: "idsTest/write", components: { write: [score] } }, (row: Row) => { row[score] = 1; });
-        const read = system({ name: "idsTest/read", components: { read: [scoreAgain] } }, (row: Row) => { void row[scoreAgain]; });
-        expect(() => scheduleOf(requireDefinition(system({ name: "idsTest/unordered", systems: [write, read] })))).toThrow("both access");
+        const write = system({ name: "write", components: { write: [score] } }, (row: Row) => { row[score] = 1; });
+        const read = system({ name: "read", components: { read: [scoreAgain] } }, (row: Row) => { void row[scoreAgain]; });
+        expect(() => scheduleOf(requireDefinition(system({ name: "unordered", systems: [write, read] })))).toThrow("both access");
     });
 });

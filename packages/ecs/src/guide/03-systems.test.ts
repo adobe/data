@@ -27,8 +27,6 @@ const spawn = System.create(({ commands }) => {
 
 // Runs once per entity with every component in read and write, and none in not.
 const move = System.create({
-    // Optional: labels the system in reports.
-    name: "physics/move",
     components: { read: [velocity], write: [position], not: [frozen] },
     resources: { read: [delta] },
 }, (row, { resources }) => {
@@ -61,7 +59,7 @@ it("runs a system once per entity, or once", async () => {
     expect(counted).toBe(1);
 });
 
-const fail = System.create({ name: "fail" }, () => {
+const fail = System.create(() => {
     throw new Error("broken");
 });
 

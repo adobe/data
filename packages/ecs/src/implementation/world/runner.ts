@@ -24,7 +24,7 @@ import { combine, identityOf, reductionTargets, type ReductionTarget } from './r
 import { samePath, type TypedArray } from '../../interface/registry/layout.js';
 import { inputFor } from './input.js';
 import { createUp, type Run } from './up.js';
-import { labelOf, labelOfItem } from '../../interface/registry/index.js';
+import { labelOf } from '../../interface/registry/index.js';
 import type { RemoteSystem } from './remote-systems.js';
 import type { JoinedObserver } from './joined-observer.js';
 import { releaseDirectory, type Directory } from './directories.js';
@@ -169,7 +169,7 @@ export const releaseHoldings = (state: State, holdings: Holdings): void => {
 
 /** The resources a declaration writes or reduces into, by id. */
 export const resourceWritesOf = (state: State, declaration: Leaf["declaration"]): readonly number[] =>
-    [...new Set([...declaration.resources?.write ?? [], ...declaration.reduce === undefined ? [] : Object.getOwnPropertySymbols(declaration.reduce)].map(key => idOf(state, key)))];
+    [...new Set([...declaration.resources?.write ?? [], ...declaration.resources?.reduce ?? []].map(key => idOf(state, key)))];
 
 /** A number for each leaf, so the GPU records of every runner made for it are its own, whatever its name. */
 const leafNumbers = new WeakMap<Leaf, number>();
@@ -184,7 +184,7 @@ const numberOf = (leaf: Leaf): number => {
 export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const { declaration } = leaf;
     const leafNumber = numberOf(leaf);
-    const label = labelOfItem(leaf);
+    const label = leaf.name;
     // Method parameters are bivariant, so the runtime can see any leaf's body with erased parameter types.
     const system: { body(subject: unknown, context?: unknown, input?: unknown): void } = leaf;
     const { components: query, resources } = declaration;
@@ -224,7 +224,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const up = declaration.up === undefined ? null : createUp(state, declaration.up, filtered);
     /** Its rows in its `order` index's order, run by run. */
     const ordered = indexLookups.ordered === null ? null : createOrdered(state.memory);
-    const targets = reductionTargets(state, declaration);
+    const targets = reductionTargets(state, label, declaration);
     /** For each partial of the kernel, the target and leaf it folds into. */
     const partialLeaves = (kernel?.description.reductions ?? []).map(reduced => {
         const index = targets.findIndex(target => target.key === reduced.resource);

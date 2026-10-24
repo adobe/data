@@ -31,15 +31,15 @@ declare module "@adobe/ecs" {
 }
 
 const groups = [0, 1, 2];
-const byGroup = Index.create({ name: "indexBucketsTest/byGroup", key: [group], components: { has: [serial], not: [hidden] } });
+const byGroup = Index.create({ key: [group], components: { has: [serial], not: [hidden] } });
 
 /** What a reader saw: each bucket's length, or each bucket's rows as entity index and serial, in order. */
 let lengths: number[] = [];
 let rows: (readonly [number, number])[][] = [];
-const readLengths = System.create({ name: "indexBucketsTest/readLengths", lookup: { byGroup: { index: byGroup } } }, ({ lookup }) => {
+const readLengths = System.create({ lookup: { byGroup: { index: byGroup } } }, ({ lookup }) => {
     lengths = groups.map(value => lookup.byGroup(value).length);
 });
-const readRows = System.create({ name: "indexBucketsTest/readRows", lookup: { byGroup: { index: byGroup, read: [serial] } } }, ({ lookup }) => {
+const readRows = System.create({ lookup: { byGroup: { index: byGroup, read: [serial] } } }, ({ lookup }) => {
     rows = groups.map(value => {
         const list = lookup.byGroup(value);
         const found: (readonly [number, number])[] = [];
@@ -53,7 +53,7 @@ const readRows = System.create({ name: "indexBucketsTest/readRows", lookup: { by
 
 /** Each reader row's bucket's serials, each times its position plus one: a sum that tells the order. */
 const orderSum = System.create({
-    name: "indexBucketsTest/orderSum", kernel: "cpu",
+    kernel: "cpu",
     components: { read: [reads], write: [sum] },
     lookup: { byGroup: { index: byGroup, read: [serial] } },
 }, (row, { lookup }) => {
@@ -63,7 +63,6 @@ const orderSum = System.create({
     row[sum] = total;
 });
 const orderSumByHand = System.create({
-    name: "indexBucketsTest/orderSumByHand",
     components: { read: [reads], write: [sumByHand] },
     lookup: { byGroup: { index: byGroup, read: [serial] } },
 }, (row, { lookup }) => {
@@ -73,11 +72,11 @@ const orderSumByHand = System.create({
     row[sumByHand] = total;
 });
 let sums: { kernel: number[]; byHand: number[] } = { kernel: [], byHand: [] };
-const readSums = System.create({ name: "indexBucketsTest/readSums", components: { read: [reads, sum, sumByHand] } }, row => {
+const readSums = System.create({ components: { read: [reads, sum, sumByHand] } }, row => {
     sums.kernel[row[reads]] = row[sum];
     sums.byHand[row[reads]] = row[sumByHand];
 });
-const spawnReaders = System.create({ name: "indexBucketsTest/spawnReaders" }, ({ commands }) => {
+const spawnReaders = System.create({}, ({ commands }) => {
     for (const value of groups) commands.spawn([reads, sum, sumByHand])({ [reads]: value, [sum]: 0, [sumByHand]: 0 });
 });
 
@@ -89,7 +88,7 @@ type Change =
     | { readonly kind: "group"; readonly entity: Entity; readonly group: number };
 
 let spawned: Entity[] = [];
-const apply = System.create({ name: "indexBucketsTest/apply" }, ({ commands }, input: { readonly changes: readonly Change[] }) => {
+const apply = System.create({}, ({ commands }, input: { readonly changes: readonly Change[] }) => {
     spawned = [];
     for (const change of input.changes) {
         switch (change.kind) {

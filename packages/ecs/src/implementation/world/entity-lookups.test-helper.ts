@@ -65,7 +65,6 @@ const seenOf = (subject: Entity, lookup: {
 
 /** On the world's thread. */
 export const probe = System.create({
-    name: "entityLookupsTest/probe",
     components: { read: [target] },
     lookup: { found: { read: [value], changed: [value] }, tagged: { has: [tag], changed: [tag] }, empty: {}, has: { has: [tag] } },
 }, (row, { lookup }) => {
@@ -74,7 +73,6 @@ export const probe = System.create({
 
 /** The same, registered later, so its first run comes after every change. */
 export const lateProbe = System.create({
-    name: "entityLookupsTest/lateProbe",
     components: { read: [target] },
     lookup: { found: { read: [value], changed: [value] }, tagged: { has: [tag], changed: [tag] }, empty: {}, has: { has: [tag] } },
 }, (row, { lookup }) => {
@@ -83,7 +81,6 @@ export const lateProbe = System.create({
 
 /** On thread "entityLookupsTest", as it reads the probe's label there. */
 export const threadProbe = System.create({
-    name: "entityLookupsTest/threadProbe",
     components: { read: [target, label] },
     lookup: { found: { read: [value], changed: [value] }, tagged: { has: [tag], changed: [tag] }, empty: {}, has: { has: [tag] } },
 }, (row, { lookup }) => {
@@ -91,23 +88,22 @@ export const threadProbe = System.create({
 });
 
 /** Writes every `value` in its rows, stamping them. */
-export const bump = System.create({ name: "entityLookupsTest/bump", components: { write: [value] } }, row => {
+export const bump = System.create({ components: { write: [value] } }, row => {
     row[value] += 1;
 });
 
 /** The same as a kernel, whose stamps are muted unless something watches `value`. */
-export const bumpKernel = System.create({ name: "entityLookupsTest/bumpKernel", kernel: "cpu", components: { write: [value] } }, row => {
+export const bumpKernel = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
 /** Writes every `other`, which no lookup watches. */
-export const touch = System.create({ name: "entityLookupsTest/touch", components: { write: [other] } }, row => {
+export const touch = System.create({ components: { write: [other] } }, row => {
     row[other] += 1;
 });
 
 /** Changes the subject by command: `action` names how. */
 export const edit = System.create({
-    name: "entityLookupsTest/edit",
 }, ({ commands }, input: { readonly action: string }) => {
     const { subject } = scene;
     switch (input.action) {
@@ -128,7 +124,7 @@ export const edit = System.create({
 });
 
 /** Points every probe at the subject. */
-export const retarget = System.create({ name: "entityLookupsTest/retarget", components: { write: [target] } }, row => {
+export const retarget = System.create({ components: { write: [target] } }, row => {
     row[target] = scene.subject;
 });
 

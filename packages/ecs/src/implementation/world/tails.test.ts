@@ -48,7 +48,7 @@ describe("tails", () => {
     });
     it("block in their tier where a body reaches its commands, which isn't terminal", async () => {
         const { world, remote } = await joined();
-        expect((await runReported(world, blocking)).warnings.map(warning => warning.name)).toEqual(["tailsTest/blocking"]);
+        expect((await runReported(world, blocking)).warnings.map(warning => warning.name)).toEqual(["blocking"]);
         await remote.dispose();
         await world.dispose();
     });
@@ -59,12 +59,12 @@ describe("tails", () => {
         await world.run(seed, { count: 10 });
         await world.run(setFailAt, { at: 1 });
         const ran = await runReported(world, ticked);
-        expect(ran.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["system", "tailsTest/watch", "tailsTest failure at 1"]]);
+        expect(ran.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["system", "watch", "tailsTest failure at 1"]]);
         const failing = await world.run(setFailAt, { at: 6 });
         const reports = followReports(world);
         world.add(ticked);
         const failed = await reports.until(value => value.run > failing && value.failures.length > 0);
-        expect(failed.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["system", "tailsTest/watch", "tailsTest failure at 6"]]);
+        expect(failed.failures.map(failure => [failure.kind, failure.name, failure.message])).toEqual([["system", "watch", "tailsTest failure at 6"]]);
         await remote.dispose();
         await world.dispose();
         driver.close();
@@ -104,8 +104,8 @@ describe("tails", () => {
         const leaving = remote.dispose();
         const report = await runReported(world, ticked);
         await leaving;
-        expect(report.failures.map(failure => [failure.kind, failure.name])).toEqual([["thread", "tailsTest/lead"], ["thread", "tailsTest/watch"]]);
-        expect(report.skipped).toEqual(["tailsTest/lead", "tailsTest/watch"]);
+        expect(report.failures.map(failure => [failure.kind, failure.name])).toEqual([["thread", "lead"], ["thread", "watch"]]);
+        expect(report.skipped).toEqual(["lead", "watch"]);
         expect(await runReported(world, ticked)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         expect(seen.map(({ counter, rows, wrong }) => [counter, rows, wrong])).toEqual([[1, 10, 0], [3, 10, 0]]);
         // A registration waits for tails in flight, of which a thread that's gone has none.

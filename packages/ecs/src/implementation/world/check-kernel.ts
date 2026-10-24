@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { declarationOf, labelOf, labelOfItem } from '../../interface/registry/index.js';
+import { declarationOf, labelOf } from '../../interface/registry/index.js';
 import { layoutOf, samePath, type Layout, type Path } from '../../interface/registry/layout.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { KernelDescription } from './kernel.js';
@@ -32,8 +32,9 @@ const exactly = (layout: Layout | null, leaves: readonly Path[]): boolean => {
  * memory. Throws with the first mismatch.
  */
 export const checkKernel = (leaf: Leaf, description: KernelDescription): void => {
-    const { lookup, components: query, resources, up, reduce } = leaf.declaration;
-    const fail = (message: string): never => { throw new Error(`Kernel "${labelOfItem(leaf)}": ${message}`); };
+    const { lookup, components: query, resources, up } = leaf.declaration;
+    const fail = (message: string): never => { throw new Error(`Kernel "${leaf.name}": ${message}`); };
+    const reduces = new Set<Key>(resources?.reduce);
     const queried = new Set<Key>([...query?.read ?? [], ...query?.write ?? []]);
     const written = new Set<Key>(query?.write);
     // A condition in `is` is readable too, and the compiler lists it with the reads.
@@ -65,7 +66,8 @@ export const checkKernel = (leaf: Leaf, description: KernelDescription): void =>
         if (!hasLeaf(layout, column.path)) fail(`"${labelOf(column.component)}" has no scalar at [${column.path.join(", ")}]; destructure tuples and structs or index their fields.`);
     }
     for (const reduced of description.reductions) {
-        if (Reflect.get(reduce ?? {}, reduced.resource) !== reduced.operator) fail(`reduces "${labelOf(reduced.resource)}" with "${reduced.operator}", which its reduce doesn't declare.`);
+        if (!reduces.has(reduced.resource)) fail(`reduces "${labelOf(reduced.resource)}", which isn't in its resources' reduce.`);
+        if (declarationOf(reduced.resource)?.reduce !== reduced.operator) fail(`reduces "${labelOf(reduced.resource)}" with "${reduced.operator}", but it's declared reduce: "${labelOf(declarationOf(reduced.resource)?.reduce)}"; rebuild.`);
         if (!hasLeaf(layoutOfKey(reduced.resource), reduced.path)) fail(`contributes to "${labelOf(reduced.resource)}" at [${reduced.path.join(", ")}], which isn't a scalar of its value; destructure tuples and structs or build them.`);
     }
     for (const list of description.spawns) {
@@ -80,7 +82,7 @@ export const checkKernel = (leaf: Leaf, description: KernelDescription): void =>
         if (layout !== null && layout.kind !== "linear") fail(`gives "${labelOf(key)}" a tuple or struct, which only a component stored in linear memory takes.`);
     }
     for (const shape of description.reducedShapes) {
-        if (Reflect.get(reduce ?? {}, shape.component) === undefined || !exactly(layoutOfKey(shape.component), shape.leaves)) {
+        if (!reduces.has(shape.component) || !exactly(layoutOfKey(shape.component), shape.leaves)) {
             fail(`contributes a value to "${labelOf(shape.component)}" that doesn't match its schema.`);
         }
     }

@@ -23,6 +23,11 @@ export type Lists = {
      * external to it, is taken as a key, and registration rejects a list there. Anything else fails with the reason.
      */
     readonly component: (node: Node) => Named;
+    /**
+     * The operator the resource the kernel's module names `name` reduces with, its declaration's `reduce` trait, read
+     * through the build from the module declaring it; undefined where the build can't read one.
+     */
+    readonly reduction: (name: string) => string | undefined;
 };
 
 /** What a command's component argument names, or why the compiler can't tell. */
@@ -199,5 +204,12 @@ export const createLists = (kernel: Module, link: Link | null, nodes: readonly N
         // its definition where it has one.
         return { kind: "key", name: node.type === "Identifier" || found.key === null ? reference : nameOf(found.key, reference) };
     };
-    return { names, component };
+    const reduction = (name: string): string | undefined => {
+        const binding = kernel.bindings.get(name);
+        const identity = binding === undefined ? null : definition(kernel, name, binding, link);
+        if (identity === null) return undefined;
+        const [file = "", defined = ""] = identity.split("\0");
+        return link?.reductionOf?.(file, defined);
+    };
+    return { names, component, reduction };
 };

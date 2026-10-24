@@ -18,7 +18,7 @@ import { logFailures } from "./log-failures.js";
  * asserted: `pnpm test:perf src/samples/todo`.
  */
 
-const nothing = System.create({ name: "profile/nothing" }, () => {});
+const nothing = System.create({}, () => {});
 const median = (values: readonly number[]): number => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? NaN;
 
 /** The median of `repeats` runs awaited one at a time, and the mean of as many issued back to back. */

@@ -30,9 +30,9 @@ declare module "@adobe/ecs" {
     }
 }
 
-const shown = Index.create({ name: "indexKeylessTest/shown", key: [], components: { has: [weight], not: [hidden] } });
-const everything = Index.create({ name: "indexKeylessTest/everything", key: [] });
-const inOrder = Index.create({ name: "indexKeylessTest/inOrder", key: [], sorted: true, components: { has: [weight] } });
+const shown = Index.create({ key: [], components: { has: [weight], not: [hidden] } });
+const everything = Index.create({ key: [] });
+const inOrder = Index.create({ key: [], sorted: true, components: { has: [weight] } });
 
 /** What a lookup gave: its entities and weights, in its order, its length and whether it changed. */
 type Seen = { readonly entities: readonly Entity[]; readonly weights: readonly number[]; readonly length: number; readonly changed: boolean };
@@ -40,7 +40,6 @@ let seen: Seen = { entities: [], weights: [], length: 0, changed: false };
 let all: readonly Entity[] = [];
 
 const look = System.create({
-    name: "indexKeylessTest/look",
     lookup: { shown: { index: shown, read: [weight] }, all: { index: everything } },
 }, ({ lookup }) => {
     const rows = lookup.shown();
@@ -57,7 +56,7 @@ const look = System.create({
 
 /** Whether the lookup through `shown` changed, with `color` watched. */
 let watchedChanged = false;
-const watchColor = System.create({ name: "indexKeylessTest/watchColor", lookup: { shown: { index: shown, changed: [weight] } } }, ({ lookup }) => {
+const watchColor = System.create({ lookup: { shown: { index: shown, changed: [weight] } } }, ({ lookup }) => {
     watchedChanged = lookup.shown().changed;
 });
 
@@ -69,7 +68,7 @@ const expected = async (world: CreatedWorld): Promise<{ readonly entities: reado
     all: [...await select(world, {})].sort(byIndex),
 });
 
-const spawn = System.create({ name: "indexKeylessTest/spawn" }, ({ commands }, input: { readonly weights: readonly number[] }) => {
+const spawn = System.create({}, ({ commands }, input: { readonly weights: readonly number[] }) => {
     for (const value of input.weights) commands.spawn([weight, color])({ [weight]: value, [color]: 0 });
 });
 
@@ -203,7 +202,7 @@ describe("an incrementally refreshed index without a key", () => {
 
 /** Each row's tally of the rows of `shown`: how many, and the sum of a window of their weights. */
 const tally = System.create({
-    name: "indexKeylessTest/tally", kernel: "cpu",
+    kernel: "cpu",
     components: { read: [color], write: [total, count] },
     lookup: { shown: { index: shown, read: [weight] } },
 }, (row, { lookup }) => {
@@ -213,7 +212,7 @@ const tally = System.create({
     row[total] = sum;
     row[count] = rows.length;
 });
-const tallyByHand = System.create({ name: "indexKeylessTest/tallyByHand", components: { read: [color], write: [total, count] }, lookup: { shown: { index: shown, read: [weight] } } }, (row, { lookup }) => {
+const tallyByHand = System.create({ components: { read: [color], write: [total, count] }, lookup: { shown: { index: shown, read: [weight] } } }, (row, { lookup }) => {
     const rows = lookup.shown();
     let sum = 0;
     for (let i = row[color] % 7; i < rows.length; i += 7) sum += rows.at(i)[weight];
@@ -222,7 +221,7 @@ const tallyByHand = System.create({ name: "indexKeylessTest/tallyByHand", compon
 });
 /** Counts runs whose list changed, `weight` watched. */
 const visit = System.create({
-    name: "indexKeylessTest/visit", kernel: "cpu",
+    kernel: "cpu",
     components: { write: [visited] },
     lookup: { shown: { index: shown, changed: [weight] } },
 }, (row, { lookup }) => {

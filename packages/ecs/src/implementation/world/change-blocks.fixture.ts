@@ -23,23 +23,23 @@ declare module "@adobe/ecs" {
 
 const rows = 4500;
 
-const seed = System.create({ name: "changeBlocksWorkersTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < rows; i++) commands.spawn([value, at, seen])({ [value]: 0, [at]: i, [seen]: 0 });
 });
 
 /** Writes the rows whose `at` is one of three, stamping row by row. */
-const writeSome = System.create({ name: "changeBlocksWorkersTest/writeSome", kernel: "cpu", components: { read: [at], write: [value] } }, (row, _context, input: { readonly a: I32; readonly b: I32; readonly c: I32 }) => {
+const writeSome = System.create({ kernel: "cpu", components: { read: [at], write: [value] } }, (row, _context, input: { readonly a: I32; readonly b: I32; readonly c: I32 }) => {
     const here = row[at];
     if (here === input.a || here === input.b || here === input.c) row[value] += 1;
 });
 
 /** Counts each run of the rows whose value changed. */
-const watch = System.create({ name: "changeBlocksWorkersTest/watch", kernel: "cpu", components: { write: [seen], changed: [value] } }, row => {
+const watch = System.create({ kernel: "cpu", components: { write: [seen], changed: [value] } }, row => {
     row[seen] += 1;
 });
 
 let found: number[] = [];
-const onMain = System.create({ name: "changeBlocksWorkersTest/onMain", components: { read: [at], changed: [value] } }, row => { found.push(row[at]); });
+const onMain = System.create({ components: { read: [at], changed: [value] } }, row => { found.push(row[at]); });
 
 /**
  * The rows a kernel on workers and a system on the world's thread find after a kernel on workers wrote three rows far

@@ -21,7 +21,7 @@ export type Wgsl = Gpu.Wgsl;
 export type Layout = Gpu.Layout;
 check<Equal<typeof Gpu.wgsl, (system: System<unknown>) => string>>();
 declare const device: GPUDevice;
-const draw = System.render({ name: "gpuTypeTest/draw", shader: { accessors: { tint } } }, () => {});
+const draw = System.render({ shader: { accessors: { tint } } }, () => {});
 const code: string = wgsl(draw);
 check<Equal<typeof Gpu.layout, (device: GPUDevice) => GPUBindGroupLayout>>();
 export const used = [code, layout(device)];

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { IndexDefinition } from '../../interface/registry/index.js';
-import { indexDefinitionOf, indexOfLookup, labelOfItem, watchedBy, watchesEntries } from '../../interface/registry/index.js';
+import { idOrNull, indexDefinitionOf, indexOfLookup, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import type { Failure } from '../../interface/report/failure.js';
 import type { SystemLookup } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
@@ -112,7 +112,7 @@ export const acquireIndex = (state: State, definition: IndexDefinition): WorldIn
     const sorted = keptSorted(definition.declaration);
     const index: WorldIndex = {
         definition,
-        label: labelOfItem(definition),
+        label: definition.name,
         users: 1,
         keys,
         has: (components?.has ?? []).map(component => idOf(state, component)),
@@ -275,6 +275,7 @@ const reportConflict = (state: State, index: WorldIndex, kept: number, other: nu
     failures.push({
         kind: "index",
         name: index.label,
+        id: idOrNull(index.definition),
         message: `Index "${index.label}" is unique, and entities ${kept} and ${other} both have key ${keyText(state, index, archetype, row)}; lookups give ${kept}, the one with the lower entity index.`,
         stack: null,
     });

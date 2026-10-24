@@ -2,7 +2,7 @@
 /// <reference types="node" />
 import type { Expression, Node, Program } from 'estree';
 import { posix } from 'node:path';
-import { idsName } from '../../interface/registry/ids.js';
+import { idsName, labelsName } from '../../interface/registry/ids.js';
 import { children, isFunction } from './estree.js';
 import { moduleScope } from './module-scope.js';
 import { isAttachKernelModule } from './paths.js';
@@ -145,14 +145,56 @@ export const identify = async (code: string, id: string | null, parse: Parse, re
             consider(statement.declaration, "default");
         }
     }
-    if (found.length === 0 || declaresInModule(program, "Symbol") || declaresInModule(program, "globalThis")) return null;
-    if (id === null) return { failure: "this module's keys and systems need ids, which name its package, but no package.json above it gives a name: give its package one" };
-    const identifier = uniqueName(code, "identify$");
+    const labeled = namespaces.size > 0 ? labelsOf(program, namespaces, attach, new Set(found.map(({ value }) => value))) : [];
+    if ((found.length === 0 && labeled.length === 0) || declaresInModule(program, "Symbol") || declaresInModule(program, "globalThis")) return null;
     const insertions: Insertion[] = [];
-    for (const { value, binding } of found) {
-        insertions.push({ at: value.start, text: `${identifier}(` }, { at: value.end, text: `, ${JSON.stringify(`${id}#${binding}`)})` });
+    if (found.length > 0) {
+        if (id === null) return { failure: "this module's keys and systems need ids, which name its package, but no package.json above it gives a name: give its package one" };
+        const identifier = uniqueName(code, "identify$");
+        for (const { value, binding } of found) {
+            insertions.push({ at: value.start, text: `${identifier}(` }, { at: value.end, text: `, ${JSON.stringify(`${id}#${binding}`)})` });
+        }
+        const ids = JSON.stringify(idsName);
+        insertions.push({ at: code.length, text: `\nfunction ${identifier}(value, id) { const ids = Symbol.for(${ids}); (globalThis[ids] || (globalThis[ids] = new Map())).set(value, id); return value; }\n` });
     }
-    const ids = JSON.stringify(idsName);
-    insertions.push({ at: code.length, text: `\nfunction ${identifier}(value, id) { const ids = Symbol.for(${ids}); (globalThis[ids] || (globalThis[ids] = new Map())).set(value, id); return value; }\n` });
-    return insertInto(code, insertions, id);
+    if (labeled.length > 0) {
+        const identifier = uniqueName(code, "label$");
+        for (const { value, label } of labeled) insertions.push({ at: value.start, text: `${identifier}(` }, { at: value.end, text: `, ${JSON.stringify(label)})` });
+        const labels = JSON.stringify(labelsName);
+        // A label already given, as an internal factory gives its own, stands.
+        insertions.push({ at: code.length, text: `\nfunction ${identifier}(value, label) { const labels = Symbol.for(${labels}); const map = globalThis[labels] || (globalThis[labels] = new Map()); if (!map.has(value)) map.set(value, label); return value; }\n` });
+    }
+    return insertInto(code, insertions, id ?? "");
+};
+
+/** The name a node gives what's declared in it: a variable's, a function's, a property's or a method's. */
+const nameIn = (node: Node): string | null => {
+    switch (node.type) {
+        case "VariableDeclarator": return node.id.type === "Identifier" ? node.id.name : null;
+        case "FunctionDeclaration": case "FunctionExpression": return node.id?.name ?? null;
+        case "Property": case "MethodDefinition": case "PropertyDefinition": return !node.computed && node.key.type === "Identifier" ? node.key.name : null;
+        case "AssignmentExpression": return node.left.type === "Identifier" ? node.left.name : null;
+        default: return null;
+    }
+};
+
+/**
+ * The declarations of constructor calls that `identified` leaves out, each with a label: the name of the nearest
+ * variable, function, property or method it's made in, as `mover` for one made in `const mover = (speed) => ...`.
+ */
+const labelsOf = (program: Program, namespaces: ReadonlyMap<string, Namespace>, attach: ReadonlySet<string>, identified: ReadonlySet<Expression>): readonly { readonly value: Expression; readonly label: string }[] => {
+    const labeled: { readonly value: Expression; readonly label: string }[] = [];
+    const visit = (node: Node, names: readonly string[]): void => {
+        const declaration = declarationOf(node, namespaces, attach);
+        const label = names.at(-1);
+        if (declaration !== undefined && !identified.has(declaration) && label !== undefined) {
+            labeled.push({ value: declaration, label });
+            return;
+        }
+        const name = nameIn(node);
+        const inner = name === null ? names : [...names, name];
+        for (const child of children(node)) visit(child, inner);
+    };
+    visit(program, []);
+    return labeled;
 };

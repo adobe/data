@@ -149,6 +149,7 @@ export const transformKernels = async (
             return linker.module(dependency);
         },
         resolve: linker.resolve,
+        reductionOf: linker.reductionOf,
     };
     const attach = uniqueName(code, "attachKernel$");
     const prepare = uniqueName(code, "prepareSpawn$");
@@ -185,7 +186,7 @@ export const transformKernels = async (
             }
             const positions = alone ? { row: -1, context: 0 } : declaration?.type === "ObjectExpression" ? positionsOf(created, declaration) : null;
             if (declaration?.type === "ObjectExpression" && positions !== null && body !== undefined && body.type !== "SpreadElement") {
-                requireExact(declaration, usedBy(declaration, body, module.bindings, positions), module.bindings, mainThreadLists);
+                requireExact(declaration, usedBy(declaration, body, module.bindings, positions), mainThreadLists);
             }
             // A system whose body never reaches its commands is terminal where its declaration allows (`world/tails.ts`).
             if (created === "system" && positions !== null && body !== undefined && body.type !== "SpreadElement" && neverReachesCommands(body, positions.context)) {

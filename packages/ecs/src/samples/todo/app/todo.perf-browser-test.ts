@@ -84,11 +84,11 @@ const measure = async (operation: string, n: number, repeats: number, run: (repe
     results.push({ operation, n, ms: median(times), mutations, tick: median(ticks) });
 };
 
-const nothing = System.create({ name: "perf/nothing" }, () => {});
+const nothing = System.create({}, () => {});
 
 /** The failures of every report the apps measured spawned, which none should. */
 const failed: Report.Failure[] = [];
-const collectFailures = System.create({ name: "perf/collectFailures", observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
+const collectFailures = System.create({ observer: true, components: { read: [Report.errors], changed: [Report.errors] } }, row => {
     failed.push(...row[Report.errors].failures);
 });
 
@@ -104,7 +104,7 @@ const forceLayout = (): void => {
 };
 
 /** Marks every other todo done, for filters to hide half the rows. */
-const halfDone = System.create({ name: "perf/halfDone", components: { write: [done] } }, item => {
+const halfDone = System.create({ components: { write: [done] } }, item => {
     item[done] = item.entity % 2 === 0;
 });
 
@@ -167,7 +167,6 @@ const benchmarkApp = async (n: number): Promise<void> => {
 
 /** The filter not kept: an attribute of the list, which a style sheet selects rows by. */
 const markList = System.create({
-    name: "perf/markList",
     observer: true,
     resources: { read: [filter], changed: [filter], is: [list] },
 }, ({ resources }) => {

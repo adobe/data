@@ -25,7 +25,6 @@ const taggedChild = Archetype.create([local, world, parent, leaf]);
 
 /** Each row's world value is its parent's plus its own. */
 export const propagate = System.create({
-    name: "hierarchy/propagate",
     kernel: "cpu",
     components: { read: [local], write: [world] },
     up: { through: parent, read: [world] },
@@ -35,7 +34,6 @@ export const propagate = System.create({
 
 /** The same, only for rows whose own or parent's values changed since it last ran. */
 export const propagateChanged = System.create({
-    name: "hierarchy/propagateChanged",
     kernel: "cpu",
     components: { read: [local], write: [world], changed: [local] },
     up: { through: parent, read: [world] },
@@ -45,7 +43,6 @@ export const propagateChanged = System.create({
 
 /** `roots` chains of `depth` rows each. */
 export const forest = System.create({
-    name: "hierarchy/forest",
 }, ({ commands }, input: { readonly roots: number; readonly depth: number }) => {
     for (let r = 0; r < input.roots; r++) {
         let previous = commands.spawn(root)({ [local]: 1, [world]: 0 });
@@ -56,12 +53,12 @@ export const forest = System.create({
 const target = { type: "object", properties: { entity: Entity.schema } } as const;
 
 /** Changes one row's own value. */
-export const nudge = System.create({ name: "hierarchy/nudge", components: { write: [local] } }, (row, _context, input: { readonly entity: Entity }) => {
+export const nudge = System.create({ components: { write: [local] } }, (row, _context, input: { readonly entity: Entity }) => {
     if (row.entity === input.entity) row[local] += 1;
 });
 
 /** Adds one leaf under a row. */
-export const sprout = System.create({ name: "hierarchy/sprout" }, ({ commands }, input: { readonly entity: Entity }) => {
+export const sprout = System.create({}, ({ commands }, input: { readonly entity: Entity }) => {
     commands.spawn(child)({ [local]: 1, [world]: 0, [parent]: input.entity });
 });
 
@@ -71,7 +68,6 @@ const leaves: Entity[] = [];
 
 /** Despawns the leaves it spawned last time and spawns `count` new ones, one under each of `under`'s first rows; `tagged` puts them in an archetype of their own. */
 export const turnover = System.create({
-    name: "hierarchy/turnover",
 }, ({ commands }, input: { readonly count: number; readonly tagged: boolean }) => {
     for (const entity of leaves.splice(0)) commands.despawn(entity);
     for (let i = 0; i < input.count; i++) {
@@ -83,7 +79,6 @@ export const turnover = System.create({
 
 /** Moves a row, and the subtree under it, to another parent. */
 export const reparent = System.create({
-    name: "hierarchy/reparent",
 }, ({ commands }, input: { readonly entity: Entity; readonly to: Entity }) => {
     commands.add(input.entity, parent, input.to);
 });
@@ -104,7 +99,6 @@ const gpuChild = Archetype.create([offset, placed, parent]);
 
 /** `propagate` in 4-byte values, on the GPU. */
 export const place = System.create({
-    name: "hierarchy/place",
     kernel: "gpu",
     components: { read: [offset], write: [placed] },
     up: { through: parent, read: [placed] },
@@ -114,7 +108,6 @@ export const place = System.create({
 
 /** `forest` in 4-byte values. */
 export const gpuForest = System.create({
-    name: "hierarchy/gpuForest",
 }, ({ commands }, input: { readonly roots: number; readonly depth: number }) => {
     for (let r = 0; r < input.roots; r++) {
         let previous = commands.spawn(gpuRoot)({ [offset]: 1, [placed]: 0 });

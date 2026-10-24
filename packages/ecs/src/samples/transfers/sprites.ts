@@ -28,7 +28,7 @@ declare module '@adobe/ecs' {
 /** The canvas main moved to the world's thread. */
 
 /** From main: the canvas the world draws into. */
-export const attachSurface = System.create({ name: "transferSprites/attachSurface", resources: { write: [surface] } }, ({ resources }, input: { readonly canvas: OffscreenCanvas }) => {
+export const attachSurface = System.create({ resources: { write: [surface] } }, ({ resources }, input: { readonly canvas: OffscreenCanvas }) => {
     resources[surface] = input.canvas;
 });
 
@@ -40,7 +40,7 @@ const random = (seed: number): number => {
 
 /** From the loader: a sprite with the texture it decoded, somewhere on the canvas, moving. */
 export const addSprite = System.create({
-    name: "transferSprites/addSprite", resources: { read: [surface], write: [stats] },
+    resources: { read: [surface], write: [stats] },
 }, ({ resources, commands }, input: { readonly bitmap: ImageBitmap; readonly seed: number }) => {
     const canvas = resources[surface];
     if (canvas === null) return;
@@ -55,7 +55,7 @@ export const addSprite = System.create({
 });
 
 /** Clears the canvas, once a frame. */
-const clear = System.create({ name: "transferSprites/clear", resources: { read: [surface], write: [stats] } }, ({ resources }) => {
+const clear = System.create({ resources: { read: [surface], write: [stats] } }, ({ resources }) => {
     const canvas = resources[surface];
     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     resources[stats] = { sprites: resources[stats].sprites, frames: resources[stats].frames + 1 };
@@ -63,7 +63,7 @@ const clear = System.create({ name: "transferSprites/clear", resources: { read: 
 
 /** Moves each sprite, bouncing off the canvas's edges. */
 const move = System.create({
-    name: "transferSprites/move", components: { read: [texture], write: [position, velocity] }, resources: { read: [surface, clock] },
+    components: { read: [texture], write: [position, velocity] }, resources: { read: [surface, clock] },
 }, (row, { resources }) => {
     const canvas = resources[surface];
     if (canvas === null) return;
@@ -79,10 +79,10 @@ const move = System.create({
 });
 
 /** Draws each sprite's texture where it is. */
-const draw = System.create({ name: "transferSprites/draw", components: { read: [texture, position] }, resources: { read: [surface] }, after: [clear, move] }, (row, { resources }) => {
+const draw = System.create({ components: { read: [texture, position] }, resources: { read: [surface] }, after: [clear, move] }, (row, { resources }) => {
     const [x, y] = row[position];
     resources[surface]?.getContext("2d")?.drawImage(row[texture], x, y);
 });
 
 /** Every frame on the world's thread. */
-export const frame = System.create({ name: "transferSprites/frame", systems: [clear, move, draw] });
+export const frame = System.create({ systems: [clear, move, draw] });

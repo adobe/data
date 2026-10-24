@@ -31,7 +31,8 @@ check<Equal<typeof Report.Archetype, readonly [typeof Report.run]>>();
 declare const failure: Report.Failure;
 check<Equal<typeof failure.kind, "system" | "finalizer" | "gpu" | "thread" | "index">>();
 check<Equal<typeof failure.stack, string | null>>();
-check<Equal<Report.Warning, { readonly kind: "blocking"; readonly name: string; readonly message: string }>>();
+check<Equal<Report.Warning, { readonly kind: "blocking"; readonly name: string; readonly id: string | null; readonly message: string }>>();
+check<Equal<typeof failure.id, string | null>>();
 
 // A report's values: errors only when something went wrong.
 check<Equal<Report, { readonly [Report.run]: Run; readonly [Report.errors]?: Errors }>>();

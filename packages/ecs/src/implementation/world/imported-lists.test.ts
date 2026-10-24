@@ -14,19 +14,19 @@ declare module "@adobe/ecs" {
     }
 }
 
-const seed = System.create({ name: "importedListsTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     commands.spawn([heat])({ [heat]: 2 });
     commands.spawn([heat])({ [heat]: 5 });
 });
 
 /** Spawns and adds through lists another module declares, naming one of their keys only through the list. */
-const ignite = System.create({ name: "importedListsTest/ignite", kernel: "cpu", components: { read: [heat] } }, (row, { commands }) => {
+const ignite = System.create({ kernel: "cpu", components: { read: [heat] } }, (row, { commands }) => {
     commands.spawn(Spark)({ [ember]: row[heat] * 2 });
     commands.add(row.entity, Lists.Marks, { [ember]: row[heat] });
 });
 
 /** Declares an imported list, and removes through one. */
-const cool = System.create({ name: "importedListsTest/cool", kernel: "cpu", components: { read: [ember], has: Lists.Spark } }, (row, { commands }) => {
+const cool = System.create({ kernel: "cpu", components: { read: [ember], has: Lists.Spark } }, (row, { commands }) => {
     if (row[ember] > 4) commands.remove(row.entity, Spark);
 });
 

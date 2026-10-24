@@ -47,7 +47,7 @@ const moving = Archetype.create([position, velocity, index]);
 const following = Archetype.create([position, velocity, index, target]);
 
 /** `count` entities, each targeting the one spawned before it. */
-export const seed = System.create({ name: "suite/seed" }, ({ commands }, input: { readonly count: number }) => {
+export const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     let previous = commands.spawn(moving)({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
     for (let i = 1; i < input.count; i++) {
         previous = commands.spawn(following)({ [position]: [i, i * 0.5, -i], [velocity]: [1, 0, 0], [index]: i, [target]: previous });
@@ -55,14 +55,14 @@ export const seed = System.create({ name: "suite/seed" }, ({ commands }, input: 
 });
 
 /** Despawns a tenth of the entities and spawns as many replacements. */
-export const churn = System.create({ name: "suite/churn", components: { read: [index, position] } }, (row, { commands }, input: { readonly group: number }) => {
+export const churn = System.create({ components: { read: [index, position] } }, (row, { commands }, input: { readonly group: number }) => {
     if (row[index] % 10 !== input.group) return;
     commands.despawn(row.entity);
     commands.spawn(moving)({ [position]: row[position], [velocity]: [0, 0, 0], [index]: row[index] });
 });
 
 /** Adds the tag to one tenth and removes it from another: a fifth of the entities move archetype. */
-export const retag = System.create({ name: "suite/retag", components: { read: [index] } }, (row, { commands }, input: { readonly group: number }) => {
+export const retag = System.create({ components: { read: [index] } }, (row, { commands }, input: { readonly group: number }) => {
     const group = row[index] % 10;
     if (group === input.group) commands.add(row.entity, tag);
     else if (group === (input.group + 5) % 10) commands.remove(row.entity, tag);
@@ -70,7 +70,6 @@ export const retag = System.create({ name: "suite/retag", components: { read: [i
 
 /** Writes 1% of positions. */
 export const poke = System.create({
-    name: "suite/poke",
     kernel: "cpu",
     components: { read: [index], write: [position] },
 }, (row, _context, input: { readonly group: I32 }) => {
@@ -82,7 +81,6 @@ export const poke = System.create({
 
 /** Writes 1% of positions, clustered in one contiguous run of rows. */
 export const pokeCluster = System.create({
-    name: "suite/pokeCluster",
     kernel: "cpu",
     components: { read: [index], write: [position] },
 }, (row, _context, input: { readonly group: I32 }) => {
@@ -95,7 +93,6 @@ export const pokeCluster = System.create({
 
 /** Sees only what changed since it last ran. */
 export const observe = System.create({
-    name: "suite/observe",
     kernel: "cpu",
     components: { read: [position], write: [velocity], changed: [position] },
 }, row => {
@@ -105,7 +102,6 @@ export const observe = System.create({
 
 /** Steers toward the target: one lookup per row. */
 export const follow = System.create({
-    name: "suite/follow",
     kernel: "cpu",
     components: { read: [position, target], write: [velocity] },
     lookup: { targets: { read: [position] } },
@@ -120,7 +116,6 @@ export const follow = System.create({
 
 /** Issues commands from a kernel: a tenth of the rows record a hit. */
 export const emit = System.create({
-    name: "suite/emit",
     kernel: "cpu",
     components: { read: [index, position] },
 }, (row, { commands }) => {
@@ -131,37 +126,36 @@ export const emit = System.create({
 });
 
 /** Six dependent kernels: one tier each, so dispatch cost shows. */
-export const chain1 = System.create({ name: "suite/chain1", kernel: "cpu", components: { write: [velocity] } }, row => {
+export const chain1 = System.create({ kernel: "cpu", components: { write: [velocity] } }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain2 = System.create({ name: "suite/chain2", kernel: "cpu", components: { write: [velocity] }, after: [chain1] }, row => {
+export const chain2 = System.create({ kernel: "cpu", components: { write: [velocity] }, after: [chain1] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain3 = System.create({ name: "suite/chain3", kernel: "cpu", components: { write: [velocity] }, after: [chain2] }, row => {
+export const chain3 = System.create({ kernel: "cpu", components: { write: [velocity] }, after: [chain2] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain4 = System.create({ name: "suite/chain4", kernel: "cpu", components: { write: [velocity] }, after: [chain3] }, row => {
+export const chain4 = System.create({ kernel: "cpu", components: { write: [velocity] }, after: [chain3] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain5 = System.create({ name: "suite/chain5", kernel: "cpu", components: { write: [velocity] }, after: [chain4] }, row => {
+export const chain5 = System.create({ kernel: "cpu", components: { write: [velocity] }, after: [chain4] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain6 = System.create({ name: "suite/chain6", kernel: "cpu", components: { write: [velocity] }, after: [chain5] }, row => {
+export const chain6 = System.create({ kernel: "cpu", components: { write: [velocity] }, after: [chain5] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain = System.create({ name: "suite/chain", systems: [chain1, chain2, chain3, chain4, chain5, chain6] });
+export const chain = System.create({ systems: [chain1, chain2, chain3, chain4, chain5, chain6] });
 
 /** Fifty small main-thread systems in one tier, each reading every row. */
 let total = 0;
 export const smalls = System.create({
-    name: "suite/smalls",
-    systems: Array.from({ length: 50 }, (_, i) => System.create({ name: `suite/small${i}`, components: { read: [position] } }, row => {
+    systems: Array.from({ length: 50 }, (_, i) => System.create({ components: { read: [position] } }, row => {
         total += row[position][0];
     })),
 });
@@ -193,30 +187,29 @@ export const seeded = async (create: () => World, count: number): Promise<World>
 };
 
 /** Folds every row's index into a sum and a maximum. */
-export const reduce = System.create({ name: "suite/reduce", kernel: "cpu", components: { read: [index] }, reduce: { [indexSum]: "+", [highest]: "max" } }, (row, { reduce }) => {
+export const reduce = System.create({ kernel: "cpu", components: { read: [index] }, resources: { reduce: [indexSum, highest] } }, (row, { reduce }) => {
     reduce[indexSum](row[index]);
     reduce[highest](row[index]);
 });
 
 /** A system no entity matches: what a run costs with nothing to do. */
-export const idle = System.create({ name: "suite/idle", components: { has: [unused] } }, () => {});
+export const idle = System.create({ components: { has: [unused] } }, () => {});
 /** A system that throws, so each run of it has a report to spawn. */
-export const failing = System.create({ name: "suite/failing" }, () => { throw new Error("suite: failing"); });
+export const failing = System.create({}, () => { throw new Error("suite: failing"); });
 /** An observer system no entity matches: a run of it alone has no tiers. */
-export const idleObserver = System.create({ name: "suite/idleObserver", observer: true, components: { has: [unused] } }, () => {});
+export const idleObserver = System.create({ observer: true, components: { has: [unused] } }, () => {});
 
 /** Fifty systems no entity matches, in one tier. */
 export const idles = System.create({
-    name: "suite/idles",
-    systems: Array.from({ length: 50 }, (_, i) => System.create({ name: `suite/idle${i}`, components: { has: [unused] } }, () => {})),
+    systems: Array.from({ length: 50 }, (_, i) => System.create({ components: { has: [unused] } }, () => {})),
 });
 
 /** Spawns one entity: a run with a sync point that applies one command. */
-export const spawnOne = System.create({ name: "suite/spawnOne" }, ({ commands }) => {
+export const spawnOne = System.create({}, ({ commands }) => {
     commands.spawn(moving)({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
 });
 
 /** One main-thread system reading every row. */
-export const small = System.create({ name: "suite/small", components: { read: [position] } }, row => {
+export const small = System.create({ components: { read: [position] } }, row => {
     total += row[position][0];
 });

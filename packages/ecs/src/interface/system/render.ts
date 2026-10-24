@@ -12,7 +12,6 @@ import type { Body } from './body.js';
 import { accessorsOf } from '../gpu/accessors.js';
 import { checkLeaf } from './check.js';
 import type { Leaf } from './leaf.js';
-import type { Name } from './name.js';
 import type { StructComponent } from './struct.js';
 import type { System } from './system.js';
 import type { OneThread, ThreadedBy, ThreadsOf } from './threads.js';
@@ -43,7 +42,6 @@ export type RenderContext = {
 };
 
 type RenderDeclaration = {
-    readonly name?: Name;
     /** It reads the components its accessors name. */
     readonly components?: { readonly has?: readonly Component.Key[]; readonly not?: readonly Component.Key[] };
     /** It runs only while `gpuDevice` is set, as if `is` listed it. */
@@ -77,7 +75,7 @@ export const render = <const D extends RenderDeclaration>(
     body: Body<Rendered<D>>,
 ): System => {
     const id = takeIdOfDeclaration(declaration);
-    const name = nameOf(declaration.name, id, "system");
+    const name = nameOf(declaration, id, "system");
     const system: Leaf & System = {
         kind: "render",
         name,

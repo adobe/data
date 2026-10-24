@@ -25,7 +25,6 @@ declare module "@adobe/ecs" {
 
 
 const propagateFull = System.create({
-    name: "upTreeTest/propagateFull",
     kernel: "cpu",
     components: { read: [local], write: [full], not: [hidden] },
     up: { through: parent, read: [full] },
@@ -33,7 +32,6 @@ const propagateFull = System.create({
     row[full] = (up === null ? 0 : up[full]) + row[local];
 });
 const propagateFiltered = System.create({
-    name: "upTreeTest/propagateFiltered",
     kernel: "cpu",
     components: { read: [local], write: [filtered], changed: [local], not: [hidden] },
     up: { through: parent, read: [filtered] },
@@ -47,7 +45,7 @@ type Operation =
     | { readonly kind: "reparent"; readonly entity: Entity; readonly to: Entity }
     | { readonly kind: "set"; readonly entity: Entity; readonly local: number };
 const operations: Operation[] = [];
-const apply = System.create({ name: "upTreeTest/apply" }, ({ commands }) => {
+const apply = System.create({}, ({ commands }) => {
     for (const operation of operations.splice(0)) {
         switch (operation.kind) {
             case "spawn":

@@ -43,8 +43,8 @@ const Group = Archetype.create([...node, parent, group]);
 const Shape = Archetype.create([...node, parent, shape]);
 const Image = Archetype.create([...node, parent, image]);
 
-const byPaintDepth = Index.create({ name: "editor/byPaintDepth", key: [paintDepth], sorted: true });
-const childrenOf = Index.create({ name: "editor/childrenOf", key: [parent] });
+const byPaintDepth = Index.create({ key: [paintDepth], sorted: true });
+const childrenOf = Index.create({ key: [parent] });
 
 /** Groups under the document, subgroups in each, and leaves in each subgroup: 50,201 nodes. */
 const groups = 200;
@@ -53,7 +53,7 @@ const leaves = 124;
 const nodes = 1 + groups * (1 + subgroups * (1 + leaves));
 
 /** Spawns the document depth first, as a file lists it, its paint depth its place in that order. */
-const load = System.create({ name: "editor/load" }, ({ commands }) => {
+const load = System.create({}, ({ commands }) => {
     let depth = 0;
     const values = (x: number) => ({ [localX]: x, [localY]: 1, [worldX]: 0, [worldY]: 0, [opacity]: 0.99, [worldOpacity]: 1, [paintDepth]: depth++ });
     const document = commands.spawn(Document)(values(0));
@@ -71,7 +71,6 @@ const load = System.create({ name: "editor/load" }, ({ commands }) => {
 
 /** Each node's world position is its parent's plus its own. */
 const place = System.create({
-    name: "editor/place",
     components: { read: [localX, localY], write: [worldX, worldY], changed: [localX, localY] },
     up: { through: parent, read: [worldX, worldY] },
 }, (row, { up }) => {
@@ -80,7 +79,6 @@ const place = System.create({
 });
 /** Each node's world opacity is its parent's times its own. */
 const fade = System.create({
-    name: "editor/fade",
     components: { read: [opacity], write: [worldOpacity], changed: [opacity] },
     up: { through: parent, read: [worldOpacity] },
 }, (row, { up }) => {
@@ -88,14 +86,14 @@ const fade = System.create({
 });
 let checksum = 0;
 /** Each group counts its children, as a layout does. */
-const layout = System.create({ name: "editor/layout", components: { has: [group] }, lookup: { children: { index: childrenOf } } }, (row, { lookup }) => {
+const layout = System.create({ components: { has: [group] }, lookup: { children: { index: childrenOf } } }, (row, { lookup }) => {
     checksum += lookup.children(row.entity).length;
 });
 /** Visits every node in paint order, as drawing does. */
-const paint = System.create({ name: "editor/paint", components: { read: [worldX, worldOpacity] }, order: byPaintDepth, after: [place, fade] }, row => {
+const paint = System.create({ components: { read: [worldX, worldOpacity] }, order: byPaintDepth, after: [place, fade] }, row => {
     checksum = (checksum * 31 + row[worldX] * row[worldOpacity]) % 1000003;
 });
-const frame = System.create({ name: "editor/frame", systems: [place, fade, layout, paint] });
+const frame = System.create({ systems: [place, fade, layout, paint] });
 
 const check = (condition: boolean, message: string): void => {
     if (!condition) throw new Error(message);

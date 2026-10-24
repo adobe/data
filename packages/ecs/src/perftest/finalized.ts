@@ -43,39 +43,39 @@ export const despawnedObjects = 10_000;
 
 /** On the joined thread: what the finalizer released. */
 export const releases = { count: 0 };
-export const release = Finalizer.create({ name: "finalized/release", components: { read: [handle, spot] } }, row => {
+export const release = Finalizer.create({ components: { read: [handle, spot] } }, row => {
     row[handle]?.release();
     if (row[spot][0] >= 0) releases.count++;
 });
 
 /** On the joined thread: the same, reading the world's string resource too. */
-export const releaseNoted = Finalizer.create({ name: "finalized/releaseNoted", components: { read: [noted, spot] }, resources: { read: [note] } }, (row, { resources }) => {
+export const releaseNoted = Finalizer.create({ components: { read: [noted, spot] }, resources: { read: [note] } }, (row, { resources }) => {
     row[noted]?.release();
     if (row[spot][0] >= 0 && resources[note].length > 0) releases.count++;
 });
 
 /** On the joined thread: the same, reading two linear resources of the world's too. */
-export const releaseMeasured = Finalizer.create({ name: "finalized/releaseMeasured", components: { read: [measured, spot] }, resources: { read: [scale, offset] } }, (row, { resources }) => {
+export const releaseMeasured = Finalizer.create({ components: { read: [measured, spot] }, resources: { read: [scale, offset] } }, (row, { resources }) => {
     row[measured]?.release();
     if (row[spot][0] * resources[scale] + resources[offset][0] >= 0) releases.count++;
 });
 
-const spawn = System.create({ name: "finalized/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     for (let k = 0; k < despawnedObjects; k++) commands.spawn([spot, handle])({ [spot]: [k, 0, 0], [handle]: null });
 });
-const despawn = System.create({ name: "finalized/despawn", components: { has: [handle, spot] } }, (row, { commands }) => {
+const despawn = System.create({ components: { has: [handle, spot] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
-const spawnNoted = System.create({ name: "finalized/spawnNoted" }, ({ commands }) => {
+const spawnNoted = System.create({}, ({ commands }) => {
     for (let k = 0; k < despawnedObjects; k++) commands.spawn([spot, noted])({ [spot]: [k, 0, 0], [noted]: null });
 });
-const spawnMeasured = System.create({ name: "finalized/spawnMeasured" }, ({ commands }) => {
+const spawnMeasured = System.create({}, ({ commands }) => {
     for (let k = 0; k < despawnedObjects; k++) commands.spawn([spot, measured])({ [spot]: [k, 0, 0], [measured]: null });
 });
-const despawnMeasured = System.create({ name: "finalized/despawnMeasured", components: { has: [measured, spot] } }, (row, { commands }) => {
+const despawnMeasured = System.create({ components: { has: [measured, spot] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
-const despawnNoted = System.create({ name: "finalized/despawnNoted", components: { has: [noted, spot] } }, (row, { commands }) => {
+const despawnNoted = System.create({ components: { has: [noted, spot] } }, (row, { commands }) => {
     commands.despawn(row.entity);
 });
 

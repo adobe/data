@@ -49,7 +49,7 @@ import { createState, defaultOf, idOf, reside, startTicking, type Key } from './
 import { indexOf } from './entities.js';
 import { isHeld } from './transfers.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
-import { labelOf, labelOfItem } from '../../interface/registry/index.js';
+import { labelOf } from '../../interface/registry/index.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
 
@@ -431,10 +431,10 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (workersChanged()) await followWorkers();
         if (deviceChanged()) await followDevice();
         const schedule = registrar.registered(definition) ?? registered;
-        if (schedule === undefined) throw new Error(`System "${labelOfItem(definition)}" didn't register.`);
+        if (schedule === undefined) throw new Error(`System "${definition.name}" didn't register.`);
         // An input that moved to a joined thread runs only there: that thread went since, its claims with it.
         if (isHeld(value) && (definition.kind === "composite" || registrar.runnerOf(definition).remote?.channel !== value.channel)) {
-            throw new Error(`System "${labelOfItem(definition)}": the run's input moved to a joined thread that's gone.`);
+            throw new Error(`System "${definition.name}": the run's input moved to a joined thread that's gone.`);
         }
         const run = ++runs;
         const started = performance.now();
@@ -526,7 +526,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 await complete(registrar.register(system));
             }
             catch (error) {
-                (observerFailures ??= []).push(failureOf("system", labelOfItem(system), error));
+                (observerFailures ??= []).push(failureOf("system", system, error));
             }
         });
     };
@@ -604,7 +604,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             }
             startRan(state.ran);
             values = valuesOf(run, performance.now(), 0);
-            report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: none, dropped: 0, warnings: none };
+            report = { failures: [failureOf("system", composite, error)], skipped: none, dropped: 0, warnings: none };
         }
         report = withFailures(report, takeFailures());
         const tails = tailing;

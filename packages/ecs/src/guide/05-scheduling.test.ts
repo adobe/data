@@ -21,7 +21,7 @@ const heal = System.create({ components: { write: [health] }, after: [hit] }, ro
     row[health] = Math.min(row[health] * 2, 10);
 });
 // A list of systems is a composite: it runs its members as one system, in their order; members without an order
-// between them may run in parallel. { systems, after, ... } declares one with a name or constraints.
+// between them may run in parallel. { systems, after, ... } declares one with constraints.
 const frame = System.create([heal, hit]);
 
 const healths: number[] = [];

@@ -4,7 +4,7 @@ import { compare, predicateOf } from './compare.js';
 import type { Observe } from './observe.js';
 import { createAll, createCount, createHeap, createSorted, inEntityOrder, indexOf, type Gather, type Page, type Term, type Values } from './plans.js';
 import {
-    createEntry, deliverAlso, give, giveFirst, keysId, labelOf, none, noDelivery, numberOf, ownName, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed,
+    createEntry, deliverAlso, give, giveFirst, keysId, labelOf, labelled, none, noDelivery, numberOf, ownName, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed,
     type Entry, type Read, type Shape, type WorldState,
 } from './world-state.js';
 
@@ -93,7 +93,7 @@ const excluding = (not: readonly Component.Key[], held: readonly Component.Key[]
 const keylessOf = (has: readonly Component.Key[], not: readonly Component.Key[]) => {
     const id = `${keysId(has)}|${keysId(not)}`;
     let index = keyless.get(id);
-    if (index === undefined) keyless.set(id, index = Index.create({ name: `Observe.query(${labelOf(has)})`, key: [], components: { has: [...has], not: excluding(not, has) } }));
+    if (index === undefined) keyless.set(id, index = Index.create(labelled({ key: [], components: { has: [...has], not: excluding(not, has) } }, `Observe.query(${labelOf(has)})`)));
     return index;
 };
 
@@ -103,7 +103,7 @@ const sortedOf = (key: readonly Component.Key[], has: readonly Component.Key[], 
     let index = sortedIndexes.get(id);
     if (index === undefined) {
         try {
-            index = Index.create({ name: `Observe.query(${labelOf(has)}) by ${labelOf(key)}`, key: [...key], sorted: true, components: { has: [...has], not: excluding(not, [...key, ...has]) } });
+            index = Index.create(labelled({ key: [...key], sorted: true, components: { has: [...has], not: excluding(not, [...key, ...has]) } }, `Observe.query(${labelOf(has)}) by ${labelOf(key)}`));
         }
         catch {
             index = null;
@@ -179,7 +179,7 @@ const rangedOf = (key: Component.Key, has: readonly Component.Key[], not: readon
     let index = rangedIndexes.get(id);
     if (index === undefined) {
         try {
-            index = Index.create({ name: `Observe.query(${labelOf(has)}) by ${labelOf([key])}`, key: [key], sorted: true, components: { has: [...has], not: excluding(not, [key, ...has]) } });
+            index = Index.create(labelled({ key: [key], sorted: true, components: { has: [...has], not: excluding(not, [key, ...has]) } }, `Observe.query(${labelOf(has)}) by ${labelOf([key])}`));
         }
         catch {
             index = null;
@@ -403,16 +403,16 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
     };
 
     const tracker = ordered !== null
-        ? System.create({ name, observer: true, lookup: { list: { index: ordered, read: reads, changed: reads } } }, ({ lookup }) => {
+        ? System.create(labelled({ observer: true, lookup: { list: { index: ordered, read: reads, changed: reads } } }, name), ({ lookup }) => {
             track(lookup.list(), null, fromSorted);
         })
         : byRange !== null
-            ? System.create({ name, observer: true, lookup: { list: { index: byRange, read: reads, changed: reads } } }, ({ lookup }) => {
+            ? System.create(labelled({ observer: true, lookup: { list: { index: byRange, read: reads, changed: reads } } }, name), ({ lookup }) => {
                 // A range is of a `where` condition on the index's key, which the query's type checked against its
                 // values.
                 track(null, entry => ownRange(entry, range => lookup.list(range as Parameters<typeof lookup.list>[0]), () => lookup.list()), fromSorted);
             })
-            : System.create({ name, observer: true, lookup: { list: { index: keylessOf(has, not), read: reads, changed: reads } } }, ({ lookup }) => {
+            : System.create(labelled({ observer: true, lookup: { list: { index: keylessOf(has, not), read: reads, changed: reads } } }, name), ({ lookup }) => {
                 track(lookup.list(), null, fromKeyless);
             });
 
@@ -466,7 +466,7 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
         for (const entry of scan.entries) entry.gather.start();
         accept = acceptOf(scan.entries);
     };
-    const scanner = System.create({ name, observer: true, components: { read: reads, has: required.filter(key => !reads.includes(key)), not } }, row => {
+    const scanner = System.create(labelled({ observer: true, components: { read: reads, has: required.filter(key => !reads.includes(key)), not } }, name), row => {
         if (accept === null) start();
         if (direct === 0) {
             accept?.(row);

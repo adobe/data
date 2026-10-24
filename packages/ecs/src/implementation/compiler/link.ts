@@ -14,6 +14,8 @@ export type LinkHost = {
     readonly resolve: (specifier: string, importer: string) => Promise<string | Unresolved>;
     /** A file's code as JavaScript, and how offsets in it map to source lines when it was compiled from another language. */
     readonly load: (file: string) => Promise<{ readonly code: string; readonly locate?: Module["locate"] } | { readonly error: string }>;
+    /** The operator each resource a file declares with a `reduce` trait reduces with, by its key's binding. */
+    readonly reductions?: (file: string) => ReadonlyMap<string, string>;
 };
 
 /**
@@ -23,6 +25,8 @@ export type LinkHost = {
 export type Link = {
     readonly module: (file: string) => Module | { readonly error: string };
     readonly resolve: (specifier: string, importer: string) => string | Unresolved;
+    /** The operator the resource `binding` of `file` declares in its `reduce` trait, if the build can read one. */
+    readonly reductionOf?: (file: string, binding: string) => string | undefined;
 };
 
 /** A cache of modules and resolutions shared across transforms. */
@@ -108,12 +112,19 @@ export const createLinker = (host: LinkHost, parse: (code: string) => Program): 
         for (const exported of module.exports.values()) if (exported.kind !== "local") void prefetch(exported.specifier, file);
         for (const star of module.stars) void prefetch(star, file);
     };
+    const reductions = new Map<string, ReadonlyMap<string, string>>();
     return {
         module: file => modules.get(file) ?? pending(startLoad(file)),
+        reductionOf: (file, binding) => {
+            let declared = reductions.get(file);
+            if (declared === undefined && host.reductions !== undefined) reductions.set(file, declared = host.reductions(file));
+            return declared?.get(binding);
+        },
         resolve: (specifier, importer) => resolutions.get(`${importer}\0${specifier}`) ?? pending(prefetch(specifier, importer)),
         add: module => { modules.set(module.file, module); },
         forget: (file, all) => {
             modules.delete(file);
+            reductions.delete(file);
             loading.delete(file);
             versions.set(file, (versions.get(file) ?? 0) + 1);
             if (all) {

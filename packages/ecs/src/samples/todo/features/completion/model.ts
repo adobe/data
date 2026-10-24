@@ -5,7 +5,6 @@ import { byDone } from "./data.js";
 
 /** Marks every todo done, or every one not done. Only todos that change are written. */
 export const toggleAll = System.create({
-    name: "completion/toggleAll",
     components: { write: [done], has: [todo] },
 }, (row, _context, input: { readonly done: boolean }) => {
     if (row[done] !== input.done) row[done] = input.done;
@@ -13,7 +12,6 @@ export const toggleAll = System.create({
 
 /** Deletes the todos that are done. */
 export const clearCompleted = System.create({
-    name: "completion/clearCompleted",
     lookup: { byDone: { index: byDone } },
 }, ({ lookup, commands }) => {
     const completed = lookup.byDone(true);

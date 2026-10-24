@@ -32,12 +32,12 @@ declare module '@adobe/ecs' {
 }
 
 // Rules derive only derived components.
-const slots = Rule.create({ name: "ruleTypeTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] });
+const slots = Rule.create({ components: { has: [source], not: [hidden] }, derive: [slot] });
 // @ts-expect-error a rule derives only derived components
-Rule.create({ name: "ruleTypeTest/slots", components: { has: [source] }, derive: [source] });
+Rule.create({ components: { has: [source] }, derive: [source] });
 
 // A finalizer's context holds only what it declares, and its commands.
-const other = Finalizer.create({ name: "ruleTypeTest/other", components: { read: [source] } }, (_, context) => {
+const other = Finalizer.create({ components: { read: [source] } }, (_, context) => {
     // @ts-expect-error no resources declared
     void context.resources;
     // @ts-expect-error no lookups declared
@@ -47,7 +47,6 @@ const other = Finalizer.create({ name: "ruleTypeTest/other", components: { read:
 
 // Per-query finalizers read the stopping row; it's read-only.
 Finalizer.create({
-    name: "ruleTypeTest/release",
     components: { read: [slot, parent], not: [hidden] },
     resources: { read: [time] },
     after: [other],
@@ -65,14 +64,13 @@ Finalizer.create({
     void value; void now;
 });
 Finalizer.create({
-    name: "ruleTypeTest/other",
     components: {},
     // @ts-expect-error write already makes a resource readable
     resources: { read: [time], write: [time] },
 }, () => {});
 
 // Changes finalizers see only the essential components they watch.
-Finalizer.changes({ name: "ruleTypeTest/save", watch: [source, parent] }, (changes, { commands }) => {
+Finalizer.changes({ watch: [source, parent] }, (changes, { commands }) => {
     check<Equal<typeof changes, ChangeSet<typeof source | typeof parent>>>();
     void commands;
     for (const group of changes.groups) {
@@ -87,19 +85,19 @@ Finalizer.changes({ name: "ruleTypeTest/save", watch: [source, parent] }, (chang
     }
 });
 // @ts-expect-error changes finalizers don't watch derived components
-Finalizer.changes({ name: "ruleTypeTest/save", watch: [slot] }, () => {});
+Finalizer.changes({ watch: [slot] }, () => {});
 
 // References change only through commands, so systems can't write them.
-System.create({ name: "ruleTypeTest/move", components: { read: [parent], write: [source] } }, row => { row[source] = row[parent]; });
+System.create({ components: { read: [parent], write: [source] } }, row => { row[source] = row[parent]; });
 // @ts-expect-error a reference changes only through commands
-System.create({ name: "ruleTypeTest/move", components: { write: [parent] } }, () => {});
+System.create({ components: { write: [parent] } }, () => {});
 check<Equal<Extract<Writable, typeof parent | typeof source>, typeof source>>();
 
 // A rule and a finalizer are the values their constructors return, labeled by their names, which needn't be unique.
 check<Equal<typeof slots, ReturnType<typeof Rule.create>>>();
 check<Equal<typeof slots, { readonly name: string }>>();
 check<Equal<typeof other, Finalizer>>();
-const sameName: Finalizer = Finalizer.create({ name: "ruleTypeTest/other", components: { read: [source] } }, () => {});
+const sameName: Finalizer = Finalizer.create({ components: { read: [source] } }, () => {});
 void sameName;
 
 // Rules and finalizers apply in every world.

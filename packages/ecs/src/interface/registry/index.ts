@@ -16,7 +16,7 @@ export { isTrait } from './traits.js';
 export { idOfKey } from './ids.js';
 export { isWorldWritten } from './written.js';
 export { sameDeclaration } from './names.js';
-export { firstItemOf, identifiedItems, idOfItem, itemOfId, labelOfItem, sameItem } from './items.js';
+export { firstItemOf, identifiedItems, idOfItem, idOrNull, itemOfId, sameItem } from './items.js';
 export { allowsNull, conditional, isStruct } from './schemas.js';
 export { isReduction, reductionOperators } from './reduction.js';
 export type { Definition } from '../system/definition.js';

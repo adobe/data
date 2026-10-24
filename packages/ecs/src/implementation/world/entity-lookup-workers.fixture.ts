@@ -31,7 +31,7 @@ declare module "@adobe/ecs" {
  * whether its mark changed in the next digit, then whether it has a mark and isn't banned.
  */
 const watchKernel = System.create({
-    name: "entityLookupWorkersTest/watchKernel", kernel: "cpu",
+    kernel: "cpu",
     components: { read: [follows], write: [kernelSeen] },
     lookup: { found: { read: [weight], changed: [weight] }, marked: { read: [mark], changed: [mark] }, eligible: { has: [mark], not: [banned] } },
 }, (row, { lookup }) => {
@@ -44,7 +44,6 @@ const watchKernel = System.create({
 });
 
 const watchPlain = System.create({
-    name: "entityLookupWorkersTest/watchPlain",
     components: { read: [follows], write: [plainSeen] },
     lookup: { found: { read: [weight], changed: [weight] }, marked: { read: [mark], changed: [mark] }, eligible: { has: [mark], not: [banned] } },
 }, (row, { lookup }) => {
@@ -56,17 +55,17 @@ const watchPlain = System.create({
     row[plainSeen] = ((row[plainSeen] * 4 + seen) % 1000003 * 4 + flagged) * 2 + eligible;
 });
 
-const tick = System.create({ name: "entityLookupWorkersTest/tick", systems: [watchKernel, watchPlain] });
+const tick = System.create({ systems: [watchKernel, watchPlain] });
 
 const targets: Entity[] = [];
-const seed = System.create({ name: "entityLookupWorkersTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     targets.length = 0;
     for (let k = 0; k < 500; k++) targets.push(k % 3 === 0 ? commands.spawn([weight, mark])({ [weight]: k, [mark]: 1 }) : commands.spawn([weight])({ [weight]: k }));
     for (let k = 0; k < 4000; k++) commands.spawn([follows, kernelSeen, plainSeen])({ [follows]: targets[(k * 7) % targets.length], [kernelSeen]: 0, [plainSeen]: 0 });
 });
 
 /** Writes some weights, marks and unmarks some targets, despawns some and spawns others: a different change each round. */
-const stir = System.create({ name: "entityLookupWorkersTest/stir", components: { write: [weight] } }, (row, { commands }, input: { readonly round: number }) => {
+const stir = System.create({ components: { write: [weight] } }, (row, { commands }, input: { readonly round: number }) => {
     const w = row[weight];
     if ((w + input.round) % 5 === 0) row[weight] = w + 1000;
     if ((w + input.round) % 11 === 0) commands.add(row.entity, mark, 2);

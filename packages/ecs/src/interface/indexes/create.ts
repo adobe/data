@@ -45,7 +45,7 @@ const collection = (schema: Schema): boolean => "type" in schema && (schema.type
  */
 export const create = <const D extends Declaration>(declaration: D & Validate<D>): Index<D> => {
     const id = takeIdOfDeclaration(declaration);
-    const name = nameOf(declaration.name, id, "index");
+    const name = nameOf(declaration, id, "index");
     const fail = (message: string): never => { throw new Error(`Index "${name}" ${message}.`); };
     const { key, components, sorted } = declaration;
     if (!Array.isArray(key)) fail("needs a key: a list of components");

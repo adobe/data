@@ -26,12 +26,12 @@ declare module "@adobe/ecs" {
 const label = Symbol("kernelsTest/label");
 
 /** Reads `value` and `other`, writes nothing, reads no resources. */
-const system = System.create({ name: "kernelsTest/read", kernel: "cpu", components: { read: [value, other] } }, row => {
+const system = System.create({ kernel: "cpu", components: { read: [value, other] } }, row => {
     if (row[value] > row[other]) return;
 });
 
-const spawn = System.create({ name: "kernelsTest/spawn" }, ({ commands }) => { commands.spawn([value, other])({ [value]: 3, [other]: 0 }); });
-const double = System.create({ name: "kernelsTest/double", kernel: "cpu", components: { write: [value] } }, row => {
+const spawn = System.create({}, ({ commands }) => { commands.spawn([value, other])({ [value]: 3, [other]: 0 }); });
+const double = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
     row[value] = row[value] * 2;
 });
 
@@ -61,13 +61,13 @@ describe("bindKernel", () => {
 
 describe("attachKernel", () => {
     it("rejects at registration a spawn site naming a component twice", () => {
-        expect(() => attachKernel(system, describing({ keys: [value, other], spawns: [[1, 0, 1]] }))).toThrow('Kernel "kernelsTest/read": spawns a list naming "kernelsTest/other" twice.');
+        expect(() => attachKernel(system, describing({ keys: [value, other], spawns: [[1, 0, 1]] }))).toThrow('spawns a list naming "kernelsTest/other" twice.');
     });
     it("rejects at registration a tuple or struct given to a component without a linear layout", () => {
-        expect(() => attachKernel(system, describing({ keys: [value, label], structuredValues: [1] }))).toThrow('Kernel "kernelsTest/read": gives "kernelsTest/label" a tuple or struct, which only a component stored in linear memory takes.');
+        expect(() => attachKernel(system, describing({ keys: [value, label], structuredValues: [1] }))).toThrow('gives "kernelsTest/label" a tuple or struct, which only a component stored in linear memory takes.');
         expect(() => attachKernel(system, describing({ keys: [value, label], structuredValues: [0] }))).not.toThrow();
     });
     it("rejects at registration a spawn site naming a component outside its keys", () => {
-        expect(() => attachKernel(system, describing({ keys: [value], spawns: [[0, 1]] }))).toThrow('Kernel "kernelsTest/read": spawns a list naming component 1 of its 1 keys.');
+        expect(() => attachKernel(system, describing({ keys: [value], spawns: [[0, 1]] }))).toThrow('spawns a list naming component 1 of its 1 keys.');
     });
 });

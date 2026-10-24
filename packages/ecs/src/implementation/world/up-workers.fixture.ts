@@ -22,7 +22,6 @@ declare module "@adobe/ecs" {
 
 
 const propagate = System.create({
-    name: "upWorkersTest/propagate",
     kernel: "cpu",
     components: { read: [local], write: [world], changed: [local] },
     up: { through: parent, read: [world] },
@@ -30,7 +29,7 @@ const propagate = System.create({
     row[world] = (up === null ? 0 : up[world]) + row[local] * 2;
 });
 /** 100 trees, each a root with 40 levels of two children, ordered so storage order isn't depth order. */
-const grow = System.create({ name: "upWorkersTest/grow" }, ({ commands }) => {
+const grow = System.create({}, ({ commands }) => {
     for (let tree = 0; tree < 100; tree++) {
         let level = [commands.spawn([local, world])({ [local]: tree, [world]: 0 })];
         for (let depth = 1; depth < 40; depth++) {
@@ -39,7 +38,7 @@ const grow = System.create({ name: "upWorkersTest/grow" }, ({ commands }) => {
         }
     }
 });
-const nudge = System.create({ name: "upWorkersTest/nudge", components: { write: [local] } }, row => {
+const nudge = System.create({ components: { write: [local] } }, row => {
     if (row[local] === 7) row[local] = 70;
 });
 

@@ -33,16 +33,16 @@ const tags = [g0, g1, g2, g3, g4, g5, g6] as const;
 const hundred = Array.from({ length: 100 }, (_, bits) => Archetype.create([value, ...tags.filter((_, bit) => (bits & (1 << bit)) !== 0)]));
 
 /** Spawns `count` entities into each of the hundred archetypes. */
-export const fillEach = System.create({ name: "growth/fillEach" }, ({ commands }, input: { readonly count: number }) => {
+export const fillEach = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (const archetype of hundred) for (let i = 0; i < input.count; i++) commands.spawn(archetype)({ [value]: i });
 });
 
 /** One spawn into each of the hundred archetypes. */
-export const spawnEach = System.create({ name: "growth/spawnEach" }, ({ commands }) => {
+export const spawnEach = System.create({}, ({ commands }) => {
     for (const archetype of hundred) commands.spawn(archetype)({ [value]: 0 });
 });
 
 /** A kernel over every row of the hundred archetypes. */
-export const bumpEach = System.create({ name: "growth/bumpEach", kernel: "cpu", components: { write: [value] } }, row => {
+export const bumpEach = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });

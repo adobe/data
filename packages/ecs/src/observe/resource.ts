@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System, type Resource, type World } from '../interface/index.js';
 import type { Observe } from './observe.js';
-import { createEntry, give, giveFirst, none, noDelivery, ownName, passed, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
+import { createEntry, give, giveFirst, labelled, none, noDelivery, ownName, passed, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
 
 /**
  * A resource's observers, sharing one value: `notifier`, added, gives the value after each pass whose sync point
@@ -31,14 +31,14 @@ const createShape = (state: WorldState, byKey: Map<Resource.Key, ResourceShape>,
     const label = ownName(`Observe.resource(${key.description ?? "?"})`);
     // On a joined thread, first values come once a run of this system resolved, never in its pass: none to skip.
     const { joined } = state;
-    const notifier = System.create({ name: label, observer: true, resources: { read: [key], changed: [key] } }, ({ resources }) => {
+    const notifier = System.create(labelled({ observer: true, resources: { read: [key], changed: [key] } }, label), ({ resources }) => {
         passed(state);
         entry.value = resources[key];
         entry.valid = true;
         if (entry.stopped > 0) sweepSubscribers(entry);
         throwFailed(give(entry, 0, true, state.pass, joined ? -1 : state.pass, none));
     });
-    const reader = System.create({ name: label, observer: true, resources: { read: [key] } }, ({ resources }) => {
+    const reader = System.create(labelled({ observer: true, resources: { read: [key] } }, label), ({ resources }) => {
         const through = shape.called.shift() ?? 0;
         entry.value = resources[key];
         entry.valid = true;

@@ -30,18 +30,17 @@ declare module "@adobe/ecs" {
 
 export const rows = 4_096;
 
-const seed = System.create({ name: "lifetimeFixture/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     let previous = commands.spawn([value])({ [value]: 0 });
     for (let i = 1; i < rows; i++) previous = commands.spawn([value, target, out])({ [value]: i, [target]: previous, [out]: 0 });
 });
 
 /** A kernel that holds what kernels can: a lookup's directory, reduction partials and its load on each worker. */
 const measure = System.create({
-    name: "lifetimeFixture/measure",
     kernel: "cpu",
     components: { read: [value, target], write: [out] },
     lookup: { targets: { read: [value] } },
-    reduce: { [total]: "+" },
+    resources: { reduce: [total] },
 }, (row, { lookup: { targets }, reduce }) => {
     const other = targets(row[target]);
     row[out] = other === null ? -1 : row[value] - other[value];

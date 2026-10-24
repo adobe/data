@@ -62,7 +62,7 @@ describe("registering a component", () => {
     });
     it("takes only plain symbols as keys, so built-in traits' string names are no component's", () => {
         expect(() => register("derived", { type: { const: true } })).toThrow(`Cannot register component "derived": a key is a plain Symbol(...), not a string.`);
-        expect(() => register(Symbol.for("typesComponentTest/shared"), { type: { const: true } })).toThrow("a Symbol.for key is shared across the program");
+        expect(() => register(Symbol.for("shared"), { type: { const: true } })).toThrow("a Symbol.for key is shared across the program");
         expect(() => register(Symbol.asyncIterator, { type: { const: true } })).toThrow("Symbol.asyncIterator is a well-known symbol.");
         expect(kindOf("derived")).toBe(undefined);
     });

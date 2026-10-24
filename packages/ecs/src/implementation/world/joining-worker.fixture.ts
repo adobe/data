@@ -10,7 +10,7 @@ import { drive, idle, names, total, until, withReports, type Driven, type Report
 /** A thread joining a world through the port it's sent and driving it, or holding a world it shares through it. */
 
 /** A system only this thread imports, which a world elsewhere never did. */
-const unimportedByMain = System.create({ name: "joiningTest/unimportedByMain" }, () => {});
+const unimportedByMain = System.create({}, () => {});
 
 type Port = MessagePort | NodeMessagePort;
 export type ToJoiningWorker =

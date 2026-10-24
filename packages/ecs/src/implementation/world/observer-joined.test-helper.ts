@@ -81,20 +81,20 @@ export const hold = (): void => {
 export const wordOf = (value: number): string => `${"·".repeat(value % 37)}${value}`;
 
 /** On the world's thread: the counter moves on once a tick, then every row's stamp, spot and word take it. */
-export const count = System.create({ name: "observerJoinedWorkerTest/count", resources: { write: [counter] } }, ({ resources }) => {
+export const count = System.create({ resources: { write: [counter] } }, ({ resources }) => {
     resources[counter] += 1;
 });
-export const advance = System.create({ name: "observerJoinedWorkerTest/advance", components: { write: [stamp, spot, word] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
+export const advance = System.create({ components: { write: [stamp, spot, word] }, resources: { read: [counter] }, after: [count] }, (row, { resources }) => {
     const value = resources[counter];
     row[stamp] = value;
     row[spot] = [value, -value, value];
     row[word] = wordOf(value);
 });
-export const ticked = System.create({ name: "observerJoinedWorkerTest/ticked", systems: [count, advance] });
-export const seed = System.create({ name: "observerJoinedWorkerTest/seed" }, ({ commands }, input: { readonly count: number }) => {
+export const ticked = System.create({ systems: [count, advance] });
+export const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let k = 0; k < input.count; k++) commands.spawn([stamp, spot, word])({ [stamp]: 0, [spot]: [0, 0, 0], [word]: wordOf(0) });
 });
-export const setStall = System.create({ name: "observerJoinedWorkerTest/setStall", resources: { write: [stall] } }, ({ resources }, input: { readonly pause: number }) => {
+export const setStall = System.create({ resources: { write: [stall] } }, ({ resources }, input: { readonly pause: number }) => {
     resources[stall] = input.pause;
 });
 
@@ -103,7 +103,7 @@ export type Seen = { counter: number; rows: number; wrong: number };
 export const seen: Seen[] = [];
 
 /** Reads every row, which must all be of one tick, pausing at the end of its first chunk while `stall` says so. */
-export const watchRows = System.create({ name: "observerJoinedWorkerTest/watchRows", observer: true, components: { read: [stamp, spot, word] }, resources: { read: [counter, stall] } }, (row, { resources }) => {
+export const watchRows = System.create({ observer: true, components: { read: [stamp, spot, word] }, resources: { read: [counter, stall] } }, (row, { resources }) => {
     const value = resources[counter];
     let last = seen.at(-1);
     if (last === undefined || last.counter !== value || last.rows === 1000) seen.push(last = { counter: value, rows: 0, wrong: 0 });
@@ -117,7 +117,7 @@ export const watchRows = System.create({ name: "observerJoinedWorkerTest/watchRo
 export const looked: Entity[] = [];
 
 /** Looks up every row by entity, which must all be of one tick, spinning halfway while `stall` says so. */
-export const lookRows = System.create({ name: "observerJoinedWorkerTest/lookRows", observer: true, resources: { read: [counter, stall] }, lookup: { found: { read: [stamp, spot] } } }, ({ resources, lookup }) => {
+export const lookRows = System.create({ observer: true, resources: { read: [counter, stall] }, lookup: { found: { read: [stamp, spot] } } }, ({ resources, lookup }) => {
     const value = resources[counter];
     const run: Seen = { counter: value, rows: 0, wrong: 0 };
     seen.push(run);
@@ -132,27 +132,27 @@ export const lookRows = System.create({ name: "observerJoinedWorkerTest/lookRows
 });
 
 /** 100 rows heated 0 to 99, which a GPU kernel warms by 100 each run. */
-export const spawnHeated = System.create({ name: "observerJoinedWorkerTest/spawnHeated" }, ({ commands }) => {
+export const spawnHeated = System.create({}, ({ commands }) => {
     for (let i = 0; i < 100; i++) commands.spawn([heat, rate])({ [heat]: i, [rate]: 1 });
 });
-export const warm = System.create({ name: "observerJoinedWorkerTest/warm", kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
+export const warm = System.create({ kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
     row[heat] = row[heat] + row[rate] * 100;
 });
-export const nextPhase = System.create({ name: "observerJoinedWorkerTest/nextPhase", resources: { write: [phase] } }, ({ resources }) => {
+export const nextPhase = System.create({ resources: { write: [phase] } }, ({ resources }) => {
     resources[phase] += 1;
 });
 
 /** What `countHot` counted, run by run, on the joined thread. */
 export const hot: number[] = [];
-export const byHeat = Index.create({ name: "observerJoinedWorkerTest/byHeat", key: [heat], sorted: true });
+export const byHeat = Index.create({ key: [heat], sorted: true });
 /** Counts the rows at least 150 hot, through the sorted index on what the GPU kernel writes. */
-export const countHot = System.create({ name: "observerJoinedWorkerTest/countHot", observer: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
+export const countHot = System.create({ observer: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
     hot.push(lookup.hot({ ">=": 150 }).length);
 });
 
 /** On the world's thread: the motto of a round, and the round, every motto of one size. */
 export const mottoOf = (round: number): string => `motto ${round % 10}`;
-export const setMotto = System.create({ name: "observerJoinedWorkerTest/setMotto", resources: { write: [motto, mottoRound] } }, ({ resources }, input: { readonly round: number }) => {
+export const setMotto = System.create({ resources: { write: [motto, mottoRound] } }, ({ resources }, input: { readonly round: number }) => {
     resources[motto] = mottoOf(input.round);
     resources[mottoRound] = input.round;
 });
@@ -164,7 +164,7 @@ export const mottos: { readonly round: number; readonly motto: string }[] = [];
  * Reads only resources, a string among them: waits on the gate first, while `stall` says so, its round plus one, then
  * reads the motto, which must be its round's.
  */
-export const watchMotto = System.create({ name: "observerJoinedWorkerTest/watchMotto", observer: true, resources: { read: [motto, mottoRound, stall] } }, ({ resources }) => {
+export const watchMotto = System.create({ observer: true, resources: { read: [motto, mottoRound, stall] } }, ({ resources }) => {
     const round = resources[mottoRound];
     pauseAt(resources[stall], round + 1);
     mottos.push({ round, motto: resources[motto] });

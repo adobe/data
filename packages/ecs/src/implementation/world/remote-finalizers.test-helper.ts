@@ -77,7 +77,7 @@ export const finalized: Entity[] = [];
 export const throwing = new Set<number>();
 
 /** On the finalizers' thread: what each stop held there, its structs before the sync point applied. */
-export const release = Finalizer.create({ name: "remoteFinalizersTest/release", components: { read: [serial, place, marked, widget, label] }, resources: { read: [tone] } }, (row, { resources }) => {
+export const release = Finalizer.create({ components: { read: [serial, place, marked, widget, label] }, resources: { read: [tone] } }, (row, { resources }) => {
     finalized.push(row.entity);
     released.push({ serial: row[serial], place: [...row[place]], marked: row[marked], widget: row[widget]?.tag ?? null, label: row[label]?.text ?? null, tone: resources[tone].text });
     if (throwing.has(row[serial])) throw new Error(`remoteFinalizersTest: ${row[serial]} throws`);
@@ -87,7 +87,7 @@ export const release = Finalizer.create({ name: "remoteFinalizersTest/release", 
 export const entitled: { readonly serial: number; readonly title: string }[] = [];
 
 /** On the finalizers' thread: what each titled stop's title was before its sync point applied. */
-export const entitle = Finalizer.create({ name: "remoteFinalizersTest/entitle", components: { read: [serial, title, widget] } }, row => {
+export const entitle = Finalizer.create({ components: { read: [serial, title, widget] } }, row => {
     entitled.push({ serial: row[serial], title: row[title] });
 });
 
@@ -95,7 +95,7 @@ export const entitle = Finalizer.create({ name: "remoteFinalizersTest/entitle", 
 export const headlined: { readonly serial: number; readonly heading: string }[] = [];
 
 /** On the finalizers' thread: the heading as it was before each headed stop's sync point applied. */
-export const headline = Finalizer.create({ name: "remoteFinalizersTest/headline", components: { read: [serial, widget], has: [headed] }, resources: { read: [heading] } }, (row, { resources }) => {
+export const headline = Finalizer.create({ components: { read: [serial, widget], has: [headed] }, resources: { read: [heading] } }, (row, { resources }) => {
     headlined.push({ serial: row[serial], heading: resources[heading] });
 });
 
@@ -103,7 +103,7 @@ export const headline = Finalizer.create({ name: "remoteFinalizersTest/headline"
 export const headlinedBoth: { readonly serial: number; readonly heading: string; readonly subheading: string }[] = [];
 
 /** On the finalizers' thread: two string resources as they were before each headed stop's sync point applied. */
-export const headlines = Finalizer.create({ name: "remoteFinalizersTest/headlines", components: { read: [serial, widget], has: [headed] }, resources: { read: [subheading, heading] } }, (row, { resources }) => {
+export const headlines = Finalizer.create({ components: { read: [serial, widget], has: [headed] }, resources: { read: [subheading, heading] } }, (row, { resources }) => {
     headlinedBoth.push({ serial: row[serial], heading: resources[heading], subheading: resources[subheading] });
 });
 
@@ -111,7 +111,7 @@ export const headlines = Finalizer.create({ name: "remoteFinalizersTest/headline
 export const gauged: { readonly serial: number; readonly level: number; readonly origin: readonly number[] }[] = [];
 
 /** On the finalizers' thread: a number and a struct resource as they were before each headed stop's sync point applied. */
-export const gauge = Finalizer.create({ name: "remoteFinalizersTest/gauge", components: { read: [serial, widget], has: [headed] }, resources: { read: [origin, level] } }, (row, { resources }) => {
+export const gauge = Finalizer.create({ components: { read: [serial, widget], has: [headed] }, resources: { read: [origin, level] } }, (row, { resources }) => {
     gauged.push({ serial: row[serial], level: resources[level], origin: [...resources[origin]] });
 });
 
@@ -120,7 +120,7 @@ export type Surveyed = { readonly serial: number; readonly caption: string; read
 export const surveyed: Surveyed[] = [];
 
 /** On the finalizers' thread: resources of mixed widths as they were before each headed stop's sync point applied. */
-export const survey = Finalizer.create({ name: "remoteFinalizersTest/survey", components: { read: [serial, widget], has: [headed] }, resources: { read: [material, caption, sample, lit, tint] } }, (row, { resources }) => {
+export const survey = Finalizer.create({ components: { read: [serial, widget], has: [headed] }, resources: { read: [material, caption, sample, lit, tint] } }, (row, { resources }) => {
     const { alpha, color, glossy } = resources[material];
     surveyed.push({
         serial: row[serial], caption: resources[caption], lit: resources[lit], tint: [...resources[tint]],
@@ -136,7 +136,7 @@ export const surveyOf = (at: number): Omit<Surveyed, "serial"> => ({
 });
 
 /** From the world's thread: the level, the origin at it, and the resources of mixed widths at it. */
-export const regauge = System.create({ name: "remoteFinalizersTest/regauge", resources: { write: [level, origin, caption, lit, tint, sample, material] } }, ({ resources }, input: { readonly level: number }) => {
+export const regauge = System.create({ resources: { write: [level, origin, caption, lit, tint, sample, material] } }, ({ resources }, input: { readonly level: number }) => {
     resources[level] = input.level;
     resources[origin] = [input.level, input.level + 10];
     const values = surveyOf(input.level);
@@ -148,59 +148,59 @@ export const regauge = System.create({ name: "remoteFinalizersTest/regauge", res
 });
 
 /** Spawns headed rows from the world's thread, with the thread's widget at null. */
-export const spawnHeaded = System.create({ name: "remoteFinalizersTest/spawnHeaded" }, ({ commands }, input: { readonly from: number; readonly count: number }) => {
+export const spawnHeaded = System.create({}, ({ commands }, input: { readonly from: number; readonly count: number }) => {
     for (let k = input.from; k < input.from + input.count; k++) commands.spawn([serial, headed, widget])({ [serial]: k, [widget]: null });
 });
 /** From the world's thread: the heading and subheading. */
-export const rehead = System.create({ name: "remoteFinalizersTest/rehead", resources: { write: [heading, subheading] } }, ({ resources }, input: { readonly heading: string }) => {
+export const rehead = System.create({ resources: { write: [heading, subheading] } }, ({ resources }, input: { readonly heading: string }) => {
     resources[heading] = input.heading;
     resources[subheading] = `s${input.heading}`;
 });
 
 /** Spawns titled rows from the world's thread, with the thread's widget at null. */
-export const spawnTitled = System.create({ name: "remoteFinalizersTest/spawnTitled" }, ({ commands }, input: { readonly from: number; readonly count: number }) => {
+export const spawnTitled = System.create({}, ({ commands }, input: { readonly from: number; readonly count: number }) => {
     for (let k = input.from; k < input.from + input.count; k++) commands.spawn([serial, title, widget])({ [serial]: k, [title]: `t${k}`, [widget]: null });
 });
 /** From the world's thread: every title as another of the same size, so the records of titles let go are reused. */
-export const retitle = System.create({ name: "remoteFinalizersTest/retitle", components: { write: [title] } }, (row, _context, input: { readonly round: number }) => {
+export const retitle = System.create({ components: { write: [title] } }, (row, _context, input: { readonly round: number }) => {
     row[title] = `r${input.round}`;
 });
 
 /** Spawns from the world's thread: structs, the thread's objects at null and their start. */
-export const spawn = System.create({ name: "remoteFinalizersTest/spawn" }, ({ commands }, input: { readonly from: number; readonly count: number }) => {
+export const spawn = System.create({}, ({ commands }, input: { readonly from: number; readonly count: number }) => {
     for (let k = input.from; k < input.from + input.count; k++) commands.spawn([serial, place, marked, widget, label])({ [serial]: k, [place]: [k, -k], [widget]: null });
 });
 /** On the thread: widgets written in place. */
-export const attach = System.create({ name: "remoteFinalizersTest/attach", components: { read: [serial], write: [widget] } }, row => {
+export const attach = System.create({ components: { read: [serial], write: [widget] } }, row => {
     const tag = `w${row[serial]}`;
     row[widget] = { tag, draw: () => tag };
 });
 /** On the thread: labels given by command, staged there, for odd serials. */
-export const relabel = System.create({ name: "remoteFinalizersTest/relabel", components: { read: [serial, label] } }, (row, { commands }) => {
+export const relabel = System.create({ components: { read: [serial, label] } }, (row, { commands }) => {
     const relabelled = { text: `l${row[serial]}${row[label]?.text === "none" ? "" : "+"}` };
     if (row[serial] % 2 === 1) commands.add(row.entity, label, relabelled);
 });
 /** On the thread: its object resource. */
-export const retone = System.create({ name: "remoteFinalizersTest/retone", resources: { write: [tone] } }, ({ resources }, input: { readonly tone: string }) => {
+export const retone = System.create({ resources: { write: [tone] } }, ({ resources }, input: { readonly tone: string }) => {
     resources[tone] = { text: input.tone };
 });
 /** From the world's thread: places move, so a stop's values are those before the sync point applies. */
-export const shift = System.create({ name: "remoteFinalizersTest/shift", components: { write: [place] } }, row => {
+export const shift = System.create({ components: { write: [place] } }, row => {
     row[place] = [row[place][0] + 100, row[place][1]];
 });
 /** From the world's thread: despawns these serials. */
-export const despawn = System.create({ name: "remoteFinalizersTest/despawn", components: { read: [serial] } }, (row, { commands }, input: { readonly serials: readonly number[] }) => {
+export const despawn = System.create({ components: { read: [serial] } }, (row, { commands }, input: { readonly serials: readonly number[] }) => {
     if (input.serials.includes(row[serial])) commands.despawn(row.entity);
 });
 /** From the world's thread: removes widgets of these serials, a stop that despawns nothing. */
-export const strip = System.create({ name: "remoteFinalizersTest/strip", components: { read: [serial], has: [widget] } }, (row, { commands }, input: { readonly serials: readonly number[] }) => {
+export const strip = System.create({ components: { read: [serial], has: [widget] } }, (row, { commands }, input: { readonly serials: readonly number[] }) => {
     if (input.serials.includes(row[serial])) commands.remove(row.entity, widget);
 });
 /** From the world's thread: every row moves archetype, flagged on one run and not on the next. */
-export const flag = System.create({ name: "remoteFinalizersTest/flag", components: { has: [serial], not: [flagged] } }, (row, { commands }) => {
+export const flag = System.create({ components: { has: [serial], not: [flagged] } }, (row, { commands }) => {
     commands.add(row.entity, flagged);
 });
-export const unflag = System.create({ name: "remoteFinalizersTest/unflag", components: { has: [serial, flagged] } }, (row, { commands }) => {
+export const unflag = System.create({ components: { has: [serial, flagged] } }, (row, { commands }) => {
     commands.remove(row.entity, flagged);
 });
 

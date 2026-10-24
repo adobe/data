@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { declarationOf, kindOf, labelOf } from '../registry/names.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
-import { firstItemOf, labelOfItem, nameOf } from '../registry/items.js';
+import { firstItemOf, nameOf } from '../registry/items.js';
 import { addFinalizer, programFinalizers } from '../registry/program.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
@@ -59,7 +59,7 @@ const checkOrder = (name: string, thread: string, declaration: { readonly before
         if (found === undefined) continue;
         const theirs = runsOn(found);
         if (theirs !== thread) {
-            throw new Error(`Finalizer "${name}" runs on thread "${thread}" and is ordered with "${labelOfItem(found)}", which runs on thread "${theirs}"; finalizers on different threads run at different times, so neither is ordered before the other.`);
+            throw new Error(`Finalizer "${name}" runs on thread "${thread}" and is ordered with "${found.name}", which runs on thread "${theirs}"; finalizers on different threads run at different times, so neither is ordered before the other.`);
         }
     }
 };
@@ -77,7 +77,7 @@ export const create = <const D extends Declaration>(
     body: (row: Row<D>, context: Context<D>) => void,
 ): Finalizer => {
     const id = takeIdOfDeclaration(declaration);
-    const name = nameOf(declaration.name, id, "finalizer");
+    const name = nameOf(declaration, id, "finalizer");
     const finalizer: Leaf<D> = { kind: "finalizer", name, declaration, body };
     checkResources(name, declaration.resources);
     const thread = threadOf(declaration, "Finalizer", name);
@@ -108,7 +108,7 @@ export const changes = <const D extends ChangesDeclaration>(
     body: (changes: ChangeSet<Watched<D>>, context: Context<D>) => void,
 ): Finalizer => {
     const id = takeIdOfDeclaration(declaration);
-    const name = nameOf(declaration.name, id, "finalizer");
+    const name = nameOf(declaration, id, "finalizer");
     const finalizer: Changes<D> = { kind: "changes", name, declaration, body };
     checkResources(name, declaration.resources);
     requireRegistered("Finalizer", name, "resource", declaration.resources?.read);

@@ -16,7 +16,7 @@ import { reportOf, runReported } from "./reports.test-helper.js";
  */
 
 /** A system on the worker's thread, which only this module declares, so the worker never imported it. */
-const onlyHere = System.create({ name: "threadSystemsTest/onlyHere", components: { read: [caption] } }, row => { void row[caption]; });
+const onlyHere = System.create({ components: { read: [caption] } }, row => { void row[caption]; });
 
 type Worker = {
     readonly ask: (message: ToThreadSystemsWorker, transfer?: readonly unknown[]) => Promise<FromThreadSystemsWorker>;

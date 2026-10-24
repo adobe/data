@@ -32,15 +32,15 @@ const Node = Archetype.create([pose, shown, extent, order]);
 
 const rows = 100_000;
 
-const seed = System.create({ name: "values/seed" }, ({ commands }, input: { readonly count: number }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn(Node)({ [pose]: { tx: i, ty: 0, rotation: 0, sx: 1, sy: 1 }, [shown]: { tx: 0, ty: 0, rotation: 0, sx: 1, sy: 1 }, [extent]: [1, 1], [order]: i });
 });
 
 /** Shows each row's pose: a struct read and written whole per row. */
-const showPose = System.create({ name: "values/showPose", components: { read: [pose], write: [shown] } }, row => { row[shown] = row[pose]; });
+const showPose = System.create({ components: { read: [pose], write: [shown] } }, row => { row[shown] = row[pose]; });
 
 /** Commits a pose and an extent per row as commands, values every row already has. */
-const commitPose = System.create({ name: "values/commitPose", kernel: "cpu", components: { read: [order] } }, (row, { commands }) => {
+const commitPose = System.create({ kernel: "cpu", components: { read: [order] } }, (row, { commands }) => {
     commands.add(row.entity, pose, { tx: row[order], ty: 1, rotation: 0, sx: 1, sy: 1 });
     commands.add(row.entity, extent, [2, 2]);
 });
@@ -78,7 +78,7 @@ export const valueBenchmarks: readonly Benchmark[] = [
         best: { bytes: 32, basis: "Each command writes its 40-byte struct or 8-byte vec2 and reads its entity's 8-byte location." },
         run: async () => {
             // Program-wide, so made here, in this benchmark's own process.
-            Finalizer.changes({ name: "values/history", watch: [pose, extent] }, ({ groups }) => {
+            Finalizer.changes({ watch: [pose, extent] }, ({ groups }) => {
                 replacedPoses = 0;
                 for (const group of groups) if (group.replaced.includes(pose)) replacedPoses += group.entities.length;
             });

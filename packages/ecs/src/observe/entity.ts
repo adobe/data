@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Index, System, type Component, type Entity, type World } from '../interface/index.js';
 import type { Observe } from './observe.js';
-import { createEntry, give, giveFirst, keysId, labelOf, none, noDelivery, ownName, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
+import { createEntry, give, giveFirst, keysId, labelOf, labelled, none, noDelivery, ownName, passed, scheduleDelivery, scheduleRead, stateOf, subscribe, sweepSubscribers, throwFailed, type Entry, type Read, type Shape, type WorldState } from './world-state.js';
 
 /** An observed entity's value, shared by its observers, and by optional component whether it had it last. */
 type EntityEntry = Entry<object | null> & { readonly entity: Entity; readonly present: boolean[] };
@@ -32,7 +32,7 @@ const memberIndexes = new Map<string, Index<{ readonly key: readonly []; readonl
 const membersOf = (required: readonly Component.Key[]) => {
     const id = keysId(required);
     let index = memberIndexes.get(id);
-    if (index === undefined) memberIndexes.set(id, index = Index.create({ name: `Observe.entity(${labelOf(required)})`, key: [], components: { has: [...required] } }));
+    if (index === undefined) memberIndexes.set(id, index = Index.create(labelled({ key: [], components: { has: [...required] } }, `Observe.entity(${labelOf(required)})`)));
     return index;
 };
 
@@ -129,14 +129,14 @@ const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: s
     let finders: Finders | null = null;
     let source: object | null = null;
     const system = optional.length === 0
-        ? System.create({ name, observer: true, lookup: { presence: { has: required, changed: required }, values: { read: required }, members: { index: membersOf(required), changed: required } } }, ({ lookup }) => {
+        ? System.create(labelled({ observer: true, lookup: { presence: { has: required, changed: required }, values: { read: required }, members: { index: membersOf(required), changed: required } } }, name), ({ lookup }) => {
             if (source !== lookup || finders === null) {
                 source = lookup;
                 finders = { presence: lookup.presence, values: lookup.values, optional: noOptional };
             }
             pass(lookup.members().changed, finders);
         })
-        : System.create({ name, observer: true, lookup: optionalLookups(required, optional) }, ({ lookup }) => {
+        : System.create(labelled({ observer: true, lookup: optionalLookups(required, optional) }, name), ({ lookup }) => {
             if (source !== lookup || finders === null) {
                 source = lookup;
                 finders = { presence: lookup.presence, values: lookup.values, optional: (index, entity) => lookup[index](entity) };

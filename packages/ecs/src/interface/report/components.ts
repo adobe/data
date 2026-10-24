@@ -58,13 +58,14 @@ declareComponent$(errors, {
                     properties: {
                         kind: { anyOf: [{ const: "system" }, { const: "finalizer" }, { const: "gpu" }, { const: "thread" }, { const: "index" }] },
                         name: text,
+                        id: { anyOf: [text, { type: "null" }] },
                         message: text,
                         stack: { anyOf: [text, { type: "null" }] },
                     },
                 },
             },
             skipped: { type: "array", items: text },
-            warnings: { type: "array", items: { type: "object", properties: { kind: { const: "blocking" }, name: text, message: text } } },
+            warnings: { type: "array", items: { type: "object", properties: { kind: { const: "blocking" }, name: text, id: { anyOf: [text, { type: "null" }] }, message: text } } },
         },
     },
 });

@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Cadence } from '../../interface/resources/cadence.js';
 import type { Composite, Definition } from '../../interface/registry/index.js';
-import { labelOfItem } from '../../interface/registry/index.js';
 import { requireDefinition } from '../../interface/registry/program.js';
 import { isLeaf, isObserver, scheduleOf } from '../../interface/registry/schedule.js';
 import type { Leaf } from '../../interface/system/leaf.js';
@@ -105,7 +104,7 @@ const checkNoInput = (system: Definition, seen: Set<Definition> = new Set()): vo
     if (seen.has(system)) return;
     seen.add(system);
     if (isLeaf(system)) {
-        if (system.input !== undefined) throw new Error(`System "${labelOfItem(system)}" takes input, which ticks don't pass; run it instead.`);
+        if (system.input !== undefined) throw new Error(`System "${system.name}" takes input, which ticks don't pass; run it instead.`);
         return;
     }
     for (const member of system.declaration.systems) checkNoInput(requireDefinition(member), seen);
@@ -248,7 +247,7 @@ export const createLoop = (host: LoopHost): Loop => {
             }
             if (systems.includes(system)) return;
             const next = [...systems, system];
-            const candidate: Composite = { kind: "composite", name: "tick", declaration: { name: "tick", systems: next } };
+            const candidate: Composite = { kind: "composite", name: "tick", declaration: { systems: next } };
             // Throws for members ordered in a cycle, or conflicting with no order between them.
             scheduleOf(candidate);
             systems.push(system);
@@ -266,7 +265,7 @@ export const createLoop = (host: LoopHost): Loop => {
             const at = systems.indexOf(system);
             if (at < 0 || composite === null) return null;
             const left = systems.filter((_, k) => k !== at);
-            const next: Composite | null = left.length === 0 ? null : { kind: "composite", name: "tick", declaration: { name: "tick", systems: left } };
+            const next: Composite | null = left.length === 0 ? null : { kind: "composite", name: "tick", declaration: { systems: left } };
             // Throws for members that conflict with no ordering path left between them.
             if (next !== null) scheduleOf(next);
             const previous = composite;

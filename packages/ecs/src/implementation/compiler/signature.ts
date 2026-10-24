@@ -61,17 +61,13 @@ const keyLists = (node: Expression | Pattern, what: string, allowed: readonly st
         ? entry(name, identifiers(property.value, `${what}.${name}`, lists))
         : fail(property, `${what}.${name} is not allowed in a kernel declaration`)));
 
-/** `reduce: { [resource]: "operator", ... }`, with resources bound at module scope. */
-const reductions = (node: Expression | Pattern, module: ModuleScope): readonly Reduced[] => {
-    if (node.type !== "ObjectExpression") return fail(node, "reduce must be an object literal in a kernel declaration");
-    return node.properties.map((property): Reduced => {
-        if (property.type === "SpreadElement" || !property.computed || property.key.type !== "Identifier" || !module.has(property.key.name)) {
-            return fail(property, "reduce names each resource as a computed key bound at module scope, as in { [total]: \"+\" }");
-        }
-        const { value } = property;
-        const operator = value.type === "Literal" ? value.value : undefined;
-        if (!isReduction(operator)) return fail(value, `a resource is reduced with one of ${reductionOperators.map(item => JSON.stringify(item)).join(", ")}`);
-        return { resource: property.key.name, operator };
+/** `resources: { reduce: [resource, ...] }`, each folded with its declaration's `reduce` trait. */
+const reductions = (node: Expression | Pattern, lists: Lists): readonly Reduced[] => {
+    const names = identifiers(node, "resources.reduce", lists);
+    return names.map((resource): Reduced => {
+        const operator = lists.reduction(resource);
+        if (!isReduction(operator)) return fail(node, `${resource} is reduced, so the build reads its operator from its declaration's reduce trait, ${operator === undefined ? "which it can't find: declare the resource with reduce in the module that makes its key" : `"${operator}", which isn't one of ${reductionOperators.map(item => JSON.stringify(item)).join(", ")}`}`);
+        return { resource, operator };
     }).map((entry, index, all) => all.findIndex(other => other.resource === entry.resource) === index ? entry : fail(node, `${entry.resource} is reduced twice`));
 };
 
@@ -106,12 +102,10 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
                     // A condition in `is` is readable too; one in `not` is only checked before the kernel runs.
                     if (list === "read" || list === "is") resources = [...resources, ...identifiers(value.value, `resources.${list}`, lists)];
                     else if (list === "changed") changedResources = identifiers(value.value, "resources.changed", lists);
+                    else if (list === "reduce") reduced = reductions(value.value, lists);
                     else if (list === "not") continue;
                     else fail(value, `resources.${list} is not allowed in a kernel declaration`);
                 }
-                break;
-            case "reduce":
-                reduced = reductions(property.value, module);
                 break;
             case "lookup":
                 for (const [lookup, value] of properties(property.value, "lookup")) {
@@ -147,7 +141,7 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
             case "order":
                 ordered = true;
                 break;
-            case "name": case "kernel": case "before": case "after": case "during":
+            case "kernel": case "before": case "after": case "during":
                 break;
             default:
                 fail(property, `${name} is not allowed in a kernel declaration`);

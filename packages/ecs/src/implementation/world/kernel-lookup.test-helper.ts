@@ -17,7 +17,6 @@ declare module "@adobe/ecs" {
 }
 
 export const labels = System.create({
-    name: "kernelLookupTest/labels",
     kernel: "cpu",
     components: { read: [target], write: [offset] },
     // @ts-expect-error kernel lookups read linear values

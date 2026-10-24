@@ -13,9 +13,9 @@ declare module "@adobe/ecs" {
     }
 }
 
-const spawn = System.create({ name: "worldTest/spawn" }, ({ commands }) => { commands.spawn([count])({ [count]: 1 }); });
-const raise = System.create({ name: "worldTest/raise", resources: { write: [total] } }, ({ resources }) => { resources[total] = 7; });
-const add = System.create({ name: "worldTest/add", components: { write: [count] } }, row => { row[count] += 1; });
+const spawn = System.create({}, ({ commands }) => { commands.spawn([count])({ [count]: 1 }); });
+const raise = System.create({ resources: { write: [total] } }, ({ resources }) => { resources[total] = 7; });
+const add = System.create({ components: { write: [count] } }, row => { row[count] += 1; });
 
 describe("World.create", () => {
     it("creates a world from the package root, the one import that names everything else", async () => {

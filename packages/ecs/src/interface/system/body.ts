@@ -16,7 +16,7 @@ export type Row<D extends Declaration> =
 
 type Resources<D> = Listed<Property<D, "resources">, "read"> | Listed<Property<D, "resources">, "write"> | Is<D>;
 type Is<D> = Listed<Property<D, "resources">, "is">;
-type Reduced<D> = keyof Property<D, "reduce"> & Resource.Key;
+type Reduced<D> = Listed<Property<D, "resources">, "reduce"> & Resource.Key;
 
 /**
  * What a body uses besides its row, by kind, under the declaration's own keys: each is present only when the

@@ -40,7 +40,7 @@ declare module "@adobe/ecs" {
 
 /** Objects: a nullable string starting at "unnamed", a nullable string, and a nullable number. */
 
-const seed = System.create({ name: "commandRingsTest/seed" }, ({ commands }, input: { readonly count: number }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([index])({ [index]: i });
 });
 
@@ -49,7 +49,6 @@ const seed = System.create({ name: "commandRingsTest/seed" }, ({ commands }, inp
  * of every seventh spawn's row, so a run of a few thousand rows overflows a worker's ring.
  */
 const burst = System.create({
-    name: "commandRingsTest/burst",
     kernel: "cpu",
     components: { read: [index] },
 }, (row, { commands }, input: { readonly shift: number }) => {
@@ -96,14 +95,13 @@ export const overflow = (count: number): Promise<{ readonly rows: readonly strin
 };
 
 /** Rows targeting a live entity, but for the last, whose target never lived. */
-const targets = System.create({ name: "commandRingsTest/targets" }, ({ commands }, input: { readonly count: number }) => {
+const targets = System.create({}, ({ commands }, input: { readonly count: number }) => {
     const first = commands.spawn([index])({ [index]: 0 });
     for (let i = 1; i < input.count; i++) commands.spawn([index, target])({ [index]: i, [target]: i === input.count - 1 ? Entity.none : first });
 });
 
 /** A spawn and an add for each row, then a read through its target, which throws at the last row, whose target is none. */
 const failing = System.create({
-    name: "commandRingsTest/failing",
     kernel: "cpu",
     components: { read: [index, target] },
     lookup: { targets: { read: [index] } },
@@ -133,14 +131,13 @@ export const failed = (count: number): Promise<Failed> => using(createWorld({ [w
 
 /** A spawn for every 64th row: each chunk uses one position of its block of eight and returns the rest. */
 const sparse = System.create({
-    name: "commandRingsTest/sparse",
     kernel: "cpu",
     components: { read: [index], not: [made] },
 }, (row, { commands }) => {
     if (row[index] % 64 === 0) commands.spawn([made])({ [made]: row[index] });
 });
 
-const many = System.create({ name: "commandRingsTest/many" }, ({ commands }) => {
+const many = System.create({}, ({ commands }) => {
     for (let i = 0; i < 5_000; i++) commands.spawn([made])({ [made]: 1_000_000 + i });
 });
 
@@ -158,7 +155,6 @@ export const returned = (count: number): Promise<{ readonly spawned: number; rea
 
 /** Object components from a kernel: left out, null, and a number, by add and by spawn. */
 const objects = System.create({
-    name: "commandRingsTest/objects",
     kernel: "cpu",
     components: { read: [index] },
 }, (row, { commands }) => {

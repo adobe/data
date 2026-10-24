@@ -20,14 +20,13 @@ declare module "@adobe/ecs" {
 }
 
 /** Todos with rows, in list order. */
-const placed = Index.create({ name: "todos/placed", key: [order], sorted: true, components: { has: [todo, row] } });
+const placed = Index.create({ key: [order], sorted: true, components: { has: [todo, row] } });
 
 /**
  * Gives each new todo a row, attached to it for events from the row, while the page has a list for it. It isn't placed
  * until the row is the todo's, so a todo gone first never shows one.
  */
 export const createRows = System.create({
-    name: "todos/createRows",
     components: { has: [todo], not: [row] },
     resources: { is: [list] },
 }, (item, { commands }) => {
@@ -36,7 +35,6 @@ export const createRows = System.create({
 
 /** Writes what changed of each todo to its row. */
 export const bindRows = System.create({
-    name: "todos/bindRows",
     observer: true,
     components: { read: [label, done, row], changed: [label, done, row] },
 }, item => {
@@ -66,7 +64,6 @@ const place = (parent: Element, element: HTMLElement, before: Element | null): v
  * its focus.
  */
 export const placeRows = System.create({
-    name: "todos/placeRows",
     observer: true,
     components: { read: [row, order], changed: [row, order] },
     order: placed,
@@ -80,7 +77,7 @@ export const placeRows = System.create({
     if (before !== element) place(parent, element, before);
 });
 
-Finalizer.create({ name: "todos/removeRows", components: { read: [row] } }, item => {
+Finalizer.create({ components: { read: [row] } }, item => {
     item[row].remove();
 });
 

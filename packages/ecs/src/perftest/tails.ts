@@ -48,36 +48,36 @@ export const lateRows = 10_000;
 /** Ticks in each timed stretch of the prompt tail. */
 export const tailTicks = 1_000;
 
-const spawnPlaces = System.create({ name: "tails/spawnPlaces" }, ({ commands }) => {
+const spawnPlaces = System.create({}, ({ commands }) => {
     for (let k = 0; k < promptRows; k++) commands.spawn([place])({ [place]: [k, 0, 0] });
 });
-const spawnPoses = System.create({ name: "tails/spawnPoses" }, ({ commands }) => {
+const spawnPoses = System.create({}, ({ commands }) => {
     for (let k = 0; k < lateRows; k++) commands.spawn([place, pose])({ [place]: [k, 0, 0], [pose]: [k, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] });
 });
 
-const here = System.create({ name: "tails/here" }, () => {});
+const here = System.create({}, () => {});
 /** On the joined thread, terminal: reads every row's place, as a DOM-writing system reads positions. */
-const draw = System.create({ name: "tails/draw", components: { read: [place] }, resources: { read: [surface] } }, (row, { resources }) => {
+const draw = System.create({ components: { read: [place] }, resources: { read: [surface] } }, (row, { resources }) => {
     if (resources[surface] === surfaceStart) drawn.sum += row[place][0];
 });
 /** A tick of a world system and a 1,000-row tail that finishes before the next tick needs it. */
-export const promptTick = System.create({ name: "tails/promptTick", systems: [here, draw] });
+export const promptTick = System.create({ systems: [here, draw] });
 
 /** On the joined thread, ahead of the late tail: busy for a while, as a main thread is with layout. */
-const busy = System.create({ name: "tails/busy", resources: { read: [surface] } }, ({ resources }) => {
+const busy = System.create({ resources: { read: [surface] } }, ({ resources }) => {
     const until = performance.now() + 4;
     while (performance.now() < until && resources[surface] === surfaceStart);
 });
 /** On the joined thread, terminal, after `busy`: reads every row's place and pose, and the resource `poke` writes. */
-const copied = System.create({ name: "tails/copied", components: { read: [place, pose] }, resources: { read: [surface, poked] }, after: [busy] }, (row, { resources }) => {
+const copied = System.create({ components: { read: [place, pose] }, resources: { read: [surface, poked] }, after: [busy] }, (row, { resources }) => {
     if (resources[surface] === surfaceStart) drawn.sum += row[place][0] + row[pose][15] + resources[poked];
 });
-export const lateTick = System.create({ name: "tails/lateTick", systems: [busy, copied] });
+export const lateTick = System.create({ systems: [busy, copied] });
 /** On the world's thread: writes what the late tail reads, so it copies the rest of the tail's reads first. */
-const poke = System.create({ name: "tails/poke", resources: { write: [poked] } }, ({ resources }) => {
+const poke = System.create({ resources: { write: [poked] } }, ({ resources }) => {
     resources[poked] += 1;
 });
-const nothing = System.create({ name: "tails/nothing" }, () => {});
+const nothing = System.create({}, () => {});
 
 /** Steps of work each row of the overlapping tail does, about 2.5 ms over 10,000 rows; the world's work after its writer. */
 export const overlapWork = 40;
@@ -86,23 +86,23 @@ export const overlapWorldMilliseconds = 2;
 export const overlapTicks = 100;
 
 /** On the world's thread: writes every row's place, which the last tick's tail still reads. */
-const overlapWrite = System.create({ name: "tails/overlapWrite", components: { write: [place] } }, row => {
+const overlapWrite = System.create({ components: { write: [place] } }, row => {
     row[place] = [row[place][0], 1, 0];
 });
 /** On the world's thread, after the writer: the rest of the tick's work, as systems reading what it wrote do. */
-const overlapSimulate = System.create({ name: "tails/overlapSimulate", resources: { read: [worldWork] }, after: [overlapWrite] }, ({ resources }) => {
+const overlapSimulate = System.create({ resources: { read: [worldWork] }, after: [overlapWrite] }, ({ resources }) => {
     const until = performance.now() + resources[worldWork];
     while (performance.now() < until);
 });
 /** On the joined thread, terminal: works on every row's place and pose, as a DOM-writing system on main does. */
-const overlapDraw = System.create({ name: "tails/overlapDraw", components: { read: [place, pose] }, resources: { read: [surface, rowWork] }, after: [overlapWrite] }, (row, { resources }) => {
+const overlapDraw = System.create({ components: { read: [place, pose] }, resources: { read: [surface, rowWork] }, after: [overlapWrite] }, (row, { resources }) => {
     if (resources[surface] !== surfaceStart) return;
     let sum = row[place][0] + row[pose][15];
     for (let k = resources[rowWork]; k > 0; k--) sum = Math.sqrt(sum + k);
     drawn.sum += sum;
 });
-export const overlapTick = System.create({ name: "tails/overlapTick", systems: [overlapWrite, overlapSimulate, overlapDraw] });
-const setOverlap = System.create({ name: "tails/setOverlap", resources: { write: [rowWork, worldWork] } }, ({ resources }) => {
+export const overlapTick = System.create({ systems: [overlapWrite, overlapSimulate, overlapDraw] });
+const setOverlap = System.create({ resources: { write: [rowWork, worldWork] } }, ({ resources }) => {
     resources[rowWork] = overlapWork;
     resources[worldWork] = overlapWorldMilliseconds;
 });

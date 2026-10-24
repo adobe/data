@@ -35,12 +35,12 @@ declare module "@adobe/ecs" {
 }
 
 
-const grid = Index.create({ name: "indexesTest/grid", key: [cell], components: { has: [weight], not: [hidden] } });
-const byServerId = Index.create({ name: "indexesTest/byServerId", key: [serverId], unique: true });
-const byLabel = Index.create({ name: "indexesTest/byLabel", key: [label] });
-const children = Index.create({ name: "indexesTest/children", key: [owner] });
+const grid = Index.create({ key: [cell], components: { has: [weight], not: [hidden] } });
+const byServerId = Index.create({ key: [serverId], unique: true });
+const byLabel = Index.create({ key: [label] });
+const children = Index.create({ key: [owner] });
 
-const spawnCells = System.create({ name: "indexesTest/spawnCells" }, ({ commands }, input: { readonly cells: readonly (readonly number[])[] }) => {
+const spawnCells = System.create({}, ({ commands }, input: { readonly cells: readonly (readonly number[])[] }) => {
     input.cells.forEach(([x, y], k) => commands.spawn([cell, weight])({ [cell]: [x ?? 0, y ?? 0], [weight]: k }));
 });
 
@@ -48,7 +48,6 @@ const spawnCells = System.create({ name: "indexesTest/spawnCells" }, ({ commands
 let seen: { readonly entities: readonly Entity[]; readonly weights: readonly number[]; readonly changed: boolean; readonly length: number } | null = null;
 
 const look = System.create({
-    name: "indexesTest/look",
     lookup: { near: { index: grid, read: [weight] } },
 }, ({ lookup }, input: { readonly x: number; readonly y: number }) => {
     const near = lookup.near([input.x, input.y]);
@@ -62,14 +61,14 @@ const look = System.create({
 });
 
 /** Moves every entity in cell [0, 0] to [1, 0], before `lookAfter` in the same run. */
-const shift = System.create({ name: "indexesTest/shift", components: { write: [cell] } }, row => {
+const shift = System.create({ components: { write: [cell] } }, row => {
     if (row[cell][0] === 0 && row[cell][1] === 0) row[cell] = [1, 0];
 });
 let afterShift: number | null = null;
-const lookAfter = System.create({ name: "indexesTest/lookAfter", lookup: { near: { index: grid } }, after: [shift] }, ({ lookup }) => {
+const lookAfter = System.create({ lookup: { near: { index: grid } }, after: [shift] }, ({ lookup }) => {
     afterShift = lookup.near([1, 0]).length;
 });
-const shiftThenLook = System.create({ name: "indexesTest/shiftThenLook", systems: [shift, lookAfter] });
+const shiftThenLook = System.create({ systems: [shift, lookAfter] });
 
 const entitiesOf = (world: CreatedWorld): Promise<readonly Entity[]> => Observe.toPromise(Observe.select(world, { required: [cell] }));
 
@@ -189,8 +188,9 @@ describe("unique indexes", () => {
         expect(known).toBe(first);
         expect(conflicted.failures).toEqual([{
             kind: "index",
-            name: "indexesTest/byServerId",
-            message: `Index "indexesTest/byServerId" is unique, and entities ${first} and ${second} both have key 7; lookups give ${first}, the one with the lower entity index.`,
+            name: "byServerId",
+            id: "@adobe/ecs@0.1.1/src/implementation/world/indexes.test.ts#byServerId",
+            message: `Index "byServerId" is unique, and entities ${first} and ${second} both have key 7; lookups give ${first}, the one with the lower entity index.`,
             stack: null,
         }]);
         // Found once: the next run reports nothing.
@@ -228,7 +228,7 @@ describe("call sites", () => {
 
 describe("finalizers", () => {
     const released: number[] = [];
-    Finalizer.create({ name: "indexesTest/release", components: { read: [order, cell] }, lookup: { near: { index: grid, read: [weight] } } }, (row, { lookup }) => {
+    Finalizer.create({ components: { read: [order, cell] }, lookup: { near: { index: grid, read: [weight] } } }, (row, { lookup }) => {
         released.push(lookup.near(row[cell]).length);
     });
     it("look up through indexes as they are before the sync point applies", async () => {
@@ -246,9 +246,9 @@ describe("finalizers", () => {
     });
 });
 
-const keepTicking = System.create({ name: "indexesTest/keepTicking" }, () => {});
+const keepTicking = System.create({}, () => {});
 /** Uses `grid` every tick it's added to. */
-const watchGrid = System.create({ name: "indexesTest/watchGrid", lookup: { near: { index: grid } } }, ({ lookup }) => { void lookup.near([0, 0]).length; });
+const watchGrid = System.create({ lookup: { near: { index: grid } } }, ({ lookup }) => { void lookup.near([0, 0]).length; });
 
 describe("index lifetime", () => {
     it("builds an index the first time a system uses it and releases it, arena blocks included, once none does", async () => {
@@ -310,7 +310,7 @@ const bucketsOf = (lookup: (key: readonly [number, number]) => { readonly length
 const isOrdered = (bucket: readonly number[]): boolean => bucket.every((entity, k) => k === 0 || (bucket[k - 1] >>> 0) < (entity >>> 0));
 
 let incremental: readonly (readonly number[])[] = [];
-const probe = System.create({ name: "indexesTest/probe", lookup: { near: { index: grid } } }, ({ lookup }) => { incremental = bucketsOf(key => lookup.near(key)); });
+const probe = System.create({ lookup: { near: { index: grid } } }, ({ lookup }) => { incremental = bucketsOf(key => lookup.near(key)); });
 
 const folded = Symbol("indexesTest/folded");
 declare module "@adobe/ecs" {
@@ -324,7 +324,7 @@ const foldOf = (bucket: readonly number[]): number => bucket.reduce((sum, entity
 
 /** A kernel folding the entities of its row's own cell's list, so kernels' lookups are checked against the same index. */
 const foldNear = System.create({
-    name: "indexesTest/foldNear", kernel: "cpu",
+    kernel: "cpu",
     components: { read: [cell], write: [folded] },
     lookup: { near: { index: grid } },
 }, (row, { lookup }) => {
@@ -337,7 +337,7 @@ const foldNear = System.create({
 
 /** Moves each row whose weight is below `share` of 1000 to the cell `cell` gives it, so keys change during runs. */
 const rekey = System.create({
-    name: "indexesTest/rekey", components: { read: [weight], write: [cell] }, before: [probe],
+    components: { read: [weight], write: [cell] }, before: [probe],
 }, (row, _context, input: { readonly share: number; readonly seed: number }) => {
     if ((row[weight] * 7919 + input.seed) % 1000 < input.share * 1000) row[cell] = cells[(row[weight] + input.seed) % cells.length];
 });
@@ -396,10 +396,10 @@ declare module "@adobe/ecs" {
     }
 }
 
-const byRank = Index.create({ name: "indexesTest/byRank", key: [rank], sorted: true });
-const byLaneRank = Index.create({ name: "indexesTest/byLaneRank", key: [lane, rank], sorted: true, components: { has: [weight] } });
-const byName = Index.create({ name: "indexesTest/byName", key: [label], sorted: true, unique: true });
-const byFlagPair = Index.create({ name: "indexesTest/byFlagPair", key: [flag, pair], sorted: true });
+const byRank = Index.create({ key: [rank], sorted: true });
+const byLaneRank = Index.create({ key: [lane, rank], sorted: true, components: { has: [weight] } });
+const byName = Index.create({ key: [label], sorted: true, unique: true });
+const byFlagPair = Index.create({ key: [flag, pair], sorted: true });
 
 /** What a sorted lookup gave: its rows' entities and ranks, and whether it changed. */
 let ranked: { readonly ranks: readonly number[]; readonly changed: boolean } = { ranks: [], changed: false };
@@ -542,13 +542,13 @@ describe("sorted indexes on the main thread", () => {
         await world.run(System.create(({ commands }) => { commands.add(second, label, "one"); }));
         const report = await runReported(world, find);
         expect(kept).toBe(first);
-        expect(report.failures).toEqual([{ kind: "index", name: "indexesTest/byName", message: `Index "indexesTest/byName" is unique, and entities ${first} and ${second} both have key "one"; lookups give ${first}, the one with the lower entity index.`, stack: null }]);
+        expect(report.failures).toEqual([{ kind: "index", name: "byName", id: "@adobe/ecs@0.1.1/src/implementation/world/indexes.test.ts#byName", message: `Index "byName" is unique, and entities ${first} and ${second} both have key "one"; lookups give ${first}, the one with the lower entity index.`, stack: null }]);
     });
 });
 
 let incrementalRanks: readonly number[] = [];
 let incrementalLanes: readonly (readonly number[])[] = [];
-const probeSorted = System.create({ name: "indexesTest/probeSorted", lookup: { lanes: { index: byLaneRank } } }, ({ lookup }) => {
+const probeSorted = System.create({ lookup: { lanes: { index: byLaneRank } } }, ({ lookup }) => {
     const all = lookup.lanes();
     incrementalRanks = Array.from({ length: all.length }, (_, i) => all.at(i).entity);
     incrementalLanes = [-1, 0, 1].map(laneValue => {
@@ -557,14 +557,14 @@ const probeSorted = System.create({ name: "indexesTest/probeSorted", lookup: { l
     });
 });
 const rerank = System.create({
-    name: "indexesTest/rerank", components: { read: [weight], write: [rank] }, before: [probeSorted],
+    components: { read: [weight], write: [rank] }, before: [probeSorted],
 }, (row, _context, input: { readonly share: number; readonly seed: number }) => {
     if ((row[weight] * 7919 + input.seed) % 1000 < input.share * 1000) row[rank] = (row[weight] * 31 + input.seed * 17) % 1000;
 });
 
 /** A kernel folding the entities of its row's lane's range of ranks within 50 of its own, so kernels' sorted lookups are checked against the same index. */
 const foldLane = System.create({
-    name: "indexesTest/foldLane", kernel: "cpu",
+    kernel: "cpu",
     components: { read: [lane, rank], write: [folded] },
     lookup: { lanes: { index: byLaneRank } },
 }, (row, { lookup }) => {

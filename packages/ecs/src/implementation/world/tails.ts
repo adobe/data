@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Failure } from '../../interface/report/failure.js';
-import { declarationOf, firstKeyOf, labelOfItem } from '../../interface/registry/index.js';
+import { declarationOf, firstKeyOf } from '../../interface/registry/index.js';
 import { layoutOf, type Layout } from '../../interface/registry/layout.js';
 import { accessOf, type Schedule } from '../../interface/registry/schedule.js';
 import { stampChanged, type Archetype } from './archetype.js';
@@ -40,7 +40,7 @@ export const isTerminal = (leaf: Leaf): boolean => {
     const { declaration } = leaf;
     const terminal = leaf.kind === "system" && declaration.kernel === undefined && declaration.up === undefined && provenTerminal(leaf.body)
         && Object.keys(declaration.lookup ?? {}).length === 0
-        && (declaration.reduce === undefined || Object.getOwnPropertySymbols(declaration.reduce).length === 0)
+        && (declaration.resources?.reduce?.length ?? 0) === 0
         && objectsOnly(declaration.components?.write) && objectsOnly(declaration.resources?.write);
     terminalLeaves.set(leaf, terminal);
     return terminal;
@@ -130,7 +130,7 @@ const isStruct = (state: State, id: number): boolean => state.layouts[id].kind !
 /** A runner's tail, made the first time it runs as one; its block is the channel's, freed with it. */
 export const tailOf = (state: State, runner: Runner, leaf: Leaf): Tail => {
     const remote = runner.remote;
-    if (remote === null) throw new Error(`System "${labelOfItem(leaf)}" runs as a tail only on a joined thread.`);
+    if (remote === null) throw new Error(`System "${leaf.name}" runs as a tail only on a joined thread.`);
     if (remote.tail !== null) return remote.tail;
     const { components, resources } = leaf.declaration;
     const ids = (keys: readonly Key[] | undefined): number[] => [...new Set((keys ?? []).map(key => idOf(state, key)))];
@@ -222,10 +222,10 @@ const outcomeOf = async (tasks: readonly Promise<{ readonly done: boolean; reado
     for (const { done, systems } of await Promise.all(tasks)) {
         for (const system of systems) {
             if (!done) {
-                (failures ??= []).push(failureOf("thread", system.label, system.channel.goneError()));
+                (failures ??= []).push(failureOf("thread", { name: system.label, id: system.id }, system.channel.goneError()));
                 (skipped ??= []).push(system.label);
             }
-            else if (system.result.error !== undefined) (failures ??= []).push(failureOf("system", system.label, system.result.error));
+            else if (system.result.error !== undefined) (failures ??= []).push(failureOf("system", { name: system.label, id: system.id }, system.result.error));
         }
     }
     return { failures, skipped };

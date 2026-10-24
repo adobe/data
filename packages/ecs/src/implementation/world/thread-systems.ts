@@ -652,7 +652,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         }
     };
     const ownInput = inputFor(leaf);
-    const targets: readonly ReductionTarget[] = reductionTargetsOf(host.layoutOf, declaration);
+    const targets: readonly ReductionTarget[] = reductionTargetsOf(host.layoutOf, leaf.name, declaration);
     const reduced = targets.map(target => new Float64Array(target.leaves.length));
 
     // The context: resources, lookups, reductions, input and commands, each under its own key when declared.

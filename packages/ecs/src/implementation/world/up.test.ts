@@ -33,7 +33,6 @@ declare module "@adobe/ecs" {
 
 const ran: string[] = [];
 const propagate = System.create({
-    name: "upTest/propagate",
     components: { read: [local, label], write: [world] },
     up: { through: parent, read: [world] },
 }, (row, { up }) => {
@@ -41,7 +40,6 @@ const propagate = System.create({
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
 const propagateChanged = System.create({
-    name: "upTest/propagateChanged",
     components: { read: [local, label], write: [world], changed: [local] },
     up: { through: parent, read: [world] },
 }, (row, { up }) => {
@@ -49,7 +47,6 @@ const propagateChanged = System.create({
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
 const propagateAdded = System.create({
-    name: "upTest/propagateAdded",
     components: { read: [local, label], write: [world], added: [local] },
     up: { through: parent, read: [world] },
 }, (row, { up }) => {
@@ -57,7 +54,6 @@ const propagateAdded = System.create({
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
 const propagateChangedKernel = System.create({
-    name: "upTest/propagateChangedKernel",
     kernel: "cpu",
     components: { read: [local], write: [world], changed: [local] },
     up: { through: parent, read: [world] },
@@ -65,7 +61,6 @@ const propagateChangedKernel = System.create({
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
 const propagateKernel = System.create({
-    name: "upTest/propagateKernel",
     kernel: "cpu",
     components: { read: [local], write: [world] },
     up: { through: parent, read: [world] },
@@ -75,27 +70,27 @@ const propagateKernel = System.create({
 
 /** Spawns a root with two trees under it, the grandchild stored before its parent so storage order isn't depth order. */
 const entities: { [name: string]: Entity } = {};
-const spawn = System.create({ name: "upTest/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     entities.root = commands.spawn([label, local, world])({ [label]: "root", [local]: 1, [world]: 0 });
     entities.grandchild = commands.spawn([label, local, world, parent])({ [label]: "grandchild", [local]: 100, [world]: 0, [parent]: entities.root });
     entities.child = commands.spawn([label, local, world, parent])({ [label]: "child", [local]: 10, [world]: 0, [parent]: entities.root });
     entities.other = commands.spawn([label, local, world])({ [label]: "other", [local]: 1000, [world]: 0 });
 });
-const nest = System.create({ name: "upTest/nest" }, ({ commands }) => { commands.add(entities.grandchild, parent, entities.child); });
-const bump = System.create({ name: "upTest/bump" }, ({ commands }, input: { readonly entity: Entity }) => {
+const nest = System.create({}, ({ commands }) => { commands.add(entities.grandchild, parent, entities.child); });
+const bump = System.create({}, ({ commands }, input: { readonly entity: Entity }) => {
     commands.add(input.entity, local, 2);
 });
-const loop = System.create({ name: "upTest/loop" }, ({ commands }) => {
+const loop = System.create({}, ({ commands }) => {
     commands.add(entities.root, parent, entities.grandchild);
     commands.spawn([label, local, world, parent])({ [label]: "under", [local]: 5, [world]: 0, [parent]: entities.child });
 });
 /** Puts the root under the grandchild, two levels below it, then under `other`. */
-const close = System.create({ name: "upTest/close" }, ({ commands }) => { commands.add(entities.root, parent, entities.grandchild); });
-const open = System.create({ name: "upTest/open" }, ({ commands }) => { commands.add(entities.root, parent, entities.other); });
-const orphan = System.create({ name: "upTest/orphan" }, ({ commands }) => { commands.remove(entities.grandchild, parent); });
+const close = System.create({}, ({ commands }) => { commands.add(entities.root, parent, entities.grandchild); });
+const open = System.create({}, ({ commands }) => { commands.add(entities.root, parent, entities.other); });
+const orphan = System.create({}, ({ commands }) => { commands.remove(entities.grandchild, parent); });
 /** Spawns `count` leaves under the grandchild, more than the journal keeps for a world this small. */
 const bulk: Entity[] = [];
-const bulkUnder = System.create({ name: "upTest/bulkUnder" }, ({ commands }, input: { readonly count: number }) => {
+const bulkUnder = System.create({}, ({ commands }, input: { readonly count: number }) => {
     bulk.length = 0;
     for (let i = 0; i < input.count; i++) bulk.push(commands.spawn([label, local, world, parent])({ [label]: "bulk", [local]: 1, [world]: 0, [parent]: entities.grandchild }));
 });
@@ -104,7 +99,6 @@ const worlds = async (value: (entity: Entity) => Promise<number | null>): Promis
     Object.fromEntries(await Promise.all(Object.entries(entities).map(async ([name, entity]) => [name, await value(entity)])));
 
 const show = System.create({
-    name: "upTest/show",
     kernel: "cpu",
     components: { read: [visible], write: [shown] },
     up: { through: parent, read: [shown] },
@@ -114,7 +108,7 @@ const show = System.create({
 
 /** Children of one archetype whose parents are in three: a matched one, one the query doesn't match, and one without `world`. */
 const mixed: { [name: string]: Entity } = {};
-const spawnMixed = System.create({ name: "upTest/spawnMixed" }, ({ commands }) => {
+const spawnMixed = System.create({}, ({ commands }) => {
     mixed.root = commands.spawn([local, world])({ [local]: 1, [world]: 0 });
     mixed.anchored = commands.spawn([local, world, anchor])({ [local]: 2, [world]: 0, [anchor]: true });
     mixed.unmatched = commands.spawn([world])({ [world]: 50 });
@@ -124,10 +118,10 @@ const spawnMixed = System.create({ name: "upTest/spawnMixed" }, ({ commands }) =
     mixed.underAnchored = commands.spawn([local, world, parent])({ [local]: 10, [world]: 0, [parent]: mixed.anchored });
     mixed.underBare = commands.spawn([local, world, parent])({ [local]: 10, [world]: 0, [parent]: mixed.bare });
 });
-const growParents = System.create({ name: "upTest/growParents" }, ({ commands }) => {
+const growParents = System.create({}, ({ commands }) => {
     for (let i = 0; i < 100; i++) commands.spawn([local, world, anchor])({ [local]: 0, [world]: 0, [anchor]: true });
 });
-const shift = System.create({ name: "upTest/shift", components: { write: [local], has: [anchor] } }, row => { row[local] += 1; });
+const shift = System.create({ components: { write: [local], has: [anchor] } }, row => { row[local] += 1; });
 
 describe("up", () => {
     for (const [kind, system] of [["main-thread", propagate], ["kernel", propagateKernel]] as const) {
@@ -262,7 +256,7 @@ describe("up", () => {
         await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawnMixed);
         await ecs.run(propagateKernel);
-        await ecs.run(System.create({ name: "upTest/moveUnmatched" }, ({ commands }) => { commands.add(mixed.unmatched, [anchor, world], { [anchor]: true, [world]: 80 }); }));
+        await ecs.run(System.create({}, ({ commands }) => { commands.add(mixed.unmatched, [anchor, world], { [anchor]: true, [world]: 80 }); }));
         await ecs.run(propagateKernel);
         expect(await read(ecs, mixed.underUnmatched, world)).toBe(90);
     });
@@ -270,7 +264,7 @@ describe("up", () => {
     it("reads booleans through up", async () => {
         await using ecs = createWorld({ [workers]: 0 });
         const tree: Entity[] = [];
-        await ecs.run(System.create({ name: "upTest/spawnShown" }, ({ commands }) => {
+        await ecs.run(System.create({}, ({ commands }) => {
             const top = commands.spawn([visible, shown])({ [visible]: false, [shown]: true });
             tree.push(top, commands.spawn([visible, shown, parent])({ [visible]: true, [shown]: true, [parent]: top }));
             const other = commands.spawn([visible, shown])({ [visible]: true, [shown]: false });
@@ -299,6 +293,6 @@ describe("up", () => {
 
     it("rejects a through that isn't a reference, for untyped declarations", async () => {
         // @ts-expect-error through is a reference component
-        expect(() => System.create({ name: "upTest/untyped", components: { write: [world] }, up: { through: local, read: [world] } }, row => { row[world] = 0; })).toThrow('System "upTest/untyped": up.through "upTest/local" isn\'t a reference component.');
+        expect(() => System.create({ components: { write: [world] }, up: { through: local, read: [world] } }, row => { row[world] = 0; })).toThrow('up.through "upTest/local" isn\'t a reference component.');
     });
 });

@@ -18,16 +18,16 @@ declare module "@adobe/ecs" {
 }
 
 
-const seed = System.create({ name: "observedWorkersTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn([value, seen])({ [value]: i, [seen]: 0 });
 });
 
 /** Writes every value: until something observes `value`, its stamps are muted. */
-const bump = System.create({ name: "observedWorkersTest/bump", kernel: "cpu", components: { write: [value] } }, row => {
+const bump = System.create({ kernel: "cpu", components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
-const watch = System.create({ name: "observedWorkersTest/watch", kernel: "cpu", components: { write: [seen], changed: [value] }, after: [bump] }, row => {
+const watch = System.create({ kernel: "cpu", components: { write: [seen], changed: [value] }, after: [bump] }, row => {
     row[seen] = row[seen] + 1;
 });
 

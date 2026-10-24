@@ -21,14 +21,14 @@ declare module "@adobe/ecs" {
 
 // A changes finalizer sees each sync point's structural changes to the components it watches, grouped by how
 // they changed, with values before and after: for persistence, replication and undo.
-Finalizer.changes({ name: "changesFinalizers/save", watch: [name, score], resources: { write: [journal] } }, (changes, { resources }) => {
+Finalizer.changes({ watch: [name, score], resources: { write: [journal] } }, (changes, { resources }) => {
     const lines = changes.groups.flatMap(group => group.entities.map(entity =>
         `${changes.previous(entity, name) ?? changes.next(entity, name)}: +${group.added.length} -${group.removed.length} score ${changes.previous(entity, score)} → ${changes.next(entity, score)}`));
     resources[journal] = [...resources[journal], ...lines];
 });
 
-const spawn = System.create({ name: "changesFinalizers/spawn" }, ({ commands }) => { commands.spawn([name, score])({ [name]: "ada", [score]: 3 }); });
-const retire = System.create({ name: "changesFinalizers/retire", components: { has: [score] } }, (row, { commands }) => { commands.remove(row.entity, score); });
+const spawn = System.create({}, ({ commands }) => { commands.spawn([name, score])({ [name]: "ada", [score]: 3 }); });
+const retire = System.create({ components: { has: [score] } }, (row, { commands }) => { commands.remove(row.entity, score); });
 
 it("records each sync point's structural changes", async () => {
     await using world = createWorld();

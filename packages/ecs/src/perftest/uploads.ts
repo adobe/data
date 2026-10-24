@@ -18,26 +18,25 @@ declare module "@adobe/ecs" {
 
 const shapes = 100_000;
 let spawned: Entity[] = [];
-const spawn = System.create({ name: "uploads/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     spawned = [];
     for (let i = 0; i < shapes; i++) spawned.push(commands.spawn([place])({ [place]: [i, 0, 0] }));
 });
 const drag = System.create({
-    name: "uploads/drag",
     components: { write: [place] },
     target: "shape",
 }, (row, _context, input: { readonly shape: Entity; readonly x: number }) => {
     row[place] = [input.x, 1, 0];
 });
 /** Draws nothing: its run uploads what it reads. */
-const draw = System.render({ name: "uploads/draw", shader: { accessors: { place } }, after: [drag] }, () => {});
-const frame = System.create({ name: "uploads/frame", systems: [drag, draw] });
-const slide = System.create({ name: "uploads/slide", kernel: "cpu", components: { write: [place] } }, row => {
+const draw = System.render({ shader: { accessors: { place } }, after: [drag] }, () => {});
+const frame = System.create({ systems: [drag, draw] });
+const slide = System.create({ kernel: "cpu", components: { write: [place] } }, row => {
     const [x, y, z] = row[place];
     row[place] = [x + 1, y, z];
 });
-const drawAfterSlide = System.render({ name: "uploads/drawAfterSlide", shader: { accessors: { place } }, after: [slide] }, () => {});
-const slideFrame = System.create({ name: "uploads/slideFrame", systems: [slide, drawAfterSlide] });
+const drawAfterSlide = System.render({ shader: { accessors: { place } }, after: [slide] }, () => {});
+const slideFrame = System.create({ systems: [slide, drawAfterSlide] });
 
 /** Timed per run by `timed`, which waits for the GPU. */
 export const uploadBenchmarks = (device: GPUDevice, timed: (run: () => Promise<unknown>) => Promise<number>): readonly Benchmark[] => [{

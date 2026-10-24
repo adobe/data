@@ -2,10 +2,8 @@
 import type { Index } from '../indexes/index-type.js';
 import type { Resource } from '../resource/resource.js';
 import type { ComponentAccess, ResourceAccess, SystemLookup, Up } from './access.js';
-import type { Name } from './name.js';
 import type { Shader } from './render.js';
 import type { System } from './system.js';
-import type { OperatorOf, Reduced } from '../resource/reduction.js';
 
 /**
  * A system never declares its thread: it runs on the one its object components and resources live on, those it
@@ -13,7 +11,6 @@ import type { OperatorOf, Reduced } from '../resource/reduction.js';
  * Without them, a kernel runs on the kernel pool and any other system on `"world"`.
  */
 export type Declaration = {
-    readonly name?: Name;
     /**
      * Compiled to a kernel, which the build rejects if the body leaves the kernel subset. Values in `components` and
      * `lookup` must be structs and resources read-only. Without it, the system runs as written, on its thread.
@@ -39,8 +36,6 @@ export type Declaration = {
      */
     readonly order?: Index<{ readonly sorted: true }>;
     readonly resources?: ResourceAccess;
-    /** The resources its body contributes to, each with the operator its `reduce` trait declares. */
-    readonly reduce?: { readonly [K in Reduced]?: OperatorOf<K> };
     /**
      * The field of its body's input naming the one entity it runs on: its body runs once, on that entity's row, when
      * the entity is alive and matches `components`, and not at all otherwise. Needs `components`; not with `kernel`,

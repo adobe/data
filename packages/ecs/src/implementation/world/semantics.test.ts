@@ -23,14 +23,13 @@ declare module "@adobe/ecs" {
     }
 }
 
-const seed = System.create({ name: "semanticsTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     // @ts-expect-error untyped callers can store any number as an entity
     commands.spawn([position, target, score])({ [position]: [5, 6], [target]: -1, [score]: 0 });
     // @ts-expect-error untyped callers can store any number as an entity
     commands.spawn([position, target, score])({ [position]: [7, 8], [target]: Number.NaN, [score]: 0 });
 });
 const chase = System.create({
-    name: "semanticsTest/chase",
     kernel: "cpu",
     components: { read: [target], write: [score] },
     lookup: { targets: { read: [position] } },
@@ -56,7 +55,7 @@ const run = async (wasm: boolean) => {
 describe("semantics", () => {
     it("a throwing sync point doesn't poison the next one or another world", async () => {
         let poison = false;
-        const spawn = System.create({ name: "semanticsTest/seed/2" }, ({ commands }) => {
+        const spawn = System.create({}, ({ commands }) => {
             commands.spawn([score])({ [score]: 1 });
             commands.spawn([score])({ [score]: poison ? Symbol("x") as unknown as number : 2 });
         });
@@ -82,9 +81,9 @@ describe("semantics", () => {
     it("re-adding an existing tag keeps its added tick", async () => {
         const seen: number[] = [];
         let entity = Entity.none;
-        const spawn = System.create({ name: "semanticsTest/seed/3" }, ({ commands }) => { entity = commands.spawn([tag, score])({ [tag]: true, [score]: 0 }); });
-        const retag = System.create({ name: "semanticsTest/retag" }, ({ commands }) => { commands.add(entity, tag, true); });
-        const watch = System.create({ name: "semanticsTest/watch", components: { has: [score], added: [tag] } }, row => { seen.push(row.entity); });
+        const spawn = System.create({}, ({ commands }) => { entity = commands.spawn([tag, score])({ [tag]: true, [score]: 0 }); });
+        const retag = System.create({}, ({ commands }) => { commands.add(entity, tag, true); });
+        const watch = System.create({ components: { has: [score], added: [tag] } }, row => { seen.push(row.entity); });
         const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(watch);

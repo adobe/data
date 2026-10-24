@@ -10,7 +10,7 @@ import { commandIdOf, idOf, type Key, type State } from './state.js';
 import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
 import { createDirectory, lookupParameters, type Directory } from './directories.js';
 import { generateWgsl, type WgslKernel } from './wgsl.js';
-import { labelOf, labelOfItem } from '../../interface/registry/index.js';
+import { labelOf } from '../../interface/registry/index.js';
 import type { WorldIndex } from './indexes.js';
 import { kernelIndexesOf, refreshSource, writeIndexParameters, type KernelIndex } from './kernel-indexes.js';
 import { createIndexReader, createIndexSource, type IndexReaderSetup } from './index-readers.js';
@@ -87,7 +87,7 @@ const leafType = (layout: Layout, path: readonly (number | string)[]): Type | nu
  */
 export const bindKernel = (state: State, leaf: Leaf, description: KernelDescription, byName: ReadonlyMap<string, WorldIndex> = new Map(), since: Since = { value: 0 }): BoundKernel => {
     const { lookup, components: query } = leaf.declaration;
-    const fail = (message: string): never => { throw new Error(`Kernel "${labelOfItem(leaf)}": ${message}`); };
+    const fail = (message: string): never => { throw new Error(`Kernel "${leaf.name}": ${message}`); };
     const booleans: boolean[] = [];
     // Per column, in elements of its view: entity and tick columns are dense.
     const strides: number[] = [];

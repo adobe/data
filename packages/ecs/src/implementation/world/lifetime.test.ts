@@ -23,13 +23,13 @@ declare module "@adobe/ecs" {
 }
 
 
-const seed = System.create({ name: "lifetimeTest/seed" }, ({ commands }) => {
+const seed = System.create({}, ({ commands }) => {
     const root = commands.spawn([count])({ [count]: 1 });
     for (let i = 0; i < 4; i++) commands.spawn([count, parent])({ [count]: i, [parent]: root });
 });
 
 /** A module-level system, run between and after the fresh ones, as an app's own systems are. */
-const steady = System.create({ name: "lifetimeTest/steady", components: { read: [count], changed: [count] } }, row => { void row[count]; });
+const steady = System.create({ components: { read: [count], changed: [count] } }, row => { void row[count]; });
 
 let copied = 0;
 

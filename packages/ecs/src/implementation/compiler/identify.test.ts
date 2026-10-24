@@ -86,47 +86,62 @@ describe("identify, for systems, rules and finalizers", () => {
     test("gives the declaration of each top-level binding's constructor call its module's id and binding", async () => {
         const result = await identify([
             `import { System as S, Rule, Finalizer, Index } from "@adobe/ecs";`,
-            `const move = S.create({ name: "move" }, () => {});`,
-            `export const grid = Index.create({ name: "grid" });`,
-            `export const draw = S.render({ name: "draw" }, () => {}), main = S.create({ name: "main", systems: [move] });`,
+            `const move = S.create({ tag: "move" }, () => {});`,
+            `export const grid = Index.create({ tag: "grid" });`,
+            `export const draw = S.render({ tag: "draw" }, () => {}), main = S.create({ tag: "main", systems: [move] });`,
             `const all = S.create([move]);`,
-            `let shown = Rule.create({ name: "shown" });`,
-            `var release = Finalizer.create({ name: "release" }, () => {});`,
-            `export default Finalizer.changes({ name: "save" }, () => {});`,
+            `let shown = Rule.create({ tag: "shown" });`,
+            `var release = Finalizer.create({ tag: "release" }, () => {});`,
+            `export default Finalizer.changes({ tag: "save" }, () => {});`,
         ].join("\n"));
         expect(declared(result?.code)).toEqual([
-            [`{ name: "move" }`, "src/keys.ts#move"], [`{ name: "grid" }`, "src/keys.ts#grid"], [`{ name: "draw" }`, "src/keys.ts#draw"], [`{ name: "main", systems: [move] }`, "src/keys.ts#main"],
-            [`{ name: "shown" }`, "src/keys.ts#shown"], [`{ name: "release" }`, "src/keys.ts#release"], [`{ name: "save" }`, "src/keys.ts#default"],
+            [`{ tag: "move" }`, "src/keys.ts#move"], [`{ tag: "grid" }`, "src/keys.ts#grid"], [`{ tag: "draw" }`, "src/keys.ts#draw"], [`{ tag: "main", systems: [move] }`, "src/keys.ts#main"],
+            [`{ tag: "shown" }`, "src/keys.ts#shown"], [`{ tag: "release" }`, "src/keys.ts#release"], [`{ tag: "save" }`, "src/keys.ts#default"],
         ]);
         // A composite's list of members takes its id as a declaration does.
         expect(result?.code).toContain(`identify$([move], "src/keys.ts#all")`);
     });
     test("records each id where the registry takes it, passing the same declaration", async () => {
-        const result = await identify(`import { System } from "@adobe/ecs";\nconst move = System.create({ name: "move" });`);
+        const result = await identify(`import { System } from "@adobe/ecs";\nconst move = System.create({ tag: "move" });`);
         const evaluated = (result?.code ?? "").replace(/^import .*$/m, "const System = { create: (declaration) => declaration };");
         const declaration: unknown = new Function(`${evaluated}\nreturn move;`)();
-        expect(typeof declaration === "object" && declaration !== null ? [Reflect.get(declaration, "name"), takeIdOfDeclaration(declaration), takeIdOfDeclaration(declaration)] : declaration).toEqual(["move", "src/keys.ts#move", undefined]);
+        expect(typeof declaration === "object" && declaration !== null ? [Reflect.get(declaration, "tag"), takeIdOfDeclaration(declaration), takeIdOfDeclaration(declaration)] : declaration).toEqual(["move", "src/keys.ts#move", undefined]);
     });
     test("identifies a kernel's call the kernel transform wrapped", async () => {
-        const result = await identify(`import { attachKernel as attachKernel$ } from ${JSON.stringify(ownCopy.attachKernel)};\nimport { System } from "@adobe/ecs";\nconst grow = attachKernel$(System.create({ name: "grow", kernel: "cpu" }, () => {}), {});`);
-        expect(declared(result?.code)).toEqual([[`{ name: "grow", kernel: "cpu" }`, "src/keys.ts#grow"]]);
+        const result = await identify(`import { attachKernel as attachKernel$ } from ${JSON.stringify(ownCopy.attachKernel)};\nimport { System } from "@adobe/ecs";\nconst grow = attachKernel$(System.create({ tag: "grow", kernel: "cpu" }, () => {}), {});`);
+        expect(declared(result?.code)).toEqual([[`{ tag: "grow", kernel: "cpu" }`, "src/keys.ts#grow"]]);
     });
     test("follows the namespace to the module that exports it, under any local name", async () => {
-        const result = await identify(`import { System as Systems, Rule } from "./system.js";\nconst a = Systems.create({ name: "a" });\nconst b = Rule.create({ name: "b" });`);
-        expect(declared(result?.code)).toEqual([[`{ name: "a" }`, "src/keys.ts#a"]]);
+        const result = await identify(`import { System as Systems, Rule } from "./system.js";\nconst a = Systems.create({ tag: "a" });\nconst b = Rule.create({});`);
+        expect(declared(result?.code)).toEqual([[`{ tag: "a" }`, "src/keys.ts#a"]]);
     });
-    test("leaves calls that aren't a top-level binding's, other namespaces and other methods", async () => {
-        expect(await identify([
+    test("labels a call that isn't a top-level binding's by the binding, function, property or method it's in, and leaves other namespaces and methods", async () => {
+        const result = await identify([
             `import { System, Component } from "@adobe/ecs";`,
             `import { System as Other } from "elsewhere";`,
-            `function make() { const inner = System.create({ name: "inner" }); return inner; }`,
-            `System.create({ name: "statement" });`,
-            `const wrapped = [System.create({ name: "wrapped" })];`,
-            `const other = Other.create({ name: "other" });`,
-            `const registered = Component.register({ name: "registered" });`,
-            `const spread = System.create(...[{ name: "spread" }]);`,
-            `const computed = System["create"]({ name: "computed" });`,
-        ].join("\n"))).toBe(null);
+            `function make() { return System.create({ tag: "make" }); }`,
+            `const mover = (speed) => { const inner = System.create({ tag: "inner" }); return inner; };`,
+            `const systems = { move: System.create({ tag: "move" }) };`,
+            `System.create({ tag: "alone" });`,
+            `const wrapped = [System.create({ tag: "wrapped" })];`,
+            `const other = Other.create({ tag: "other" });`,
+            `const registered = Component.register({ tag: "registered" });`,
+            `const spread = System.create(...[{ tag: "spread" }]);`,
+            `const computed = System["create"]({ tag: "computed" });`,
+        ].join("\n"));
+        expect([...(result?.code ?? "").matchAll(/label\$\((\{[^}]*\}), "(\w+)"\)/g)].map(match => [match[1], match[2]])).toEqual([
+            [`{ tag: "make" }`, "make"], [`{ tag: "inner" }`, "inner"], [`{ tag: "move" }`, "move"], [`{ tag: "wrapped" }`, "wrapped"],
+        ]);
+        expect(result?.code).not.toContain("identify$");
+    });
+    test("keeps a label already given, as an internal factory gives its own", async () => {
+        const result = await identify(`import { System } from "@adobe/ecs";\nfunction make(given) { return System.create(given); }`);
+        const evaluated = (result?.code ?? "").replace(/^import .*$/m, "const System = { create: (declaration) => declaration };");
+        const labels = new Map([[{}, "given"]]);
+        const [declaration] = labels.keys();
+        Reflect.set(globalThis, Symbol.for("@adobe/ecs/labels@1"), labels);
+        new Function(`${evaluated}\nreturn make;`)()(declaration);
+        expect(labels.get(declaration)).toBe("given");
     });
     test("fails for a module outside a named package, which has nothing to name its ids by", async () => {
         const result = await identifyModule(`export const position = Symbol();`, null, parse, resolve);

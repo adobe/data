@@ -9,7 +9,7 @@ import { describeFailure } from './failure.js';
 import { identify as identifyModule, moduleIdOf, type PackageOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
-import { augmentationInsertions, type AugmentationHost } from './augmentations.js';
+import { augmentationInsertions, reductionsIn, type AugmentationHost } from './augmentations.js';
 import { inputInsertions, type InputHost } from './input-schemas.js';
 import { copyForImporter, isInPackageCopy, namespaceCopyOf, packagePathOf, typesFileOf } from './paths.js';
 import { moduleOf, type TypedProgram } from './type-schemas.js';
@@ -54,8 +54,28 @@ const packages = (): PackageOf => {
     };
 };
 
+/** Vite's parser of TypeScript, loaded by the first kernel transform, which reads `reduce` traits with it. */
+let parseTypes: typeof import("vite").parseAst | null = null;
+
+const noReductions: ReadonlyMap<string, string> = new Map();
+
+/** The `reduce` traits a TypeScript file's declarations give, read from its source. */
+const reductionsOf = (file: string): ReadonlyMap<string, string> => {
+    const lang = loaders[file.slice(file.lastIndexOf(".") + 1)];
+    if (parseTypes === null || (lang !== "ts" && lang !== "tsx")) return noReductions;
+    let code: string;
+    try {
+        code = readFileSync(file, "utf8");
+    }
+    catch {
+        return noReductions;
+    }
+    return code.includes("reduce") && code.includes("declare module") ? reductionsIn(parseTypes(code, { lang }, file)) : noReductions;
+};
+
 /** Resolves imports through the build, from whichever transform runs. */
 const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
+    reductions: reductionsOf,
     resolve: async (specifier, importer) => {
         const resolved = await resolver().resolve(specifier, importer, { skipSelf: true });
         if (resolved === null) return { error: `${specifier} can't be resolved from ${importer}` };
@@ -291,6 +311,7 @@ const compilePlugin = (): Plugin => {
                 return identified !== null && "failure" in identified ? this.error(identified.failure) : identified;
             };
             const ssr = options?.ssr === true;
+            parseTypes ??= (await import("vite")).parseAst;
             const linker = linkerFor(ssr, this);
             const hashes: string[] = [];
             const transformed = await transformKernels(code, id, parse, async source => {

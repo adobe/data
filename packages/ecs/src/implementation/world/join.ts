@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Thread } from '../../interface/thread/thread.js';
 import type { World } from '../../interface/world/world.js';
-import { declarationOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, labelOfItem, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';
+import { declarationOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';
 import { unsharedKeyOf } from './index-keys.js';
 import { layoutOf, type Views } from '../../interface/registry/layout.js';
 import {
@@ -530,7 +530,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
 
     /** What an observer system reads, for the world, by this thread's numbers; throws for what can't cross. */
     const describe = (leaf: Leaf): ObserverDeclaration => {
-        const label = labelOfItem(leaf);
+        const label = leaf.name;
         const readable = (keys: readonly unknown[] | undefined): number[] => (keys ?? []).map(key => {
             const symbol = symbolOf(key);
             if (layoutOf(declarationOf(symbol)?.type).kind === "object" && !ownObject(symbol, claims)) {
@@ -549,12 +549,12 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             let indexed: string | ObserverIndex | null = null;
             if (index !== undefined) {
                 const object = unsharedKeyOf(index.declaration.key);
-                if (object !== undefined) throw new Error(`Observer system "${label}" looks up through index "${labelOfItem(index)}", whose key part "${labelOf(object.key)}" is ${object.what}, so it runs only on the world's thread.`);
-                if (declared.changed === true) throw new Error(`Observer system "${label}" runs when index "${labelOfItem(index)}" changed, as its lookup "${name}"'s changed is true, so it runs only on the world's thread.`);
+                if (object !== undefined) throw new Error(`Observer system "${label}" looks up through index "${index.name}", whose key part "${labelOf(object.key)}" is ${object.what}, so it runs only on the world's thread.`);
+                if (declared.changed === true) throw new Error(`Observer system "${label}" runs when index "${index.name}" changed, as its lookup "${name}"'s changed is true, so it runs only on the world's thread.`);
                 const { key, components: held, sorted, unique } = index.declaration;
                 // One without an id, made in a function, is named by its declaration, and the world makes one like it.
                 indexed = idOfItem(index) ?? {
-                    name: labelOfItem(index), key: readable(key), has: present(held?.has), not: present(held?.not), sorted: sorted === true, unique: unique === true,
+                    name: index.name, key: readable(key), has: present(held?.has), not: present(held?.not), sorted: sorted === true, unique: unique === true,
                 };
             }
             lookups.push({
@@ -581,7 +581,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         localsByLeaf.set(leaf, local);
         localsByNumber.set(number, new WeakRef(local));
         collected.register(leaf, number);
-        post({ protocol: protocolName, kind: "observer", number, name: labelOfItem(leaf), declaration, added: false });
+        post({ protocol: protocolName, kind: "observer", number, name: leaf.name, declaration, added: false });
         return local;
     };
 
@@ -615,7 +615,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                     return Promise.all(locals.map(local => runNumbered(local.number, local.leaf, undefined, local))).then(lastOf);
                 }
                 id = idOfItem(definition);
-                if (id === undefined) throw new Error(`System "${labelOfItem(definition)}" has no id, so it can't run from another thread; the build gives top-level systems one.`);
+                if (id === undefined) throw new Error(`System "${definition.name}" has no id, so it can't run from another thread; the build gives top-level systems one.`);
             }
             catch (error) {
                 return Promise.reject(error);

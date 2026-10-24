@@ -28,19 +28,19 @@ declare module "@adobe/ecs" {
 }
 
 /** `count` entities with a value and a rank, the first of them marked. */
-const seed = System.create({ name: "observed/seed" }, ({ commands }, input: { readonly count: number }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     commands.spawn([value, rank, marked])({ [value]: 0, [rank]: 0, [marked]: true });
     for (let i = 1; i < input.count; i++) commands.spawn([value, rank])({ [value]: (i * 7919) % input.count, [rank]: i });
 });
 
 /** Writes the marked entity's value, so one entity observer is notified and a selection or count is a candidate. */
-const nudge = System.create({ name: "observed/nudge", components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
+const nudge = System.create({ components: { has: [marked], write: [value] } }, row => { row[value] += 1; });
 
 /** A kernel writing every row's rank. */
-const advance = System.create({ name: "observed/advance", kernel: "cpu", components: { write: [rank] } }, row => { row[rank] += 1; });
+const advance = System.create({ kernel: "cpu", components: { write: [rank] } }, row => { row[rank] += 1; });
 
 /** A system no entity matches: a run that changes nothing. */
-const idle = System.create({ name: "observed/idle", components: { has: [unmatched] } }, () => {});
+const idle = System.create({ components: { has: [unmatched] } }, () => {});
 
 const check = (condition: boolean, message: string): void => {
     if (!condition) throw new Error(message);

@@ -24,17 +24,17 @@ declare module "@adobe/ecs" {
 }
 
 /** Appends a digit to `total`, so the order of runs shows in it. */
-export const add = System.create({ name: "joiningTest/add", resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
+export const add = System.create({ resources: { write: [total] } }, ({ resources }, input: { readonly amount: number }) => {
     resources[total] = resources[total] * 10 + input.amount;
 });
-export const append = System.create({ name: "joiningTest/append", resources: { write: [names] } }, ({ resources }, input: { readonly name: string }) => {
+export const append = System.create({ resources: { write: [names] } }, ({ resources }, input: { readonly name: string }) => {
     resources[names] = [...resources[names], input.name];
 });
-export const spawn = System.create({ name: "joiningTest/spawn" }, ({ commands }, input: { readonly x: number }) => {
+export const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, label, marked])({ [point]: [input.x, -input.x], [label]: `p${input.x}` });
 });
-export const fail = System.create({ name: "joiningTest/fail" }, () => { throw new Error("joiningTest failure"); });
-export const idle = System.create({ name: "joiningTest/idle" }, () => {});
+export const fail = System.create({}, () => { throw new Error("joiningTest failure"); });
+export const idle = System.create({}, () => {});
 
 /** The first value an observer gives that `accept` takes. */
 export const until = <T>(observe: Observe<T>, accept: (value: T) => boolean): Promise<T> => new Promise(resolve => {

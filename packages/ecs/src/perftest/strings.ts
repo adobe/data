@@ -23,17 +23,17 @@ const rows = 10_000;
 /** A todo's label, of a typical length, different per row and round. */
 const labelOf = (row: number, round: number): string => `Buy milk and bread #${row}.${round}`;
 
-const seed = System.create({ name: "strings/seed" }, ({ commands }, input: { readonly count: number }) => {
+const seed = System.create({}, ({ commands }, input: { readonly count: number }) => {
     for (let i = 0; i < input.count; i++) commands.spawn([text, boxed])({ [text]: labelOf(i, 0), [boxed]: { text: labelOf(i, 0) } });
 });
 
 let total = 0;
 let round = 0;
 
-const readText = System.create({ name: "strings/readText", components: { read: [text] } }, row => { total += row[text].length; });
-const readBoxed = System.create({ name: "strings/readBoxed", components: { read: [boxed] } }, row => { total += row[boxed].text.length; });
-const writeText = System.create({ name: "strings/writeText", components: { write: [text] } }, row => { row[text] = labelOf(row.entity, round); });
-const writeBoxed = System.create({ name: "strings/writeBoxed", components: { write: [boxed] } }, row => { row[boxed] = { text: labelOf(row.entity, round) }; });
+const readText = System.create({ components: { read: [text] } }, row => { total += row[text].length; });
+const readBoxed = System.create({ components: { read: [boxed] } }, row => { total += row[boxed].text.length; });
+const writeText = System.create({ components: { write: [text] } }, row => { row[text] = labelOf(row.entity, round); });
+const writeBoxed = System.create({ components: { write: [boxed] } }, row => { row[boxed] = { text: labelOf(row.entity, round) }; });
 
 /** A seeded world, with a joined thread on this one when `shared`, which keeps records of its strings. */
 const seeded = async (shared = false): Promise<{ readonly world: World; readonly dispose: () => Promise<void> }> => {

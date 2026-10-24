@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { definitionOf, labelOfItem } from '../../interface/registry/index.js';
+import { definitionOf } from '../../interface/registry/index.js';
 import type { System } from '../../interface/system/system.js';
 import { checkKernel } from './check-kernel.js';
 import type { KernelDescription } from './kernel.js';
@@ -14,7 +14,7 @@ const kernels = new WeakMap<System<unknown>, KernelDescription>();
  */
 export const attachKernel = <S extends System<unknown>>(system: S, description: KernelDescription): S => {
     for (const key of description.keys) {
-        if (Array.isArray(key)) throw new Error(`System "${labelOfItem(system)}" names a list of components where a command takes one component; its kernel's build couldn't read the list, so name it from a module the build reads, or as an array literal.`);
+        if (Array.isArray(key)) throw new Error(`System "${system.name}" names a list of components where a command takes one component; its kernel's build couldn't read the list, so name it from a module the build reads, or as an array literal.`);
     }
     const leaf = definitionOf(system);
     if (leaf !== undefined && leaf.kind !== "composite") checkKernel(leaf, description);

@@ -22,11 +22,11 @@ declare module "@adobe/ecs" {
     }
 }
 
-const byDepth = Index.create({ name: "renderOrder/byDepth", key: [paintDepth], sorted: true });
+const byDepth = Index.create({ key: [paintDepth], sorted: true });
 
 const items = 50_000;
 let spawned: Entity[] = [];
-const spawn = System.create({ name: "renderOrder/spawn" }, ({ commands }) => {
+const spawn = System.create({}, ({ commands }) => {
     spawned = [];
     for (let i = 0; i < items; i++) {
         spawned.push(i % 2 === 0 ? commands.spawn([paintDepth, shape])({ [paintDepth]: i, [shape]: true }) : commands.spawn([paintDepth, image])({ [paintDepth]: i, [image]: true }));
@@ -34,15 +34,14 @@ const spawn = System.create({ name: "renderOrder/spawn" }, ({ commands }) => {
 });
 /** Moves one item to a new depth, as reordering it does. */
 const restack = System.create({
-    name: "renderOrder/restack",
     components: { write: [paintDepth] },
     target: "item",
 }, (row, _context, input: { readonly item: Entity; readonly depth: number }) => {
     row[paintDepth] = input.depth;
 });
 /** Draws nothing: its run uploads what it reads and its order. */
-const draw = System.render({ name: "renderOrder/draw", order: byDepth, shader: { accessors: { paintDepth } }, after: [restack] }, () => {});
-const frame = System.create({ name: "renderOrder/frame", systems: [restack, draw] });
+const draw = System.render({ order: byDepth, shader: { accessors: { paintDepth } }, after: [restack] }, () => {});
+const frame = System.create({ systems: [restack, draw] });
 
 /** Timed per run by `timed`, which waits for the GPU. */
 export const renderOrderBenchmarks = (device: GPUDevice, timed: (run: () => Promise<unknown>) => Promise<number>): readonly Benchmark[] => [{

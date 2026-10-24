@@ -22,7 +22,7 @@ declare module "@adobe/ecs" {
 
 /** What the observer system read, were it run: this test stands for the thread, so it never runs. */
 const seen: number[] = [];
-const watch = System.create({ name: "joinedObserverTest/watch", observer: true, components: { read: [amount] } }, row => { seen.push(row[amount]); });
+const watch = System.create({ observer: true, components: { read: [amount] } }, row => { seen.push(row[amount]); });
 
 describe("an observer system on a joined thread", () => {
     it("is waited for, not cancelled, by a sync point after a writer copied the rest of a post the thread claimed partway", async () => {

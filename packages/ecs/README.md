@@ -50,4 +50,5 @@ A library builds with `Compiler.plugin({ library: true })`, so its build ships t
 
 ## Guide
 
-See the [guide](src/guide/guide.md) for how to use it.
+See the [guide](src/guide/guide.md) for how to use it, and the [API reference](https://adobe.github.io/data/ecs/) for
+every type and function.

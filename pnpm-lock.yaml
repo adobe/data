@@ -669,6 +669,9 @@ importers:
       playwright:
         specifier: ^1.64.1
         version: 1.64.1
+      typedoc:
+        specifier: ^0.28.9
+        version: 0.28.9(typescript@5.8.3)
       typescript:
         specifier: ^5.8.3
         version: 5.8.3

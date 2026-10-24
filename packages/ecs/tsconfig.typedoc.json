@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "paths": {
+      "@adobe/ecs": ["./src/index.ts"],
+      "@adobe/ecs/*": ["./src/index.ts"]
+    }
+  },
+  "include": ["src/index.ts", "src/implementation/compiler/index.ts"],
+  "exclude": [],
+  "references": []
+}

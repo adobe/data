@@ -54,7 +54,7 @@ decisions about ecs here rather than in a personal memory, so every machine and 
 ## Repository
 
 - **The ecs repository is the source of truth** for this package and its samples. adobe/data holds a copy of the
-  repository at `packages/ecs`, which a sync replaces, deleting what's gone; never edit it there.
+  repository at `ecs`, which a sync replaces, deleting what's gone; never edit it there.
 
 ## Checks
 

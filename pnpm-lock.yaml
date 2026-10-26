@@ -19,6 +19,227 @@ importers:
         specifier: ^9.0.0
         version: 9.0.0
 
+  ecs/packages/ecs:
+    devDependencies:
+      '@oxc-parser/binding-wasm32-wasip1':
+        specifier: 0.155.0
+        version: 0.155.0
+      '@oxc-transform/binding-wasm32-wasip1':
+        specifier: 0.155.0
+        version: 0.155.0
+      '@types/estree':
+        specifier: ^1.0.9
+        version: 1.0.9
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@vitest/browser-playwright':
+        specifier: ^5.0.5
+        version: 5.0.5(playwright@1.64.1)(vite@8.3.4)(vitest@5.0.5)
+      '@vitest/coverage-v8':
+        specifier: ^5.0.5
+        version: 5.0.5(vitest@5.0.5)
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      playwright:
+        specifier: ^1.64.1
+        version: 1.64.1
+      typedoc:
+        specifier: ^0.28.9
+        version: 0.28.9(typescript@5.8.3)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
+      wabt:
+        specifier: 1.0.39
+        version: 1.0.39
+
+  ecs/packages/ecs-guide:
+    dependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+      '@codemirror/commands':
+        specifier: ^6.11.1
+        version: 6.11.1
+      '@codemirror/lang-javascript':
+        specifier: ^6.2.5
+        version: 6.2.5
+      '@codemirror/language':
+        specifier: ^6.13.1
+        version: 6.13.1
+      '@codemirror/lint':
+        specifier: ^6.9.7
+        version: 6.9.7
+      '@codemirror/state':
+        specifier: ^6.7.6
+        version: 6.7.6
+      '@codemirror/view':
+        specifier: ^6.43.15
+        version: 6.43.15
+      '@lezer/highlight':
+        specifier: ^1.2.5
+        version: 1.2.5
+      '@oxc-parser/binding-wasm32-wasip1':
+        specifier: 0.155.0
+        version: 0.155.0
+      '@oxc-transform/binding-wasm32-wasip1':
+        specifier: 0.155.0
+        version: 0.155.0
+      '@spectrum-web-components/badge':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/button':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/progress-circle':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/sidenav':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/split-view':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/status-light':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/tabs':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/theme':
+        specifier: ^1.12.5
+        version: 1.12.5
+      marked:
+        specifier: ^18.1.1
+        version: 18.1.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      playwright:
+        specifier: ^1.64.1
+        version: 1.64.1
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+
+  ecs/packages/ecs-particles-webgpu:
+    dependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+
+  ecs/packages/ecs-sample-browser:
+    dependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+      '@spectrum-web-components/theme':
+        specifier: ^1.12.5
+        version: 1.12.5
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      playwright:
+        specifier: ^1.64.1
+        version: 1.64.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+
+  ecs/packages/ecs-todo-vanillajs:
+    dependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@vitest/browser-playwright':
+        specifier: ^5.0.5
+        version: 5.0.5(playwright@1.64.1)(vite@8.3.4)(vitest@5.0.5)
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      playwright:
+        specifier: ^1.64.1
+        version: 1.64.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+
+  ecs/packages/ecs-transfers-canvas:
+    dependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+
   packages/data:
     dependencies:
       '@cfworker/json-schema':
@@ -150,7 +371,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
 
   packages/data-gpu:
     dependencies:
@@ -172,7 +393,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
 
   packages/data-gpu-hopper:
     dependencies:
@@ -407,7 +628,7 @@ importers:
         version: 0.14.5(typescript@5.8.3)(vite@8.3.4)
       vitest:
         specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
 
   packages/data-persistence:
     dependencies:
@@ -429,7 +650,7 @@ importers:
         version: 8.3.4(@types/node@25.6.0)
       vitest:
         specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
 
   packages/data-react:
     dependencies:
@@ -448,7 +669,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
 
   packages/data-react-hello:
     dependencies:
@@ -594,7 +815,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
 
   packages/data-solid-dashboard:
     dependencies:
@@ -641,7 +862,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
 
   packages/data-testing:
     dependencies:
@@ -654,228 +875,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
-
-  packages/ecs/packages/ecs:
-    devDependencies:
-      '@oxc-parser/binding-wasm32-wasip1':
-        specifier: 0.155.0
-        version: 0.155.0
-      '@oxc-transform/binding-wasm32-wasip1':
-        specifier: 0.155.0
-        version: 0.155.0
-      '@types/estree':
-        specifier: ^1.0.9
-        version: 1.0.9
-      '@types/node':
-        specifier: ^25.6.0
-        version: 25.6.0
-      '@vitest/browser-playwright':
-        specifier: ^5.0.5
-        version: 5.0.5(playwright@1.64.1)(vite@8.3.4)(vitest@5.0.5)
-      '@vitest/coverage-v8':
-        specifier: ^5.0.5
-        version: 5.0.5(vitest@5.0.5)
-      '@webgpu/types':
-        specifier: ^0.1.61
-        version: 0.1.61
-      playwright:
-        specifier: ^1.64.1
-        version: 1.64.1
-      typedoc:
-        specifier: ^0.28.9
-        version: 0.28.9(typescript@5.8.3)
-      typescript:
-        specifier: ^5.8.3
-        version: 5.8.3
-      vite:
-        specifier: ^8.3.4
-        version: 8.3.4(@types/node@25.6.0)
-      vitest:
-        specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
-      wabt:
-        specifier: 1.0.39
-        version: 1.0.39
-
-  packages/ecs/packages/ecs-guide:
-    dependencies:
-      '@adobe/ecs':
-        specifier: workspace:*
-        version: link:../ecs
-      '@codemirror/commands':
-        specifier: ^6.11.1
-        version: 6.11.1
-      '@codemirror/lang-javascript':
-        specifier: ^6.2.5
-        version: 6.2.5
-      '@codemirror/language':
-        specifier: ^6.13.1
-        version: 6.13.1
-      '@codemirror/lint':
-        specifier: ^6.9.7
-        version: 6.9.7
-      '@codemirror/state':
-        specifier: ^6.7.6
-        version: 6.7.6
-      '@codemirror/view':
-        specifier: ^6.43.15
-        version: 6.43.15
-      '@lezer/highlight':
-        specifier: ^1.2.5
-        version: 1.2.5
-      '@oxc-parser/binding-wasm32-wasip1':
-        specifier: 0.155.0
-        version: 0.155.0
-      '@oxc-transform/binding-wasm32-wasip1':
-        specifier: 0.155.0
-        version: 0.155.0
-      '@spectrum-web-components/badge':
-        specifier: ^1.12.5
-        version: 1.12.5
-      '@spectrum-web-components/button':
-        specifier: ^1.12.5
-        version: 1.12.5
-      '@spectrum-web-components/progress-circle':
-        specifier: ^1.12.5
-        version: 1.12.5
-      '@spectrum-web-components/sidenav':
-        specifier: ^1.12.5
-        version: 1.12.5
-      '@spectrum-web-components/split-view':
-        specifier: ^1.12.5
-        version: 1.12.5
-      '@spectrum-web-components/status-light':
-        specifier: ^1.12.5
-        version: 1.12.5
-      '@spectrum-web-components/tabs':
-        specifier: ^1.12.5
-        version: 1.12.5
-      '@spectrum-web-components/theme':
-        specifier: ^1.12.5
-        version: 1.12.5
-      marked:
-        specifier: ^18.1.1
-        version: 18.1.1
-      typescript:
-        specifier: ^5.8.3
-        version: 5.8.3
-    devDependencies:
-      '@types/node':
-        specifier: ^25.6.0
-        version: 25.6.0
-      '@webgpu/types':
-        specifier: ^0.1.61
-        version: 0.1.61
-      playwright:
-        specifier: ^1.64.1
-        version: 1.64.1
-      vite:
-        specifier: ^8.3.4
-        version: 8.3.4(@types/node@25.6.0)
-      vitest:
-        specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
-
-  packages/ecs/packages/ecs-particles-webgpu:
-    dependencies:
-      '@adobe/ecs':
-        specifier: workspace:*
-        version: link:../ecs
-    devDependencies:
-      '@types/node':
-        specifier: ^25.6.0
-        version: 25.6.0
-      '@webgpu/types':
-        specifier: ^0.1.61
-        version: 0.1.61
-      typescript:
-        specifier: ^5.8.3
-        version: 5.8.3
-      vite:
-        specifier: ^8.3.4
-        version: 8.3.4(@types/node@25.6.0)
-      vitest:
-        specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
-
-  packages/ecs/packages/ecs-sample-browser:
-    dependencies:
-      '@adobe/ecs':
-        specifier: workspace:*
-        version: link:../ecs
-      '@spectrum-web-components/theme':
-        specifier: ^1.12.5
-        version: 1.12.5
-    devDependencies:
-      '@types/node':
-        specifier: ^25.6.0
-        version: 25.6.0
-      '@webgpu/types':
-        specifier: ^0.1.61
-        version: 0.1.61
-      playwright:
-        specifier: ^1.64.1
-        version: 1.64.1
-      typescript:
-        specifier: ^5.8.3
-        version: 5.8.3
-      vite:
-        specifier: ^8.3.4
-        version: 8.3.4(@types/node@25.6.0)
-      vitest:
-        specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
-
-  packages/ecs/packages/ecs-todo-vanillajs:
-    dependencies:
-      '@adobe/ecs':
-        specifier: workspace:*
-        version: link:../ecs
-    devDependencies:
-      '@types/node':
-        specifier: ^25.6.0
-        version: 25.6.0
-      '@vitest/browser-playwright':
-        specifier: ^5.0.5
-        version: 5.0.5(playwright@1.64.1)(vite@8.3.4)(vitest@5.0.5)
-      '@webgpu/types':
-        specifier: ^0.1.61
-        version: 0.1.61
-      playwright:
-        specifier: ^1.64.1
-        version: 1.64.1
-      typescript:
-        specifier: ^5.8.3
-        version: 5.8.3
-      vite:
-        specifier: ^8.3.4
-        version: 8.3.4(@types/node@25.6.0)
-      vitest:
-        specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
-
-  packages/ecs/packages/ecs-transfers-canvas:
-    dependencies:
-      '@adobe/ecs':
-        specifier: workspace:*
-        version: link:../ecs
-    devDependencies:
-      '@types/node':
-        specifier: ^25.6.0
-        version: 25.6.0
-      '@webgpu/types':
-        specifier: ^0.1.61
-        version: 0.1.61
-      typescript:
-        specifier: ^5.8.3
-        version: 5.8.3
-      vite:
-        specifier: ^8.3.4
-        version: 8.3.4(@types/node@25.6.0)
-      vitest:
-        specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
 
 packages:
 
@@ -2884,7 +2884,7 @@ packages:
       '@vitest/mocker': 5.0.5(vite@8.3.4)
       playwright: 1.64.1
       tinyrainbow: 3.2.0
-      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
     transitivePeerDependencies:
       - bufferutil
       - msw
@@ -2905,7 +2905,7 @@ packages:
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
       ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
@@ -3015,7 +3015,7 @@ packages:
       pathe: 2.0.3
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
     dev: true
 
   /@vitest/utils@1.6.0:

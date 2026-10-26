@@ -5,7 +5,7 @@ The ECS (`packages/ecs`, published as `@adobe/ecs`) and its samples. Each packag
 
 ## This repository is the source of truth
 
-adobe/data holds a copy of this whole repository at `packages/ecs` while it still publishes the ECS and its site. A
+adobe/data holds a copy of this whole repository at `ecs` while it still publishes the ECS and its site. A
 sync outside this repository replaces that copy from a commit here, deleting what's gone, and lists its packages in
 adobe/data's workspace. Make every change here; never edit the copy in adobe/data.
 

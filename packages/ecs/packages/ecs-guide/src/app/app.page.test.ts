@@ -140,7 +140,10 @@ it.each([[21, "div"], [22, "canvas"]] as const)("renders chapter %i's animation 
         expect(later.sum).not.toBe(first.sum);
         expect(await statusOf(page, /Running/)).toBe("Running…");
         // Another chapter shown replaces the frame, and the world and loop it held go with it.
+        const resources = chapter(1);
         await page.locator("guide-nav sp-sidenav-item[value='1-resources']").click();
+        // Resources' own output, not the status, which still reads Systems' "Finished" until Resources' run starts.
+        await page.waitForFunction(lines => document.querySelector("guide-console")?.logged.entries.length === lines, resources.expected.split("\n").length - 1);
         await statusOf(page, /Finished/);
         expect(frame.isDetached()).toBe(true);
         expect(page.frames().filter(item => item !== page.mainFrame())).toHaveLength(1);

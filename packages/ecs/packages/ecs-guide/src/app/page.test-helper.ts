@@ -27,7 +27,15 @@ export const statusOf = async (page: Page, pattern: RegExp = /Finished|Failed|re
     const handle = await page.waitForFunction(source => {
         const text = document.querySelector("guide-status")?.shadowRoot?.querySelector("sp-status-light")?.textContent ?? "";
         return new RegExp(source).test(text) ? text : null;
-    }, pattern.source);
+    }, pattern.source).catch(async (error: unknown) => {
+        // What the page shows instead, for a failure: its status, what it logged and its problems.
+        const shown = await page.evaluate(() => ({
+            status: document.querySelector("guide-status")?.shadowRoot?.querySelector("sp-status-light")?.textContent ?? null,
+            console: document.querySelector("guide-console")?.shadowRoot?.textContent?.slice(0, 400) ?? null,
+            problems: document.querySelector("guide-problems")?.shadowRoot?.textContent?.slice(0, 400) ?? null,
+        })).catch(() => null);
+        throw new Error(`the status never matched ${String(pattern)}: ${JSON.stringify(shown)}`, { cause: error });
+    });
     return String(await handle.jsonValue());
 };
 

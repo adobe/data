@@ -97,7 +97,19 @@ const readAll = System.create({ kernel: false, components: { with: [difference, 
     values.push(row[difference], ...row[position]);
 });
 
-/** Every value after a seed, a change to some rows and `system`, as bits, so NaN and -0 compare exactly. */
+/** A NaN's sign and payload are the platform's, x86's and ARM's differing; every NaN reads as the one. */
+const quietNaN = 0x7fc00000;
+
+/** f32 values as bits, so -0 and every other value compare exactly, and each NaN as a NaN. */
+const bitsOf = (values: readonly number[]): readonly number[] =>
+    [...new Uint32Array(new Float32Array(values).buffer)].map(bits => (bits & 0x7f800000) === 0x7f800000 && (bits & 0x7fffff) !== 0 ? quietNaN : bits);
+
+it("reads x86's NaN, sign set, and ARM's as one NaN, while -0 stays apart from 0", () => {
+    const x86 = new Float32Array(new Uint32Array([0xffc00000]).buffer)[0] ?? 0;
+    expect(bitsOf([x86, NaN, -0, 0])).toEqual([quietNaN, quietNaN, 0x80000000, 0]);
+});
+
+/** Every value after a seed, a change to some rows and `system`, as bits. */
 const bitsAfter = async (system: (typeof pairs)[number][number], wasm: boolean): Promise<readonly number[]> => {
     const world = createWorld({ [workers]: 0 }, { wasm });
     try {
@@ -107,7 +119,7 @@ const bitsAfter = async (system: (typeof pairs)[number][number], wasm: boolean):
         await world.run(system);
         values.length = 0;
         await world.run(readAll);
-        return [...new Uint32Array(new Float32Array(values).buffer)];
+        return bitsOf(values);
     }
     finally {
         await world.dispose();
@@ -150,7 +162,7 @@ it("gives a kernel's values that are the same for every row bit for bit as writt
                 await world.run(readAll);
                 seen.push(...values);
             }
-            return [...new Uint32Array(new Float32Array(seen).buffer)];
+            return bitsOf(seen);
         }
         finally {
             await world.dispose();

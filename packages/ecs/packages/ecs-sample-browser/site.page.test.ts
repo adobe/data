@@ -88,6 +88,9 @@ it("runs the todo sample, adding a todo", async () => {
 it("runs the particles sample, frame after frame", async () => {
     const { page, frame } = await sample("#ecs-particles-webgpu");
     try {
+        // A sample's page served from the site is what this checks, not its speed: a software adapter, as CI's runners
+        // have, can't draw the default million particles ten times in a minute.
+        await frame.goto(new URL("?count=4096", frame.url()).href);
         const webgpu = await frame.evaluate(async () => (await navigator.gpu?.requestAdapter()) !== null && navigator.gpu !== undefined);
         if (!webgpu) {
             await frame.waitForFunction(() => document.querySelector("#stats")?.textContent === "This browser has no WebGPU.");

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Browser, Page } from "playwright";
 import { afterAll, beforeAll, expect, inject, it } from "vitest";
-import { consoleOf, launch, statusOf } from "./page.test-helper.js";
+import { consoleOf, launch, statusOf, watch } from "./page.test-helper.js";
 
 let browser: Browser;
 beforeAll(async () => {
@@ -24,11 +24,11 @@ const runFolders = (page: Page): Promise<string[]> => page.evaluate(async () => 
 it("runs each tab's examples in its own frames, though tabs share the cache, and drops a closed tab's runs", async () => {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     try {
-        const first = await context.newPage();
+        const first = watch(await context.newPage());
         await first.goto(`${inject("guide")}#1-resources`);
         await statusOf(first);
         const own = await consoleOf(first);
-        const second = await context.newPage();
+        const second = watch(await context.newPage());
         await second.goto(`${inject("guide")}#3-systems`);
         await statusOf(second);
         for (let round = 0; round < 4; round++) {
@@ -40,7 +40,7 @@ it("runs each tab's examples in its own frames, though tabs share the cache, and
         }
         expect((await runFolders(first)).length).toBe(2);
         await second.close();
-        const third = await context.newPage();
+        const third = watch(await context.newPage());
         await third.goto(`${inject("guide")}#2-entities-components-and-archetypes`);
         await statusOf(third);
         // The closed tab's folder is gone; the open tabs' remain.

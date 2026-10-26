@@ -22,6 +22,23 @@ export const open = async (browser: Browser, url: string, colorScheme: "light" |
     return { page, errors };
 };
 
+/** What each watched page, and its workers, logged and threw, for a failure's message. */
+const heard = new WeakMap<Page, string[]>();
+
+/** Records what a page and its workers log and throw, which a status that never comes reports. */
+export const watch = (page: Page): Page => {
+    const lines: string[] = [];
+    heard.set(page, lines);
+    page.on("console", message => lines.push(`${message.type()}: ${message.text()}`));
+    page.on("pageerror", error => lines.push(`pageerror: ${error.message}`));
+    page.on("worker", worker => {
+        lines.push(`worker: ${worker.url()}`);
+        worker.on("console", message => lines.push(`worker ${message.type()}: ${message.text()}`));
+        worker.on("close", () => lines.push(`worker closed: ${worker.url()}`));
+    });
+    return page;
+};
+
 /** The status line's words, once they match `pattern`: by default, once the run has ended. */
 export const statusOf = async (page: Page, pattern: RegExp = /Finished|Failed|rejected|failed/): Promise<string> => {
     const handle = await page.waitForFunction(source => {
@@ -31,10 +48,11 @@ export const statusOf = async (page: Page, pattern: RegExp = /Finished|Failed|re
         // What the page shows instead, for a failure: its status, what it logged and its problems.
         const shown = await page.evaluate(() => ({
             status: document.querySelector("guide-status")?.shadowRoot?.querySelector("sp-status-light")?.textContent ?? null,
-            console: document.querySelector("guide-console")?.shadowRoot?.textContent?.slice(0, 400) ?? null,
-            problems: document.querySelector("guide-problems")?.shadowRoot?.textContent?.slice(0, 400) ?? null,
+            console: document.querySelector("guide-console")?.shadowRoot?.querySelector("ol")?.innerText.slice(0, 400) ?? null,
+            problems: document.querySelector("guide-problems")?.shadowRoot?.querySelector("ul")?.innerText.slice(0, 400) ?? null,
         })).catch(() => null);
-        throw new Error(`the status never matched ${String(pattern)}: ${JSON.stringify(shown)}`, { cause: error });
+        const lines = heard.get(page)?.slice(-40) ?? [];
+        throw new Error(`the status never matched ${String(pattern)}: ${JSON.stringify(shown)}; heard: ${JSON.stringify(lines)}`, { cause: error });
     });
     return String(await handle.jsonValue());
 };

@@ -1,8 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { chromium, type Browser, type Page } from "playwright";
 
-/** Full Chromium, as the samples' browser tests use, with WebGPU where the machine has it. */
-export const launch = (): Promise<Browser> => chromium.launch({ channel: "chromium", args: ["--enable-unsafe-webgpu"] });
+/**
+ * Chromium's flags: WebGPU where the machine has a GPU, and none on CI's runners, whose WebGPU is software and too slow,
+ * unless `ECS_GPU=1`; without it pages see no adapter, as in a browser without WebGPU.
+ */
+export const chromiumArgs = process.env["ECS_GPU"] === "1" || process.env["CI"] === undefined ? ["--enable-unsafe-webgpu"] : ["--disable-gpu"];
+
+/** Full Chromium, as the samples' browser tests use. */
+export const launch = (): Promise<Browser> => chromium.launch({ channel: "chromium", args: chromiumArgs });
 
 /** A page of the guide at `url`, recording what it logs as errors, in the color scheme given. */
 export const open = async (browser: Browser, url: string, colorScheme: "light" | "dark" = "light"): Promise<{ readonly page: Page; readonly errors: string[] }> => {

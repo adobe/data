@@ -6,6 +6,7 @@ import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";
+import { gpu } from "./gpu.test-helper.js";
 
 const f2a = Symbol("intrinsicsTest/f2a");
 const f2b = Symbol("intrinsicsTest/f2b");
@@ -517,7 +518,7 @@ const device = async (): Promise<GPUDevice> => {
 };
 
 describe("declared WGSL builtins", () => {
-    it("give on the GPU what their functions give on the CPU", async () => {
+    it.runIf(gpu)("give on the GPU what their functions give on the CPU", async () => {
         const gpuWorld = createWorld({ [gpuDevice]: await device() });
         const cpuWorld = createWorld({ [workers]: 0 });
         for (const world of [gpuWorld, cpuWorld]) {

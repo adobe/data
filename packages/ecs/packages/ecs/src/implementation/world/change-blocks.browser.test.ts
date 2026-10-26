@@ -6,6 +6,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, join } from "./create.js";
 import type { F32, U32 } from "../../interface/math/index.js";
+import { gpu } from "./gpu.test-helper.js";
 
 // A GPU kernel stamps a whole column once; before a joined thread's systems filter on it, its rows, chunks and blocks
 // take the stamp, so the thread's change filters find every row, and then only rows written after.
@@ -48,7 +49,7 @@ const device = async (): Promise<GPUDevice> => {
 };
 
 describe("chunk and block ticks after a GPU kernel's column stamp", () => {
-    it("let a joined thread's filters find every row a GPU kernel wrote, then a row the CPU wrote", async () => {
+    it.runIf(gpu)("let a joined thread's filters find every row a GPU kernel wrote, then a row the CPU wrote", async () => {
         const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         const channel = new MessageChannel();
         const shared = world.share(channel.port1);

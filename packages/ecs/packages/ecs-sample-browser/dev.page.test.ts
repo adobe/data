@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createLogger, createServer, type ViteDevServer } from "vite";
+import { chromiumArgs } from "./chromium.test-helper.js";
 
 // The dev server as a first run starts it, on a cache of dependencies it hasn't optimized yet: it optimizes every
 // dependency a page or its workers import before the first page asks, so it never reloads the page mid-load.
@@ -23,7 +24,7 @@ beforeAll(async () => {
         server: { port: 0, strictPort: false },
     });
     await server.listen();
-    browser = await chromium.launch({ channel: "chromium", args: ["--enable-unsafe-webgpu"] });
+    browser = await chromium.launch({ channel: "chromium", args: chromiumArgs });
 }, 120000);
 afterAll(async () => {
     await browser.close();

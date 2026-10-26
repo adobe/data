@@ -8,6 +8,7 @@ import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { runReported } from "./outcomes.test-helper.js";
 import type { F32, U32, Vec3 } from "../../interface/math/index.js";
+import { gpu } from "./gpu.test-helper.js";
 
 const depth = Symbol("renderOrderTest/depth");
 const code = Symbol("renderOrderTest/code");
@@ -59,7 +60,7 @@ const spawn = System.create({}, ({ commands }) => {
 const drawn = (codes: Iterable<number>): number[] => [...codes].filter(i => i % 10 !== 3 && i % 10 !== 7).sort((a, b) => a - b);
 
 describe("render systems with an order", () => {
-    it("draw every matching archetype as one table, in the index's order, through the same accessors", async () => {
+    it.runIf(gpu)("draw every matching archetype as one table, in the index's order, through the same accessors", async () => {
         const own = await device();
         const output = own.createBuffer({ size: (count + 16) * 8, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
         const tableCounts: number[][] = [];
@@ -149,7 +150,7 @@ describe("render systems with an order", () => {
         await world.dispose();
     });
 
-    it("write their order only when the index's entries change or move", async () => {
+    it.runIf(gpu)("write their order only when the index's entries change or move", async () => {
         const own = await device();
         const draw = System.render({ components: { with: [visible], not: [hidden] }, order: byDepth, shader: { accessors: { paintDepth: depth } } }, () => {});
         const world = createWorld({ [gpuDevice]: own });
@@ -182,7 +183,7 @@ describe("render systems with an order", () => {
         await world.dispose();
     });
 
-    it("give a shader one table when nothing matches", async () => {
+    it.runIf(gpu)("give a shader one table when nothing matches", async () => {
         const own = await device();
         let tables: readonly System.RenderTable[] = [];
         const draw = System.render({ components: { with: [hidden, image] }, order: byDepth, shader: { accessors: { paintDepth: depth } } }, context => { tables = context.tables; });
@@ -193,7 +194,7 @@ describe("render systems with an order", () => {
         await world.dispose();
     });
 
-    it("declare their ordered accessors, which compile", async () => {
+    it.runIf(gpu)("declare their ordered accessors, which compile", async () => {
         const own = await device();
         const draw = System.render({ order: byDepth, shader: { group: 2, accessors: { paintDepth: depth, paintSize: size } } }, () => {});
         const code = Gpu.wgsl(draw);

@@ -47,4 +47,6 @@ or similar script. `scripts/check-workspace-conventions.mjs` (`pnpm run check:wo
 ## Checks
 
 Before a push, delete every `*.tsbuildinfo` under `packages`, then run `pnpm run check:workspace`, `pnpm run build`
-and `pnpm test` at the root.
+and `pnpm test` at the root, on a machine with a GPU. CI's runners have none, and their software WebGPU is too slow, so
+with `CI` set the browsers start without WebGPU and the tests that need a GPU skip (`ECS_GPU=1` runs them anyway):
+the local run is the only one that covers them.

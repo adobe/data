@@ -5,6 +5,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { edit, probe, scene, threadProbe, value } from "./entity-lookups.test-helper.js";
+import { gpu } from "./gpu.test-helper.js";
 
 /** Writes every `value` on the GPU, which stamps its whole column at once. */
 const bumpOnGpu = System.create({ kernel: "gpu", components: { with: [value] } }, row => {
@@ -32,12 +33,12 @@ const gpuWrites = async (world: CreatedWorld, probe: System): Promise<readonly (
 const expected = [[true, 1], [false, 1], [true, 2], [false, 2]];
 
 describe("lookups by entity with changed, after a GPU kernel's writes", () => {
-    it("see them on the world's thread", async () => {
+    it.runIf(gpu)("see them on the world's thread", async () => {
         const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         expect(await gpuWrites(world, probe)).toEqual(expected);
         await world.dispose();
     });
-    it("see them on a joined thread", async () => {
+    it.runIf(gpu)("see them on a joined thread", async () => {
         const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         const channel = new MessageChannel();
         const shared = world.share(channel.port1);

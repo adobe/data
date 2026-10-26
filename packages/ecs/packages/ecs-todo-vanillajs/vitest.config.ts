@@ -7,6 +7,9 @@ import { isolation } from "./isolation.ts";
 /** A test's timeout only guards against a hang, which no test asserts on: long enough for a machine busy elsewhere. */
 const timeouts = { testTimeout: 30000, hookTimeout: 30000 };
 
+/** WebGPU where the machine has a GPU; none on CI's runners, whose WebGPU is software, unless `ECS_GPU=1`. */
+const chromiumArgs = process.env["ECS_GPU"] === "1" || process.env["CI"] === undefined ? ["--enable-unsafe-webgpu"] : ["--disable-gpu"];
+
 // Two groups, one after the other: `*.test.ts` in node, files in parallel; then `*.browser.test.ts` in chromium, with
 // real workers, a file at a time.
 export default defineConfig({
@@ -33,7 +36,7 @@ export default defineConfig({
                     browser: {
                         enabled: true,
                         // Full Chromium rather than the headless shell, whose WebGPU computes trigonometry less precisely.
-                        provider: playwright({ launchOptions: { channel: "chromium", args: ["--enable-unsafe-webgpu"] } }),
+                        provider: playwright({ launchOptions: { channel: "chromium", args: chromiumArgs } }),
                         headless: true,
                         instances: [{ browser: "chromium" }],
                     },

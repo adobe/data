@@ -24,6 +24,13 @@ const rowPath = [
 /** Whether to leave the guide's programs out, for coverage without them (`pnpm test:coverage:without-guide`). */
 const withoutGuide = process.env["ECS_WITHOUT_GUIDE"] === "1";
 
+/**
+ * Whether this run has a GPU: not on CI's runners, whose WebGPU is software and too slow, unless `ECS_GPU=1`. Without
+ * one, Chromium starts with no WebGPU adapter, as a browser without WebGPU, and the tests that need one skip.
+ */
+const gpu = process.env["ECS_GPU"] === "1" || process.env["CI"] === undefined;
+const chromiumArgs = gpu ? ["--enable-unsafe-webgpu"] : ["--disable-gpu"];
+
 /** A test's timeout only guards against a hang, which no test asserts on: long enough for a machine busy elsewhere. */
 const timeouts = { testTimeout: 30000, hookTimeout: 30000 };
 
@@ -88,10 +95,11 @@ export default defineConfig({
                     include: ["src/**/*.browser.test.ts"],
                     fileParallelism: false,
                     sequence: { groupOrder: 2 },
+                    provide: { gpu },
                     browser: {
                         enabled: true,
                         // Full Chromium rather than the headless shell, whose WebGPU computes trigonometry less precisely.
-                        provider: playwright({ launchOptions: { channel: "chromium", args: ["--enable-unsafe-webgpu"] } }),
+                        provider: playwright({ launchOptions: { channel: "chromium", args: chromiumArgs } }),
                         headless: true,
                         instances: [{ browser: "chromium" }],
                     },

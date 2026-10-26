@@ -7,6 +7,7 @@ import transformerUrl from "@oxc-transform/binding-wasm32-wasip1/wasm?url";
 import { expect, it } from "vitest";
 import { createMemoryCompiler, type MemoryCompiled } from "./memory-compiler.js";
 import { oxcParse, oxcStrip } from "./oxc.js";
+import { gpu } from "../world/gpu.test-helper.js";
 
 // The compiler's core in chromium: oxc's WASM bindings loaded as a page loads them, and the package's sources in
 // memory, laid out as installed.
@@ -62,7 +63,7 @@ it("fails a module that doesn't parse, at the error", async () => {
     expect(result).toMatchObject({ failure: expect.stringContaining("Unexpected token"), location: { line: 2 } });
 });
 
-it("describes the systems of the kernel chapters, their WGSL a shader module the GPU compiles without an error", async () => {
+it.runIf(gpu)("describes the systems of the kernel chapters, their WGSL a shader module the GPU compiles without an error", async () => {
     const shaders: string[] = [];
     for (const chapter of ["14-kernels", "16-gpu"]) {
         const file = `${root}/src/guide/${chapter}.ts`;

@@ -6,6 +6,7 @@ import { createWorld } from "./create.js";
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { F32 } from "../../interface/math/index.js";
+import { gpu } from "./gpu.test-helper.js";
 
 const heat = Symbol("observerGpuTest/heat");
 const rate = Symbol("observerGpuTest/rate");
@@ -41,7 +42,7 @@ const device = async (): Promise<GPUDevice> => {
 };
 
 describe("observer systems over GPU kernels' writes", () => {
-    it("read what a GPU kernel wrote in the run, read back for them", async () => {
+    it.runIf(gpu)("read what a GPU kernel wrote in the run, read back for them", async () => {
         const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         await world.run(spawn);
         world.add(sum);
@@ -54,7 +55,7 @@ describe("observer systems over GPU kernels' writes", () => {
         await world.dispose();
     });
 
-    it("look up through indexes kept by what a GPU kernel wrote in the run, read back before they're refreshed", async () => {
+    it.runIf(gpu)("look up through indexes kept by what a GPU kernel wrote in the run, read back before they're refreshed", async () => {
         const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         await world.run(spawn);
         world.add(countHot);
@@ -65,7 +66,7 @@ describe("observer systems over GPU kernels' writes", () => {
         await world.dispose();
     });
 
-    it("look up on a joined thread through indexes kept by what a GPU kernel wrote in the run, read back before they're refreshed", async () => {
+    it.runIf(gpu)("look up on a joined thread through indexes kept by what a GPU kernel wrote in the run, read back before they're refreshed", async () => {
         const fixture = await import("./observer-joined.fixture.js");
         expect(await fixture.gpuLookups(await device())).toEqual([50, 100]);
     });

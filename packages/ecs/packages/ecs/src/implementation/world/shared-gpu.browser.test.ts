@@ -6,6 +6,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { kernelOf } from "./attach-kernel.js";
 import { createWorld } from "./create.js";
+import { gpu } from "./gpu.test-helper.js";
 
 const scale = Symbol("sharedGpuTest/scale");
 const cell = Symbol("sharedGpuTest/cell");
@@ -75,7 +76,7 @@ const results = async (world: ReturnType<typeof createWorld>): Promise<readonly 
 };
 
 describe("a GPU kernel reading a shared component", () => {
-    it("reads its dispatch's archetype's value from its record, as the CPU does", async () => {
+    it.runIf(gpu)("reads its dispatch's archetype's value from its record, as the CPU does", async () => {
         expect(kernelOf(compute)?.shared).toEqual([scale, cell, flag]);
         await using cpu = createWorld({ [workers]: 0 });
         await cpu.run(spawn);
@@ -87,7 +88,7 @@ describe("a GPU kernel reading a shared component", () => {
         expect(await results(gpu)).toEqual(expected);
         expect(expected[1]).toBe("1 -20000001");
     });
-    it("gives a shared f32 value, and one product or sum of f32s, bit for bit; longer arithmetic within a few roundings", async () => {
+    it.runIf(gpu)("gives a shared f32 value, and one product or sum of f32s, bit for bit; longer arithmetic within a few roundings", async () => {
         await using cpu = createWorld({ [workers]: 0 });
         await cpu.run(spawnFractions);
         await cpu.run(fractions);

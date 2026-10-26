@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Frame, type Page } from "playwright";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { build } from "vite";
+import { chromiumArgs } from "./chromium.test-helper.js";
 
 // The built samples, served as a static host such as GitHub Pages serves them: without the headers that isolate a
 // page across origins, which the samples' service worker gives them.
@@ -37,7 +38,7 @@ beforeAll(async () => {
     const address = server.address();
     if (address === null || typeof address === "string") throw new Error("the server isn't listening on a port");
     url = `http://127.0.0.1:${address.port}/`;
-    browser = await chromium.launch({ channel: "chromium", args: ["--enable-unsafe-webgpu"] });
+    browser = await chromium.launch({ channel: "chromium", args: chromiumArgs });
 }, 180000);
 afterAll(async () => {
     await browser.close();

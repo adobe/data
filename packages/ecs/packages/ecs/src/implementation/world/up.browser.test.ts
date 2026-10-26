@@ -23,6 +23,7 @@ declare module "@adobe/ecs" {
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { F32 } from "../../interface/math/index.js";
+import { gpu } from "./gpu.test-helper.js";
 
 const place = System.create({
     kernel: "gpu",
@@ -67,7 +68,7 @@ const placements = async (gpu: GPUDevice | null): Promise<readonly (number | nul
 };
 
 describe("up on the GPU", () => {
-    it("runs depth by depth, a dispatch per group, as on the CPU", async () => {
+    it.runIf(gpu)("runs depth by depth, a dispatch per group, as on the CPU", async () => {
         const cpu = await placements(null);
         expect(await placements(await device())).toEqual(cpu);
     });

@@ -8,6 +8,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { Observe } from "../../observe/index.js";
 import { settle } from "./observe.test-helper.js";
 import type { F32 } from "../../interface/math/index.js";
+import { gpu } from "./gpu.test-helper.js";
 
 // The observer factories of `src/observe` over values GPU kernels wrote.
 
@@ -42,7 +43,7 @@ const device = async (): Promise<GPUDevice> => {
 };
 
 describe("observers of GPU kernels' writes", () => {
-    it("give an entity's values the GPU wrote, read back after each run, and a first value once read back", async () => {
+    it.runIf(gpu)("give an entity's values the GPU wrote, read back after each run, and a first value once read back", async () => {
         const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         await world.run(spawn);
         const seen: unknown[] = [];
@@ -62,7 +63,7 @@ describe("observers of GPU kernels' writes", () => {
         await world.dispose();
     });
 
-    it("give a query's result over values the GPU wrote", async () => {
+    it.runIf(gpu)("give a query's result over values the GPU wrote", async () => {
         const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         await world.run(spawn);
         const counts: number[] = [];
@@ -76,7 +77,7 @@ describe("observers of GPU kernels' writes", () => {
         await world.dispose();
     });
 
-    it("give an observer waiting for its first value nothing from a run queued before it", async () => {
+    it.runIf(gpu)("give an observer waiting for its first value nothing from a run queued before it", async () => {
         const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         await world.run(spawn);
         await world.run(warm);

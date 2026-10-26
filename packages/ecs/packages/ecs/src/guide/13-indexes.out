@@ -1,0 +1,8 @@
+players 3
+crowds [ 1, 2, 2 ]
+90 and up [ 'cy', 'ada' ]
+bo 80
+cy 91
+ada 95
+server 8 bo
+server 1 null

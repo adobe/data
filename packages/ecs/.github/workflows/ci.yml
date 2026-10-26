@@ -1,0 +1,57 @@
+name: CI
+
+# Validates every pull request (and pushes to main) before merge. The gate is
+# fully uniform: it never names individual packages. Each package owns how it
+# builds/tests/typechecks via standard script names, and every step here is a
+# single recursive invocation that pnpm runs in dependency (topological) order,
+# skipping packages that don't define the script. Adding a package therefore
+# needs no change to this file — see `scripts/check-workspace-conventions.mjs`
+# and the "Workspace script conventions" section of CLAUDE.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: typecheck · lint · build · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check workspace conventions
+        run: pnpm run check:workspace
+
+      - name: Type-check (every package, topological)
+        run: pnpm -r run typecheck
+
+      - name: Lint (every package that defines it)
+        run: pnpm -r run lint
+
+      - name: Build (every package, topological)
+        run: pnpm -r run build
+
+      - name: API docs (every package that defines them; warnings fail)
+        run: pnpm -r run docs
+
+      - name: Test (each package runs its own complete suite)
+        run: pnpm -r run test

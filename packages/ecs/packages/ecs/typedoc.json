@@ -1,0 +1,12 @@
+{
+    "name": "@adobe/ecs",
+    "entryPoints": ["src/index.ts", "src/implementation/compiler/index.ts"],
+    "tsconfig": "tsconfig.typedoc.json",
+    "out": "docs",
+    "readme": "README.md",
+    "includeVersion": true,
+    "excludePrivate": true,
+    "excludeInternal": true,
+    "treatWarningsAsErrors": true,
+    "validation": { "notExported": false, "invalidLink": true, "rewrittenLink": true }
+}

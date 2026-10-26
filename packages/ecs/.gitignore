@@ -1,0 +1,33 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+node_modules
+dist
+*.local
+*.tsbuildinfo
+
+# Editor directories and files
+.idea
+.DS_Store
+*.sw?
+
+# Generated API docs (typedoc output)
+packages/ecs/docs
+
+# Playwright MCP capture artifacts
+.playwright-mcp/
+
+# Vitest browser attachments and failure screenshots
+.vitest/
+
+# Coverage reports (pnpm test:coverage)
+coverage/
+
+# The GitHub Pages site, assembled by scripts/collect-pages.mjs
+/site/
+
+# The guide test's changed programs, each removed as its test ends
+packages/ecs/.mutants/

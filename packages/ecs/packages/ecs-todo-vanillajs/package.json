@@ -1,0 +1,27 @@
+{
+  "name": "ecs-todo-vanillajs",
+  "version": "0.0.0",
+  "description": "A todo app on the ECS, its DOM driven by systems, with vanilla custom elements",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc && vite build",
+    "dev": "vite",
+    "typecheck": "tsc",
+    "test": "pnpm exec playwright install chromium && vitest --run",
+    "test:perf": "pnpm exec playwright install chromium && vitest --run --config vitest.perf.config.ts"
+  },
+  "dependencies": {
+    "@adobe/ecs": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@vitest/browser-playwright": "^5.0.5",
+    "@webgpu/types": "^0.1.61",
+    "playwright": "^1.64.1",
+    "typescript": "^5.8.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}

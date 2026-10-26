@@ -1,58 +1,50 @@
-# ecs
+# CLAUDE.md
 
-## Interface and implementation are separate
+The ECS (`packages/ecs`, published as `@adobe/ecs`) and its samples. Each package's own CLAUDE.md guides work in it;
+`packages/ecs/CLAUDE.md` holds the ECS's rules, which its samples follow too.
 
-The ECS has two parts:
+## This repository is the source of truth
 
-1. **The interface:** what consumers see and use, in `src/interface`.
-2. **The implementation:** provided only by `World.create`, in `src/implementation`.
+adobe/data holds a copy of this whole repository at `packages/ecs` while it still publishes the ECS and its site. A
+sync outside this repository replaces that copy from a commit here, deleting what's gone, and lists its packages in
+adobe/data's workspace. Make every change here; never edit the copy in adobe/data.
 
-The interface exposes only what correct usage needs. Anything only the implementation needs stays out of it: out of
-the exports, and out of the types of values the interface returns. For example, a system's type is its name and the
-input consumers pass to `run`. Its components, resources, kernel and body are only for the implementation, so they
-aren't in its type, though the value still holds them: narrowing a type doesn't mean changing the value.
+Overrides of dependencies take effect only at a workspace's root, so keep any this repository needs scoped to the
+dependency they fix (`"parent>child"`): the sync carries them into adobe/data's root.
 
-Keeping the two apart leaves the implementation free to change how it stores, validates and runs things without
-changing the interface.
+## Never use top-level await
 
-Humans own the interface and agents own the implementation: agents don't add to or widen the public contract. See
-`src/interface/CLAUDE.md`.
+Do not use `await` at module top level in any package's sources. Defer async work to a lazy-init pattern: store the
+in-flight promise in a closure and `await` it inside the functions that need it.
 
-## Folders
+**Why:** Bundlers (Rolldown / Vite 8) wrap any module containing top-level await, and every module that transitively
+imports it, in an async lazy-init function. When those wrappers take part in an import cycle, the cycle becomes a
+circular-await chain and the bundled graph deadlocks silently, while native ESM in dev appears fine.
 
-- **`src/interface`** holds every public type, the registration functions with their registry and checks, and the runtime
-  helpers declarations and bodies use (`Entity.schema`, the math functions and schemas, `Gpu.wgsl`, `Gpu.layout`).
-  It's a project of its own: nothing in it imports from outside it. Each type exists once, there.
-- **`src/implementation`** holds `createWorld` and everything behind it, the kernel compiler included. It imports
-  types and the registry's read side from `src/interface`.
-- **`src/samples`** holds one folder per sample, its page included. `pnpm dev` (or `pnpm sample`, without
-  the type-check watch) serves them, with a sample browser at the root that has a tab for each.
-- `src/index.ts` exports `src/interface`, and `World` as a value too, whose `create` and `join` are the
-  implementation's, so `import { World } from "@adobe/ecs"` gives consumers the type, `World.create` and `World.join`,
-  the only entry points. Samples and the guide use them; tests and benchmarks may take `createWorld` from
-  `src/implementation` for its test hooks.
-- `tsc -b` emits only into `dist`; delete any `.js` or `.d.ts` that appears beside sources.
+## Workspace script conventions
 
-## Naming
+The root and CI never name individual packages. They invoke uniform recursive scripts (`pnpm -r run <script>`), which
+pnpm runs in dependency order and skips for packages that don't define the script. Each package owns *how* it does each
+step, so a new package needs no edit to any central list but `pnpm-workspace.yaml`, which lists packages explicitly.
 
-- **Archetypes count as types, so they're PascalCase:** `Todo`, and in a namespace `Report.Archetype`, not
-  `Report.archetype`. Component and resource keys, indexes and systems are camelCase values.
+Standard script names a package may define:
 
-## Real-time performance
+- **`build`**: produce dist or a bundle; must fail on type or bundler errors.
+- **`typecheck`**: type-check (usually `tsc -b` or `tsc --noEmit`).
+- **`test`**: run the package's *complete* suite, self-contained and runnable in CI. A package that needs a browser
+  installs and drives it itself. Keep long or optional lanes under suffixed names (`test:perf`) that CI doesn't call.
+- **`lint`**: lint the package.
+- **`dev`**: local dev or watch.
+- **`docs`**: generate the package's documentation (typedoc). What a package publishes to the GitHub Pages site is
+  its `pages` field: a list of `{ "from", "to" }`, a folder of the package and its path on the site (`"."` for the
+  root). The docs workflow runs `pnpm -r run build` and `pnpm -r run docs`, then `scripts/collect-pages.mjs` copies
+  every package's `pages`.
 
-The ECS runs every frame, so performance is a requirement, not a polish step, and it outranks every other concern:
-when a measured win conflicts with a style or design preference, take the win and state the trade. Keep work per run, per system and per
-row as low as it can be, and allocate nothing on those paths: reuse arrays, buffers and objects, share read-only
-empties, and avoid closures, spreads and awaits there. Measure changes with `pnpm perf` against the recorded baseline.
+Publishing is governed only by the `private` field: `pnpm -r publish` publishes every package with `private: false` and
+skips the rest. Every package sets `private` explicitly, and samples are `private: true`. Don't add a `publish-public`
+or similar script. `scripts/check-workspace-conventions.mjs` (`pnpm run check:workspace`, run in CI) enforces these.
 
-## Pull requests
+## Checks
 
-Each PR costs a review, a merge and a publish, so keep one open PR at a time. Add new work and fixes to it as more
-commits; never open stacked or parallel PRs. Keep it rebased on main, with this package's version one above main's.
-Bump it by hand in `package.json`; never run the workspace `bump` script, which bumps packages this PR didn't change.
-
-## Memory
-
-Decisions about working on this package live in `memory.md`; add new ones there.
-
-@memory.md
+Before a push, delete every `*.tsbuildinfo` under `packages`, then run `pnpm run check:workspace`, `pnpm run build`
+and `pnpm test` at the root.

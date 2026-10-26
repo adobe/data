@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Guide</title>
+    <link rel="icon" href="data:,">
+    <style>
+        html, body { margin: 0; height: 100%; }
+        /* Spectrum's base background, dark or light as the system prefers, until the theme's tokens load. */
+        body { background: rgb(29 29 29); }
+        @media (prefers-color-scheme: light) { body { background: rgb(255 255 255); } }
+        sp-theme { display: block; min-height: 100%; color-scheme: dark; background: var(--spectrum-background-base-color);
+            color: var(--spectrum-neutral-content-color-default); font-family: var(--spectrum-sans-font-family-stack, system-ui, sans-serif); }
+        sp-theme[color=light] { color-scheme: light; }
+        .app {
+            --guide-gutter: var(--spectrum-spacing-200);
+            --guide-radius: var(--spectrum-corner-radius-200);
+            --guide-panel: var(--spectrum-background-layer-1-color);
+            --guide-border: var(--spectrum-gray-200);
+            --guide-elevation: var(--spectrum-drop-shadow-x) var(--spectrum-drop-shadow-y) var(--spectrum-drop-shadow-blur) var(--spectrum-drop-shadow-color);
+            --guide-code-font: ui-monospace, SFMono-Regular, Menlo, var(--spectrum-code-font-family-stack, monospace);
+            --guide-typescript: var(--spectrum-red-900); --guide-build: var(--spectrum-purple-900);
+            box-sizing: border-box; height: 100vh; height: 100dvh; padding: 0 var(--guide-gutter) var(--guide-gutter); display: grid; gap: var(--guide-gutter);
+            grid-template: "header header" auto "nav columns" minmax(0, 1fr) / 248px minmax(0, 1fr); }
+        /* The prose and the example, side by side, a splitter in the gutter between them resizing them. */
+        .columns { grid-area: columns; min-width: 0; min-height: 0; overflow: visible; background: transparent; }
+        .columns > guide-prose { margin-inline-end: calc(var(--guide-gutter) / 2); }
+        .columns > .example { margin-inline-start: calc(var(--guide-gutter) / 2); overflow: visible; }
+        /* A chapter without an example is all prose. */
+        .columns:has(> .example[hidden]) > guide-prose { width: auto; flex: 1; margin-inline-end: 0; }
+        header { grid-area: header; display: flex; flex-wrap: wrap; align-items: center; gap: var(--spectrum-spacing-100) var(--spectrum-spacing-300);
+            min-height: 48px; padding: var(--spectrum-spacing-100) var(--spectrum-spacing-100) 0; }
+        header h1 { margin: 0; font-size: var(--spectrum-font-size-300); font-weight: 700; letter-spacing: -0.01em; }
+        header guide-status { margin-left: auto; }
+        .panel { box-sizing: border-box; min-width: 0; min-height: 0; background: var(--guide-panel); border: 1px solid var(--guide-border);
+            border-radius: var(--guide-radius); box-shadow: var(--guide-elevation); overflow: hidden; }
+        /* The navigation and the prose scroll inside their rounded panels, which otherwise clip what they hold. */
+        guide-nav { grid-area: nav; }
+        .panel:is(guide-nav, guide-prose) { overflow-y: auto; }
+        /* The prose takes the focus, so the keyboard scrolls it. */
+        guide-prose:focus-visible { outline: 2px solid var(--spectrum-focus-indicator-color); outline-offset: -2px; }
+        .example { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+        .example[hidden] { display: none; }
+        .example sp-split-view { flex: 1; min-height: 0; overflow: visible; background: transparent; }
+        /* The splitter sits in the gutter between the example and its run. */
+        .code { display: flex; flex-direction: column; margin-block-end: calc(var(--guide-gutter) / 2); }
+        sp-split-view > guide-tabs { margin-block-start: calc(var(--guide-gutter) / 2); }
+        .code guide-editor { flex: 1; }
+        guide-problems { overflow-y: auto; padding: var(--spectrum-spacing-75) var(--spectrum-spacing-100); }
+        @media (max-width: 1100px) {
+            .app { height: auto; grid-template: "header" auto "nav" auto "columns" auto / 100%; }
+            guide-nav { max-height: 40vh; }
+            /* Stacked, the splitter isn't resizable, and takes no room: the prose is as tall as it is, the example 85vh. */
+            .columns { flex-direction: column; gap: var(--guide-gutter); --mod-splitview-handle-width: 0px; }
+            .columns > guide-prose { width: auto; height: auto; margin: 0; }
+            .columns > .example { height: 85vh; flex: none; margin: 0; }
+        }
+    </style>
+</head>
+<body>
+    <sp-theme system="spectrum" color="dark" scale="medium">
+        <!-- The system's color scheme, read before the first paint; the page's world follows it from then on. -->
+        <script>document.currentScript.parentElement.setAttribute("color", matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");</script>
+        <div class="app">
+            <header>
+                <h1>ECS Guide</h1>
+                <guide-status></guide-status>
+                <guide-reset></guide-reset>
+            </header>
+            <guide-nav class="panel"></guide-nav>
+            <sp-split-view class="columns" resizable primary-size="44%" primary-min="320" secondary-min="440" label="Resize the chapter and its example">
+                <guide-prose class="panel" tabindex="0" role="region" aria-label="The chapter"></guide-prose>
+                <div class="example">
+                    <sp-split-view vertical resizable primary-size="58%" label="Resize the example and its results">
+                        <div class="code panel">
+                            <guide-note hidden></guide-note>
+                            <guide-files hidden></guide-files>
+                            <guide-editor></guide-editor>
+                        </div>
+                        <guide-tabs class="panel">
+                            <guide-console slot="console"></guide-console>
+                            <guide-output slot="output"></guide-output>
+                            <guide-problems slot="problems"></guide-problems>
+                            <guide-compiled slot="compiled"></guide-compiled>
+                        </guide-tabs>
+                    </sp-split-view>
+                </div>
+            </sp-split-view>
+        </div>
+    </sp-theme>
+    <script type="module" src="./app/main.ts"></script>
+</body>
+</html>

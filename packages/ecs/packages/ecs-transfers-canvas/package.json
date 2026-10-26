@@ -1,0 +1,24 @@
+{
+  "name": "ecs-transfers-canvas",
+  "version": "0.0.0",
+  "description": "Sprites drawn on an OffscreenCanvas on the world's worker, with textures from a loader worker",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc && vite build",
+    "dev": "vite",
+    "typecheck": "tsc",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@adobe/ecs": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@webgpu/types": "^0.1.61",
+    "typescript": "^5.8.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}

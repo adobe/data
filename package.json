@@ -28,5 +28,11 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"
+  },
+  "pnpm": {
+    "overrides": {
+      "@oxc-parser/binding-wasm32-wasip1>@napi-rs/wasm-runtime": "1.2.5",
+      "@oxc-transform/binding-wasm32-wasip1>@napi-rs/wasm-runtime": "1.2.5"
+    }
   }
 }

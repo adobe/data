@@ -1,0 +1,43 @@
+{
+  "name": "ecs-guide",
+  "version": "0.0.0",
+  "description": "The ECS's guide, each example edited in place, compiled, checked and run in the browser as it's typed",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc && vite build",
+    "dev": "vite",
+    "typecheck": "tsc",
+    "test": "pnpm exec playwright install chromium && vitest --run"
+  },
+  "dependencies": {
+    "@adobe/ecs": "workspace:*",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/lint": "^6.9.7",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
+    "@lezer/highlight": "^1.2.5",
+    "@oxc-parser/binding-wasm32-wasip1": "0.155.0",
+    "@oxc-transform/binding-wasm32-wasip1": "0.155.0",
+    "@spectrum-web-components/badge": "^1.12.5",
+    "@spectrum-web-components/button": "^1.12.5",
+    "@spectrum-web-components/progress-circle": "^1.12.5",
+    "@spectrum-web-components/sidenav": "^1.12.5",
+    "@spectrum-web-components/split-view": "^1.12.5",
+    "@spectrum-web-components/status-light": "^1.12.5",
+    "@spectrum-web-components/tabs": "^1.12.5",
+    "@spectrum-web-components/theme": "^1.12.5",
+    "marked": "^18.1.1",
+    "typescript": "^5.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@webgpu/types": "^0.1.61",
+    "playwright": "^1.64.1",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}

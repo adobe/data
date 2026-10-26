@@ -1,0 +1,3 @@
+at [ 1, 2 ]
+fn dotPosition(row: u32) -> vec2<f32>
+fn dotSize(row: u32) -> f32

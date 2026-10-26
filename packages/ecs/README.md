@@ -1,54 +1,68 @@
-# @adobe/ecs
+# ECS
 
 A high-performance, multithreaded Entity Component System for web-based applications, simulations and games.
 
-## Features
+## Packages
 
-- **Linear, gapless structure-of-arrays component storage**
-  - Fixed-length values (numbers, tuples, structs) in a `SharedArrayBuffer`
-    - Shared across the main thread and all workers
-    - Read by WASM kernels without copying
-    - WebGPU-compatible struct layout for fast uploads
-  - WebGPU storage for GPU system kernels
-    - Synced back to shared memory only when the CPU reads it
-  - Strings in shared memory, readable on every thread
-  - Objects and other variable-length values on the thread that owns them
-- **Declarations**
-  - Components and resources declared once, as TypeScript types; the build registers them
-  - Named types such as `F32`, `U32` and your own `Schema.Type`s give storage precision, width and bounds
-- **Systems**
-  - Plain TypeScript bodies with declared reads and writes
-  - Kernels compiled and checked at build time to optimized JavaScript, WASM and WGSL
-  - Balanced scheduling across the main thread, workers and the GPU
-  - Typed input, with its schema generated from the TypeScript type
-  - Render systems that draw straight from component storage
-  - Observer systems for reading state into a UI
-- **Changes**
-  - Per-component added and changed ticks: an O(1) check per entity, with each change seen exactly once
-  - Filters that skip unchanged chunks and 64-row blocks
-  - Structural changes batched at sync points, so memory never moves while systems run
-  - Rules, finalizers and traits for derived components, cleanup and references
-- **Queries**
-  - Hash, unique, sorted and keyless indexes, all updated incrementally
-  - Hierarchy traversal that reruns only below what changed
-- **Threads**
-  - Worlds shared with other threads through a `MessagePort` or worker
-  - Joined threads run their own systems and observers, and lend their workers to the pool
-- **Runtime**
-  - Kernels allocate nothing per row; commands, lookups and reports reuse their buffers
-  - Errors reported as data, in each run's report
+- **[`@adobe/ecs`](packages/ecs)**: the ECS and its build plugin, `@adobe/ecs/compiler`.
+- **[`ecs-todo-vanillajs`](packages/ecs-todo-vanillajs)**: a todo app whose world drives the DOM through systems,
+  with vanilla custom elements.
+- **[`ecs-particles-webgpu`](packages/ecs-particles-webgpu)**: particles simulated by kernels, on the CPU and with
+  WebGPU.
+- **[`ecs-transfers-canvas`](packages/ecs-transfers-canvas)**: sprites drawn on a worker into a canvas moved to it,
+  with textures transferred from another worker.
+- **[`ecs-guide`](packages/ecs-guide)**: the guide, each example edited in place, checked, compiled and run in the
+  browser as it's typed.
+- **[`ecs-sample-browser`](packages/ecs-sample-browser)**: the sample browser, a tab for each sample.
 
-## Setup
+## Online
 
-```ts
-// vite.config.ts
-import { Compiler } from "@adobe/ecs/compiler";
-export default defineConfig({ plugins: [Compiler.plugin()] });
+These links are to the published site, relative to its root page, which is this README.
+
+- [API reference](ecs/)
+- [Sample browser](ecs/samples/): [Guide](ecs/samples/#ecs-guide), [GPU Particles](ecs/samples/#ecs-particles-webgpu),
+  [Todos](ecs/samples/#ecs-todo-vanillajs), [Transferred Sprites](ecs/samples/#ecs-transfers-canvas)
+- The guide's chapters:
+  - [Setup](ecs/samples/#ecs-guide/setup)
+  - [Keys and declarations](ecs/samples/#ecs-guide/keys-and-declarations)
+  - [1. Resources](ecs/samples/#ecs-guide/1-resources)
+  - [2. Entities, components and archetypes](ecs/samples/#ecs-guide/2-entities-components-and-archetypes)
+  - [3. Systems](ecs/samples/#ecs-guide/3-systems)
+  - [4. Ticks and cadence](ecs/samples/#ecs-guide/4-ticks-and-cadence)
+  - [5. Scheduling and composites](ecs/samples/#ecs-guide/5-scheduling-and-composites)
+  - [6. Sync points](ecs/samples/#ecs-guide/6-sync-points)
+  - [7. Change filters and conditions](ecs/samples/#ecs-guide/7-change-filters-and-conditions)
+  - [8. Input](ecs/samples/#ecs-guide/8-input)
+  - [9. Rules](ecs/samples/#ecs-guide/9-rules)
+  - [10. Finalizers and change sets](ecs/samples/#ecs-guide/10-finalizers-and-change-sets)
+  - [11. Traits, within and references](ecs/samples/#ecs-guide/11-traits-within-and-references)
+  - [12. Lookups](ecs/samples/#ecs-guide/12-lookups)
+  - [13. Indexes](ecs/samples/#ecs-guide/13-indexes)
+  - [14. Kernels](ecs/samples/#ecs-guide/14-kernels)
+  - [15. Reductions](ecs/samples/#ecs-guide/15-reductions)
+  - [16. GPU kernels and render systems](ecs/samples/#ecs-guide/16-gpu-kernels-and-render-systems)
+  - [17. Hierarchies](ecs/samples/#ecs-guide/17-hierarchies)
+  - [18. Identity and ids](ecs/samples/#ecs-guide/18-identity-and-ids)
+  - [19. Threads](ecs/samples/#ecs-guide/19-threads)
+  - [20. Shared components and where](ecs/samples/#ecs-guide/20-shared-components-and-where)
+  - [21. Animating elements](ecs/samples/#ecs-guide/21-animating-elements)
+  - [22. Drawing on a canvas](ecs/samples/#ecs-guide/22-drawing-on-a-canvas)
+
+## Development
+
+Requires Node 24 and pnpm.
+
+```sh
+pnpm install
+pnpm build
+pnpm test
+pnpm --filter ecs-sample-browser dev   # every sample, in the sample browser
 ```
 
-A library builds with `Compiler.plugin({ library: true })`, so its build ships the registrations its declarations give.
+## Contributing
 
-## Guide
+See [CONTRIBUTING](.github/CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md).
 
-See the [guide](src/guide/guide.md) for how to use it, and the [API reference](https://adobe.github.io/data/ecs/) for
-every type and function.
+## License
+
+[MIT](LICENSE)

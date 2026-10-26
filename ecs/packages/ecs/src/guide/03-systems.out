@@ -1,0 +1,5 @@
+at [ 0, 1, 5 ]
+moving [ 'at 2', 'at 2', 'still' ]
+frames 1
+Error: System "fail" (@adobe/ecs@0.2.0/src/guide/03-systems.ts#fail) failed: broken
+frames 2

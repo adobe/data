@@ -1,0 +1,24 @@
+{
+  "name": "ecs-particles-webgpu",
+  "version": "0.0.0",
+  "description": "Particles moved by kernels on the ECS's workers or on the GPU, and drawn with WebGPU",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc && vite build",
+    "dev": "vite",
+    "typecheck": "tsc",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@adobe/ecs": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@webgpu/types": "^0.1.61",
+    "typescript": "^5.8.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}

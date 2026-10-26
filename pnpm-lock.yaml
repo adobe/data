@@ -4,6 +4,10 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@oxc-parser/binding-wasm32-wasip1>@napi-rs/wasm-runtime': 1.2.5
+  '@oxc-transform/binding-wasm32-wasip1>@napi-rs/wasm-runtime': 1.2.5
+
 importers:
 
   .:
@@ -14,6 +18,227 @@ importers:
       pnpm:
         specifier: ^9.0.0
         version: 9.0.0
+
+  ecs/packages/ecs:
+    devDependencies:
+      '@oxc-parser/binding-wasm32-wasip1':
+        specifier: 0.155.0
+        version: 0.155.0
+      '@oxc-transform/binding-wasm32-wasip1':
+        specifier: 0.155.0
+        version: 0.155.0
+      '@types/estree':
+        specifier: ^1.0.9
+        version: 1.0.9
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@vitest/browser-playwright':
+        specifier: ^5.0.5
+        version: 5.0.5(playwright@1.64.1)(vite@8.3.4)(vitest@5.0.5)
+      '@vitest/coverage-v8':
+        specifier: ^5.0.5
+        version: 5.0.5(vitest@5.0.5)
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      playwright:
+        specifier: ^1.64.1
+        version: 1.64.1
+      typedoc:
+        specifier: ^0.28.9
+        version: 0.28.9(typescript@5.8.3)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
+      wabt:
+        specifier: 1.0.39
+        version: 1.0.39
+
+  ecs/packages/ecs-guide:
+    dependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+      '@codemirror/commands':
+        specifier: ^6.11.1
+        version: 6.11.1
+      '@codemirror/lang-javascript':
+        specifier: ^6.2.5
+        version: 6.2.5
+      '@codemirror/language':
+        specifier: ^6.13.1
+        version: 6.13.1
+      '@codemirror/lint':
+        specifier: ^6.9.7
+        version: 6.9.7
+      '@codemirror/state':
+        specifier: ^6.7.6
+        version: 6.7.6
+      '@codemirror/view':
+        specifier: ^6.43.15
+        version: 6.43.15
+      '@lezer/highlight':
+        specifier: ^1.2.5
+        version: 1.2.5
+      '@oxc-parser/binding-wasm32-wasip1':
+        specifier: 0.155.0
+        version: 0.155.0
+      '@oxc-transform/binding-wasm32-wasip1':
+        specifier: 0.155.0
+        version: 0.155.0
+      '@spectrum-web-components/badge':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/button':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/progress-circle':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/sidenav':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/split-view':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/status-light':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/tabs':
+        specifier: ^1.12.5
+        version: 1.12.5
+      '@spectrum-web-components/theme':
+        specifier: ^1.12.5
+        version: 1.12.5
+      marked:
+        specifier: ^18.1.1
+        version: 18.1.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      playwright:
+        specifier: ^1.64.1
+        version: 1.64.1
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+
+  ecs/packages/ecs-particles-webgpu:
+    dependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+
+  ecs/packages/ecs-sample-browser:
+    dependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+      '@spectrum-web-components/theme':
+        specifier: ^1.12.5
+        version: 1.12.5
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      playwright:
+        specifier: ^1.64.1
+        version: 1.64.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+
+  ecs/packages/ecs-todo-vanillajs:
+    dependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@vitest/browser-playwright':
+        specifier: ^5.0.5
+        version: 5.0.5(playwright@1.64.1)(vite@8.3.4)(vitest@5.0.5)
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      playwright:
+        specifier: ^1.64.1
+        version: 1.64.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+
+  ecs/packages/ecs-transfers-canvas:
+    dependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+    devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@25.6.0)
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
 
   packages/data:
     dependencies:
@@ -652,33 +877,6 @@ importers:
         specifier: ^5.0.5
         version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
 
-  packages/ecs:
-    devDependencies:
-      '@types/estree':
-        specifier: ^1.0.5
-        version: 1.0.9
-      '@types/node':
-        specifier: ^25.6.0
-        version: 25.6.0
-      '@vitest/browser-playwright':
-        specifier: ^5.0.5
-        version: 5.0.5(playwright@1.64.1)(vite@8.3.4)(vitest@5.0.5)
-      '@webgpu/types':
-        specifier: ^0.1.61
-        version: 0.1.61
-      playwright:
-        specifier: ^1.64.1
-        version: 1.64.1
-      typescript:
-        specifier: ^5.8.3
-        version: 5.8.3
-      vite:
-        specifier: ^8.3.4
-        version: 8.3.4(@types/node@25.6.0)
-      vitest:
-        specifier: ^5.0.5
-        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
-
 packages:
 
   /@asamuzakjp/css-color@3.2.0:
@@ -932,12 +1130,86 @@ packages:
       '@babel/helper-validator-identifier': 7.29.7
     dev: true
 
+  /@bcoe/v8-coverage@1.0.2:
+    resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
+    engines: {node: '>=18'}
+    dev: true
+
   /@blazediff/core@1.10.0:
     resolution: {integrity: sha512-AOQff0zgR7cGsZL+4E7hVkmujoPUpm0J9xzWGWZj5wCjd3gmxESXAPfKyuzs93VdpQNFhHlBhfOjrcZ+XTERtQ==}
     dev: true
 
   /@cfworker/json-schema@4.1.1:
     resolution: {integrity: sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og==}
+    dev: false
+
+  /@codemirror/autocomplete@6.20.4:
+    resolution: {integrity: sha512-yF8RhOf2SXlg00+qtupzLhrglcas61boqaONiNcbPIebHCpJocpqTBA6dyrtUrQO47hqyTdeob/3XnYilT7TaQ==}
+    dependencies:
+      '@codemirror/language': 6.13.1
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.15
+      '@lezer/common': 1.5.4
+    dev: false
+
+  /@codemirror/commands@6.11.1:
+    resolution: {integrity: sha512-O/4hG3SC1YwcmQ0d2UVNDs+AsaNWd1iHVxbTeEBuqH+6bExAiPK3iS/BvpY6rZGURALv4ZD3sIgcCmRvw3ehBg==}
+    dependencies:
+      '@codemirror/language': 6.13.1
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.15
+      '@lezer/common': 1.5.4
+    dev: false
+
+  /@codemirror/lang-javascript@6.2.5:
+    resolution: {integrity: sha512-zD4e5mS+50htS7F+TYjBPsiIFGanfVqg4HyUz6WNFikgOPf2BgKlx+TQedI1w6n/IqRBVBbBWmGFdLB/7uxO4A==}
+    dependencies:
+      '@codemirror/autocomplete': 6.20.4
+      '@codemirror/language': 6.13.1
+      '@codemirror/lint': 6.9.7
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.15
+      '@lezer/common': 1.5.4
+      '@lezer/javascript': 1.5.6
+    dev: false
+
+  /@codemirror/language@6.13.1:
+    resolution: {integrity: sha512-zfvU2r3TyylQLMj/te+5CnQ0rSqZi8B1oTCBbQkagcLW4Xc6imab6qN+pEJhsuNOLaJqiRyBXp9UhWA1DhVvDw==}
+    dependencies:
+      '@codemirror/state': 6.7.6
+      '@codemirror/streamparser': 6.0.0
+      '@codemirror/view': 6.43.15
+      '@lezer/common': 1.5.4
+      '@lezer/highlight': 1.2.5
+      '@lezer/lr': 1.4.11
+      style-mod: 4.1.4
+    dev: false
+
+  /@codemirror/lint@6.9.7:
+    resolution: {integrity: sha512-28/+iWLYxKxsvGYhSYL7zaCZqLz5+FFFDq9tVsvGv9kv8RY4fFAchJ5WX9M3YrrRlTIsECjsXPqeNgnSmNP2dg==}
+    dependencies:
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.15
+      crelt: 1.0.7
+    dev: false
+
+  /@codemirror/state@6.7.6:
+    resolution: {integrity: sha512-kAz+AncRtKuIknedxT1bq4XwXv4UowhbkHU1myPrtVb/jZtImWuV5BXzv5vK6i3kYACsdiZiQKFQQ5Mq7elW8w==}
+    dependencies:
+      '@marijn/find-cluster-break': 1.0.4
+    dev: false
+
+  /@codemirror/streamparser@6.0.0:
+    resolution: {integrity: sha512-JTFPF6xrfjt0mnfGPgzcLiMwYmvIyNaoizp8BYzv8FE8KrT6GBGDZ190rtt+O7Wke3gG/MFHyiY9YGNeimof4w==}
+    dev: false
+
+  /@codemirror/view@6.43.15:
+    resolution: {integrity: sha512-HHsfpqFeHyXLs983pSRe38Xajs0vFWZQ2BuX0m7Ki8w3jZ5iD8cuR3lBz2/5/X53Dhf32SBHKh6rtSTB6tKeGw==}
+    dependencies:
+      '@codemirror/state': 6.7.6
+      crelt: 1.0.7
+      style-mod: 4.1.4
+      w3c-keyname: 2.2.8
     dev: false
 
   /@csstools/color-helpers@5.1.0:
@@ -1020,6 +1292,22 @@ packages:
   /@dimforge/rapier3d-compat@0.19.3:
     resolution: {integrity: sha512-mMVdSj1PRTT108s9Swbu2GQOmHbn8kbJANRV5xfczL3s0T4vkgZAuoMRgvBzQcHanpKusbC0ZJj6z3mC3aj3vg==}
     dev: false
+
+  /@emnapi/core@2.0.0-alpha.6:
+    resolution: {integrity: sha512-MNVvMV7WtEJMgqaWJMvCyupK7Oi8sZctUIgPRZTsiS3cVvefk8DXPflOU3MSBddtj/rrYHygpYgpHDgwXnI3+w==}
+    dependencies:
+      '@emnapi/wasi-threads': 2.2.0
+      tslib: 2.8.1
+
+  /@emnapi/runtime@2.0.0-alpha.6:
+    resolution: {integrity: sha512-5ZR49ZsZ3cLvu5lkrVj6CMpHRgZjYz7XSlqK23GYYpyEqp749RVuIH0bEUKaGNghMh2pXRhIC3cnVrH28Y1j1Q==}
+    dependencies:
+      tslib: 2.8.1
+
+  /@emnapi/wasi-threads@2.2.0:
+    resolution: {integrity: sha512-JP7OYH38Q7+pyTAe14raZHLQIK7BDKbdwji+Xi3pcd/6QkJYQH3SX4wu6EplGrGJWRepoNzedfm0G3B9Z4e9Rw==}
+    dependencies:
+      tslib: 2.8.1
 
   /@esbuild/aix-ppc64@0.19.12:
     resolution: {integrity: sha512-bmoCYyWdEL3wDQIVbcyzRyeKLgk2WtWLTWz1ZIAZF/EGbNOwSA6ew3PftJ1PqMiOOGu0OyFMzG53L0zqIpPeNA==}
@@ -1367,6 +1655,30 @@ packages:
       '@jridgewell/sourcemap-codec': 1.6.0
     dev: true
 
+  /@lezer/common@1.5.4:
+    resolution: {integrity: sha512-xt3Q4z64xM+xhg4M7NXqw1N//1O74bUFo5kz6fwMeC4qwxSuRdwkYSmjcqCEEKYkNw5e67f2hcNqBoNERAEU0w==}
+    dev: false
+
+  /@lezer/highlight@1.2.5:
+    resolution: {integrity: sha512-O1GMVKgtf5YspFaRzpmqkVgMtIk2HG9uMAbH6wdAIdNh3TVzCsch/+cRi+6l2//UGDKe6NB9BW3cvuR5ezMQ0w==}
+    dependencies:
+      '@lezer/common': 1.5.4
+    dev: false
+
+  /@lezer/javascript@1.5.6:
+    resolution: {integrity: sha512-sEvOqpl4vJQca0NugSQK02vQPbc5KrvoojnYGoqqFgFO0MtcYhwGiHKVEB+LuXYJnfyXo4QPA8ztbrEa4Fw5NA==}
+    dependencies:
+      '@lezer/common': 1.5.4
+      '@lezer/highlight': 1.2.5
+      '@lezer/lr': 1.4.11
+    dev: false
+
+  /@lezer/lr@1.4.11:
+    resolution: {integrity: sha512-UwgZcl1R66H2hDzBrA7kWyYmX6s8p5TQ+e/t7CuvgCtBEPxbEPaHYHu+pJBvTvDotEJpuQkJjbXuHiw5Cixxgw==}
+    dependencies:
+      '@lezer/common': 1.5.4
+    dev: false
+
   /@lit-labs/observers@2.0.2:
     resolution: {integrity: sha512-eZb5+W9Cb0e/Y5m1DNxBSGTvGB2TAVTGMnTxL/IzFhPQEcZIAHewW1eVBhN8W07A5tirRaAmmF6fGL1V20p3gQ==}
     dependencies:
@@ -1405,6 +1717,10 @@ packages:
       call-bind: 1.0.9
     dev: true
 
+  /@marijn/find-cluster-break@1.0.4:
+    resolution: {integrity: sha512-Wy0V7+SGUjnF9/TkiM1hKVDPj7jKXduPNboMVtHTA8dySMURWqfg/JZ9E2Sq8JgSJmkl7k7Qe9FLeMSrSraWmQ==}
+    dev: false
+
   /@napi-rs/lzma-linux-x64-gnu@1.5.1:
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
     engines: {node: ^22.20 || ^24.12 || >=25}
@@ -1413,6 +1729,17 @@ packages:
     requiresBuild: true
     dev: true
     optional: true
+
+  /@napi-rs/wasm-runtime@1.2.5(@emnapi/core@2.0.0-alpha.6)(@emnapi/runtime@2.0.0-alpha.6):
+    resolution: {integrity: sha512-HshSvXzmBxNzqejd3k/KemgQ3hdREUYFRRrgxOZ+gPljDIsO2SDZrVZMd4Z/HsxudQbE62OVyVFE8z9BCurfjA==}
+    engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
+    peerDependencies:
+      '@emnapi/core': ^1.7.1 || ^2.0.0-alpha.4
+      '@emnapi/runtime': ^1.7.1 || ^2.0.0-alpha.4
+    dependencies:
+      '@emnapi/core': 2.0.0-alpha.6
+      '@emnapi/runtime': 2.0.0-alpha.6
+      '@tybys/wasm-util': 0.10.4
 
   /@nodelib/fs.scandir@2.1.5:
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -1435,9 +1762,25 @@ packages:
       fastq: 1.20.1
     dev: true
 
+  /@oxc-parser/binding-wasm32-wasip1@0.155.0:
+    resolution: {integrity: sha512-DQ/0XVOqI8jSspq9g6ZCvjHrthoDFg6Z6WvGogV3zZG8rGQky5jYp3Q8rBggbndpl1frtg6AMkVZgTqZ+XjNyw==}
+    engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
+    dependencies:
+      '@emnapi/core': 2.0.0-alpha.6
+      '@emnapi/runtime': 2.0.0-alpha.6
+      '@napi-rs/wasm-runtime': 1.2.5(@emnapi/core@2.0.0-alpha.6)(@emnapi/runtime@2.0.0-alpha.6)
+
   /@oxc-project/types@0.154.0:
     resolution: {integrity: sha512-KYOUGQFlLWR+s4QMV2Q9ko38TZm7EdO87Qm7rvZLqk/webse/cDjtyxKhg/47l0byCbs/k46LT8qc4PKjAikzA==}
     dev: true
+
+  /@oxc-transform/binding-wasm32-wasip1@0.155.0:
+    resolution: {integrity: sha512-j9s9MBcb/PBY1LzxLp69eXJ8NSdFg/M379AfGTmlZLfAZ4O0jvNox04xfQ8cznzWEHA47zo/teGpkrwnF8z+Tw==}
+    engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
+    dependencies:
+      '@emnapi/core': 2.0.0-alpha.6
+      '@emnapi/runtime': 2.0.0-alpha.6
+      '@napi-rs/wasm-runtime': 1.2.5(@emnapi/core@2.0.0-alpha.6)(@emnapi/runtime@2.0.0-alpha.6)
 
   /@pixi/colord@2.9.6:
     resolution: {integrity: sha512-nezytU2pw587fQstUu1AsJZDVEynjskwOL+kibwcdxsMBFqPsFFNA7xl0ii/gXuDi6M0xj3mfRJj8pBSc2jCfA==}
@@ -1881,8 +2224,31 @@ packages:
       '@spectrum-web-components/shared': 1.12.2
     dev: false
 
+  /@spectrum-web-components/action-button@1.12.5:
+    resolution: {integrity: sha512-GwBF2h5rsm4I9WgSgikt4dA5q5Zysd4jKMqMeXQkYagsMWHIUS5h0GRlDR8f+opSmtjPK4lDyzAZmuDwOMduiA==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
+      '@spectrum-web-components/button': 1.12.5
+      '@spectrum-web-components/icon': 1.12.5
+      '@spectrum-web-components/icons-ui': 1.12.5
+      '@spectrum-web-components/shared': 1.12.5
+    dev: false
+
+  /@spectrum-web-components/badge@1.12.5:
+    resolution: {integrity: sha512-5hs2e7YVYW3LQfVuFfaTq1TiCc23KnlzaZwjwrtiWWJJNBgSnc7DBzXnmxonFc0XuzIHLgwiA9XkGmVun5CPFw==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
+      '@spectrum-web-components/shared': 1.12.5
+    dev: false
+
   /@spectrum-web-components/base@1.12.2:
     resolution: {integrity: sha512-7vB3182FqJzRevafUWlFRw/bfM4ZjC+Mmh5Fh0mDmVcP/SohUowrmHsQns1fsQPi+/O8iMP8XbtT7sAFp6ejkA==}
+    dependencies:
+      lit: 3.3.1
+    dev: false
+
+  /@spectrum-web-components/base@1.12.5:
+    resolution: {integrity: sha512-TMuLaJ9Gy8BtA4tosUCQxVgUGUNnO/U3SjwP1Ntb4xp6HsP/zxvabN+T2djIS+EepNh2cvBITfiReDj6s6MeVA==}
     dependencies:
       lit: 3.3.1
     dev: false
@@ -1900,6 +2266,19 @@ packages:
       '@spectrum-web-components/shared': 1.12.2
     dev: false
 
+  /@spectrum-web-components/button@1.12.5:
+    resolution: {integrity: sha512-Sl+fXwRmP6Nkxvk/+Mp2+uYcXZNHha+fEnhR4ZEK7YCnxx7wAggTRL6sqnjesxsYJ/RXFUMrLHcnChLI6xV4UQ==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
+      '@spectrum-web-components/clear-button': 1.12.5
+      '@spectrum-web-components/close-button': 1.12.5
+      '@spectrum-web-components/icon': 1.12.5
+      '@spectrum-web-components/icons-ui': 1.12.5
+      '@spectrum-web-components/progress-circle': 1.12.5
+      '@spectrum-web-components/reactive-controllers': 1.12.5
+      '@spectrum-web-components/shared': 1.12.5
+    dev: false
+
   /@spectrum-web-components/checkbox@1.12.2:
     resolution: {integrity: sha512-zXNYRwrdpuzXMBBzZUOkG06uELQQDF2C7xMxLCB1dsuLAswodi4yw2VvydsQ6mOmU46Zo8lmX3okEKzkSDU0/A==}
     dependencies:
@@ -1915,10 +2294,22 @@ packages:
       '@spectrum-web-components/base': 1.12.2
     dev: false
 
+  /@spectrum-web-components/clear-button@1.12.5:
+    resolution: {integrity: sha512-FkWFAk6Gvw1Odoo+S8+hMHF2+e6C4rOcO6l4+CFhwLyaiLk09O0BUiz4DbTRVD13aX0tzM61yVoy4gkQ0xoKMg==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
+    dev: false
+
   /@spectrum-web-components/close-button@1.12.2:
     resolution: {integrity: sha512-T1owl+MncqZTMapRZvwGI0IRzzYigzDpsGWR4yu4yc8MDD8D9k067KFZeh2Og1o5uzLNMT9jr6qUh795Xk6rtg==}
     dependencies:
       '@spectrum-web-components/base': 1.12.2
+    dev: false
+
+  /@spectrum-web-components/close-button@1.12.5:
+    resolution: {integrity: sha512-x8+fUvl6YGZB4DebuerirotGob8+WgafFK13OZcmkZBaXRQ8tCSQWhtZDCOfdwSiwLDN2bGnk2hY3HbDXMGGWw==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
     dev: false
 
   /@spectrum-web-components/field-label@1.12.2:
@@ -1947,12 +2338,28 @@ packages:
       '@spectrum-web-components/reactive-controllers': 1.12.2
     dev: false
 
+  /@spectrum-web-components/icon@1.12.5:
+    resolution: {integrity: sha512-4sGKfAXigCeOqDHSRYGzn4TQRuzn0I6KeVoaaNbyx3kgrdnFxfr4FinaMzbAVzO1M/liEBrwwd1eHlaX/74Ong==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
+      '@spectrum-web-components/iconset': 1.12.5
+      '@spectrum-web-components/reactive-controllers': 1.12.5
+    dev: false
+
   /@spectrum-web-components/icons-ui@1.12.2:
     resolution: {integrity: sha512-ibSFBD1gM6NkU+88g7QOPcee8E2JpClwiI/VZ/6EXbvOa/9QvQR23NfcYZIWHu8p3Wh7Lyas4MO+NdKlt6b09g==}
     dependencies:
       '@spectrum-web-components/base': 1.12.2
       '@spectrum-web-components/icon': 1.12.2
       '@spectrum-web-components/iconset': 1.12.2
+    dev: false
+
+  /@spectrum-web-components/icons-ui@1.12.5:
+    resolution: {integrity: sha512-Ji94apTo4sx0EYNPjpGObMiAV7FP0h+m7w5H555egbLnfYbcfzg0fuHlCSxhv1gnj6jFSXBQnYkG+rw8fpR+WQ==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
+      '@spectrum-web-components/icon': 1.12.5
+      '@spectrum-web-components/iconset': 1.12.5
     dev: false
 
   /@spectrum-web-components/icons-workflow@1.12.2:
@@ -1966,6 +2373,12 @@ packages:
     resolution: {integrity: sha512-s6BsY6VnZQOcTx8LfLixdu16g0QXr54wC4PiY7wKcgqkS+VJzo3Up02y7nUUcga38tDb2XcYHZU3rqKVagz6zQ==}
     dependencies:
       '@spectrum-web-components/base': 1.12.2
+    dev: false
+
+  /@spectrum-web-components/iconset@1.12.5:
+    resolution: {integrity: sha512-NCZCgPd1AGYJijOevPVMltXsAQ2qYlj7QORj4vaUk9hg18oxqvoaCvlBwQh0F3pImRg4c5RVQ7DF5Ij0fs63tQ==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
     dev: false
 
   /@spectrum-web-components/overlay@1.12.2:
@@ -1989,10 +2402,26 @@ packages:
       '@spectrum-web-components/shared': 1.12.2
     dev: false
 
+  /@spectrum-web-components/progress-circle@1.12.5:
+    resolution: {integrity: sha512-5nc0ol9GxP0kgJgPADXAbWrT4gmJjzP6UNSWQ1B/QrNV0ppR/Zi/yFznKINQURhR1ESUnnMln3X3X+1IYPGgtA==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
+      '@spectrum-web-components/reactive-controllers': 1.12.5
+      '@spectrum-web-components/shared': 1.12.5
+    dev: false
+
   /@spectrum-web-components/reactive-controllers@1.12.2:
     resolution: {integrity: sha512-TD94tuA5XDK8ISUM4pWHxJF9oe/IvSHYoR/4P6aYsAj8oPZgrGerNh1a+vzQZ0PorRpVMV4Rg/UHCbtTwxOgOQ==}
     dependencies:
       '@spectrum-web-components/progress-circle': 1.12.2
+      colorjs.io: 0.5.2
+      lit: 3.3.1
+    dev: false
+
+  /@spectrum-web-components/reactive-controllers@1.12.5:
+    resolution: {integrity: sha512-54H+Qf0k1XEqPYoz235TD3l9B4/zj8/qrdDR+KNG5BdCawyGmh+NpnBZYPxFYIVo603PCB5ZCOMsaB74LuLeVw==}
+    dependencies:
+      '@spectrum-web-components/progress-circle': 1.12.5
       colorjs.io: 0.5.2
       lit: 3.3.1
     dev: false
@@ -2005,10 +2434,46 @@ packages:
       focus-visible: 5.2.1
     dev: false
 
+  /@spectrum-web-components/shared@1.12.5:
+    resolution: {integrity: sha512-uj3q0miZLc+3C6M9EvzB2kkWRw/ta7YD33tER+T4+fD2PhtYq0U2MDspVzpduEYxFvpcTZXsLBNH38XJ3P3E3g==}
+    dependencies:
+      '@lit-labs/observers': 2.0.2
+      '@spectrum-web-components/base': 1.12.5
+      focus-visible: 5.2.1
+    dev: false
+
+  /@spectrum-web-components/sidenav@1.12.5:
+    resolution: {integrity: sha512-GFd2VtwXq+P9mP6FN9EbJ8aoV0OpaqLr/vC5mPCNTqIiosEpw/HLJx/7U4KoqjS/bv50YRplwPILusgOW3oUeQ==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
+      '@spectrum-web-components/reactive-controllers': 1.12.5
+      '@spectrum-web-components/shared': 1.12.5
+    dev: false
+
+  /@spectrum-web-components/split-view@1.12.5:
+    resolution: {integrity: sha512-MhElRJzPqi3dk3Ypq2ZcCYW/REStGmKaExImPTYx0VekhjWK3Kh0oDXXrKpYqrwwUwD+mdEOz4h9rBs3O++Egg==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
+      '@spectrum-web-components/shared': 1.12.5
+    dev: false
+
+  /@spectrum-web-components/status-light@1.12.5:
+    resolution: {integrity: sha512-SIkFiwpGpiyEOjw9KRQZ1fZMoOmNDmkP7AE4u4xFVPXWFaOwz4Cow4jfRJPVISD5I8hVjTrelMFHPodaFZ37lw==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
+    dev: false
+
   /@spectrum-web-components/styles@1.12.2:
     resolution: {integrity: sha512-6vYe/VEbjJ4VDcOSbjxEZaKatwRdxp6yLgEf+qtlo7YOSTAM2016kr6MaqV3EbKXBsVJP8qe9j2hoq29MLGqyA==}
     dependencies:
       '@spectrum-web-components/base': 1.12.2
+      lit: 3.3.1
+    dev: false
+
+  /@spectrum-web-components/styles@1.12.5:
+    resolution: {integrity: sha512-L7Pn1A4DtiGFYR+tmM0BDaJ1yYPFFEVJQwbcqsfeTRe5nF2f54s42mBc8osIeDWTFIMKgmLn2o5SFRL/0HtIRQ==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
       lit: 3.3.1
     dev: false
 
@@ -2017,6 +2482,18 @@ packages:
     dependencies:
       '@spectrum-web-components/base': 1.12.2
       '@spectrum-web-components/checkbox': 1.12.2
+    dev: false
+
+  /@spectrum-web-components/tabs@1.12.5:
+    resolution: {integrity: sha512-DhQvhvL+LM6voHvDZzM3LUuJT0Fy8Xi0s2NufXXprmRjjHg4seI3wc96t37eI0YFNbmGuSugbsH+sO7mfceElQ==}
+    dependencies:
+      '@lit-labs/observers': 2.0.2
+      '@spectrum-web-components/action-button': 1.12.5
+      '@spectrum-web-components/base': 1.12.5
+      '@spectrum-web-components/icon': 1.12.5
+      '@spectrum-web-components/icons-ui': 1.12.5
+      '@spectrum-web-components/reactive-controllers': 1.12.5
+      '@spectrum-web-components/shared': 1.12.5
     dev: false
 
   /@spectrum-web-components/textfield@1.12.2:
@@ -2037,6 +2514,13 @@ packages:
     dependencies:
       '@spectrum-web-components/base': 1.12.2
       '@spectrum-web-components/styles': 1.12.2
+    dev: false
+
+  /@spectrum-web-components/theme@1.12.5:
+    resolution: {integrity: sha512-cntA9Aki8rb/o1ahQLAnQY/UiDMtN/Bbi3ft02KCSWg6wpIjWLdZZ0jJoytlOQqR8y9YeH12+1zWpNzBkZREaQ==}
+    dependencies:
+      '@spectrum-web-components/base': 1.12.5
+      '@spectrum-web-components/styles': 1.12.5
     dev: false
 
   /@spectrum-web-components/tooltip@1.12.2:
@@ -2071,6 +2555,11 @@ packages:
     transitivePeerDependencies:
       - supports-color
     dev: true
+
+  /@tybys/wasm-util@0.10.4:
+    resolution: {integrity: sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A==}
+    dependencies:
+      tslib: 2.8.1
 
   /@types/babel__core@7.20.5:
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
@@ -2395,7 +2884,7 @@ packages:
       '@vitest/mocker': 5.0.5(vite@8.3.4)
       playwright: 1.64.1
       tinyrainbow: 3.2.0
-      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
     transitivePeerDependencies:
       - bufferutil
       - msw
@@ -2416,7 +2905,7 @@ packages:
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
       ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
@@ -2425,12 +2914,44 @@ packages:
       - vite
     dev: true
 
+  /@vitest/coverage-v8@5.0.5(vitest@5.0.5):
+    resolution: {integrity: sha512-4KpkGdIrSqBihx/JyP/e+S+IKB98etg1XDQiLAxksLfcShnwi1VReGeOT9NI43hLHbknosKp/1CCLn9Zgcs8mg==}
+    peerDependencies:
+      '@vitest/browser': 5.0.5
+      vitest: 5.0.5
+    peerDependenciesMeta:
+      '@vitest/browser':
+        optional: true
+    dependencies:
+      '@bcoe/v8-coverage': 1.0.2
+      '@vitest/istanbul-lib-coverage': 1.0.2
+      '@vitest/istanbul-lib-report': 1.0.2
+      ast-v8-to-istanbul: 1.0.7
+      magicast: 0.5.5
+      obug: 3.0.0
+      std-env: 4.3.0
+      tinyrainbow: 3.2.0
+      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
+    dev: true
+
   /@vitest/expect@1.6.0:
     resolution: {integrity: sha512-ixEvFVQjycy/oNgHjqsL6AZCDduC+tflRluaHIzKIsdbzkLn2U/iBnVeJwB6HsIjQBdfMR8Z0tRxKUsvFJEeWQ==}
     dependencies:
       '@vitest/spy': 1.6.0
       '@vitest/utils': 1.6.0
       chai: 4.5.0
+    dev: true
+
+  /@vitest/istanbul-lib-coverage@1.0.2:
+    resolution: {integrity: sha512-9J/JMwOf9AoJhAywhrn7ScKTL38hsWQP/qPG60OtaAFcQ5OXPwKsxZFlbnuCKmZ61m8/lGgHYnFpdyQZUvG/iA==}
+    engines: {node: '>=22'}
+    dev: true
+
+  /@vitest/istanbul-lib-report@1.0.2:
+    resolution: {integrity: sha512-gUsfXZJbzPamoIY5TvHFiMMoXESBrUMo+xqaj+rYrWI69+EnvRlYBlP96ZnHPY4vX8kyUpgAnFUCg5wZG/HkDQ==}
+    engines: {node: '>=22'}
+    dependencies:
+      '@vitest/istanbul-lib-coverage': 1.0.2
     dev: true
 
   /@vitest/mocker@5.0.5(vite@8.3.4):
@@ -2494,7 +3015,7 @@ packages:
       pathe: 2.0.3
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+      vitest: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4)
     dev: true
 
   /@vitest/utils@1.6.0:
@@ -2861,6 +3382,14 @@ packages:
     engines: {node: '>=4'}
     dependencies:
       tslib: 2.8.1
+    dev: true
+
+  /ast-v8-to-istanbul@1.0.7:
+    resolution: {integrity: sha512-kFL68AG6ajd8fg248zwM9GQrUWEp79gsmjum34OEXjs4yHuUMZfYKwOLW9GMmB4oNvVrj+EAGxsP7ye2UR9UlA==}
+    dependencies:
+      '@jridgewell/trace-mapping': 0.3.31
+      estree-walker: 3.0.3
+      js-tokens: 10.0.0
     dev: true
 
   /astral-regex@2.0.0:
@@ -3398,6 +3927,10 @@ packages:
       crc-32: 1.2.2
       readable-stream: 4.7.0
     dev: true
+
+  /crelt@1.0.7:
+    resolution: {integrity: sha512-aK6BbWfhf4U/wCcLHKPJl/xa6VkVstRaPywWtMKGwuOLc/wZTyQYuoxgvZnNsBvv7Kg3YTBQYYBCggcviQczuA==}
+    dev: false
 
   /cross-spawn@6.0.6:
     resolution: {integrity: sha512-VqCUuhcd1iB+dsv8gxPttb5iZh/D0iubSP21g36KXdEuf6I5JiioesUVjpCdHV9MZRUfVFlvwtIUyPfxo5trtw==}
@@ -5349,6 +5882,10 @@ packages:
     resolution: {integrity: sha512-rA7Mcb3CDqsDzr0J15P2DDftMR4d15/B6hfvvVh88Se3KFCYXGbPKGK2sJFGOpzUksRpyQhgbfLHgHL4SA5UzQ==}
     dev: false
 
+  /js-tokens@10.0.0:
+    resolution: {integrity: sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q==}
+    dev: true
+
   /js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
     dev: true
@@ -5840,6 +6377,14 @@ packages:
       '@jridgewell/sourcemap-codec': 1.6.0
     dev: true
 
+  /magicast@0.5.5:
+    resolution: {integrity: sha512-UicdXN8zQ3JHlxVq+28afMXPr1z7WNY6+7EJnzTdQWkTAlMLF5fNCCKxJHBQwGaNGR11581EiQmQzx73+MvszA==}
+    dependencies:
+      '@babel/parser': 7.29.8
+      '@babel/types': 7.29.8
+      source-map-js: 1.2.2
+    dev: true
+
   /markdown-it@14.3.0:
     resolution: {integrity: sha512-RCEsPjR+sr0x+AuYp601tKTkgFG4YEPLCzHST3cQ/fhlJkqAkz1L2/Qbp1j9qw5SBwQHFBoW8+hoN5xssOF0Tw==}
     hasBin: true
@@ -5851,6 +6396,12 @@ packages:
       punycode.js: 2.3.1
       uc.micro: 2.1.0
     dev: true
+
+  /marked@18.1.1:
+    resolution: {integrity: sha512-zEGgrtUG8crk+TrMacJSVABU4DYDDkS8uqgU3ohrn/2fW9C2AEfUrO3m6IhpIpQpl7YcVpiXXC9cSMWDANT3dg==}
+    engines: {node: '>= 20'}
+    hasBin: true
+    dev: false
 
   /math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -7554,6 +8105,10 @@ packages:
     resolution: {integrity: sha512-vrN+B7DBIoTTZjnPNewwhx6cBA/H+IS7rfW68n7XxC1y7uoiGQBxaKzqucGUgavX15dJgiGztLJ8vxuEzwqBdA==}
     dev: true
 
+  /style-mod@4.1.4:
+    resolution: {integrity: sha512-XXWIQt633/EpAFx8aZDOTjBzrCaGmhvEQlQo6MVPfa2OzO2cWo+4hV9h+6UkHYlXGfy+ODXKUdP7Pthmcu5ATw==}
+    dev: false
+
   /stylelint-config-recommended@14.0.1(stylelint@16.2.1):
     resolution: {integrity: sha512-bLvc1WOz/14aPImu/cufKAZYfXs/A/owZfSMZ4N+16WGXLoX5lOir53M6odBxvhgmgdxCVnNySJmZKx73T93cg==}
     engines: {node: '>=18.12.0'}
@@ -7870,7 +8425,6 @@ packages:
 
   /tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
-    dev: true
 
   /type-check@0.3.2:
     resolution: {integrity: sha512-ZCmOJdvOWDBYJlzAoFkC+Q0+bUyEOS1ltgp1MGU03fqHG+dbi9tBFU2Rd9QKiDZFAYrhPh2JUf7rZRIuHRKtOg==}
@@ -7975,7 +8529,6 @@ packages:
     resolution: {integrity: sha512-p1diW6TqL9L07nNxvRMM7hMMw4c5XOo/1ibL4aAIGmSAt9slTE1Xgw5KWuof2uTOvCg9BY7ZRi+GaF+7sfgPeQ==}
     engines: {node: '>=14.17'}
     hasBin: true
-    dev: true
 
   /uc.micro@2.1.0:
     resolution: {integrity: sha512-ARDJmphmdvUk6Glw7y9DQ2bFkKBHwQHLi2lsaH6PPmz/Ka9sFOBsBluozhDltWmnv9u/cF6Rt87znRTPV+yp/A==}
@@ -8323,6 +8876,68 @@ packages:
       - terser
     dev: true
 
+  /vitest@5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(vite@8.3.4):
+    resolution: {integrity: sha512-cPODOMF8YnkiiYtDdHo6n4wWmBrOBBbOIYH2d33M4l3CdNn72h+qMmO6uXffUN6A5AZFXNND/d+krS9mgkXRfg==}
+    engines: {node: ^22.12.0 || ^24.0.0 || >=26.0.0}
+    hasBin: true
+    peerDependencies:
+      '@edge-runtime/vm': '*'
+      '@opentelemetry/api': ^1.9.0
+      '@types/node': ^22.0.0 || >=24.0.0
+      '@vitest/browser-playwright': 5.0.5
+      '@vitest/browser-preview': 5.0.5
+      '@vitest/browser-webdriverio': ^5.0.0-beta.5 || >=5.0.0
+      '@vitest/coverage-istanbul': 5.0.5
+      '@vitest/coverage-v8': 5.0.5
+      '@vitest/ui': 5.0.5
+      happy-dom: '*'
+      jsdom: '*'
+      vite: ^6.4.0 || ^7.0.0 || ^8.0.0
+    peerDependenciesMeta:
+      '@edge-runtime/vm':
+        optional: true
+      '@opentelemetry/api':
+        optional: true
+      '@types/node':
+        optional: true
+      '@vitest/browser-playwright':
+        optional: true
+      '@vitest/browser-preview':
+        optional: true
+      '@vitest/browser-webdriverio':
+        optional: true
+      '@vitest/coverage-istanbul':
+        optional: true
+      '@vitest/coverage-v8':
+        optional: true
+      '@vitest/ui':
+        optional: true
+      happy-dom:
+        optional: true
+      jsdom:
+        optional: true
+    dependencies:
+      '@types/chai': 5.2.3
+      '@types/node': 25.6.0
+      '@vitest/browser-playwright': 5.0.5(playwright@1.64.1)(vite@8.3.4)(vitest@5.0.5)
+      '@vitest/coverage-v8': 5.0.5(vitest@5.0.5)
+      '@vitest/mocker': 5.0.5(vite@8.3.4)
+      chai: 6.3.0
+      es-module-lexer: 2.3.2
+      expect-type: 1.4.0
+      magic-string: 1.4.3
+      obug: 3.0.0
+      picomatch: 4.0.7
+      std-env: 4.3.0
+      tinybench: 6.2.2
+      tinyexec: 1.3.1
+      tinyglobby: 0.2.17
+      vite: 8.3.4(@types/node@25.6.0)
+      why-is-node-running: 3.2.1
+    transitivePeerDependencies:
+      - msw
+    dev: true
+
   /vitest@5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4):
     resolution: {integrity: sha512-cPODOMF8YnkiiYtDdHo6n4wWmBrOBBbOIYH2d33M4l3CdNn72h+qMmO6uXffUN6A5AZFXNND/d+krS9mgkXRfg==}
     engines: {node: ^22.12.0 || ^24.0.0 || >=26.0.0}
@@ -8446,11 +9061,20 @@ packages:
       - msw
     dev: true
 
+  /w3c-keyname@2.2.8:
+    resolution: {integrity: sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==}
+    dev: false
+
   /w3c-xmlserializer@5.0.0:
     resolution: {integrity: sha512-o8qghlI8NZHU1lLPrpi2+Uq7abh4GGPpYANlalzWxyWteJOCsr/P+oPBA49TOLu5FTZO4d3F9MnWJfiMo4BkmA==}
     engines: {node: '>=18'}
     dependencies:
       xml-name-validator: 5.0.0
+    dev: true
+
+  /wabt@1.0.39:
+    resolution: {integrity: sha512-ba+dRL/75VQQY7RkU/CgriGbkoWAfS8TDyUlJfJhJ8KhtXgMl5dhNvoPNUcQ9IWRhW8u41glMSuZeTvsYq2rRg==}
+    hasBin: true
     dev: true
 
   /wait-port@1.1.0:

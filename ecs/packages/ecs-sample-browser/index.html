@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ECS Samples</title>
+    <link rel="icon" href="data:,">
+    <style>
+        html, body { margin: 0; height: 100%; }
+        /* Spectrum's base background, dark or light as the system prefers, until the theme's tokens load. */
+        body { background: rgb(29 29 29); }
+        @media (prefers-color-scheme: light) { body { background: rgb(255 255 255); } }
+        sp-theme { display: flex; flex-direction: column; height: 100%; color-scheme: dark; background: var(--spectrum-background-base-color);
+            color: var(--spectrum-neutral-content-color-default); font: var(--spectrum-font-size-100)/1.4 var(--spectrum-sans-font-family-stack, system-ui, sans-serif); }
+        sp-theme[color=light] { color-scheme: light; }
+        nav { display: flex; align-items: stretch; gap: var(--spectrum-spacing-75); padding: 0 var(--spectrum-spacing-200); overflow-x: auto;
+            background: var(--spectrum-background-layer-1-color); border-bottom: 1px solid var(--spectrum-gray-200); }
+        nav a { padding: var(--spectrum-spacing-200) var(--spectrum-spacing-200); color: var(--spectrum-gray-700); text-decoration: none; white-space: nowrap;
+            border-bottom: 2px solid transparent; }
+        nav a:hover { color: var(--spectrum-gray-900); }
+        nav a:focus-visible { outline: 2px solid var(--spectrum-focus-indicator-color); outline-offset: -2px; border-radius: var(--spectrum-corner-radius-100); }
+        nav a[aria-current="page"] { color: var(--spectrum-gray-900); border-bottom-color: var(--spectrum-accent-content-color-default); }
+        nav #alone { margin-left: auto; }
+        iframe { flex: 1; width: 100%; border: 0; }
+    </style>
+</head>
+<body>
+    <sp-theme system="spectrum" color="dark" scale="medium">
+    <!-- The system's color scheme, read before the first paint; the page follows it from then on (browser.ts). -->
+    <script>document.currentScript.parentElement.setAttribute("color", matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");</script>
+    <nav>
+        <!-- One tab per sample package beside this one, by its folder's name; browser.test.ts checks the list. -->
+        <a href="#ecs-guide">Guide</a>
+        <a href="#ecs-particles-webgpu">GPU Particles</a>
+        <a href="#ecs-todo-vanillajs">Todos</a>
+        <a href="#ecs-transfers-canvas">Transferred Sprites</a>
+        <a id="alone" target="_blank" title="Open this sample in a tab of its own">Open alone ↗</a>
+    </nav>
+    <iframe title="Sample"></iframe>
+    </sp-theme>
+    <script type="module" src="./browser.ts"></script>
+</body>
+</html>

@@ -4,6 +4,9 @@
   "description": "WebGPU samples built on @adobe/data-gpu",
   "type": "module",
   "private": true,
+  "pages": [
+    { "from": "dist", "to": "gpu-samples" }
+  ],
   "scripts": {
     "predev": "pnpm --filter @adobe/data-gpu build",
     "dev": "vite",

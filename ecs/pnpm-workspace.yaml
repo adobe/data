@@ -1,0 +1,9 @@
+packages:
+  - 'packages/ecs'
+  - 'packages/ecs-particles-webgpu'
+  - 'packages/ecs-todo-vanillajs'
+  - 'packages/ecs-transfers-canvas'
+  - 'packages/ecs-sample-browser'
+  - 'packages/ecs-guide'
+allowBuilds:
+  esbuild: false

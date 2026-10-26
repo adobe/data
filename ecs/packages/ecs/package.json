@@ -1,0 +1,79 @@
+{
+  "name": "@adobe/ecs",
+  "version": "0.2.0",
+  "description": "Adobe ECS",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "private": false,
+  "pages": [
+    { "from": "docs", "to": "ecs" }
+  ],
+  "independentVersion": true,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/*.type-test.*",
+    "!dist/**/*.test-helper.*",
+    "!dist/**/*.cases.*",
+    "!dist/**/*.fixture.*",
+    "!dist/fixtures",
+    "!dist/guide",
+    "!dist/perf",
+    "!dist/perftest",
+    "!dist/observe",
+    "!dist/**/*.tsbuildinfo",
+    "src",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "cp ../../LICENSE . && tsc -b",
+    "dev": "tsc -b -w --preserveWatchOutput",
+    "typecheck": "tsc -b",
+    "test": "pnpm exec playwright install chromium && vitest --run",
+    "test:coverage": "pnpm exec playwright install chromium && vitest --run --coverage",
+    "test:coverage:without-guide": "pnpm exec playwright install chromium && ECS_WITHOUT_GUIDE=1 vitest --run --coverage",
+    "test:perf": "pnpm exec playwright install chromium && vitest --run --config vitest.perf.config.ts",
+    "perf": "node scripts/perf.mjs",
+    "perf:browser": "node scripts/perf.mjs --browser",
+    "perf:report": "node scripts/perf.mjs --report",
+    "docs": "typedoc"
+  },
+  "devDependencies": {
+    "@oxc-parser/binding-wasm32-wasip1": "0.155.0",
+    "@oxc-transform/binding-wasm32-wasip1": "0.155.0",
+    "@types/estree": "^1.0.9",
+    "@types/node": "^25.6.0",
+    "@vitest/browser-playwright": "^5.0.5",
+    "@vitest/coverage-v8": "^5.0.5",
+    "@webgpu/types": "^0.1.61",
+    "playwright": "^1.64.1",
+    "typedoc": "^0.28.9",
+    "typescript": "^5.8.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5",
+    "wabt": "1.0.39"
+  },
+  "peerDependencies": {
+    "vite": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./compiler": {
+      "import": "./dist/implementation/compiler/index.js",
+      "types": "./dist/implementation/compiler/index.d.ts"
+    }
+  }
+}

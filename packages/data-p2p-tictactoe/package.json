@@ -4,6 +4,9 @@
   "description": "Serverless P2P tic-tac-toe — WebRTC DataChannel + @adobe/data-sync",
   "type": "module",
   "private": true,
+  "pages": [
+    { "from": "dist", "to": "p2p-tictactoe" }
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",

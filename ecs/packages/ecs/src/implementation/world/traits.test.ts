@@ -1,0 +1,62 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import { describe, expect, it } from "vitest";
+import { Entity } from "../../interface/entity/entity.js";
+import { System } from "../../interface/system/system.js";
+import { count, read } from "./reads.test-helper.js";
+import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
+
+const score = Symbol("traitsTest/score");
+const slot = Symbol("traitsTest/slot");
+const ready = Symbol("traitsTest/ready");
+const parent = Symbol("traitsTest/parent");
+
+declare module "@adobe/ecs" {
+    export interface Components {
+        [score]: { type: number };
+        [slot]: { type: number; derived: true };
+        [ready]: { type: true; within: typeof slot };
+        [parent]: { type: Entity; reference: "owner" };
+    }
+}
+
+
+describe("traits", () => {
+    it("keep derived components out of commands, for untyped callers too", async () => {
+        const errors: string[] = [];
+        const derived = System.create({}, ({ commands }) => {
+            const entity = commands.spawn([score])({ [score]: 1 });
+            const attempts = [
+                // @ts-expect-error derived components are added only by rules
+                () => commands.spawn([slot])({ [slot]: 1 }),
+                // @ts-expect-error derived components are added only by rules
+                () => commands.add(entity, slot, 1),
+                // @ts-expect-error derived components are removed only by rules
+                () => commands.remove(entity, slot),
+            ];
+            for (const attempt of attempts) {
+                try { attempt(); }
+                catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
+            }
+        });
+        const world = createWorld({ [workers]: 0 });
+        await world.run(derived);
+        expect(errors).toEqual(Array.from({ length: 3 }, () => `"traitsTest/slot" is derived, so only rules add and remove it.`));
+        expect(await count(world, { required: [score] })).toBe(1);
+        await world.dispose();
+    });
+
+    it("leave index 0 to Entity.none, which no lookup finds", async () => {
+        let first = Entity.none;
+        let found: unknown = undefined;
+        const spawn = System.create({}, ({ commands }) => { first = commands.spawn([score])({ [score]: 1 }); });
+        const lookup = System.create({ lookup: { scores: { with: [score] } } }, ({ lookup: { scores } }) => { found = scores(Entity.none); });
+        const world = createWorld({ [workers]: 0 });
+        await world.run(spawn);
+        await world.run(lookup);
+        expect(first).not.toBe(Entity.none);
+        expect(found).toBeNull();
+        expect(await read(world, Entity.none, score)).toBeNull();
+        await world.dispose();
+    });
+});

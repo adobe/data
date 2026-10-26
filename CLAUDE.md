@@ -27,6 +27,12 @@ Standard script names a package may define:
   that the uniform pipeline does not call.
 - **`lint`** — lint the package.
 - **`dev`** — local dev/watch.
+- **`docs`** — generate the package's documentation (e.g. typedoc). What a
+  package publishes to the GitHub Pages site is its `pages` field: a list of
+  `{ "from", "to" }`, a folder of the package and its path on the site (`"."`
+  for the root). The docs workflow runs `pnpm -r run build` and
+  `pnpm -r run docs`, then `scripts/collect-pages.mjs` copies every package's
+  `pages`, so publishing never names a package.
 
 Do **not** add a `publish-public` (or similar) script. Publishing is governed
 *only* by the `private` field: `pnpm -r publish` publishes every package with

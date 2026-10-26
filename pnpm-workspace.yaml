@@ -1,7 +1,12 @@
 packages:
   - 'packages/data'
   - 'packages/data-ai'
-  - 'packages/ecs'
+  - 'ecs/packages/ecs'
+  - 'ecs/packages/ecs-particles-webgpu'
+  - 'ecs/packages/ecs-todo-vanillajs'
+  - 'ecs/packages/ecs-transfers-canvas'
+  - 'ecs/packages/ecs-sample-browser'
+  - 'ecs/packages/ecs-guide'
   - 'packages/data-testing'
   - 'packages/data-persistence'
   - 'packages/data-sync'

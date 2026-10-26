@@ -11,7 +11,12 @@ afterAll(async () => {
     await browser.close();
 });
 
+/**
+ * Edits a tab as a reader does, in front: a tab behind another has its timers throttled, by up to a minute, so the
+ * pause after typing that starts a build wouldn't end.
+ */
 const edit = async (page: Page): Promise<void> => {
+    await page.bringToFront();
     await page.locator("guide-editor .cm-content").click();
     await page.keyboard.press("End");
     await page.keyboard.insertText(" ");
@@ -34,6 +39,7 @@ it("runs each tab's examples in its own frames, though tabs share the cache, and
         for (let round = 0; round < 4; round++) {
             await edit(second);
             await edit(first);
+            await first.bringToFront();
             await first.waitForTimeout(1500);
             await statusOf(first);
             expect(await consoleOf(first)).toBe(own);

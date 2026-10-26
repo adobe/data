@@ -70,9 +70,6 @@ const registered = async (): Promise<string> => {
     return `${new URL(runsFolder, registration.scope).href}${folder}/`;
 };
 
-/** How long a compile may go unanswered before it fails, so a compiler that stalls never leaves a chapter compiling. */
-const answerLimit = 20_000;
-
 export const createRuns = (): Runs => {
     let runs: Promise<string> | null = null;
     let next = 1;
@@ -107,12 +104,7 @@ export const createRuns = (): Runs => {
             }
             const request: CompileRequest = { kind: "compile", run, files, runs: folder, runtime: new URL(runtimeUrl, location.href).href, names: [...Object.keys(ecs), ...runtimeNames] };
             const reply = await new Promise<CompileReply>(resolve => {
-                const timer = setTimeout(() => {
-                    if (!waiting.has(run)) return;
-                    waiting.delete(run);
-                    resolve({ kind: "compiled", run, diagnostics: [], page: null, systems: [], failure: `The compiler didn't answer within ${answerLimit / 1000} s`, superseded: false });
-                }, answerLimit);
-                waiting.set(run, { request, resolve: answered => { clearTimeout(timer); resolve(answered); }, retrying });
+                waiting.set(run, { request, resolve, retrying });
                 worker.post(request);
             });
             return { run, diagnostics: reply.diagnostics, page: reply.page, systems: reply.systems, failure: reply.failure, superseded: reply.superseded };

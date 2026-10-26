@@ -162,16 +162,19 @@ it("runs a chapter shown again once, in one frame, printing what the guide shows
         await statusOf(page, /Finished/);
         await page.evaluate(() => {
             const root = document.querySelector("guide-output")?.shadowRoot;
-            Reflect.set(globalThis, "framesLoaded", 0);
+            const framed: string[] = [];
+            Reflect.set(globalThis, "framed", framed);
             if (root !== null && root !== undefined) new MutationObserver(records => {
-                for (const record of records) for (const node of record.addedNodes) if (node instanceof HTMLIFrameElement) Reflect.set(globalThis, "framesLoaded", Number(Reflect.get(globalThis, "framesLoaded")) + 1);
+                for (const record of records) for (const node of record.addedNodes) if (node instanceof HTMLIFrameElement) framed.push(node.src);
             }).observe(root, { childList: true });
         });
         await page.locator(`guide-nav sp-sidenav-item[value='${systems.slug}']`).click();
         await page.waitForFunction(lines => document.querySelector("guide-console")?.logged.entries.length === lines, systems.expected.split("\n").length - 1);
         await statusOf(page, /Finished/);
         await page.waitForTimeout(1000);
-        expect(await page.evaluate(() => Reflect.get(globalThis, "framesLoaded"))).toBe(1);
+        // The frames added while the chapter was shown again, by address, so a failure says which ran.
+        const framed: unknown = await page.evaluate(() => Reflect.get(globalThis, "framed"));
+        expect(Array.isArray(framed) ? framed.length : -1, JSON.stringify(framed)).toBe(1);
         expect(unversioned(await consoleOf(page))).toBe(unversioned(systems.expected));
         expect(errors).toEqual([]);
     } finally {

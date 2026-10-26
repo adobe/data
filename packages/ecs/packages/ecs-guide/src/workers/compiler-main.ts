@@ -46,6 +46,18 @@ const load = once(async (): Promise<{ readonly compiler: MemoryCompiler; readonl
 const written = new Map<number, readonly string[]>();
 
 const reply = (message: CompileReply): void => postMessage(message);
+
+/** How long a step in Cache Storage may take before the compile fails, saying which step didn't finish. */
+const cacheLimit = 10_000;
+
+/** `promise`, or a rejection naming `what` once it has taken longer than `cacheLimit`. */
+const within = <T>(what: string, promise: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${what} didn't finish within ${cacheLimit / 1000} s`)), cacheLimit);
+    });
+    return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+};
 const reasonOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
 const failed = (request: CompileRequest, failure: string): CompileReply =>
     ({ kind: "compiled", run: request.run, diagnostics: [], page: null, systems: [], failure, superseded: false });
@@ -61,13 +73,13 @@ const compile = async (request: CompileRequest): Promise<CompileReply> => {
         const { diagnostics, files, systems } = await compileRun(loaded.compiler, request, loaded.guard);
         if (files === null) return { kind: "compiled", run: request.run, diagnostics, page: null, systems, failure: null, superseded: false };
         const folder = `${request.runs}${request.run}/`;
-        const cache = await caches.open(runsCache);
-        await Promise.all(files.map(file => cache.put(`${folder}${file.path}`, new Response(file.text, { headers: { "Content-Type": `${file.type}; charset=utf-8` } }))));
+        const cache = await within("opening the cache of runs", caches.open(runsCache));
+        await within("storing the run's files", Promise.all(files.map(file => cache.put(`${folder}${file.path}`, new Response(file.text, { headers: { "Content-Type": `${file.type}; charset=utf-8` } })))));
         written.set(request.run, files.map(file => `${folder}${file.path}`));
         for (const [run, urls] of written) {
             if (run >= request.run - 1) continue;
             written.delete(run);
-            await Promise.all(urls.map(url => cache.delete(url)));
+            await within("deleting an earlier run's files", Promise.all(urls.map(url => cache.delete(url))));
         }
         return { kind: "compiled", run: request.run, diagnostics, page: `${folder}index.html`, systems, failure: null, superseded: false };
     } catch (error) {

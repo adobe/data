@@ -53,6 +53,6 @@ A library builds with `Compiler.plugin({ library: true })`, so its build ships t
 
 ## Guide
 
-See the [guide](https://adobe.github.io/data/ecs/samples/#ecs-guide) for how to use it, each chapter's program edited
-and run in the browser beside its prose, and the [API reference](https://adobe.github.io/data/ecs/) for every type and
+See the [guide](https://opensource.adobe.com/data/ecs/samples/#ecs-guide) for how to use it, each chapter's program edited
+and run in the browser beside its prose, and the [API reference](https://opensource.adobe.com/data/ecs/) for every type and
 function. The guide is the `ecs-guide` package in this package's repository, its chapters in `src/guide`.

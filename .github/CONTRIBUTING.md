@@ -42,6 +42,49 @@ process that must reach lazy consensus (silence is approval) before invitations
 are issued. If you feel you are qualified and want to get more deeply involved,
 feel free to reach out to existing committers to have a conversation about that.
 
+## Contributing from a corporate account
+
+If your primary GitHub account is a corporate / Enterprise Managed User (EMU) account, it may be unable to fork or push to public repositories like this one. The fix is to contribute from a separate personal GitHub identity on the same machine, using SSH host aliases so each identity uses its own key.
+
+**Problem:** one machine, multiple GitHub identities (e.g. corporate vs. personal), needing a different SSH key per identity — but `git@github.com` only supports one key per config entry.
+
+**Solution:** define extra `Host` aliases in `~/.ssh/config` that all point at the real `github.com`, each pinned to a different key with `IdentitiesOnly yes`:
+
+```sshconfig
+# Default identity (e.g. your corporate account)
+Host github.com
+  HostName github.com
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+
+# Alternate identity (e.g. your personal account)
+Host github.com-personal
+  HostName github.com
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519_personal
+  IdentitiesOnly yes
+```
+
+Then pick the identity by swapping the host in the remote URL:
+
+```sh
+git@github.com-personal:adobe/data.git   # uses the personal-account key
+git@github.com:adobe/data.git            # uses the default key
+```
+
+`IdentitiesOnly yes` is required — without it, `ssh-agent` may offer the wrong key first and authenticate against the wrong account.
+
+**Setup:**
+
+1. Generate a separate SSH key per GitHub identity and add each public key to the corresponding GitHub account.
+2. Add one host-alias block per non-default identity to `~/.ssh/config`, as above.
+3. For any repo that should use a non-default identity, set its remote to the aliased host (`git remote set-url origin git@github.com-personal:adobe/data.git`), and set that repo's local `user.email` to the matching account.
+
+The `-personal` suffix is just an arbitrary alias name — any label works as long as `HostName` maps it back to `github.com`.
+
 ## Security Issues
 
 Security issues shouldn't be reported on this issue tracker. Instead, [file an issue to our security experts](https://helpx.adobe.com/security/alertus.html).

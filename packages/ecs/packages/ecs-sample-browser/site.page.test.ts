@@ -96,10 +96,23 @@ it("runs the particles sample, frame after frame", async () => {
             await frame.waitForFunction(() => document.querySelector("#stats")?.textContent === "This browser has no WebGPU.");
             return;
         }
-        await frame.waitForFunction(() => {
+        const drawing = frame.waitForFunction(() => {
             const stats: unknown = Reflect.get(globalThis, "sampleStats");
             return typeof stats === "function" && Number(Reflect.get(Object(stats()), "frames")) > 10;
         }, null, { timeout: 60000 });
+        // What the page shows, for a failure: its overlay, its stats, and its adapter.
+        await drawing.catch(async (error: unknown) => {
+            const shown = await frame.evaluate(async () => {
+                const stats: unknown = Reflect.get(globalThis, "sampleStats");
+                const adapter = await navigator.gpu?.requestAdapter();
+                return {
+                    overlay: document.querySelector("#stats")?.textContent ?? null,
+                    stats: typeof stats === "function" ? JSON.stringify(stats()) : null,
+                    adapter: adapter === null || adapter === undefined ? null : JSON.stringify({ vendor: adapter.info.vendor, architecture: adapter.info.architecture, fallback: adapter.info.isFallbackAdapter }),
+                };
+            });
+            throw new Error(`the particles sample drew no frames: ${JSON.stringify(shown)}`, { cause: error });
+        });
     } finally {
         await page.close();
     }

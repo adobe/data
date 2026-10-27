@@ -12,7 +12,7 @@ import { asEntity, indexOf, locate } from './entities.js';
 import { createContext, rowBinder, type Context } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
 import type { Queued } from './synchronize.js';
-import type { Essential, ReadonlyValue } from '../../interface/component/value.js';
+import type { Essential, ReadonlyType } from '../../interface/component/value.js';
 import type { Leaf } from '../../interface/finalizer/created.js';
 import { newestKeyOf, threadOf } from '../../interface/registry/index.js';
 import type { Layout } from '../../interface/registry/layout.js';
@@ -369,8 +369,8 @@ const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queue
     return {
         groups: [...groups.values()],
         // Stored and commanded values match each component's registered schema, so they have its type.
-        previous: <K extends Essential>(entity: Entity, key: K) => (bornHere(entity) ? null : live(entity, idOf(state, key))) as ReadonlyValue<K> | null,
-        next: <K extends Essential>(entity: Entity, key: K) => next(entity, idOf(state, key)) as ReadonlyValue<K> | null,
+        previous: <K extends Essential>(entity: Entity, key: K) => (bornHere(entity) ? null : live(entity, idOf(state, key))) as ReadonlyType<K> | null,
+        next: <K extends Essential>(entity: Entity, key: K) => next(entity, idOf(state, key)) as ReadonlyType<K> | null,
     };
 };
 

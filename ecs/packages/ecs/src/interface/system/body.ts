@@ -23,7 +23,7 @@ type Reading<D> = D extends { readonly observer: true } | { readonly shader: obj
 export type Optional<D> = Exclude<Listed<Property<D, "components">, "optional">, Members<D>>;
 
 /** Each optional component's value or `undefined`, as `ComponentValues` gives members'. */
-type OptionalValues = { readonly [K in Component.Key]: Component.Value<K> | undefined };
+type OptionalValues = { readonly [K in Component.Key]: Component.Type<K> | undefined };
 
 /**
  * Its members' values, writable but for references and shared components, and in a system that only reads; its
@@ -45,7 +45,7 @@ export type ReadResources = Values<Resource.Key, never, Resource.Key, ResourceVa
 export type WriteResources = Values<Resource.Key, Writes, Resource.Key, ResourceValues>;
 
 /** Each reduced resource, as a function contributing a value to the run's fold. */
-type Reductions = { readonly [K in Reduced]: (value: Resource.Value<K>) => void };
+type Reductions = { readonly [K in Reduced]: (value: Resource.Type<K>) => void };
 
 type Is<D> = Listed<Property<D, "resources">, "is">;
 

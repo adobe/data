@@ -5,7 +5,7 @@ import type { InvalidDeclarations } from './declarations.js';
 import type { World } from './world.js';
 
 /** Values resources start at in place of their defaults: any but those only the world writes. */
-export type InitialResources = { readonly [K in Exclude<Resource.Key, WorldWritten>]?: Resource.Value<K> };
+export type InitialResources = { readonly [K in Exclude<Resource.Key, WorldWritten>]?: Resource.Type<K> };
 
 /**
  * The type of `World.create`.

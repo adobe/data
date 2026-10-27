@@ -46,7 +46,7 @@ import { createState, defaultOf, idOf, reside, startTicking, type Key } from './
 import { indexOf } from './entities.js';
 import { touchedHeld } from './up.js';
 import { isHeld } from './transfers.js';
-import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
+import type { ReadonlyType as ReadonlyResourceType } from '../../interface/resource/value.js';
 import { labelOf, whyUnregistered } from '../../interface/registry/index.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
@@ -425,12 +425,12 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     const deviceId = idOf(state, gpuDevice);
     const deviceDefault = defaultOf(gpuDevice);
     /** The `gpuDevice` resource's value, read each run, so without allocating. */
-    const readDevice = (): ReadonlyResourceValue<typeof gpuDevice> => {
+    const readDevice = (): ReadonlyResourceType<typeof gpuDevice> => {
         const index = state.resourceEntity < 0 ? -1 : indexOf(state.resourceEntity);
         const storage = index < 0 ? undefined : state.archetypes[state.entities.archetype[index]]?.storageById[deviceId];
         const value = storage !== undefined ? readCell(storage, state.entities.row[index]) : state.initial.has(gpuDevice) ? state.initial.get(gpuDevice) : deviceDefault;
         // The resource's value matches its registered schema, `GPUDevice | null`.
-        return value as ReadonlyResourceValue<typeof gpuDevice>;
+        return value as ReadonlyResourceType<typeof gpuDevice>;
     };
 
     /**

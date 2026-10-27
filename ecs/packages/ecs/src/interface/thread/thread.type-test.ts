@@ -55,7 +55,7 @@ declare module '@adobe/ecs' {
     }
 }
 
-check<Equal<Component.Value<typeof path>, readonly number[]>>();
+check<Equal<Component.Type<typeof path>, readonly number[]>>();
 check<Equal<ThreadOf<{ readonly thread: "main" }, string>, never>>();
 check<Equal<ThreadOf<{ readonly thread: "main" }, "edit" | "view">, never>>();
 check<Equal<ThreadOf<{ readonly thread: "main" }, readonly string[]>, "main">>();

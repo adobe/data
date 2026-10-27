@@ -6,8 +6,8 @@ import type { Resource } from '../resource/resource.js';
 import type { Comparison } from '../world/filter.js';
 import type { Listed, Property } from './property.js';
 
-export type ComponentValues = { readonly [K in Component.Key]: Component.Value<K> };
-export type ResourceValues = { readonly [K in Resource.Key]: Resource.Value<K> };
+export type ComponentValues = { readonly [K in Component.Key]: Component.Type<K> };
+export type ResourceValues = { readonly [K in Resource.Key]: Resource.Type<K> };
 
 /** `Read` values are read-only, `Write` values writable. */
 export type Values<Read, Write, Keys extends PropertyKey, Types> =
@@ -21,7 +21,7 @@ export type KeyOf<D> = D extends { readonly key: infer K extends readonly Compon
 export type HeldBy<D> = KeyOf<D>[number] | Listed<Property<D, "components">, "with">;
 
 /** The key's values, in key order. */
-type KeyValues<K extends readonly Component.Key[]> = { readonly [I in keyof K]: Component.Value<K[I] & Component.Key> };
+type KeyValues<K extends readonly Component.Key[]> = { readonly [I in keyof K]: Component.Type<K[I] & Component.Key> };
 
 /** A prefix of the key, possibly empty, whose last part may be a comparison. */
 type Prefix<V extends readonly unknown[]> = V extends readonly [infer First, ...infer Rest]
@@ -29,7 +29,7 @@ type Prefix<V extends readonly unknown[]> = V extends readonly [infer First, ...
     : readonly [];
 
 /** A row an index lookup gives: its entity and the values of what every entity the index holds has, read-only. */
-type IndexRow<D> = { readonly entity: Entity } & { readonly [K in HeldBy<D> & Component.Key]: Component.Value<K> };
+type IndexRow<D> = { readonly entity: Entity } & { readonly [K in HeldBy<D> & Component.Key]: Component.Type<K> };
 
 /**
  * The rows a lookup found, in the index's order: by entity for a hash index, by key and then entity for a sorted one.
@@ -65,7 +65,7 @@ type IndexLookup<D> =
 type EntityRow<L> = {
     readonly [K in (Listed<L, "with"> & Component.Key) | (Exclude<Listed<L, "optional">, Listed<L, "with">> & Component.Key) | (L extends { readonly changed: readonly Component.Key[] } ? "changed" : never)]:
         // Its `optional` components are their values where the entity has them, `undefined` where it doesn't.
-        K extends Component.Key ? K extends Listed<L, "with"> ? Component.Value<K> : Component.Value<K> | undefined : boolean
+        K extends Component.Key ? K extends Listed<L, "with"> ? Component.Type<K> : Component.Type<K> | undefined : boolean
 };
 
 export type LookupFunction<L> = L extends { readonly index: Index<infer D> }

@@ -4,16 +4,16 @@ import type { Key as TraitKey } from "../trait/key.js";
 import type { Key } from "./key.js";
 import type { Components } from "./types.js";
 
-/** Every component's value type, computed once so `Value` is a lookup. */
-type ValueTypes = { readonly [K in Key]: Components[K] extends { readonly type: infer T } ? T : never };
+/** Every component's value type, computed once so `Type` is a lookup. */
+type Types = { readonly [K in Key]: Components[K] extends { readonly type: infer T } ? T : never };
 
 /** The value type of component `K`. */
-export type Value<K extends Key> = ValueTypes[K];
+export type Type<K extends Key> = Types[K];
 
 type Primitive = string | number | boolean | bigint | symbol | null | undefined;
 
 /** Component `K`'s value as reads return it: read-only, with branded primitives such as `Entity` as they are. */
-export type ReadonlyValue<K extends Key> = Value<K> extends Primitive ? Value<K> : Readonly<Value<K>>;
+export type ReadonlyType<K extends Key> = Type<K> extends Primitive ? Type<K> : Readonly<Type<K>>;
 
 /** Components that declare trait `T`, with a value assignable to `V`. */
 export type With<T extends TraitKey, V = unknown> = { [K in Key]: Components[K] extends { readonly [P in T]: V } ? K : never }[Key];
@@ -35,7 +35,7 @@ export type Shared = With<"shared">;
 export type Writable = Exclude<Key, With<"reference"> | Shared>;
 
 /** Every component's thread, computed once so `ThreadOf` is a lookup. */
-type Threads = { readonly [K in Key]: ThreadOf<Components[K], Value<K>> };
+type Threads = { readonly [K in Key]: ThreadOf<Components[K], Type<K>> };
 
 /** The thread component `K` lives on, or `never` for a struct, which lives in shared memory. */
 export type ThreadOfComponent<K extends Key> = Threads[K];

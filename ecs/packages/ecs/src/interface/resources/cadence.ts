@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { registerResource } from '../registry/declarations.js';
 
-/** The cadence's value, for the implementation: `Resource.Value<typeof cadence>`. */
+/** The cadence's value, for the implementation: `Resource.Type<typeof cadence>`. */
 export type Cadence = { readonly kind: "frame" } | { readonly kind: "fixed"; readonly step: number; readonly maxSteps?: number };
 
 /**

@@ -10,7 +10,7 @@ type Comparison<T> = {
     readonly ">="?: T;
 };
 
-type ValuesOf<C extends readonly Component.Key[]> = { readonly [K in C[number]]: Component.Value<K> };
+type ValuesOf<C extends readonly Component.Key[]> = { readonly [K in C[number]]: Component.Type<K> };
 
 /**
  * Entities that have every component in `required`, every entity but the resource entity without it, and none in

@@ -6,7 +6,7 @@ import type { Listed, Property } from '../system/property.js';
 import type { LookupFunction } from '../system/values.js';
 import type { WriteResources } from '../system/body.js';
 import type { ChangesDeclaration, Declaration } from './declaration.js';
-import type { Essential, ReadonlyValue } from '../component/value.js';
+import type { Essential, ReadonlyType } from '../component/value.js';
 import type { Elsewhere, ThreadsOf } from '../system/threads.js';
 
 /**
@@ -14,8 +14,8 @@ import type { Elsewhere, ThreadsOf } from '../system/threads.js';
  * its `optional` where it had them, `undefined` where it didn't.
  */
 export type Row<D extends Declaration> =
-    { readonly entity: Entity } & { readonly [K in Listed<Property<D, "components">, "with"> & Component.Key]: Component.Value<K> }
-    & { readonly [K in Exclude<Listed<Property<D, "components">, "optional">, Listed<Property<D, "components">, "with">> & Component.Key]: Component.Value<K> | undefined };
+    { readonly entity: Entity } & { readonly [K in Listed<Property<D, "components">, "with"> & Component.Key]: Component.Type<K> }
+    & { readonly [K in Exclude<Listed<Property<D, "components">, "optional">, Listed<Property<D, "components">, "with">> & Component.Key]: Component.Type<K> | undefined };
 
 /**
  * Every resource, its lookups when declared, and the commands it issues for the next sync point: none on another
@@ -46,7 +46,7 @@ export type Group<C extends Component.Key> = {
 export type ChangeSet<C extends Component.Key> = {
     readonly groups: readonly Group<C>[];
     /** The value before the sync point, or null if the entity didn't have it. */
-    previous<K extends C>(entity: Entity, component: K): ReadonlyValue<K> | null;
+    previous<K extends C>(entity: Entity, component: K): ReadonlyType<K> | null;
     /** The value after it, or null if the entity won't have it. */
-    next<K extends C>(entity: Entity, component: K): ReadonlyValue<K> | null;
+    next<K extends C>(entity: Entity, component: K): ReadonlyType<K> | null;
 };

@@ -62,6 +62,10 @@ correctness, then optimization. Remove an item once it's decided or done.
   mid-switch (`receiveCompiled` checks the revision, not whether the chapter is shown) is the likeliest path. The test
   records each frame's address, hash, status and time when it fails. It's skipped on CI until it's hardened; enable it
   there again once it passes reliably.
+- **The guide's build-problem test races TypeScript's problem** (`app.page.test.ts`, "shows what the ECS build
+  rejects"): it compares the Problems badge's count with the list's as soon as the build's rejection shows, and
+  TypeScript's own problem for the same `async` body can land between the two reads (CI: badge 1, list 2). Wait for
+  both problems before comparing. Skipped on CI until then.
 - **Transactions, future:** never by default, since they would cost every run. An explicit declarative option on a
   one-off system, making its run all or nothing.
 

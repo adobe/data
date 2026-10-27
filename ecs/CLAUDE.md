@@ -12,6 +12,28 @@ adobe/data's workspace. Make every change here; never edit the copy in adobe/dat
 Overrides of dependencies take effect only at a workspace's root, so keep any this repository needs scoped to the
 dependency they fix (`"parent>child"`): the sync carries them into adobe/data's root.
 
+## Writing
+
+Write for a reader who sees only the finished thing: the code, the doc, the README. They never saw the request, the
+conversation, the diff or the alternatives. Tell them what it is and what it does.
+
+- **Names first.** Code documents itself through names. Comment only what the code and its names can't show: an
+  invariant, a unit, a constraint that isn't visible, why a surprising choice is correct.
+- **Test each sentence:** would it still be true, and still matter, if the code had always been this way? If not,
+  cut it or move it where it belongs.
+- **Where things go instead:**
+
+  | What | Where |
+  |---|---|
+  | Why it changed, and what it replaced | the commit message or PR |
+  | A regression it guards against | a test that states it |
+  | Work left, open questions | follow-ups |
+
+- **Cut, for example:**
+  - "uses X because Y", when the reader doesn't need Y to use X;
+  - "X, not B, C or D": say what is done;
+  - "previously", "now", "instead of", "moved from", "whose source of truth is…".
+
 ## Never use top-level await
 
 Do not use `await` at module top level in any package's sources. Defer async work to a lazy-init pattern: store the

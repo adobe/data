@@ -50,3 +50,7 @@ Before a push, delete every `*.tsbuildinfo` under `packages`, then run `pnpm run
 and `pnpm test` at the root, on a machine with a GPU. CI's runners have none, and their software WebGPU is too slow, so
 with `CI` set the browsers start without WebGPU and the tests that need a GPU skip (`ECS_GPU=1` runs them anyway):
 the local run is the only one that covers them.
+
+CI runs no flaky test. A test that fails on CI and passes on a rerun is skipped there (`it.skipIf(process.env["CI"] !==
+undefined)`, with a comment pointing at its entry in `packages/ecs/followups.md`), still run locally, and enabled on CI
+again once it's hardened.

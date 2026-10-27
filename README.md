@@ -5,7 +5,7 @@ whose state changes through observable, undoable transactions (`@adobe/data`), w
 persistence, peer-to-peer sync, RPC across frames, and WebGPU. Each package is in `packages/`.
 
 The repository also hosts [`@adobe/ecs`](ecs/), a high-performance, multithreaded Entity Component System for web
-applications, simulations and games, whose source of truth is its own repository.
+applications, simulations and games.
 
 ## Links
 

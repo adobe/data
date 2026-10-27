@@ -2,6 +2,10 @@
 
 Each child package may contain it's own AGENTS.md which guides it's usage.
 
+## Writing
+
+Follow the Writing section of the root `CLAUDE.md`: write for a reader who sees only the finished thing.
+
 ## Custom Skills and Configuration
 
 Project-specific customization lives in `aidd-custom/`. Before starting work,

@@ -165,7 +165,10 @@ it("runs a chapter shown again once, in one frame, printing what the guide shows
             const framed: string[] = [];
             Reflect.set(globalThis, "framed", framed);
             if (root !== null && root !== undefined) new MutationObserver(records => {
-                for (const record of records) for (const node of record.addedNodes) if (node instanceof HTMLIFrameElement) framed.push(node.src);
+                for (const record of records) for (const node of record.addedNodes) if (node instanceof HTMLIFrameElement) {
+                    const status = document.querySelector("guide-status")?.shadowRoot?.querySelector("sp-status-light")?.textContent ?? "";
+                    framed.push(`${node.src.replace(/^.*ecs-guide-runs\/[^/]+\//, "")} at ${location.hash}, ${status}, ${Math.round(performance.now())} ms`);
+                }
             }).observe(root, { childList: true });
         });
         await page.locator(`guide-nav sp-sidenav-item[value='${systems.slug}']`).click();

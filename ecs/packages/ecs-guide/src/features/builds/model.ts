@@ -64,14 +64,14 @@ export const receiveChecked = System.create({
 export const receiveCompiled = System.create({
     target: "chapter",
     components: { with: [revision, buildProblems, run, page, runState, logged, consoleSeen, described] },
-}, (row, _context, input: Result & { readonly run: number; readonly page: string | null; readonly systems: readonly FileSystems[]; readonly failed: boolean }) => {
+}, (row, _context, input: Result & { readonly run: number; readonly page: string | null; readonly systems: readonly FileSystems[]; readonly compiled: boolean; readonly failed: boolean }) => {
     if (input.revision !== row[revision]) return;
     const last = row[described];
-    row[described] = input.page !== null ? { systems: input.systems, stale: false } : last.systems.length === 0 || last.stale ? last : { systems: last.systems, stale: true };
+    row[described] = input.compiled ? { systems: input.systems, stale: false } : last.systems.length === 0 || last.stale ? last : { systems: last.systems, stale: true };
     row[buildProblems] = input.diagnostics;
     row[run] = input.run;
     row[page] = input.page;
-    row[runState] = input.failed ? "unavailable" : input.page === null ? "rejected" : "running";
+    row[runState] = input.failed ? "unavailable" : !input.compiled ? "rejected" : input.page === null ? "compiled" : "running";
     row[logged] = nothingLogged;
     row[consoleSeen] = 0;
 });

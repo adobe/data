@@ -9,17 +9,18 @@ import { createWorkerClient } from "../shared/worker-client.js";
 import { runsFolder } from "./run-files.js";
 
 /**
- * A run compiled: its number, the build's diagnostics, its frame's page, null when it failed to compile, and what each
- * file that compiled compiles each system to; `failure` says why the compiler itself failed, and `superseded` that a
+ * A run compiled: its number, the build's diagnostics, its frame's page, null when it failed to compile or this host
+ * can't run it, whether it compiled, and what each file that compiled compiles each system to; `failure` says why the compiler itself failed, and `superseded` that a
  * later request replaced it before it compiled.
  */
 export type Compiled = {
-    readonly run: number; readonly diagnostics: readonly Diagnostic[]; readonly page: string | null; readonly systems: readonly FileSystems[];
-    readonly failure: string | null; readonly superseded: boolean;
+    readonly run: number; readonly diagnostics: readonly Diagnostic[]; readonly page: string | null; readonly compiled: boolean;
+    readonly systems: readonly FileSystems[]; readonly failure: string | null; readonly superseded: boolean;
 };
 
 /**
- * Compiles runs of examples off the main thread, for frames the service worker serves them to. Never rejects;
+ * Compiles runs of examples off the main thread, for frames the service worker serves them to, or only compiles them
+ * where the service worker can't register. Never rejects;
  * `retrying` hears when the compiler's worker failed and is starting again.
  */
 export type Runs = { readonly compile: (files: readonly Source[], retrying?: (reason: string) => void) => Promise<Compiled> };
@@ -29,12 +30,13 @@ const replyOf = (data: unknown): CompileReply | null => {
     const run: unknown = Reflect.get(data, "run");
     const diagnostics: unknown = Reflect.get(data, "diagnostics");
     const page: unknown = Reflect.get(data, "page");
+    const compiled: unknown = Reflect.get(data, "compiled");
     const failure: unknown = Reflect.get(data, "failure");
     const superseded: unknown = Reflect.get(data, "superseded");
     const systems: unknown = Reflect.get(data, "systems");
     return typeof run === "number" && Array.isArray(diagnostics) && diagnostics.every(isDiagnostic) && (page === null || typeof page === "string")
-        && isFileSystems(systems) && (failure === null || typeof failure === "string") && typeof superseded === "boolean"
-        ? { kind: "compiled", run, diagnostics, page, systems, failure, superseded } : null;
+        && typeof compiled === "boolean" && isFileSystems(systems) && (failure === null || typeof failure === "string") && typeof superseded === "boolean"
+        ? { kind: "compiled", run, diagnostics, page, compiled, systems, failure, superseded } : null;
 };
 
 const reasonOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
@@ -71,7 +73,7 @@ const registered = async (): Promise<string> => {
 };
 
 export const createRuns = (): Runs => {
-    let runs: Promise<string> | null = null;
+    let runs: Promise<string | null> | null = null;
     let next = 1;
     const waiting = new Map<number, { readonly request: CompileRequest; readonly resolve: (reply: CompileReply) => void; readonly retrying: (reason: string) => void }>();
     const worker = createWorkerClient("the compiler's worker", () => new Worker(new URL("../workers/compiler.ts", import.meta.url), { type: "module" }), {
@@ -88,26 +90,23 @@ export const createRuns = (): Runs => {
             for (const { request } of waiting.values()) worker.post(request);
         },
         failed: reason => {
-            for (const [run, { resolve }] of waiting) resolve({ kind: "compiled", run, diagnostics: [], page: null, systems: [], failure: `The compiler failed to load: ${reason}`, superseded: false });
+            for (const [run, { resolve }] of waiting) resolve({ kind: "compiled", run, diagnostics: [], page: null, compiled: false, systems: [], failure: `The compiler failed to load: ${reason}`, superseded: false });
             waiting.clear();
         },
     });
     return {
         compile: async (files, retrying = () => {}) => {
             const run = next++;
-            let folder: string;
-            try {
-                folder = await (runs ??= registered());
-            } catch (error) {
-                runs = null;
-                return { run, diagnostics: [], page: null, systems: [], failure: `The guide's service worker failed: ${reasonOf(error)}`, superseded: false };
-            }
+            const folder = await (runs ??= registered().catch((error: unknown) => {
+                console.warn(`The guide can't run examples on this host: its service worker didn't register (${reasonOf(error)})`);
+                return null;
+            }));
             const request: CompileRequest = { kind: "compile", run, files, runs: folder, runtime: new URL(runtimeUrl, location.href).href, names: [...Object.keys(ecs), ...runtimeNames] };
             const reply = await new Promise<CompileReply>(resolve => {
                 waiting.set(run, { request, resolve, retrying });
                 worker.post(request);
             });
-            return { run, diagnostics: reply.diagnostics, page: reply.page, systems: reply.systems, failure: reply.failure, superseded: reply.superseded };
+            return { run, diagnostics: reply.diagnostics, page: reply.page, compiled: reply.compiled, systems: reply.systems, failure: reply.failure, superseded: reply.superseded };
         },
     };
 };

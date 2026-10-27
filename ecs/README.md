@@ -17,8 +17,6 @@ A high-performance, multithreaded Entity Component System for web-based applicat
 
 ## Online
 
-These links are to the published site, relative to its root page, which is this README.
-
 - [API reference](ecs/)
 - [Sample browser](ecs/samples/): [Guide](ecs/samples/#ecs-guide), [GPU Particles](ecs/samples/#ecs-particles-webgpu),
   [Todos](ecs/samples/#ecs-todo-vanillajs), [Transferred Sprites](ecs/samples/#ecs-transfers-canvas)

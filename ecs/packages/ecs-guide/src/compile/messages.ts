@@ -7,11 +7,11 @@ export type Source = { readonly name: string; readonly code: string };
 
 /**
  * Compiles a run's modules: on success puts its files in the cache under `runs`, the service worker's folder of runs,
- * its exports module loading `runtime` and re-exporting `names`.
+ * its exports module loading `runtime` and re-exporting `names`; with `runs` null, only compiles them.
  */
 export type CompileRequest = {
     readonly kind: "compile"; readonly run: number; readonly files: readonly Source[];
-    readonly runs: string; readonly runtime: string; readonly names: readonly string[];
+    readonly runs: string | null; readonly runtime: string; readonly names: readonly string[];
 };
 
 /**
@@ -21,13 +21,13 @@ export type CompileRequest = {
 export type FileSystems = { readonly file: string; readonly systems: readonly SystemDescription[] };
 
 /**
- * A run compiled: the build's diagnostics, its page, null when a module failed, and what each module that compiled
- * compiles each system to. `failure` says why the compiler itself failed, null when it didn't; `superseded` is set for
+ * A run compiled: the build's diagnostics, its page, null when a module failed or it had no folder of runs, whether
+ * every module compiled, and what each module that compiled compiles each system to. `failure` says why the compiler itself failed, null when it didn't; `superseded` is set for
  * a request a later one replaced before it was compiled.
  */
 export type CompileReply = {
     readonly kind: "compiled"; readonly run: number; readonly diagnostics: readonly Diagnostic[]; readonly page: string | null;
-    readonly systems: readonly FileSystems[]; readonly failure: string | null; readonly superseded: boolean;
+    readonly compiled: boolean; readonly systems: readonly FileSystems[]; readonly failure: string | null; readonly superseded: boolean;
 };
 
 const backendKinds: ReadonlySet<unknown> = new Set(["compiled", "eligible", "registration", "none"]);
@@ -56,6 +56,6 @@ export const compileRequestOf = (data: unknown): CompileRequest | null => {
     const runs: unknown = Reflect.get(data, "runs");
     const runtime: unknown = Reflect.get(data, "runtime");
     const names: unknown = Reflect.get(data, "names");
-    return typeof run === "number" && isSources(files) && typeof runs === "string" && typeof runtime === "string" && isStrings(names)
+    return typeof run === "number" && isSources(files) && (runs === null || typeof runs === "string") && typeof runtime === "string" && isStrings(names)
         ? { kind: "compile", run, files, runs, runtime, names } : null;
 };

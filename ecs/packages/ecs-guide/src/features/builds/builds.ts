@@ -26,7 +26,7 @@ export type BuildEvents = {
     readonly "guide-retrying": CustomEvent<{ readonly chapter: Entity; readonly revision: number; readonly reason: string }>;
     readonly "guide-compiled": CustomEvent<{
         readonly chapter: Entity; readonly revision: number; readonly run: number; readonly diagnostics: readonly Diagnostic[]; readonly page: string | null;
-        readonly systems: readonly FileSystems[]; readonly failed: boolean;
+        readonly systems: readonly FileSystems[]; readonly compiled: boolean; readonly failed: boolean;
     }>;
 };
 
@@ -65,10 +65,10 @@ export const createBuilds = (root: HTMLElement): Builds => {
                 send("guide-checked", { chapter, revision, diagnostics: failure === null ? diagnostics : [problemOf("typescript", failure)] })), first ? 0 : quiet.check);
             const compile = setTimeout(() => {
                 timers.delete(chapter);
-                void runs.compile(files, reason => send("guide-retrying", { chapter, revision, reason })).then(({ run, diagnostics, page, systems, failure, superseded }) => {
+                void runs.compile(files, reason => send("guide-retrying", { chapter, revision, reason })).then(({ run, diagnostics, page, compiled, systems, failure, superseded }) => {
                     // A request a later one replaced is that one's to answer.
                     if (superseded) return;
-                    send("guide-compiled", { chapter, revision, run, page, systems, diagnostics: failure === null ? diagnostics : [problemOf("build", failure)], failed: failure !== null });
+                    send("guide-compiled", { chapter, revision, run, page, compiled, systems, diagnostics: failure === null ? diagnostics : [problemOf("build", failure)], failed: failure !== null });
                 });
             }, first ? 0 : quiet.compile);
             timers.set(chapter, { check, compile });

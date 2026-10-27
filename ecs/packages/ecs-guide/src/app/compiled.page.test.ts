@@ -218,3 +218,20 @@ it("shows chapter 20's kernel reading a shared component taking its archetype's 
         await page.close();
     }
 });
+
+it("compiles and marks a chapter's systems where the guide's service worker can't register, saying the host can't run it", async () => {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    // A host that answers the service worker's script with a redirect, as a private Pages site does.
+    await context.route(/service-worker/, route => route.fulfill({ status: 302, headers: { location: `${route.request().url()}?redirected` } }));
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    try {
+        await page.goto(`${inject("guide")}#${slugOf("14-")}`);
+        expect(await statusOf(page, /Compiled|Finished|Failed|rejected|failed/)).toBe("Compiled: this host can't run examples");
+        await lensesReading(page, chipLabels);
+        expect(errors).toEqual([]);
+    } finally {
+        await context.close();
+    }
+});

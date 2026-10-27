@@ -28,7 +28,7 @@ export const consoleSeen = Symbol();
 export const described = Symbol();
 export const systemOpened = Symbol();
 
-export type RunState = "waiting" | "compiling" | "running" | "finished" | "failed" | "rejected" | "unavailable" | "retrying";
+export type RunState = "waiting" | "compiling" | "running" | "finished" | "failed" | "rejected" | "compiled" | "unavailable" | "retrying";
 
 export type Tab = "console" | "output" | "problems" | "compiled";
 

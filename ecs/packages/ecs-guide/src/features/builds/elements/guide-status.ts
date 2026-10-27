@@ -4,7 +4,7 @@
  * animation does until its page goes, then a status light saying how it ended. `state` is the run's.
  */
 
-export type StatusState = "waiting" | "compiling" | "running" | "finished" | "failed" | "rejected" | "unavailable" | "retrying";
+export type StatusState = "waiting" | "compiling" | "running" | "finished" | "failed" | "rejected" | "compiled" | "unavailable" | "retrying";
 
 const template = document.createElement("template");
 template.innerHTML = `
@@ -24,6 +24,7 @@ const shown = (state: StatusState): { readonly variant: string; readonly text: s
         case "finished": return { variant: "positive", text: "Finished" };
         case "failed": return { variant: "negative", text: "Failed: see Console" };
         case "rejected": return { variant: "negative", text: "The ECS build rejected it: see Problems" };
+        case "compiled": return { variant: "notice", text: "Compiled: this host can't run examples" };
         case "retrying": return { variant: "notice", text: "Retrying the compiler…" };
         case "unavailable": return { variant: "negative", text: "The compiler failed: see Problems" };
     }

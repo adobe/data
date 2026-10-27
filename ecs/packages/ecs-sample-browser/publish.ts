@@ -35,7 +35,7 @@ const registration = (root: string): string => `(() => {
     };
     navigator.serviceWorker.addEventListener("controllerchange", again);
     navigator.serviceWorker.register(new URL(${JSON.stringify(`${root}${isolationWorker}`)}, location.href), { type: "module", scope: new URL(${JSON.stringify(root)}, location.href).href })
-        .then(registered => { if (registered.active !== null) again(); }, () => {});
+        .then(registered => { if (registered.active !== null) again(); }, error => console.warn("The samples' service worker didn't register, so pages here aren't isolated across origins and threads can't share memory:", error));
 })();`;
 
 /** The build's root page: it sends the address it's given to the sample browser, keeping its hash. */

@@ -96,10 +96,10 @@ it("takes results only for the latest revision, and follows a run's console to i
     const { entity } = await chapterOf(world, "1-one");
     const problem = { kind: "typescript", severity: "error", file: "01-one.ts", message: "no", line: 1, column: 1, length: 1 } as const;
     await world.run(receiveChecked, { chapter: entity, revision: 0, diagnostics: [problem] });
-    await world.run(receiveCompiled, { chapter: entity, revision: 0, run: 9, diagnostics: [], page: "stale", systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 0, run: 9, diagnostics: [], page: "stale", compiled: true, systems: [], failed: false });
     expect(await chapterOf(world, "1-one")).toMatchObject({ problems: 0, page: null, state: "compiling" });
     await world.run(receiveChecked, { chapter: entity, revision: 1, diagnostics: [problem] });
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 2, diagnostics: [], page: "run/2/", systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 2, diagnostics: [], page: "run/2/", compiled: true, systems: [], failed: false });
     expect(await chapterOf(world, "1-one")).toMatchObject({ problems: 1, page: "run/2/", state: "running" });
     await world.run(receiveRun, { message: { kind: "logs", run: 1, entries: [{ level: "log", text: "from an earlier run" }] } });
     await world.run(receiveRun, { message: { kind: "logs", run: 2, entries: [{ level: "log", text: "one" }, { level: "warn", text: "two" }] } });
@@ -107,10 +107,19 @@ it("takes results only for the latest revision, and follows a run's console to i
     expect(await chapterOf(world, "1-one")).toMatchObject({ logged: ["log one", "warn two", "log three"], state: "running" });
     await world.run(receiveRun, { message: { kind: "finished", run: 2 } });
     expect(await chapterOf(world, "1-one")).toMatchObject({ state: "finished" });
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 3, diagnostics: [], page: null, systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 3, diagnostics: [], page: null, compiled: false, systems: [], failed: false });
     expect(await chapterOf(world, "1-one")).toMatchObject({ state: "rejected", logged: [], page: null });
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 4, diagnostics: [{ ...problem, kind: "build", file: "", message: "The compiler failed to load: no WASM" }], page: null, systems: [], failed: true });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 4, diagnostics: [{ ...problem, kind: "build", file: "", message: "The compiler failed to load: no WASM" }], page: null, compiled: false, systems: [], failed: true });
     expect(await chapterOf(world, "1-one")).toMatchObject({ state: "unavailable", problems: 2, page: null });
+});
+
+it("shows a run compiled where the host can't run it", async () => {
+    await using world = await guide();
+    await world.run(showChapter, { slug: "1-one" });
+    await world.run(tick);
+    const { entity } = await chapterOf(world, "1-one");
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 2, diagnostics: [], page: null, compiled: true, systems: [], failed: false });
+    expect(await chapterOf(world, "1-one")).toMatchObject({ state: "compiled", problems: 0, page: null });
 });
 
 it("fails a run on an error nothing caught, even as it goes on, or on its failure, and keeps its latest lines", async () => {
@@ -118,13 +127,13 @@ it("fails a run on an error nothing caught, even as it goes on, or on its failur
     await world.run(showChapter, { slug: "1-one" });
     await world.run(tick);
     const { entity } = await chapterOf(world, "1-one");
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 5, diagnostics: [], page: "run/5/", systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 5, diagnostics: [], page: "run/5/", compiled: true, systems: [], failed: false });
     await world.run(receiveRun, { message: { kind: "logs", run: 5, entries: [{ level: "uncaught", text: "Uncaught (in promise) Error: no" }] } });
     await world.run(receiveRun, { message: { kind: "logs", run: 5, entries: Array.from({ length: keptLines + 1 }, (_, index): Entry => ({ level: "log", text: String(index) })) } });
     await world.run(receiveRun, { message: { kind: "finished", run: 5 } });
     const read = await chapterOf(world, "1-one");
     expect([read.state, read.logged.length, read.dropped, read.logged[0], read.logged.at(-1)]).toEqual(["failed", keptLines, 2, "log 1", `log ${keptLines}`]);
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 6, diagnostics: [], page: "run/6/", systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 6, diagnostics: [], page: "run/6/", compiled: true, systems: [], failed: false });
     await world.run(receiveRun, { message: { kind: "failed", run: 6 } });
     expect(await chapterOf(world, "1-one")).toMatchObject({ state: "failed", logged: [], dropped: 0 });
 });
@@ -134,7 +143,7 @@ it("shows a tab of the shown chapter's run, counting the lines logged as seen wh
     await world.run(showChapter, { slug: "1-one" });
     await world.run(tick);
     const { entity } = await chapterOf(world, "1-one");
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 7, diagnostics: [], page: "run/7/", systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 7, diagnostics: [], page: "run/7/", compiled: true, systems: [], failed: false });
     await world.run(receiveRun, { message: { kind: "logs", run: 7, entries: [{ level: "log", text: "a" }] } });
     expect(await chapterOf(world, "1-one")).toMatchObject({ tab: "console", seen: 1 });
     await world.run(selectTab, { tab: "output" });
@@ -143,7 +152,7 @@ it("shows a tab of the shown chapter's run, counting the lines logged as seen wh
     await world.run(selectTab, { tab: "console" });
     expect(await chapterOf(world, "1-one")).toMatchObject({ tab: "console", seen: 3 });
     // A new run has nothing seen yet.
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 8, diagnostics: [], page: "run/8/", systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 8, diagnostics: [], page: "run/8/", compiled: true, systems: [], failed: false });
     expect(await chapterOf(world, "1-one")).toMatchObject({ seen: 0, logged: [] });
     expect(await chapterOf(world, "setup")).toMatchObject({ tab: "console" });
 });
@@ -153,11 +162,11 @@ it("shows the Output of a run that renders, unless the reader picked a tab in it
     await world.run(showChapter, { slug: "1-one" });
     await world.run(tick);
     const { entity } = await chapterOf(world, "1-one");
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 9, diagnostics: [], page: "run/9/", systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 9, diagnostics: [], page: "run/9/", compiled: true, systems: [], failed: false });
     await world.run(receiveRun, { message: { kind: "rendered", run: 9 } });
     expect(await chapterOf(world, "1-one")).toMatchObject({ tab: "output" });
     await world.run(selectTab, { tab: "console" });
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 10, diagnostics: [], page: "run/10/", systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 10, diagnostics: [], page: "run/10/", compiled: true, systems: [], failed: false });
     await world.run(receiveRun, { message: { kind: "rendered", run: 10 } });
     expect(await chapterOf(world, "1-one")).toMatchObject({ tab: "console" });
 });
@@ -167,7 +176,7 @@ it("frames a chapter shown again only once its new revision compiles, not its la
     await world.run(showChapter, { slug: "1-one" });
     await world.run(tick);
     const { entity } = await chapterOf(world, "1-one");
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 2, diagnostics: [], page: "run/2/", systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 2, diagnostics: [], page: "run/2/", compiled: true, systems: [], failed: false });
     await world.run(receiveRun, { message: { kind: "logs", run: 2, entries: [{ level: "log", text: "once" }] } });
     await world.run(showChapter, { slug: "setup" });
     await world.run(tick);
@@ -194,14 +203,14 @@ it("keeps what the last build that compiled says each system compiles to, marked
     const { entity } = await chapterOf(world, "1-one");
     const backend = { kind: "none", reason: "per-run systems run as written; only row systems compile" } as const;
     const systems: readonly FileSystems[] = [{ file: "01-one.ts", systems: [{ start: 40, end: 90, line: 3, column: 14, binding: "spawn", kind: "per-run", kernel: null, runs: "Its body as written", js: backend, wasm: backend, wgsl: backend }] }];
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 2, diagnostics: [], page: "run/2/", systems, failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 2, diagnostics: [], page: "run/2/", compiled: true, systems, failed: false });
     expect(await compiledOf(world)).toMatchObject({ described: { systems, stale: false }, opened: null });
     const rejected = { kind: "build", severity: "error", file: "01-one.ts", message: "a body can't be async", line: 3, column: 1, length: null } as const;
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 3, diagnostics: [rejected], page: null, systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 3, diagnostics: [rejected], page: null, compiled: false, systems: [], failed: false });
     expect(await compiledOf(world)).toMatchObject({ described: { systems, stale: true } });
     await world.run(openSystem, { file: "01-one.ts", start: 40 });
     await world.run(openSystem, { file: "01-one.ts", start: 40 });
     expect(await compiledOf(world)).toMatchObject({ tab: "compiled", picked: true, opened: { file: "01-one.ts", start: 40, serial: 2 } });
-    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 4, diagnostics: [], page: "run/4/", systems: [], failed: false });
+    await world.run(receiveCompiled, { chapter: entity, revision: 1, run: 4, diagnostics: [], page: "run/4/", compiled: true, systems: [], failed: false });
     expect(await compiledOf(world)).toMatchObject({ described: { systems: [], stale: false } });
 });

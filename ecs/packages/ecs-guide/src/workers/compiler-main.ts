@@ -48,7 +48,7 @@ const written = new Map<number, readonly string[]>();
 const reply = (message: CompileReply): void => postMessage(message);
 const reasonOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
 const failed = (request: CompileRequest, failure: string): CompileReply =>
-    ({ kind: "compiled", run: request.run, diagnostics: [], page: null, systems: [], failure, superseded: false });
+    ({ kind: "compiled", run: request.run, diagnostics: [], page: null, compiled: false, systems: [], failure, superseded: false });
 
 const compile = async (request: CompileRequest): Promise<CompileReply> => {
     let loaded: { readonly compiler: MemoryCompiler; readonly guard: (code: string) => string };
@@ -59,7 +59,7 @@ const compile = async (request: CompileRequest): Promise<CompileReply> => {
     }
     try {
         const { diagnostics, files, systems } = await compileRun(loaded.compiler, request, loaded.guard);
-        if (files === null) return { kind: "compiled", run: request.run, diagnostics, page: null, systems, failure: null, superseded: false };
+        if (files === null || request.runs === null) return { kind: "compiled", run: request.run, diagnostics, page: null, compiled: files !== null, systems, failure: null, superseded: false };
         const folder = `${request.runs}${request.run}/`;
         const cache = await caches.open(runsCache);
         await Promise.all(files.map(file => cache.put(`${folder}${file.path}`, new Response(file.text, { headers: { "Content-Type": `${file.type}; charset=utf-8` } }))));
@@ -69,7 +69,7 @@ const compile = async (request: CompileRequest): Promise<CompileReply> => {
             written.delete(run);
             await Promise.all(urls.map(url => cache.delete(url)));
         }
-        return { kind: "compiled", run: request.run, diagnostics, page: `${folder}index.html`, systems, failure: null, superseded: false };
+        return { kind: "compiled", run: request.run, diagnostics, page: `${folder}index.html`, compiled: true, systems, failure: null, superseded: false };
     } catch (error) {
         return failed(request, `The compiler failed: ${reasonOf(error)}`);
     }

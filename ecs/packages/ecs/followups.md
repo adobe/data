@@ -55,6 +55,13 @@ correctness, then optimization. Remove an item once it's decided or done.
 
 ## Correctness
 
+- **The guide sometimes runs a chapter it's leaving once more.** On CI's runners, about one run in three, going from
+  Resources back to Systems framed Resources' run again before Systems' new one (`app.page.test.ts`, "runs a chapter
+  shown again once"); it doesn't reproduce locally, even with the page throttled 12 times. The frame is replaced only
+  when the shown chapter's `page` changes, and only the address chooses the chapter, so a compile's reply landing
+  mid-switch (`receiveCompiled` checks the revision, not whether the chapter is shown) is the likeliest path. The test
+  records each frame's address, hash, status and time when it fails. It's skipped on CI until it's hardened; enable it
+  there again once it passes reliably.
 - **Transactions, future:** never by default, since they would cost every run. An explicit declarative option on a
   one-off system, making its run all or nothing.
 

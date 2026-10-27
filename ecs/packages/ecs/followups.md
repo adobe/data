@@ -82,6 +82,26 @@ correctness, then optimization. Remove an item once it's decided or done.
 - **A test helper awaiting the next tick.** Tests watch `clock` with an observer system today; a helper in
   `src/observe` would do it (from the todo sample).
 
+## Publishing as adobe/ecs
+
+Once this repository is public as `adobe/ecs`:
+
+- **Pages:** GitHub serves an Adobe repository's site at `adobe.github.io/ecs/`, which redirects to
+  `opensource.adobe.com/ecs/`. That domain is Adobe's own CDN, which forwards only the project paths on its allowlist
+  to GitHub Pages and answers 404 itself for the rest (`server: Varnish`; over `http://` it redirects to
+  `developer.adobe.com/open/…`). Ask Adobe's Open Source Office (Grp-opensourceoffice@adobe.com) to route `/ecs/` as
+  it routes `/spectrum-web-components/`. To check a deploy before that's done, ask a GitHub Pages server directly:
+  `curl -sk --resolve opensource.adobe.com:443:185.199.108.153 https://opensource.adobe.com/ecs/`.
+- **The deploy workflow** runs once the repository is public: enable Pages with GitHub Actions as its source.
+- **Site paths:** packages publish to `ecs/` and `ecs/samples/` so adobe/data's copy can share its site; on this
+  repository's own site they become `/ecs/ecs/`. Once adobe/data no longer hosts the copy, publish the API reference
+  and the samples at the site's own paths and update the root README's relative links.
+- **Links:** `packages/ecs/README.md` links the guide and API reference at `opensource.adobe.com/data/ecs/`; point them
+  at this repository's site.
+- **adobe/data's copy:** remove `ecs/` and its workspace entries and overrides there, and stop syncing.
+- **CI:** hosted runners work once public; tests needing a GPU skip there (`CI` set), so a local run still covers them.
+- **npm:** publish `@adobe/ecs` from here, `private` and versions as they are.
+
 ## Decisions awaiting confirmation
 
 - **An index lookup's `changed: true` is a change filter,** as a resource in `changed` is: when the index changed every

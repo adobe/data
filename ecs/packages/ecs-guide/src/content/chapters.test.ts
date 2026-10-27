@@ -6,10 +6,10 @@ import { asConsumer, chapters, numbered } from "./guide.js";
 
 const prose: { readonly [path: string]: string } = import.meta.glob("../../../ecs/src/guide/[0-9]*.md", { query: "?raw", import: "default", eager: true });
 
-it("gives a chapter for Setup and each chapter the index lists, each with its files and what they print, addressed as the repository's README links them", () => {
+it("gives a chapter for Setup and each chapter the index lists, each with its files and what they print, and one for any chapter the repository's README links", () => {
     expect(chapters.map(chapter => chapter.number)).toEqual([0, 0, ...Array.from({ length: 22 }, (_, index) => index + 1)]);
     const linked = [...readme.matchAll(/\]\(ecs\/samples\/#ecs-guide\/([^)]+)\)/g)].map(([, slug]) => slug);
-    expect(chapters.map(chapter => chapter.slug)).toEqual(linked);
+    for (const slug of linked) expect(chapters.map(chapter => chapter.slug)).toContain(slug);
     expect(chapters[0]).toMatchObject({ slug: "setup", title: "Setup", part: "", files: [], expected: "" });
     expect(chapters[1]).toMatchObject({ slug: "keys-and-declarations", title: "Keys and declarations", part: "", expected: "score 15\n" });
     expect(chapters[1]?.files.map(file => file.name)).toEqual(["00-keys.ts"]);

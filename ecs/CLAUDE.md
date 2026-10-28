@@ -68,10 +68,13 @@ or similar script. `scripts/check-workspace-conventions.mjs` (`pnpm run check:wo
 
 ## Checks
 
-Before a push, delete every `*.tsbuildinfo` under `packages`, then run `pnpm run check:workspace`, `pnpm run build`
-and `pnpm test` at the root, on a machine with a GPU. CI's runners have none, and their software WebGPU is too slow, so
-with `CI` set the browsers start without WebGPU and the tests that need a GPU skip (`ECS_GPU=1` runs them anyway):
-the local run is the only one that covers them.
+Before every push, delete every `*.tsbuildinfo` under `packages`, then run `pnpm run check:workspace`, `pnpm run build`
+and `pnpm test` at the root, on a machine with a GPU and several hardware threads. That's every package's whole suite,
+not the tests a change seems to touch: a version bump alone changes every id the tests check (`@adobe/ecs@<version>/…`).
+CI passing doesn't replace this run. CI's runners have no GPU and few threads, and their software WebGPU is too slow, so
+with `CI` set the browsers start without WebGPU and the tests that need a GPU skip (`ECS_GPU=1` runs them anyway), as
+do the flaky ones below: the local run is the only one that covers them. After syncing into adobe/data, run the synced
+packages' suites there too.
 
 CI runs no flaky test. A test that fails on CI and passes on a rerun is skipped there (`it.skipIf(process.env["CI"] !==
 undefined)`, with a comment pointing at its entry in `packages/ecs/followups.md`), still run locally, and enabled on CI

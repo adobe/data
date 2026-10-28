@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Gpu, System, World, gpuDevice } from '@adobe/ecs';
-import { createDraw, enabled, move, moveOnCpu, position, spawn, visible } from './particles.js';
+import { System, World, gpuDevice } from '@adobe/ecs';
+import { Device, Frame, Surface, Target } from '@adobe/ecs-gpu';
+import { draw, enabled, move, moveOnCpu, position, spawn, spawnView, visible } from './particles.js';
 
 /**
  * The particles sample. `?mode=gpu` moves particles on the GPU, `cpu` on workers (uploading positions for drawing
@@ -43,24 +44,21 @@ const overlay = (text: string): void => {
 };
 
 const start = async (): Promise<void> => {
-    const adapter = await navigator.gpu?.requestAdapter();
-    if (adapter === null || adapter === undefined) return overlay("This browser has no WebGPU.");
-    const device = await adapter.requestDevice();
+    const device = await Device.request();
+    if (device === null) return overlay("This browser has no WebGPU.");
     const canvas = document.querySelector("canvas");
     if (canvas === null) return;
-    canvas.width = Math.floor(canvas.clientWidth * devicePixelRatio);
-    canvas.height = Math.floor(canvas.clientHeight * devicePixelRatio);
-    const context = canvas.getContext("webgpu");
-    if (context === null) return overlay("No WebGPU canvas context.");
-    const format = navigator.gpu.getPreferredCanvasFormat();
-    context.configure({ device, format, alphaMode: "opaque" });
+    const width = Math.floor(canvas.clientWidth * devicePixelRatio);
+    const height = Math.floor(canvas.clientHeight * devicePixelRatio);
 
     const moving = mode === "gpu" ? [move] : mode === "cpu" ? [moveOnCpu] : [];
     const world = World.create({ [gpuDevice]: device });
-    const { draw, ready } = createDraw(device, Gpu.layout(device), context, format);
-    await ready;
-    const frame = System.create({ systems: [...moving, draw] });
-    await world.run(spawn, { count, width: canvas.width, height: canvas.height });
+    const target = { ...Target.Options.default, depthFormat: null };
+    const surface = await world.run(Surface.attach, { canvas: canvas.transferControlToOffscreen(), width, height, target });
+    Surface.observe(canvas, world, surface);
+    await world.run(spawnView, { surface });
+    const frame = System.create({ systems: [...moving, Frame.systems, draw] });
+    await world.run(spawn, { count, width, height });
     /** For automated checks: a few drawn particles' positions, which an observer system reads back from the GPU. */
     const probed: (readonly number[])[] = [];
     const probe = System.create({ observer: true, components: { with: [position, visible, enabled] } }, row => {

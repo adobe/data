@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { type F32, Gpu, System, type U32, Vec3 } from '@adobe/ecs';
+import { type Entity, type F32, Gpu, Mat4x4, System, type U32, Vec3 } from '@adobe/ecs';
+import { Cache, Frame, View } from '@adobe/ecs-gpu';
 
 // The ECS's perf particles (its src/perftest/particles.ts) on screen: 1M particles over four archetypes by visible and
 // enabled, with screen-space positions and velocities in pixels per frame. `move` is the perf move kernel, on the GPU.
@@ -69,11 +70,8 @@ export const moveOnCpu = System.create({
     row[position] = Vec3.add(row[position], row[velocity]);
 });
 
-/** The vertex and fragment stages, after the world's declarations: each particle is a point, wrapped into the field. */
+/** The vertex and fragment stages, after the world's declarations and the view's: each particle is a point, wrapped into the view. */
 const shader = `
-struct View { size: vec2f }
-@group(1) @binding(0) var<uniform> view: View;
-
 struct Point { @builtin(position) position: vec4f, @location(0) color: vec4f }
 
 @vertex fn vertexMain(@builtin(vertex_index) row: u32) -> Point {
@@ -89,39 +87,43 @@ struct Point { @builtin(position) position: vec4f, @location(0) color: vec4f }
 const declaration = {
     components: { with: [visible, enabled] },
     shader: { group: 0, accessors: { particlePosition: position, particleColor: color } },
-    after: [move, moveOnCpu],
+    after: [move, moveOnCpu, Frame.update],
+    before: [Frame.present],
 } as const;
 
+/** Each device's pipeline for each target format, null until it's compiled. */
+const pipelines = Cache.perDevice((device: GPUDevice, format: GPUTextureFormat) => {
+    const made = { pipeline: null as GPURenderPipeline | null };
+    const module = device.createShaderModule({ code: `${Gpu.wgsl(draw)}${View.wgsl(1)}${shader}` });
+    void device.createRenderPipelineAsync({
+        layout: device.createPipelineLayout({ bindGroupLayouts: [Gpu.layout(device), View.layout(device)] }),
+        vertex: { module, entryPoint: "vertexMain" },
+        fragment: { module, entryPoint: "fragmentMain", targets: [{ format }] },
+        primitive: { topology: "point-list" },
+    }).then(pipeline => { made.pipeline = pipeline; });
+    return made;
+}, format => format);
+
 /**
- * The render system for a canvas: it draws the visible and enabled particles as points, wrapping positions so
- * particles leaving one side of the field come back on the other. `layout` is the world's GPU layout.
+ * Draws the visible and enabled particles as points into every view, wrapping positions so particles leaving one side
+ * of the field come back on the other; a view draws once its pipeline is compiled.
  */
-export const createDraw = (device: GPUDevice, layout: GPUBindGroupLayout, context: GPUCanvasContext, format: GPUTextureFormat) => {
-    const viewLayout = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }] });
-    const viewBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    const viewGroup = device.createBindGroup({ layout: viewLayout, entries: [{ binding: 0, resource: { buffer: viewBuffer } }] });
-    let pipeline: GPURenderPipeline | null = null;
-    const draw = System.render(declaration, ({ encoder, tables }) => {
-        if (pipeline === null) return;
-        const texture = context.getCurrentTexture();
-        device.queue.writeBuffer(viewBuffer, 0, new Float32Array([texture.width, texture.height]));
-        const pass = encoder.beginRenderPass({ colorAttachments: [{ view: texture.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
+export const draw = System.render(declaration, ({ device, encoder, tables }, { resources }) => {
+    for (const view of resources[View.states]?.values() ?? []) {
+        const { pipeline } = pipelines(device, view.target.format);
+        if (pipeline === null) continue;
+        const pass = View.begin(encoder, view);
         pass.setPipeline(pipeline);
-        pass.setBindGroup(1, viewGroup);
+        pass.setBindGroup(1, view.bindGroup);
         for (const table of tables) {
             table.bind(pass);
             pass.draw(table.count);
         }
         pass.end();
-    });
-    const module = device.createShaderModule({ code: `${Gpu.wgsl(draw)}${shader}` });
-    const ready = (async () => {
-        pipeline = await device.createRenderPipelineAsync({
-            layout: device.createPipelineLayout({ bindGroupLayouts: [layout, viewLayout] }),
-            vertex: { module, entryPoint: "vertexMain" },
-            fragment: { module, entryPoint: "fragmentMain", targets: [{ format }] },
-            primitive: { topology: "point-list" },
-        });
-    })();
-    return { draw, ready };
-};
+    }
+});
+
+/** A view of the whole of a surface, drawing particles in its pixels. */
+export const spawnView = System.create({}, ({ commands }, input: { readonly surface: Entity }) => {
+    commands.spawn([View.target, View.viewport, View.projection])({ [View.target]: input.surface, [View.viewport]: [0, 0, 1, 1], [View.projection]: Mat4x4.identity });
+});

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2024", "ESNext.Disposable", "DOM", "DOM.Iterable"],
+    "types": ["@webgpu/types", "node"],
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": ["src", "*.ts"],
+  // The test config makes a playwright provider, whose types are those of the vitest a workspace links it to: in one
+  // holding several variants of vitest, another variant than this package's. Vitest checks it as it loads it.
+  "exclude": ["vitest.config.ts"]
+}

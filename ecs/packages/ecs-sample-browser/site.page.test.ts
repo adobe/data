@@ -129,6 +129,65 @@ it("runs the transfers sample, its sprites drawn on a worker", async () => {
     }
 }, 90000);
 
+it("runs the views sample, its world on a worker drawing into both canvases", async () => {
+    const { page, frame, errors } = await sample("#ecs-gpu-views");
+    try {
+        const webgpu = await frame.evaluate(async () => navigator.gpu !== undefined && (await navigator.gpu.requestAdapter()) !== null);
+        if (!webgpu) {
+            await frame.waitForFunction(() => document.querySelector("#stats")?.textContent === "This browser has no WebGPU.");
+            return;
+        }
+        await frame.waitForFunction(() => /^frame (1\d|[2-9]\d|\d{3,}) /.test(document.querySelector("#stats")?.textContent ?? ""), null, { timeout: 60000 });
+        expect(errors).toEqual([]);
+    } finally {
+        await page.close();
+    }
+}, 90000);
+
+it("shuts the views sample's world down when its page is hidden for leaving", async () => {
+    const { page, frame, errors } = await sample("#ecs-gpu-views");
+    try {
+        const webgpu = await frame.evaluate(async () => navigator.gpu !== undefined && (await navigator.gpu.requestAdapter()) !== null);
+        if (!webgpu) return;
+        const drawn = (): Promise<string> => frame.evaluate(() => document.querySelector("#stats")?.textContent ?? "");
+        await frame.waitForFunction(() => /^frame (1\d|[2-9]\d|\d{3,}) /.test(document.querySelector("#stats")?.textContent ?? ""), null, { timeout: 60000 });
+        await frame.evaluate(() => dispatchEvent(new PageTransitionEvent("pagehide")));
+        // The world on the worker says it disposed itself and destroyed its device.
+        await frame.waitForFunction(() => {
+            const stats: unknown = Reflect.get(globalThis, "sampleStats");
+            return typeof stats === "function" && Reflect.get(Object(stats()), "left") === true;
+        }, null, { timeout: 10000 });
+        const stopped = await drawn();
+        await page.waitForTimeout(1000);
+        expect(await drawn()).toBe(stopped);
+        expect(errors).toEqual([]);
+    } finally {
+        await page.close();
+    }
+}, 90000);
+
+it("leaves the views sample for another tab once the sample says it shut down, the page staying responsive", async () => {
+    const { page, frame, errors } = await sample("#ecs-gpu-views");
+    try {
+        const webgpu = await frame.evaluate(async () => navigator.gpu !== undefined && (await navigator.gpu.requestAdapter()) !== null);
+        if (webgpu) await frame.waitForFunction(() => /^frame (1\d|[2-9]\d|\d{3,}) /.test(document.querySelector("#stats")?.textContent ?? ""), null, { timeout: 60000 });
+        // What the sample browser hears, in order: the sample's answer, then the next sample's page loading.
+        await page.evaluate(() => {
+            const heard: string[] = [];
+            Reflect.set(globalThis, "heard", heard);
+            addEventListener("message", event => { if (typeof event.data === "object" && event.data !== null && Reflect.get(event.data, "kind") === "ecs-sample-left") heard.push("left"); });
+            document.querySelector("iframe")?.addEventListener("load", () => heard.push("loaded"));
+        });
+        await page.click('nav a[href="#ecs-todo-vanillajs"]');
+        await page.frameLocator("iframe").locator("todo-entry input").waitFor({ timeout: 20000 });
+        expect(await page.evaluate(() => Reflect.get(globalThis, "heard"))).toEqual(webgpu ? ["left", "loaded"] : ["loaded"]);
+        expect(await page.evaluate(() => document.title)).toMatch(/^Todos/);
+        expect(errors).toEqual([]);
+    } finally {
+        await page.close();
+    }
+}, 90000);
+
 it("runs the guide at a chapter named in the hash, its threads chapter's program finishing", async () => {
     const { page, frame, errors } = await sample("#ecs-guide/19-threads");
     try {

@@ -25,14 +25,14 @@ world.remove(move);
 void removed;
 
 // Built-in resources.
-check<Equal<Resource.Type<typeof gpuDevice>, GPUDevice | null>>();
-check<Equal<Resource.Type<typeof workers>, number | null>>();
+check<Equal<Resource<typeof gpuDevice>, GPUDevice | null>>();
+check<Equal<Resource<typeof workers>, number | null>>();
 // null is the platform's choice of pool size.
 export const platformPool: World = create({ [workers]: null });
-check<Equal<Resource.Type<typeof always>, boolean>>();
-check<Equal<Resource.Type<typeof wake>, number>>();
-check<Equal<Resource.Type<typeof clock>, { readonly now: number; readonly delta: number; readonly tick: number }>>();
-check<Equal<Resource.Type<typeof cadence>, { readonly kind: "frame" } | { readonly kind: "fixed"; readonly step: number; readonly maxSteps?: number }>>();
+check<Equal<Resource<typeof always>, boolean>>();
+check<Equal<Resource<typeof wake>, number>>();
+check<Equal<Resource<typeof clock>, { readonly now: number; readonly delta: number; readonly tick: number }>>();
+check<Equal<Resource<typeof cadence>, { readonly kind: "frame" } | { readonly kind: "fixed"; readonly step: number; readonly maxSteps?: number }>>();
 // Built-in resources are symbols, so worlds start them at other values through their imported keys.
 check<Equal<[typeof gpuDevice, typeof workers, typeof cadence, typeof always, typeof wake, typeof clock] extends readonly symbol[] ? true : false, true>>();
 // @ts-expect-error a resource key is its imported symbol, never its description

@@ -152,7 +152,7 @@ const customTrait = creating(`
 export const instanced = Symbol();
 export const foo = Symbol();
 declare module "@adobe/ecs" {
-    interface Traits<N> { readonly [instanced]: N extends Component.Key ? ([Component.Type<N>] extends [readonly number[]] ? true : never) : never }
+    interface Traits<N> { readonly [instanced]: N extends Component.Key ? ([Component<N>] extends [readonly number[]] ? true : never) : never }
     interface Components { [foo]: { type: string; [instanced]: true } }
 }`);
 
@@ -182,7 +182,7 @@ const severalTraits = creating(`
 export const instanced = Symbol();
 export const name = Symbol();
 declare module "@adobe/ecs" {
-    interface Traits<N> { readonly [instanced]: N extends Component.Key ? ([Component.Type<N>] extends [readonly number[]] ? true : never) : never }
+    interface Traits<N> { readonly [instanced]: N extends Component.Key ? ([Component<N>] extends [readonly number[]] ? true : never) : never }
     interface Components { [name]: { type: string; [instanced]: true; thread: "main" } }
 }`);
 

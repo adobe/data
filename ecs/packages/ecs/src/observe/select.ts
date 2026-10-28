@@ -161,7 +161,7 @@ const rangeOf = (condition: unknown): Range => {
     return bounds.length === 0 ? unbounded : { range, bounds, exact };
 };
 
-type Value = Component.Type<Component.Key>;
+type Value = Component<Component.Key>;
 
 /** A value or comparison a sorted index on one key part looks up by. */
 type Bound = Value | { readonly "<="?: Value; readonly ">="?: Value; readonly "=="?: Value };

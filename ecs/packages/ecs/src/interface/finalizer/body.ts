@@ -14,8 +14,8 @@ import type { Elsewhere, ThreadsOf } from '../system/threads.js';
  * its `optional` where it had them, `undefined` where it didn't.
  */
 export type Row<D extends Declaration> =
-    { readonly entity: Entity } & { readonly [K in Listed<Property<D, "components">, "with"> & Component.Key]: Component.Type<K> }
-    & { readonly [K in Exclude<Listed<Property<D, "components">, "optional">, Listed<Property<D, "components">, "with">> & Component.Key]: Component.Type<K> | undefined };
+    { readonly entity: Entity } & { readonly [K in Listed<Property<D, "components">, "with"> & Component.Key]: Component<K> }
+    & { readonly [K in Exclude<Listed<Property<D, "components">, "optional">, Listed<Property<D, "components">, "with">> & Component.Key]: Component<K> | undefined };
 
 /**
  * Every resource, its lookups when declared, and the commands it issues for the next sync point: none on another

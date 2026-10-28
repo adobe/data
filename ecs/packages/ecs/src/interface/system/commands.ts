@@ -5,13 +5,13 @@ import type { Essential, Shared } from '../component/value.js';
 import type { ValuesOf } from './values-of.js';
 
 /** The value an `add` of one component takes: none for a tag. */
-type ValueArgument<K extends Essential> = Component.Value<K> extends true ? [value?: true] : [value: Component.Value<K>];
+type ValueArgument<K extends Essential> = Component<K> extends true ? [value?: true] : [value: Component<K>];
 
 /** Values of components of `C` a spawner's first call may give, constant for every entity it spawns. */
-type Preset<C extends readonly Essential[]> = { readonly [K in C[number]]?: Component.Value<K> };
+type Preset<C extends readonly Essential[]> = { readonly [K in C[number]]?: Component<K> };
 
 /** The value of each shared component of `C`, which a spawner's first call must give, since they choose the archetype. */
-type SharedPreset<C extends readonly Essential[]> = { readonly [K in C[number] & Shared]: Component.Value<K> };
+type SharedPreset<C extends readonly Essential[]> = { readonly [K in C[number] & Shared]: Component<K> };
 
 /**
  * Whether `C` names a shared component, so a spawner of it takes its constants: a list that isn't a tuple, whose
@@ -27,7 +27,7 @@ type Named<C extends readonly Essential[], P> = { readonly [K in Exclude<keyof P
  * the spawn takes their values first.
  */
 type Spawned<C extends readonly Essential[], P> = RequiresPreset<C> extends true
-    ? [keyof P] extends [never] ? C & { readonly "error: a spawn of a shared component takes its value first, in its constants": { readonly [K in C[number] & Shared]: Component.Value<K> } } : C
+    ? [keyof P] extends [never] ? C & { readonly "error: a spawn of a shared component takes its value first, in its constants": { readonly [K in C[number] & Shared]: Component<K> } } : C
     : C;
 
 /** Each component of `C` the constants `P` gave, whose value a spawn's values give again as a message naming it. */

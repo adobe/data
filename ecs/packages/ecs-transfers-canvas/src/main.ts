@@ -25,6 +25,7 @@ const start = async (): Promise<void> => {
     const canvas = document.querySelector("canvas");
     if (canvas === null) return;
     if (typeof canvas.transferControlToOffscreen !== "function") return overlay("This browser can't draw into a canvas from a worker.");
+    if (!crossOriginIsolated) return overlay("This sample's threads share memory, which needs cross-origin isolation, and this host doesn't provide it.");
     canvas.width = Math.floor(canvas.clientWidth * devicePixelRatio);
     canvas.height = Math.floor(canvas.clientHeight * devicePixelRatio);
     const world = new Worker(new URL("./world.ts", import.meta.url), { type: "module" });

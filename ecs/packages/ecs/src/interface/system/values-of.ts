@@ -2,7 +2,7 @@
 import type { Component } from '../component/component.js';
 
 /** Components a spawn or add may leave out: a tag, whose value is `true`, and one whose type allows `null`, its start. */
-type Omissible<K extends Component.Key> = Component.Value<K> extends true ? K : null extends Component.Value<K> ? K : never;
+type Omissible<K extends Component.Key> = Component<K> extends true ? K : null extends Component<K> ? K : never;
 
 /**
  * The values a spawn or add of the components `C` takes, keyed by component and exact against `C`, but those `Given`
@@ -12,6 +12,6 @@ type Omissible<K extends Component.Key> = Component.Value<K> extends true ? K : 
  */
 export type ValuesOf<C extends readonly Component.Key[], Given extends PropertyKey = never> = number extends C["length"]
     // A list whose components aren't known until it runs, so any of them may be given.
-    ? { readonly [K in Exclude<C[number], Given>]?: Component.Value<K> }
-    : { readonly [K in Exclude<C[number], Given> as K extends Omissible<K> ? never : K]: Component.Value<K> }
-        & { readonly [K in Exclude<C[number], Given> as K extends Omissible<K> ? K : never]?: Component.Value<K> };
+    ? { readonly [K in Exclude<C[number], Given>]?: Component<K> }
+    : { readonly [K in Exclude<C[number], Given> as K extends Omissible<K> ? never : K]: Component<K> }
+        & { readonly [K in Exclude<C[number], Given> as K extends Omissible<K> ? K : never]?: Component<K> };

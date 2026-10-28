@@ -16,20 +16,15 @@ concurrency:
 
 jobs:
   build:
-    # Pages publishes only once the repository is public; until then the docs deploy from adobe/data's copy.
-    if: github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 9
-
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+
+      - run: npm install --global pnpm@9
 
       - run: pnpm install --frozen-lockfile
 

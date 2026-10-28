@@ -12,7 +12,9 @@ export const poolSizeCases = (load: () => Promise<typeof Fixture>) => describe("
     });
     it("honors a number, and null again gives the platform's choice", async () => {
         const fixture = await load();
-        expect((await fixture.resized(1, [null])).started).toEqual([1, 1 + fixture.platformCount()]);
+        // The platform's choice starts a pool of its own unless it's the size the pool already is.
+        const platform = fixture.platformCount();
+        expect((await fixture.resized(1, [null])).started).toEqual([1, platform === 1 ? 1 : 1 + platform]);
     });
     it("starts the pool only once a kernel has rows enough for workers", async () => {
         const fixture = await load();

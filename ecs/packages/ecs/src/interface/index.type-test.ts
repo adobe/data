@@ -36,7 +36,7 @@ export const added = world.add(read);
 // Only types a consumer declares with are named; the rest are inferred where wanted.
 // @ts-expect-error a thread's name is keyof Threads
 export type NoThread = Ecs.Thread;
-// @ts-expect-error the cadence's value is Resource.Value<typeof cadence>
+// @ts-expect-error the cadence's value is Resource<typeof cadence>
 export type NoCadence = Ecs.Cadence;
 // @ts-expect-error a rule is the value Rule.create returns: ReturnType<typeof Rule.create>
 export const noRule: Rule = Rule.create({ components: { with: [position] }, derive: [slot] });

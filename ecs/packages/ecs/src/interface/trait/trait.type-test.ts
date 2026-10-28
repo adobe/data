@@ -16,7 +16,7 @@ const gpuOnly = Symbol("traitTest/gpuOnly");
 const nonPersistent = Symbol("traitTest/nonPersistent");
 declare module '@adobe/ecs' {
     export interface Traits<N> {
-        readonly [gpuOnly]: N extends Component.Key ? (IsStruct<Component.Value<N>> extends true ? true : never) : never;
+        readonly [gpuOnly]: N extends Component.Key ? (IsStruct<Component<N>> extends true ? true : never) : never;
         readonly [nonPersistent]: N extends Component.Key ? (Components[N] extends { readonly derived: true } ? never : true) : true;
     }
 }
@@ -53,15 +53,15 @@ declare module '@adobe/ecs' {
 
 // Types filter components by their traits and value types.
 type Ours = typeof parent | typeof follows | typeof slot | typeof ready | typeof score | typeof link | typeof pair | typeof cache;
-check<Equal<Component.Value<typeof parent>, Entity>>();
-check<Equal<Component.Value<typeof link>, { readonly to: Entity; readonly weight: number }>>();
+check<Equal<Component<typeof parent>, Entity>>();
+check<Equal<Component<typeof link>, { readonly to: Entity; readonly weight: number }>>();
 check<Equal<Extract<Component.With<"reference">, Ours>, typeof parent | typeof follows>>();
 check<Equal<Extract<Component.With<"reference", "owner">, Ours>, typeof parent>>();
 check<Equal<Extract<Derived, Ours>, typeof slot>>();
 check<Equal<Extract<Component.With<typeof gpuOnly>, Ours>, typeof pair>>();
 type Persisted = Exclude<Essential, Component.With<typeof nonPersistent>>;
 check<Equal<Extract<Persisted, Ours>, Exclude<Ours, typeof slot | typeof cache>>>();
-check<Equal<Resource.Value<typeof time>, number>>();
+check<Equal<Resource<typeof time>, number>>();
 
 // Commands add and remove only essential components.
 export const issue = (commands: Commands, entity: Entity): void => {

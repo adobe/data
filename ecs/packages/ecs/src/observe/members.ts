@@ -5,7 +5,7 @@ import type { Observe } from './observe.js';
 import { observeCount, observeSelect } from './select.js';
 import type { Query } from './query.js';
 import { observeResource } from './resource.js';
-import type { ReadonlyResourceValue, ReadonlyValue } from './values.js';
+import type { ReadonlyResourceType, ReadonlyType } from './values.js';
 
 export { toPromise } from './to-promise.js';
 export type { Query } from './query.js';
@@ -14,7 +14,7 @@ export type { Query } from './query.js';
  * A resource's value, then a new one after each run or tick that changed it: one whose sync point stamped it, even with
  * the same value, a reduced resource when its fold differs.
  */
-export const resource = <R extends Resource.Key>(world: World, resource: R): Observe<ReadonlyResourceValue<R>> =>
+export const resource = <R extends Resource.Key>(world: World, resource: R): Observe<ReadonlyResourceType<R>> =>
     observeResource(world, resource);
 
 /**
@@ -27,7 +27,7 @@ export const entity = <const R extends readonly Component.Key[] = [], const O ex
     world: World,
     entity: Entity,
     components: { readonly required?: R; readonly optional?: O },
-): Observe<({ readonly [K in keyof Pick<Components, R[number]>]: ReadonlyValue<K> } & { readonly [K in keyof Pick<Components, O[number]>]?: ReadonlyValue<K> }) | null> =>
+): Observe<({ readonly [K in keyof Pick<Components, R[number]>]: ReadonlyType<K> } & { readonly [K in keyof Pick<Components, O[number]>]?: ReadonlyType<K> }) | null> =>
     observeEntity(world, entity, components);
 
 /**

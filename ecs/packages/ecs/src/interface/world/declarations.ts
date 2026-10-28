@@ -30,5 +30,5 @@ type Reported<K, Members extends PropertyKey> = [Members] extends [never] ? neve
  * `World.create` reports these.
  */
 export type InvalidDeclarations =
-    | { readonly [K in Component.Key]: Reported<K, Invalid<K, Components[K], Component.Value<K>>> }[Component.Key]
-    | { readonly [K in Resource.Key]: Reported<K, Invalid<K, Resources[K], Resource.Value<K>>> }[Resource.Key];
+    | { readonly [K in Component.Key]: Reported<K, Invalid<K, Components[K], Component<K>>> }[Component.Key]
+    | { readonly [K in Resource.Key]: Reported<K, Invalid<K, Resources[K], Resource<K>>> }[Resource.Key];

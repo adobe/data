@@ -5,7 +5,7 @@ import { Component } from "../index.js";
 export const instanced = Symbol();
 declare module "@adobe/ecs" {
     interface Traits<N> {
-        readonly [instanced]: N extends Component.Key ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
+        readonly [instanced]: N extends Component.Key ? ([Component<N>] extends [readonly number[]] ? true : never) : never;
     }
 }
 

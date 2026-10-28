@@ -26,7 +26,7 @@ export type ComponentAccess = {
      * that runs the system, once per archetype as it appears and again whenever a resource it reads changed. With
      * change filters, an archetype it skipped keeps its rows unseen until it passes again.
      */
-    readonly where?: { readonly [K in Shared]?: Component.Value<K> | ((value: Component.Value<K>, context: { readonly resources: ReadResources }) => boolean) };
+    readonly where?: { readonly [K in Shared]?: Component<K> | ((value: Component<K>, context: { readonly resources: ReadResources }) => boolean) };
 };
 
 /**

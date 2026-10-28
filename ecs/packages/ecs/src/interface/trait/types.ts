@@ -9,7 +9,7 @@ import type { IsComparable, IsString, IsStruct } from '../schema/is-struct.js';
 import type { Thread } from '../thread/thread.js';
 
 /** The value type of the component or resource `N`. */
-type ValueOf<N> = N extends Component.Key ? Component.Value<N> : N extends Resource.Key ? Resource.Value<N> : never;
+type ValueOf<N> = N extends Component.Key ? Component<N> : N extends Resource.Key ? Resource<N> : never;
 
 /**
  * Whether each component's and resource's value is a struct, `"string"` for a string, computed once so a check is a
@@ -39,14 +39,14 @@ export interface Traits<N extends Component.Key | Resource.Key> {
      * component. Not on a derived component, whose target only a command could set.
      */
     readonly reference: N extends Component.Key
-        ? Components[N] extends { readonly derived: true } | { readonly shared: true } ? never : [Component.Value<N>] extends [Entity] ? "owner" | "weak" : never
+        ? Components[N] extends { readonly derived: true } | { readonly shared: true } ? never : [Component<N>] extends [Entity] ? "owner" | "weak" : never
         : never;
     /**
      * On a resource, the operator systems reduce into it with: each run that a contributor runs in starts it at the
      * operator's identity and leaves it holding the fold of every contribution. Booleans fold bitwise.
      */
     readonly reduce: N extends Resource.Key
-        ? [Resource.Value<N>] extends [boolean] ? "&" | "|" | "^" : Structs[N] extends true ? Reduction : never
+        ? [Resource<N>] extends [boolean] ? "&" | "|" | "^" : Structs[N] extends true ? Reduction : never
         : never;
     /**
      * The logical thread an object lives on, `"world"` without it. Not on a struct or a string, which live in shared
@@ -64,6 +64,6 @@ export interface Traits<N extends Component.Key | Resource.Key> {
      * reference, and it has no thread: every thread reads it.
      */
     readonly shared: N extends Component.Key
-        ? Components[N] extends { readonly derived: true } | { readonly reference: unknown } ? never : IsComparable<Component.Value<N>> extends true ? true : never
+        ? Components[N] extends { readonly derived: true } | { readonly reference: unknown } ? never : IsComparable<Component<N>> extends true ? true : never
         : never;
 }

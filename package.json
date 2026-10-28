@@ -8,6 +8,8 @@
   "scripts": {
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
+    "clean": "rm -rf node_modules/.vitest-cache */node_modules/.vitest-cache",
+    "fresh": "git checkout main && git pull && pnpm install && pnpm build && pnpm clean && pnpm test",
     "lint": "pnpm -r run lint",
     "lint-fix": "pnpm -r run lint-fix",
     "typecheck": "pnpm -r run typecheck",

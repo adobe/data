@@ -16,6 +16,18 @@ import { ApplicationHost, DatabaseElement } from "@adobe/data-lit";
 import { createDatabase } from "@adobe/data/ecs";
 ```
 
+## State and resize callbacks
+
+`useState` returns a setter whose identity is stable for the lifetime of the hook state. The setter
+requests a render only when `Object.is` reports that the value has changed. Lazy initializers run once
+per hook state, including when the initial value is `null` or `undefined`.
+
+Treat state objects and arrays as immutable: pass a new object or array when its contents change.
+Mutating a value in place and passing the same reference to the setter does not request a render.
+
+`useResizeObserver` keeps its observer attached across renders and invokes the latest callback.
+Inline callbacks do not cause the observer to disconnect and reattach.
+
 ## Hooks and the disconnect lifecycle
 
 Hooks (`useState`, `useEffect`, `useObservable`, `useObservableValues`, `useMemo`, `useRef`, ...) follow

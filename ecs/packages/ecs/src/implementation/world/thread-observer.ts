@@ -69,7 +69,7 @@ const errorOf = (error: unknown): WorkerError =>
 
 const refuse = (): never => { throw new Error("An observer system issues no commands."); };
 /** An observer system's context has no commands, so these are never called. */
-const noCommands: Commands = { spawn: refuse, despawn: refuse, add: refuse, remove: refuse };
+const noCommands: Commands = { spawn: refuse, despawn: refuse, add: refuse, remove: refuse, spawnTables: refuse };
 const noStamps: number[] = [];
 
 export const createThreadObserver = (host: ThreadObserverHost) => {

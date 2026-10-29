@@ -61,6 +61,14 @@ const entryOf = (key: symbol): Entry | undefined => {
     return entries.get(key);
 };
 
+/** Every key registered as `kind`, each by the symbol a world gives its values by, with its declaration. */
+export const declaredOf = (kind: "component" | "resource"): ReadonlyMap<symbol, AnyDeclaration> => {
+    catchUp();
+    const found = new Map<symbol, AnyDeclaration>();
+    for (const entry of entries.values()) if (entry.kind === kind && entry.declaration !== undefined) found.set(entry.newest, entry.declaration);
+    return found;
+};
+
 /** Whether a key is a component, a resource or a trait. */
 export const kindOf = (key: unknown): Kind | undefined => typeof key === "symbol" ? entryOf(key)?.kind : undefined;
 

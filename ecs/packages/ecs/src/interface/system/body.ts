@@ -10,6 +10,7 @@ import type { Commands } from './commands.js';
 import type { Declaration } from './declaration.js';
 import type { Listed, Property } from './property.js';
 import type { RenderContext } from './render.js';
+import type { Tables } from './tables.js';
 import type { ComponentValues, LookupFunction, ResourceValues, Values } from './values.js';
 
 /** The components every entity a declaration matches has: those in `with`, `added` and `changed`. */
@@ -66,7 +67,8 @@ export type Context<D extends Declaration> =
         /** The parent's values the body reads, or null for a row without a parent or whose parent lacks one of them. */
         readonly up: ComponentValues | null;
     } : {})
-    & (D extends { readonly kernel: "gpu" } | { readonly shader: object } | { readonly readonly: true } ? {} : { readonly commands: Commands });
+    & (D extends { readonly kernel: "gpu" } | { readonly shader: object } | { readonly readonly: true } ? {} : { readonly commands: Commands })
+    & (D extends { readonly tables: object } ? { readonly tables: Tables } : {});
 
 /**
  * `(row, context, input)` for a system with `components`, `(context, input)` for one without, and `(gpu, context)` for

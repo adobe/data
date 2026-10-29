@@ -34,6 +34,12 @@ conversation, the diff or the alternatives. Tell them what it is and what it doe
   - "X, not B, C or D": say what is done;
   - "previously", "now", "instead of", "moved from", "whose source of truth is…".
 
+## Layout
+
+A feature's or package's root folder holds only its public exports, one file per export, named after it, and their
+tests. Its implementation lives in folders below. Nothing outside a feature imports below its root, and within a
+package only its entry file re-exports.
+
 ## Never use top-level await
 
 Do not use `await` at module top level in any package's sources. Defer async work to a lazy-init pattern: store the

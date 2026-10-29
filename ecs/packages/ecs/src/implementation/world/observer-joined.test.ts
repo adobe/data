@@ -291,6 +291,14 @@ describe("observer systems on a joined thread", () => {
         await close();
     });
 
+    it("refuse a readonly system reading tables, which only the world's thread gives", async () => {
+        const { remote, close } = await joined();
+        const readTables = System.create({ readonly: true, tables: { components: [label] } }, ({ tables }) => tables.archetypes.length);
+        expect(() => remote.add(readTables)).toThrow(`System "readTables" reads tables, which only the world's thread gives: run or add it there.`);
+        await expect(remote.run(readTables)).rejects.toThrow(`System "readTables" reads tables, which only the world's thread gives: run or add it there.`);
+        await close();
+    });
+
     it("are placed on the joined thread filling their objects, reading them there", async () => {
         reset();
         const { world, close } = await joined(["observerJoinedTest"]);

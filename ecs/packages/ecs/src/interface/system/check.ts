@@ -165,6 +165,19 @@ const checkReadonly = (leaf: Leaf): void => {
     if ((declaration.before?.length ?? 0) + (declaration.after?.length ?? 0) + (declaration.during?.length ?? 0) > 0) fail("is ordered with nothing");
 };
 
+/** Throws for `tables` on a system that isn't readonly or has components, or naming keys that aren't registered as their kind. */
+const checkTables = (leaf: Leaf): void => {
+    const { name, declaration } = leaf;
+    const { tables } = declaration;
+    if (tables === undefined) return;
+    if (declaration.readonly !== true) throw new Error(`System "${name}" reads tables, which only a readonly system reads.`);
+    if (declaration.components !== undefined) throw new Error(`System "${name}" reads tables, so it has no components.`);
+    requireRegistered("System", name, "component", tables.components);
+    requireRegistered("System", name, "component", tables.with);
+    requireRegistered("System", name, "component", tables.not);
+    requireRegistered("System", name, "resource", tables.resources);
+};
+
 /**
  * Throws for a leaf that names a component or resource that isn't registered as one, lists a key in both `read` and
  * `write`, writes a reference, has a lookup reading a component it writes, uses object components and resources of different threads, declares what a readonly system can't, or whose
@@ -190,6 +203,7 @@ export const checkLeaf = (leaf: Leaf): void => {
         if (writes.has(key)) throw new Error(`System "${name}": its rows are ordered by an index keyed by "${labelOf(key)}", which the system writes.`);
     }
     checkTarget(leaf);
+    checkTables(leaf);
     threadOf(declaration, "System", name);
     requireRegistered("System", name, "component", components?.has);
     requireRegistered("System", name, "component", components?.not);

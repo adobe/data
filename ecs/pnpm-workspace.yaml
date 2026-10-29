@@ -1,6 +1,7 @@
 packages:
   - 'packages/ecs'
   - 'packages/ecs-gpu'
+  - 'packages/ecs-persistence'
   - 'packages/ecs-gpu-views'
   - 'packages/ecs-particles-webgpu'
   - 'packages/ecs-todo-vanillajs'

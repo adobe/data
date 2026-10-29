@@ -2,6 +2,7 @@
 import type { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import type { Essential, Shared } from '../component/value.js';
+import type { Table } from '../world/table/table.js';
 import type { ValuesOf } from './values-of.js';
 
 /** The value an `add` of one component takes: none for a tag. */
@@ -68,4 +69,17 @@ export type Commands = {
     add<const C extends readonly Essential[]>(entity: Entity, components: C, values: ValuesOf<C>): void;
     remove(entity: Entity, component: Essential): void;
     remove(entity: Entity, components: readonly Essential[]): void;
+    /**
+     * Spawns an entity for each row of `tables`, as a readonly system's `tables` gives them, of each table's components
+     * with its columns' values: a block copy per column. Entity values are rewritten as the world's references would
+     * leave them had the entities outside the tables despawned: each naming an entity of the tables, a reference, a
+     * struct's field or an array's item, names the one spawned for it; a row whose owner reference names an entity
+     * outside them isn't spawned, nor anything it owns, through owner references, as despawning its owner would; a
+     * weak reference to one is left out of its row, which is spawned without it; any other value naming one is
+     * `Entity.none`. Returns, at once, each table's new entities, alive at the sync point. A column's stride must be its
+     * component's in this world, and its length its table's count. `resources` sets each resource it names, by key, at
+     * the sync point, as commands apply, each value checked against its resource's schema; not one only the world
+     * writes, nor one living on another thread. On the world's thread only.
+     */
+    spawnTables(tables: readonly Table[], resources?: { readonly [key: symbol]: unknown }): Table.Spawned;
 };

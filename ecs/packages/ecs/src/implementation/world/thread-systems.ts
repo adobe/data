@@ -279,6 +279,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
             return typeof preset === "object" && preset !== null ? presetSpawnerOf(components, preset) : spawnerOf(components);
         },
         despawn: entity => beginCommand(writer, despawnCommand, entity),
+        spawnTables: () => { throw new Error("commands.spawnTables runs on the world's thread: run the system there."); },
         add: (entity: number, components: symbol | readonly symbol[], values?: unknown) => {
             if (typeof components === "symbol") {
                 const key = givenKeyOf(components);

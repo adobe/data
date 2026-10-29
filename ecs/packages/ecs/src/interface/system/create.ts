@@ -98,6 +98,11 @@ type Validate<D extends Declaration> =
     & (D extends { readonly components: { readonly optional: readonly [unknown, ...unknown[]] } }
         ? { readonly kernel?: boolean | { readonly "error: a GPU kernel can't have optional components yet": true } } : {})
     & (D extends { readonly readonly: true } ? Readonly : {})
+    // Tables are copies a readonly system without components reads.
+    & (D extends { readonly tables: object }
+        ? (D extends { readonly readonly: true } ? {} : { readonly tables?: { readonly "error: tables are read by a readonly system": true } })
+        & (Property<D, "components"> extends undefined ? {} : { readonly tables?: { readonly "error: a system reading tables has no components": true } })
+        : {})
     & (D extends { readonly target: string } ? Targeted : {})
     & (D extends { readonly target: string } ? Property<D, "components"> extends undefined ? { readonly target?: { readonly "error: a system on one entity runs on its row, so it needs components": true } } : {} : {})
     // A body's input is the type of its parameter after its context, not part of its declaration.
@@ -183,10 +188,10 @@ const resolve = (what: string, declared: Declaration, access: ReturnType<typeof 
     const reading = declared.readonly === true;
     const { components, lookup, up, resources, ...rest } = declared;
     const uses = resourceUses(what, access, resources?.is);
-    // What `where`'s predicates read counts as the system's reads, for its order, conflicts and placement.
     const whereReads = whereReadsOf(what, components, access);
     const conditions: readonly symbol[] = resources?.is ?? [];
-    for (const key of whereReads) if (!uses.read.includes(key) && !uses.write.includes(key) && !conditions.includes(key)) uses.read.push(key);
+    // What `where`'s predicates and `tables` read counts as the system's reads, for its order, conflicts and placement.
+    for (const key of [...whereReads, ...declared.tables?.resources ?? []]) if (!uses.read.includes(key) && !uses.write.includes(key) && !conditions.includes(key)) uses.read.push(key);
     const resolved: Resolved = {
         ...rest,
         ...components === undefined ? {} : { components: componentLists(components, access.components, reading, whereReads) },

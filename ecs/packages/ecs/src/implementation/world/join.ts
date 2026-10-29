@@ -33,6 +33,12 @@ const observerLeavesOf = (definition: Definition): readonly Leaf[] | null => {
     return schedule.tiers.length === 0 && schedule.observer.length > 0 ? schedule.observer : null;
 };
 
+/** Throws for a readonly system reading tables, which only the world's thread gives. */
+const refuseTables = (leaves: readonly Leaf[]): void => {
+    const reading = leaves.find(leaf => leaf.declaration.tables !== undefined);
+    if (reading !== undefined) throw new Error(`System "${reading.name}" reads tables, which only the world's thread gives: run or add it there.`);
+};
+
 /** A run not yet settled: how to settle it, and its rejection once posted. */
 type Run = { readonly resolve: (value: unknown) => void; readonly reject: (error: unknown) => void; message: ToJoined | null; error: unknown; readonly local: Local | null };
 
@@ -659,6 +665,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             // This thread's own observer systems run here, after the sync point of an empty run of the world's.
             const leaves = observerLeavesOf(definition);
             if (leaves !== null) {
+                refuseTables(leaves);
                 if (failure !== null) return Promise.reject(failure);
                 const locals = leaves.map(localOf);
                 if (locals.length === 1 && definition.kind !== "composite") return runNumbered(locals[0].number, locals[0].leaf, undefined, locals[0]);
@@ -681,6 +688,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             const definition = requireDefinition(system);
             const leaves = observerLeavesOf(definition);
             if (leaves === null) throw new Error(`System "${definition.name}" isn't readonly, and a joined thread adds only readonly systems: declare it readonly: true to read the world from this thread, or add it on the world's thread.`);
+            refuseTables(leaves);
             if (added.has(definition) || failure !== null) return;
             const locals = leaves.map(localOf);
             added.set(definition, locals);

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2024", "ESNext.Disposable", "DOM"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": ["src", "perf", "*.ts"],
+  // The test configs take the vitest a workspace links: in one holding several variants of vitest, another variant
+  // than this package's. Vitest checks them as it loads them.
+  "exclude": ["vitest.config.ts", "vitest.perf.config.ts"]
+}

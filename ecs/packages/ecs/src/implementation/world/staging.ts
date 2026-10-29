@@ -69,14 +69,15 @@ export const createBatch = (layouts: readonly Layout[], ids: readonly number[], 
     return { ids: sorted, shared, archetype: null, columns: sorted.map(id => columnOf(layouts[id], id, initialCapacity)), entities: new Float64Array(initialCapacity), count: 0, capacity: initialCapacity, revive: null, generation: 0 };
 };
 
-const grow = (batch: SpawnBatch): void => {
+/** Grows a batch to hold at least `needed` rows: twice its capacity, or `needed` where that's more. */
+const grow = (batch: SpawnBatch, needed = batch.count + 1): void => {
     const { revive } = batch;
     if (revive !== null) {
         batch.revive = null;
         revive();
-        if (batch.count < batch.capacity) return;
+        if (needed <= batch.capacity) return;
     }
-    const capacity = batch.capacity * 2;
+    const capacity = Math.max(batch.capacity * 2, needed);
     for (const column of batch.columns) {
         const views = viewsOf(new ArrayBuffer(capacity * column.stride), 0, capacity * column.stride);
         views.u8.set(column.views.u8.subarray(0, batch.count * column.stride));
@@ -144,6 +145,18 @@ const writeColumn = (column: Column, row: number, value: unknown): void => {
 export const openRow = (batch: SpawnBatch): number => {
     if (batch.count === batch.capacity) grow(batch);
     return batch.count;
+};
+
+/** The first of the `n` rows the batch's next spawns write, growing it first to hold them. */
+export const openRows = (batch: SpawnBatch, n: number): number => {
+    if (batch.count + n > batch.capacity) grow(batch, batch.count + n);
+    return batch.count;
+};
+
+/** Claims the open rows for `entities`, once all their values are written. */
+export const claimRows = (batch: SpawnBatch, entities: Float64Array): void => {
+    batch.entities.set(entities, batch.count);
+    batch.count += entities.length;
 };
 
 /** Claims the open row for `entity`, once all its values are written. */

@@ -87,6 +87,12 @@ correctness, then optimization. Remove an item once it's decided or done.
 
 ## Optimization
 
+- **Owner references at the sync point:** spawning 1M entities with an owner reference costs about 200 ms more at
+  the sync point than without one, whether through `commands.spawn` or `commands.spawnTables`: the holders' bookkeeping,
+  per entity. Bulk spawns of tables could record holders per block.
+- **A row system over many small archetypes** inlines its rows' per-archetype `bind` into its run only after a second
+  optimization, which V8 makes or not depending on what else the bundle holds: `small archetypes 1K` runs in 0.075 ms
+  or 0.083 ms with no change to its path. A binding that doesn't rely on being inlined would steady it.
 - **f64 SIMD for `Vec3` bodies:** automatic kernels' f64x2 lanes run only across dense single-f32 columns, so a body
   over `Vec3` components, as chapter 14's `move`, runs in WASM a row at a time. Measure lanes within a row's leaves.
 - Index step 5 items.
@@ -99,8 +105,14 @@ correctness, then optimization. Remove an item once it's decided or done.
 
 ## External utilities
 
-- **Persistence,** never part of the core: provided externally through custom traits (e.g. `persist: string`, the stable
-  name saved data maps through, independent of thread ids) and changes finalizers watching by trait.
+- **Persistence, next:** `@adobe/ecs-persistence` saves, loads and copies whole snapshots.
+  - **Incremental saves:** changes finalizers watching the `persist` trait (`watch` by trait, above) would give
+    autosaves and deltas.
+  - **Migrations:** a snapshot holds each component's schema, and a load refuses one that differs; a declared
+    migration could read the old schema's values instead.
+  - **Tables on joined threads:** a joined thread refuses a readonly system reading tables.
+  - **Layouts across versions:** a snapshot's bytes are checked by schema and stride; a layout placing a schema's
+    fields differently in another version of the ECS would load wrongly. Possible: a layout's signature in the format.
 - **A test helper awaiting the next tick.** Tests watch `clock` with a readonly system today; a helper in
   `src/observe` would do it (from the todo sample).
 

@@ -69,7 +69,9 @@ Standard script names a package may define:
   every package's `pages`.
 
 Publishing is governed only by the `private` field: `pnpm -r publish` publishes every package with `private: false` and
-skips the rest. Every package sets `private` explicitly, and samples are `private: true`. Don't add a `publish-public`
+skips the rest. Every package sets `private` explicitly. Samples are `private: true`, and every library is published
+publicly from the start: `private: false`, `publishConfig` with `"access": "public"`, `independentVersion: true`, and
+`LICENSE` among its files, as `ecs-gpu`'s are. Don't add a `publish-public`
 or similar script. `scripts/check-workspace-conventions.mjs` (`pnpm run check:workspace`, run in CI) enforces these.
 
 ## Checks

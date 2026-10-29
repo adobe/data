@@ -5,7 +5,12 @@
   "license": "MIT",
   "type": "module",
   "sideEffects": true,
-  "private": true,
+  "private": false,
+  "independentVersion": true,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "files": [
     "dist",
     "src",

@@ -12,7 +12,8 @@
     "test": "vitest --run"
   },
   "dependencies": {
-    "@adobe/ecs": "workspace:*"
+    "@adobe/ecs": "workspace:*",
+    "@adobe/ecs-gpu": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

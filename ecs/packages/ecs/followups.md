@@ -26,7 +26,18 @@ correctness, then optimization. Remove an item once it's decided or done.
 - **Per-row CPU values in render systems:** a render body's tables are `{ count, bind }`, so it can't draw with a
   per-row object such as a texture's bind group, and a row body can't learn its GPU row. A consumer drawing an image
   per row keeps its own instance buffer, 4,000 draws in 2.1 ms a tick. Possible: tables giving their entities in GPU
-  row order. Not needed until a consumer's profile says so.
+  row order. A mesh and material package on `@adobe/ecs-gpu` will need it: a draw per material binds that material's
+  textures.
+- **Frames in flight:** `run` resolves once its work is submitted, before the GPU finishes it, so a loop on a slow GPU
+  queues frames without bound; the particles sample caps them at two with `onSubmittedWorkDone`. Possible: the world's
+  loop skips a beat while a set number of submitted frames are unfinished, the number a resource.
+- **A resource holding objects that aren't data can't start as an empty map:** a `ReadonlyMap` of `GPUTexture`s, say,
+  gets no fresh map, and a namespace's `default` holding an empty one fails the build's deep readonly check at the
+  objects. Such a resource allows `null` instead, which `@adobe/ecs-gpu`'s `states` resources do, and every reader
+  handles it. Possible: a fresh empty `ReadonlyMap` or `ReadonlySet` for one of objects too, since emptiness doesn't
+  depend on what it would hold.
+- **Pipelines built from a device a body captured go stale** when `gpuDevice` changes: the world rebuilds its own GPU
+  objects, and a consumer's must follow `changed: [gpuDevice]`. `System.render`'s and `gpuDevice`'s docs should say so.
 - **Descending sorted indexes:** an ordered render reads its index front to back, so a consumer painting back to front
   maps `instance_index` to `ecs_count() - 1u - instance_index`, which costs nothing. Possible: a `descending` option on
   sorted indexes. Not needed until a consumer's profile or readability says so.

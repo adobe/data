@@ -1,0 +1,25 @@
+{
+  "name": "ecs-gpu-views",
+  "version": "0.0.0",
+  "description": "A world on a worker drawing into two canvases through @adobe/ecs-gpu: one multisampled with two views, one with a view from above",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc && vite build",
+    "dev": "vite",
+    "typecheck": "tsc",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@adobe/ecs": "workspace:*",
+    "@adobe/ecs-gpu": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@webgpu/types": "^0.1.61",
+    "typescript": "^5.8.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}

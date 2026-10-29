@@ -1,0 +1,39 @@
+{
+  "name": "@adobe/ecs-gpu",
+  "version": "0.0.1",
+  "description": "WebGPU devices, surfaces, render targets, views and frame passes for @adobe/ecs",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": true,
+  "private": true,
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.test-helper.ts",
+    "!src/**/*.test-worker.ts"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "typecheck": "tsc && tsc -p tsconfig.build.json",
+    "test": "pnpm exec playwright install chromium && vitest --run"
+  },
+  "dependencies": {
+    "@adobe/ecs": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@vitest/browser-playwright": "^5.0.5",
+    "@webgpu/types": "^0.1.61",
+    "playwright": "^1.64.1",
+    "typescript": "^5.8.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/types/index.d.ts"
+    }
+  }
+}

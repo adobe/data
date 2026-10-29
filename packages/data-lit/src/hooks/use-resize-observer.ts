@@ -2,6 +2,7 @@
 
 import { useEffect } from "./use-effect.js";
 import { useElement } from "./use-element.js";
+import { useRef } from "./use-ref.js";
 
 export interface ResizeInfo {
     width: number;
@@ -17,15 +18,17 @@ export interface ResizeInfo {
  */
 export function useResizeObserver(onResize: (info: ResizeInfo) => void) {
     const element = useElement();
+    const latestCallback = useRef(onResize);
+    latestCallback.current = onResize;
 
     useEffect(() => {
         const observer = new ResizeObserver(entries => {
             for (const entry of entries) {
                 const { width, height } = entry.contentRect;
-                onResize({ width, height, entry });
+                latestCallback.current({ width, height, entry });
             }
         });
         observer.observe(element);
         return () => observer.disconnect();
-    }, [element, onResize]);
+    }, [element]);
 } 

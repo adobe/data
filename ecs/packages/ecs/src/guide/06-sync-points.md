@@ -10,5 +10,12 @@ A run ends at a *sync point*, where its commands apply.
 A composite is one run with one sync point. In [`frame`](06-sync-points.ts#L25), `count` runs `after: [spawn]` but
 before the spawned entities exist, so it counts none; run alone, after the sync point, it counts the hero.
 
-A readonly system added to a world runs after the sync point of every run and tick, reading what it left:
-[`watch`](06-sync-points.ts#L39-L41) logs the hero after the run that spawned it.
+**Readonly systems.** `readonly: true` places a system after the sync point, so it reads what the commands did. Added
+to a world, [`watch`](06-sync-points.ts#L27-L29) runs after the sync point of every run and tick, and logs the hero
+after the run that spawned it; `count`, which isn't readonly, runs before the sync point, in its tier.
+
+- **Where:** a readonly system runs on the thread that added or ran it, so a [joined thread](19-threads.md) adds only
+  readonly systems.
+- **Order:** none. It can't declare `before`, `after` or `during`.
+- **Limits:** it can't write, use `commands` or `reduce`, or take input. Its row and resources are read-only, so each
+  is a type error.

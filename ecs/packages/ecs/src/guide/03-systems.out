@@ -1,6 +1,5 @@
 at [ 0, 1, 5 ]
 moving [ 'at 2', 'at 2', 'still' ]
 frames 1
-{ peeked: 3, looked: 4 }
 Error: System "fail" (@adobe/ecs@0.2.2/src/guide/03-systems.ts#fail) failed: broken
 frames 2

@@ -126,7 +126,7 @@ System.create({ components: { with: [health], optional: [team] } }, row => {
     // @ts-expect-error nor an optional one
     row[team] = "red";
 });
-System.create({ observer: true, components: { with: [team] } }, row => {
+System.create({ readonly: true, components: { with: [team] } }, row => {
     check<Equal<typeof row[typeof team], "red" | "blue">>();
 });
 

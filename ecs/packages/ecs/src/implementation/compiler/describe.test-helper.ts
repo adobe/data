@@ -51,7 +51,7 @@ export const spawn = System.create(({ commands }) => {
     commands.spawn([position, velocity])({ [position]: [0, 0, 0], [velocity]: [1, 0, 0] });
 });
 
-export const observe = System.create({ observer: true, components: { with: [position] } }, row => {
+export const observe = System.create({ readonly: true, components: { with: [position] } }, row => {
     console.log(row[position]);
 });
 

@@ -59,9 +59,10 @@ export type Declaration = {
     readonly during?: readonly System<unknown>[];
     /**
      * Runs after the last sync point of each run and tick (a tick is a run of the added composite), reading the settled
-     * state; changes nothing; never ordered; doesn't keep the loop ticking.
+     * state, on the thread that added or ran it; changes nothing, its row and resources typed read-only and its context
+     * without `commands`; takes no input; never ordered; doesn't keep the loop ticking. A joined thread adds only these.
      */
-    readonly observer?: true;
+    readonly readonly?: true;
 };
 
 /** A declaration as the world takes it: the build's inferred reads, writes and reductions joined with what it declares. */

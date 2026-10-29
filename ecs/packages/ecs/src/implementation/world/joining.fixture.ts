@@ -16,7 +16,7 @@ import { add, drive, idle, names, shelf, total, until } from "./joining.test-hel
 /** A system only this thread imports, which a world on a worker never did. */
 const unimportedByWorker = System.create({}, () => {});
 /** An observer system only this thread imports, reading an object of `main`, so it's placed on a thread claiming it. */
-const shelvedHere = System.create({ observer: true }, ({ resources }) => resources[shelf].length);
+const shelvedHere = System.create({ readonly: true }, ({ resources }) => resources[shelf].length);
 
 type Worker = {
     readonly ask: (message: ToJoiningWorker, transfer?: readonly unknown[]) => Promise<FromJoiningWorker>;

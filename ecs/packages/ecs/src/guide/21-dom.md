@@ -13,9 +13,9 @@ same.
 Each tick runs one composite:
 
 1. [`move`](21-dom.ts#L38-L44) moves every particle and turns it back from the walls.
-2. [`create`](21-dom.ts#L46-L51) gives each particle without a dot an element, with `commands.add`. Observers can't
+2. [`create`](21-dom.ts#L46-L51) gives each particle without a dot an element, with `commands.add`. Readonly systems can't
    issue commands, so it ticks, and its condition `is: [stage]` waits for a stage.
-3. [`draw`](21-dom.ts#L52-L60), an observer, sets each moved dot's `style.translate`, a transform, which the page
+3. [`draw`](21-dom.ts#L52-L60), a readonly system, sets each moved dot's `style.translate`, a transform, which the page
    doesn't lay out again. `changed: [position]` skips the dots that didn't move.
 
 [A finalizer](21-dom.ts#L61-L63) removes a particle's element when the particle goes, and every element when the

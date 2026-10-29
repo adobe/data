@@ -21,7 +21,7 @@ const place = System.create({ components: { with: [offset, placed] }, up: { thro
 });
 
 const where: string[] = [];
-const read = System.create({ observer: true, components: { with: [label, placed] } }, row => {
+const read = System.create({ readonly: true, components: { with: [label, placed] } }, row => {
     where.push(`${row[label]} at ${row[placed]}`);
 });
 

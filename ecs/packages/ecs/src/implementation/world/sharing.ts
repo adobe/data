@@ -613,7 +613,7 @@ export const createSharing = (host: SharingHost) => {
             const { components, resources } = declared;
             // Unnamed, so other systems' labels stay as they are; its own is the thread's.
             const declaration: Resolved = {
-                observer: true,
+                readonly: true,
                 // Its `where` runs on its thread; here, an empty one says it has one, which every archetype passes.
                 ...components === null ? {} : { components: { ...listed([["read", components.read], ["has", components.has], ["optional", components.optional], ["not", components.not], ["added", components.added], ["changed", components.changed]]), ...components.where ? { where: {} } : {} } },
                 ...resources === null ? {} : { resources: listed([["read", resources.read], ["changed", resources.changed], ["is", resources.is], ["not", resources.not]]) },

@@ -29,10 +29,10 @@ const pause = System.create({}, ({ resources }, input: { readonly paused: boolea
 });
 
 const seen: { wide: number[][]; steps: number[] } = { wide: [], steps: [] };
-const watchWide = System.create({ observer: true, resources: { changed: [wide] } }, ({ resources }) => {
+const watchWide = System.create({ readonly: true, resources: { changed: [wide] } }, ({ resources }) => {
     seen.wide.push([...resources[wide]]);
 });
-const watchSteps = System.create({ observer: true, resources: { not: [paused], changed: [steps] } }, ({ resources }) => {
+const watchSteps = System.create({ readonly: true, resources: { not: [paused], changed: [steps] } }, ({ resources }) => {
     seen.steps.push(resources[steps]);
 });
 

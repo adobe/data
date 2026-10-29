@@ -20,7 +20,7 @@ declare module "@adobe/ecs" {
  * removed or toggled: the index's entries changing is its only change filter.
  */
 export const bindCompletion = System.create({
-    observer: true,
+    readonly: true,
     resources: { is: [summary, toggleAllBox] },
     lookup: { byDone: { index: byDone, changed: true } },
 }, ({ resources, lookup }) => {

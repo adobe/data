@@ -56,7 +56,7 @@ let drawn = 0;
 let left = Infinity;
 let right = -Infinity;
 const draw = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [position], where: { [cell]: (at, { resources }) => resources[camera]?.sees(at) === true } },
 }, row => {
     drawn += 1;
@@ -66,7 +66,7 @@ const draw = System.create({
 
 let refreshed = 0;
 const refresh = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [position], changed: [position], where: { [cell]: (at, { resources }) => resources[camera]?.sees(at) === true } },
 }, () => {
     refreshed += 1;
@@ -74,7 +74,7 @@ const refresh = System.create({
 
 // Only chunk [4, 0], which no unit is in until one crosses into it.
 let east = 0;
-const countEast = System.create({ observer: true, components: { with: [position], where: { [cell]: [4, 0] } } }, () => {
+const countEast = System.create({ readonly: true, components: { with: [position], where: { [cell]: [4, 0] } } }, () => {
     east += 1;
 });
 

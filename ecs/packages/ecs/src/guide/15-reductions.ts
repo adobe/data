@@ -23,7 +23,7 @@ const weigh = System.create({ components: { with: [mass] } }, (row, { reduce }) 
     reduce[count](1);
 });
 
-const report = System.create({ observer: true }, ({ resources }) =>
+const report = System.create({ readonly: true }, ({ resources }) =>
     `${resources[count]} weigh ${resources[total]}, at most ${resources[heaviest]}`);
 
 const spawn = System.create(({ commands }) => {

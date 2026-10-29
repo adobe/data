@@ -109,7 +109,7 @@ describe("a module's systems described", () => {
     it("says why systems that run as written have no code: per-run systems, observers, render systems, kernel: false and one declared in a function", () => {
         expect(described("spawn")).toMatchObject({ kind: "per-run", runs: `Its body as written, on the "world" thread` });
         for (const backend of ["js", "wasm", "wgsl"] as const) expect(reasonOf(described("spawn")[backend])).toBe("per-run systems run as written; only row systems compile");
-        expect(described("observe")).toMatchObject({ kind: "observer", js: { kind: "none", reason: expect.stringMatching(/^an observer runs as written/) } });
+        expect(described("observe")).toMatchObject({ kind: "readonly", js: { kind: "none", reason: expect.stringMatching(/^a readonly system runs as written/) } });
         expect(described("draw")).toMatchObject({ kind: "render", runs: expect.stringContaining("while the world has a GPU device"), wgsl: { kind: "none", reason: expect.stringMatching(/^a render system runs as written/) } });
         const unflagged = described("unflagged");
         expect(unflagged).toMatchObject({ kernel: false, js: { kind: "none", reason: "as written, because `kernel: false`" }, wasm: { kind: "none", reason: "as written, because `kernel: false`" }, wgsl: { kind: "eligible" } });

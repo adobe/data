@@ -219,7 +219,7 @@ System.create({
 
 // An index lookup's `changed: true` runs its system only when the index's entries changed since it last ran: its
 // lists' `changed` then reports entries alone. Observer systems and CPU kernels take it; it's not a list of components.
-System.create({ observer: true, lookup: { living: { index: living, changed: true } } }, ({ lookup }) => {
+System.create({ readonly: true, lookup: { living: { index: living, changed: true } } }, ({ lookup }) => {
     const rows = lookup.living();
     check<Equal<typeof rows.changed, boolean>>();
     check<Equal<typeof rows.length, number>>();

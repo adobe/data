@@ -307,13 +307,13 @@ const seedFlags = System.create({}, ({ commands }) => {
     for (let i = 0; i < flagged; i++) commands.spawn([flag])({ [flag]: i % 2 === 0 });
 });
 /** A run of observer systems alone, which passes every one added. */
-const pass = System.create({ observer: true }, () => {});
+const pass = System.create({ readonly: true }, () => {});
 /** A count of each bucket, written only when the index's entries changed: by `changed: true`, or by its lists' `changed`. */
 const countsWhenChanged = (filtered: boolean): System => filtered
-    ? System.create({ observer: true, lookup: { byFlag: { index: byFlag, changed: true } } }, ({ lookup }) => {
+    ? System.create({ readonly: true, lookup: { byFlag: { index: byFlag, changed: true } } }, ({ lookup }) => {
         found += lookup.byFlag(false).length + lookup.byFlag(true).length;
     })
-    : System.create({ observer: true, lookup: { byFlag: { index: byFlag } } }, ({ lookup }) => {
+    : System.create({ readonly: true, lookup: { byFlag: { index: byFlag } } }, ({ lookup }) => {
         const off = lookup.byFlag(false);
         const on = lookup.byFlag(true);
         if (!off.changed && !on.changed) return;

@@ -680,7 +680,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         add: system => {
             const definition = requireDefinition(system);
             const leaves = observerLeavesOf(definition);
-            if (leaves === null) throw new Error("A joined thread adds only observer systems; others are added to ticks on the world's thread.");
+            if (leaves === null) throw new Error(`System "${definition.name}" isn't readonly, and a joined thread adds only readonly systems: declare it readonly: true to read the world from this thread, or add it on the world's thread.`);
             if (added.has(definition) || failure !== null) return;
             const locals = leaves.map(localOf);
             added.set(definition, locals);
@@ -692,7 +692,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         },
         remove: system => {
             const definition = requireDefinition(system);
-            if (observerLeavesOf(definition) === null) throw new Error("A joined thread removes only observer systems; others are removed from ticks on the world's thread.");
+            if (observerLeavesOf(definition) === null) throw new Error(`System "${definition.name}" isn't readonly, and a joined thread removes only readonly systems: others are removed on the world's thread.`);
             const locals = added.get(definition);
             if (locals === undefined) return;
             added.delete(definition);

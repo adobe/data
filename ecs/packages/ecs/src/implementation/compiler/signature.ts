@@ -120,7 +120,7 @@ export const kernelOf = (declaration: ObjectExpression): KernelRequest | null =>
         }
     }
     if (declaration.properties.some(property => property.type === "SpreadElement")) return null;
-    if (!declares(declaration, "components") || declares(declaration, "observer") || declares(declaration, "target")) return null;
+    if (!declares(declaration, "components") || declares(declaration, "readonly") || declares(declaration, "target")) return null;
     return { target: "cpu", required: false };
 };
 

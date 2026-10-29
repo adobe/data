@@ -339,7 +339,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     let runInput: unknown;
     const context = createContext(state, declaration, {
         targets: kernel === null ? targets : [],
-        commands: leaf.kind === "render" || declaration.kernel === "gpu" || declaration.observer === true ? undefined : commands,
+        commands: leaf.kind === "render" || declaration.kernel === "gpu" || declaration.readonly === true ? undefined : commands,
         indexes: indexLookups.byName,
         since: lookupSince,
     });
@@ -1343,7 +1343,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             return taken;
         },
         didRun: () => ran && (query === undefined || bodyRanOnRow()),
-        restart: declaration.observer !== true || !holdsNothing(holdings) ? null : since => {
+        restart: declaration.readonly !== true || !holdsNothing(holdings) ? null : since => {
             lastRun = since;
             holdings.removed = false;
             holdings.released = false;

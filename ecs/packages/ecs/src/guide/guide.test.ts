@@ -69,9 +69,9 @@ const listed = [...read("README.md").matchAll(/^(?:- |(\d+)\. )\[([^\]]+)\]\(([^
 /** What each chapter teaches, which its prose names as code and its program does; 0 is the unnumbered keys chapter's. */
 const teaches: { readonly [chapter: number]: readonly string[] } = {
     0: ["Symbol()", "declare module \"@adobe/ecs\"", "Components", "Resources", "row[score]", "resources[bonus]", "default"],
-    1: ["Resources", "default", "World.create", "observer: true", "run", "ReadonlyMap", "Entity"],
+    1: ["Resources", "default", "World.create", "readonly: true", "run", "ReadonlyMap", "Entity"],
     2: ["Components", "type: true", "as const", "commands.spawn", "commands.remove", "with: [...Particle]"],
-    3: ["System.create", "with", "not", "observer: true", "optional: [velocity]"],
+    3: ["System.create", "with", "not", "readonly: true", "optional: [velocity]", "after: [addOne]"],
     4: ["clock", "delta", "cadence", "always", "resources: { changed: [elapsed] }", "wake", "reduce[wake]", "world.add", "world.remove"],
     5: ["after", "during", "System.create([heal, hit])", "during: [update]"],
     6: ["commands.spawn", "commands.add", "commands.despawn", "after: [spawn]"],
@@ -106,7 +106,11 @@ const mutations: { readonly [chapter: number]: readonly (readonly [string, strin
     ],
     1: [["World.create({ [gravity]: -1.6 })", "World.create()"], ["default: -9.8 ", ""], ["{ default: -Infinity }", "{}"]],
     2: [["commands.remove(row.entity, enemy);", ""], ["{ [position]: [0, 10, 0] }", "{}"]],
-    3: [["not: [frozen]", "not: []"], ["System.create([count, fail])", "System.create([fail])"]],
+    3: [
+        ["not: [frozen]", "not: []"], ["System.create([count, fail])", "System.create([fail])"],
+        ["const look = System.create({ readonly: true, components: { with: [position] } }", "const look = System.create({ components: { with: [position] } }"],
+        ["const peek = System.create({ components: { with: [position] }, after: [addOne] }", "const peek = System.create({ readonly: true, components: { with: [position] } }"],
+    ],
     4: [["world.remove(advance);", ""]],
     5: [["after: [hit] ", ""], ["during: [update] ", ""]],
     6: [["commands.add(hero, health, 5);", ""], ["commands.despawn(commands.spawn([health])({ [health]: 1 }));", "commands.spawn([health])({ [health]: 1 });"], ["watched.add(watch);", ""]],

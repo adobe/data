@@ -17,7 +17,7 @@ let drawn = 0;
 /** Whether the world on the worker has shut down, after the page said it was leaving. */
 let left = false;
 // Added on this thread, it runs here after each of the world's frames.
-const show = System.create({ observer: true, resources: { changed: [frames] } }, ({ resources }) => {
+const show = System.create({ readonly: true, resources: { changed: [frames] } }, ({ resources }) => {
     drawn = resources[frames];
     overlay(`frame ${drawn} · drawn on the world's worker into two canvases: two views side by side, and one from above`);
 });

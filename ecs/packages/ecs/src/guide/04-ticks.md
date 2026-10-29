@@ -9,7 +9,7 @@ every tick from then on, and [`world.remove`](04-ticks.ts#L41) takes it off.
   `step` milliseconds, each with that `delta`.
 - A world ticks only after a run arrives, unless `always` is set, as for [the first world](04-ticks.ts#L36).
 
-An observer with `resources: { changed: [elapsed] }` runs after each tick that changed `elapsed`:
+A readonly system with `resources: { changed: [elapsed] }` runs after each tick that changed `elapsed`:
 [`watch`](04-ticks.ts#L18-L21) resolves once 30 ms have passed. Once `advance` is removed, `elapsed` stays put.
 
 **Asking for a tick.** A system that needs another tick contributes a time to the `wake` reduction:

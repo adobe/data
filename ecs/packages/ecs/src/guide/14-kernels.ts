@@ -29,7 +29,7 @@ const slow = System.create({ kernel: false, components: { with: [velocity] } }, 
 });
 
 const moved: string[] = [];
-const read = System.create({ observer: true, components: { with: [position, velocity] } }, row => {
+const read = System.create({ readonly: true, components: { with: [position, velocity] } }, row => {
     moved.push(`at ${row[position][0]}, moving at ${row[velocity][0]}`);
 });
 

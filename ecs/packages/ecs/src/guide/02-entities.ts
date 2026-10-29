@@ -25,10 +25,10 @@ export const defeat = System.create({ components: { with: [enemy] } }, (row, { c
     commands.remove(row.entity, enemy);
 });
 
-const readFoes = System.create({ observer: true, components: { with: [position, enemy] } }, row => {
+const readFoes = System.create({ readonly: true, components: { with: [position, enemy] } }, row => {
     console.log("a foe at", row[position]);
 });
-const readParticles = System.create({ observer: true, components: { with: [...Particle] } }, row => {
+const readParticles = System.create({ readonly: true, components: { with: [...Particle] } }, row => {
     console.log("a particle moving at", row[velocity]);
 });
 

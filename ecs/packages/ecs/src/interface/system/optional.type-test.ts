@@ -36,7 +36,7 @@ System.create({
 }, row => { void row[velocity]; });
 
 // An observer system reads its optional components and writes nothing.
-System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => {
+System.create({ readonly: true, components: { with: [position], optional: [velocity] } }, row => {
     void row[velocity];
     // @ts-expect-error an observer system's row is read-only
     row[velocity] = 1;

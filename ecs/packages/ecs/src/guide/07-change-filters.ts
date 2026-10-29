@@ -36,7 +36,7 @@ const bump = System.create({ components: { with: [score, boss] } }, row => {
 });
 
 let loaded = 0;
-const countLoaded = System.create({ observer: true, components: { with: [shown] } }, () => {
+const countLoaded = System.create({ readonly: true, components: { with: [shown] } }, () => {
     loaded += 1;
 });
 
@@ -45,7 +45,7 @@ const step = System.create({ resources: { is: [map], not: [paused] } }, ({ resou
 });
 const pause = System.create({}, ({ resources }) => { resources[paused] = true; });
 const open = System.create({}, ({ resources }) => { resources[map] = { width: 4 }; });
-const readSteps = System.create({ observer: true }, ({ resources }) => resources[steps]);
+const readSteps = System.create({ readonly: true }, ({ resources }) => resources[steps]);
 
 export const main = async (): Promise<void> => {
     await using world = World.create();

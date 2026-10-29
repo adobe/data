@@ -23,7 +23,7 @@ describe("particles", () => {
         let positions: readonly (readonly number[])[] = [];
         for (const seconds of frames) positions = await frame(world, seconds);
         let spawned = 0;
-        await world.run(System.create({ observer: true }, ({ resources }) => { spawned = resources[count]; }));
+        await world.run(System.create({ readonly: true }, ({ resources }) => { spawned = resources[count]; }));
         expect(spawned).toBe(100);
         const expected = reference(frames);
         expect(positions).toHaveLength(expected.length);

@@ -56,7 +56,7 @@ describe("a derived component declared without a default", () => {
             commands.spawn([tagged])({});
         });
         const seen: unknown[] = [];
-        const read = System.create({ observer: true, components: { with: [index] } }, row => { seen.push(row[index]); });
+        const read = System.create({ readonly: true, components: { with: [index] } }, row => { seen.push(row[index]); });
         await using first = createWorld();
         await using second = createWorld();
         for (const world of [first, second]) {

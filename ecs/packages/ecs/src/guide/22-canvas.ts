@@ -51,7 +51,7 @@ const particles = Index.create({ key: [], components: { with: [position] } });
 const tracedOnes = Index.create({ key: [], components: { with: [position, traced] } });
 // Clears the canvas and draws every particle, after each tick.
 const draw = System.create({
-    observer: true,
+    readonly: true,
     resources: { is: [pen], changed: [clock] },
     lookup: { particles: { index: particles }, traced: { index: tracedOnes } },
 }, ({ resources, lookup }) => {

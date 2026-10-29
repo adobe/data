@@ -645,7 +645,7 @@ export { World as OtherWorld };
 export const runOther = async (key) => {
     const spawn = System.create(({ commands }) => { commands.spawn([key].slice())({ [key]: 10 }); });
     let total = 0;
-    const count = System.create({ observer: true, components: { with: [key] } }, (row) => { total += row[key]; });
+    const count = System.create({ readonly: true, components: { with: [key] } }, (row) => { total += row[key]; });
     const world = World.create();
     await world.run(spawn);
     await world.run(spawn);
@@ -662,7 +662,7 @@ declare$(score, "component", { type: { type: "number" } });
 ${recorder}
 const spawn = System.create(({ commands }) => { commands.spawn([score].slice())({ [score]: 1 }); });
 let counted = 0;
-const count = System.create({ observer: true, components: { with: [score] } }, (row) => { counted += row[score]; });
+const count = System.create({ readonly: true, components: { with: [score] } }, (row) => { counted += row[score]; });
 export const copies = World === OtherWorld ? 1 : 2;
 export const run = async () => {
     const world = World.create();

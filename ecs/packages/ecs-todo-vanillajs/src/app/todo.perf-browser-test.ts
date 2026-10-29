@@ -164,7 +164,7 @@ const benchmarkApp = async (n: number): Promise<void> => {
 
 /** The filter not kept: an attribute of the list, which a style sheet selects rows by. */
 const markList = System.create({
-    observer: true,
+    readonly: true,
     resources: { changed: [filter], is: [list] },
 }, ({ resources }) => {
     resources[list].dataset.filter = resources[filter];

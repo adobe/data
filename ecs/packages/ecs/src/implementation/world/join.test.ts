@@ -57,16 +57,16 @@ const idle = System.create({}, () => {});
 const totalPlus = System.create({}, ({ resources }, input: { readonly plus: number }) => resources[total] + input.plus);
 const described = System.create(({ resources }) => ({ total: resources[total], names: resources[names] }));
 const unpostable = System.create(() => () => "a function");
-const readTotal = System.create({ observer: true }, ({ resources }) => resources[total]);
+const readTotal = System.create({ readonly: true }, ({ resources }) => resources[total]);
 /** Writes levels, an object of joinTestAudio, so it runs on the thread claiming it. */
 const mix = System.create({}, ({ resources }, input: { readonly level: number }) => {
     resources[levels] = [...resources[levels], input.level];
 });
 /** An observer system recording each total it reads into `into`. */
-const totalsInto = (into: number[]) => System.create({ observer: true }, ({ resources }) => { into.push(resources[total]); });
+const totalsInto = (into: number[]) => System.create({ readonly: true }, ({ resources }) => { into.push(resources[total]); });
 /** An observer system recording how many levels it reads into `into`. */
-const levelsInto = (into: number[]) => System.create({ observer: true }, ({ resources }) => { into.push(resources[levels].length); });
-const failingRead = System.create({ observer: true }, () => { throw new Error("joinTest read failure"); });
+const levelsInto = (into: number[]) => System.create({ readonly: true }, ({ resources }) => { into.push(resources[levels].length); });
+const failingRead = System.create({ readonly: true }, () => { throw new Error("joinTest read failure"); });
 
 /** A world shared with a thread joined through a channel, and the joined world, once both say it joined. */
 const joined = async (threads: readonly ("main")[] = []): Promise<{ readonly world: CreatedWorld; readonly remote: World; readonly channel: MessageChannel }> => {

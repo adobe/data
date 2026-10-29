@@ -23,7 +23,7 @@ export const Particle = [position, velocity] as const;
 expectType<Equal<typeof Particle, readonly [typeof position, typeof velocity]>>();
 export const one: readonly Component.Key[] = Particle;
 export const move = System.create({ components: { with: [...Particle] } }, row => { row[position] += row[velocity]; });
-export const read = System.create({ observer: true, components: { with: [...Particle] } }, row => { void row[velocity]; });
+export const read = System.create({ readonly: true, components: { with: [...Particle] } }, row => { void row[velocity]; });
 
 // Declared without `as const`, a list's keys widen to `symbol`, which no list of components takes.
 const loose = [position, velocity];

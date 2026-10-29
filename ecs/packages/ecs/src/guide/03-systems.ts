@@ -37,16 +37,30 @@ const count = System.create({}, ({ resources }) => {
 });
 
 const places: number[] = [];
-const read = System.create({ observer: true, components: { with: [position] } }, row => {
+const read = System.create({ readonly: true, components: { with: [position] } }, row => {
     places.push(row[position][0]);
 });
 
 const speeds: string[] = [];
-const readSpeeds = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => {
+const readSpeeds = System.create({ readonly: true, components: { with: [position], optional: [velocity] } }, row => {
     speeds.push(row[velocity] === undefined ? "still" : `at ${row[velocity][0]}`);
 });
 
-const frameCount = System.create({ observer: true }, ({ resources }) => resources[frames]);
+const frameCount = System.create({ readonly: true }, ({ resources }) => resources[frames]);
+
+const addOne = System.create(({ commands }) => {
+    commands.spawn([position])({ [position]: [9, 0, 0] });
+});
+const counted = { peeked: 0, looked: 0 };
+// Only reads, but isn't readonly: it runs in its tier, before the sync point.
+const peek = System.create({ components: { with: [position] }, after: [addOne] }, () => {
+    counted.peeked += 1;
+});
+// Readonly: it runs after the sync point, so it sees the entity addOne spawned.
+const look = System.create({ readonly: true, components: { with: [position] } }, () => {
+    counted.looked += 1;
+});
+const frame = System.create([addOne, peek, look]);
 
 const fail = System.create(() => {
     throw new Error("broken");
@@ -63,6 +77,8 @@ export const main = async (): Promise<void> => {
     console.log("moving", speeds.sort());
     await world.run(count);
     console.log("frames", await world.run(frameCount));
+    await world.run(frame);
+    console.log(counted);
     await world.run(countThenFail).catch((error: unknown) => console.log(String(error)));
     console.log("frames", await world.run(frameCount));
 };

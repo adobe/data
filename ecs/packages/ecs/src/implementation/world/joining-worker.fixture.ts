@@ -42,7 +42,7 @@ const channel = scopeChannel<FromJoiningWorker, ToJoiningWorker>();
 let hosted: ReturnType<typeof createWorld> | null = null;
 /** What the observer system `listen` adds heard. */
 const heard: number[] = [];
-const hear = System.create({ observer: true }, ({ resources }) => { heard.push(resources[total]); });
+const hear = System.create({ readonly: true }, ({ resources }) => { heard.push(resources[total]); });
 const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
 /** Ends this thread at once: node's worker exits, and a browser worker closes, dropping the tasks it queued. */
 const exit = (): void => {

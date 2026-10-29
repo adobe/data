@@ -103,7 +103,7 @@ export type Seen = { counter: number; rows: number; wrong: number };
 export const seen: Seen[] = [];
 
 /** Reads every row, which must all be of one tick, pausing at the end of its first chunk while `stall` says so. */
-export const watchRows = System.create({ observer: true, components: { with: [stamp, spot, word] } }, (row, { resources }) => {
+export const watchRows = System.create({ readonly: true, components: { with: [stamp, spot, word] } }, (row, { resources }) => {
     const value = resources[counter];
     let last = seen.at(-1);
     if (last === undefined || last.counter !== value || last.rows === 1000) seen.push(last = { counter: value, rows: 0, wrong: 0 });
@@ -117,7 +117,7 @@ export const watchRows = System.create({ observer: true, components: { with: [st
 export const looked: Entity[] = [];
 
 /** Looks up every row by entity, which must all be of one tick, spinning halfway while `stall` says so. */
-export const lookRows = System.create({ observer: true, lookup: { found: { with: [stamp, spot] } } }, ({ resources, lookup }) => {
+export const lookRows = System.create({ readonly: true, lookup: { found: { with: [stamp, spot] } } }, ({ resources, lookup }) => {
     const value = resources[counter];
     const run: Seen = { counter: value, rows: 0, wrong: 0 };
     seen.push(run);
@@ -146,7 +146,7 @@ export const nextPhase = System.create({}, ({ resources }) => {
 export const hot: number[] = [];
 export const byHeat = Index.create({ key: [heat], sorted: true });
 /** Counts the rows at least 150 hot, through the sorted index on what the GPU kernel writes. */
-export const countHot = System.create({ observer: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
+export const countHot = System.create({ readonly: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
     hot.push(lookup.hot({ ">=": 150 }).length);
 });
 
@@ -164,7 +164,7 @@ export const mottos: { readonly round: number; readonly motto: string }[] = [];
  * Reads only resources, a string among them: waits on the gate first, while `stall` says so, its round plus one, then
  * reads the motto, which must be its round's.
  */
-export const watchMotto = System.create({ observer: true }, ({ resources }) => {
+export const watchMotto = System.create({ readonly: true }, ({ resources }) => {
     const round = resources[mottoRound];
     pauseAt(resources[stall], round + 1);
     mottos.push({ round, motto: resources[motto] });

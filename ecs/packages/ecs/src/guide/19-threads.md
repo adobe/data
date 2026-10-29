@@ -11,6 +11,8 @@ A *logical thread* is where objects live and the code touching them runs: the pa
 `World.join(port, { threads: ["audio"] })`, claiming the threads it fills. Usually the other end of the channel goes
 to a worker; [here both ends](19-threads.ts#L44-L54) are on one thread.
 
-- `share` resolves once the thread joined, with the observer systems it added as `join` resolved, before awaiting
-  anything else. Those observers run there after the world's sync points: `listen` hears what `mix` wrote.
+- `share` resolves once the thread joined, with the readonly systems it added as `join` resolved, before awaiting
+  anything else. Those readonly systems run there after the world's sync points: `listen` hears what `mix` wrote.
+- A joined thread adds only [readonly systems](03-systems.md), which run on it; a system that writes is added on the
+  world's thread.
 - A joined world runs systems as the world does: [`audio.run`](19-threads.ts#L60-L61) spawns and mixes too.

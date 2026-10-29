@@ -20,8 +20,8 @@ correctness, then optimization. Remove an item once it's decided or done.
 - **`watch` by trait on changes finalizers:** `Finalizer.changes({ watch: "persist" }, …)`, `watch` taking a trait name as
   well as a list of keys, typed as `Component.With<…>`, computed once per component id as `watches` already is. The
   hook external persistence would build on.
-- **Observer systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities
-   don't work as bindings. Proposal: allow `up` in observer systems, since it only reads; let `order` take an index over
+- **Readonly systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities
+   don't work as bindings. Proposal: allow `up` in readonly systems, since it only reads; let `order` take an index over
    the entity a reference names. (from the todo sample)
 - **Per-row CPU values in render systems:** a render body's tables are `{ count, bind }`, so it can't draw with a
   per-row object such as a texture's bind group, and a row body can't learn its GPU row. A consumer drawing an image
@@ -101,7 +101,7 @@ correctness, then optimization. Remove an item once it's decided or done.
 
 - **Persistence,** never part of the core: provided externally through custom traits (e.g. `persist: string`, the stable
   name saved data maps through, independent of thread ids) and changes finalizers watching by trait.
-- **A test helper awaiting the next tick.** Tests watch `clock` with an observer system today; a helper in
+- **A test helper awaiting the next tick.** Tests watch `clock` with a readonly system today; a helper in
   `src/observe` would do it (from the todo sample).
 
 ## Publishing as adobe/ecs
@@ -132,7 +132,7 @@ Once this repository is public as `adobe/ecs`:
   `up`, is skipped before its body, keeping its `lastRun`. The alternative, a condition, would run no row while the
   index is unchanged, whatever else changed. Recommended: accept.
 
-- **Re-adding an observer system:** a re-added observer system runs from the next pass, even for a run already queued,
+- **Re-adding a readonly system:** a re-added readonly system runs from the next pass, even for a run already queued,
   while a first add waits for registration. Recommended: accept.
 - **Indexes without ids on joined threads:** these now work instead of throwing; the documentation only required ids on
   keys. Recommended: accept.
@@ -156,14 +156,14 @@ Once this repository is public as `adobe/ecs`:
   ran its body without its failing, conditions and change filters skipping it changing nothing; a finalizer once a
   tick's sync points ran it without its failing; an index once a tick found no conflict in it; GPU work once a run of
   its system gave its scopes no error. Joined threads tell the world only of
-  failures, so their observer systems are reported once per placement and their finalizers once. Recommended: accept.
+  failures, so their readonly systems are reported once per placement and their finalizers once. Recommended: accept.
 - **What's no failure and isn't public:** commands that did nothing and tiers that waited for a joined thread are
   gathered only for the implementation's tests. Recommended: accept, until instrumentation is designed.
 - **What fails a run and what's out of band:** a run rejects for its systems and finalizers, its tails, its joined
-  threads gone, its unique indexes' conflicts, those its observer pass found included, and its own observer systems,
+  threads gone, its unique indexes' conflicts, those its readonly pass found included, and its own readonly systems,
   those on joined threads included; what those added throw, GPU errors, which
   come after the run, and kernels failing to load on the pool after it are out of band. A joined thread's `run` of its
-  own observer system rejects with what it threw there, its own `Error`, and a `run` of several of them resolves to
+  own readonly system rejects with what it threw there, its own `Error`, and a `run` of several of them resolves to
   nothing. Recommended: accept.
 - **The rejection's shape:** one failure's `Error`, `System "label" (id) failed: message` with what was thrown as its
   `cause`; several, an `AggregateError` of them; systems skipped after a failed tier named in the message. A joined
@@ -171,7 +171,7 @@ Once this repository is public as `adobe/ecs`:
 - **A `share` that fails is an unhandled rejection when nothing handles it,** as a run's is: a refused claim, a dispose
   while the thread joins, a port shared again while its thread lives, or that thread gone first, one leaving on the
   turn its join resolved included. Recommended: accept.
-- **`share` covers observer systems added before awaiting anything else after `join`:** the joined thread says it's
+- **`share` covers readonly systems added before awaiting anything else after `join`:** the joined thread says it's
   ready on its next turn of the event loop. One added after an import or a fetch reaches the runs after its add arrived;
   an idle rule covering those would wait an unbounded number of turns. Recommended: accept, as documented.
 - **A node `MessagePort` already closed** is told by `hasRef()` false once a message listener is set, since its
@@ -188,7 +188,7 @@ Once this repository is public as `adobe/ecs`:
   thenable a per-run, row or render body returned fails its system at once, never awaited, so no body holds the
   world's runs. Types can't tell a body returning `any`, a body typed `any`, nor an async function typed as returning
   `void`; the runtime check covers those. The build refuses `async` row bodies.
-- **A world's run of its observer system on a joined thread** waits for it to run there, resolving to its value as
+- **A world's run of its readonly system on a joined thread** waits for it to run there, resolving to its value as
   structured clone, or rejecting with what it threw there, which isn't reported out of band; a value that can't be
   posted fails it. A post owed to it that the thread gives back while the run waits is posted again at once.
   Recommended: accept.
@@ -213,6 +213,6 @@ Once this repository is public as `adobe/ecs`:
 - **Kernels don't read strings yet,** by type and check, and **an index keyed by strings is looked up only on the
   world's thread,** which keeps it by values. Recommended: accept for now; kernels would need the records' code units
   compared in the compiler, and joined lookups an index of interned records.
-- **An observer system on a joined thread that reads a string resource doesn't post copies of its resources:** nothing
+- **A readonly system on a joined thread that reads a string resource doesn't post copies of its resources:** nothing
   waits for such posts, and a handle there could outlive its record, so it posts as row systems do. Recommended: accept.
 

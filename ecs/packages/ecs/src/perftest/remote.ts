@@ -49,7 +49,7 @@ export const reorder = System.create([flip, reverse]);
 export const observerSeen = { last: 0, notified: 0 };
 
 /** On a joined thread, after each sync point that changed it: the observed resource. */
-export const observerCounter = System.create({ observer: true, resources: { changed: [counter] } }, ({ resources }) => {
+export const observerCounter = System.create({ readonly: true, resources: { changed: [counter] } }, ({ resources }) => {
     observerSeen.last = resources[counter];
     observerSeen.notified++;
 });
@@ -61,7 +61,7 @@ const sortedKeys = { keys: new Float64Array(0), entities: new Float64Array(0), p
  * On a joined thread, after each sync point: the entities in `order`, sorted from a scan of the index of every ranked
  * entity into reused arrays.
  */
-export const observerSelect = System.create({ observer: true, lookup: { all: { index: ranked } } }, ({ lookup }) => {
+export const observerSelect = System.create({ readonly: true, lookup: { all: { index: ranked } } }, ({ lookup }) => {
     const list = lookup.all();
     const count = list.length;
     if (sortedKeys.keys.length < count) {
@@ -99,12 +99,12 @@ export const retext = System.create([count, recaption]);
 export const reamounted = System.create([count, reamount]);
 
 /** On a joined thread, after each sync point: every row's caption, out of its record. */
-export const observerCaptions = System.create({ observer: true, components: { with: [caption] } }, row => {
+export const observerCaptions = System.create({ readonly: true, components: { with: [caption] } }, row => {
     observerSeen.last += row[caption].length;
     observerSeen.notified++;
 });
 /** On a joined thread, after each sync point: every row's amount. */
-export const observerAmounts = System.create({ observer: true, components: { with: [amount] } }, row => {
+export const observerAmounts = System.create({ readonly: true, components: { with: [amount] } }, row => {
     observerSeen.last += row[amount];
     observerSeen.notified++;
 });
@@ -129,7 +129,7 @@ const joinedFile = "./joined.js";
 /** The observed resource, read by an observer run. */
 const counterOf = async (world: World): Promise<number> => {
     let value = 0;
-    await world.run(System.create({ observer: true }, ({ resources }) => { value = resources[counter]; }));
+    await world.run(System.create({ readonly: true }, ({ resources }) => { value = resources[counter]; }));
     return value;
 };
 

@@ -75,7 +75,7 @@ describe("tails", () => {
         const { world, remote } = await joined({ loop: driver }, { [always]: true });
         await world.run(seed, { count: 10 });
         const counters: number[] = [];
-        const values = System.create({ observer: true }, ({ resources }) => { counters.push(resources[counter]); });
+        const values = System.create({ readonly: true }, ({ resources }) => { counters.push(resources[counter]); });
         world.add(ticked);
         world.add(values);
         await until(Observe.resource(world, counter), value => value >= 5);

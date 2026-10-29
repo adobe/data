@@ -22,7 +22,7 @@ const mix = System.create({ components: { with: [volume] } }, (row, { resources 
 });
 
 let heard = 0;
-const listen = System.create({ observer: true }, ({ resources }) => {
+const listen = System.create({ readonly: true }, ({ resources }) => {
     heard = resources[levels].size;
 });
 
@@ -31,7 +31,7 @@ const spawn = System.create(({ commands }) => {
     commands.spawn([volume])({ [volume]: 0.3 });
 });
 
-const countVoices = System.create({ observer: true }, ({ resources }) => resources[levels].size);
+const countVoices = System.create({ readonly: true }, ({ resources }) => resources[levels].size);
 
 /** Waits a turn of the event loop at a time until `done`, for two seconds at most. */
 const until = async (done: () => boolean): Promise<void> => {

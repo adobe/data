@@ -81,7 +81,7 @@ it("marks each of chapter 14's systems above its call with what it compiles to, 
         await statusOf(page);
         const lenses = await lensesReading(page, chipLabels);
         expect(lenses.map(lens => lens.line.trim().slice(0, 30))).toEqual([
-            "const move = System.create({ c", "const drift = System.create({ ", "const slow = System.create({ k", "const read = System.create({ o", "const spawn = System.create(({",
+            "const move = System.create({ c", "const drift = System.create({ ", "const slow = System.create({ k", "const read = System.create({ r", "const spawn = System.create(({",
         ]);
         expect(lenses[0]?.label).toBe("move: JS compiled, WASM compiled, WGSL if declared kernel: \"gpu\". Show what it compiles to.");
         await (await chipOf(page, "spawn")).hover();

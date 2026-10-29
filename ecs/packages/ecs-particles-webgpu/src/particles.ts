@@ -54,7 +54,7 @@ export const main = System.create({ systems: [spawn, gravity, integrate] });
 // Reads every position the frame left, in spawn order.
 const positions: Vec3[] = [];
 const read = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [position] },
 }, row => {
     positions.push(row[position]);

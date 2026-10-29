@@ -23,7 +23,7 @@ describe("World.create", () => {
         await world.run(spawn);
         await world.run(add);
         let seen = 0;
-        await world.run(System.create({ observer: true, components: { with: [count] } }, row => { seen = row[count]; }));
+        await world.run(System.create({ readonly: true, components: { with: [count] } }, row => { seen = row[count]; }));
         expect(seen).toBe(2);
     });
     it("rejects a key that isn't a resource, as worlds the implementation creates do", () => {
@@ -40,7 +40,7 @@ describe("World.join", () => {
         await shared;
         await joined.run(raise);
         let seen = 0;
-        await world.run(System.create({ observer: true }, ({ resources }) => { seen = resources[total]; }));
+        await world.run(System.create({ readonly: true }, ({ resources }) => { seen = resources[total]; }));
         expect(seen).toBe(7);
     });
 });

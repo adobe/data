@@ -16,8 +16,8 @@ import type { ComponentValues, LookupFunction, ResourceValues, Values } from './
 export type Members<D> =
     | Listed<Property<D, "components">, "with"> | Listed<Property<D, "components">, "added"> | Listed<Property<D, "components">, "changed">;
 
-/** Whether a declaration only reads: an observer or a render system. */
-type Reading<D> = D extends { readonly observer: true } | { readonly shader: object } ? true : false;
+/** Whether a declaration only reads: one declared `readonly`, or a render system. */
+type Reading<D> = D extends { readonly readonly: true } | { readonly shader: object } ? true : false;
 
 /** The components a declaration's rows hold only where an entity has them. */
 export type Optional<D> = Exclude<Listed<Property<D, "components">, "optional">, Members<D>>;
@@ -51,8 +51,8 @@ type Is<D> = Listed<Property<D, "resources">, "is">;
 
 /**
  * What a body uses besides its row: every resource, its lookups by name, the resources it may reduce into, its
- * parent's values with `up`, and its commands, there for every system but a GPU kernel, a render system and an
- * observer system. The build infers which of them the body reads and writes.
+ * parent's values with `up`, and its commands, there for every system but a GPU kernel, a render system and one
+ * declared `readonly`. The build infers which of them the body reads and writes.
  */
 export type Context<D extends Declaration> =
     {
@@ -66,7 +66,7 @@ export type Context<D extends Declaration> =
         /** The parent's values the body reads, or null for a row without a parent or whose parent lacks one of them. */
         readonly up: ComponentValues | null;
     } : {})
-    & (D extends { readonly kernel: "gpu" } | { readonly shader: object } | { readonly observer: true } ? {} : { readonly commands: Commands });
+    & (D extends { readonly kernel: "gpu" } | { readonly shader: object } | { readonly readonly: true } ? {} : { readonly commands: Commands });
 
 /**
  * `(row, context, input)` for a system with `components`, `(context, input)` for one without, and `(gpu, context)` for

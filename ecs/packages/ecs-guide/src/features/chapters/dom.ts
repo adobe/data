@@ -17,7 +17,7 @@ declare module "@adobe/ecs" {
 
 /** Lists the chapters in the navigation, in order, whenever a chapter is added. */
 export const bindChapters = System.create({
-    observer: true,
+    readonly: true,
     resources: { is: [nav] },
     lookup: { chapters: { index: inOrder, changed: true } },
 }, ({ resources, lookup }) => {
@@ -32,7 +32,7 @@ export const bindChapters = System.create({
 
 /** Shows the shown chapter: selected in the navigation, its prose, and its title in the page's. */
 export const bindShown = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, slug, chapterNumber, title, prose], changed: [shown] },
     resources: { is: [nav, proseElement] },
 }, (row, { resources }) => {

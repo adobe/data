@@ -69,7 +69,7 @@ and so are the builds, a service that checks and compiles off the main thread an
   are rounded panels on the base background, a gutter apart, and the editor's colors are Spectrum's palette, whose
   tokens flip with the theme.
 
-Each feature's `model.ts` holds systems with input, one per thing that happens, and `dom.ts` the observer systems that
+Each feature's `model.ts` holds systems with input, one per thing that happens, and `dom.ts` the readonly systems that
 bind elements, with the ticking systems a feature needs, as one composite the app adds. `events.ts` turns DOM events,
 the builds' results and the frame's messages into runs. Typing stays smooth: each keystroke is one run and the
 bindings it changes, while checking, compiling and running happen in workers and the frame, after the code has been

@@ -3,23 +3,23 @@ import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
 
 /**
- * A world. Systems read and change it; observer systems read it after each run's and tick's sync point. Every member's
+ * A world. Systems read and change it; readonly systems read it after each run's and tick's sync point. Every member's
  * type is named from the package root, so declarations a consumer emits for its results name no internal module.
  */
 export type World = {
     /**
      * The one way to change state. Runs are sequential in call order; physically, any that don't conflict overlap. Each
-     * runs a system or composite, ending in a sync point, then observer systems, the run's and those added, and
+     * runs a system or composite, ending in a sync point, then readonly systems, the run's and those added, and
      * resolves to what a per-run body returns: a system without components resolves to its body's value, or
      * `undefined` when its body was skipped, and any other system or composite to nothing. So a one-off read is a run
-     * of an observer system returning what it read; one that runs on a joined thread, as it reads objects there, runs
-     * there before the run resolves, to its value as structured clone. A run of observer systems alone runs them once
+     * of a readonly system returning what it read; one that runs on a joined thread, as it reads objects there, runs
+     * there before the run resolves, to its value as structured clone. A run of readonly systems alone runs them once
      * after an empty sync point, and doesn't wake the loop.
      *
      * When a system or finalizer of the run fails, later tiers are skipped, the sync point still applies what was done,
-     * and once its observer systems ran the run rejects with an `Error` naming each failure, its system's label and id,
+     * and once its readonly systems ran the run rejects with an `Error` naming each failure, its system's label and id,
      * message and cause. It rejects too when the run can't happen or finish: registration fails, the world is disposed,
-     * its GPU device is lost, or its sync point can't apply a command's value. What fails after it, an observer system
+     * its GPU device is lost, or its sync point can't apply a command's value. What fails after it, a readonly system
      * added or GPU work, is reported out of band, as ticks' failures are (see `add`).
      */
     run<I, R>(system: System<I, R>, ...input: Input<NoInfer<I>>): Promise<R>;
@@ -27,9 +27,9 @@ export type World = {
      * Adds a system to every tick, from the next one on, ordered with those already added by its constraints, as a
      * composite's members are. A tick runs on a beat of the `cadence` resource where `always` is set, `wake` is due or
      * a run arrived since the last tick, and only while some system is added. Throws for a system with no ordering path
-     * to one already added that conflicts with it. An observer system runs after every run's and tick's sync point
+     * to one already added that conflicts with it. A readonly system runs after every run's and tick's sync point
      * instead. It never conflicts and doesn't count as an added system for ticking. On a joined thread `add` takes only
-     * observer systems, whose keys need ids: each runs on that thread after the world's sync points, once for the
+     * readonly systems, whose keys need ids: each runs on that thread after the world's sync points, once for the
      * newest when the thread fell behind, reading structs and the objects of the threads it fills as of one sync point.
      *
      * What added systems throw, and what fails in ticks, is reported out of band on the world's thread, as an `Error`
@@ -43,14 +43,14 @@ export type World = {
      * released. A system added both alone and within an added composite stays until both are removed; constraints
      * naming a removed system are ignored. Removing a value that isn't added does nothing. Throws, removing nothing,
      * when the systems left would conflict with no ordering path between them, as `add` does. On a joined thread it
-     * takes only observer systems.
+     * takes only readonly systems.
      */
     remove(system: System<void>): void;
     /**
      * Lets another thread join this world through `port`, one end of a channel to it, of the browser or node: a
      * `MessagePort`, a `Worker`, or a worker's own scope, `self` or node's `parentPort`. That thread joins through the
      * other end, claiming the logical threads it fills. Resolves once it has joined: the threads it claims are its own,
-     * and the observer systems it added as its join resolved, before awaiting anything else, are added, so a run
+     * and the readonly systems it added as its join resolved, before awaiting anything else, are added, so a run
      * started afterwards runs on it and reaches them; one it adds later reaches the runs after its add arrived.
      * Rejects with an `Error` saying why it didn't join: the world refused its claim, as of a thread claimed twice, the
      * world was disposed, the port is shared already, or that thread ended first, as the platform reports it: a

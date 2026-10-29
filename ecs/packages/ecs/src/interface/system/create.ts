@@ -50,10 +50,10 @@ type GpuKernel = {
 };
 
 /**
- * An observer system only reads, after a sync point: its row and resources are read-only, and it never compiles to a
+ * A readonly system only reads, after a sync point: its row and resources are read-only, and it never compiles to a
  * kernel, has no `up`, and is ordered with nothing. That it takes no input is checked at its body.
  */
-type Observer = {
+type Readonly = {
     readonly kernel?: false;
     readonly up?: never;
     readonly before?: never;
@@ -97,7 +97,7 @@ type Validate<D extends Declaration> =
     // GPU kernels don't read components an archetype may lack yet.
     & (D extends { readonly components: { readonly optional: readonly [unknown, ...unknown[]] } }
         ? { readonly kernel?: boolean | { readonly "error: a GPU kernel can't have optional components yet": true } } : {})
-    & (D extends { readonly observer: true } ? Observer : {})
+    & (D extends { readonly readonly: true } ? Readonly : {})
     & (D extends { readonly target: string } ? Targeted : {})
     & (D extends { readonly target: string } ? Property<D, "components"> extends undefined ? { readonly target?: { readonly "error: a system on one entity runs on its row, so it needs components": true } } : {} : {})
     // A body's input is the type of its parameter after its context, not part of its declaration.
@@ -109,7 +109,7 @@ type EntityFields<I> = { [K in keyof I]-?: [Exclude<I[K], undefined>] extends [E
 /**
  * What a declaration requires of the input its body takes, checked at the body, since the input is known only once the
  * body is: a target names an entity field of it, and a system with input doesn't filter on added or changed, as its
- * runs pass different input, nor is it an observer. Every check passes for `never`, the input before the body is
+ * runs pass different input, nor is it a readonly system. Every check passes for `never`, the input before the body is
  * inferred.
  */
 type Checks<D, I> = [I] extends [never] ? unknown :
@@ -119,7 +119,7 @@ type Checks<D, I> = [I] extends [never] ? unknown :
         : unknown)
     & ([I] extends [undefined] ? unknown
         : (D extends { readonly components: { readonly added: object } | { readonly changed: object } } ? { readonly "error: a system with input can't filter on added or changed, as its runs pass different input; pass it through a resource": true } : unknown)
-        & (D extends { readonly observer: true } ? { readonly "error: an observer system takes no input": true } : unknown));
+        & (D extends { readonly readonly: true } ? { readonly "error: a readonly system takes no input": true } : unknown));
 
 /** The body of a system that declares nothing, which runs once per run with its resources and commands. */
 type Alone = (context: Context<{}>) => void;
@@ -144,10 +144,10 @@ type Checked<C> = C extends Alone ? ReturnsNoPromise<C> : C extends CompositeDec
  * input, with every field of theirs. Throws if a system names a key that isn't registered as its kind, its body writes
  * a reference, a lookup's rows are read where it writes them or it goes through an index keyed by what it writes, its
  * rows are ordered by an index it isn't sorted or keyed by what it writes, its object components and resources live on
- * different threads, or its reductions, conditions, `up`, `order` or placement can't hold, or it's an observer and
+ * different threads, or its reductions, conditions, `up`, `order` or placement can't hold, or it's a readonly system and
  * writes, reduces, takes input, is a kernel, has `up` or is ordered; if the build couldn't follow how its body uses its
  * resources, lookups or parent; or if a composite's member isn't a system a constructor returned, or two members
- * declare an input field with different schemas. A composite's observer members run after its sync point, ordered
+ * declare an input field with different schemas. A composite's readonly members run after its sync point, ordered
  * with nothing.
  *
  * A run of a system without components resolves to what its body returns, or `undefined` when its conditions, resource
@@ -180,7 +180,7 @@ export function create(first: Declaration | Leaf["body"] | readonly System<unkno
 
 /** A declaration as the world takes it, with what the build inferred its body uses. */
 const resolve = (what: string, declared: Declaration, access: ReturnType<typeof accessOf>): Resolved => {
-    const reading = declared.observer === true;
+    const reading = declared.readonly === true;
     const { components, lookup, up, resources, ...rest } = declared;
     const uses = resourceUses(what, access, resources?.is);
     // What `where`'s predicates read counts as the system's reads, for its order, conflicts and placement.

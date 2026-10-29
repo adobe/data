@@ -26,14 +26,14 @@ const count = System.create({ components: { with: [cell, crowded] }, lookup: { a
 
 const byScore = Index.create({ key: [score], sorted: true, components: { with: [player] } });
 
-const leaders = System.create({ observer: true, lookup: { scores: { index: byScore } } }, ({ lookup }) => {
+const leaders = System.create({ readonly: true, lookup: { scores: { index: byScore } } }, ({ lookup }) => {
     const winners: string[] = [];
     const high = lookup.scores({ ">=": 90 });
     for (let i = 0; i < high.length; i++) winners.push(high.at(i)[player]);
     return winners;
 });
 
-const list = System.create({ observer: true, components: { with: [player, score] }, order: byScore }, row => {
+const list = System.create({ readonly: true, components: { with: [player, score] }, order: byScore }, row => {
     console.log(row[player], row[score]);
 });
 
@@ -42,12 +42,12 @@ const find = System.create({ lookup: { byId: { index: byServerId } } }, ({ looku
     lookup.byId(input.id)?.[player] ?? null);
 
 const players = Index.create({ key: [], components: { with: [player] } });
-const countPlayers = System.create({ observer: true, lookup: { players: { index: players, changed: true } } }, ({ lookup }) => {
+const countPlayers = System.create({ readonly: true, lookup: { players: { index: players, changed: true } } }, ({ lookup }) => {
     console.log("players", lookup.players().length);
 });
 
 const crowds: number[] = [];
-const readCrowds = System.create({ observer: true, components: { with: [crowded] } }, row => {
+const readCrowds = System.create({ readonly: true, components: { with: [crowded] } }, row => {
     crowds.push(row[crowded]);
 });
 

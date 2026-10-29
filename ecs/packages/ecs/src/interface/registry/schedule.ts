@@ -28,15 +28,15 @@ const checkInputs = (leaves: readonly Leaf[]): void => {
 
 /**
  * Leaves in run order, grouped into tiers. Leaves in one tier have no ordering path between them. `reductions` are the
- * resources its leaves reduce into, each with how many of them contribute. `observer` are its observer leaves, in no
+ * resources its leaves reduce into, each with how many of them contribute. `observer` are its readonly leaves, in no
  * tier: they run after its sync point, ordered with nothing.
  */
 export type Schedule = { readonly tiers: readonly (readonly Leaf[])[]; readonly reductions: ReadonlyMap<Key, number>; readonly observer: readonly Leaf[] };
 
 export const isLeaf = (system: Definition): system is Leaf => system.kind !== "composite";
 
-/** Whether a system is an observer leaf, which runs after a sync point rather than in a tier. */
-export const isObserver = (system: Definition): system is Leaf & { readonly declaration: { readonly observer: true } } => system.kind !== "composite" && system.declaration.observer === true;
+/** Whether a system is a readonly system leaf, which runs after a sync point rather than in a tier. */
+export const isObserver = (system: Definition): system is Leaf & { readonly declaration: { readonly readonly: true } } => system.kind !== "composite" && system.declaration.readonly === true;
 
 /** Each system is an interval, from its start node to its end node. */
 const start = (unit: number): number => 2 * unit;
@@ -65,7 +65,7 @@ const graphOf = (root: Definition): Graph => {
     };
     visit(root);
     const successors = units.flatMap(() => [new Set<number>(), new Set<number>()]);
-    // An observer system is ordered with nothing, so constraints naming one are ignored.
+    // A readonly system is ordered with nothing, so constraints naming one are ignored.
     const resolve = (systems: readonly object[] | undefined): readonly number[] =>
         (systems ?? []).flatMap(system => {
             const unit = indexOf.get(firstItemOf(system));

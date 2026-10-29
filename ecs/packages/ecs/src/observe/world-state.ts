@@ -116,7 +116,7 @@ const ignore = (): void => {
 };
 
 /** Runs nothing: a run of it resolves while its world lives. */
-const alive = System.create(labelled({ observer: true }, "Observe/alive"), () => {});
+const alive = System.create(labelled({ readonly: true }, "Observe/alive"), () => {});
 
 /**
  * What a rejected run of the factories' own does: nothing for a disposed world, whose first values never come, and for
@@ -232,7 +232,7 @@ export const stateOf = (world: World): WorldState => {
         deliveries: [],
         idle: [],
         rejected: rejectedOf(world),
-        deliver: System.create(labelled({ observer: true }, "Observe/deliver"), () => {
+        deliver: System.create(labelled({ readonly: true }, "Observe/deliver"), () => {
             const delivery = created.deliveries.shift();
             if (delivery === undefined) return;
             created.delivered = delivery.batch;
@@ -243,7 +243,7 @@ export const stateOf = (world: World): WorldState => {
     states.set(world, created);
     if (joined) return created;
     // Added before any shape's system, so in each pass it counts the pass before they run.
-    world.add(System.create(labelled({ observer: true }, "Observe/maintain"), () => {
+    world.add(System.create(labelled({ readonly: true }, "Observe/maintain"), () => {
         created.pass++;
         if (created.idle.length > 0) sweepShapes(created);
     }));

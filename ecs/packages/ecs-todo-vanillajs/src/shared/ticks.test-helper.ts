@@ -4,7 +4,7 @@ import { System, clock, type World } from "@adobe/ecs";
 const waiting: (() => void)[] = [];
 
 /** Passes after each tick, the only passes that change the clock, and on its first. */
-const ticked = System.create({ observer: true, resources: { changed: [clock] } }, () => {
+const ticked = System.create({ readonly: true, resources: { changed: [clock] } }, () => {
     for (const resolve of waiting.splice(0)) resolve();
 });
 

@@ -129,14 +129,14 @@ const createShape = (state: WorldState, byShape: Map<string, EntityShape>, id: s
     let finders: Finders | null = null;
     let source: object | null = null;
     const system = optional.length === 0
-        ? System.create(labelled({ observer: true, lookup: { presence: { with: required, changed: required }, values: { with: required }, members: { index: membersOf(required), changed: required } } }, name, { lookup: { values: required } }), ({ lookup }) => {
+        ? System.create(labelled({ readonly: true, lookup: { presence: { with: required, changed: required }, values: { with: required }, members: { index: membersOf(required), changed: required } } }, name, { lookup: { values: required } }), ({ lookup }) => {
             if (source !== lookup || finders === null) {
                 source = lookup;
                 finders = { presence: lookup.presence, values: lookup.values, optional: noOptional };
             }
             pass(lookup.members().changed, finders);
         })
-        : System.create(labelled({ observer: true, lookup: optionalLookups(required, optional) }, name, { lookup: optionalReads(required, optional) }), ({ lookup }) => {
+        : System.create(labelled({ readonly: true, lookup: optionalLookups(required, optional) }, name, { lookup: optionalReads(required, optional) }), ({ lookup }) => {
             if (source !== lookup || finders === null) {
                 source = lookup;
                 finders = { presence: lookup.presence, values: lookup.values, optional: (index, entity) => lookup[index](entity) };

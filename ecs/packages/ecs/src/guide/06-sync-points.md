@@ -10,5 +10,5 @@ A run ends at a *sync point*, where its commands apply.
 A composite is one run with one sync point. In [`frame`](06-sync-points.ts#L25), `count` runs `after: [spawn]` but
 before the spawned entities exist, so it counts none; run alone, after the sync point, it counts the hero.
 
-An observer added to a world runs after the sync point of every run and tick, reading what it left:
+A readonly system added to a world runs after the sync point of every run and tick, reading what it left:
 [`watch`](06-sync-points.ts#L39-L41) logs the hero after the run that spawned it.

@@ -73,7 +73,7 @@ const copySpeedKernel = System.create({
     if (found !== null) row[order] = found[velocity] === undefined ? -found[position] : found[velocity];
 });
 const speeds: number[] = [];
-const readSpeeds = System.create({ observer: true, components: { with: [other, order] } }, row => { speeds.push(row[order]); });
+const readSpeeds = System.create({ readonly: true, components: { with: [other, order] } }, row => { speeds.push(row[order]); });
 
 /** What finalizers read of rows that stopped, on the world's thread and on the markers'. */
 const stopped: string[] = [];
@@ -87,7 +87,7 @@ export const finalizeThere = Finalizer.create({ components: { with: [position, m
 const despawnAll = System.create({ components: { with: [position] } }, (row, { commands }) => { commands.despawn(row.entity); });
 
 let seen: (readonly [number, number | undefined, string | undefined])[] = [];
-const read = System.create({ observer: true, components: { with: [position], optional: [velocity, label] } }, row => {
+const read = System.create({ readonly: true, components: { with: [position], optional: [velocity, label] } }, row => {
     seen.push([row[position], row[velocity], row[label]]);
 });
 const sorted = () => [...seen].sort((a, b) => a[0] - b[0]);
@@ -109,7 +109,7 @@ const lookedThere = System.create({ components: { with: [position, marker] }, lo
 });
 // An observer system there reads copies of rows across archetypes, which tell which have the optional component.
 let watched: (readonly [number, number | undefined])[] = [];
-const watchThere = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => {
+const watchThere = System.create({ readonly: true, components: { with: [position], optional: [velocity] } }, row => {
     watched.push([row[position], row[velocity]]);
 });
 // A tail there: it writes only its thread's objects, so it runs after the sync point, reading copies of rows.
@@ -165,7 +165,7 @@ const markEither = System.create({ kernel: true, components: { with: [mark], opt
     if (row[far] !== undefined) row[mark] = 2;
 });
 const marked: number[] = [];
-const watchStamped = System.create({ observer: true, components: { with: [mark], changed: [mark] } }, row => { marked.push(row[mark]); });
+const watchStamped = System.create({ readonly: true, components: { with: [mark], changed: [mark] } }, row => { marked.push(row[mark]); });
 const clearNear = System.create({ kernel: false, components: { with: [mark], optional: [near] } }, row => {
     if (row[near] !== undefined) row[near] = undefined;
 });
@@ -195,7 +195,7 @@ describe("optional components", () => {
 
     it("pass change filters on other components, and are stamped changed when written", async () => {
         const changed: number[] = [];
-        const watch = System.create({ observer: true, components: { with: [velocity], changed: [velocity] } }, row => { changed.push(row[velocity]); });
+        const watch = System.create({ readonly: true, components: { with: [velocity], changed: [velocity] } }, row => { changed.push(row[velocity]); });
         const speedUp = System.create({ components: { with: [position], optional: [velocity] } }, row => {
             const speed = row[velocity];
             if (speed !== undefined && row[position] > 50) row[velocity] = speed + 1;
@@ -212,7 +212,7 @@ describe("optional components", () => {
     it("run in an index's order across archetypes that have them and don't", async () => {
         const byOrder = Index.create({ key: [order], sorted: true });
         const ordered: (number | undefined)[] = [];
-        const list = System.create({ observer: true, components: { with: [position], optional: [velocity] }, order: byOrder }, row => {
+        const list = System.create({ readonly: true, components: { with: [position], optional: [velocity] }, order: byOrder }, row => {
             ordered.push(row[velocity]);
         });
         await using world = inline();
@@ -297,7 +297,7 @@ describe("optional components", () => {
         await world.run(spawnMarked);
         stoppedThere.length = 0;
         await world.run(despawnAll);
-        await remote.run(System.create({ observer: true }, () => {}));
+        await remote.run(System.create({ readonly: true }, () => {}));
         expect(stoppedThere.sort()).toEqual(["10:5:null", "1:none:null"]);
         await remote.dispose();
         await world.dispose();

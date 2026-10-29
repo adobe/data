@@ -24,7 +24,7 @@ export type FromContainedWorker =
 
 const channel = scopeChannel<FromContainedWorker, ToContainedWorker>();
 let remote: World | null = null;
-const placed = System.create({ observer: true }, () => {});
+const placed = System.create({ readonly: true }, () => {});
 
 channel.onMessage(async message => {
     if ("protocol" in message) return;

@@ -42,7 +42,7 @@ const caught: number[] = [];
 export const catchUp = System.create({ kernel: false, components: { with: [position], changed: [position], where: { [cell]: (at, { resources }) => at[0] === resources[camera] } } }, row => { caught.push(row[position]); });
 // On a joined thread.
 const heard: number[] = [];
-export const hear = System.create({ observer: true, components: { with: [cell, position], where: { [cell]: at => at[0] === 50 } } }, row => { heard.push(row[cell][0] * 1000 + row[position]); });
+export const hear = System.create({ readonly: true, components: { with: [cell, position], where: { [cell]: at => at[0] === 50 } } }, row => { heard.push(row[cell][0] * 1000 + row[position]); });
 
 /** Moves an entity to cell `[x, 0]`. */
 const step = System.create({}, ({ commands }, input: { readonly entity: Entity; readonly x: number }) => { commands.add(input.entity, cell, [input.x, 0]); });
@@ -59,7 +59,7 @@ const spawnAt = (world: ReturnType<typeof inline>, x: number, components: readon
 /** Every row's cell and position, by position. */
 const cellsOf = async (world: ReturnType<typeof inline>): Promise<readonly string[]> => {
     const found: [number, string][] = [];
-    await world.run(System.create({ observer: true, components: { with: [cell, position] } }, row => { found.push([row[position], `${row[cell][0]}:${row[position]}`]); }));
+    await world.run(System.create({ readonly: true, components: { with: [cell, position] } }, row => { found.push([row[position], `${row[cell][0]}:${row[position]}`]); }));
     return found.sort((a, b) => a[0] - b[0]).map(([, text]) => text);
 };
 
@@ -132,7 +132,7 @@ describe("reclaiming archetypes of shared values", () => {
         found.length = 0;
         await world.run(System.create({ kernel: false, components: { with: [cell, position] } }, row => { found.push(`body ${row[cell][0]}`); }));
         await world.run(copyCell);
-        await world.run(System.create({ observer: true, components: { with: [cell, seen] } }, row => { found.push(`kernel ${row[seen]}`); }));
+        await world.run(System.create({ readonly: true, components: { with: [cell, seen] } }, row => { found.push(`kernel ${row[seen]}`); }));
         await world.run(atFifty);
         await world.run(atLast);
         expect(found.sort()).toEqual(["body 50", `body ${emptyFor + 2}`, "kernel 50", `kernel ${emptyFor + 2}`, "value 0", "where 100"].sort());

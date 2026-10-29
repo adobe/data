@@ -19,7 +19,7 @@ declare module '@adobe/ecs' {
 }
 
 // A run resolves to its per-run body's value: a one-off read is an observer system returning it.
-const count = System.create({ observer: true }, ({ resources }) => resources[frames]);
+const count = System.create({ readonly: true }, ({ resources }) => resources[frames]);
 check<Equal<typeof count, System<undefined, number>>>();
 const counted: Promise<number> = world.run(count);
 // @ts-expect-error a run of it resolves to a number
@@ -32,7 +32,7 @@ const scaled = System.create({}, ({ resources }, input: { readonly by: number })
 const scaledValue: Promise<{ scaled: number }> = world.run(scaled, { by: 2 });
 
 // A body that may be skipped, as one whose conditions or resource change filters can fail, may give undefined.
-const changedFrames = System.create({ observer: true, resources: { changed: [frames] } }, ({ resources }) => resources[frames]);
+const changedFrames = System.create({ readonly: true, resources: { changed: [frames] } }, ({ resources }) => resources[frames]);
 check<Equal<typeof changedFrames, System<undefined, number | undefined>>>();
 const whileDevice = System.create({ resources: { is: [gpuDevice] } }, () => "drawn");
 const drawn: Promise<string | undefined> = world.run(whileDevice);
@@ -68,7 +68,7 @@ void [counted, notText, nextValue, scaledValue, drawn, rows, composite, input, n
 // @ts-expect-error a body returns no promise
 System.create(() => Promise.resolve(1));
 // @ts-expect-error a body returns no promise
-System.create({ observer: true }, () => Promise.resolve(1));
+System.create({ readonly: true }, () => Promise.resolve(1));
 // @ts-expect-error a body returns no promise, a row system's neither
 System.create({ components: { with: [position] } }, () => Promise.resolve());
 // @ts-expect-error a body returns no promise, a render system's neither

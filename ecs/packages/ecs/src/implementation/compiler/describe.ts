@@ -30,7 +30,7 @@ export type Backend =
  * What runs a system: over every matched row, once per run, as an observer, on one entity its input names (`target`),
  * or as a render system.
  */
-export type SystemKind = "row" | "per-run" | "observer" | "target" | "render";
+export type SystemKind = "row" | "per-run" | "readonly" | "target" | "render";
 
 /**
  * A system of a module as the build compiles it: its call's offsets in the code transformed, the binding it's
@@ -427,7 +427,7 @@ export const describeSystems = async (sites: TransformedSites, format: (code: st
         const kernel: boolean | "gpu" | null = literal === true || literal === false ? literal : literal === "gpu" ? "gpu" : null;
         const kind: SystemKind = created === "render" ? "render"
             : declaration === undefined ? "per-run"
-            : propertyOf(declaration, "observer") !== null ? "observer"
+            : propertyOf(declaration, "readonly") !== null ? "readonly"
             : propertyOf(declaration, "target") !== null ? "target"
             : propertyOf(declaration, "components") !== null ? "row" : "per-run";
         const base = { start: node.start, end: node.end, binding: bindings.get(node) ?? null, kind, kernel };
@@ -442,7 +442,7 @@ export const describeSystems = async (sites: TransformedSites, format: (code: st
             ? threadOf(declaration, body, kind === "render" ? positionsOf("render", declaration) : positionsOf("system", declaration)) : "world";
         if (kind === "render") return asWritten("a render system runs as written, recording GPU work with shaders of your own; `Gpu.wgsl` gives them their accessors", "world");
         if (kind === "per-run") return asWritten("per-run systems run as written; only row systems compile", written());
-        if (kind === "observer") return asWritten("an observer runs as written, reading the settled state after the run's last sync point; only row systems that aren't observers compile", written());
+        if (kind === "readonly") return asWritten("a readonly system runs as written, reading the settled state after the run's last sync point; only row systems that aren't readonly compile", written());
         if (kind === "target") return asWritten("a system with `target` runs as written, once, on the entity its input names; only systems over every matched row compile", written());
         if (declaration === undefined || body === undefined || body.type === "SpreadElement" || !isFunction(body)) {
             return asWritten(declaration === undefined ? "its declaration isn't written in its call, so the build can't read whether it's a kernel" : "its body isn't a function written in place or bound at module scope, so the build can't read it", "world");

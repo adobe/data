@@ -72,7 +72,7 @@ export type Observers = "factory" | "observer";
 const observer: { entity: Entity | null; seen: ((odd: boolean, held: boolean, text: string | null | undefined) => void) | null } = { entity: null, seen: null };
 
 /** After each sync point, on the joined thread: the watched entity's phase and caption, and whether it's flagged. */
-export const observerWatch = System.create({ observer: true, lookup: { values: { with: [phase, caption] }, flagged: { with: [flag] } } }, ({ lookup }) => {
+export const observerWatch = System.create({ readonly: true, lookup: { values: { with: [phase, caption] }, flagged: { with: [flag] } } }, ({ lookup }) => {
     if (observer.entity === null) return;
     const row = lookup.values(observer.entity);
     if (row === null) return;

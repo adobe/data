@@ -38,7 +38,7 @@ const focusNearest = (hiding: Element, chosen: Filter): void => {
  * README).
  */
 export const filterRows = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [done, row], changed: [done, row] },
     resources: { changed: [filter] },
 }, (item, { resources }) => {
@@ -50,7 +50,7 @@ export const filterRows = System.create({
 });
 
 export const bindFilters = System.create({
-    observer: true,
+    readonly: true,
     resources: { changed: [filter], is: [filters] },
 }, ({ resources }) => {
     resources[filters].filter = resources[filter];

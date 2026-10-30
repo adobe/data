@@ -19,7 +19,7 @@ type Read = {
 };
 const read: Read[] = [];
 const readChapters = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [slug, chapterNumber, sources, revision, fileShown, revealed, runState, logged, page, typeProblems, buildProblems, tab, consoleSeen], optional: [shown] },
 }, row => {
     read.push({
@@ -190,7 +190,7 @@ it("frames a chapter shown again only once its new revision compiles, not its la
 /** What a chapter's systems compile to, and the system opened, as tests read them. */
 const compiledOf = async (world: World): Promise<unknown> => {
     let found: unknown = null;
-    await world.run(System.create({ observer: true, components: { with: [shown, described, systemOpened, tab, tabPicked] } }, row => {
+    await world.run(System.create({ readonly: true, components: { with: [shown, described, systemOpened, tab, tabPicked] } }, row => {
         found = { described: row[described], opened: row[systemOpened], tab: row[tab], picked: row[tabPicked] };
     }));
     return found;

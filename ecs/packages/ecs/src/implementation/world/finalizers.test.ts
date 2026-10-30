@@ -137,7 +137,7 @@ describe("finalizers", () => {
         const reads = System.create({}, ({ resources }) => { void resources[level]; });
         // Read after every run, as a read through a run of its own would apply the commands left for it.
         let seen: string | null = null;
-        const watch = System.create({ observer: true, lookup: { labels: { with: [label] } } }, ({ lookup }) => {
+        const watch = System.create({ readonly: true, lookup: { labels: { with: [label] } } }, ({ lookup }) => {
             seen = lookup.labels(other)?.[label] ?? null;
         });
         const world = createWorld({ [workers]: 0 });

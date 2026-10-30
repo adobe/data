@@ -1,8 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Commands } from '../../interface/system/commands.js';
-import { addCommand, despawnCommand, pushCommand, pushComponent, removeCommand, type CommandBuffer } from './buffer.js';
+import { addCommand, createBuffer, despawnCommand, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
+import { reserve } from './entities.js';
 import { listShapeOf, presetSpawnerOf, spawnerOf, type ListShape } from './lists.js';
 import { commandIdOf, idOf, storedShared, type Key, type State } from './state.js';
+import { spawnTables } from './tables.js';
+import { declarationOf, isWorldWritten, kindOf, labelOf, threadOfDeclaration, whyUnregistered } from '../../interface/registry/index.js';
+import { matchesSchema } from '../../interface/registry/schemas.js';
 
 const collect = (state: State, buffer: CommandBuffer, key: Key, value: unknown): void => {
     if (value !== undefined) pushComponent(buffer, idOf(state, key), value);
@@ -44,6 +48,38 @@ const addShared = (state: State, buffer: CommandBuffer, entity: number, shape: L
     for (let k = 0; k < keys.length; k++) pushComponent(buffer, ids[k], values[k]);
 };
 
+/**
+ * Throws for a key of `resources` that isn't a resource, is one only the world writes or one living on another thread,
+ * or is given a value its schema doesn't take.
+ */
+const checkResources = (resources: object): void => {
+    for (const key of Object.getOwnPropertySymbols(resources)) {
+        const fail = (message: string): never => { throw new Error(`commands.spawnTables: "${labelOf(key)}" ${message}.`); };
+        if (kindOf(key) !== "resource") fail(`isn't a registered resource: ${whyUnregistered(key)}`);
+        if (isWorldWritten(key)) fail("is written only by the world");
+        const declaration = declarationOf(key);
+        if (declaration === undefined) continue;
+        const thread = threadOfDeclaration(declaration);
+        if (thread !== null && thread !== "world") fail(`lives on thread "${thread}", not the world's`);
+        if (declaration.type !== undefined && !matchesSchema(declaration.type, Reflect.get(resources, key))) fail("is given a value its type doesn't take");
+    }
+};
+
+/**
+ * Queues `resources`' values for the sync point as the world's own change to its resource entity, which it reserves
+ * when the world has none yet: a buffer of their own, since the sync point skips systems' commands to that entity.
+ */
+const queueResources = (state: State, resources: object): void => {
+    if (Object.getOwnPropertySymbols(resources).length === 0) return;
+    const buffer = createBuffer();
+    if (state.resourceEntity < 0) {
+        state.resourceEntity = reserve(state.entities);
+        pushValues(state, buffer, spawnCommand, state.resourceEntity, resources);
+    }
+    else pushValues(state, buffer, addCommand, state.resourceEntity, resources);
+    state.queued.push({ buffer, guarded: false });
+};
+
 /** Values of a list add given none, which only an untyped caller does. */
 const empty = {};
 
@@ -82,6 +118,13 @@ export const createCommands = (state: State, target: { readonly buffer: CommandB
             const value: unknown = Reflect.get(given, keys[k]);
             pushComponent(buffer, ids[k], value === undefined ? starts[k] : value);
         }
+    },
+    spawnTables: (tables, resources) => {
+        if (resources === undefined) return spawnTables(state, tables);
+        checkResources(resources);
+        const spawned = spawnTables(state, tables);
+        queueResources(state, resources);
+        return spawned;
     },
     remove: (entity: number, components: symbol | readonly symbol[]) => {
         const { buffer } = target;

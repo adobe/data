@@ -8,8 +8,8 @@ it in parallel.
   component in `with` and none in `not`, so the `frozen` one stays put. Values are replaced whole, never edited in
   place.
 - **Systems without components**, such as [`count`](03-systems.ts#L35-L37), run once per run.
-- **Observer systems**, `observer: true`, only read. They see what the runs before them left. Run one to read the
-  world, or add one to react to it.
+- **Readonly systems**, `readonly: true`, only read. Run one to read the world, as [`read`](03-systems.ts#L40-L42)
+  does, or add one to react to it. [Sync points](06-sync-points.md) says when and where they run.
 - **Optional components**, `optional: [velocity]`, are in the row where the entity has them and `undefined` where it
   doesn't. They never narrow which entities a system runs on; [`readSpeeds`](03-systems.ts#L44-L47) still reads the
   entity without a velocity. Only commands add and remove them.

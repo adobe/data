@@ -37,16 +37,16 @@ const count = System.create({}, ({ resources }) => {
 });
 
 const places: number[] = [];
-const read = System.create({ observer: true, components: { with: [position] } }, row => {
+const read = System.create({ readonly: true, components: { with: [position] } }, row => {
     places.push(row[position][0]);
 });
 
 const speeds: string[] = [];
-const readSpeeds = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => {
+const readSpeeds = System.create({ readonly: true, components: { with: [position], optional: [velocity] } }, row => {
     speeds.push(row[velocity] === undefined ? "still" : `at ${row[velocity][0]}`);
 });
 
-const frameCount = System.create({ observer: true }, ({ resources }) => resources[frames]);
+const frameCount = System.create({ readonly: true }, ({ resources }) => resources[frames]);
 
 const fail = System.create(() => {
     throw new Error("broken");

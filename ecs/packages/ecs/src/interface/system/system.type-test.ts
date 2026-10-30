@@ -367,7 +367,7 @@ System.render({ shader: { accessors: { place: position } } }, gpu => { void gpu.
 
 // Observer systems read what a sync point left, after it: rows, resources, lookups and change filters, and no commands.
 export const watchPositions = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [position], changed: [position] },
     lookup: { targets: { with: [velocity] } },
 }, (row, context) => {
@@ -379,33 +379,39 @@ export const watchPositions = System.create({
     void context.commands;
 });
 check<Equal<typeof watchPositions, System>>();
-export const watchTime = System.create({ observer: true, resources: { changed: [time] } }, ({ resources }) => { void resources[time]; });
+export const watchTime = System.create({ readonly: true, resources: { changed: [time] } }, ({ resources }) => { void resources[time]; });
 // A composite may hold observer members, which run after its sync point.
 export const withWatch = System.create([integrate, watchTime]);
 check<Equal<typeof withWatch, System>>();
-// @ts-expect-error observer is true or left out
-System.create({ observer: false }, () => {});
-System.create({ observer: true, components: { with: [position] } }, (row, { resources }) => {
-    // @ts-expect-error an observer system writes no components
+// @ts-expect-error observer isn't a declaration's: readonly is
+System.create({ observer: true }, () => {});
+// @ts-expect-error readonly is true or left out
+System.create({ readonly: false }, () => {});
+System.create({ readonly: true, components: { with: [position] } }, (row, { resources }) => {
+    // @ts-expect-error a readonly system writes no components
     row[position] = 0;
-    // @ts-expect-error an observer system writes no resources
+    // @ts-expect-error a readonly system writes no resources
     resources[score] = 0;
 });
-System.create({ observer: true }, context => {
-    // @ts-expect-error an observer system reduces into nothing
+System.create({ readonly: true }, context => {
+    // @ts-expect-error a readonly system reduces into nothing
     void context.reduce;
+    // @ts-expect-error a readonly system has no commands
+    void context.commands;
 });
-// @ts-expect-error an observer system takes no input
-System.create({ observer: true }, (_context, input: { readonly count: number }) => { void input; });
-// @ts-expect-error an observer system isn't a kernel
-System.create({ observer: true, kernel: true, components: { with: [position] } }, () => {});
-System.create({ observer: true, kernel: false, components: { with: [position] } }, () => {});
-// @ts-expect-error an observer system is ordered with nothing
-System.create({ observer: true, after: [integrate] }, () => {});
-// @ts-expect-error an observer system is ordered with nothing
-System.create({ observer: true, before: [integrate] }, () => {});
-// @ts-expect-error an observer system is ordered with nothing
-System.create({ observer: true, during: [integrate] }, () => {});
+// @ts-expect-error a readonly system takes no input
+System.create({ readonly: true }, (_context, input: { readonly count: number }) => { void input; });
+// @ts-expect-error a readonly system isn't a kernel
+System.create({ readonly: true, kernel: true, components: { with: [position] } }, () => {});
+// @ts-expect-error a readonly system isn't a GPU kernel
+System.create({ readonly: true, kernel: "gpu", components: { with: [position] } }, () => {});
+System.create({ readonly: true, kernel: false, components: { with: [position] } }, () => {});
+// @ts-expect-error a readonly system is ordered with nothing
+System.create({ readonly: true, after: [integrate] }, () => {});
+// @ts-expect-error a readonly system is ordered with nothing
+System.create({ readonly: true, before: [integrate] }, () => {});
+// @ts-expect-error a readonly system is ordered with nothing
+System.create({ readonly: true, during: [integrate] }, () => {});
 
 // A system on one entity: its input names the entity, and its body runs on that entity's row.
 type OnOne = { readonly entity: Entity; readonly by: number };

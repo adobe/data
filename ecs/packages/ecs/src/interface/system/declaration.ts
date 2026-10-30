@@ -4,6 +4,7 @@ import type { Resource } from '../resource/resource.js';
 import type { ComponentAccess, ComponentLists, ResourceAccess, ResourceLists, SystemLookup, SystemLookupLists, Up, UpLists } from './access.js';
 import type { Shader } from './render.js';
 import type { System } from './system.js';
+import type { TablesDeclaration } from './tables.js';
 
 /**
  * A system never declares its thread: it runs on the one its object components and resources live on, those it
@@ -59,9 +60,15 @@ export type Declaration = {
     readonly during?: readonly System<unknown>[];
     /**
      * Runs after the last sync point of each run and tick (a tick is a run of the added composite), reading the settled
-     * state; changes nothing; never ordered; doesn't keep the loop ticking.
+     * state, on the thread that added or ran it; changes nothing, its row and resources typed read-only and its context
+     * without `commands`; takes no input; never ordered; doesn't keep the loop ticking. A joined thread adds only these.
      */
-    readonly observer?: true;
+    readonly readonly?: true;
+    /**
+     * For a readonly system without components: gives its context `tables`, copies of whole archetypes' columns, as
+     * `TablesDeclaration` says, read on the world's thread. Its components and resources count as what it reads.
+     */
+    readonly tables?: TablesDeclaration;
 };
 
 /** A declaration as the world takes it: the build's inferred reads, writes and reductions joined with what it declares. */

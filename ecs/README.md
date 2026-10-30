@@ -7,6 +7,8 @@ A high-performance, multithreaded Entity Component System for web-based applicat
 - **[`@adobe/ecs`](packages/ecs)**: the ECS and its build plugin, `@adobe/ecs/compiler`.
 - **[`@adobe/ecs-gpu`](packages/ecs-gpu)**: WebGPU devices, canvases, render targets, views and frame passes for the
   ECS.
+- **[`@adobe/ecs-persistence`](packages/ecs-persistence)**: saving, loading and copying the entities of worlds, as
+  binary columns.
 - **[`ecs-todo-vanillajs`](packages/ecs-todo-vanillajs)**: a todo app whose world drives the DOM through systems,
   with vanilla custom elements.
 - **[`ecs-particles-webgpu`](packages/ecs-particles-webgpu)**: particles simulated by kernels, on the CPU and with

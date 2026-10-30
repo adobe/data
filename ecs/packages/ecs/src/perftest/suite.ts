@@ -196,7 +196,7 @@ export const idle = System.create({ components: { with: [unused] } }, () => {});
 /** A system that throws, so each run of it rejects. */
 export const failing = System.create({}, () => { throw new Error("suite: failing"); });
 /** An observer system no entity matches: a run of it alone has no tiers. */
-export const idleObserver = System.create({ observer: true, components: { with: [unused] } }, () => {});
+export const idleObserver = System.create({ readonly: true, components: { with: [unused] } }, () => {});
 
 /** Fifty systems no entity matches, in one tier. */
 export const idles = System.create({

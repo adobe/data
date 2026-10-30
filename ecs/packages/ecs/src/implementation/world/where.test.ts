@@ -62,10 +62,10 @@ export const noteInView = System.create({ components: { with: [position, note], 
     row[note] = { text: `${row[position]}` };
 });
 const heard: number[] = [];
-export const hearInView = System.create({ observer: true, components: { with: [position], changed: [position], where: { [cell]: (at, { resources }) => visible(at, resources[camera].x, resources[camera].radius) } } }, row => { heard.push(row[position]); });
+export const hearInView = System.create({ readonly: true, components: { with: [position], changed: [position], where: { [cell]: (at, { resources }) => visible(at, resources[camera].x, resources[camera].radius) } } }, row => { heard.push(row[position]); });
 // Filtered by a resource the predicate doesn't read: a culled archetype coming into view catches up on its change.
 const signalled: number[] = [];
-export const signalInView = System.create({ observer: true, components: { with: [position], where: { [cell]: (at, { resources }) => visible(at, resources[camera].x, resources[camera].radius) } }, resources: { changed: [other] } }, row => { signalled.push(row[position]); });
+export const signalInView = System.create({ readonly: true, components: { with: [position], where: { [cell]: (at, { resources }) => visible(at, resources[camera].x, resources[camera].radius) } }, resources: { changed: [other] } }, row => { signalled.push(row[position]); });
 // A system moving the camera its own predicate reads: its next run sees the new view.
 const followed: number[] = [];
 export const follow = System.create({ components: { with: [position], where: { [cell]: (at, { resources }) => visible(at, resources[camera].x, resources[camera].radius) } } }, (row, { resources }) => {
@@ -79,7 +79,7 @@ export const noteChanged = System.create({ components: { with: [position, note],
     row[note] = { text: `${row[position]}` };
 });
 const notes: string[] = [];
-export const readNotes = System.create({ observer: true, components: { with: [note] } }, row => { if (row[note] !== null) notes.push(row[note].text); });
+export const readNotes = System.create({ readonly: true, components: { with: [note] } }, row => { if (row[note] !== null) notes.push(row[note].text); });
 export const nudgeNoted = System.create({ components: { with: [position, note] } }, row => { row[position] += 0.5; });
 
 /** Waits a turn at a time until `done`, for two seconds at most. */
@@ -91,7 +91,7 @@ const until = async (done: () => boolean): Promise<void> => {
 /** Every row's position and how often it was seen, by position. */
 const seenOf = async (world: ReturnType<typeof createWorld>): Promise<readonly string[]> => {
     const read: [number, string][] = [];
-    await world.run(System.create({ observer: true, components: { with: [position, seen] } }, row => { read.push([row[position], `${row[position]}:${row[seen]}`]); }));
+    await world.run(System.create({ readonly: true, components: { with: [position, seen] } }, row => { read.push([row[position], `${row[position]}:${row[seen]}`]); }));
     return read.sort((a, b) => a[0] - b[0]).map(([, text]) => text).filter(text => !text.endsWith(":0"));
 };
 

@@ -5,16 +5,22 @@
   "license": "MIT",
   "type": "module",
   "sideEffects": true,
-  "private": true,
+  "private": false,
+  "independentVersion": true,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "files": [
     "dist",
     "src",
     "!src/**/*.test.ts",
     "!src/**/*.test-helper.ts",
-    "!src/**/*.test-worker.ts"
+    "!src/**/*.test-worker.ts",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && vite build",
+    "build": "cp ../../LICENSE . && tsc -p tsconfig.build.json && vite build",
     "typecheck": "tsc && tsc -p tsconfig.build.json",
     "test": "pnpm exec playwright install chromium && vitest --run"
   },

@@ -57,7 +57,7 @@ it.each(["dark", "light"] as const)("shows the types of what's hovered, System.c
         await away(page);
         await hoverWord(page, "await using world = World.create()", "create");
         const world = await hovered(page);
-        expect(world.signature).toMatch(/^\(property\) create: /);
+        expect(world.signature).toMatch(/^const create: /);
         expect(errors).toEqual([]);
     } finally {
         await page.close();

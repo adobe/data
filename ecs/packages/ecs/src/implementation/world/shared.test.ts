@@ -39,7 +39,7 @@ const inline = () => createWorld({ [workers]: 0 });
 
 // Systems a joined thread runs, which it names by the ids the build gives them at the top level.
 const heard: string[] = [];
-export const listen = System.create({ observer: true, components: { with: [team, health] } }, row => { heard.push(`${row[team]} ${row[health]}`); });
+export const listen = System.create({ readonly: true, components: { with: [team, health] } }, row => { heard.push(`${row[team]} ${row[health]}`); });
 export const spawnBanners = System.create(({ commands }) => {
     commands.spawn([team, health, banner], { [team]: "red" })({ [health]: 1 });
     commands.spawn([team, health, banner], { [team]: "blue" })({ [health]: 2 });
@@ -60,11 +60,11 @@ export const spawnThere = System.create({ components: { with: [banner] } }, (row
     commands.spawn([health, marker], base)({ [marker]: 1 });
     commands.spawn([health], base)({});
 });
-export const readBanners = System.create({ observer: true, components: { with: [banner] } }, row => { banners.push(row[banner]?.text ?? "none"); });
+export const readBanners = System.create({ readonly: true, components: { with: [banner] } }, row => { banners.push(row[banner]?.text ?? "none"); });
 
 /** Every entity's team and health, and whether it's armed, sorted by health. */
 const rowsOf = async (world: ReturnType<typeof inline>): Promise<readonly string[]> => {
-    const read = System.create({ observer: true, components: { with: [team, health], optional: [armed] } }, (row) => {
+    const read = System.create({ readonly: true, components: { with: [team, health], optional: [armed] } }, (row) => {
         found.push(`${row[team]} ${row[health]}${row[armed] === true ? " armed" : ""}`);
     });
     const found: string[] = [];
@@ -116,7 +116,7 @@ describe("a shared component", () => {
         // Three cells' worth of [1, 2] and [2, 1], three weights and one style.
         expect((await world.tables()).archetypes - before).toBe(2 + 3 + 1);
         const read: string[] = [];
-        await world.run(System.create({ observer: true, components: { with: [health], optional: [cell, weight, style] } }, row => {
+        await world.run(System.create({ readonly: true, components: { with: [health], optional: [cell, weight, style] } }, row => {
             if (row[health] === 0) return;
             read.push(`${row[health]}: ${JSON.stringify(row[cell] ?? row[style] ?? null)} ${String(row[weight])}`);
         }));
@@ -216,8 +216,8 @@ describe("a shared component", () => {
             commands.spawn([team, health], { [team]: "red" })({ [health]: 2 });
         }));
         const changes: string[] = [];
-        const watch = System.create({ observer: true, components: { with: [health], changed: [team] } }, row => { changes.push(`changed ${row[health]}`); });
-        const adds = System.create({ observer: true, components: { with: [health], added: [team] } }, row => { changes.push(`added ${row[health]}`); });
+        const watch = System.create({ readonly: true, components: { with: [health], changed: [team] } }, row => { changes.push(`changed ${row[health]}`); });
+        const adds = System.create({ readonly: true, components: { with: [health], added: [team] } }, row => { changes.push(`added ${row[health]}`); });
         world.add(watch);
         world.add(adds);
         await world.run(System.create(() => {}));
@@ -294,7 +294,7 @@ describe("a shared component", () => {
         }));
         await world.run(System.create({ components: { with: [weight, health] } }, row => { row[health] *= row[weight]; }));
         const read: number[] = [];
-        await world.run(System.create({ observer: true, components: { with: [health] } }, row => { read.push(row[health]); }));
+        await world.run(System.create({ readonly: true, components: { with: [health] } }, row => { read.push(row[health]); }));
         expect(read.sort()).toEqual([2, 3]);
     });
 
@@ -338,7 +338,7 @@ describe("a shared component", () => {
         await world.run(writeBanners);
         await world.run(spawnThere);
         const found: string[] = [];
-        await world.run(System.create({ observer: true, components: { with: [health], optional: [marker, team] } }, row => {
+        await world.run(System.create({ readonly: true, components: { with: [health], optional: [marker, team] } }, row => {
             if (row[team] === undefined) found.push(`${row[health]} ${row[marker] ?? "none"}`);
         }));
         expect(found.sort()).toEqual(["7 1", "7 1", "7 none", "7 none"]);

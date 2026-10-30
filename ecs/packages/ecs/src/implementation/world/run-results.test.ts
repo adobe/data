@@ -30,11 +30,11 @@ const spawn = System.create(({ commands }) => {
 const raise = System.create(({ resources }) => {
     resources[level] += 1;
 });
-const count = System.create({ observer: true, components: { with: [amount] } }, () => {
+const count = System.create({ readonly: true, components: { with: [amount] } }, () => {
     counted++;
 });
 let counted = 0;
-const readLevel = System.create({ observer: true }, ({ resources }) => resources[level]);
+const readLevel = System.create({ readonly: true }, ({ resources }) => resources[level]);
 const broken = System.create(() => {
     throw new Error("broken");
 });
@@ -57,7 +57,7 @@ describe("a run", () => {
         expect(await world.run(System.create({ components: { with: [amount] } }, row => row[amount]))).toBeUndefined();
         expect(await world.run(System.create([readLevel, raise]))).toBeUndefined();
         expect(await world.run(raise)).toBeUndefined();
-        const whenChanged = System.create({ observer: true, resources: { changed: [level] } }, ({ resources }) => resources[level]);
+        const whenChanged = System.create({ readonly: true, resources: { changed: [level] } }, ({ resources }) => resources[level]);
         expect(await world.run(whenChanged)).toBe(2);
         // Unchanged since it last ran: skipped.
         expect(await world.run(whenChanged)).toBeUndefined();
@@ -94,7 +94,7 @@ describe("a run", () => {
     it("rejects when its own observer system fails, and reports one added out of band", async () => {
         using reported = catchOutOfBand();
         await using world = inline();
-        const failingObserver = System.create({ observer: true }, () => {
+        const failingObserver = System.create({ readonly: true }, () => {
             throw new Error("observer failed");
         });
         await expect(world.run(failingObserver)).rejects.toThrow(/observer failed/);
@@ -144,7 +144,7 @@ const spawnTwins = System.create(({ commands }) => {
     commands.spawn([serial])({ [serial]: 1 });
     commands.spawn([serial])({ [serial]: 1 });
 });
-const findTwin = System.create({ observer: true, lookup: { twins: { index: bySerial } } }, ({ lookup }) => lookup.twins(1)?.entity ?? null);
+const findTwin = System.create({ readonly: true, lookup: { twins: { index: bySerial } } }, ({ lookup }) => lookup.twins(1)?.entity ?? null);
 const setGate = System.create({}, ({ resources }, input: { readonly open: boolean }) => {
     resources[gate] = input.open;
 });
@@ -207,10 +207,10 @@ describe("a run's observer pass", () => {
     it("fails the run for its own observer system, and reports one added out of band, in one run", async () => {
         using reported = catchOutOfBand();
         await using world = inline();
-        const ownFails = System.create({ observer: true }, () => {
+        const ownFails = System.create({ readonly: true }, () => {
             throw new Error("own failed");
         });
-        const addedFails = System.create({ observer: true }, () => {
+        const addedFails = System.create({ readonly: true }, () => {
             throw new Error("added failed");
         });
         world.add(addedFails);
@@ -255,7 +255,7 @@ describe("out-of-band reports", () => {
     it("aren't made again for a system skipped between its failures", async () => {
         using reported = catchOutOfBand();
         await using world = inline();
-        const failsWhenChanged = System.create({ observer: true, resources: { changed: [level] } }, () => {
+        const failsWhenChanged = System.create({ readonly: true, resources: { changed: [level] } }, () => {
             throw new Error("changed failed");
         });
         world.add(failsWhenChanged);
@@ -294,7 +294,7 @@ describe("out-of-band reports", () => {
         using reported = catchOutOfBand();
         const world = inline();
         let failing = false;
-        const failsAdded = System.create({ observer: true }, () => {
+        const failsAdded = System.create({ readonly: true }, () => {
             if (failing) throw new Error("added failed");
         });
         world.add(failsAdded);
@@ -331,7 +331,7 @@ describe("out-of-band reports", () => {
     it("aren't made again for a row system whose change filter passed no row between its failures", async () => {
         using reported = catchOutOfBand();
         await using world = inline();
-        const failsOnChange = System.create({ observer: true, components: { with: [amount], changed: [amount] } }, () => {
+        const failsOnChange = System.create({ readonly: true, components: { with: [amount], changed: [amount] } }, () => {
             throw new Error("row failed");
         });
         const bump = System.create({ components: { with: [amount] } }, row => {

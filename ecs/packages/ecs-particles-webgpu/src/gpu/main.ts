@@ -61,7 +61,7 @@ const start = async (): Promise<void> => {
     await world.run(spawn, { count, width, height });
     /** For automated checks: a few drawn particles' positions, which an observer system reads back from the GPU. */
     const probed: (readonly number[])[] = [];
-    const probe = System.create({ observer: true, components: { with: [position, visible, enabled] } }, row => {
+    const probe = System.create({ readonly: true, components: { with: [position, visible, enabled] } }, row => {
         if (probed.length < 3) probed.push(row[position]);
     });
     Reflect.set(globalThis, "sampleProbe", async () => {

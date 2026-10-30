@@ -35,7 +35,7 @@ export const createRows = System.create({
 
 /** Writes what changed of each todo to its row. */
 export const bindRows = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [label, done, row], changed: [label, done, row] },
 }, item => {
     const element = item[row];
@@ -64,7 +64,7 @@ const place = (parent: Element, element: HTMLElement, before: Element | null): v
  * its focus.
  */
 export const placeRows = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [row, order], changed: [row, order] },
     order: placed,
     resources: { is: [list] },

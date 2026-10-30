@@ -20,7 +20,7 @@ const heal = System.create({ components: { with: [health] }, after: [hit] }, row
 });
 const frame = System.create([heal, hit]);
 
-const read = System.create({ observer: true, components: { with: [health] } }, row => {
+const read = System.create({ readonly: true, components: { with: [health] } }, row => {
     console.log("health", row[health]);
 });
 

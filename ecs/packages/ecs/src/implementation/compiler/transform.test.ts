@@ -335,7 +335,7 @@ describe("kernels by default", () => {
     test("runs as written, without failing, a body that leaves the subset or a declaration a kernel can't have", async () => {
         expect(await attached(`const log = []; const kernel = System.create({ components: { with: [mass] } }, row => { log.push(row[mass]); });`)).toBe(false);
         expect(await attached(`const kernel = System.create({ components: { with: [mass] } }, (row, { resources }) => { resources[delta] = row[mass]; });`)).toBe(false);
-        expect(await attached(`const kernel = System.create({ observer: true, components: { with: [mass] } }, row => { void row[mass]; });`)).toBe(false);
+        expect(await attached(`const kernel = System.create({ readonly: true, components: { with: [mass] } }, row => { void row[mass]; });`)).toBe(false);
         expect(await attached(`const kernel = System.create({ target: "entity", components: { with: [score] } }, row => { row[score] = 1; });`)).toBe(false);
         expect(await attached(`const make = () => System.create({ components: { with: [score] } }, row => { row[score] = 1; });`)).toBe(false);
     });
@@ -1418,11 +1418,11 @@ describe("inferred access", () => {
     });
 
     test("an observer's row it can't follow as unknown without a warning, since the world takes an observer's as read", async () => {
-        const result = await transform(system("observer: true, components: { with: [position] }", "(row) => { helper(row); }"));
+        const result = await transform(system("readonly: true, components: { with: [position] }", "(row) => { helper(row); }"));
         expect(result !== null && "code" in result ? [result.code.includes("components: null"), result.warnings] : null).toEqual([true, []]);
     });
 
-    test("a row it can't follow with a warning unless the declaration says observer: true, as the world reads it", async () => {
+    test("a row it can't follow with a warning unless the declaration says readonly: true, as the world reads it", async () => {
         for (const observer of ["observer: false, ", "observer: watching, "]) {
             const result = await transform(`const watching = true;\n${system(`${observer}components: { with: [position] }`, "(row) => { helper(row); }")}`);
             expect(result !== null && "code" in result ? result.warnings.length : null).toBe(1);

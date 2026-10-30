@@ -21,7 +21,7 @@ declare module "@adobe/ecs" {
 
 /** Colors the page light or dark, as the system prefers. */
 export const bindTheme = System.create({
-    observer: true,
+    readonly: true,
     resources: { is: [theme], changed: [dark] },
 }, ({ resources }) => {
     resources[theme].setAttribute("color", resources[dark] ? "dark" : "light");
@@ -29,7 +29,7 @@ export const bindTheme = System.create({
 
 /** Says whether this browser has WebGPU. */
 export const bindWebgpu = System.create({
-    observer: true,
+    readonly: true,
     resources: { is: [note], changed: [webgpu] },
 }, ({ resources }) => {
     resources[note].webgpu = resources[webgpu];
@@ -37,7 +37,7 @@ export const bindWebgpu = System.create({
 
 /** Shows the note in the chapter on GPU kernels only. */
 export const bindNote = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, chapterNumber], changed: [shown] },
     resources: { is: [note] },
 }, (row, { resources }) => {
@@ -49,7 +49,7 @@ export const bindNote = System.create({
  * without an example, there's nothing to resize.
  */
 export const bindColumns = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, sources] },
     resources: { is: [columnsElement] },
 }, (row, { resources }) => {

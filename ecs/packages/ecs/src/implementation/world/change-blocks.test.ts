@@ -89,7 +89,7 @@ const setGroup = System.create({ target: "entity", components: { with: [group] }
 // Readers.
 let found: number[] = [];
 const onMain = System.create({ components: { with: [at], changed: [value] } }, row => { found.push(row[at]); });
-const observed = System.create({ observer: true, components: { with: [at], changed: [value] } }, row => { found.push(row[at]); });
+const observed = System.create({ readonly: true, components: { with: [at], changed: [value] } }, row => { found.push(row[at]); });
 const ofTwo = System.create({ components: { with: [at], changed: [group, value] } }, row => { found.push(row[at]); });
 const inKernel = System.create({ kernel: true, components: { with: [seen], changed: [value] } }, row => { row[seen] += 1; });
 const inUp = System.create({ components: { with: [at], changed: [value] }, up: { through: parent } }, row => { found.push(row[at]); });

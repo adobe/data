@@ -172,7 +172,7 @@ const reading: { entities: readonly Entity[]; objects: readonly { readonly [name
 
 /** Each entity's objects of the thread, as data, a note by its text: none for an entity that's dead or has no uid. */
 const readObjects = System.create({
-    observer: true,
+    readonly: true,
     lookup: { ids: { with: [uid] }, captions: { with: [caption] }, notes: { with: [note] } },
 }, ({ lookup }) => {
     reading.objects = reading.entities.map(entity => {
@@ -322,9 +322,9 @@ export const paintReader = System.create(({ resources }) => () => resources[pain
 /** A composite of systems on the thread returning values, which no run resolves to. */
 export const paintsTogether = System.create([paintReader, paintLengthThere]);
 /** An observer system on the thread, as it reads the thread's paint: what a run of it resolves to. */
-export const paintObserved = System.create({ observer: true }, ({ resources }) => resources[paint].text);
+export const paintObserved = System.create({ readonly: true }, ({ resources }) => resources[paint].text);
 /** An observer system on the thread, throwing there. */
-export const paintObservedFails = System.create({ observer: true }, ({ resources }) => {
+export const paintObservedFails = System.create({ readonly: true }, ({ resources }) => {
     if (resources[paint].text !== "never") throw new Error("threadSystemsTest observer failure there");
     return 0;
 });

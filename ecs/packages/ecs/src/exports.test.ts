@@ -50,7 +50,7 @@ export const world: World = World.create({ [workers]: 0 });
 // Another thread joins it through the other end of a channel the world shares.
 declare const port: MessagePort;
 export const joined: Promise<World> = World.join(port, { threads: ["main"] });
-export const read = System.create({ observer: true, components: { with: [position] }, lookup: { at: { with: [position] } } }, () => {});
+export const read = System.create({ readonly: true, components: { with: [position] }, lookup: { at: { with: [position] } } }, () => {});
 export const added = world.add(read);
 `;
 

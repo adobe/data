@@ -12,6 +12,7 @@ import { ownTag } from './move-log.js';
 import { resourceCell } from './resources.js';
 import { labelOf } from '../../interface/registry/names.js';
 import { idOf, type Key, type State } from './state.js';
+import { readTables } from './tables-read.js';
 import { combine, contributed, identityOf, type ReductionTarget } from './reductions.js';
 import { createIndexLookup, type Since } from './index-lookups.js';
 import type { WorldIndex } from './indexes.js';
@@ -506,8 +507,11 @@ const never: Since = { value: -1 };
 const own = (): object => Object.create({});
 
 /** Resource cells are resolved once per run: they move only at sync points. An unresolved resource throws on access. */
-export const createContext = (state: State, declaration: Pick<Resolved, "lookup" | "resources">, { targets = [], commands, indexes, since = never }: Extras = {}): Context => {
+export const createContext = (state: State, declaration: Pick<Resolved, "lookup" | "resources" | "tables">, { targets = [], commands, indexes, since = never }: Extras = {}): Context => {
     const value: { up?: unknown } = own();
+    const { tables } = declaration;
+    // Each read copies the tables as they are then.
+    if (tables !== undefined) Object.defineProperty(value, "tables", { get: () => readTables(state, tables), enumerable: true });
     const { lookup, resources } = declaration;
     const names = Object.keys(lookup ?? {});
     if (names.length > 0) {

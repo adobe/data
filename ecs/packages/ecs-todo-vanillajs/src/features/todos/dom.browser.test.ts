@@ -29,7 +29,7 @@ const createDriven = async (): Promise<{ readonly world: World; readonly element
 const rowsOf = (element: TodoList): TodoRow[] => [...element.querySelectorAll("todo-row")];
 
 let rows = 0;
-const countRows = System.create({ observer: true, components: { with: [row] } }, () => {
+const countRows = System.create({ readonly: true, components: { with: [row] } }, () => {
     rows += 1;
 });
 

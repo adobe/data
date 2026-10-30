@@ -147,15 +147,15 @@ const checkWhere = (leaf: Leaf): void => {
 };
 
 /**
- * Throws for what an observer system can't declare: it only reads, after a sync point, so it writes and reduces into
+ * Throws for what a readonly system can't declare: it only reads, after a sync point, so it writes and reduces into
  * nothing, takes no input, isn't a kernel or a render system, has no `up`, and is ordered with nothing.
  */
-const checkObserver = (leaf: Leaf): void => {
+const checkReadonly = (leaf: Leaf): void => {
     const { name, declaration } = leaf;
-    const { observer } = declaration;
-    if (observer === undefined) return;
-    const fail = (message: string): never => { throw new Error(`System "${name}" is an observer, so it ${message}.`); };
-    if (observer !== true) throw new Error(`System "${name}": observer is true or left out.`);
+    const { readonly } = declaration;
+    if (readonly === undefined) return;
+    const fail = (message: string): never => { throw new Error(`System "${name}" is readonly, so it ${message}.`); };
+    if (readonly !== true) throw new Error(`System "${name}": readonly is true or left out.`);
     if (leaf.kind === "render") fail("records no GPU work");
     if (declaration.kernel === true || declaration.kernel === "gpu") fail("isn't a kernel");
     if ((declaration.components?.write?.length ?? 0) + (declaration.resources?.write?.length ?? 0) > 0) fail("writes nothing");
@@ -165,9 +165,22 @@ const checkObserver = (leaf: Leaf): void => {
     if ((declaration.before?.length ?? 0) + (declaration.after?.length ?? 0) + (declaration.during?.length ?? 0) > 0) fail("is ordered with nothing");
 };
 
+/** Throws for `tables` on a system that isn't readonly or has components, or naming keys that aren't registered as their kind. */
+const checkTables = (leaf: Leaf): void => {
+    const { name, declaration } = leaf;
+    const { tables } = declaration;
+    if (tables === undefined) return;
+    if (declaration.readonly !== true) throw new Error(`System "${name}" reads tables, which only a readonly system reads.`);
+    if (declaration.components !== undefined) throw new Error(`System "${name}" reads tables, so it has no components.`);
+    requireRegistered("System", name, "component", tables.components);
+    requireRegistered("System", name, "component", tables.with);
+    requireRegistered("System", name, "component", tables.not);
+    requireRegistered("System", name, "resource", tables.resources);
+};
+
 /**
  * Throws for a leaf that names a component or resource that isn't registered as one, lists a key in both `read` and
- * `write`, writes a reference, has a lookup reading a component it writes, uses object components and resources of different threads, declares what an observer system can't, or whose
+ * `write`, writes a reference, has a lookup reading a component it writes, uses object components and resources of different threads, declares what a readonly system can't, or whose
  * reductions, conditions, `up` or placement can't hold.
  */
 export const checkLeaf = (leaf: Leaf): void => {
@@ -190,6 +203,7 @@ export const checkLeaf = (leaf: Leaf): void => {
         if (writes.has(key)) throw new Error(`System "${name}": its rows are ordered by an index keyed by "${labelOf(key)}", which the system writes.`);
     }
     checkTarget(leaf);
+    checkTables(leaf);
     threadOf(declaration, "System", name);
     requireRegistered("System", name, "component", components?.has);
     requireRegistered("System", name, "component", components?.not);
@@ -202,7 +216,7 @@ export const checkLeaf = (leaf: Leaf): void => {
         if (declarationOf(key)?.reference !== undefined) throw new Error(`System "${name}" writes "${labelOf(key)}", a reference, which changes only through commands.`);
         if (declarationOf(key)?.shared === true) throw new Error(`System "${name}" writes "${labelOf(key)}", a shared component, whose value is its archetype's: give it another with commands.add.`);
     }
-    checkObserver(leaf);
+    checkReadonly(leaf);
     checkWhere(leaf);
     checkReductions(leaf);
     checkConditions(leaf);

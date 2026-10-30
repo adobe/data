@@ -17,18 +17,18 @@ filter, and generate 10 or 1,000 todos.
   the app starts. Every DOM system that uses one declares it in `resources.is`, so it's skipped in a world without it.
 - **Repeated elements** are component values on the entity they show, declared on `main`: a todo's `row`.
   - *Created* by an ordinary system, `createRows`, over todos without a row, which adds the row by a command. It runs
-    on the tick after the run that added the todo, since observer systems can't issue commands.
-  - *Bound* by an observer system, `bindRows`, with the row and the values it shows in `changed`: it writes a new row
+    on the tick after the run that added the todo, since readonly systems can't issue commands.
+  - *Bound* by a readonly system, `bindRows`, with the row and the values it shows in `changed`: it writes a new row
     once and then only rows whose todo changed, after each run's and tick's sync point.
-  - *Placed* by an observer system, `placeRows`, which runs the rows whose row or order changed in list order, through
+  - *Placed* by a readonly system, `placeRows`, which runs the rows whose row or order changed in list order, through
     a sorted index, and puts each after the row before it, which is always placed already. A row already in place
     isn't touched, and one in the list moves with `moveBefore`, never leaving it, so it keeps its focus; where the
     browser has no `moveBefore`, it gets its focus back.
-  - *Filtered* by the filter feature's observer system, `filterRows`, which sets `hidden` on rows whose visibility
+  - *Filtered* by the filter feature's readonly system, `filterRows`, which sets `hidden` on rows whose visibility
     changes, as their todo or the filter changes, and moves focus off a row it hides to the nearest one shown.
   - *Removed* by a finalizer on the row, which runs whatever ends the todo, `world.dispose()` included.
   - Rows out of view skip their rendering (`content-visibility: auto`).
-- **Fixed elements showing counts** are bound by an observer system that runs only when an index's entries changed:
+- **Fixed elements showing counts** are bound by a readonly system that runs only when an index's entries changed:
   `bindCompletion` looks up `completion/byDone` with `changed: true`, so it writes the summary and the toggle-all box
   after a pass in which a todo was added, removed or toggled, and is skipped before its body otherwise.
 - **Events become runs** in each feature's `events.ts`: listeners on the page's root call `world.run(system, input)`
@@ -37,7 +37,7 @@ filter, and generate 10 or 1,000 todos.
   to its todo (`attach`), and a move's `item` and `before` are read with `entityOfElement`. Systems acting on one
   todo name it as their `target`, so they run on its row alone, writing it in place, and on nothing once it's gone.
 - **Failures:** a run whose system failed rejects, and an event's run, its promise left, goes unhandled, which the
-  browser logs; what fails in ticks and observer systems the world reports with `reportError`, which the browser logs
+  browser logs; what fails in ticks and readonly systems the world reports with `reportError`, which the browser logs
   too, once per system while it keeps failing.
 
 ## Structure
@@ -71,7 +71,7 @@ Adding a feature is a folder and a line in `features/index.ts`.
 
 ## Tests
 
-- `*/model.test.ts`, in node: each feature's model systems against a world, read back through observer systems.
+- `*/model.test.ts`, in node: each feature's model systems against a world, read back through readonly systems.
 - `*/elements/*.browser.test.ts`: elements alone, with no world: properties set, the render checked, events recorded.
 - `shared/attach.browser.test.ts`: the entity an element was attached to, found from an event on it or within its open
   shadow root, and none for others.
@@ -80,7 +80,7 @@ Adding a feature is a folder and a line in `features/index.ts`.
   off, edited; no rows without a list; none for a todo deleted before its tick; several runs before one tick; all
   removed on dispose.
 - `app/app.browser.test.ts`: the whole app on the page's markup, used through DOM events as a user would, with no
-  console errors; edits committed on blur; a row's events after its todo is deleted; a tick's system's and observer
+  console errors; edits committed on blur; a row's events after its todo is deleted; a tick's system's and readonly
   system's failures reported.
 - `app/proportional.browser.test.ts`: each operation's DOM mutations, and how often the DOM systems reach rows, are
   the same with 100 todos as with 2,000, less what each row it changed costs.
@@ -92,9 +92,9 @@ Adding a feature is a folder and a line in `features/index.ts`.
 
 ## Performance
 
-Apple M1 Max, Chromium, with other benchmarks running on the machine. A run's time includes the observer systems
+Apple M1 Max, Chromium, with other benchmarks running on the machine. A run's time includes the readonly systems
 after it; each is the median of 21 runs, each made after a rendered frame as an event's would be, unless it's a single
-pass. The tick after it is timed from its frame's start to the end of its observer systems. Mutations count the page's
+pass. The tick after it is timed from its frame's start to the end of its readonly systems. Mutations count the page's
 and its shadow roots' records until that tick ends.
 
 | Operation | 1K run ms | 10K run ms | Tick after, ms | Mutations |
@@ -120,12 +120,12 @@ world, and toggling one at 26 µs with 1K todos, 62 µs with 10K and 400 µs wit
 
 What the current API does and doesn't offer the DOM path, each with the change it would take.
 
-- **Observer systems can't issue commands,** so a row is created by an ordinary system on the tick after the run that
+- **Readonly systems can't issue commands,** so a row is created by an ordinary system on the tick after the run that
   added its todo. That tick runs at the next animation frame, before that frame is painted, so a row added in response
   to an event shows in the frame that would have shown it anyway, at 0.05–0.08 ms. *No change needed.*
-- **Observer systems can't declare `up`.** A view entity of its own, `{ view, viewOf }`, can't be bound by an observer
+- **Readonly systems can't declare `up`.** A view entity of its own, `{ view, viewOf }`, can't be bound by a readonly system
   through `up: { through: viewOf }`; as a ticking system, its writes come a tick late, and a new view's first only on
-  the tick after it's made. *Proposal:* allow `up` in observer systems, which only read through it.
+  the tick after it's made. *Proposal:* allow `up` in readonly systems, which only read through it.
 - **`order` can't go with `up`.** Views can't be placed in their models' order from a system over the views.
   *Proposal:* let `order` take an index over the entity a reference names, or allow it with `up`.
 - **No index finds an entity by its element.** Object parts of index keys are interned by structure
@@ -138,14 +138,14 @@ What the current API does and doesn't offer the DOM path, each with the change i
   any component might be on another thread; its body then reads by `Reflect`. *Proposal:* none unless bindings get
   their own constructor; a binding is four to six lines.
 - **A run's fixed cost** in Chromium is small, and none of it is a task: a run that changes nothing takes 1.0 µs back
-  to back in an empty world, at most 0.3 µs more with the app's observer systems added, and 2.5 µs in the app
+  to back in an empty world, at most 0.3 µs more with the app's readonly systems added, and 2.5 µs in the app
   with 1K todos, where a
   task round trip takes 7.6 µs. Node's `run idle` is 0.33 µs. A run made right after a frame, as an event's is, takes
   0.02–0.10 ms, which is the CPU coming back from idle, not the ECS. Toggling one todo of 10K took 62 µs, of which
   the profile gave 64% to keeping `completion/byDone`'s two buckets of 5K entries in entity order, which the next
   finding removes, and 16% to `forEachPassingRange` (`ranges.ts`), the change filters scanning the 1024 row ticks of
-  the one chunk that changed, for each observer system with `changed`, which the finding after it removes. The rest is
-  the sync point, the observer pass and the DOM writes, about 13 µs.
+  the one chunk that changed, for each readonly system with `changed`, which the finding after it removes. The rest is
+  the sync point, the readonly pass and the DOM writes, about 13 µs.
 - **A low-cardinality hash index costs O(1) amortized per change:** toggling one todo moves it between `byDone`'s
   buckets, which are left unsorted, its entry leaving a hole in one and joining a tail of the other, until a list is
   read by position (`index-hash.ts`). In node, a toggle and a run reading both buckets' lengths, as the summary does,
@@ -154,11 +154,11 @@ What the current API does and doesn't offer the DOM path, each with the change i
   sorts both buckets first: 6.2, 12.7 and 69 µs (`bucket move … in order`), against 9.4, 65 and 418.
 - **A change filter finds one changed row by its block:** it reads the chunk's sixteen block ticks and the 64 row ticks
   of the block that changed, not the chunk's 1024. In a profile of 40,000 toggles of one todo of 10K, the change
-  filters take 5.0% of samples, against 6.9% scanning the chunk, most of it the chunk checks of observer systems
+  filters take 5.0% of samples, against 6.9% scanning the chunk, most of it the chunk checks of readonly systems
   filtering on two or three components; in node, eight systems filtering on one changed row of 100K take 5.0 µs a
   run, against 34.9 µs scanning the chunk (`changed one 100K`). *No change needed.*
-- **Nothing awaits the next tick.** Tests watch `clock` changes through an observer, after a first run that passes it
-  regardless, and a world ticks only while a system that isn't an observer is added. *Proposal:* none for consumers; a
+- **Nothing awaits the next tick.** Tests watch `clock` changes through a readonly system, after a first run that passes it
+  regardless, and a world ticks only while a system that isn't a readonly system is added. *Proposal:* none for consumers; a
   test helper in `src/observe` would do.
 
 ## Not kept

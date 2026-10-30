@@ -260,7 +260,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         : createOrderedRender(indexLookups.ordered, ordered, accessors.map(accessor => idOf(state, accessor.component)), declaration.shader?.group ?? 0, `${leafNumber}:`);
     const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
     const writes = (query?.write ?? []).map(key => idOf(state, key));
-    const looks = [...new Set([...Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []), ...declaration.up?.read ?? []])].map(key => idOf(state, key));
+    const looks = [...new Set([...Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []), ...declaration.up?.read ?? [], ...declaration.tables?.components ?? []])].map(key => idOf(state, key));
     /** Record keys by archetype. */
     const keys = new Map<Archetype, string>();
     const keyOf = (archetype: Archetype): string => {
@@ -339,7 +339,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     let runInput: unknown;
     const context = createContext(state, declaration, {
         targets: kernel === null ? targets : [],
-        commands: leaf.kind === "render" || declaration.kernel === "gpu" || declaration.observer === true ? undefined : commands,
+        commands: leaf.kind === "render" || declaration.kernel === "gpu" || declaration.readonly === true ? undefined : commands,
         indexes: indexLookups.byName,
         since: lookupSince,
     });
@@ -1343,7 +1343,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             return taken;
         },
         didRun: () => ran && (query === undefined || bodyRanOnRow()),
-        restart: declaration.observer !== true || !holdsNothing(holdings) ? null : since => {
+        restart: declaration.readonly !== true || !holdsNothing(holdings) ? null : since => {
             lastRun = since;
             holdings.removed = false;
             holdings.released = false;

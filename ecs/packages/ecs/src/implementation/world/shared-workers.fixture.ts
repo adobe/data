@@ -39,7 +39,7 @@ const written = System.create({ kernel: false, components: { with: [scale, cell,
     row[steps] = x * 1000 + y;
 });
 const read: [number, string][] = [];
-const results = System.create({ observer: true, components: { with: [value, out, steps] } }, row => { read.push([row[value], `${row[out]} ${row[steps]}`]); });
+const results = System.create({ readonly: true, components: { with: [value, out, steps] } }, row => { read.push([row[value], `${row[out]} ${row[steps]}`]); });
 
 const outcome = async (system: typeof compute, wasm: boolean): Promise<readonly string[]> => {
     await using world = createWorld({ [workers]: 2 }, { minimumChunk: 2, wasm });
@@ -66,7 +66,7 @@ export const whereOnWorkers = async (wasm: boolean): Promise<{ readonly written:
     await world.run(negative);
     let written = 0;
     let left = 0;
-    await world.run(System.create({ observer: true, components: { with: [value, out] } }, row => {
+    await world.run(System.create({ readonly: true, components: { with: [value, out] } }, row => {
         if (row[out] === 0 && row[value] !== 0) left++;
         else written++;
     }));

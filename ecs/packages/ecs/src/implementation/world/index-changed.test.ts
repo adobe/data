@@ -109,7 +109,7 @@ describe("an index lookup's changed: true", () => {
         await using world = inline();
         spawned = [];
         const orders: string[] = [];
-        const ordering = System.create({ observer: true, lookup: { inOrder: { index: inOrder, changed: true } } }, ({ lookup }) => {
+        const ordering = System.create({ readonly: true, lookup: { inOrder: { index: inOrder, changed: true } } }, ({ lookup }) => {
             const all = lookup.inOrder();
             const groups: number[] = [];
             for (let i = 0; i < all.length; i++) groups.push(all.at(i).entity === spawned[0] ? -1 : 0);
@@ -205,7 +205,7 @@ describe("an index lookup's changed: true", () => {
         await using world = inline();
         spawned = [];
         const totals: number[] = [];
-        const readTotals = System.create({ observer: true, components: { with: [total] } }, row => {
+        const readTotals = System.create({ readonly: true, components: { with: [total] } }, row => {
             totals.push(row[total]);
         });
         const totalsOf = async (): Promise<number[]> => {

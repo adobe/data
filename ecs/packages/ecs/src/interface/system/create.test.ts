@@ -105,17 +105,17 @@ describe("System.create", () => {
             [{ kernel: "gpu", components: { write: [position], changed: [position] } }, "can't run on the GPU: GPU kernels don't support change filters yet"],
             [{ kernel: "gpu", components: { read: [position] }, lookup: { others: { read: [position] } } }, "can't run on the GPU: GPU kernels don't support lookups yet"],
             [{ kernel: "gpu", components: { has: [position] }, resources: { reduce: [total] } }, "can't run on the GPU: GPU kernels don't support reductions yet"],
-            [{ observer: false, resources: { read: [time] } }, "observer is true or left out"],
-            [{ observer: true, components: { write: [position] } }, "is an observer, so it writes nothing"],
-            [{ observer: true, resources: { write: [time] } }, "is an observer, so it writes nothing"],
-            [{ observer: true, components: { has: [position] }, resources: { reduce: [total] } }, "is an observer, so it reduces into nothing"],
-            [{ observer: true, kernel: true, components: { read: [position] } }, "is an observer, so it isn't a kernel"],
-            [{ observer: true, components: { read: [position] }, up: { through: parent } }, "is an observer, so it has no up"],
-            [{ observer: true, resources: { read: [time] }, after: [System.create(() => {})] }, "is an observer, so it is ordered with nothing"],
-            [{ observer: true, resources: { read: [time] }, before: [System.create(() => {})] }, "is an observer, so it is ordered with nothing"],
-            [{ observer: true, resources: { read: [time] }, during: [System.create(() => {})] }, "is an observer, so it is ordered with nothing"],
+            [{ readonly: false, resources: { read: [time] } }, "readonly is true or left out"],
+            [{ readonly: true, components: { write: [position] } }, "is readonly, so it writes nothing"],
+            [{ readonly: true, resources: { write: [time] } }, "is readonly, so it writes nothing"],
+            [{ readonly: true, components: { has: [position] }, resources: { reduce: [total] } }, "is readonly, so it reduces into nothing"],
+            [{ readonly: true, kernel: true, components: { read: [position] } }, "is readonly, so it isn't a kernel"],
+            [{ readonly: true, components: { read: [position] }, up: { through: parent } }, "is readonly, so it has no up"],
+            [{ readonly: true, resources: { read: [time] }, after: [System.create(() => {})] }, "is readonly, so it is ordered with nothing"],
+            [{ readonly: true, resources: { read: [time] }, before: [System.create(() => {})] }, "is readonly, so it is ordered with nothing"],
+            [{ readonly: true, resources: { read: [time] }, during: [System.create(() => {})] }, "is readonly, so it is ordered with nothing"],
         ];
-        expect(() => createTaking({ observer: true }, { type: "object", properties: {} })).toThrow("is an observer, so it takes no input");
+        expect(() => createTaking({ readonly: true }, { type: "object", properties: {} })).toThrow("is readonly, so it takes no input");
         rejected.forEach(([declaration, message], index) => {
             expect(() => create({ ...declaration })).toThrow(message);
         });
@@ -171,9 +171,9 @@ describe("System.create of a composite", () => {
         const looped = System.create({ before: [first], after: [second] }, () => {});
         expect(() => System.create({ systems: [first, second, looped] })).toThrow("Ordering cycle");
     });
-    it("runs observer members after its sync point, in no tier, never conflicting and ignoring constraints naming them", () => {
+    it("runs readonly members after its sync point, in no tier, never conflicting and ignoring constraints naming them", () => {
         const write = System.create({ components: { with: [position] } }, row => { row[position] += 1; });
-        const watch = System.create({ observer: true, components: { with: [position] } }, row => { void row[position]; });
+        const watch = System.create({ readonly: true, components: { with: [position] } }, row => { void row[position]; });
         const later = System.create({ components: { with: [position] }, after: [watch, write] }, row => { void row[position]; });
         const free = System.create({ after: [watch] }, ({ resources }) => { void resources[time]; });
         const schedule = scheduleOf(requireDefinition(System.create([write, watch, later, free])));
@@ -205,6 +205,6 @@ describe("System.render", () => {
         const render = (declaration: object, uses: Parameters<typeof giveAccess>[1] = {}): unknown => Reflect.apply(System.render, undefined, [giveAccess(declaration, uses), () => {}]);
         expect(() => System.render({ shader: { accessors: { loop: height } } }, () => {})).toThrow(`can't render: "loop" isn't usable as a WGSL function name.`);
         expect(() => render({ shader: { accessors: {} } }, { resources: { reduce: [total] } })).toThrow("writes or reduces into resources; a render system only reads");
-        expect(() => render({ shader: { accessors: {} }, observer: true })).toThrow("is an observer, so it records no GPU work");
+        expect(() => render({ shader: { accessors: {} }, readonly: true })).toThrow("is readonly, so it records no GPU work");
     });
 });

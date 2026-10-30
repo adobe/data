@@ -70,6 +70,12 @@ export const createEntities = (memory: Memory): Entities => {
 /** Reserves an entity. Safe to call from any thread between sync points. */
 export const reserve = ({ cursor, free, generation }: Reservations): Entity => entityAt(cursor, free, generation, Atomics.add(cursor, taken, 1));
 
+/** Reserves an entity for each of `into`'s elements, with one atomic add. Safe to call from any thread between sync points. */
+export const reserveRun = ({ cursor, free, generation }: Reservations, into: Float64Array): void => {
+    const first = Atomics.add(cursor, taken, into.length);
+    for (let i = 0; i < into.length; i++) into[i] = entityAt(cursor, free, generation, first + i);
+};
+
 /**
  * Reservations a thread takes in blocks of positions, so threads spawning together don't contend for the cursor.
  * Positions a block leaves unused are reserved entities that never spawn, which the sync point releases.

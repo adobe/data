@@ -22,7 +22,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-const read = System.create({ observer: true }, ({ resources }) =>
+const read = System.create({ readonly: true }, ({ resources }) =>
     [resources[gravity], resources[floor], resources[names], resources[audio], resources[focused]]);
 
 export const main = async (): Promise<void> => {

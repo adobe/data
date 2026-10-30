@@ -62,7 +62,7 @@ const wideOnGpu = System.create({ kernel: "gpu", components: { with: [wide, out]
 /** Every row's results, by its value. */
 const results = async (world: ReturnType<typeof createWorld>): Promise<readonly string[]> => {
     const read: [number, string][] = [];
-    await world.run(System.create({ observer: true, components: { with: [value, out, steps] } }, row => { read.push([row[value], `${row[out]} ${row[steps]}`]); }));
+    await world.run(System.create({ readonly: true, components: { with: [value, out, steps] } }, row => { read.push([row[value], `${row[out]} ${row[steps]}`]); }));
     return read.sort((a, b) => a[0] - b[0]).map(([, text]) => text);
 };
 
@@ -98,7 +98,7 @@ describe("a kernel reading a shared component", () => {
         await world.run(spawn);
         expect((await runReported(world, moving)).failures).toEqual([]);
         const scales: number[] = [];
-        await world.run(System.create({ observer: true, components: { with: [scale] } }, row => { scales.push(row[scale]); }));
+        await world.run(System.create({ readonly: true, components: { with: [scale] } }, row => { scales.push(row[scale]); }));
         expect(new Set(scales)).toEqual(new Set([2]));
         // A kernel built without knowing a component is shared, naming it in a command, fails where it registers.
         const description = kernelOf(compute);

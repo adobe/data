@@ -34,6 +34,12 @@ conversation, the diff or the alternatives. Tell them what it is and what it doe
   - "X, not B, C or D": say what is done;
   - "previously", "now", "instead of", "moved from", "whose source of truth is…".
 
+## Layout
+
+A feature's or package's root folder holds only its public exports, one file per export, named after it, and their
+tests. Its implementation lives in folders below. Nothing outside a feature imports below its root, and within a
+package only its entry file re-exports.
+
 ## Never use top-level await
 
 Do not use `await` at module top level in any package's sources. Defer async work to a lazy-init pattern: store the
@@ -63,7 +69,9 @@ Standard script names a package may define:
   every package's `pages`.
 
 Publishing is governed only by the `private` field: `pnpm -r publish` publishes every package with `private: false` and
-skips the rest. Every package sets `private` explicitly, and samples are `private: true`. Don't add a `publish-public`
+skips the rest. Every package sets `private` explicitly. Samples are `private: true`, and every library is published
+publicly from the start: `private: false`, `publishConfig` with `"access": "public"`, `independentVersion: true`, and
+`LICENSE` among its files, as `ecs-gpu`'s are. Don't add a `publish-public`
 or similar script. `scripts/check-workspace-conventions.mjs` (`pnpm run check:workspace`, run in CI) enforces these.
 
 ## Checks

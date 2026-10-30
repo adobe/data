@@ -22,7 +22,7 @@ A high-performance, multithreaded Entity Component System for web-based applicat
   - Balanced scheduling across the main thread, workers and the GPU
   - Typed input, with its schema generated from the TypeScript type
   - Render systems that draw straight from component storage
-  - Observer systems for reading state into a UI
+  - Readonly systems for reading state into a UI
 - **Changes**
   - Per-component added and changed ticks: an O(1) check per entity, with each change seen exactly once
   - Filters that skip unchanged chunks and 64-row blocks
@@ -33,7 +33,7 @@ A high-performance, multithreaded Entity Component System for web-based applicat
   - Hierarchy traversal that reruns only below what changed
 - **Threads**
   - Worlds shared with other threads through a `MessagePort` or worker
-  - Joined threads run their own systems and observers, and lend their workers to the pool
+  - Joined threads run their own systems and readonly systems, and lend their workers to the pool
 - **Runtime**
   - Kernels allocate nothing per row; commands and lookups reuse their buffers
   - Runs resolve to what a body returns, and reject naming each system that failed; ticks' failures are reported out of

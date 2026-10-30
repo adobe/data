@@ -24,10 +24,10 @@ const count = System.create({ components: { with: [health] }, after: [spawn] }, 
 });
 const frame = System.create([spawn, count]);
 
-const watch = System.create({ observer: true, components: { with: [health] } }, row => {
+const watch = System.create({ readonly: true, components: { with: [health] } }, row => {
     console.log("health", row[health]);
 });
-const readSeen = System.create({ observer: true }, ({ resources }) => resources[seen]);
+const readSeen = System.create({ readonly: true }, ({ resources }) => resources[seen]);
 
 export const main = async (): Promise<void> => {
     await using world = World.create();

@@ -62,6 +62,6 @@ System.create({
     up: { through: parent },
 }, () => {});
 
-// An observer system reads what a sync point left, in no order.
-// @ts-expect-error an observer system has no up
-System.create({ observer: true, components: { with: [local] }, up: { through: parent } }, () => {});
+// A readonly system reads what a sync point left, in no order.
+// @ts-expect-error a readonly system has no up
+System.create({ readonly: true, components: { with: [local] }, up: { through: parent } }, () => {});

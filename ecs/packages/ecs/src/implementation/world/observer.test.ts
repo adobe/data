@@ -37,33 +37,33 @@ const grow = System.create({ components: { with: [amount] } }, row => { row[amou
 const nothing = System.create({}, () => {});
 
 // It keeps its context, which the build can't follow, so it's given what it reads.
-const watchLevel = System.create(giveAccess({ observer: true }, { resources: { read: [level] } }), context => {
+const watchLevel = System.create(giveAccess({ readonly: true }, { resources: { read: [level] } }), context => {
     seen.levels.push(context.resources[level]);
     seen.contexts.push(context);
 });
-const watchAmounts = System.create({ observer: true, components: { with: [amount], changed: [amount] } }, row => { seen.amounts.push(row[amount]); });
-const count = System.create({ observer: true, components: { with: [amount] } }, () => { seen.counted.push(1); });
-const inCell = System.create({ observer: true, lookup: { found: { index: byCell } } }, ({ lookup }) => {
+const watchAmounts = System.create({ readonly: true, components: { with: [amount], changed: [amount] } }, row => { seen.amounts.push(row[amount]); });
+const count = System.create({ readonly: true, components: { with: [amount] } }, () => { seen.counted.push(1); });
+const inCell = System.create({ readonly: true, lookup: { found: { index: byCell } } }, ({ lookup }) => {
     seen.cells.push(lookup.found(7).length);
 });
-const failing = System.create({ observer: true }, ({ resources }) => {
+const failing = System.create({ readonly: true }, ({ resources }) => {
     if (resources[level] > 0) throw new Error("observer failed");
 });
 const raiseThenWatch = System.create([raise, watchLevel]);
-const watchLevelChanges = System.create({ observer: true, resources: { changed: [level] } }, ({ resources }) => {
+const watchLevelChanges = System.create({ readonly: true, resources: { changed: [level] } }, ({ resources }) => {
     seen.levels.push(resources[level]);
 });
 
 /** The world a removing body acts on. */
 let current: World | null = null;
-const removeLevel = System.create({ observer: true }, () => {
+const removeLevel = System.create({ readonly: true }, () => {
     seen.removals.push(1);
     current?.remove(watchLevel);
 });
 
 /** Adds `watchLevel` to the world the test runs, during a run. */
 const addWatch = System.create({}, () => { current?.add(watchLevel); });
-const addLevel = System.create({ observer: true }, () => {
+const addLevel = System.create({ readonly: true }, () => {
     current?.add(watchLevel);
 });
 

@@ -31,7 +31,7 @@ const hide = System.create({ components: { with: [sprite] } }, (row, { commands 
 });
 
 const drawing: string[] = [];
-const read = System.create({ observer: true, components: { with: [layer, drawn], optional: [mesh, sprite] } }, row => {
+const read = System.create({ readonly: true, components: { with: [layer, drawn], optional: [mesh, sprite] } }, row => {
     drawing.push(`${row[mesh] === undefined ? `sprite ${row[sprite]}` : `mesh ${row[mesh]}`} on layer ${row[layer]}`);
 });
 /** Logs what's drawn, in order. */

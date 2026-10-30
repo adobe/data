@@ -37,7 +37,7 @@ const nothing = System.create({}, () => {});
 
 /** Counts passes: the observer passes after each run's sync point. */
 const passes = { count: 0 };
-const counter = System.create({ observer: true }, () => { passes.count++; });
+const counter = System.create({ readonly: true }, () => { passes.count++; });
 
 /**
  * A world of `count` entities, each amount its index and one more, at level 1: the runs below registered, so runners
@@ -184,7 +184,7 @@ describe("observer factories", () => {
     it("rethrow only their own systems' failures from their runs, not those of observer systems the world added", async () => {
         using reported = catchOutOfBand();
         await using world = await seeded(3);
-        const failing = System.create({ observer: true }, () => { throw new Error("added failed"); });
+        const failing = System.create({ readonly: true }, () => { throw new Error("added failed"); });
         world.add(failing);
         const caught: unknown[] = [];
         const original = globalThis.queueMicrotask;

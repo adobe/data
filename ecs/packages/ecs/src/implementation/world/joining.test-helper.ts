@@ -36,7 +36,7 @@ export const append = System.create({}, ({ resources }, input: { readonly name: 
     return resources[names].length;
 });
 /** Reads `total` from an observer system, which a joined thread runs itself. */
-export const readTotal = System.create({ observer: true }, ({ resources }) => resources[total]);
+export const readTotal = System.create({ readonly: true }, ({ resources }) => resources[total]);
 export const spawn = System.create({}, ({ commands }, input: { readonly x: number }) => {
     commands.spawn([point, label, marked])({ [point]: [input.x, -input.x], [label]: `p${input.x}` });
 });

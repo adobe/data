@@ -25,7 +25,7 @@ const track = System.create({
 
 const refreshed: boolean[] = [];
 const watch = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [target] },
     lookup: { enemy: { with: [health], changed: [health] } },
 }, (row, { lookup }) => {
@@ -34,7 +34,7 @@ const watch = System.create({
 });
 
 const aims: number[] = [];
-const readAims = System.create({ observer: true, components: { with: [aim] } }, row => {
+const readAims = System.create({ readonly: true, components: { with: [aim] } }, row => {
     aims.push(row[aim]);
 });
 

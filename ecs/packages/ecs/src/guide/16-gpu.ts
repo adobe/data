@@ -32,7 +32,7 @@ const draw = System.render({ shader: { accessors: { dotPosition: position, dotSi
 });
 const shaderCode = Gpu.wgsl(draw);
 
-const read = System.create({ observer: true, components: { with: [position] } }, row => {
+const read = System.create({ readonly: true, components: { with: [position] } }, row => {
     console.log("at", row[position]);
 });
 

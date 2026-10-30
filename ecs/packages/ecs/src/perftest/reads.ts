@@ -78,7 +78,7 @@ const lookups = async (system: System): Promise<{ readonly best: number; readonl
 /** Every entity a seeded world holds. */
 const entitiesOf = async (world: World): Promise<readonly Entity[]> => {
     const found: Entity[] = [];
-    await world.run(System.create({ observer: true, components: { with: [value] } }, row => { found.push(row.entity); }));
+    await world.run(System.create({ readonly: true, components: { with: [value] } }, row => { found.push(row.entity); }));
     return found;
 };
 
@@ -124,7 +124,7 @@ export const readBenchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(10_000);
             copied = 0;
-            const best = await fastest(() => world.run(System.create({ observer: true }, ({ resources }) => { copied = resources[level]; })), 300);
+            const best = await fastest(() => world.run(System.create({ readonly: true }, ({ resources }) => { copied = resources[level]; })), 300);
             check(copied === 3, "read run observer: wrong value");
             await world.dispose();
             return best;

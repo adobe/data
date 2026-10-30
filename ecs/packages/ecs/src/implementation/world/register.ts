@@ -132,7 +132,7 @@ const observerTargetOf = (state: State, leaf: Leaf): ObserverTarget | undefined 
 
 /** A runner for a leaf where it runs now: on the joined thread filling its thread, or that added it, or here. */
 const placedRunner = (state: State, leaf: Leaf, since = 0): Runner => {
-    if (leaf.declaration.observer === true) {
+    if (leaf.declaration.readonly === true) {
         const target = observerTargetOf(state, leaf);
         return target === undefined ? createRunner(state, leaf, since) : createJoinedObserverRunner(state, leaf, target, since);
     }
@@ -394,7 +394,7 @@ export const createRegistrar = (state: State): Registrar => {
 
     const place = (): void => {
         eachRunner((leaf, old, entry) => {
-            if (leaf.declaration.observer === true) {
+            if (leaf.declaration.readonly === true) {
                 if (observerTargetOf(state, leaf) === old.joined?.target) return;
                 replace(leaf, entry, old, placedRunner(state, leaf, old.lastRun()));
                 return;

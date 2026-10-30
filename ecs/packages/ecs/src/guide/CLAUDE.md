@@ -45,5 +45,5 @@ it in `NN-name.type-test.ts`, under a `// @ts-expect-error` that the package's b
   before they're printed.
 - Keys are `Symbol()` with no description: the build's id names each by its binding.
 - Archetypes are types, so their names are PascalCase: `const Particle = [position, velocity] as const`.
-- Use the public API only, as a consumer imports it, not internal modules. Read a world through observer systems.
+- Use the public API only, as a consumer imports it, not internal modules. Read a world through readonly systems.
 - Lines change as code does: the test of links fails on any that no longer covers whole code, so move them with it.

@@ -17,6 +17,6 @@ that isn't data, such as an `AudioContext`, is stored as it is; a change inside 
 written back. An `Entity` resource with no entity holds `Entity.none`, which is `0` rather than `null`, so it stays data
 every thread can read.
 
-A system reads resources by key. With `observer: true` it only reads, and runs after the world's changes apply.
+A system reads resources by key. With `readonly: true` it only reads, and runs after the world's changes apply.
 [`run`](01-resources.ts#L31-L32) runs a system once, and resolves to what the body returns, for a system without
 components.

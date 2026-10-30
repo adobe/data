@@ -36,7 +36,7 @@ declare module "@adobe/ecs" {
 
 /** Sends each revision of a chapter's files to be checked and compiled. */
 export const requestBuilds = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [revision, sources], changed: [revision] },
     resources: { is: [builds] },
 }, (row, { resources }) => {
@@ -45,7 +45,7 @@ export const requestBuilds = System.create({
 
 /** Lists the shown chapter's problems, and marks the shown file's in the editor. */
 export const bindProblems = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, typeProblems, buildProblems, sources, fileShown], changed: [shown, typeProblems, buildProblems, fileShown] },
     resources: { is: [problemsElement, editor] },
 }, (row, { resources }) => {
@@ -57,7 +57,7 @@ export const bindProblems = System.create({
 
 /** Shows where the shown chapter's run is. */
 export const bindStatus = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, runState], changed: [shown, runState] },
     resources: { is: [statusElement] },
 }, (row, { resources }) => {
@@ -66,7 +66,7 @@ export const bindStatus = System.create({
 
 /** Shows what the shown chapter's run logged. */
 export const bindConsole = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, logged], changed: [shown, logged] },
     resources: { is: [consoleElement] },
 }, (row, { resources }) => {
@@ -78,7 +78,7 @@ export const bindConsole = System.create({
  * was last shown, and the Problems, each saying whether an error is among them.
  */
 export const bindTabs = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, tab, logged, consoleSeen, typeProblems, buildProblems], changed: [shown, tab, logged, consoleSeen, typeProblems, buildProblems] },
     resources: { is: [tabsElement] },
 }, (row, { resources }) => {
@@ -96,7 +96,7 @@ export const bindTabs = System.create({
 
 /** Lists what the shown chapter's systems compile to, and opens the one the reader chose. */
 export const bindCompiled = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, described, systemOpened], changed: [shown, described, systemOpened] },
     resources: { is: [compiledElement] },
 }, (row, { resources }) => {
@@ -107,7 +107,7 @@ export const bindCompiled = System.create({
 
 /** Lets the editor ask TypeScript what's at a place in the shown chapter's files. */
 export const bindQuickInfo = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown], changed: [shown] },
     resources: { is: [editor, builds] },
 }, (row, { resources }) => {
@@ -118,7 +118,7 @@ export const bindQuickInfo = System.create({
 
 /** Marks the shown file's systems in the editor at their calls. */
 export const bindSystemMarks = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, described, sources, fileShown], changed: [shown, described, fileShown] },
     resources: { is: [editor] },
 }, (row, { resources }) => {
@@ -129,7 +129,7 @@ export const bindSystemMarks = System.create({
 
 /** Frames the shown chapter's latest run. */
 export const bindOutput = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, page], changed: [shown, page] },
     resources: { is: [outputElement] },
 }, (row, { resources }) => {

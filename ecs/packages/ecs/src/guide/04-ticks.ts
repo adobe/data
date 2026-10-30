@@ -16,11 +16,11 @@ const advance = System.create({}, ({ resources }) => {
 });
 
 let reached: (elapsed: number) => void = () => {};
-const watch = System.create({ observer: true, resources: { changed: [elapsed] } }, ({ resources }) => {
+const watch = System.create({ readonly: true, resources: { changed: [elapsed] } }, ({ resources }) => {
     if (resources[elapsed] >= 30) reached(resources[elapsed]);
 });
 
-const readTime = System.create({ observer: true }, ({ resources }) => ({ elapsed: resources[elapsed], delta: resources[clock].delta }));
+const readTime = System.create({ readonly: true }, ({ resources }) => ({ elapsed: resources[elapsed], delta: resources[clock].delta }));
 
 const step = System.create({}, ({ resources, reduce }) => {
     resources[steps] += 1;
@@ -28,7 +28,7 @@ const step = System.create({}, ({ resources, reduce }) => {
 });
 
 let finished: (steps: number) => void = () => {};
-const watchSteps = System.create({ observer: true, resources: { changed: [steps] } }, ({ resources }) => {
+const watchSteps = System.create({ readonly: true, resources: { changed: [steps] } }, ({ resources }) => {
     if (resources[steps] === 3) finished(resources[steps]);
 });
 

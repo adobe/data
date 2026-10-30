@@ -30,7 +30,7 @@ const assign = System.create({ kernel: true, components: { with: [position], opt
     row[velocity] = row[position];
 });
 const totals = { moved: 0, still: 0 };
-const sum = System.create({ observer: true, components: { with: [position], optional: [velocity] } }, row => {
+const sum = System.create({ readonly: true, components: { with: [position], optional: [velocity] } }, row => {
     if (row[velocity] === undefined) totals.still += row[position];
     else totals.moved += row[position];
 });

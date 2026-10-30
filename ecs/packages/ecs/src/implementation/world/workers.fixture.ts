@@ -149,8 +149,8 @@ const emitted = { seen: 0 };
 const countEmitted = System.create({ components: { added: [position], with: [spawned] } }, () => { emitted.seen++; });
 
 const gathered: Entity[] = [];
-const gatherPositioned = System.create({ observer: true, components: { with: [position] } }, row => { gathered.push(row.entity); });
-const gatherSpawned = System.create({ observer: true, components: { with: [spawned] } }, row => { gathered.push(row.entity); });
+const gatherPositioned = System.create({ readonly: true, components: { with: [position] } }, row => { gathered.push(row.entity); });
+const gatherSpawned = System.create({ readonly: true, components: { with: [spawned] } }, row => { gathered.push(row.entity); });
 
 /** The entities an observer row system passes, in storage order. */
 const storageOrder = async (world: World, gather: System<void>): Promise<Entity[]> => {

@@ -185,10 +185,10 @@ describe("the todo app", () => {
 const failing = System.create({ components: { with: [todo] } }, () => {
     throw new Error("a tick's system failed");
 });
-const failingObserver = System.create({ observer: true, components: { with: [row], changed: [row] } }, () => {
+const failingObserver = System.create({ readonly: true, components: { with: [row], changed: [row] } }, () => {
     throw new Error("a tick's observer failed");
 });
-const pass = System.create({ observer: true }, () => {});
+const pass = System.create({ readonly: true }, () => {});
 
 describe("the todo app's failures", () => {
     /** What the world reported, as `error` events on the page, which the browser logs unless they're handled. */

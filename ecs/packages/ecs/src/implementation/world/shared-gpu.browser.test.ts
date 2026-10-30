@@ -59,7 +59,7 @@ const fractions = System.create({ kernel: "gpu", components: { with: [scale, val
 });
 const fractionsOf = async (world: ReturnType<typeof createWorld>): Promise<readonly (readonly number[])[]> => {
     const read: [number, number[]][] = [];
-    await world.run(System.create({ observer: true, components: { with: [value, copied, product, sum, compound] } }, row => { read.push([row[value], [row[copied], row[product], row[sum], row[compound], row[value]]]); }));
+    await world.run(System.create({ readonly: true, components: { with: [value, copied, product, sum, compound] } }, row => { read.push([row[value], [row[copied], row[product], row[sum], row[compound], row[value]]]); }));
     return read.sort((a, b) => a[0] - b[0]).map(([, values]) => values);
 };
 
@@ -71,7 +71,7 @@ const device = async (): Promise<GPUDevice> => {
 
 const results = async (world: ReturnType<typeof createWorld>): Promise<readonly string[]> => {
     const read: [number, string][] = [];
-    await world.run(System.create({ observer: true, components: { with: [value, out, steps] } }, row => { read.push([row[value], `${row[out]} ${row[steps]}`]); }));
+    await world.run(System.create({ readonly: true, components: { with: [value, out, steps] } }, row => { read.push([row[value], `${row[out]} ${row[steps]}`]); }));
     return read.sort((a, b) => a[0] - b[0]).map(([, text]) => text);
 };
 

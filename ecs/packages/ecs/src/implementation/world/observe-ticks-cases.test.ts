@@ -29,7 +29,7 @@ const count = System.create({}, ({ resources }) => { resources[frames] += 1; });
 const watch = System.create({}, ({ resources }) => { resources[seen] = resources[clock].tick; });
 const fail = System.create({}, () => { throw new Error("tick failed"); });
 const nothing = System.create({}, () => {});
-const idle = System.create({ observer: true }, () => {});
+const idle = System.create({ readonly: true }, () => {});
 const fast = System.create({}, ({ resources }) => {
     resources[cadence] = { kind: "fixed", step: 1 };
     resources[always] = true;

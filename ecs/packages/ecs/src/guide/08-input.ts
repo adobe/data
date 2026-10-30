@@ -30,7 +30,7 @@ const heal = System.create({
 });
 
 const healths: number[] = [];
-const read = System.create({ observer: true, components: { with: [health] } }, row => {
+const read = System.create({ readonly: true, components: { with: [health] } }, row => {
     healths.push(row[health]);
 });
 

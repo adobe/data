@@ -27,11 +27,11 @@ const warm = System.create({ kernel: "gpu", components: { with: [rate, heat] } }
 });
 
 let total = 0;
-const sum = System.create({ observer: true, components: { with: [heat] } }, row => { total += row[heat]; });
+const sum = System.create({ readonly: true, components: { with: [heat] } }, row => { total += row[heat]; });
 
 const byHeat = Index.create({ key: [heat], sorted: true });
 let hot = 0;
-const countHot = System.create({ observer: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
+const countHot = System.create({ readonly: true, lookup: { hot: { index: byHeat } } }, ({ lookup }) => {
     hot = lookup.hot({ ">=": 150 }).length;
 });
 

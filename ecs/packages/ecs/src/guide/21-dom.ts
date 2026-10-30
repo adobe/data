@@ -51,7 +51,7 @@ const create = System.create({ components: { with: [position], not: [dot] }, res
 });
 // Moves each dot whose particle moved, by a transform, which the page doesn't lay out again.
 const draw = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [position, dot], optional: [traced], changed: [position] },
 }, (row, { resources }) => {
     const [x, y] = row[position];

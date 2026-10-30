@@ -24,8 +24,8 @@ const remove = System.create({ target: "entity", components: { with: [tagged] } 
 });
 let amounts: number[] = [];
 let changed: number[] = [];
-const readAmounts = System.create({ observer: true, components: { with: [amount] } }, row => { amounts.push(row[amount]); });
-const watchChanged = System.create({ observer: true, components: { with: [amount], changed: [amount] } }, row => { changed.push(row[amount]); });
+const readAmounts = System.create({ readonly: true, components: { with: [amount] } }, row => { amounts.push(row[amount]); });
+const watchChanged = System.create({ readonly: true, components: { with: [amount], changed: [amount] } }, row => { changed.push(row[amount]); });
 
 const inline = () => createWorld({ [workers]: 0 });
 const amountsOf = async (world: ReturnType<typeof inline>): Promise<number[]> => {

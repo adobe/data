@@ -403,16 +403,16 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
     };
 
     const tracker = ordered !== null
-        ? System.create(labelled({ observer: true, lookup: { list: { index: ordered, changed: reads } } }, name, { lookup: { list: reads } }), ({ lookup }) => {
+        ? System.create(labelled({ readonly: true, lookup: { list: { index: ordered, changed: reads } } }, name, { lookup: { list: reads } }), ({ lookup }) => {
             track(lookup.list(), null, fromSorted);
         })
         : byRange !== null
-            ? System.create(labelled({ observer: true, lookup: { list: { index: byRange, changed: reads } } }, name, { lookup: { list: reads } }), ({ lookup }) => {
+            ? System.create(labelled({ readonly: true, lookup: { list: { index: byRange, changed: reads } } }, name, { lookup: { list: reads } }), ({ lookup }) => {
                 // A range is of a `where` condition on the index's key, which the query's type checked against its
                 // values.
                 track(null, entry => ownRange(entry, range => lookup.list(range as Parameters<typeof lookup.list>[0]), () => lookup.list()), fromSorted);
             })
-            : System.create(labelled({ observer: true, lookup: { list: { index: keylessOf(has, not), changed: reads } } }, name, { lookup: { list: reads } }), ({ lookup }) => {
+            : System.create(labelled({ readonly: true, lookup: { list: { index: keylessOf(has, not), changed: reads } } }, name, { lookup: { list: reads } }), ({ lookup }) => {
                 track(lookup.list(), null, fromKeyless);
             });
 
@@ -466,7 +466,7 @@ const createShape = (state: WorldState, byShape: Map<string, QueryShape>, id: st
         for (const entry of scan.entries) entry.gather.start();
         accept = acceptOf(scan.entries);
     };
-    const scanner = System.create(labelled({ observer: true, components: { with: [...reads, ...required.filter(key => !reads.includes(key))], not } }, name, { components: reads }), row => {
+    const scanner = System.create(labelled({ readonly: true, components: { with: [...reads, ...required.filter(key => !reads.includes(key))], not } }, name, { components: reads }), row => {
         if (accept === null) start();
         if (direct === 0) {
             accept?.(row);

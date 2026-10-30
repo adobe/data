@@ -42,8 +42,8 @@ decisions about ecs here rather than in a personal memory, so every machine and 
 
 ## Direction
 
-- **Reading and observing go through systems.** Consumers write plain observer systems, as the DOM work will; the
-  `Observe<T>` pattern isn't offered to them, and a world has no observers. Observer factories built on observer
+- **Reading and observing go through systems.** Consumers write plain readonly systems, as the DOM work will; the
+  `Observe<T>` pattern isn't offered to them, and a world has no readonly systems. Observer factories built on observer
   systems with only the public API stay internal (`src/observe`), for tests, debugging and benchmarks, never exported.
 - **Observing single entities is mainly for debugging.** Production reads, such as DOM bindings, are ordinary row
   systems over every matching row, which always beat one system per entity. Spend optimization effort on row systems

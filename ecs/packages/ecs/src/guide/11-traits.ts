@@ -33,9 +33,9 @@ const destroy = System.create({ components: { with: [ship] } }, (row, { commands
 });
 
 const counts = { outlined: 0, targeting: 0, entities: 0 };
-const countOutlined = System.create({ observer: true, components: { with: [outline] } }, () => { counts.outlined += 1; });
-const countTargeting = System.create({ observer: true, components: { with: [target] } }, () => { counts.targeting += 1; });
-const countAll = System.create({ observer: true, components: {} }, () => { counts.entities += 1; });
+const countOutlined = System.create({ readonly: true, components: { with: [outline] } }, () => { counts.outlined += 1; });
+const countTargeting = System.create({ readonly: true, components: { with: [target] } }, () => { counts.targeting += 1; });
+const countAll = System.create({ readonly: true, components: {} }, () => { counts.entities += 1; });
 const count = System.create([countOutlined, countTargeting, countAll]);
 
 export const main = async (): Promise<void> => {

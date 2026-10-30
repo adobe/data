@@ -80,7 +80,7 @@ const read = (system: System, name: string) => measure(system, async world => {
 /** Each row's text, as the last write left it. */
 const written = (name: string) => async (world: World): Promise<void> => {
     let wrong = 0;
-    await world.run(System.create({ observer: true, components: { with: [text, boxed] } }, row => {
+    await world.run(System.create({ readonly: true, components: { with: [text, boxed] } }, row => {
         if (row[text] !== row[boxed].text && row[text] !== labelOf(row.entity, round) && row[boxed].text !== labelOf(row.entity, round)) wrong++;
     }));
     check(wrong === 0, `${name}: wrong text`);

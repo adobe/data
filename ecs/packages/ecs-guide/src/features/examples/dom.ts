@@ -24,7 +24,7 @@ declare module "@adobe/ecs" {
 
 /** Puts the shown chapter's shown file in the editor, and its files in the tabs; a chapter without examples hides them. */
 export const bindEditor = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, sources, fileShown], changed: [shown, sources, fileShown] },
     resources: { is: [editor, filesElement, exampleArea] },
 }, (row, { resources }) => {
@@ -37,7 +37,7 @@ export const bindEditor = System.create({
 
 /** Shows the lines asked for in the editor. */
 export const bindRevealed = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, revealed], changed: [shown, revealed] },
     resources: { is: [editor] },
 }, (row, { resources }) => {
@@ -46,7 +46,7 @@ export const bindRevealed = System.create({
 
 /** Lets the reset button reset only a chapter edited. */
 export const bindReset = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [shown, sources, originals], changed: [shown, sources] },
     resources: { is: [resetElement] },
 }, (row, { resources }) => {

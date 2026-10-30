@@ -32,7 +32,7 @@ export const setHolding = System.create({}, ({ resources }, input: { readonly ho
 });
 
 /** After each sync point that changed the tally: notes it, and, while `holding` says so, waits there to be released. */
-export const watchTally = System.create({ observer: true, resources: { changed: [tally] } }, ({ resources }) => {
+export const watchTally = System.create({ readonly: true, resources: { changed: [tally] } }, ({ resources }) => {
     const value = resources[tally];
     tallies.push(value);
     const { words } = gate;

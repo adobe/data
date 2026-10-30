@@ -2,7 +2,7 @@
 
 The same particles, drawn in immediate mode: each frame, the canvas is cleared and drawn again whole.
 
-[`draw`](22-canvas.ts#L52-L80) is one observer without components, so it runs once per tick, not per particle.
+[`draw`](22-canvas.ts#L52-L80) is one readonly system without components, so it runs once per tick, not per particle.
 
 - `changed: [clock]` runs it after every tick, and `is: [pen]` waits for a 2D context.
 - It reads every particle through [an index without a key](22-canvas.ts#L50-L51), `key: []`, and the traced one

@@ -12,7 +12,7 @@ counts the sprites and frames.
 
 - **Main** (`main.ts`) owns the page. It starts both workers, hands each a port to the world, and joins the world. It
   moves its `<canvas>` to the world's thread with `transferControlToOffscreen()`, as the input of a run of
-  `attachSurface`, and adds `show`, an observer system that writes the counts into the overlay after each frame that
+  `attachSurface`, and adds `show`, a readonly system that writes the counts into the overlay after each frame that
   changes them.
 - **The world's worker** (`world.ts`) creates the world, which ticks every frame, and shares it on the ports main
   sends. The canvas becomes its `surface` resource.

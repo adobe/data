@@ -87,7 +87,7 @@ const stirBands = System.create({ components: { with: [serial, band] } }, (row, 
 /** An observer system of the joined thread's labels: the serials of each reader's band, in entity order, by reader. */
 let observedBands: string[] = [];
 const observeBands = System.create({
-    observer: true,
+    readonly: true,
     components: { with: [target, bandReader, label] },
     lookup: { inBand: { index: bands } },
 }, (row, { lookup }) => {
@@ -219,14 +219,14 @@ const inOrder = System.create({ components: { with: [rank, label] }, order: rank
 const countWhenMoved = System.create({ components: { with: [cell, label] }, lookup: { near: { index: grid, changed: true } } }, (row, { lookup }) => {
     row[label] = { text: String(lookup.near(row[cell]).length) };
 });
-const readWhenMoved = System.create({ observer: true, components: { with: [label] }, lookup: { near: { index: grid, changed: true } } }, row => {
+const readWhenMoved = System.create({ readonly: true, components: { with: [label] }, lookup: { near: { index: grid, changed: true } } }, row => {
     void row[label];
 });
-const ownWhenMoved = System.create({ observer: true, lookup: { near: { index: grid, changed: true } } }, () => {});
+const ownWhenMoved = System.create({ readonly: true, lookup: { near: { index: grid, changed: true } } }, () => {});
 
 /** The entities `readLabels` reads, and their labels. */
 const reading: { entities: readonly Entity[]; labels: readonly string[] } = { entities: [], labels: [] };
-const readLabels = System.create({ observer: true, lookup: { labeled: { with: [label] } } }, ({ lookup }) => {
+const readLabels = System.create({ readonly: true, lookup: { labeled: { with: [label] } } }, ({ lookup }) => {
     reading.labels = reading.entities.map(entity => lookup.labeled(entity)?.[label].text ?? "missing");
 });
 
@@ -279,7 +279,7 @@ const heldSerials = Index.create({ key: [serial], unique: true, components: { wi
 let observedHeld = "";
 /** An observer system reading every held row through the keyless index, and serial 3's through the unique one. */
 const observeHeld = System.create({
-    observer: true,
+    readonly: true,
     lookup: { all: { index: held }, bySerial: { index: heldSerials } },
 }, ({ lookup }) => {
     const all = lookup.all();

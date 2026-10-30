@@ -23,7 +23,7 @@ const award = System.create({ components: { with: [score] } }, (row, { resources
     row[score] += resources[bonus];
 });
 
-const read = System.create({ observer: true, components: { with: [score] } }, row => {
+const read = System.create({ readonly: true, components: { with: [score] } }, row => {
     console.log("score", row[score]);
 });
 

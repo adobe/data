@@ -26,22 +26,24 @@ beforeAll(async () => {
     guard = code => protect(code, source => parse(source, { lang: "js" }));
 });
 
-const request = (files: CompileRequest["files"]): CompileRequest => ({ kind: "compile", run: 1, files, runs: "https://guide/run/", runtime: "https://guide/runtime.js", names: ["System"] });
+const core = numbered(1)?.package ?? "";
+const request = (files: CompileRequest["files"], owner = core): CompileRequest => ({ kind: "compile", run: 1, package: owner, files, runs: "https://guide/run/", runtime: "https://guide/runtime.js", packages: [{ name: owner, names: ["System"] }] });
 
 it("compiles every chapter's files without a diagnostic, their kernels inlined, their ids naming the package", async () => {
     let kernels = 0;
     for (const chapter of chapters.filter(chapter => chapter.files.length > 0)) {
-        const { diagnostics, files } = await compileRun(compiler, request(chapter.files.map(file => ({ name: file.name, code: file.source }))), guard);
+        const { diagnostics, files } = await compileRun(compiler, request(chapter.files.map(file => ({ name: file.name, code: file.source })), chapter.package), guard);
         expect([chapter.slug, diagnostics]).toEqual([chapter.slug, []]);
-        const modules = files?.slice(2) ?? [];
-        expect(modules.map(file => file.path)).toEqual(chapter.files.map(file => `node_modules/@adobe/ecs/src/guide/${file.name}`));
+        // Past its page, the runtime's exports module and its package's.
+        const modules = files?.slice(3) ?? [];
+        expect(modules.map(file => file.path)).toEqual(chapter.files.map(file => `node_modules/${chapter.package}/src/guide/${file.name}`));
         for (const module of modules) {
             expect(module.text).not.toContain("@ecs-kernel-inline/");
             kernels += [...module.text.matchAll(/"data:text\/javascript;base64,/g)].length;
             // Each module's own code is protected from loops that never end, its kernels never.
             expect(module.text.startsWith(`import { loopGuard as __guideLoop, callGuard as __guideCall } from "@ecs-guide/guard";`)).toBe(true);
             for (const [, kernel = ""] of module.text.matchAll(/"data:text\/javascript;base64,([^"]+)"/g)) expect(atob(kernel)).not.toContain("__guide");
-            if (module.text.includes("identify$(")) expect(module.text).toMatch(/"@adobe\/ecs@[^/]+\/src\/guide\/[^#"]+#\w+"/);
+            if (module.text.includes("identify$(")) expect(module.text).toContain(`"${chapter.package}@`);
         }
     }
     expect(kernels).toBe(24);
@@ -61,7 +63,7 @@ it("describes each system of every chapter, at its call in the file as given, wi
     const counts = { compiled: 0, eligible: 0, registration: 0, none: 0 };
     for (const chapter of chapters.filter(chapter => chapter.files.length > 0)) {
         const sources = chapter.files.map(file => ({ name: file.name, code: file.source }));
-        const { systems } = await compileRun(compiler, request(sources), guard);
+        const { systems } = await compileRun(compiler, request(sources, chapter.package), guard);
         expect(systems.map(entry => entry.file)).toEqual(sources.map(source => source.name));
         for (const { file, systems: described } of systems) {
             const code = sources.find(source => source.name === file)?.code ?? "";
@@ -93,7 +95,7 @@ it("compiles a kernel whose body loops, its kernel holding no loop protection", 
     expect(edited).not.toBe(kernels.source);
     const { diagnostics, files } = await compileRun(compiler, request([{ name: kernels.name, code: edited }]), guard);
     expect(diagnostics).toEqual([]);
-    const module = files?.[2]?.text ?? "";
+    const module = files?.[3]?.text ?? "";
     const inlined = [...module.matchAll(/"data:text\/javascript;base64,([^"]+)"/g)].map(([, kernel = ""]) => atob(kernel));
     expect(inlined.length).toBe(2);
     for (const kernel of inlined) expect(kernel).not.toContain("__guide");

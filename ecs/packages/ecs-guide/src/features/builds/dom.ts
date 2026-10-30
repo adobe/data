@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System } from "@adobe/ecs";
-import { shown } from "../chapters/data.js";
+import { owner, shown } from "../chapters/data.js";
 import { fileShown, revision, sources } from "../examples/data.js";
 import { editor } from "../examples/dom.js";
 import type { Builds } from "./builds.js";
@@ -37,10 +37,10 @@ declare module "@adobe/ecs" {
 /** Sends each revision of a chapter's files to be checked and compiled. */
 export const requestBuilds = System.create({
     readonly: true,
-    components: { with: [revision, sources], changed: [revision] },
+    components: { with: [revision, sources, owner], changed: [revision] },
     resources: { is: [builds] },
 }, (row, { resources }) => {
-    if (row[revision] > 0 && row[sources].length > 0) resources[builds].request(row.entity, row[revision], row[sources]);
+    if (row[revision] > 0 && row[sources].length > 0) resources[builds].request(row.entity, row[revision], row[sources], row[owner]);
 });
 
 /** Lists the shown chapter's problems, and marks the shown file's in the editor. */

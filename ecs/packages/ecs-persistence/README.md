@@ -56,12 +56,17 @@ const spawned = await spawn({ world: other, snapshot: loaded });
   `dropped`; a weak reference to it is left out; any other value naming it is `Entity.none`. The result's `entities`
   maps each of the snapshot's entities to the one spawned for it, or null; `entities: false` leaves the map out, which
   saves about 85 ms and 50 MB at a million entities.
-- Copying entities from one world into another is a snapshot spawned there: `spawn({ world: to, snapshot: await snapshot({ world: from }) })`, without
-  bytes.
+- Copying entities from one world into another is a snapshot spawned there:
+  `spawn({ world: to, snapshot: await snapshot({ world: from }) })`, without bytes.
+- **Merging:** `match` takes unique indexes saying which of the snapshot's entities are already in the world:
+  `spawn({ world, snapshot, match: [materialByName] })`. An entity an index holds in the world, with the key of one
+  of the snapshot's it holds, stands for that one, keeping its own values, and every entity value naming the
+  snapshot's names it; `entities` maps the one to the other. Keys compare as stored, a number's or a vector's bytes and
+  a string's or an object's value. It fails for an index with a part of its key that isn't persisted, or two of the
+  snapshot's entities one index holds with one key.
 
 Each reports why it didn't happen as `{ failure }`, rather than throwing, and `result.failure !== undefined` tells
-which. A snapshot is opaque: only these functions
-read it.
+which. A snapshot is opaque: only these functions read it.
 
 ## Speed
 
@@ -69,4 +74,5 @@ read it.
 entity, this package with reading rows and spawning entity by entity. At 1M entities, a snapshot takes about 6 ms
 against 110 ms, encoding 5 ms against 150 ms for `JSON.stringify` of the rows, and decoding views the bytes where they
 are. Spawning takes about 310 ms against 1,450 ms, most of it the world's bookkeeping of owner references at its sync
-point; without references, 1M entities spawn in about 26 ms.
+point; without references, 1M entities spawn in about 26 ms. Matching reads the world's entities each index holds, so its cost grows with those: a
+merge of 1M entities, each matched by a unique index on its `Vec3`, takes about 940 ms.

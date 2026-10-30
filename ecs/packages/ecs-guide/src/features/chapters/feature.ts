@@ -15,6 +15,6 @@ export const chapters: Feature = {
     system: dom,
     connect,
     start: async world => {
-        await world.run(addChapters, { chapters: content.map(item => ({ number: item.number, slug: item.slug, title: item.title, part: item.part, prose: marked.parse(item.prose, { async: false }) })) });
+        await world.run(addChapters, { chapters: content.map(item => ({ number: item.number, slug: item.slug, title: item.title, part: item.part, package: item.package, prose: marked.parse(item.prose, { async: false }) })) });
     },
 };

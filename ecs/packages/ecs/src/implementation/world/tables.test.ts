@@ -46,14 +46,29 @@ const tablesOf = (components: readonly Component.Key[], resources: readonly Reso
     System.create({ readonly: true, tables: { components, resources, not } }, ({ tables }): Tables => tables);
 
 const spawnedBy: { spawned: Table.Spawned } = { spawned: { entities: [], dropped: 0 } };
-const given: { tables: readonly Table[]; resources?: { readonly [key: symbol]: unknown } } = { tables: [] };
+const given: { tables: readonly Table[]; resources?: { readonly [key: symbol]: unknown }; existing?: ReadonlyMap<Entity, Entity> } = { tables: [] };
 const spawnGiven = System.create(({ commands }) => {
-    spawnedBy.spawned = given.resources === undefined ? commands.spawnTables(given.tables) : commands.spawnTables(given.tables, given.resources);
+    spawnedBy.spawned = commands.spawnTables(given.tables, { resources: given.resources, existing: given.existing });
 });
-const spawnTables = async (world: ReturnType<typeof inline>, tables: readonly Table[]): Promise<Table.Spawned> => {
+const spawnTables = async (world: ReturnType<typeof inline>, tables: readonly Table[], existing?: ReadonlyMap<Entity, Entity>): Promise<Table.Spawned> => {
     given.tables = tables;
-    await world.run(spawnGiven);
+    given.existing = existing;
+    try {
+        await world.run(spawnGiven);
+    }
+    finally {
+        given.existing = undefined;
+    }
     return spawnedBy.spawned;
+};
+
+/** Spawns `labels` in `world`, giving each label's entity. */
+const spawnLabels = async (world: ReturnType<typeof inline>, labels: readonly string[]): Promise<ReadonlyMap<string, Entity>> => {
+    const made = new Map<string, Entity>();
+    await world.run(System.create(({ commands }) => {
+        for (const text of labels) made.set(text, commands.spawn([label])({ [label]: text }));
+    }));
+    return made;
 };
 
 const values = System.create({ readonly: true, components: { with: [label], optional: [position, parent, target, link, friends, tags, buddy] } }, row => {
@@ -196,6 +211,53 @@ describe("tables", () => {
         const read = await readAll(other);
         const inside = read.find(entry => entry.label === "inside")?.entity;
         expect(read.find(entry => entry.label === "pointing")).toMatchObject({ buddy: Entity.none, link: { to: Entity.none, weight: 1 }, friends: [Entity.none, inside] });
+    });
+
+    it("spawn no row existing maps, giving the entity it maps to, which every entity value naming it names", async () => {
+        await using world = inline();
+        let steel = Entity.none;
+        await world.run(System.create(({ commands }) => {
+            steel = commands.spawn([label])({ [label]: "steel" });
+            commands.spawn([label, parent, target, buddy, link, friends])({ [label]: "body", [parent]: steel, [target]: steel, [buddy]: steel, [link]: { to: steel, weight: 2 }, [friends]: [steel] });
+        }));
+        const { archetypes } = await world.run(tablesOf([label, parent, target, buddy, link, friends]));
+        await using other = inline();
+        const existingSteel = (await spawnLabels(other, ["steel in other"])).get("steel in other") ?? Entity.none;
+        const { entities, dropped } = await spawnTables(other, archetypes, new Map([[steel, existingSteel]]));
+        expect(dropped).toBe(0);
+        expect(entities.flatMap(list => [...list])).toContain(existingSteel);
+        const read = await readAll(other);
+        // Steel isn't spawned again: the body's every entity value names the one already there.
+        expect(read.map(entry => entry.label)).toEqual(["body", "steel in other"]);
+        expect(read.find(entry => entry.label === "body")).toMatchObject({ parent: existingSteel, target: existingSteel, buddy: existingSteel, link: { to: existingSteel, weight: 2 }, friends: [existingSteel] });
+    });
+
+    it("let an entity existing maps stand for one outside the tables, so what it owns or points at is kept", async () => {
+        await using world = inline();
+        let steel = Entity.none;
+        await world.run(System.create(({ commands }) => {
+            steel = commands.spawn([pinned])();
+            commands.spawn([label, parent, target])({ [label]: "owned", [parent]: steel, [target]: steel });
+        }));
+        const { archetypes } = await world.run(tablesOf([label, parent, target]));
+        await using other = inline();
+        const existingSteel = (await spawnLabels(other, ["steel"])).get("steel") ?? Entity.none;
+        const { dropped } = await spawnTables(other, archetypes, new Map([[steel, existingSteel]]));
+        expect(dropped).toBe(0);
+        expect((await readAll(other)).find(entry => entry.label === "owned")).toMatchObject({ parent: existingSteel, target: existingSteel });
+    });
+
+    it("refuse existing mapping to an entity that isn't alive, spawning nothing", async () => {
+        await using world = inline();
+        const gone = (await spawnLabels(world, ["gone"])).get("gone") ?? Entity.none;
+        await world.run(System.create(({ commands }) => { commands.despawn(gone); }));
+        const { archetypes } = await world.run(tablesOf([label]));
+        await using source = inline();
+        const steel = (await spawnLabels(source, ["steel"])).get("steel") ?? Entity.none;
+        const { archetypes: tables } = await source.run(tablesOf([label]));
+        expect(archetypes).toEqual([]);
+        await expect(spawnTables(world, tables, new Map([[steel, gone]]))).rejects.toThrow(new RegExp(`as entity ${gone}, which isn't alive`));
+        expect(await readAll(world)).toEqual([]);
     });
 
     it("set the resources they're given at the sync point, beside the entities", async () => {

@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 /**
- * The guide's chapters, read from the files beside its programs: its index, `README.md`, which lists them by part, in
- * order, the unnumbered ones, `Setup` and `Keys and declarations`, first; each chapter's prose, `NN-name.md`, under its
+ * The guide's chapters, read from each package's files beside its programs: its index, `README.md`, which lists them by
+ * part, in order, the unnumbered ones, as `Setup` and `Keys and declarations`, first; each chapter's prose, `NN-name.md`, under its
  * title; its programs, `NN-name.ts` and `NN-name.type-test.ts`, and what they print, `NN-name.out`, by the prose's name.
  * A chapter's address is its numbered title's anchor, `1-resources`, as GitHub makes it, or an unnumbered one's title's.
  */
@@ -11,9 +11,11 @@
 export type ExampleFile = { readonly name: string; readonly source: string };
 
 export type Chapter = {
+    /** The package it's a chapter of, whose guide section it's in. */
+    readonly package: string;
     /** Its address: `1-resources`, or `setup`. */
     readonly slug: string;
-    /** Its number, 0 for one unnumbered. */
+    /** Its number, 0 for one unnumbered: in the guide, after the chapters of the packages before its own. */
     readonly number: number;
     readonly title: string;
     /** The part of the guide it's in: `Basics`, `Intermediate`, `Advanced` or `UI`; empty for one unnumbered. */
@@ -50,10 +52,16 @@ const programLink = /\]\(([^)#\s]+\.ts)#L(\d+)(?:-L(\d+))?\)/g;
 const chapterLink = /\]\(([^)#\s]+\.md)\)/g;
 
 /**
- * The guide's chapters, as its index lists them: each with its prose, its files and what its programs print, given by
- * their names.
+ * Where a package's chapters go in the guide: its name; how many numbered chapters come before its own, which its
+ * numbers continue from; and the part every chapter of it is in, or null to take the parts its index gives.
  */
-export const chaptersOf = (index: string, prose: readonly ExampleFile[], files: readonly ExampleFile[], outputs: readonly ExampleFile[] = []): readonly Chapter[] => {
+export type Section = { readonly package: string; readonly after: number; readonly part: string | null };
+
+/**
+ * A package's chapters, as its index lists them: each with its prose, its files and what its programs print, given by
+ * their names, placed in the guide as `section` says.
+ */
+export const chaptersOf = (section: Section, index: string, prose: readonly ExampleFile[], files: readonly ExampleFile[], outputs: readonly ExampleFile[] = []): readonly Chapter[] => {
     const listed: { readonly number: number; readonly title: string; readonly part: string; readonly file: string }[] = [];
     let part = "";
     for (const line of index.split("\n")) {
@@ -61,8 +69,9 @@ export const chaptersOf = (index: string, prose: readonly ExampleFile[], files: 
         if (heading !== null) part = heading[1] ?? "";
         const found = entry.exec(line);
         if (found === null) continue;
-        const number = Number(found[1] ?? 0);
-        listed.push({ number, title: found[2] ?? "", part: number === 0 ? "" : part, file: found[3] ?? "" });
+        const own = Number(found[1] ?? 0);
+        const number = own === 0 ? 0 : own + section.after;
+        listed.push({ number, title: found[2] ?? "", part: number === 0 ? "" : section.part ?? part, file: found[3] ?? "" });
     }
     const slugs = new Map(listed.map(item => [item.file, item.number === 0 ? slugOf(item.title) : slugOf(`${item.number}. ${item.title}`)]));
     return listed.map(({ number, title, part: within, file }) => {
@@ -74,6 +83,6 @@ export const chaptersOf = (index: string, prose: readonly ExampleFile[], files: 
                 `](${linesLink(slug, { file: name, from: Number(from), to: Number(to ?? from) })} "${to === undefined || to === from ? `Line ${from}` : `Lines ${from}–${to}`} of ${name}, in the editor")`)
             .replace(chapterLink, (link, name: string) => slugs.has(name) ? `](#${slugs.get(name)})` : link);
         const expected = outputs.find(output => output.name === `${stem}.out`)?.source ?? "";
-        return { slug, number, title, part: within, prose: body, files: files.filter(item => item.name.startsWith(`${stem}.`)), expected };
+        return { package: section.package, slug, number, title, part: within, prose: body, files: files.filter(item => item.name.startsWith(`${stem}.`)), expected };
     });
 };

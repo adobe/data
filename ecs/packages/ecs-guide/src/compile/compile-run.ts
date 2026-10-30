@@ -5,7 +5,7 @@ import type { Diagnostic } from "./diagnostic.js";
 import type { CompileRequest } from "./messages.js";
 // The plugin's own inlining of kernels for node, which the guide does in the browser too (README.md).
 import { inlineKernels, inlinePlaceholder } from "../../../ecs/src/implementation/compiler/inline-kernels.js";
-import { examplesFolder, runFiles, type RunFile } from "./run-files.js";
+import { examplesFolderOf, runFiles, type RunFile } from "./run-files.js";
 
 /**
  * A run compiled: the build's diagnostics, its files, null when a module failed, and what each system of each module
@@ -23,7 +23,7 @@ export const compileRun = async (compiler: MemoryCompiler, request: CompileReque
     const compiled: { readonly path: string; readonly code: string }[] = [];
     const systems: FileSystems[] = [];
     for (const { name, code } of request.files) {
-        const path = `${examplesFolder}/${name}`;
+        const path = `${examplesFolderOf(request.package)}/${name}`;
         const result = await compiler.compile(path, code, index => JSON.stringify(inlinePlaceholder(index, "")), { describe: true });
         if ("failure" in result) {
             diagnostics.push({ kind: "build", severity: "error", file: name, message: result.failure, line: result.location?.line ?? null, column: result.location?.column ?? null, length: null });
@@ -33,5 +33,5 @@ export const compileRun = async (compiler: MemoryCompiler, request: CompileReque
         compiled.push({ path, code: inlineKernels(guard(result.code), result.kernels, []) });
         systems.push({ file: name, systems: result.systems ?? [] });
     }
-    return { diagnostics, files: compiled.length < request.files.length ? null : runFiles(request.run, request.runtime, request.names, compiled), systems };
+    return { diagnostics, files: compiled.length < request.files.length ? null : runFiles(request.run, request.runtime, request.packages, compiled), systems };
 };

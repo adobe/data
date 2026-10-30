@@ -40,6 +40,14 @@ A feature's or package's root folder holds only its public exports, one file per
 tests. Its implementation lives in folders below. Nothing outside a feature imports below its root, and within a
 package only its entry file re-exports.
 
+## The guide
+
+Every library has a section of the guide. Its chapters are in its own `src/guide`, listed by a `README.md` there, each
+its prose, `NN-name.md`, a program, `NN-name.ts`, and what it prints, `NN-name.out`; its package.json's `guide` field
+names, in `files`, what the guide's in-browser compiler reads of it; it's a dependency of `ecs-guide`; and its
+`src/guide/guide.test.ts` passes its chapters to `ecs-guide-checks`, with what each teaches and the changes that take
+each point away, which its output must catch. A chapter's output is the same with a GPU or without one.
+
 ## Never use top-level await
 
 Do not use `await` at module top level in any package's sources. Defer async work to a lazy-init pattern: store the

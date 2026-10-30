@@ -77,9 +77,15 @@ export type Commands = {
      * outside them isn't spawned, nor anything it owns, through owner references, as despawning its owner would; a
      * weak reference to one is left out of its row, which is spawned without it; any other value naming one is
      * `Entity.none`. Returns, at once, each table's new entities, alive at the sync point. A column's stride must be its
-     * component's in this world, and its length its table's count. `resources` sets each resource it names, by key, at
-     * the sync point, as commands apply, each value checked against its resource's schema; not one only the world
-     * writes, nor one living on another thread. On the world's thread only.
+     * component's in this world, and its length its table's count. On the world's thread only.
+     * - `existing` maps entities to ones already alive in this world, which stand for them: a row whose entity it maps
+     *   isn't spawned, its entry in the result is the entity it maps to, and every value naming one it maps names that
+     *   entity, whether or not it's in the tables. Fails for one that isn't alive.
+     * - `resources` sets each resource it names, by key, at the sync point, as commands apply, each value checked
+     *   against its resource's schema; not one only the world writes, nor one living on another thread.
      */
-    spawnTables(tables: readonly Table[], resources?: { readonly [key: symbol]: unknown }): Table.Spawned;
+    spawnTables(tables: readonly Table[], options?: {
+        readonly resources?: { readonly [key: symbol]: unknown };
+        readonly existing?: ReadonlyMap<Entity, Entity>;
+    }): Table.Spawned;
 };

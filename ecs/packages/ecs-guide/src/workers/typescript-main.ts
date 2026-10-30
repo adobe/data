@@ -18,7 +18,7 @@ export const handle = (data: unknown): void => {
         let reply: InfoReply;
         try {
             service ??= createService();
-            reply = { kind: "info", serial: asked.serial, info: service.info(asked.files, asked.file, asked.position), failure: null };
+            reply = { kind: "info", serial: asked.serial, info: service.info(asked.owner, asked.files, asked.file, asked.position), failure: null };
         } catch (error) {
             service = null;
             reply = { kind: "info", serial: asked.serial, info: null, failure: reasonOf(error) };
@@ -31,7 +31,7 @@ export const handle = (data: unknown): void => {
     let reply: CheckReply;
     try {
         service ??= createService();
-        reply = { kind: "checked", version: request.version, diagnostics: service.check(request.files), failure: null };
+        reply = { kind: "checked", version: request.version, diagnostics: service.check(request.owner, request.files), failure: null };
     } catch (error) {
         // A language service that threw may be left broken, so the next request starts another.
         service = null;

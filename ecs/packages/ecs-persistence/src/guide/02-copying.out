@@ -1,0 +1,4 @@
+harbor holds [ 'hull, owned', 'mast, owned', 'ship' ]
+entities gives the harbor's ship for the ship: true
+harbor holds, merged [ 'hull, owned', 'mast, owned', 'ship' ]
+dock holds [] and dropped 2

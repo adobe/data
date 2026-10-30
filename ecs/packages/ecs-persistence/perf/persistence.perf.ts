@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Entity, System, World, workers, type Vec3 } from "@adobe/ecs";
+import { Entity, Index, System, World, workers, type Vec3 } from "@adobe/ecs";
 import { it } from "vitest";
 import { decode } from "../src/decode.js";
 import { encode } from "../src/encode.js";
@@ -9,7 +9,8 @@ import { spawn } from "../src/spawn.js";
 
 // Snapshot, encode, decode, spawn and merge of entities with a Vec3, a number, an owner reference and a struct holding
 // an entity: through tables and spawnTables, and through rows and per-entity commands, as a program does without
-// them. Each prints its median of a few runs; none asserts on time.
+// them; and a merge matching every entity by a unique index, into a world already holding them. Each prints its median
+// of a few runs; none asserts on time.
 
 const position = Symbol();
 const health = Symbol();
@@ -23,6 +24,9 @@ declare module "@adobe/ecs" {
         [link]: { type: { readonly to: Entity; readonly weight: number }; [persist]: "perf/link" };
     }
 }
+
+/** Every entity's position is its own, so this index says which are the same in two worlds. */
+const byPosition = Index.create({ key: [position], unique: true });
 
 const size = { count: 0 };
 /** A root and `count - 1` entities each owned by an earlier one, and each linked to another. */
@@ -100,11 +104,16 @@ for (const count of [100_000, 1_000_000]) {
         const loaded = decoded;
         const tableSpawn = await timed(runs, async () => { await into.dispose(); into = World.create({ [workers]: 0 }); }, () => spawn({ world: into, snapshot: loaded, entities: false }));
         const tableMerge = await timed(runs, async () => { await into.dispose(); into = World.create({ [workers]: 0 }); }, async () => { const copied = await snapshot({ world, resources: false }); if (copied.failure === undefined) await spawn({ world: into, snapshot: copied, entities: false }); });
+        const tableMatch = await timed(runs, async () => {
+            await into.dispose();
+            into = World.create({ [workers]: 0 });
+            await spawn({ world: into, snapshot: loaded, entities: false });
+        }, () => spawn({ world: into, snapshot: loaded, entities: false, match: [byPosition] }));
         await into.dispose();
 
         results.push(
             `${count} entities, rows and commands: snapshot ${ms(rowSnapshot)}, JSON.stringify ${ms(rowJson)} (${(rowText.length / 1e6).toFixed(1)} MB), JSON.parse ${ms(rowParse)}, spawn ${ms(rowSpawn)}`,
-            `${count} entities, tables: snapshot ${ms(tableSnapshot)}, encode ${ms(tableEncode)} (${(bytes.byteLength / 1e6).toFixed(1)} MB), decode ${ms(tableDecode)}, spawn ${ms(tableSpawn)}, merge ${ms(tableMerge)}`,
+            `${count} entities, tables: snapshot ${ms(tableSnapshot)}, encode ${ms(tableEncode)} (${(bytes.byteLength / 1e6).toFixed(1)} MB), decode ${ms(tableDecode)}, spawn ${ms(tableSpawn)}, merge ${ms(tableMerge)}, merge matching all ${ms(tableMatch)}`,
         );
         process.stdout.write(`${results.slice(-2).join("\n")}\n`);
     });

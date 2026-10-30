@@ -7,7 +7,10 @@
   "sideEffects": false,
   "private": false,
   "pages": [
-    { "from": "docs", "to": "ecs" }
+    {
+      "from": "docs",
+      "to": "ecs"
+    }
   ],
   "independentVersion": true,
   "publishConfig": {
@@ -51,6 +54,7 @@
     "@vitest/browser-playwright": "^5.0.5",
     "@vitest/coverage-v8": "^5.0.5",
     "@webgpu/types": "^0.1.61",
+    "ecs-guide-checks": "workspace:*",
     "playwright": "^1.64.1",
     "typedoc": "^0.28.9",
     "typescript": "^5.8.3",
@@ -75,5 +79,13 @@
       "import": "./dist/implementation/compiler/index.js",
       "types": "./dist/implementation/compiler/index.d.ts"
     }
+  },
+  "guide": {
+    "files": [
+      "src/index.ts",
+      "src/interface/**/*.ts",
+      "dist/index.js",
+      "dist/interface/**/*.js"
+    ]
   }
 }

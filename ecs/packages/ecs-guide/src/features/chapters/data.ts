@@ -12,6 +12,8 @@ export const slug = Symbol();
 export const title = Symbol();
 /** The part of the guide it's in, empty for Setup. */
 export const part = Symbol();
+/** The package it's a chapter of, whose examples its files are. */
+export const owner = Symbol();
 /** Its prose, as HTML. */
 export const prose = Symbol();
 /** The chapter the page shows: one at a time. */
@@ -25,12 +27,13 @@ declare module "@adobe/ecs" {
         [slug]: { type: string };
         [title]: { type: string };
         [part]: { type: string };
+        [owner]: { type: string };
         [prose]: { type: string };
         [shown]: { type: true };
     }
 }
 
-export const Chapter = [chapter, chapterNumber, chapterOrder, slug, title, part, prose] as const;
+export const Chapter = [chapter, chapterNumber, chapterOrder, slug, title, part, owner, prose] as const;
 
 /** Every chapter, in the guide's order. */
 export const inOrder = Index.create({ key: [chapterOrder], sorted: true, components: { with: [chapter, chapterNumber, slug, title, part] } });

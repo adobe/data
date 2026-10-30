@@ -6,9 +6,14 @@ The ECS's guide, every example edited in place: as it's typed, TypeScript checks
 `pnpm dev` in this package serves it alone; `pnpm dev` in `ecs-sample-browser` serves it in the sample browser, as the
 Guide tab. Each chapter has an address of its own, its numbered title's anchor, as GitHub makes it: `#1-resources`.
 
-The chapters are read as the guide builds from `../ecs/src/guide`, where they stay: their order and parts from its
-index, `README.md`, the unnumbered chapters first, and each chapter's prose, `NN-name.md`, its programs, `NN-name.ts`, and what they print,
-`NN-name.out`. A link in the prose to a program's lines, `[text](01-resources.ts#L14-L23)`, which on GitHub opens the
+Each package with a guide section has its chapters in its own `src/guide`, where they stay: their order and parts from
+its index, `README.md`, the unnumbered chapters first, and each chapter's prose, `NN-name.md`, its programs,
+`NN-name.ts`, and what they print, `NN-name.out`. A package has a section when it's one of this guide's dependencies and
+its package.json has a `guide` field, whose `files` are the patterns of what the guide's compiler reads of it; the
+guide reads them as it builds (`guide-packages.ts`), so it names no package. Sections come in the order the packages
+depend on each other, the ECS's first: its chapters in the parts its index gives, each other package's in one part
+titled by its name, numbered on from the chapters before. Every package's chapters pass the same checks
+(`ecs-guide-checks`): each program prints what its `.out` says, and taking away each point it teaches changes that. A link in the prose to a program's lines, `[text](01-resources.ts#L14-L23)`, which on GitHub opens the
 file at them, shows them in the editor, selected; a link to a chapter's prose, `[text](15-reductions.md)`, opens that
 chapter.
 
@@ -79,28 +84,28 @@ tries again. A worker that fails to load, or fails as it runs, is started again 
 short wait, the status saying it's retrying; only then is its failure a problem, saying what failed to load. Each
 worker's entry (`workers/serve.ts`) loads its modules and says why when they fail. Both dev servers that serve the
 guide optimize the workers' dependencies before the first page asks, so a first run never reloads the page, and
-neither reloads it as the package is built again (`package-updates.ts`): its modules are invalidated, so the next load,
+neither reloads it as a package is built again (`guide-packages.ts`): its modules are invalidated, so the next load,
 the workers' included, reads the new build, and the reader's edits stay.
 
 ## How an example runs
 
 - **Checking**: TypeScript's language service, in a worker (`workers/typescript.ts`, `check/language-service.ts`),
-  over the chapter's files with the package's declarations from `../ecs/dist`, the standard library's and WebGPU's.
+  over the chapter's files with each package's declarations from its `dist`, the standard library's and WebGPU's.
   The same service says what's at a place for a hover (`getQuickInfoAtPosition`), over the files as the editor has
   them, the text it checks being the text it shows, so their positions are the same: one asked at a time, and only the
   newest answered (`latestAnswer` in `compile/latest.ts`).
 - **Compiling**: the ECS's compiler, in a worker (`workers/compiler.ts`, `compile/compile-run.ts`), with oxc's WASM
-  parser and transformer, from the package's files held in memory (`compile/package-files.ts`). The examples compile at
-  their place in the package's sources, `src/guide`, as the package's own tests do, so their ids name the package.
+  parser and transformer, from the packages' files held in memory (`compile/package-files.ts`). A chapter's examples
+  compile at their place in its package's sources, `src/guide`, as the package's own tests do, so their ids name it.
   Each kernel's module is inlined as a `data:` url, which loads in the world's workers wherever they're served from.
 - **Running**: each run is a fresh frame, so it has a registry of its own, and disposing the frame disposes its worlds
   and workers. The compiler's worker compiles one run at a time, the newest asked for, and puts the run's files in a
   cache, in a folder of the page's own, which the service worker drops once its page is gone (`compile/run-files.ts`):
-  its page, whose import map sends `@adobe/ecs` and the hooks compiled code imports to one exports module, and the
-  compiled modules; the page's `#output` fills its frame, for a program to render into, and the frame says when
+  its page, whose import map sends each package to its exports module and the hooks compiled code imports to the
+  runtime's, and the compiled modules; the page's `#output` fills its frame, for a program to render into, and the frame says when
   something is first put there. The service worker (`service-worker.ts`) serves them, and gives every response in its scope the headers that
   isolate a page across origins, so shared memory and the world's workers work on a host that can't send them. The
-  frame loads the runtime (`run/runtime.ts`): the package, the hooks, and `start` (`run/program.ts`), which loads the
+  frame loads the runtime (`run/runtime.ts`): the packages, the hooks, and `start` (`run/program.ts`), which loads the
   run's modules and awaits each one's `main`, telling the page what the console takes, each turn's lines together,
   written as node writes values (`run/inspect.ts`), and how the run ended (`run/protocol.ts`).
 
@@ -118,14 +123,14 @@ the browser, which no export offers. What it depends on of the package's insides
   `prepared-lookup.js`, from `../ecs/dist/implementation/world`: the same files `@adobe/ecs` resolves to, so they
   share its registry. `compile/run-files.ts` names the same hooks' paths in the package's build, which the compiler
   writes in compiled code, for each run's import map.
-- `compile/package-files.ts` reads the package's sources' root and interface, `src/index.ts` and `src/interface`, and
-  the same in its build, `dist`: what the build reads types from and kernels inline from, for anything an example can
-  import. `check/language-service.ts` reads the build's declarations. Both keep only what the package ships, by its
-  package.json's `files`.
-- `compile/run-files.ts` compiles each example at its place in the package's sources, `src/guide`, as the package's
+- `compile/package-files.ts` reads what each package's `guide.files` name, the ECS's sources' root and interface,
+  `src/index.ts` and `src/interface`, and the same in its build, `dist`: what the build reads types from and kernels
+  inline from, for anything an example can import. `check/language-service.ts` reads each build's declarations. Both
+  keep only what a package ships, by its package.json's `files`.
+- `compile/run-files.ts` compiles each example at its place in its package's sources, `src/guide`, as the package's
   own tests are, so its keys' and systems' ids name the package, as `18-identity.test.ts` checks.
 
-The editor shows each example importing the package as `@adobe/ecs`, as a consumer does, where its file imports the
+The editor shows each example importing its package by name, as a consumer does, where its file imports the
 package's sources' root as `../index.js` (`content/guide.ts`); both resolve to the package where the guide compiles
 it, so the file is otherwise the same, line for line.
 

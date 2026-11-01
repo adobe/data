@@ -14,4 +14,5 @@ a derived component; `selected` here has no name, so it isn't saved.
   entities spawned for theirs: the archer [targets the tower](01-saving.ts#L29-L30) again. Its result's `entities`
   maps each saved entity to its new one.
 
-Each says why it didn't happen as `{ failure }`, rather than throwing, so `result.failure !== undefined` tells which.
+`snapshot`, `decode` and `spawn` each say why it didn't happen as `{ failure }`, rather than throwing, so
+`result.failure !== undefined` tells which. `encode` takes a snapshot one of them gave and always gives its bytes.

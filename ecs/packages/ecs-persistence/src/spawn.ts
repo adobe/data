@@ -40,8 +40,8 @@ const spawnTables = System.create({}, ({ commands }, input: { readonly tables: u
  * one is left out; and any other entity value naming one is `Entity.none`.
  * - `match`: unique indexes saying which of the snapshot's entities are already in `world`: one an index holds there,
  *   with the key of one of the snapshot's it holds, stands for it, keeping its own values, and isn't spawned again. It
- *   fails for an index with a part of its key that the snapshot's trait doesn't cover, or two of the snapshot's
- *   entities with one key.
+ *   fails for an index whose key, `with` or `not` names a component the snapshot's trait doesn't cover, or two of the
+ *   snapshot's entities with one key.
  * - `entities: false` leaves out the result's map of entities, which costs about 85 ms and 50 MB at a million.
  *
  * Fails, as data, for a column or resource that doesn't fit, spawning nothing.

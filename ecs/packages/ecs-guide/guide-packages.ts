@@ -58,10 +58,15 @@ const packagesOf = (guide: string): readonly Found[] => {
     return ordered;
 };
 
-/** Every file below `folder`, by its path there, but those in `node_modules`. */
-const filesBelow = (folder: string): readonly string[] => readdirSync(folder, { recursive: true, encoding: "utf8" })
-    .map(path => path.replace(/\\/g, "/"))
-    .filter(path => !path.split("/").includes("node_modules") && statSync(join(folder, path)).isFile());
+/**
+ * Every file below `folder`, by its path there, but those in `node_modules` and in folders whose names start with a dot,
+ * which a package ships none of and a test may fill and empty while this reads.
+ */
+const filesBelow = (folder: string, below = ""): readonly string[] => readdirSync(join(folder, below), { withFileTypes: true }).flatMap(entry => {
+    const path = below === "" ? entry.name : `${below}/${entry.name}`;
+    if (entry.isDirectory()) return entry.name === "node_modules" || entry.name.startsWith(".") ? [] : filesBelow(folder, path);
+    return entry.isFile() ? [path] : [];
+});
 
 const named = (folder: string, names: readonly string[]) => names.map(name => ({ name, source: readFileSync(join(folder, name), "utf8") }));
 

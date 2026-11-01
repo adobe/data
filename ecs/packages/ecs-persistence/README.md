@@ -73,8 +73,8 @@ const spawned = await spawn({ world: other, snapshot: loaded });
   `spawn({ world, snapshot, match: [materialByName] })`. An entity an index holds in the world, with the key of one
   of the snapshot's it holds, stands for that one, keeping its own values, and every entity value naming the
   snapshot's names it; `entities` maps the one to the other. Keys compare as stored, a number's or a vector's bytes and
-  a string's or an object's value. It fails for an index with a part of its key the snapshot's trait doesn't cover, or
-  two of the snapshot's entities one index holds with one key.
+  a string's or an object's value. It fails for an index whose key, `with` or `not` names a component the snapshot's
+  trait doesn't cover, or two of the snapshot's entities one index holds with one key.
 
 Each reports why it didn't happen as `{ failure }`, rather than throwing, and `result.failure !== undefined` tells
 which. A snapshot is opaque: only these functions read it.

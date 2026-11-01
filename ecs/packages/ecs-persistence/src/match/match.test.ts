@@ -36,6 +36,8 @@ declare module "@adobe/ecs" {
 const materialByName = Index.create({ key: [material], unique: true, components: { with: [friction] } });
 const materialByTag = Index.create({ key: [tag], unique: true });
 const labelsByMaterial = Index.create({ key: [material] });
+const taggedMaterials = Index.create({ key: [material], unique: true, components: { with: [tag] } });
+const untaggedMaterials = Index.create({ key: [material], unique: true, components: { not: [tag] } });
 
 const bySerial = Index.create({ key: [serial], unique: true });
 const bySerialAndNote = Index.create({ key: [serial, note], unique: true });
@@ -140,6 +142,17 @@ describe("spawn with match", () => {
         await using into = inline();
         const spawned = await spawn({ world: into, snapshot: await taken(from), match: [materialByTag] });
         expect(spawned.failure).toBe(`Index "materialByTag" can't match: a part of its key isn't one the snapshot's trait covers, so the snapshot holds no key for it.`);
+    });
+
+    it("fails, spawning nothing, for an index whose with or not names a component the snapshot's trait doesn't cover", async () => {
+        await using from = inline();
+        await from.run(build, { materials: [{ name: "steel", friction: 0.5 }], bodies: [] });
+        await using into = inline();
+        for (const index of [taggedMaterials, untaggedMaterials]) {
+            const spawned = await spawn({ world: into, snapshot: await taken(from), match: [index] });
+            expect(spawned.failure).toBe(`Index "${index.name}" can't match: its with or not names a component the snapshot's trait doesn't cover, so the snapshot can't tell which of its entities the index holds.`);
+        }
+        expect(await read(into)).toEqual([]);
     });
 
     it("merges by a key of bytes, keeping the world's entities and spawning the rest", async () => {

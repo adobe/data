@@ -139,8 +139,8 @@ const matchText = (world: World, from: Contents, declaration: Index.Declared, pa
 
 /**
  * Each of the snapshot's entities that `indexes` say is the same as one of `world`'s, to that one: an index holds both,
- * with equal keys. Fails, as data, for an index whose key a component the snapshot's trait doesn't cover is part of, or
- * two of the snapshot's entities one index holds with one key.
+ * with equal keys. Fails, as data, for an index whose key, `with` or `not` names a component the snapshot's trait doesn't
+ * cover, or two of the snapshot's entities one index holds with one key.
  */
 export const existingFor = async (world: World, from: Contents, indexes: readonly Matching[]): Promise<ReadonlyMap<number, number> | Failure> => {
     const existing = new Map<number, number>();
@@ -153,6 +153,9 @@ export const existingFor = async (world: World, from: Contents, indexes: readonl
             const found = persisted.get(key);
             if (found === undefined) return { failure: `Index "${index.name}" can't match: a part of its key isn't one the snapshot's trait covers, so the snapshot holds no key for it.` };
             parts.push({ key, schema: found.schema });
+        }
+        if ([...declaration.components.with ?? [], ...declaration.components.not ?? []].some(key => !persisted.has(key))) {
+            return { failure: `Index "${index.name}" can't match: its with or not names a component the snapshot's trait doesn't cover, so the snapshot can't tell which of its entities the index holds.` };
         }
         const matched = matchBytes(world, from, declaration, parts) ?? matchText(world, from, declaration, parts);
         const found = await matched(index.name, existing);

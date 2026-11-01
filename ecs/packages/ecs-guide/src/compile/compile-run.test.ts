@@ -46,7 +46,7 @@ it("compiles every chapter's files without a diagnostic, their kernels inlined, 
             if (module.text.includes("identify$(")) expect(module.text).toContain(`"${chapter.package}@`);
         }
     }
-    expect(kernels).toBe(24);
+    expect(kernels).toBe(25);
 });
 
 it("reports what the build rejects as a diagnostic located in the file, and gives no run", async () => {

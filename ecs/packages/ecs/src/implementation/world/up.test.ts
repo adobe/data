@@ -190,7 +190,7 @@ describe("up", () => {
         expect(await read(ecs, entities.grandchild, world)).toBe(100);
     });
 
-    it("runs every row after a spawn outruns the journal, with change filters, then only the rows that changed", async () => {
+    it("runs every row after spawning more than a patch takes, with change filters, then only the rows that changed", async () => {
         await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawn);
         await ecs.run(nest);
@@ -209,6 +209,18 @@ describe("up", () => {
         ran.length = 0;
         await ecs.run(propagateChanged);
         expect(ran).toEqual([]);
+    });
+
+    it("runs only the rows spawned in bulk, which the journal holds once each, with change filters", async () => {
+        await using ecs = createWorld({ [workers]: 0 });
+        await ecs.run(spawn);
+        await ecs.run(nest);
+        await ecs.run(propagateChanged);
+        await ecs.run(bulkUnder, { count: 3000 });
+        ran.length = 0;
+        await ecs.run(propagateChanged);
+        expect(ran.length).toBe(3000);
+        expect(await readEach(ecs, bulk.slice(0, 3), world)).toEqual([112, 112, 112]);
     });
 
     it("finds a cycle a reparent closes after the tree was built, and runs its rows again once it opens", async () => {

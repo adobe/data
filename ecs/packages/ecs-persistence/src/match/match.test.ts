@@ -12,8 +12,12 @@ const friction = Symbol();
 const made = Symbol();
 const label = Symbol();
 const tag = Symbol();
+const serial = Symbol();
+const note = Symbol();
 declare module "@adobe/ecs" {
     interface Components {
+        [serial]: { type: number; [persist]: "matchTest/serial" };
+        [note]: { type: string; [persist]: "matchTest/note" };
         [material]: { type: string; [persist]: "matchTest/material" };
         [friction]: { type: number; [persist]: "matchTest/friction" };
         [made]: { type: Entity; reference: "weak"; [persist]: "matchTest/made" };
@@ -26,7 +30,23 @@ const materialByName = Index.create({ key: [material], unique: true, components:
 const materialByTag = Index.create({ key: [tag], unique: true });
 const labelsByMaterial = Index.create({ key: [material] });
 
+const bySerial = Index.create({ key: [serial], unique: true });
+const bySerialAndNote = Index.create({ key: [serial, note], unique: true });
+
 const inline = () => World.create({ [workers]: 0 });
+
+/** Spawns a part for each serial and note. */
+const buildParts = System.create({}, ({ commands }, input: { readonly parts: readonly { readonly serial: number; readonly note: string }[] }) => {
+    for (const part of input.parts) commands.spawn([serial, note])({ [serial]: part.serial, [note]: part.note });
+});
+/** Each part's serial and note, by serial. */
+const partsOf = async (world: World): Promise<readonly { readonly entity: Entity; readonly serial: number; readonly note: string }[]> => {
+    const found: { entity: Entity; serial: number; note: string }[] = [];
+    await world.run(System.create({ readonly: true, components: { with: [serial, note] } }, row => {
+        found.push({ entity: row.entity, serial: row[serial], note: row[note] });
+    }));
+    return found.sort((a, b) => a.serial - b.serial || a.note.localeCompare(b.note));
+};
 
 /** Spawns materials, each its name and friction, and bodies, each its label and the material it's made of. */
 type Built = {
@@ -113,6 +133,48 @@ describe("spawn with match", () => {
         await using into = inline();
         const spawned = await spawn({ world: into, snapshot: await taken(from), match: [materialByTag] });
         expect(spawned.failure).toMatch(/a part of its key isn't persisted/);
+    });
+
+    it("merges by a key of bytes, keeping the world's entities and spawning the rest", async () => {
+        await using from = inline();
+        // In an order other than the world's, so its rows are found by hash as well as by guess.
+        await from.run(buildParts, { parts: Array.from({ length: 300 }, (_, k) => ({ serial: 1000 - k, note: "saved" })) });
+        await using into = inline();
+        await into.run(buildParts, { parts: Array.from({ length: 200 }, (_, k) => ({ serial: 701 + 2 * k, note: "world" })) });
+        const before = new Map((await partsOf(into)).map(part => [part.serial, part.entity]));
+        const saved = await partsOf(from);
+        const spawned = await spawn({ world: into, snapshot: await taken(from), match: [bySerial] });
+        if (spawned.failure !== undefined) throw new Error(spawned.failure);
+        const after = await partsOf(into);
+        expect(after.length).toBe(200 + 150);
+        for (const part of saved) {
+            const entity = spawned.entities.get(part.entity);
+            const existing = before.get(part.serial);
+            if (existing !== undefined) expect(entity).toBe(existing);
+            expect(after.find(item => item.entity === entity)?.note).toBe(existing === undefined ? "saved" : "world");
+        }
+    });
+
+    it("fails, spawning nothing, for two of the snapshot's entities with one key of bytes", async () => {
+        await using from = inline();
+        await from.run(buildParts, { parts: [{ serial: 1, note: "a" }, { serial: 2, note: "b" }, { serial: 1, note: "c" }] });
+        await using into = inline();
+        const spawned = await spawn({ world: into, snapshot: await taken(from), match: [bySerial] });
+        expect(spawned.failure).toMatch(/two of the snapshot's entities have one key/);
+        expect(await partsOf(into)).toEqual([]);
+    });
+
+    it("merges by a key of bytes and values together", async () => {
+        await using from = inline();
+        await from.run(buildParts, { parts: [{ serial: 1, note: "a" }, { serial: 1, note: "b" }, { serial: 2, note: "a" }] });
+        await using into = inline();
+        await into.run(buildParts, { parts: [{ serial: 1, note: "b" }] });
+        const existing = (await partsOf(into))[0]?.entity;
+        const spawned = await spawn({ world: into, snapshot: await taken(from), match: [bySerialAndNote] });
+        if (spawned.failure !== undefined) throw new Error(spawned.failure);
+        expect((await partsOf(into)).map(part => [part.serial, part.note])).toEqual([[1, "a"], [1, "b"], [2, "a"]]);
+        const savedB = (await partsOf(from)).find(part => part.note === "b")?.entity ?? Entity.none;
+        expect(spawned.entities.get(savedB)).toBe(existing);
     });
 
     it("takes only unique indexes", () => {

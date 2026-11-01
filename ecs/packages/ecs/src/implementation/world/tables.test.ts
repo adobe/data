@@ -311,6 +311,46 @@ describe("tables", () => {
         expect(await readAll(world)).toEqual([]);
     });
 
+    it("keep to the archetypes holding where's shared values, each required as with requires it", async () => {
+        await using world = inline();
+        await world.run(System.create(({ commands }) => {
+            commands.spawn([team, label], { [team]: "red" })({ [label]: "red" });
+            commands.spawn([team, label, position], { [team]: "red" })({ [label]: "red placed", [position]: [1, 1, 1] });
+            commands.spawn([team, label], { [team]: "blue" })({ [label]: "blue" });
+            commands.spawn([label])({ [label]: "none" });
+        }));
+        const red = await world.run(System.create({ readonly: true, tables: { components: [label], where: { [team]: "red" } } }, ({ tables }): Tables => tables));
+        expect(red.archetypes.map(table => table.columns[label]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))))
+            .toEqual([{ kind: "values", values: ["red placed"] }, { kind: "values", values: ["red"] }]);
+        const placed = await world.run(System.create({ readonly: true, tables: { components: [label], with: [position], where: { [team]: "red" } } }, ({ tables }): Tables => tables));
+        expect(placed.archetypes.map(table => table.columns[label])).toEqual([{ kind: "values", values: ["red placed"] }]);
+        // One system's tables follow its archetypes as they come and go.
+        const blue = System.create({ readonly: true, tables: { components: [label], where: { [team]: "blue" } } }, ({ tables }): Tables => tables);
+        expect((await world.run(blue)).archetypes.map(table => table.count)).toEqual([1]);
+        await world.run(System.create(({ commands }) => {
+            commands.spawn([team, label, position], { [team]: "blue" })({ [label]: "blue placed", [position]: [2, 2, 2] });
+        }));
+        expect((await world.run(blue)).archetypes.map(table => table.count)).toEqual([1, 1]);
+    });
+
+    it("give no table for a shared value no archetype holds", async () => {
+        await using world = inline();
+        await world.run(System.create(({ commands }) => { commands.spawn([team, label], { [team]: "red" })({ [label]: "red" }); }));
+        const blue = System.create({ readonly: true, tables: { components: [label], where: { [team]: "blue" } } }, ({ tables }): Tables => tables);
+        expect((await world.run(blue)).archetypes).toEqual([]);
+        await world.run(System.create(({ commands }) => { commands.spawn([team, label], { [team]: "blue" })({ [label]: "blue" }); }));
+        expect((await world.run(blue)).archetypes.map(table => table.columns[label])).toEqual([{ kind: "values", values: ["blue"] }]);
+    });
+
+    it("take only values of shared components in where", () => {
+        // @ts-expect-error: where names only shared components.
+        expect(() => System.create({ readonly: true, tables: { components: [label], where: { [label]: "a" } } }, () => {})).toThrow(/tables' where names "tablesTest\/label", which isn't a shared component/);
+        // @ts-expect-error: tables' where takes values, not predicates.
+        expect(() => System.create({ readonly: true, tables: { components: [label], where: { [team]: (value: string) => value === "red" } } }, () => {})).toThrow(/tables' where gives "tablesTest\/team" a predicate/);
+        // @ts-expect-error: a value of the component's type.
+        expect(() => System.create({ readonly: true, tables: { components: [label], where: { [team]: "green" } } }, () => {})).toThrow(/isn't one of its type's values/);
+    });
+
     it("are read only by a readonly system without components", () => {
         // @ts-expect-error: tables are read only by a readonly system, which the declaration's type says too.
         expect(() => System.create({ tables: { components: [label] } }, () => {})).toThrow(/reads tables, which only a readonly system reads/);

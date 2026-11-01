@@ -68,9 +68,12 @@ type Targeted = {
     readonly order?: never;
 };
 
+/** A `where`'s keys that aren't shared components, each an error: `where` names only shared components. */
+type SharedOnly<W> = { readonly [K in Exclude<keyof W, Shared>]: { readonly "error: where names only shared components, which each archetype holds one value of": K } };
+
 /** `where` names only shared components, and keeps rows unordered across archetypes, so it's without `up`, `order` and a target. */
 type Where<D> = D extends { readonly components: { readonly where: infer W } }
-    ? { readonly components?: { readonly where?: { readonly [K in Exclude<keyof W, Shared>]: { readonly "error: where names only shared components, which each archetype holds one value of": K } } } }
+    ? { readonly components?: { readonly where?: SharedOnly<W> } }
         & (D extends { readonly up: object } | { readonly order: object } | { readonly target: string }
             ? { readonly components?: { readonly where?: { readonly "error: where can't be used with up, order or a target, which run rows across archetypes": true } } } : {})
     : {};
@@ -99,6 +102,7 @@ type Validate<D extends Declaration> =
         ? { readonly kernel?: boolean | { readonly "error: a GPU kernel can't have optional components yet": true } } : {})
     & (D extends { readonly readonly: true } ? Readonly : {})
     // Tables are copies a readonly system without components reads.
+    & (D extends { readonly tables: { readonly where: infer W } } ? { readonly tables?: { readonly where?: SharedOnly<W> } } : {})
     & (D extends { readonly tables: object }
         ? (D extends { readonly readonly: true } ? {} : { readonly tables?: { readonly "error: tables are read by a readonly system": true } })
         & (Property<D, "components"> extends undefined ? {} : { readonly tables?: { readonly "error: a system reading tables has no components": true } })

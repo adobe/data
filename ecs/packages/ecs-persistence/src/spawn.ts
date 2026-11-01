@@ -20,8 +20,11 @@ const isTables = (value: unknown): value is readonly World.Table[] => Array.isAr
 const isKeyed = (value: unknown): value is { readonly [key: symbol]: unknown } => typeof value === "object" && value !== null;
 
 /** `spawnTables` takes entities by their numbers: a map of the snapshot's to the world's holds only numbers. */
-const isEntities = (value: unknown): value is ReadonlyMap<Entity, Entity> => value instanceof Map
-    && [...value].every(([saved, found]) => typeof saved === "number" && typeof found === "number");
+const isEntities = (value: unknown): value is ReadonlyMap<Entity, Entity> => {
+    if (!(value instanceof Map)) return false;
+    for (const [saved, found] of value) if (typeof saved !== "number" || typeof found !== "number") return false;
+    return true;
+};
 
 /** Spawns its input's tables and sets its resources, a snapshot's, rewriting their entities, those `existing` maps standing for theirs. */
 const spawnTables = System.create({}, ({ commands }, input: { readonly tables: unknown; readonly resources: unknown; readonly existing: unknown }) => {

@@ -12,7 +12,7 @@ import { ownTag } from './move-log.js';
 import { resourceCell } from './resources.js';
 import { labelOf } from '../../interface/registry/names.js';
 import { idOf, type Key, type State } from './state.js';
-import { readTables } from './tables-read.js';
+import { tablesReader } from './tables-read.js';
 import { combine, contributed, identityOf, type ReductionTarget } from './reductions.js';
 import { createIndexLookup, type Since } from './index-lookups.js';
 import type { WorldIndex } from './indexes.js';
@@ -131,11 +131,24 @@ const viewOf = (storage: RowStorage): TypedArray => {
     return layout.kind === "linear" && storage.write !== writeGeneral ? storage.views[layout.leaves[0].view] : storage.views.f32;
 };
 
-const slotOf = (archetype: RowArchetype, id: number): Slot => {
+const storageOf = (archetype: RowArchetype, id: number): RowStorage => {
     const storage = archetype.storageById[id];
     // A system matches only archetypes with every component it reads or writes.
     if (storage === undefined) throw new Error(`Archetype ${archetype.id} lacks component ${id}.`);
+    return storage;
+};
+
+const slotOf = (archetype: RowArchetype, id: number): Slot => {
+    const storage = storageOf(archetype, id);
     return { storage, view: viewOf(storage), value: constantOf(storage) };
+};
+
+/** Points `slot` at `archetype`'s storage of component `id`, allocating nothing, since rows bind once per archetype a run. */
+const bindSlot = (slot: Slot, archetype: RowArchetype, id: number): void => {
+    const storage = storageOf(archetype, id);
+    slot.storage = storage;
+    slot.view = viewOf(storage);
+    slot.value = constantOf(storage);
 };
 
 /** An optional component's getter where the archetype lacks it, and its setter, which fails its system. */
@@ -168,11 +181,7 @@ export const createRow = (host: RowHost, archetype: RowArchetype, keys: readonly
             row.entities = next.entities;
             for (let i = 0; i < ids.length; i++) {
                 const slot = slots[i];
-                if (slot === undefined) continue;
-                const { storage, view, value } = slotOf(next, ids[i]);
-                slot.storage = storage;
-                slot.view = view;
-                slot.value = value;
+                if (slot !== undefined) bindSlot(slot, next, ids[i]);
             }
         },
     };
@@ -271,12 +280,7 @@ export const sharedRows = (host: RowHost, keys: readonly Key[], ids: readonly nu
             slots: ids.map(id => slotOf(archetype, id)),
             bind: next => {
                 row.entities = next.entities;
-                for (let i = 0; i < ids.length; i++) {
-                    const { storage, view, value } = slotOf(next, ids[i]);
-                    row.slots[i].storage = storage;
-                    row.slots[i].view = view;
-                    row.slots[i].value = value;
-                }
+                for (let i = 0; i < ids.length; i++) bindSlot(row.slots[i], next, ids[i]);
             },
         };
         Object.defineProperty(value, rowOfValue, { value: row });
@@ -511,7 +515,10 @@ export const createContext = (state: State, declaration: Pick<Resolved, "lookup"
     const value: { up?: unknown } = own();
     const { tables } = declaration;
     // Each read copies the tables as they are then.
-    if (tables !== undefined) Object.defineProperty(value, "tables", { get: () => readTables(state, tables), enumerable: true });
+    if (tables !== undefined) {
+        const read = tablesReader(state, tables);
+        Object.defineProperty(value, "tables", { get: read, enumerable: true });
+    }
     const { lookup, resources } = declaration;
     const names = Object.keys(lookup ?? {});
     if (names.length > 0) {

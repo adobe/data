@@ -63,7 +63,7 @@ const noIndexParameters: readonly number[] = [];
 const noAddresses: readonly number[] = [];
 
 /** An archetype's change filters for a runner, and the WASM addresses of its columns and filters (`filterCache`). */
-type Filtered = { readonly version: number; readonly filters: readonly Filter[]; addresses: readonly number[]; addressed: WasmKernel | null };
+type Filtered = { readonly archetype: Archetype; readonly version: number; readonly filters: readonly Filter[]; addresses: readonly number[]; addressed: WasmKernel | null };
 
 /**
  * Runs one leaf system. Each run takes a new tick, which becomes the system's `lastRun`. `start` does main-thread work
@@ -470,7 +470,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
 
     /** Drops match `m`, its last taking its place; with `where`, one evaluated stays among those evaluated. */
     const removeMatch = (m: number): void => {
-        filterCache.delete(matches[m]);
+        filterCache[matches[m].id] = undefined;
         matchOf[matches[m].id] = -1;
         let hole = m;
         if (where !== null && m < where.evaluated) {
@@ -487,7 +487,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     /** Matches `m` anew, reused for other values: its point is its last run's, and `where` evaluates it again. */
     const renewMatch = (m: number): void => {
         const archetype = matches[m];
-        filterCache.delete(archetype);
+        filterCache[archetype.id] = undefined;
         points[m] = lastRun;
         generations[m] = archetype.generation;
         if (where !== null && m < where.evaluated) {
@@ -563,12 +563,12 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
      * and the WASM addresses of its columns and filters, for the WASM kernel `addressed` they were taken for, since a
      * kernel loaded again may stamp a tick column the last one muted.
      */
-    const filterCache = new Map<Archetype, Filtered>();
+    const filterCache: (Filtered | undefined)[] = [];
     const noFilters: readonly Filter[] = [];
 
     const filteredOf = (archetype: Archetype) => {
-        const cached = filterCache.get(archetype);
-        if (cached !== undefined && cached.version === archetype.version) return cached;
+        const cached = filterCache[archetype.id];
+        if (cached !== undefined && cached.archetype === archetype && cached.version === archetype.version) return cached;
         const filters = addedIds.length + changedIds.length === 0 ? noFilters : [
             ...addedIds.flatMap(id => {
                 const storage = archetype.storageById[id];
@@ -579,8 +579,8 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged, blocks: storage.blockChanged }];
             }),
         ];
-        const entry: Filtered = { version: archetype.version, filters, addresses: noAddresses, addressed: null };
-        filterCache.set(archetype, entry);
+        const entry: Filtered = { archetype, version: archetype.version, filters, addresses: noAddresses, addressed: null };
+        filterCache[archetype.id] = entry;
         return entry;
     };
 
@@ -614,13 +614,14 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const { value } = row;
         const values = context.value;
         const input = runInput;
+        const { body } = system;
         const filters = filtersOf(archetype);
         // Every row passes, so nothing is filtered.
         // A body may remove its own system, after which no row of it runs.
         if (since < 0 || filters.length === 0) {
             for (let index = 0, count = archetype.count; index < count && !holdings.removed; index++) {
                 row.index = index;
-                const returned = system.body(value, values, input);
+                const returned = body(value, values, input);
                 if (returned !== undefined) noPromise(returned);
             }
             return;
@@ -628,7 +629,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         forEachPassingRange(filters, since, 0, archetype.count, (start, end) => {
             for (let index = start; index < end && !holdings.removed; index++) {
                 row.index = index;
-                const returned = system.body(value, values, input);
+                const returned = body(value, values, input);
                 if (returned !== undefined) noPromise(returned);
             }
         });
@@ -714,10 +715,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const upContext = context.value;
         const input = runInput;
         upContext.up = parentRow === null ? null : parentRow.value;
+        const { body } = system;
         for (let n = start; n < end && !holdings.removed; n++) {
             row.index = rows[n];
             if (parentRow !== null) parentRow.index = parents[n];
-            const returned = system.body(row.value, upContext, input);
+            const returned = body(row.value, upContext, input);
             if (returned !== undefined) noPromise(returned);
         }
     };
@@ -748,9 +750,10 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             }
             const row = bindRow(archetype);
             const { value } = row;
+            const { body } = system;
             for (let n = run.start; n < run.end && !holdings.removed; n++) {
                 row.index = run.rows[n];
-                const returned = system.body(value, contextValue, input);
+                const returned = body(value, contextValue, input);
                 if (returned !== undefined) noPromise(returned);
             }
         }
@@ -762,6 +765,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const { entries, stride, words, lengths, blocks } = sorted;
         const contextValue = context.value;
         const input = runInput;
+        const { body } = system;
         let current = -1;
         let row: ReturnType<typeof bindRow> | null = null;
         let value: object | null = null;
@@ -782,7 +786,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                     current = owner;
                 }
                 row.index = entries[at + 2];
-                const returned = system.body(value, contextValue, input);
+                const returned = body(value, contextValue, input);
                 if (returned !== undefined) noPromise(returned);
             }
         }

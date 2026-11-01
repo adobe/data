@@ -138,11 +138,23 @@ const checkWhere = (leaf: Leaf): void => {
     const where = declaration.components?.where;
     if (where === undefined) return;
     if (declaration.up !== undefined || declaration.order !== undefined || declaration.target !== undefined) throw new Error(`System "${name}" uses where with up, order or a target, which run rows across archetypes.`);
+    checkWhereValues(name, "where", where, true);
+};
+
+/**
+ * Throws for a `where`, the one `named` says, naming what isn't a shared component or giving one a value not of its
+ * type, or a predicate unless `predicates`.
+ */
+const checkWhereValues = (name: string, named: string, where: { readonly [key: symbol]: unknown }, predicates: boolean): void => {
     for (const key of Object.getOwnPropertySymbols(where)) {
         const found = declarationOf(key);
-        if (kindOf(key) !== "component" || found?.shared !== true) throw new Error(`System "${name}": where names "${labelOf(key)}", which isn't a shared component: where keeps a system to archetypes by their shared values.`);
+        if (kindOf(key) !== "component" || found?.shared !== true) throw new Error(`System "${name}": ${named} names "${labelOf(key)}", which isn't a shared component: where keeps ${named === "where" ? "a system" : "tables"} to archetypes by their shared values.`);
         const value: unknown = Reflect.get(where, key);
-        if (typeof value !== "function" && found.type !== undefined && !matchesSchema(found.type, value)) throw new Error(`System "${name}": where gives "${labelOf(key)}" ${labelOf(value)}, which isn't one of its type's values.`);
+        if (typeof value === "function") {
+            if (!predicates) throw new Error(`System "${name}": ${named} gives "${labelOf(key)}" a predicate, and takes only values.`);
+            continue;
+        }
+        if (found.type !== undefined && !matchesSchema(found.type, value)) throw new Error(`System "${name}": ${named} gives "${labelOf(key)}" ${labelOf(value)}, which isn't one of its type's values.`);
     }
 };
 
@@ -176,6 +188,7 @@ const checkTables = (leaf: Leaf): void => {
     requireRegistered("System", name, "component", tables.with);
     requireRegistered("System", name, "component", tables.not);
     requireRegistered("System", name, "resource", tables.resources);
+    if (tables.where !== undefined) checkWhereValues(name, "tables' where", tables.where, false);
 };
 
 /**

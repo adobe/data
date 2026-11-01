@@ -226,6 +226,43 @@ describe("references", () => {
         await world.dispose();
     });
 
+    it("cascade through entities spawned together, whichever archetype each is spawned into first", async () => {
+        const world = createWorld({ [workers]: 0 });
+        const step = at(world);
+        let gone = Entity.none, owner = Entity.none, child = Entity.none, watcher = Entity.none;
+        await step(commands => { gone = commands.spawn([mark])({ [mark]: 0 }); });
+        await step(commands => commands.despawn(gone));
+        await step(commands => {
+            // The archetypes of the child and the watcher take their first spawns before the owner's does.
+            commands.spawn([mark, owned])({ [mark]: 1, [owned]: Entity.none });
+            commands.spawn([mark, follows])({ [mark]: 2, [follows]: Entity.none });
+            owner = commands.spawn([mark, owned, sprite])({ [mark]: 3, [owned]: gone });
+            child = commands.spawn([mark, owned])({ [mark]: 4, [owned]: owner });
+            watcher = commands.spawn([mark, follows])({ [mark]: 5, [follows]: owner });
+        });
+        expect(await read(world, owner, mark)).toBeNull();
+        expect(await read(world, child, mark)).toBeNull();
+        expect(await components(world, watcher)).toEqual([mark]);
+        await world.dispose();
+    });
+
+    it("cascade to entities spawned in the sync point their owner despawns in", async () => {
+        const world = createWorld({ [workers]: 0 });
+        const step = at(world);
+        let owner = Entity.none, child = Entity.none, grandchild = Entity.none;
+        await step(commands => { owner = commands.spawn([mark])({ [mark]: 0 }); });
+        await step(commands => {
+            // The grandchild's archetype takes its first spawn before the child's does.
+            commands.spawn([mark, owned, sprite])({ [mark]: 1, [owned]: Entity.none });
+            child = commands.spawn([mark, owned])({ [mark]: 2, [owned]: owner });
+            grandchild = commands.spawn([mark, owned, sprite])({ [mark]: 3, [owned]: child });
+            commands.despawn(owner);
+        });
+        expect(await read(world, child, mark)).toBeNull();
+        expect(await read(world, grandchild, mark)).toBeNull();
+        await world.dispose();
+    });
+
     it("move a holder whose weak reference is dropped to an archetype no entity had, closed by the rules", async () => {
         const world = createWorld({ [workers]: 0 });
         const step = at(world);

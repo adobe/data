@@ -22,6 +22,9 @@ const cyclic = -1;
 const denseShare = 1 / 8;
 /** Rows below this many are sorted rather than scanned. */
 const denseMinimum = 4096;
+/** Past this many journal entries, and past this share of the matched rows, the tree is built again rather than patched. */
+const patchMinimum = 4096;
+const patchShare = 1 / 8;
 /** Sort keys pack a row with its parent's archetype: `(parent + 1) * rowLimit + row`. */
 const rowLimit = 2 ** 27;
 
@@ -375,7 +378,9 @@ const createShared = (state: State, through: number, read: readonly number[], ma
         const { journal } = state;
         const end = journalEnd(journal);
         if (position === end) return;
-        if (position < journal.first) {
+        let matched = 0;
+        for (let k = 0; k < matches.length; k++) matched += matches[k].count;
+        if (position < journal.first || end - position > Math.max(patchMinimum, matched * patchShare)) {
             build(matches);
             position = end;
             rebuiltAll();

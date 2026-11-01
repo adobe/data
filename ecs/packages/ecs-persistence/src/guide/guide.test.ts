@@ -5,6 +5,7 @@ import { checkChapters } from "ecs-guide-checks";
 const teaches: { readonly [chapter: number]: readonly string[] } = {
     1: ["[persist]: \"position\"", "snapshot({ world })", "encode(", "decode(bytes)", "spawn({ world", "entities", "failure"],
     2: ["snapshot({ world, root", "dropped", "entities: false", "entities", "match: [byLabel]"],
+    3: ["shared: true", "where: { [chunk]: [2, 0] }", "match: [byTree]"],
 };
 
 /**
@@ -14,6 +15,7 @@ const teaches: { readonly [chapter: number]: readonly string[] } = {
 const mutations: { readonly [chapter: number]: readonly (readonly [string, string, string?])[] } = {
     1: [["; [persist]: \"target\"", ""], ["; [persist]: \"level\"", ""], ["; [persist]: \"position\"", ""]],
     2: [["root: ship", "root: hull"], ["[parent]: hull", "[parent]: ship"], [", match: [byLabel]", ""]],
+    3: [["where: { [chunk]: [2, 0] }", "where: { [chunk]: [1, 0] }"], [", match: [byTree]", ""]],
 };
 
 checkChapters({ folder: new URL(".", import.meta.url), teaches, mutations });

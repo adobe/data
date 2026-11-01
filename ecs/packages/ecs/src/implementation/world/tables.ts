@@ -153,6 +153,12 @@ const placesOf = (plans: readonly Planned[]): { readonly entities: Float64Array;
 /** A reference column's entity value in each row: the f64 at the row's start, a reference's whole value. */
 const referencesOf = (column: Table.Column): ((row: number) => number) => {
     if (column.kind !== "bytes") return () => 0;
+    const { bytes } = column;
+    if (bytes.byteOffset % 8 === 0 && column.stride % 8 === 0) {
+        const view = new Float64Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 3);
+        const words = column.stride >> 3;
+        return row => view[row * words];
+    }
     const view = new DataView(column.bytes.buffer, column.bytes.byteOffset, column.bytes.byteLength);
     const { stride } = column;
     return row => view.getFloat64(row * stride, true);
@@ -253,39 +259,36 @@ export const spawnTables = (state: State, tables: readonly Table[], existing: Re
     });
     // A row owned by an entity outside the tables isn't spawned, nor anything it owns, as despawning its owner would.
     const dropped = new Uint8Array(total);
-    /** Each owner reference between rows of the tables: the owned row's position, and its owner's. */
-    const ownedRows: number[] = [];
-    const ownerRows: number[] = [];
     const waiting: number[] = [];
-    plans.forEach(({ table, keys }, t) => {
+    /**
+     * Calls `each` with each owner reference of a row that doesn't exist: the owned row's position, its owner's among
+     * the tables' rows or -1 for an owner outside them, and the owner.
+     */
+    const forEachOwner = (each: (position: number, at: number, owner: number) => void): void => plans.forEach(({ table, keys }, t) => {
         for (const key of keys) {
             if (declarationOf(key)?.reference !== "owner") continue;
             const ownerAt = referencesOf(Reflect.get(table.columns, key));
             for (let row = 0; row < table.count; row++) {
                 const owner = ownerAt(row);
-                if (owner === 0) continue;
-                const at = positionOf(owner);
                 const position = firsts[t] + row;
                 // A row that exists stands, whatever owns it.
-                if (existingAt[position] !== 0) continue;
-                if (at >= 0) {
-                    ownedRows.push(position);
-                    ownerRows.push(at);
-                }
-                else if (dropped[position] === 0 && !existing.has(owner)) {
-                    dropped[position] = 1;
-                    waiting.push(position);
-                }
+                if (owner !== 0 && existingAt[position] === 0) each(position, positionOf(owner), owner);
             }
         }
     });
+    forEachOwner((position, at, owner) => {
+        if (at >= 0 || dropped[position] !== 0 || existing.has(owner)) return;
+        dropped[position] = 1;
+        waiting.push(position);
+    });
     if (waiting.length > 0) {
         const owned = new Map<number, number[]>();
-        for (let i = 0; i < ownedRows.length; i++) {
-            const list = owned.get(ownerRows[i]);
-            if (list === undefined) owned.set(ownerRows[i], [ownedRows[i]]);
-            else list.push(ownedRows[i]);
-        }
+        forEachOwner((position, at) => {
+            if (at < 0) return;
+            const list = owned.get(at);
+            if (list === undefined) owned.set(at, [position]);
+            else list.push(position);
+        });
         for (let next = waiting.pop(); next !== undefined; next = waiting.pop()) {
             for (const child of owned.get(next) ?? []) {
                 if (dropped[child] !== 0 || existingAt[child] !== 0) continue;
@@ -296,11 +299,22 @@ export const spawnTables = (state: State, tables: readonly Table[], existing: Re
     }
     // Each row's entity in this world: the one spawned for it, the one existing for it, or 0 for one dropped.
     const spawnedAt = new Float64Array(total);
+    /** By table, whether every row of it is spawned: none exists or is dropped. */
+    const wholly: boolean[] = [];
     const entities = plans.map(({ table }, t) => {
-        const alive = [];
+        const first = firsts[t];
         const spawned = new Float64Array(table.count);
+        let standing = 0;
+        for (let row = 0; row < table.count; row++) if (existingAt[first + row] !== 0 || dropped[first + row] !== 0) standing++;
+        wholly.push(standing === 0);
+        if (standing === 0) {
+            reserveRun(state.entities, spawned);
+            spawnedAt.set(spawned, first);
+            return spawned;
+        }
+        const alive = [];
         for (let row = 0; row < table.count; row++) {
-            const position = firsts[t] + row;
+            const position = first + row;
             if (existingAt[position] !== 0) spawnedAt[position] = spawned[row] = existingAt[position];
             else if (dropped[position] === 0) alive.push(row);
         }
@@ -308,7 +322,7 @@ export const spawnTables = (state: State, tables: readonly Table[], existing: Re
         reserveRun(state.entities, reserved);
         alive.forEach((row, i) => {
             spawned[row] = reserved[i];
-            spawnedAt[firsts[t] + row] = reserved[i];
+            spawnedAt[first + row] = reserved[i];
         });
         return spawned;
     });
@@ -328,8 +342,8 @@ export const spawnTables = (state: State, tables: readonly Table[], existing: Re
             const target = targetAt(row);
             return target !== 0 && !isSpawned(target);
         });
-        let whole = true;
-        for (let row = 0; row < table.count && whole; row++) if (dropped[first + row] !== 0 || existingAt[first + row] !== 0 || loses(row)) whole = false;
+        let whole = wholly[t];
+        if (weak.length > 0) for (let row = 0; row < table.count && whole; row++) if (loses(row)) whole = false;
         if (whole) return spawnRows(state, plan, null, none, entities[t], remap);
         // Rows by the weak references they lose, whose targets aren't spawned: each set of components a batch of its own.
         const groups = new Map<string, { readonly removed: Set<Key>; readonly rows: number[] }>();

@@ -990,18 +990,19 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         const row = bindRow(archetype);
         const subject = row.value;
         const input = runInput;
+        const { body } = system;
         const filters = filtersOf(archetype);
         if (since < 0 || filters.length === 0) {
             for (let index = 0; index < count; index++) {
                 row.index = index;
-                system.body(subject, value, input);
+                body(subject, value, input);
             }
             return;
         }
         forEachPassingRange(filters, since, 0, count, (start, end) => {
             for (let index = start; index < end; index++) {
                 row.index = index;
-                system.body(subject, value, input);
+                body(subject, value, input);
             }
         });
     };
@@ -1103,18 +1104,19 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         const row = bindRow(archetype);
         const subject = row.value;
         const input = runInput;
+        const { body } = system;
         const filters = filtersOf(archetype);
         if (since < 0 || filters.length === 0) {
             for (let index = start; index < end && !halted; index++) {
                 row.index = index;
-                system.body(subject, tailValue, input);
+                body(subject, tailValue, input);
             }
             return;
         }
         forEachPassingRange(filters, since, start, end, (first, last) => {
             for (let index = first; index < last && !halted; index++) {
                 row.index = index;
-                system.body(subject, tailValue, input);
+                body(subject, tailValue, input);
             }
         });
     };
@@ -1233,6 +1235,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
         const copied = (storages: readonly (ThreadStorage | undefined)[]): ThreadArchetype =>
             ({ id: -1, entities, storageById: storages, record: -1, version: -1, mirrored: null, components: [], resource: false, reclaimed: false, generation: 0 });
         const ownedInput = runInput;
+        const { body } = system;
         try {
             if (optionalNumbers.length === 0 && sharedReads.length === 0) {
                 const row = bindRow(copied(storageById));
@@ -1240,7 +1243,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
                 for (let index = first; index < rows && !halted; index++) {
                     if (skipped !== null && skipped.has(archetypeIds[index])) continue;
                     row.index = index;
-                    system.body(subject, tailValue, ownedInput);
+                    body(subject, tailValue, ownedInput);
                 }
             }
             else {
@@ -1275,7 +1278,7 @@ export const createThreadRunner = (host: RunnerHost, leaf: Leaf, records: Readon
                     const subject = row.value;
                     for (; index < end && !halted; index++) {
                         row.index = index;
-                        system.body(subject, tailValue, ownedInput);
+                        body(subject, tailValue, ownedInput);
                     }
                 }
             }

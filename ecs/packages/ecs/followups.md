@@ -77,6 +77,11 @@ correctness, then optimization. Remove an item once it's decided or done.
   rejects"): it compares the Problems badge's count with the list's as soon as the build's rejection shows, and
   TypeScript's own problem for the same `async` body can land between the two reads (CI: badge 1, list 2). Wait for
   both problems before comparing. Skipped on CI until then.
+- **Index lifetime's first count can come before a one-run system is collected** (`indexes.test.ts`, "builds an index
+  the first time a system uses it and releases it"): on CI's runners, once, the count taken before the index is built
+  still held the one-run `changed` system, its schedule and runner, which the next collection freed (CI: schedules 2,
+  then 1). The collector finishes compiles in flight before collecting, so something else holds it a while: find what,
+  or take that count once it's settled. Skipped on CI until then.
 - **Transactions, future:** never by default, since they would cost every run. An explicit declarative option on a
   one-off system, making its run all or nothing.
 

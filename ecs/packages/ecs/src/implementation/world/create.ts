@@ -33,8 +33,8 @@ import { refreshDirectories } from './directories.js';
 import { createRegistrar, type Registration } from './register.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
-import { ensureProgramResources, activate, finalizerCrossing, placeFinalizers } from './activate.js';
-import { isObserver, isWorldWritten, kindOf, programVersion, scheduleOf, type Composite } from '../../interface/registry/index.js';
+import { ensureProgramResources, activate, finalizerCrossing, placeFinalizers, programResourcesChanged, type Ensured } from './activate.js';
+import { isObserver, isWorldWritten, kindOf, scheduleOf, type Composite } from '../../interface/registry/index.js';
 import { always } from '../../interface/resources/always.js';
 import { cadence, type Cadence } from '../../interface/resources/cadence.js';
 import { clock } from '../../interface/resources/clock.js';
@@ -284,7 +284,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (state.observer.posts.length !== 0) await settlePosts(state, true);
     };
     let disposed = false;
-    const ensured = { version: -1 };
+    const ensured: Ensured = { version: -1, keys: -1, traits: false };
 
     const minimumChunk = options.minimumChunk ?? defaultMinimumChunk;
 
@@ -545,7 +545,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     /** Follows what changed since the last run: program resources, change watches, workers and the device; null when nothing did. */
     const prepareRun = (): Promise<void> | null => {
         // Resources added between runs move the resource entity, whose structs a tail may still read.
-        if (ensured.version !== programVersion() && (state.channels.length > 0 || state.observer.posts.length > 0)) return drainThenPrepare();
+        if (programResourcesChanged(ensured) && (state.channels.length > 0 || state.observer.posts.length > 0)) return drainThenPrepare();
         ensureProgramResources(state, ensured);
         if (startWatches(state)) return followChanges(true, false);
         if (workersChanged()) return followChanges(false, true);

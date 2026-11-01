@@ -119,16 +119,36 @@ describe("despawnWhere", () => {
         await world.dispose();
     });
 
-    it("despawns matching entities spawned at the same sync point, whenever spawned, since spawns commit first", async () => {
+    it("keeps what the same sync point spawns, whenever spawned and whatever earlier commands give it", async () => {
         const { world, run } = withCommands();
+        let alive = Entity.none;
+        await run(commands => { alive = commands.spawn([mark, value])({ [value]: 0 }); });
         const spawned: Entity[] = [];
         await run(commands => {
             spawned.push(commands.spawn([mark, value])({ [value]: 1 }));
+            const tagged = commands.spawn([value])({ [value]: 2 });
+            commands.add(tagged, mark);
+            spawned.push(tagged);
             commands.despawnWhere({ with: [mark] });
-            spawned.push(commands.spawn([mark, value])({ [value]: 2 }));
-            spawned.push(commands.spawn([value])({ [value]: 3 }));
+            spawned.push(commands.spawn([mark, value])({ [value]: 3 }));
         });
-        expect(await aliveEach(world, spawned)).toEqual([false, false, true]);
+        expect([await aliveEach(world, [alive]), await aliveEach(world, spawned)]).toEqual([[false], [true, true, true]]);
+        await world.dispose();
+    });
+
+    it("clears the events a frame made before, keeping those it makes, in one system", async () => {
+        const { world, run } = withCommands();
+        let first = Entity.none, second = Entity.none;
+        await run(commands => {
+            commands.despawnWhere({ with: [mark] });
+            first = commands.spawn([mark, value])({ [value]: 1 });
+        });
+        expect(await aliveEach(world, [first])).toEqual([true]);
+        await run(commands => {
+            commands.despawnWhere({ with: [mark] });
+            second = commands.spawn([mark, value])({ [value]: 2 });
+        });
+        expect(await aliveEach(world, [first, second])).toEqual([false, true]);
         await world.dispose();
     });
 
@@ -256,18 +276,21 @@ describe("despawnWhere", () => {
         await world.dispose();
     });
 
-    it("despawns by where the entities spawned at the same sync point, and none for a value no archetype holds", async () => {
+    it("despawns by where what was alive before the sync point, keeping what it spawns, and none for a value no archetype holds", async () => {
         const { world, run } = withCommands();
         const spawned: Entity[] = [];
         await run(commands => {
             spawned.push(commands.spawn([mark, chunk], { [chunk]: 1 })());
-            commands.despawnWhere({ with: [mark], where: { [chunk]: 1 } });
             spawned.push(commands.spawn([mark, chunk], { [chunk]: 2 })());
+        });
+        await run(commands => {
+            spawned.push(commands.spawn([mark, chunk], { [chunk]: 1 })());
+            commands.despawnWhere({ with: [mark], where: { [chunk]: 1 } });
             commands.despawnWhere({ with: [mark], where: { [chunk]: 3 } });
         });
-        expect(await aliveEach(world, spawned)).toEqual([false, true]);
+        expect(await aliveEach(world, spawned)).toEqual([false, true, true]);
         await run(commands => commands.despawnWhere({ with: [mark], where: {} }));
-        expect(await aliveEach(world, spawned)).toEqual([false, false]);
+        expect(await aliveEach(world, spawned)).toEqual([false, false, false]);
         await world.dispose();
     });
 

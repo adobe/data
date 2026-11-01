@@ -1436,13 +1436,13 @@ describe("inferred access", () => {
 
     test("commands by kind, keys and lists as their bindings name them, however the context reaches them", async () => {
         const commanded = async (body: string, declaration = "components: { with: [position] }"): Promise<string> =>
-            /commands: (null|\{[^}]*\})/.exec(await inferred(`const Shapes = [mass];\nconst Listed = [velocity];\n${system(declaration, body)}`))?.[1] ?? "none";
+            /commands: (null|\(\) => \(\{[^}]*\}\))/.exec(await inferred(`const Shapes = [mass];\nconst Listed = [velocity];\n${system(declaration, body)}`))?.[1] ?? "none";
         expect(await commanded("(row, { commands }) => { commands.spawn([mass, ...Shapes])({}); commands.add(row.entity, velocity, 1); commands.remove(row.entity, [mass]); }"))
-            .toBe("{ spawn: [mass, Shapes], add: [velocity], remove: [mass], despawn: false }");
+            .toBe("() => ({ spawn: [mass, Shapes], add: [velocity], remove: [mass], despawn: false })");
         expect(await commanded("(row, context) => { const c = context.commands; c.despawn(row.entity); context.commands.add(row.entity, Listed, {}); }"))
-            .toBe("{ spawn: [], add: [Listed], remove: [], despawn: true }");
+            .toBe("() => ({ spawn: [], add: [Listed], remove: [], despawn: true })");
         expect(await commanded("(row, context) => { const { commands } = context; commands.despawnWhere({ with: [mass] }); }")).toContain("despawn: true");
-        expect(await commanded("(row) => { row[position] = 1; }")).toBe("{ spawn: [], add: [], remove: [], despawn: false }");
+        expect(await commanded("(row) => { row[position] = 1; }")).toBe("() => ({ spawn: [], add: [], remove: [], despawn: false })");
         for (const body of ["(row, { commands }) => { helper(commands); }", "(row, { commands }) => { commands.add(row.entity, keyOf(1), 1); }",
             "(row, { commands: { spawn } }) => { spawn([mass]); }", "(row, context) => { helper(context); }",
             "(row, { commands }) => { commands.spawnTables(tables); }"]) {

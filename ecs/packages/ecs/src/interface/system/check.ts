@@ -220,6 +220,8 @@ export const checkLeaf = (leaf: Leaf): void => {
     threadOf(declaration, "System", name);
     requireRegistered("System", name, "component", components?.has);
     requireRegistered("System", name, "component", components?.not);
+    if (declaration.before !== undefined) requireRegistered("System", name, "resource", declaration.before.filter(item => typeof item === "symbol"));
+    if (declaration.after !== undefined) requireRegistered("System", name, "resource", declaration.after.filter(item => typeof item === "symbol"));
     for (const lookupName in lookup) {
         const found = lookup[lookupName];
         requireRegistered("System", name, "component", "has" in found ? found.has : undefined);

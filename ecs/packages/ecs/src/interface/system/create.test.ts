@@ -49,7 +49,7 @@ describe("System.create", () => {
         const body = (): void => {};
         // A body the build doesn't see is given what it uses.
         const move = System.create(giveAccess({ components: { with: [position] } }, { write: [position], resources: { read: [time] } }), body);
-        expect(definitionOf(move)).toEqual({ kind: "system", name: "move", declaration: { components: { write: [position] }, resources: { read: [time] } }, body });
+        expect(definitionOf(move)).toEqual({ kind: "system", name: "move", declaration: { components: { write: [position] }, resources: { read: [time] } }, body, commands: expect.any(Function) });
         expect(move.name).toBe("move");
         expect(definitionOf({ name: "move" })).toBe(undefined);
     });
@@ -71,7 +71,7 @@ describe("System.create", () => {
     it("labels a system made with neither an id nor a binding by its kind numbered", () => {
         const body = ({ commands }: { readonly commands: System.Commands }): void => { commands.spawn([position])({ [position]: 0 }); };
         const [alone] = [System.create(giveAccess(identify(body, "setup.ts#spawnOnce")))];
-        expect(definitionOf(alone)).toEqual({ kind: "system", name: "spawnOnce", declaration: {}, body });
+        expect(definitionOf(alone)).toEqual({ kind: "system", name: "spawnOnce", declaration: {}, body, commands: expect.any(Function) });
         const [first, second] = [System.create(() => {}), System.create({ systems: [alone] })].map(system => system.name);
         const number = Number(first?.slice("system #".length));
         expect([first, second]).toEqual([`system #${number}`, `system #${number + 1}`]);
@@ -177,7 +177,7 @@ describe("System.create of a composite", () => {
         const reader = System.create({ components: { with: [position] } }, row => { void row[position]; });
         const definition = definitionOf(whole);
         expect(definition?.kind === "system" ? definition.declaration.components : null).toEqual({ read: [parent], write: [position], whole: true });
-        expect(() => System.create([whole, reader])).toThrow('both access "typesSystemTest/position" and one writes it; order them with before or after. "whole" takes its row whole (components.whole), so it writes every member.');
+        expect(() => System.create([whole, reader])).toThrow(`both access "typesSystemTest/position" and one writes it; order them with before or after, or, if they never match one entity, add a component of one to the other's not. "whole" takes its row whole (components.whole), so it writes every member.`);
     });
     it("runs readonly members after its sync point, in no tier, never conflicting and ignoring constraints naming them", () => {
         const write = System.create({ components: { with: [position] } }, row => { row[position] += 1; });

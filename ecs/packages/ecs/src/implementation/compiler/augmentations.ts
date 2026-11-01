@@ -819,6 +819,9 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
                     if (error.notData.node && !thread) fail(module, member, `${key.name} is a DOM Node, which lives on "main": declare \`thread: "main"\``);
                 }
                 await checkBuiltIns(key.name, kind, typeNode, schema, builtIns);
+                const freshType = schema !== undefined ? null : await converter.freshOf(typeNode, module);
+                const emptied = schema !== undefined && "type" in schema && (schema.type === "map" || schema.type === "set") ? (schema.type === "map" ? "Map" : "Set") : freshType;
+                if (defaultNode !== undefined && emptied !== null) fail(module, defaultNode, `${key.name} is a Readonly${emptied}, which starts empty in each world: leave its default out`);
                 const given = defaultNode === undefined ? undefined : await literalDefault(defaultNode, key.name);
                 if (schema !== undefined && given !== undefined && !matchesSchema(schema, given)) fail(module, defaultNode ?? member, `${key.name}'s default isn't of its declared type`);
                 let start = given === undefined ? undefined : codeOf(given);
@@ -838,7 +841,8 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
                         const namespaced = await namespacedDefault(typeNode, key.name, undefined, oneObject);
                         if (namespaced !== null) read({ text: namespaced.text, locals: namespaced.local === undefined ? [] : [namespaced.local], given: true });
                         else if (needed && !await allowsNullType(typeNode, module, new Set())) {
-                            fail(module, member, `${kind} ${key.name} holds a value that isn't data, so nothing gives it a start: let its type allow null, or give its type a namespace with a deeply readonly \`default\`; a ReadonlyMap or ReadonlySet starts fresh in each world, a Map or Set doesn't`);
+                            if (freshType !== null) fresh = freshType;
+                            else fail(module, member, `${kind} ${key.name} holds a value that isn't data, so nothing gives it a start: let its type allow null, give its type a namespace with a deeply readonly \`default\`, or declare it a ReadonlyMap or ReadonlySet, which starts empty in each world`);
                         }
                     }
                     else {

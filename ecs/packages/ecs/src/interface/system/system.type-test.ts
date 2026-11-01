@@ -154,6 +154,12 @@ System.create({
     // @ts-expect-error ordering takes systems
     after: ["test/unregistered"],
 }, () => {});
+// Ordering by a resource: before or after every other system of the composite that uses it.
+System.create({ before: [time], after: [integrate, score] }, ({ resources }) => { resources[time] = resources[score]; });
+System.create({
+    // @ts-expect-error ordering takes systems and resources, not components
+    after: [position],
+}, () => {});
 
 // @ts-expect-error a system with input can't use change filters
 System.create({ components: { changed: [position] } }, (_row, _context, input: { readonly distance: number }) => { void input; });

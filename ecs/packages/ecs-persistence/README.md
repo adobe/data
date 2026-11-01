@@ -75,6 +75,10 @@ const spawned = await spawn({ world: other, snapshot: loaded });
   snapshot's names it; `entities` maps the one to the other. Keys compare as stored, a number's or a vector's bytes and
   a string's or an object's value. It fails for an index whose key, `with` or `not` names a component the snapshot's
   trait doesn't cover, or two of the snapshot's entities one index holds with one key.
+- **Updating:** with `update: true`, each entity `match` found takes the snapshot's components of its own, as
+  `commands.add` gives them: added where it lacks one, replaced and marked changed where it has it, its other
+  components left as they are. So an entity the application makes at startup, such as a camera, keeps a component that
+  is a saved setting: `spawn({ world, snapshot: settings, match: [byCamera], update: true })`.
 
 Each reports why it didn't happen as `{ failure }`, rather than throwing, and `result.failure !== undefined` tells
 which. A snapshot is opaque: only these functions read it.

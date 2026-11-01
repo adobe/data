@@ -2,7 +2,7 @@
 import type { Finalizer } from '../../interface/finalizer/created.js';
 import type { Rule } from '../../interface/rule/created.js';
 import type { RuleFacts } from '../../interface/registry/strata.js';
-import { createFinalizerRunner, placeFinalizer, type FinalizerRunner } from './finalizers.js';
+import { createFinalizerRunner, followResources, placeFinalizer, watchedResourcesOf, type FinalizerRunner } from './finalizers.js';
 import { watchResource } from './resource-changes.js';
 import { finalizerKeysOf, type TaskChannel } from './remote-systems.js';
 import { programFinalizers, programRules, programVersion } from '../../interface/registry/program.js';
@@ -10,7 +10,7 @@ import { triggersOf } from './program.js';
 import { ensureResources, findResource } from './resources.js';
 import { idOf, metIdOf, type Key, type State } from './state.js';
 import { restratify } from './structure.js';
-import { idOfItem, idOfKey, kindOf, labelOf, threadOf } from '../../interface/registry/index.js';
+import { idOfItem, idOfKey, keysVersion, labelOf, threadOf } from '../../interface/registry/index.js';
 
 /**
  * Why a joined thread that imported the items of ids `imported` can't claim `threads`: a program finalizer on one that
@@ -71,19 +71,31 @@ export const placeFinalizers = (state: State): void => {
 /** The resources a finalizer reads, writes or, for a changes finalizer, watches. */
 const resourcesOf = (finalizer: Finalizer): readonly Key[] => [
     ...finalizer.declaration.resources?.read ?? [], ...finalizer.declaration.resources?.write ?? [],
-    ...finalizer.kind === "changes" ? (finalizer.declaration.watch ?? []).filter(key => kindOf(key) === "resource") : [],
+    ...finalizer.kind === "changes" ? watchedResourcesOf(finalizer.declaration.watch) : [],
 ];
 
+/**
+ * What a world ensured of the program's resources: the program's version then, and the keys' while a changes finalizer
+ * watches resources by a trait, which a resource registering later may declare.
+ */
+export type Ensured = { version: number; keys: number; traits: boolean };
+
+/** Whether the program's finalizers may use a resource the world hasn't ensured. */
+export const programResourcesChanged = (ensured: Ensured): boolean => ensured.version !== programVersion() || (ensured.traits && ensured.keys !== keysVersion());
+
 /** Between runs: adds the resources of every finalizer in the program, so one can activate at any sync point. */
-export const ensureProgramResources = (state: State, ensured: { version: number }): void => {
-    const version = programVersion();
-    if (ensured.version === version) return;
-    ensured.version = version;
+export const ensureProgramResources = (state: State, ensured: Ensured): void => {
+    if (!programResourcesChanged(ensured)) return;
+    ensured.version = programVersion();
+    ensured.keys = keysVersion();
+    ensured.traits = programFinalizers().some(finalizer => finalizer.kind === "changes" && finalizer.declaration.watch.resourceTraits.length > 0);
     ensureResources(state, new Set(programFinalizers().flatMap(resourcesOf)));
     // A watched resource is followed from now, before its finalizer activates, so writes before then are seen.
     for (const finalizer of programFinalizers()) {
-        if (finalizer.kind === "changes") for (const key of finalizer.declaration.watch ?? []) if (kindOf(key) === "resource") watchResource(state, idOf(state, key));
+        if (finalizer.kind === "changes") for (const key of watchedResourcesOf(finalizer.declaration.watch)) watchResource(state, idOf(state, key));
     }
+    // Active finalizers watching resources by a trait follow those registered since.
+    for (const runner of state.finalizers) if (runner.finalizer.kind === "changes") followResources(state, runner.finalizer.declaration.watch, runner.resourceWatches);
     // Finalizers waiting for these can activate at the next sync point.
     state.activation.met = true;
 };
@@ -99,10 +111,11 @@ const ready = (state: State, item: Rule | Finalizer): boolean => {
  * resolves its components' ids, which may make more ready.
  */
 export const activate = (state: State): void => {
-    const { activation } = state;
-    if (!activation.met && activation.version === programVersion()) return;
-    activateNow(state);
+    if (activationPending(state)) activateNow(state);
 };
+
+/** Whether a rule or finalizer of the program may be ready to activate: a component met, or the program changed. */
+export const activationPending = (state: State): boolean => state.activation.met || state.activation.version !== programVersion();
 
 /** `activate` once something may be ready: apart, so a sync point with nothing to activate allocates no closure context. */
 const activateNow = (state: State): void => {

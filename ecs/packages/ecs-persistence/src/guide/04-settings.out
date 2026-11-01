@@ -1,4 +1,4 @@
-settings as a document: This snapshot holds resource "tool", which the trait doesn't cover.
+settings as a document: This snapshot holds component "camera", which the trait doesn't cover.
 a document as settings: This snapshot holds component "voxel", which the trait doesn't cover.
 opened: 2 voxels, size 32, tool select, panel closed
-restored: 0 entities, size 16, tool brush, panel open
+restored: size 16, tool brush, panel open | views 25

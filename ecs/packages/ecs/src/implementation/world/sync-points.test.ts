@@ -79,6 +79,11 @@ const tally = System.create({ components: { with: [grown] }, after: [sprout] }, 
 const garden = System.create([plant, sprout, tally]);
 const readChildren = System.create({ readonly: true }, ({ resources }) => resources[children]);
 
+const spawnSeedlings = System.create(({ commands }) => { commands.spawn(Seedling)({ [seed]: 1, [grown]: 2 }); });
+const countSeedlings = System.create({ components: { with: [seed, grown] }, after: [spawnSeedlings] }, (row, { resources }) => { resources[children] += row[grown]; });
+/** Declared below the systems whose commands name it. */
+const Seedling = [seed, grown] as const;
+
 describe("sync points within a run", () => {
     it("apply commands before a later system that depends on what they change, which then sees them in the same run", async () => {
         const world = createWorld({ [workers]: 0 });
@@ -120,6 +125,13 @@ describe("sync points within a run", () => {
             const byDepth = [1, 2, 3].map(depth => totals.filter(value => value === depth).length);
             expect([byDepth, totals.length]).toEqual([[totals.length - 2 * spawned, spawned, spawned], totals.length]);
         }
+    });
+
+    it("follow commands naming an archetype declared below their system", async () => {
+        expect(System.describe(System.create([spawnSeedlings, countSeedlings])).tiers.map(tier => tier.sync?.map(reason => reason.keys) ?? null)).toEqual([[[seed, grown]], null]);
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(System.create([spawnSeedlings, countSeedlings]));
+        expect(await world.run(readChildren)).toBe(2);
     });
 
     it("commit a kernel's staged spawns at a sync point within the run, for a later tier", async () => {

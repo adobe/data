@@ -4,10 +4,12 @@ import { System, World } from "../index.js";
 const health = Symbol();
 const seen = Symbol();
 const seenEarly = Symbol();
+const keyDown = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
         [health]: { type: number };
+        [keyDown]: { type: string };
     }
     interface Resources {
         [seen]: { type: number };
@@ -34,6 +36,16 @@ const watch = System.create({ readonly: true, components: { with: [health] } }, 
 });
 const readSeen = System.create({ readonly: true }, ({ resources }) => [resources[seen], resources[seenEarly]]);
 
+// One-frame events: the producer clears the events it made before, then makes this frame's.
+const press = System.create({}, ({ commands }, input: { readonly key: string }) => {
+    commands.despawnWhere({ with: [keyDown] });
+    commands.spawn([keyDown])({ [keyDown]: input.key });
+});
+const handle = System.create({ components: { with: [keyDown] }, after: [press] }, row => {
+    console.log("pressed", row[keyDown]);
+});
+const keys = System.create([press, handle]);
+
 export const main = async (): Promise<void> => {
     await using world = World.create();
     await world.run(frame);
@@ -43,4 +55,7 @@ export const main = async (): Promise<void> => {
     await using watched = World.create();
     watched.add(watch);
     await watched.run(spawn);
+
+    await world.run(keys, { key: "a" });
+    await world.run(keys, { key: "b" });
 };

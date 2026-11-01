@@ -85,8 +85,9 @@ export const accessText = (used: Used, at: string, where?: ReadonlySet<string> |
     const lookupText = lookups === null ? "null" : `{ ${[...lookups].map(([name, read]) => `${JSON.stringify(name)}: ${read === null ? "null" : list(read)}`).join(", ")} }`;
     // The resources `where`'s predicates read, only with predicates.
     const whereText = where === undefined ? "" : `, where: ${where === null ? "null" : list(where)}`;
-    // Lists of keys stay as their bindings name them, so a list imported from another module is read where it's made.
-    const commandText = commands === null ? "null" : `{ spawn: ${list(commands.spawn)}, add: ${list(commands.add)}, remove: ${list(commands.remove)}, despawn: ${commands.despawn} }`;
+    // Lists of keys stay as their bindings name them, so a list imported from another module is read where it's made,
+    // and in a function, read at first need, so a list declared below the system is read once its module has loaded.
+    const commandText = commands === null ? "null" : `() => ({ spawn: ${list(commands.spawn)}, add: ${list(commands.add)}, remove: ${list(commands.remove)}, despawn: ${commands.despawn} })`;
     return `{ components: ${components}, resources: ${resourceText}, lookup: ${lookupText}, up: ${up === null ? "null" : list(up)}${whereText}, commands: ${commandText}, at: ${JSON.stringify(at)} }`;
 };
 

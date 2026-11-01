@@ -6,11 +6,12 @@ import type { Archetype, Storage } from './archetype.js';
 import { countRan, idOf, startRan, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
 import { applySync, prepareSync, syncPending } from './synchronize.js';
-import { activate } from './activate.js';
+import { resourcesWritten } from './resource-changes.js';
+import { activate, activationPending } from './activate.js';
 import { markRun } from './move-log.js';
 import { postTails, settleAll, settleKeys, settleRunners, tailsOf, type TailOutcome } from './tails.js';
 import { settlePosts, settleObserverKeys, settleObserverRunners } from './joined-observer.js';
-import { locate } from './entities.js';
+import { locate, reserved } from './entities.js';
 import { clearBuffer, createBuffer } from './buffer.js';
 import { drainSegment, type Segment } from './command-ring.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
@@ -24,6 +25,7 @@ import { mergeUses, refreshUses, type IndexUse } from './indexes.js';
 /** Shared by every report without failures or skipped systems: they're read-only, so none needs its own. */
 const none: readonly never[] = [];
 const noChunks: readonly Chunk[] = [];
+const noRunners: readonly Runner[] = [];
 /** The report of a run with nothing to report. */
 export const clean: RunReport = { failures: none, skipped: none, dropped: 0, warnings: none };
 
@@ -101,6 +103,14 @@ type Prepared = {
     readonly remotes: number[];
     /** The indexes each tier's runners look up through, refreshed before it. */
     readonly uses: (readonly IndexUse[])[];
+    /**
+     * By tier, the last tier of the pass starting there: tiers whose systems all run on the world's thread as written,
+     * which look up through no index from the second on, run in one pass while their sync points apply nothing. Its own
+     * tier for any other.
+     */
+    readonly passes: number[];
+    /** By tier starting a pass of several, the runners of the whole pass, which it counts as it ran at once. */
+    readonly passRunners: (readonly Runner[])[];
     /** The world's `runnersVersion` its runners were read at. */
     version: number;
     readonly started: (readonly Chunk[])[][];
@@ -168,7 +178,8 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
     let prepared = bySchedule.get(schedule);
     if (prepared === undefined) {
         prepared = {
-            runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), remotes: schedule.tiers.map(() => 0), uses: schedule.tiers.map(() => []), version: -1,
+            runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), remotes: schedule.tiers.map(() => 0), uses: schedule.tiers.map(() => []),
+            passes: schedule.tiers.map((_, t) => t), passRunners: schedule.tiers.map(() => noRunners), version: -1,
             started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)),
             systems: [], tiers: [], tasks: new Map(), warnings: [], warningCount: 0, warned: null, outcome: { failures: null, skipped: null },
             placement: -1, tailing: null, settling: 0, chunk: 0, error: undefined, tierFailed: false, dropped: 0,
@@ -189,7 +200,29 @@ const refresh = (context: ExecuteContext, schedule: Schedule, prepared: Prepared
         prepared.remotes[t] = remote;
         prepared.uses[t] = mergeUses(runners);
     }
+    passesOf(schedule, prepared);
     prepared.version = context.state.runnersVersion;
+};
+
+/** Whether every runner of a tier runs on the world's thread as written: none a kernel or on a joined thread. */
+const asWritten = (runners: readonly Runner[]): boolean => {
+    for (let i = 0; i < runners.length; i++) if (runners[i].kernel !== null || runners[i].remote !== null) return false;
+    return true;
+};
+
+/** Finds a schedule's passes (`Prepared["passes"]`) from its runners as read now. */
+const passesOf = (schedule: Schedule, prepared: Prepared): void => {
+    const { runners, uses, passes, passRunners } = prepared;
+    let last = -1;
+    for (let t = 0; t < schedule.tiers.length; t++) {
+        if (!asWritten(runners[t])) last = t;
+        else if (last < t) {
+            last = t;
+            while (last + 1 < schedule.tiers.length && uses[last + 1].length === 0 && asWritten(runners[last + 1])) last++;
+        }
+        passes[t] = last;
+        passRunners[t] = last === t ? noRunners : runners.slice(t, last + 1).flat();
+    }
 };
 
 /**
@@ -477,11 +510,20 @@ const executeTiers = (context: ExecuteContext, whole: Schedule, args: unknown): 
                 if (building !== null) return handed = executeFrom(context, schedule, prepared, folds, args, null, t, building, null);
                 if (state.indexFailures.length !== 0) (outcome.failures ??= []).push(...state.indexFailures.splice(0));
             }
-            startTier(context, prepared, t, args);
-            const waiting = settleTier(state, folds, prepared, schedule.tiers[t], t, nothing);
-            if (waiting !== null) return handed = executeFrom(context, schedule, prepared, folds, args, null, t, null, waiting);
-            if (endTier(state, null, prepared, schedule, t)) break;
-            if (schedule.syncs[t] !== null) syncNow(context, prepared, false);
+            const last = prepared.passes[t];
+            if (last > t) {
+                const reached = runPass(context, prepared, schedule, folds, args, t, last);
+                if (typeof reached !== "number") return handed = reached;
+                if (reached < 0) break;
+                t = reached;
+            }
+            else {
+                startTier(context, prepared, t, args);
+                const waiting = settleTier(state, folds, prepared, schedule.tiers[t], t, nothing);
+                if (waiting !== null) return handed = executeFrom(context, schedule, prepared, folds, args, null, t, null, waiting);
+                if (endTier(state, null, prepared, schedule, t)) break;
+            }
+            if (schedule.syncs[t] !== null && !idleSync(state)) syncNow(context, prepared, false);
         }
     }
     finally {
@@ -489,6 +531,43 @@ const executeTiers = (context: ExecuteContext, whole: Schedule, args: unknown): 
     }
     return reportOf(state, prepared);
 };
+
+/**
+ * Runs tiers `first` to `last`, a pass, one after another with none of the checks between tiers that only a tier on
+ * another thread, using an index or after a sync point that applies something needs. Returns the last tier it ran,
+ * after which the caller applies its sync point: `last`, or one before it whose sync point applies something or whose
+ * bodies replaced runners; -1 when one failed, the tiers after it skipped; or what `executeFrom` returns once one waits
+ * for something.
+ */
+const runPass = (context: ExecuteContext, prepared: Prepared, schedule: Schedule, folds: Map<unknown, Fold> | null, args: unknown, first: number, last: number): number | Promise<RunReport> => {
+    const { state } = context;
+    for (let v = first; v <= last; v++) {
+        startTier(context, prepared, v, args);
+        const waiting = settleTier(state, folds, prepared, schedule.tiers[v], v, nothing);
+        if (waiting !== null) {
+            for (let ran = first; ran < v; ran++) countRan(state, prepared.runners[ran]);
+            return executeFrom(context, schedule, prepared, folds, args, null, v, null, waiting);
+        }
+        if (prepared.tierFailed || (v < last && (prepared.version !== state.runnersVersion || (schedule.syncs[v] !== null && !idleSync(state))))) {
+            for (let ran = first; ran <= v; ran++) countRan(state, prepared.runners[ran]);
+            if (!prepared.tierFailed) return v;
+            const { outcome } = prepared;
+            for (let later = v + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (outcome.skipped ??= []).push(leaf);
+            return -1;
+        }
+    }
+    countRan(state, prepared.passRunners[first]);
+    return last;
+};
+
+/**
+ * Whether a sync point within a run, with no joined thread, would apply nothing and leave nothing to do after:
+ * nothing queued, drained, unreserved or pending (`syncPending`), no rule or finalizer to activate, and no layout for
+ * workers to see.
+ */
+const idleSync = (state: State): boolean => state.queued.length === 0 && state.drained === 0 && state.unused.length === 0
+    && state.channels.length === 0 && state.logs.length === 0 && state.bumped.length === 0 && state.counted.length === 0 && state.carried === null && !state.structure.rederive && state.unplaced.length === 0
+    && (state.resourcesSeen.size === 0 || !resourcesWritten(state)) && !activationPending(state) && !reserved(state.entities);
 
 /**
  * A sync point with nothing to wait for: no GPU, tails or observer posts, which `executeTiers` checked before each

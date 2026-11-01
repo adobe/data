@@ -7,7 +7,7 @@ import { System } from '../system/system.js';
 import type { Create } from '../world/create.js';
 import type { World } from '../world/world.js';
 import { Rule } from './rule.js';
-import type { Writable } from '../component/value.js';
+import type { Essential, Writable } from '../component/value.js';
 import type { ChangeSet } from '../finalizer/body.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
@@ -18,6 +18,9 @@ const hidden = Symbol("ruleTypeTest/hidden");
 const slot = Symbol("ruleTypeTest/slot");
 const parent = Symbol("ruleTypeTest/parent");
 const time = Symbol("ruleTypeTest/time");
+const inDocument = Symbol("ruleTypeTest/inDocument");
+const kept = Symbol("ruleTypeTest/kept");
+const saved = Symbol("ruleTypeTest/saved");
 
 declare module '@adobe/ecs' {
     export interface Components {
@@ -25,9 +28,14 @@ declare module '@adobe/ecs' {
         [hidden]: { type: true };
         [slot]: { type: number; derived: true };
         [parent]: { type: Entity; reference: "owner" };
+        [kept]: { type: number; [inDocument]: true };
     }
     export interface Resources {
         [time]: { type: number };
+        [saved]: { type: number; [inDocument]: true };
+    }
+    export interface Traits<N> {
+        readonly [inDocument]: N extends unknown ? true : never;
     }
 }
 
@@ -80,6 +88,20 @@ Finalizer.changes({ watch: [source, parent] }, (changes, { commands }) => {
 });
 // @ts-expect-error changes finalizers don't watch derived components
 Finalizer.changes({ watch: [slot] }, () => {});
+
+// A trait of your own watches every component and resource declaring it.
+Finalizer.changes({ watch: [inDocument, source] }, changes => {
+    check<Equal<typeof changes, ChangeSet<typeof kept | typeof source, typeof saved>>>();
+});
+// Every component, and the resources chosen, by key or trait.
+Finalizer.changes({ watch: { components: true, resources: [time, inDocument] } }, changes => {
+    check<Equal<typeof changes, ChangeSet<Essential, typeof time | typeof saved>>>();
+});
+Finalizer.changes({ watch: { components: [inDocument], resources: [] } }, changes => {
+    check<Equal<typeof changes, ChangeSet<typeof kept>>>();
+});
+// @ts-expect-error components lists components and traits, resources resources and traits
+Finalizer.changes({ watch: { components: [time], resources: [source] } }, () => {});
 
 // References change only through commands, so systems can't write them.
 System.create({ components: { with: [parent, source] } }, row => { row[source] = row[parent]; });

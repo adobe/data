@@ -1,6 +1,6 @@
 {
   "name": "@adobe/ecs-gpu",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "WebGPU devices, surfaces, render targets, views and frame passes for @adobe/ecs",
   "license": "MIT",
   "type": "module",

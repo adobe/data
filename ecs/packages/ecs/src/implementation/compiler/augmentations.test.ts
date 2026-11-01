@@ -213,7 +213,34 @@ const Height = { default: -1 } as const;`);
     });
     test("gives a mutable Map or Set no start of its own: null when its type allows it, else a failure", async () => {
         expect(await registrations(`${keys("pool")}declare module "@adobe/ecs" { interface Resources { [pool]: { type: Pool | null } } }\ntype Pool = Map<string, number>;`)).toEqual([`declare$(pool, "resource", {});`]);
-        expect(await passed(`${keys("pool")}declare module "@adobe/ecs" { interface Resources { [pool]: { type: Pool } } }\ntype Pool = Map<string, number>;`)).toContain("a ReadonlyMap or ReadonlySet starts fresh in each world, a Map or Set doesn't");
+        expect(await passed(`${keys("pool")}declare module "@adobe/ecs" { interface Resources { [pool]: { type: Pool } } }\ntype Pool = Map<string, number>;`)).toContain("or declare it a ReadonlyMap or ReadonlySet, which starts empty in each world");
+    });
+    test("starts a ReadonlyMap or ReadonlySet of what isn't data fresh in each world, with no schema", async () => {
+        const files = { "/src/pool.ts": `export class Pool {}` };
+        expect(await registrations(`import { Pool } from "./pool.js";\nimport type { Resource, Component } from "@adobe/ecs";\n${keys("written", "pools", "marks", "seen", "named", "byKey")}declare module "@adobe/ecs" {
+    interface Resources {
+        [written]: { type: ReadonlyMap<Resource.Key, unknown> };
+        [pools]: { type: ReadonlyMap<string, Pool> };
+        [marks]: { type: ReadonlySet<symbol> };
+        [seen]: { type: ReadonlySet<unknown> };
+        [named]: { type: Named };
+    }
+    interface Components { [byKey]: { type: ReadonlySet<Component.Key> } }
+}
+type Named = ReadonlyMap<unique symbol, string>;`, files)).toEqual([
+            `declare$(written, "resource", { fresh: "Map" });`,
+            `declare$(pools, "resource", { fresh: "Map" });`,
+            `declare$(marks, "resource", { fresh: "Set" });`,
+            `declare$(seen, "resource", { fresh: "Set" });`,
+            `declare$(named, "resource", { fresh: "Map" });`,
+            `declare$(byKey, "component", {});`,
+        ]);
+    });
+    test("fails for a default of a ReadonlyMap or ReadonlySet, which starts empty in each world", async () => {
+        for (const type of ["ReadonlySet<string>", "ReadonlyMap<string, number>", "ReadonlySet<unknown>"]) {
+            expect(await passed(`${keys("tags")}declare module "@adobe/ecs" { interface Resources { [tags]: { type: ${type}; default: [] } } }`))
+                .toContain(`tags is a ${type.slice(0, type.indexOf("<"))}, which starts empty in each world: leave its default out`);
+        }
     });
     test("gives a value that isn't data no schema, and its traits", async () => {
         const files = { "/src/row.ts": `export class Row extends HTMLElement {}\nexport class Pool {}` };

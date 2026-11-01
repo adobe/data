@@ -22,6 +22,9 @@ type Entry = {
 /** Every component, resource and user trait, by symbol identity: symbols of one id share an entry. */
 const entries = new Map<symbol, Entry>();
 
+/** How many keys were registered, counting a symbol registered under another's id. */
+let registered = 0;
+
 /** Entries by the ids the plugin gave their keys. */
 const identified = new Map<string, Entry>();
 
@@ -155,12 +158,28 @@ export const claimKey = (key: unknown, kind: Kind, declaration?: AnyDeclaration)
         }
         named.newest = symbol;
         entries.set(symbol, named);
+        registered++;
         return;
     }
     const description = descriptionOf(symbol);
     const entry: Entry = { kind, declaration, description, id, first: symbol, newest: symbol };
     if (id !== undefined) identified.set(id, entry);
     entries.set(symbol, entry);
+    registered++;
+};
+
+/** How many keys are registered so far, so a world can tell when one registered since it last looked. */
+export const keysVersion = (): number => {
+    catchUp();
+    return registered;
+};
+
+/** Whether a component's or resource's declaration declares one of `traits`, keys of traits of your own. */
+export const declaresTrait = (key: unknown, traits: readonly symbol[]): boolean => {
+    const declaration = declarationOf(key);
+    if (declaration === undefined) return false;
+    for (const declared of Object.getOwnPropertySymbols(declaration)) for (const trait of traits) if (sameKey(declared, trait)) return true;
+    return false;
 };
 
 /** The symbol last registered under an id, by which a world gives values, or undefined where none was. */

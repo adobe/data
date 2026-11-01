@@ -46,18 +46,20 @@ const tablesOf = (components: readonly Component.Key[], resources: readonly Reso
     System.create({ readonly: true, tables: { components, resources, not } }, ({ tables }): Tables => tables);
 
 const spawnedBy: { spawned: Table.Spawned } = { spawned: { entities: [], dropped: 0 } };
-const given: { tables: readonly Table[]; resources?: { readonly [key: symbol]: unknown }; existing?: ReadonlyMap<Entity, Entity> } = { tables: [] };
+const given: { tables: readonly Table[]; resources?: { readonly [key: symbol]: unknown }; existing?: ReadonlyMap<Entity, Entity>; update?: boolean } = { tables: [] };
 const spawnGiven = System.create(({ commands }) => {
-    spawnedBy.spawned = commands.spawnTables(given.tables, { resources: given.resources, existing: given.existing });
+    spawnedBy.spawned = commands.spawnTables(given.tables, { resources: given.resources, existing: given.existing, update: given.update });
 });
-const spawnTables = async (world: ReturnType<typeof inline>, tables: readonly Table[], existing?: ReadonlyMap<Entity, Entity>): Promise<Table.Spawned> => {
+const spawnTables = async (world: ReturnType<typeof inline>, tables: readonly Table[], existing?: ReadonlyMap<Entity, Entity>, update?: boolean): Promise<Table.Spawned> => {
     given.tables = tables;
     given.existing = existing;
+    given.update = update;
     try {
         await world.run(spawnGiven);
     }
     finally {
         given.existing = undefined;
+        given.update = undefined;
     }
     return spawnedBy.spawned;
 };
@@ -245,6 +247,37 @@ describe("tables", () => {
         const { dropped } = await spawnTables(other, archetypes, new Map([[steel, existingSteel]]));
         expect(dropped).toBe(0);
         expect((await readAll(other)).find(entry => entry.label === "owned")).toMatchObject({ parent: existingSteel, target: existingSteel });
+    });
+
+    it("write a row existing maps onto its entity with update, as an add would, entity values rewritten as a spawned row's", async () => {
+        await using world = inline();
+        let steel = Entity.none;
+        await world.run(System.create(({ commands }) => {
+            const inside = commands.spawn([label])({ [label]: "inside" });
+            const outside = commands.spawn([pinned])();
+            steel = commands.spawn([label, position, buddy, target, link, team], { [team]: "red" })({ [label]: "steel", [position]: [1, 2, 3], [buddy]: inside, [target]: outside, [link]: { to: inside, weight: 4 } });
+        }));
+        const { archetypes } = await world.run(tablesOf([label, position, buddy, target, link, team]));
+        await using other = inline();
+        let mine = Entity.none, kept = Entity.none;
+        await other.run(System.create(({ commands }) => {
+            kept = commands.spawn([label])({ [label]: "kept" });
+            mine = commands.spawn([label, hidden, target, team], { [team]: "blue" })({ [label]: "mine", [target]: kept });
+        }));
+        const changed: string[] = [];
+        const watch = System.create({ components: { with: [label], changed: [label] } }, row => { changed.push(row[label]); });
+        await other.run(watch);
+        changed.length = 0;
+        const { entities, dropped } = await spawnTables(other, archetypes, new Map([[steel, mine]]), true);
+        expect([dropped, entities.flatMap(list => [...list]).includes(mine)]).toEqual([0, true]);
+        const read = await readAll(other);
+        const inside = read.find(entry => entry.label === "inside")?.entity;
+        // The weak reference to an entity outside the tables is left out, so the entity's own stands.
+        expect(read.find(entry => entry.entity === mine)).toMatchObject({ label: "steel", position: [1, 2, 3], buddy: inside, target: kept, link: { to: inside, weight: 4 } });
+        const teams = await other.run(System.create({ readonly: true, tables: { components: [team, hidden] } }, ({ tables }) => tables.archetypes.map(table => [table.columns[team], table.columns[hidden] !== undefined])));
+        expect(teams).toEqual([[{ kind: "value", value: "red" }, true]]);
+        await other.run(watch);
+        expect(changed.sort()).toEqual(["inside", "steel"]);
     });
 
     it("refuse existing mapping to an entity that isn't alive, spawning nothing", async () => {

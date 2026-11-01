@@ -6,13 +6,13 @@ import { addFinalizer, programFinalizers } from '../registry/program.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
 import { checkLookup } from '../registry/indexes.js';
-import type { Listed, Property } from '../system/property.js';
+import type { Property } from '../system/property.js';
 import type { ThreadOfComponent } from '../component/value.js';
 import type { ThreadOfResource } from '../resource/value.js';
 import type { Resource } from '../resource/resource.js';
 import type { Component } from '../component/component.js';
 import type { Elsewhere, OneThread, ThreadedBy, ThreadsOf } from '../system/threads.js';
-import type { ChangeSet, Context, Row, Watched, WatchedResources } from './body.js';
+import type { ChangeSet, Context, Row, Watched, WatchedResources, WatchListed } from './body.js';
 import type { Changes, Leaf } from './created.js';
 import type { ChangesDeclaration, Declaration, Resolved, ResolvedChanges } from './declaration.js';
 import { accessOf, compact, lookupsLists, resourceUses, type Access } from '../system/resolve.js';
@@ -28,7 +28,7 @@ type Remote<D> = true extends Elsewhere<ThreadsOf<D>>
     : {};
 
 /** A changes finalizer runs on the world's thread, in the sync point: it watches and reads no other thread's objects. */
-type OnWorld<D> = true extends Elsewhere<ThreadsOf<D> | ThreadOfComponent<Listed<D, "watch"> & Component.Key> | ThreadOfResource<Listed<D, "watch"> & Resource.Key>>
+type OnWorld<D extends ChangesDeclaration> = true extends Elsewhere<ThreadsOf<D> | ThreadOfComponent<Extract<WatchListed<D, "components">, Component.Key>> | ThreadOfResource<Extract<WatchListed<D, "resources">, Resource.Key>>>
     ? { readonly "error: a changes finalizer watches and reads only the world's thread's objects": true }
     : {};
 
@@ -127,6 +127,39 @@ export const create = <const D extends Declaration>(
     return addFinalizer(finalizer, id);
 };
 
+const isList = (watch: NonNullable<ChangesDeclaration["watch"]>): watch is Extract<ChangesDeclaration["watch"], readonly unknown[]> => Array.isArray(watch);
+
+/** What a changes finalizer watches, sorted by kind. Throws for a key that's neither of the kinds it's listed as, or derived. */
+const watchOf = (name: string, watch: ChangesDeclaration["watch"]): ResolvedChanges["watch"] => {
+    const components: symbol[] = [];
+    const componentTraits: symbol[] = [];
+    const resources: symbol[] = [];
+    const resourceTraits: symbol[] = [];
+    const sort = (key: unknown, kinds: readonly ("component" | "resource")[]): void => {
+        const kind = kindOf(key);
+        if (typeof key !== "symbol" || kind === undefined || (kind !== "trait" && !kinds.includes(kind))) {
+            const among = kinds.length === 2 ? "" : ` among its ${kinds[0]}s`;
+            throw new Error(`Finalizer "${name}" watches "${labelOf(key)}"${among}, which isn't a registered ${kinds.length === 2 ? "component, resource" : kinds[0]} or trait: ${whyUnregistered(key)}.`);
+        }
+        if (kind === "trait") {
+            if (kinds.includes("component")) componentTraits.push(key);
+            if (kinds.includes("resource")) resourceTraits.push(key);
+            return;
+        }
+        if (declarationOf(key)?.derived === true) throw new Error(`Finalizer "${name}" watches "${labelOf(key)}", which is derived; it sees only components user code adds and removes.`);
+        (kind === "component" ? components : resources).push(key);
+    };
+    if (watch === undefined) return { components: true, componentTraits, resources, resourceTraits };
+    if (isList(watch)) {
+        for (const key of watch) sort(key, ["component", "resource"]);
+        return { components, componentTraits, resources, resourceTraits };
+    }
+    const every = watch.components === true;
+    if (!every) for (const key of watch.components) sort(key, ["component"]);
+    for (const key of watch.resources) sort(key, ["resource"]);
+    return { components: every ? true : components, componentTraits: every ? [] : componentTraits, resources, resourceTraits };
+};
+
 /**
  * Declares a finalizer of each sync point's structural changes, which applies in every world, and returns it. It runs
  * on the world's thread. Throws as `create` does, for a watched component that isn't registered or is derived, a
@@ -139,7 +172,7 @@ export const changes = <const D extends ChangesDeclaration>(
     const id = takeIdOfDeclaration(declared);
     const name = nameOf(declared, id, "finalizer");
     const what = `Finalizer "${name}"`;
-    const declaration: ResolvedChanges = { ...resolveShared(what, declared, accessOf(what, declared)), ...declared.watch === undefined ? {} : { watch: declared.watch } };
+    const declaration: ResolvedChanges = { ...resolveShared(what, declared, accessOf(what, declared)), watch: watchOf(name, declared.watch) };
     const finalizer: Changes = { kind: "changes", name, declaration, body };
     checkResources(name, declaration.resources);
     requireRegistered("Finalizer", name, "resource", declaration.resources?.read);
@@ -149,14 +182,9 @@ export const changes = <const D extends ChangesDeclaration>(
         checkLookup("Finalizer", name, lookupName, lookup);
         for (const keys of [lookup.read, "has" in lookup ? lookup.has : undefined, "not" in lookup ? lookup.not : undefined]) requireRegistered("Finalizer", name, "component", keys);
     }
-    for (const key of declaration.watch ?? []) {
-        const kind = kindOf(key);
-        if (kind !== "component" && kind !== "resource") throw new Error(`Finalizer "${name}" watches "${labelOf(key)}", which isn't a registered component or resource: ${whyUnregistered(key)}.`);
-        if (declarationOf(key)?.derived === true) throw new Error(`Finalizer "${name}" watches "${labelOf(key)}", which is derived; it sees only components user code adds and removes.`);
-    }
-    const watched = (kind: "component" | "resource"): readonly symbol[] => (declaration.watch ?? []).filter(key => kindOf(key) === kind);
-    const read = [...declaration.resources?.read ?? [], ...watched("resource")];
-    const thread = threadOf({ components: { read: watched("component") }, resources: { ...declaration.resources, read }, lookup: declaration.lookup }, "Finalizer", name);
+    const { watch } = declaration;
+    const read = [...declaration.resources?.read ?? [], ...watch.resources];
+    const thread = threadOf({ components: { read: watch.components === true ? [] : watch.components }, resources: { ...declaration.resources, read }, lookup: declaration.lookup }, "Finalizer", name);
     if (thread !== null && thread !== "world") throw new Error(`Finalizer "${name}" watches or reads values on thread "${thread}"; a changes finalizer runs on the world's thread, in the sync point.`);
     checkOrder(name, "world", declaration);
     return addFinalizer(finalizer, id);

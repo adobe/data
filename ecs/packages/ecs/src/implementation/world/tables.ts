@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Layout, Path } from '../../interface/registry/layout.js';
+import { viewsOf, type Layout, type Path } from '../../interface/registry/layout.js';
 import { declarationOf, labelOf } from '../../interface/registry/names.js';
 import { isEntity } from '../../interface/registry/schemas.js';
 import type { Schema } from '../../interface/schema/schema.js';
@@ -8,7 +8,8 @@ import { batchOf } from './batches.js';
 import { indexOf, locate, reserveRun } from './entities.js';
 import { internShared } from './shared.js';
 import { claimRows, openRows, writerOf, type Column as BatchColumn } from './staging.js';
-import { commandIdOf, type Key, type State } from './state.js';
+import { commandIdOf, storedShared, type Key, type State } from './state.js';
+import { addCommand, pushCommand, pushComponent, type CommandBuffer } from './buffer.js';
 
 /** Whether a value of `schema` may hold an entity anywhere in it. */
 const holdsEntity = (schema: Schema): boolean => {
@@ -209,6 +210,45 @@ const spawnRows = (state: State, { table, keys, ids, shared }: Planned, rows: re
     claimRows(batch, entities);
 };
 
+/** A linear value read out of a table's bytes, copied to row 0 here first; grown for larger layouts. */
+let scratch = viewsOf(new ArrayBuffer(256), 0, 256);
+
+/** A table's value of a component in a row: its column's one value, its value there, or one read out of its bytes. */
+const valueIn = (layout: Layout, column: Table.Column, row: number): unknown => {
+    if (column.kind === "value") return column.value;
+    if (column.kind === "values") return column.values[row];
+    if (layout.kind !== "linear") return undefined;
+    const { stride } = layout;
+    if (stride > scratch.u8.length) scratch = viewsOf(new ArrayBuffer(stride * 2), 0, stride * 2);
+    scratch.u8.set(column.bytes.subarray(row * stride, (row + 1) * stride));
+    return layout.read(scratch, 0);
+};
+
+/**
+ * Queues an add of each of its table's components onto the entity standing for a row `existing` maps, its entity
+ * values remapped, but a reference whose target isn't there.
+ */
+const updateRows = (state: State, { table, keys, ids }: Planned, rows: readonly number[], standing: Float64Array, buffer: CommandBuffer, remap: Remap): void => {
+    const columns: Table.Column[] = keys.map(key => Reflect.get(table.columns, key));
+    const schemas = keys.map(key => declarationOf(key)?.type);
+    const references = keys.map(key => declarationOf(key)?.reference !== undefined);
+    for (const row of rows) {
+        pushCommand(buffer, addCommand, standing[row]);
+        for (let k = 0; k < keys.length; k++) {
+            const id = ids[k];
+            const schema = schemas[k];
+            let value = valueIn(state.layouts[id], columns[k], row);
+            if (references[k]) {
+                const to = remap(Number(value));
+                if (to === 0 && value !== 0) continue;
+                value = to;
+            }
+            else if (schema !== undefined && holdsEntity(schema)) value = remapValue(schema, value, remap);
+            pushComponent(buffer, id, state.shared[id] === undefined ? value : storedShared(state, id, value));
+        }
+    }
+};
+
 /** Throws for an entity `existing` maps to that isn't alive in this world. */
 const checkExisting = (state: State, existing: ReadonlyMap<number, number>): void => {
     for (const [source, target] of existing) {
@@ -223,7 +263,7 @@ const checkExisting = (state: State, existing: ReadonlyMap<number, number>): voi
  * value naming an entity spawned names the one spawned for it. A row whose entity `existing` maps isn't spawned: the
  * entity it maps to stands for it, as it does for an entity outside the tables that `existing` maps.
  */
-export const spawnTables = (state: State, tables: readonly Table[], existing: ReadonlyMap<number, number> = new Map()): Table.Spawned => {
+export const spawnTables = (state: State, tables: readonly Table[], existing: ReadonlyMap<number, number> = new Map(), updates: CommandBuffer | null = null): Table.Spawned => {
     const plans = tables.map(table => planOf(state, table));
     checkExisting(state, existing);
     // Entities are mapped only where a value of the tables may hold one, or a row is one that exists.
@@ -342,6 +382,11 @@ export const spawnTables = (state: State, tables: readonly Table[], existing: Re
             const target = targetAt(row);
             return target !== 0 && !isSpawned(target);
         });
+        if (updates !== null && !wholly[t]) {
+            const mapped: number[] = [];
+            for (let row = 0; row < table.count; row++) if (existingAt[first + row] !== 0) mapped.push(row);
+            if (mapped.length > 0) updateRows(state, plan, mapped, entities[t], updates, remap);
+        }
         let whole = wholly[t];
         if (weak.length > 0) for (let row = 0; row < table.count && whole; row++) if (loses(row)) whole = false;
         if (whole) return spawnRows(state, plan, null, none, entities[t], remap);

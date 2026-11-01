@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import "../registry/declarations.js";
-import { componentLists, lookupsLists, resourceUses, type Access } from "./resolve.js";
+import { commandListsOf, componentLists, lookupsLists, resourceUses, type Access } from "./resolve.js";
 
 const mass = Symbol("resolveTest/mass");
 const pool = Symbol("resolveTest/pool");
@@ -45,5 +45,21 @@ describe("resourceUses", () => {
     it("rejects a change inside a data value, given as a copy, and takes one inside an object as a read", () => {
         expect(() => resourceUses("System \"s\"", changing(mass), undefined)).toThrow(`changes something inside its row's "resolveTest/mass", a value given as a copy`);
         expect(() => resourceUses("System \"s\"", changing(pool), undefined)).not.toThrow();
+    });
+});
+
+describe("commandListsOf", () => {
+    const commanding = (commands: () => unknown): Access => ({ components: null, resources: null, lookup: null, up: null, commands, at: "a test" });
+    it("reads what the commands name at the first call, once", () => {
+        let reads = 0;
+        const lists = commandListsOf("System \"s\"", commanding(() => { reads++; return { spawn: [[mass, position]], add: [mass], remove: [], despawn: false }; }));
+        expect(reads).toBe(0);
+        expect([lists(), lists(), reads]).toEqual([{ spawn: [mass, position], add: [mass] }, { spawn: [mass, position], add: [mass] }, 1]);
+    });
+    it("names the system and the declaration its commands name before it's initialized", () => {
+        for (const message of ["Cannot access 'standard' before initialization", "can't access lexical declaration 'standard' before initialization"]) {
+            const lists = commandListsOf("System \"s\"", commanding(() => { throw new ReferenceError(message); }));
+            expect(lists).toThrow(`System "s" names "standard" in its commands before it's initialized: declare it above the system.`);
+        }
     });
 });

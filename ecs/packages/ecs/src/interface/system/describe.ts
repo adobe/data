@@ -16,7 +16,7 @@ const asSystem = (leaf: Leaf): System<unknown, unknown> => leaf;
 /** What the build inferred one system uses, and what placed it, as plain data. */
 const describeLeaf = (leaf: Leaf, placements: readonly Placement[]) => {
     const { components, resources, lookup, up, order } = leaf.declaration;
-    const { commands } = leaf;
+    const commands = leaf.commands();
     return {
         /** The system, the value its constructor returned. */
         system: asSystem(leaf),

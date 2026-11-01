@@ -171,6 +171,14 @@ describe("System.create of a composite", () => {
         const looped = System.create({ before: [first], after: [second] }, () => {});
         expect(() => System.create({ systems: [first, second, looped] })).toThrow("Ordering cycle");
     });
+    it("takes a row declared whole as written, every member but references, and says so in a conflict", () => {
+        const pass = (row: object): void => { void row; };
+        const whole = System.create({ components: { with: [position, parent], whole: true } }, row => { pass(row); });
+        const reader = System.create({ components: { with: [position] } }, row => { void row[position]; });
+        const definition = definitionOf(whole);
+        expect(definition?.kind === "system" ? definition.declaration.components : null).toEqual({ read: [parent], write: [position], whole: true });
+        expect(() => System.create([whole, reader])).toThrow('both access "typesSystemTest/position" and one writes it; order them with before or after. "whole" takes its row whole (components.whole), so it writes every member.');
+    });
     it("runs readonly members after its sync point, in no tier, never conflicting and ignoring constraints naming them", () => {
         const write = System.create({ components: { with: [position] } }, row => { row[position] += 1; });
         const watch = System.create({ readonly: true, components: { with: [position] } }, row => { void row[position]; });

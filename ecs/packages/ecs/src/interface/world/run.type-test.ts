@@ -62,7 +62,17 @@ void ecs.Report;
 // @ts-expect-error no run numbers
 const numbered: Promise<number> = world.run(main);
 
-void [counted, notText, nextValue, scaledValue, drawn, rows, composite, input, nothing, numbered, time];
+// Asked for its changes, after its input, a run resolves to them, in the shape changes finalizers take.
+const changes = world.run(move, { distance: 1 }, { changes: true });
+const alone = world.run(main, { changes: true });
+check<Equal<typeof changes, typeof alone>>();
+check<Equal<Awaited<typeof alone>["resources"][number]["key"], Ecs.Resource.Key>>();
+// @ts-expect-error its input comes first
+void world.run(move, { changes: true }, { distance: 1 });
+// @ts-expect-error a run asks only for its changes
+void world.run(main, { changes: false });
+
+void [counted, notText, nextValue, scaledValue, drawn, rows, composite, input, nothing, numbered, time, changes];
 
 // A body returns no promise: it starts the work, and a later run finishes it.
 // @ts-expect-error a body returns no promise

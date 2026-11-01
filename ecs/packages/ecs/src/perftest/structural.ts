@@ -12,6 +12,7 @@ export const flag = Symbol("structural/flag");
 export const amount = Symbol("structural/amount");
 export const extra = Symbol("structural/extra");
 export const spawned = Symbol("structural/spawned");
+export const doomed = Symbol("structural/doomed");
 const source1 = Symbol("structural/source1");
 const source2 = Symbol("structural/source2");
 const t0 = Symbol("structural/t0");
@@ -27,6 +28,7 @@ declare module "@adobe/ecs" {
         [amount]: { type: F32 };
         [extra]: { type: F32 };
         [spawned]: { type: true };
+        [doomed]: { type: true };
         [source1]: { type: true };
         [source2]: { type: true };
         [t0]: { type: true };
@@ -126,6 +128,24 @@ export const addFlagKernel = System.create({ kernel: true, components: { with: [
 
 export const removeFlagKernel = System.create({ kernel: true, components: { with: [flag] } }, (row, { commands }) => {
     commands.remove(row.entity, flag);
+});
+
+const doomedList = [index, value, doomed] as const;
+const doomedQuery = { with: [doomed] } as const;
+
+/** `count` spawns of entities tagged `doomed`, beside the seeded ones. */
+export const spawnDoomed = System.create({}, ({ commands }, input: { readonly count: number }) => {
+    for (let i = 0; i < input.count; i++) commands.spawn(doomedList)({ [index]: i, [value]: i });
+});
+
+/** Despawns every `doomed` entity, a command per row. */
+export const despawnDoomedRows = System.create({ kernel: false, components: { with: [doomed] } }, (row, { commands }) => {
+    commands.despawn(row.entity);
+});
+
+/** Despawns every `doomed` entity, by one command. */
+export const despawnDoomedWhere = System.create({}, ({ commands }) => {
+    commands.despawnWhere(doomedQuery);
 });
 
 export const addAmount = System.create({ kernel: false, components: { with: [index], not: [amount, spawned] } }, (row, { commands }) => {

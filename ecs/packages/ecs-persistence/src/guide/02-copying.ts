@@ -1,14 +1,19 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Entity, Index, System, World } from "@adobe/ecs";
-import { persist, snapshot, spawn } from "../index.js";
+import { snapshot, spawn } from "../index.js";
 
+/** Saved in a file, under its name there. */
+const file = Symbol();
 const label = Symbol();
 const parent = Symbol();
 
 declare module "@adobe/ecs" {
+    interface Traits<N> {
+        readonly [file]: string;
+    }
     interface Components {
-        [label]: { type: string; [persist]: "label" };
-        [parent]: { type: Entity; reference: "owner"; [persist]: "parent" };
+        [label]: { type: string; [file]: "label" };
+        [parent]: { type: Entity; reference: "owner"; [file]: "parent" };
     }
 }
 
@@ -41,9 +46,9 @@ export const main = async (): Promise<void> => {
     await using world = World.create();
     await world.run(build);
 
-    // The ship and everything it owns, through persisted owner references, copied into another world.
+    // The ship and everything it owns, through owner references the trait covers, copied into another world.
     await using harbor = World.create();
-    const fleet = await snapshot({ world, root: ship });
+    const fleet = await snapshot({ world, by: file, root: ship });
     if (fleet.failure !== undefined) return console.log(fleet.failure);
     const copied = await spawn({ world: harbor, snapshot: fleet });
     if (copied.failure !== undefined) return console.log(copied.failure);
@@ -57,7 +62,7 @@ export const main = async (): Promise<void> => {
 
     // The hull's subtree, its owner left behind: copied, the hull would belong to no one, so neither it nor its mast is.
     await using dock = World.create();
-    const hullOnly = await snapshot({ world, root: hull });
+    const hullOnly = await snapshot({ world, by: file, root: hull });
     if (hullOnly.failure !== undefined) return console.log(hullOnly.failure);
     const docked = await spawn({ world: dock, snapshot: hullOnly, entities: false });
     if (docked.failure !== undefined) return console.log(docked.failure);

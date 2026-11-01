@@ -33,14 +33,15 @@ const spawnTables = System.create({}, ({ commands }, input: { readonly tables: u
 });
 
 /**
- * Spawns an entity in `world` for each of the snapshot's, with its persisted components, and sets the persisted
- * resources, on the world's thread, as the world's references would leave them had the entities outside the snapshot
+ * Spawns an entity in `world` for each of the snapshot's, with the components its trait covers, and sets the resources
+ * it holds, on the world's thread, as the world's references would leave them had the entities outside the snapshot
  * despawned: each entity value naming one of the snapshot's names the one spawned for it; an entity owned, directly
  * or through others, by an entity outside the snapshot isn't spawned, which the result counts; a weak reference to
  * one is left out; and any other entity value naming one is `Entity.none`.
  * - `match`: unique indexes saying which of the snapshot's entities are already in `world`: one an index holds there,
  *   with the key of one of the snapshot's it holds, stands for it, keeping its own values, and isn't spawned again. It
- *   fails for an index with a part of its key that isn't persisted, or two of the snapshot's entities with one key.
+ *   fails for an index with a part of its key that the snapshot's trait doesn't cover, or two of the snapshot's
+ *   entities with one key.
  * - `entities: false` leaves out the result's map of entities, which costs about 85 ms and 50 MB at a million.
  *
  * Fails, as data, for a column or resource that doesn't fit, spawning nothing.

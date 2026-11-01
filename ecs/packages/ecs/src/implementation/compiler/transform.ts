@@ -313,9 +313,11 @@ export const transformKernels = async (
             const used = kernel?.used ?? inOrder(usedBy(declared, body, module.bindings, positions), declared);
             requireRequired(used, declared, body);
             const where = at(body);
-            // A readonly system's row, and a lookup's rows, it can't follow are taken as read whole, which is what their
-            // declarations already say; only a row taken as written whole costs what the author should know of.
-            if (used.query === null && !declaresTrue(declared, "readonly")) warnings.push(`${where}: the build can't follow how this body uses its row, so it takes every component in with, added and changed as written: index the row by key directly, or destructure it by key, to let it tell what the body reads and writes.`);
+            // A readonly system's row, a finalizer's, and a lookup's rows it can't follow are taken as read whole, which is
+            // what their declarations already say; a system's row taken as written whole would change its schedule unseen.
+            if (created === "system" && used.rowLost !== undefined && !declaresTrue(declared, "readonly")) {
+                fail(used.rowLost.at, `the build can't follow how this body uses its row, since ${used.rowLost.why}, so it would take every component in with, added and changed as written: index the row by key directly, or destructure it by key; or declare \`components: { whole: true }\` for a body that uses its row whole`);
+            }
             accessing = true;
             const access = accessText(used, where, whereReads.has(node) ? whereReads.get(node) ?? null : undefined);
             if (kernel !== undefined) {

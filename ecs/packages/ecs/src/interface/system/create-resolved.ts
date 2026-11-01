@@ -14,7 +14,7 @@ import type { System } from './system.js';
 export const createResolved = (declaration: Resolved, body: Leaf["body"], input?: unknown): System<unknown> => {
     const name = nameOf(declaration, undefined, "system");
     const schema = inputSchemaOf(name, body, declaration.components === undefined ? 1 : 2, input);
-    const system: Leaf & System<unknown> = { kind: "system", name, declaration, input: schema, body };
+    const system: Leaf & System<unknown> = { kind: "system", name, declaration, input: schema, body, commands: undefined };
     checkLeaf(system);
     claimSystem(system, undefined);
     return system;

@@ -7,6 +7,8 @@ import type { LookupFunction } from '../system/values.js';
 import type { WriteResources } from '../system/body.js';
 import type { ChangesDeclaration, Declaration } from './declaration.js';
 import type { Essential, ReadonlyType } from '../component/value.js';
+import type { Resource } from '../resource/resource.js';
+import type { ReadonlyType as ResourceType } from '../resource/value.js';
 import type { Elsewhere, ThreadsOf } from '../system/threads.js';
 
 /**
@@ -29,7 +31,10 @@ export type Context<D extends Declaration | ChangesDeclaration> =
     & (true extends Elsewhere<ThreadsOf<D>> ? {} : { readonly commands: Commands });
 
 /** The components a changes finalizer sees. */
-export type Watched<D extends ChangesDeclaration> = Property<D, "watch"> extends readonly Essential[] ? Listed<D, "watch"> & Essential : Essential;
+export type Watched<D extends ChangesDeclaration> = Property<D, "watch"> extends readonly unknown[] ? Listed<D, "watch"> & Essential : Essential;
+
+/** The resources a changes finalizer sees: those it watches. */
+export type WatchedResources<D extends ChangesDeclaration> = Listed<D, "watch"> & Resource.Key;
 
 /** Entities whose components changed the same way: `from` and `to` are null for those spawned and despawned. */
 export type Group<C extends Component.Key> = {
@@ -42,9 +47,14 @@ export type Group<C extends Component.Key> = {
     readonly entities: readonly Entity[];
 };
 
-/** A sync point's structural changes to the watched components, and the values adds replace, before they apply. */
-export type ChangeSet<C extends Component.Key> = {
+/**
+ * A sync point's structural changes to the watched components, and the values adds replace, before they apply; and each
+ * watched resource written since the last sync point's finalizers ran, to a value that isn't equal to its last one,
+ * leaf by leaf for data and by identity for objects, with its value before and after.
+ */
+export type ChangeSet<C extends Component.Key, R extends Resource.Key = never> = {
     readonly groups: readonly Group<C>[];
+    readonly resources: readonly { readonly [K in R]: { readonly key: K; readonly previous: ResourceType<K>; readonly next: ResourceType<K> } }[R][];
     /** The value before the sync point, or null if the entity didn't have it. */
     previous<K extends C>(entity: Entity, component: K): ReadonlyType<K> | null;
     /** The value after it, or null if the entity won't have it. */

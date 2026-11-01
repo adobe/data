@@ -3,7 +3,6 @@ import { Entity, Index, System, World, workers, type Vec2 } from "@adobe/ecs";
 import { describe, expect, it } from "vitest";
 import { decode } from "../decode.js";
 import { encode } from "../encode.js";
-import { persist } from "../persist.js";
 import { snapshot, type Snapshot } from "../snapshot.js";
 import { spawn } from "../spawn.js";
 
@@ -11,12 +10,17 @@ const cell = Symbol();
 const spot = Symbol();
 const owner = Symbol();
 const plain = Symbol();
+/** The trait these entities are saved by, its value each key's name. */
+const saved = Symbol();
 declare module "@adobe/ecs" {
+    interface Traits<N> {
+        readonly [saved]: string;
+    }
     interface Components {
-        [cell]: { type: Vec2.I32; shared: true; [persist]: "whereTest/cell" };
-        [spot]: { type: number; [persist]: "whereTest/spot" };
-        [owner]: { type: Entity; reference: "owner"; [persist]: "whereTest/owner" };
-        [plain]: { type: number; [persist]: "whereTest/plain" };
+        [cell]: { type: Vec2.I32; shared: true; [saved]: "cell" };
+        [spot]: { type: number; [saved]: "spot" };
+        [owner]: { type: Entity; reference: "owner"; [saved]: "owner" };
+        [plain]: { type: number; [saved]: "plain" };
     }
 }
 
@@ -54,7 +58,7 @@ const placedIn = async (world: World): Promise<readonly Placed[]> => {
 const chunkTables = System.create({ readonly: true, tables: { components: [spot], where: { [cell]: [1, 0] } } }, ({ tables }) => tables.archetypes.map(table => table.count).sort((a, b) => b - a));
 
 const taken = async (world: World, x: number): Promise<Snapshot> => {
-    const result = await snapshot({ world, where: { [cell]: [x, 0] } });
+    const result = await snapshot({ world, by: saved, where: { [cell]: [x, 0] } });
     if (result.failure !== undefined) throw new Error(result.failure);
     return result;
 };
@@ -63,12 +67,12 @@ describe("snapshots by shared values", () => {
     it("take the entities of the archetypes holding where's values, and nothing else", async () => {
         await using world = inline();
         await world.run(fill, { perChunk: 5 });
-        const chunk = decode(encode(await taken(world, 2)));
+        const chunk = decode(encode(await taken(world, 2)), { by: saved });
         if (chunk.failure !== undefined) throw new Error(chunk.failure);
         await using into = inline();
         await spawn({ world: into, snapshot: chunk });
         expect((await placedIn(into)).map(item => [item.x, item.spot])).toEqual([[2, 200], [2, 201], [2, 202], [2, 203], [2, 204]]);
-        const none = await snapshot({ world, where: { [cell]: [9, 9] } });
+        const none = await snapshot({ world, by: saved, where: { [cell]: [9, 9] } });
         if (none.failure !== undefined) throw new Error(none.failure);
         await using empty = inline();
         await spawn({ world: empty, snapshot: none });
@@ -111,10 +115,10 @@ describe("snapshots by shared values", () => {
     it("fail, as data, for a where naming what isn't a shared component or giving one a value not of its type", async () => {
         await using world = inline();
         // @ts-expect-error: where names only shared components.
-        const unshared = await snapshot({ world, where: { [plain]: 1 } });
+        const unshared = await snapshot({ world, by: saved, where: { [plain]: 1 } });
         expect(unshared.failure).toMatch(/isn't a shared component/);
         // @ts-expect-error: a value of the component's type.
-        const mistyped = await snapshot({ world, where: { [cell]: "far" } });
+        const mistyped = await snapshot({ world, by: saved, where: { [cell]: "far" } });
         expect(mistyped.failure).toMatch(/isn't one of its type's values/);
     });
 });

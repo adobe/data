@@ -1,6 +1,6 @@
 {
   "name": "@adobe/ecs-persistence",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Saving, loading and copying the entities of @adobe/ecs worlds, as binary columns",
   "license": "MIT",
   "type": "module",

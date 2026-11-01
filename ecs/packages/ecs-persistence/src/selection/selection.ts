@@ -8,14 +8,15 @@ import type { Program } from "../program/program.js";
 type Where = { readonly [K in Component.With<"shared">]?: Component<K> };
 
 /**
- * Which entities a snapshot takes: those matching `with`, `not` and `where`, every one holding a persisted component
- * by default; or `root` and every entity it owns, directly or through others, by persisted owner references.
+ * Which entities a snapshot takes: those matching `with`, `not` and `where`, every one holding a component its trait
+ * covers by default; or `root` and every entity it owns, directly or through others, by owner references its trait
+ * covers.
  */
 export type Selection =
     | { readonly with?: readonly Component.Key[]; readonly not?: readonly Component.Key[]; readonly where?: Where; readonly resources?: boolean }
     | { readonly root: Entity };
 
-/** Which tables a snapshot reads: those of its persisted components, matching `with`, `not` and `where`, and its resources. */
+/** Which tables a snapshot reads: those of the components its trait covers, matching `with`, `not` and `where`, and its resources. */
 type Reading = {
     readonly components: readonly Component.Key[];
     readonly with?: readonly Component.Key[];
@@ -79,7 +80,7 @@ const subtreeOf = (tables: readonly World.Table[], owners: readonly Component.Ke
     return taken;
 };
 
-/** The persisted part of the entities `selection` takes from `world`, on its thread, or why it can't be read. */
+/** What `program`'s trait covers of the entities `selection` takes from `world`, on its thread, or why it can't be read. */
 export const select = async (world: World, program: Program, selection: Selection): Promise<Contents | Failure> => {
     const components = [...program.components.values()];
     const keys = components.map(persisted => persisted.key);
@@ -105,5 +106,5 @@ export const select = async (world: World, program: Program, selection: Selectio
         const taken = subtreeOf(tables, owners, selection.root);
         tables = tables.flatMap(table => rowsOf(table, entity => taken.has(entity)) ?? []);
     }
-    return { components, tables, resources: resources.map(persisted => ({ persisted, value: read.resources[persisted.key] })) };
+    return { by: program.by, components, tables, resources: resources.map(persisted => ({ persisted, value: read.resources[persisted.key] })) };
 };

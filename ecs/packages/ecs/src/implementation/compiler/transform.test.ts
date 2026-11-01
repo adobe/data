@@ -924,10 +924,10 @@ describe("terminal bodies", () => {
         return code.includes("terminal$((") && code.includes("function terminal$(body)");
     };
     test.each([
-        ["no context", "(row)", "console.log(row);", `{ components: { with: [mass] } }`],
+        ["no context", "(row)", "console.log(row);", `{ components: { with: [mass], whole: true } }`],
         ["a context destructured without commands", "({ resources })", "console.log(resources);", `{}`],
         ["a context used only through its other properties", "(context)", "console.log(context.resources);", `{ resources: {} }`],
-        ["a context reaching resources and lookups", "(row, context)", "console.log(context.resources, context.lookup, row);", `{ components: { with: [mass] } }`],
+        ["a context reaching resources and lookups", "(row, context)", "console.log(context.resources, context.lookup, row);", `{ components: { with: [mass], whole: true } }`],
         ["nested destructuring", "({ resources: { [delta]: d } })", "console.log(d);", `{ resources: {} }`],
     ])("mark a body with %s", async (_, parameters, body, declaration) => {
         expect(await marked(parameters, body, declaration)).toBe(true);
@@ -1412,32 +1412,52 @@ describe("inferred access", () => {
             .toContain("components: { read: [position], write: [] }");
     });
 
-    test("a row it can't follow as unknown, which the world takes as every member written, with a warning", async () => {
-        const result = await transform(system("components: { with: [position] }", "(row) => { helper(row); }"));
-        expect(result !== null && "code" in result ? [result.code.includes("components: null"), result.warnings.length] : null).toEqual([true, 1]);
+    test("fails at the use of a system's row it can't follow, saying why, unless its declaration takes the row whole", async () => {
+        const failure = async (source: string) => {
+            const result = await transform(source);
+            return result !== null && "failure" in result ? result.failure : null;
+        };
+        const passed = await failure(system("components: { with: [position] }", "(row) => { helper(row); }"));
+        expect(passed?.message).toMatch(/^the build can't follow how this body uses its row, since it passes its row on, aliases or spreads it, so it would take every component in with, added and changed as written: .*components: \{ whole: true \}/);
+        expect(passed?.position).toBe(header.length + "const system = System.create({ components: { with: [position] } }, (row) => { ".length);
+        const shadowed = await failure(system("components: { with: [position] }", "(row, { commands }) => { for (const row of list) commands.despawn(row); }"));
+        expect(shadowed?.message).toContain("it declares another `row` here, which hides its row: rename one");
+        expect(shadowed?.position).toBe(header.length + "const system = System.create({ components: { with: [position] } }, (row, { commands }) => { for (const ".length);
+        expect((await failure(system("components: { with: [position] }", "(row) => { console.log(row.size); }")))?.message).toContain("it reads a member of its row by name");
+        expect((await failure(system("components: { with: [position] }", "(row) => { delete row[position]; }")))?.message).toContain("it deletes a member of its row");
+        for (const readonly of ["readonly: false, ", "readonly: watching, "]) {
+            expect(await failure(`const watching = true;\n${system(`${readonly}components: { with: [position] }`, "(row) => { helper(row); }")}`)).not.toBe(null);
+        }
+        const whole = await transform(system("components: { with: [position], whole: true }", "(row) => { helper(row); }"));
+        expect(whole !== null && "code" in whole ? [whole.code.includes("components: null"), whole.warnings] : null).toEqual([true, []]);
+        // Taken whole on purpose, a row the build could follow is still taken whole.
+        expect(await inferred(system("components: { with: [position], whole: true }", "(row) => { console.log(row[position]); }"))).toContain("components: null");
     });
 
-    test("an observer's row it can't follow as unknown without a warning, since the world takes an observer's as read", async () => {
+    test("commands by kind, keys and lists as their bindings name them, however the context reaches them", async () => {
+        const commanded = async (body: string, declaration = "components: { with: [position] }"): Promise<string> =>
+            /commands: (null|\{[^}]*\})/.exec(await inferred(`const Shapes = [mass];\nconst Listed = [velocity];\n${system(declaration, body)}`))?.[1] ?? "none";
+        expect(await commanded("(row, { commands }) => { commands.spawn([mass, ...Shapes])({}); commands.add(row.entity, velocity, 1); commands.remove(row.entity, [mass]); }"))
+            .toBe("{ spawn: [mass, Shapes], add: [velocity], remove: [mass], despawn: false }");
+        expect(await commanded("(row, context) => { const c = context.commands; c.despawn(row.entity); context.commands.add(row.entity, Listed, {}); }"))
+            .toBe("{ spawn: [], add: [Listed], remove: [], despawn: true }");
+        expect(await commanded("(row, context) => { const { commands } = context; commands.despawnWhere({ with: [mass] }); }")).toContain("despawn: true");
+        expect(await commanded("(row) => { row[position] = 1; }")).toBe("{ spawn: [], add: [], remove: [], despawn: false }");
+        for (const body of ["(row, { commands }) => { helper(commands); }", "(row, { commands }) => { commands.add(row.entity, keyOf(1), 1); }",
+            "(row, { commands: { spawn } }) => { spawn([mass]); }", "(row, context) => { helper(context); }",
+            "(row, { commands }) => { commands.spawnTables(tables); }"]) {
+            expect(await commanded(body)).toBe("null");
+        }
+    });
+
+    test("a readonly system's row it can't follow as unknown without a failure, since the world takes a readonly system's as read", async () => {
         const result = await transform(system("readonly: true, components: { with: [position] }", "(row) => { helper(row); }"));
         expect(result !== null && "code" in result ? [result.code.includes("components: null"), result.warnings] : null).toEqual([true, []]);
     });
 
-    test("a row it can't follow with a warning unless the declaration says readonly: true, as the world reads it", async () => {
-        for (const observer of ["observer: false, ", "observer: watching, "]) {
-            const result = await transform(`const watching = true;\n${system(`${observer}components: { with: [position] }`, "(row) => { helper(row); }")}`);
-            expect(result !== null && "code" in result ? result.warnings.length : null).toBe(1);
-        }
-    });
-
-    test("a lookup's rows it can't follow without a warning, since what they hold is what the declaration says", async () => {
+    test("a lookup's rows it can't follow without a failure, since what they hold is what the declaration says", async () => {
         const result = await transform(system("components: { with: [target] }, lookup: { targets: { with: [mass] } }", "(row, { lookup }) => { helper(lookup.targets(row[target])); }"));
         expect(result !== null && "code" in result ? [result.code.includes(`"targets": null`), result.warnings] : null).toEqual([true, []]);
-    });
-
-    test("warnings name the module by the label given, with line and column", async () => {
-        const result = await transformKernels(`${header}${system("components: { with: [position] }", "(row) => { helper(row); }")}`, "/repo/app/src/features/a/model.ts", parse,
-            async specifier => specifier === "ecs" ? ownCopy : null, () => "", createLinker(host({}, reductions), parse), true, "src/features/a/model.ts");
-        expect(result !== null && "code" in result ? result.warnings.map(warning => /^[^ ]*:/.exec(warning)?.[0]) : null).toEqual([`src/features/a/model.ts:${header.split("\n").length}:${"const system = System.create({ components: { with: [position] } }, ".length + 1}:`]);
     });
 
     test("resources read, written and reduced, however its context reaches them", async () => {
@@ -1519,7 +1539,7 @@ describe("inferred access", () => {
     });
 
     test("a body mentioning eval as one it can't follow", async () => {
-        expect(await inferred(system("components: { with: [position] }", "(row) => { eval(\"row[position] = 1\"); }"))).toContain("components: null");
+        expect(await inferred(system("components: { with: [position] }", "(row) => { eval(\"row[position] = 1\"); }"))).toContain("since it calls `eval`");
     });
 
     test("fail the build for an async or generator body", async () => {

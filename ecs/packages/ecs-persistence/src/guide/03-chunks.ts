@@ -1,15 +1,20 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Index, System, World, type Vec2 } from "@adobe/ecs";
-import { decode, encode, persist, snapshot, spawn } from "../index.js";
+import { decode, encode, snapshot, spawn } from "../index.js";
 
+/** Saved in a file, under its name there. */
+const file = Symbol();
 const chunk = Symbol();
 const tree = Symbol();
 
 declare module "@adobe/ecs" {
+    interface Traits<N> {
+        readonly [file]: string;
+    }
     interface Components {
         // Shared: each chunk's entities are an archetype of their own, holding its coordinates once.
-        [chunk]: { type: Vec2.I32; shared: true; [persist]: "chunk" };
-        [tree]: { type: number; [persist]: "tree" };
+        [chunk]: { type: Vec2.I32; shared: true; [file]: "chunk" };
+        [tree]: { type: number; [file]: "tree" };
     }
 }
 
@@ -22,6 +27,11 @@ const grow = System.create(({ commands }) => {
         const plant = commands.spawn([chunk, tree], { [chunk]: [x, 0] });
         for (let k = 0; k < 3; k++) plant({ [tree]: 10 * x + k });
     }
+});
+
+/** Unloads chunk `x`: despawns the trees of the archetype holding its coordinates, by one command. */
+const unload = System.create({}, ({ commands }, input: { readonly x: number }) => {
+    commands.despawnWhere({ with: [tree], where: { [chunk]: [input.x, 0] } });
 });
 
 /** Cuts the trees of chunk 2 down: those from `from` on. */
@@ -44,14 +54,14 @@ export const main = async (): Promise<void> => {
     await world.run(grow);
 
     // Chunk 2 alone: only the archetype holding its coordinates is read.
-    const saved = await snapshot({ world, where: { [chunk]: [2, 0] }, resources: false });
+    const saved = await snapshot({ world, by: file, where: { [chunk]: [2, 0] }, resources: false });
     if (saved.failure !== undefined) return console.log(saved.failure);
     const bytes = encode(saved);
 
     // Unloaded, then loaded back from its bytes, into the archetype of its coordinates.
-    await world.run(cut, { from: 0 });
+    await world.run(unload, { x: 2 });
     console.log("unloaded", await surveyed(world));
-    const read = decode(bytes);
+    const read = decode(bytes, { by: file });
     if (read.failure !== undefined) return console.log(read.failure);
     const loaded = await spawn({ world, snapshot: read });
     if (loaded.failure !== undefined) return console.log(loaded.failure);

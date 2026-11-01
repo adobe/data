@@ -1,9 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { asksForChanges, takesInput } from './run-changes.js';
+import type { ChangeSet } from '../../interface/finalizer/body.js';
+import type { Essential } from '../../interface/component/value.js';
+import type { Resource } from '../../interface/resource/resource.js';
 import type { Thread } from '../../interface/thread/thread.js';
 import type { World } from '../../interface/world/world.js';
 import type { Input } from '../../interface/system/input.js';
 import type { System } from '../../interface/system/system.js';
-import { declarationOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';
+import { declarationOf, definitionOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';
 import { unsharedKeyOf } from './index-keys.js';
 import { layoutOf, type Views } from '../../interface/registry/layout.js';
 import {
@@ -681,9 +685,19 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         return runNumbered(numberOf(id, true), definition, input, null);
     };
 
+    function run<I, R>(system: System<I, R>, ...input: Input<NoInfer<I>>): Promise<R>;
+    function run<I, R>(system: System<I, R>, ...input: [...Input<NoInfer<I>>, options: { readonly changes: true }]): Promise<ChangeSet<Essential, Resource.Key>>;
+    function run(system: System<unknown, unknown>, ...args: readonly unknown[]): Promise<unknown> {
+        const definition = definitionOf(system);
+        // A system taking input whose input is all it was given runs with it.
+        const asked = args.length > 0 && asksForChanges(args[args.length - 1]) && definition !== undefined && !(args.length < 2 && takesInput(definition));
+        if (asked) return Promise.reject(new Error(`System "${system.name}": a run's changes are recorded only on the world's thread.`));
+        return runOn(system, args);
+    }
+
     const world: World = {
         // A run gives what its system's body returned, `R` by the system's type.
-        run: <I, R>(system: System<I, R>, ...args: Input<NoInfer<I>>) => runOn(system, args) as Promise<R>,
+        run,
         add: system => {
             const definition = requireDefinition(system);
             const leaves = observerLeavesOf(definition);

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Finalizer } from '../../interface/finalizer/created.js';
 import type { Rule } from '../../interface/rule/created.js';
-import { requireDefinition, type Definition } from '../../interface/registry/index.js';
+import { definitionOf, requireDefinition, type Definition } from '../../interface/registry/index.js';
 import type { World } from '../../interface/world/world.js';
 import type { Input } from '../../interface/system/input.js';
 import type { System } from '../../interface/system/system.js';
@@ -43,6 +43,10 @@ import { stampChanged } from './archetype.js';
 import { createLoop, platformFrame, platformTimer, type Clock, type LoopPlatform } from './loop.js';
 import { presetLevelsOf } from './lists.js';
 import { createState, defaultOf, idOf, reside, startTicking, type Key } from './state.js';
+import { asksForChanges, changesOf, resourcesWrittenBy, startRecording, takesInput } from './run-changes.js';
+import type { ChangeSet } from '../../interface/finalizer/body.js';
+import type { Essential } from '../../interface/component/value.js';
+import type { Resource } from '../../interface/resource/resource.js';
 import { indexOf } from './entities.js';
 import { touchedHeld } from './up.js';
 import { isHeld } from './transfers.js';
@@ -53,6 +57,9 @@ type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
 
 /** A task's failure as the queue's own chain carries it, which never rejects: made only when a task fails. */
 type Carried = { readonly thrown: unknown };
+/** A schedule of nothing, whose run is its sync point alone. */
+const noTiers: Schedule = { tiers: [], reductions: new Map(), observer: [], syncs: [] };
+
 const thrownValues = new WeakSet<object>();
 const thrownOf = (error: unknown): Carried => {
     const wrapped = { thrown: error };
@@ -956,9 +963,57 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         },
     });
 
+    /**
+     * Runs a system or composite, recording its own changes, which it resolves to: what earlier finalizers queued
+     * applies first, at a sync point of its own, and the recording covers the run's sync points alone.
+     */
+    const runChanging = (definition: Definition, value: unknown): Promise<unknown> => {
+        const started = enqueue(() => startChanges(definition));
+        const ran = runWith(definition, value);
+        const taken = enqueue(takeChanges);
+        return Promise.all([started, ran, taken]).then(([, , changes]) => changes);
+    };
+    const startChanges = (definition: Definition): unknown => {
+        checkLive();
+        const flushed = execution(definition, undefined, noTiers);
+        if (flushed instanceof Promise) return flushed.then(report => startRecordingOf(definition, report));
+        startRecordingOf(definition, flushed);
+        return undefined;
+    };
+    const startRecordingOf = (definition: Definition, flushed: RunReport): void => {
+        outOfBand.reportAll(flushed.failures);
+        state.recording = startRecording(state, resourcesWrittenBy(definition));
+    };
+    const takeChanges = (): unknown => {
+        const { recording } = state;
+        state.recording = null;
+        if (recording === null) throw new Error("The run's changes weren't recorded.");
+        return changesOf(state, recording);
+    };
+
+    function run<I, R>(system: System<I, R>, ...input: Input<NoInfer<I>>): Promise<R>;
+    function run<I, R>(system: System<I, R>, ...input: [...Input<NoInfer<I>>, options: { readonly changes: true }]): Promise<ChangeSet<Essential, Resource.Key>>;
+    function run(system: System<unknown, unknown>, ...args: readonly unknown[]): Promise<unknown> {
+        // Options come last, so a run not asking for changes reads one value more.
+        const { length } = args;
+        if (length === 0 || !asksForChanges(args[length - 1])) return runWith(system, args[0]);
+        const definition = definitionOf(system);
+        let input = false;
+        try {
+            input = definition !== undefined && takesInput(definition);
+        }
+        catch {
+            // A composite whose schedule can't be made fails its run, as `runWith` finds.
+            return runWith(system, args[0]);
+        }
+        // A system taking input whose input is all it was given runs with it.
+        if (definition === undefined || (input && args.length < 2)) return runWith(system, args[0]);
+        return runChanging(definition, input ? args[0] : undefined);
+    }
+
     const world: CreatedWorld = {
         // A run gives what its system's body returned, `R` by the system's type.
-        run: <I, R>(system: System<I, R>, ...input: Input<NoInfer<I>>) => runWith(system, input[0]) as Promise<R>,
+        run,
         share: port => {
             if (disposed) return Promise.reject(new Error("The world is disposed."));
             if (!state.memory.shared) return Promise.reject(new Error("Without cross-origin isolation memory can't be shared, so no thread can join."));

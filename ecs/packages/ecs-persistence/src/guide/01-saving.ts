@@ -1,7 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Entity, System, World, type Vec3 } from "@adobe/ecs";
-import { decode, encode, persist, snapshot, spawn } from "../index.js";
+import { decode, encode, snapshot, spawn } from "../index.js";
 
+/** Saved in a file, under its name there. */
+const file = Symbol();
 const position = Symbol();
 const name = Symbol();
 const target = Symbol();
@@ -9,14 +11,17 @@ const selected = Symbol();
 const level = Symbol();
 
 declare module "@adobe/ecs" {
+    interface Traits<N> {
+        readonly [file]: string;
+    }
     interface Components {
-        [position]: { type: Vec3; [persist]: "position" };
-        [name]: { type: string; [persist]: "name" };
-        [target]: { type: Entity; reference: "weak"; [persist]: "target" };
+        [position]: { type: Vec3; [file]: "position" };
+        [name]: { type: string; [file]: "name" };
+        [target]: { type: Entity; reference: "weak"; [file]: "target" };
         [selected]: { type: true };
     }
     interface Resources {
-        [level]: { type: number; default: 1; [persist]: "level" };
+        [level]: { type: number; default: 1; [file]: "level" };
     }
 }
 
@@ -35,13 +40,13 @@ const levelOf = System.create({ readonly: true }, ({ resources }) => resources[l
 export const main = async (): Promise<void> => {
     await using world = World.create();
     await world.run(build);
-    const taken = await snapshot({ world });
+    const taken = await snapshot({ world, by: file });
     if (taken.failure !== undefined) return console.log(taken.failure);
     const bytes = encode(taken);
     console.log("saved", bytes.length > 0 ? "bytes" : "nothing");
 
     await using loaded = World.create();
-    const read = decode(bytes);
+    const read = decode(bytes, { by: file });
     if (read.failure !== undefined) return console.log(read.failure);
     const spawned = await spawn({ world: loaded, snapshot: read });
     if (spawned.failure !== undefined) return console.log(spawned.failure);

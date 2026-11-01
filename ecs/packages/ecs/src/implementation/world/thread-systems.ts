@@ -280,6 +280,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         },
         despawn: entity => beginCommand(writer, despawnCommand, entity),
         spawnTables: () => { throw new Error("commands.spawnTables runs on the world's thread: run the system there."); },
+        despawnWhere: () => { throw new Error("commands.despawnWhere runs on the world's thread: run the system there."); },
         add: (entity: number, components: symbol | readonly symbol[], values?: unknown) => {
             if (typeof components === "symbol") {
                 const key = givenKeyOf(components);

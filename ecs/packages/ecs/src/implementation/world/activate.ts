@@ -3,13 +3,14 @@ import type { Finalizer } from '../../interface/finalizer/created.js';
 import type { Rule } from '../../interface/rule/created.js';
 import type { RuleFacts } from '../../interface/registry/strata.js';
 import { createFinalizerRunner, placeFinalizer, type FinalizerRunner } from './finalizers.js';
+import { watchResource } from './resource-changes.js';
 import { finalizerKeysOf, type TaskChannel } from './remote-systems.js';
 import { programFinalizers, programRules, programVersion } from '../../interface/registry/program.js';
 import { triggersOf } from './program.js';
 import { ensureResources, findResource } from './resources.js';
 import { idOf, metIdOf, type Key, type State } from './state.js';
 import { restratify } from './structure.js';
-import { idOfItem, idOfKey, labelOf, threadOf } from '../../interface/registry/index.js';
+import { idOfItem, idOfKey, kindOf, labelOf, threadOf } from '../../interface/registry/index.js';
 
 /**
  * Why a joined thread that imported the items of ids `imported` can't claim `threads`: a program finalizer on one that
@@ -67,7 +68,11 @@ export const placeFinalizers = (state: State): void => {
     state.finalizers.splice(0, state.finalizers.length, ...kept);
 };
 
-const resourcesOf = (finalizer: Finalizer): readonly Key[] => [...finalizer.declaration.resources?.read ?? [], ...finalizer.declaration.resources?.write ?? []];
+/** The resources a finalizer reads, writes or, for a changes finalizer, watches. */
+const resourcesOf = (finalizer: Finalizer): readonly Key[] => [
+    ...finalizer.declaration.resources?.read ?? [], ...finalizer.declaration.resources?.write ?? [],
+    ...finalizer.kind === "changes" ? (finalizer.declaration.watch ?? []).filter(key => kindOf(key) === "resource") : [],
+];
 
 /** Between runs: adds the resources of every finalizer in the program, so one can activate at any sync point. */
 export const ensureProgramResources = (state: State, ensured: { version: number }): void => {
@@ -75,6 +80,10 @@ export const ensureProgramResources = (state: State, ensured: { version: number 
     if (ensured.version === version) return;
     ensured.version = version;
     ensureResources(state, new Set(programFinalizers().flatMap(resourcesOf)));
+    // A watched resource is followed from now, before its finalizer activates, so writes before then are seen.
+    for (const finalizer of programFinalizers()) {
+        if (finalizer.kind === "changes") for (const key of finalizer.declaration.watch ?? []) if (kindOf(key) === "resource") watchResource(state, idOf(state, key));
+    }
     // Finalizers waiting for these can activate at the next sync point.
     state.activation.met = true;
 };

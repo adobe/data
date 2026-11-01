@@ -115,10 +115,11 @@ const predicateOf = (given: unknown): ((value: unknown, context: object) => unkn
     typeof given === "function" ? (value, context) => Reflect.apply(given, undefined, [value, context]) : null;
 
 /**
- * `where`'s conditions in a world, each value interned there, by number, and pinned, so its number stays while no
- * archetype holds it and one that comes to hold it again matches; or the key of a component that isn't shared.
+ * `where`'s conditions in a world, each value interned there, by number, and with `pinned`, pinned, so its number stays
+ * while no archetype holds it and one that comes to hold it again matches; or the key of a component that isn't shared.
+ * A value interned unpinned keeps its number to the end of the sync point.
  */
-const conditionsOf = (state: State, where: { readonly [key: symbol]: unknown }): Condition[] | symbol => {
+const conditionsOf = (state: State, where: { readonly [key: symbol]: unknown }, pinned: boolean): Condition[] | symbol => {
     const conditions: Condition[] = [];
     for (const key of Object.getOwnPropertySymbols(where)) {
         const id = idOf(state, key);
@@ -131,7 +132,7 @@ const conditionsOf = (state: State, where: { readonly [key: symbol]: unknown }):
         const values = state.shared[id];
         if (values === undefined) return key;
         const number = internShared(values, given);
-        if (number >= 0) holdShared(values, number);
+        if (pinned && number >= 0) holdShared(values, number);
         conditions.push({ id, number, predicate: null });
     }
     return conditions;
@@ -139,10 +140,11 @@ const conditionsOf = (state: State, where: { readonly [key: symbol]: unknown }):
 
 /**
  * Whether an archetype holds each of `where`'s values, as a system's `where` of values passes it, for a `where` naming
- * only shared components and giving no predicate; or the key of one that isn't shared.
+ * only shared components and giving no predicate; or the key of one that isn't shared. Its values are pinned with
+ * `pinned`, and otherwise only interned, for a `where` used before the sync point ends.
  */
-export const holdsValuesOf = (state: State, where: { readonly [key: symbol]: unknown }): ((archetype: Valued) => boolean) | symbol => {
-    const conditions = conditionsOf(state, where);
+export const holdsValuesOf = (state: State, where: { readonly [key: symbol]: unknown }, pinned: boolean): ((archetype: Valued) => boolean) | symbol => {
+    const conditions = conditionsOf(state, where, pinned);
     if (typeof conditions === "symbol") return conditions;
     return archetype => {
         for (let c = 0; c < conditions.length; c++) if (archetype.shared[conditions[c].id] !== conditions[c].number) return false;
@@ -155,7 +157,7 @@ export const holdsValuesOf = (state: State, where: { readonly [key: symbol]: unk
  * evaluated again once one of them changed since they last were.
  */
 export const createWhere = <A extends Valued>(state: State, where: { readonly [key: symbol]: unknown }, reads: readonly symbol[], leaf: Leaf): Where<A> => {
-    const conditions = conditionsOf(state, where);
+    const conditions = conditionsOf(state, where, true);
     if (typeof conditions === "symbol") throw new Error(`System "${leaf.name}": where names "${labelOf(conditions)}", which isn't a shared component.`);
     const readIds = reads.map(key => idOf(state, key));
     // Its predicates' context: each resource read once per evaluation, since a struct's read copies it out.

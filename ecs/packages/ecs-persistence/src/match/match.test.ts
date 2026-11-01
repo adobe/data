@@ -3,7 +3,6 @@ import { Entity, Index, System, World, workers } from "@adobe/ecs";
 import { describe, expect, it } from "vitest";
 import { decode } from "../decode.js";
 import { encode } from "../encode.js";
-import { persist } from "../persist.js";
 import { snapshot, type Snapshot } from "../snapshot.js";
 import { spawn } from "../spawn.js";
 
@@ -14,15 +13,23 @@ const label = Symbol();
 const tag = Symbol();
 const serial = Symbol();
 const note = Symbol();
+/** The trait these entities are saved by, its value each key's name. */
+const saved = Symbol();
+/** A trait of another place, which the snapshots here aren't taken by. */
+const elsewhere = Symbol();
 declare module "@adobe/ecs" {
+    interface Traits<N> {
+        readonly [saved]: string;
+        readonly [elsewhere]: string;
+    }
     interface Components {
-        [serial]: { type: number; [persist]: "matchTest/serial" };
-        [note]: { type: string; [persist]: "matchTest/note" };
-        [material]: { type: string; [persist]: "matchTest/material" };
-        [friction]: { type: number; [persist]: "matchTest/friction" };
-        [made]: { type: Entity; reference: "weak"; [persist]: "matchTest/made" };
-        [label]: { type: string; [persist]: "matchTest/label" };
-        [tag]: { type: string };
+        [serial]: { type: number; [saved]: "serial" };
+        [note]: { type: string; [saved]: "note" };
+        [material]: { type: string; [saved]: "material" };
+        [friction]: { type: number; [saved]: "friction" };
+        [made]: { type: Entity; reference: "weak"; [saved]: "made" };
+        [label]: { type: string; [saved]: "label" };
+        [tag]: { type: string; [elsewhere]: "tag" };
     }
 }
 
@@ -86,7 +93,7 @@ const described = async (world: World): Promise<{ readonly bodies: { readonly [l
 };
 
 const taken = async (world: World): Promise<Snapshot> => {
-    const result = await snapshot({ world });
+    const result = await snapshot({ world, by: saved });
     if (result.failure !== undefined) throw new Error(result.failure);
     return result;
 };
@@ -111,7 +118,7 @@ describe("spawn with match", () => {
         await from.run(build, { materials: [{ name: "steel", friction: 0.5 }], bodies: [{ label: "box", material: "steel" }] });
         await using into = inline();
         await into.run(build, { materials: [{ name: "steel", friction: 0.9 }], bodies: [] });
-        const decoded = decode(encode(await taken(from)));
+        const decoded = decode(encode(await taken(from)), { by: saved });
         if (decoded.failure !== undefined) throw new Error(decoded.failure);
         const spawned = await spawn({ world: into, snapshot: decoded, match: [materialByName] });
         expect(spawned.failure).toBeUndefined();
@@ -127,12 +134,12 @@ describe("spawn with match", () => {
         expect(await read(into)).toEqual([]);
     });
 
-    it("fails for an index with a part of its key that isn't persisted", async () => {
+    it("fails for an index with a part of its key that the snapshot's trait doesn't cover, though another trait does", async () => {
         await using from = inline();
         await from.run(build, { materials: [{ name: "steel", friction: 0.5 }], bodies: [] });
         await using into = inline();
         const spawned = await spawn({ world: into, snapshot: await taken(from), match: [materialByTag] });
-        expect(spawned.failure).toMatch(/a part of its key isn't persisted/);
+        expect(spawned.failure).toBe(`Index "materialByTag" can't match: a part of its key isn't one the snapshot's trait covers, so the snapshot holds no key for it.`);
     });
 
     it("merges by a key of bytes, keeping the world's entities and spawning the rest", async () => {

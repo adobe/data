@@ -7,3 +7,4 @@ the ECS's own chapters.
 1. [Saving and loading](01-saving.md)
 2. [Copying between worlds](02-copying.md)
 3. [Saving chunks](03-chunks.md)
+4. [Documents and settings](04-settings.md)

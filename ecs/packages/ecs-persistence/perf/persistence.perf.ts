@@ -3,7 +3,6 @@ import { Entity, Index, System, World, workers, type Vec2, type Vec3 } from "@ad
 import { it } from "vitest";
 import { decode } from "../src/decode.js";
 import { encode } from "../src/encode.js";
-import { persist } from "../src/persist.js";
 import { snapshot } from "../src/snapshot.js";
 import { spawn } from "../src/spawn.js";
 
@@ -19,14 +18,19 @@ const parent = Symbol();
 const link = Symbol();
 const cell = Symbol();
 const chunkOwner = Symbol();
+/** The trait these entities are saved by, its value each key's name. */
+const saved = Symbol();
 declare module "@adobe/ecs" {
+    interface Traits<N> {
+        readonly [saved]: string;
+    }
     interface Components {
-        [cell]: { type: Vec2.I32; shared: true; [persist]: "perf/cell" };
-        [chunkOwner]: { type: Entity; reference: "owner"; [persist]: "perf/chunkOwner" };
-        [position]: { type: Vec3; [persist]: "perf/position" };
-        [health]: { type: number; [persist]: "perf/health" };
-        [parent]: { type: Entity; reference: "owner"; [persist]: "perf/parent" };
-        [link]: { type: { readonly to: Entity; readonly weight: number }; [persist]: "perf/link" };
+        [cell]: { type: Vec2.I32; shared: true; [saved]: "cell" };
+        [chunkOwner]: { type: Entity; reference: "owner"; [saved]: "chunkOwner" };
+        [position]: { type: Vec3; [saved]: "position" };
+        [health]: { type: number; [saved]: "health" };
+        [parent]: { type: Entity; reference: "owner"; [saved]: "parent" };
+        [link]: { type: { readonly to: Entity; readonly weight: number }; [saved]: "link" };
     }
 }
 
@@ -97,18 +101,18 @@ for (const count of [100_000, 1_000_000]) {
         let into = World.create({ [workers]: 0 });
         const rowSpawn = await timed(runs, async () => { await into.dispose(); into = World.create({ [workers]: 0 }); given.rows = rows; }, () => into.run(spawnRows));
 
-        let taken = await snapshot({ world });
-        const tableSnapshot = await timed(runs, () => {}, async () => { taken = await snapshot({ world }); });
+        let taken = await snapshot({ world, by: saved });
+        const tableSnapshot = await timed(runs, () => {}, async () => { taken = await snapshot({ world, by: saved }); });
         if ("failure" in taken) throw new Error(taken.failure);
         const ready = taken;
         let bytes = encode(ready);
         const tableEncode = await timed(runs, () => {}, () => { bytes = encode(ready); });
-        let decoded = decode(bytes);
-        const tableDecode = await timed(runs, () => {}, () => { decoded = decode(bytes); });
+        let decoded = decode(bytes, { by: saved });
+        const tableDecode = await timed(runs, () => {}, () => { decoded = decode(bytes, { by: saved }); });
         if ("failure" in decoded) throw new Error(decoded.failure);
         const loaded = decoded;
         const tableSpawn = await timed(runs, async () => { await into.dispose(); into = World.create({ [workers]: 0 }); }, () => spawn({ world: into, snapshot: loaded, entities: false }));
-        const tableMerge = await timed(runs, async () => { await into.dispose(); into = World.create({ [workers]: 0 }); }, async () => { const copied = await snapshot({ world, resources: false }); if (copied.failure === undefined) await spawn({ world: into, snapshot: copied, entities: false }); });
+        const tableMerge = await timed(runs, async () => { await into.dispose(); into = World.create({ [workers]: 0 }); }, async () => { const copied = await snapshot({ world, by: saved, resources: false }); if (copied.failure === undefined) await spawn({ world: into, snapshot: copied, entities: false }); });
         const tableMatch = await timed(runs, async () => {
             await into.dispose();
             into = World.create({ [workers]: 0 });
@@ -148,15 +152,15 @@ it(`persists one chunk of ${chunks} among 1000000 entities`, async () => {
     await world.run(buildChunks);
     const ms = (value: number): string => `${value.toFixed(2)} ms`;
     const x = 42;
-    let one = await snapshot({ world, where: { [cell]: [x, 0] }, resources: false });
-    const chunkSnapshot = await timed(runs, () => {}, async () => { one = await snapshot({ world, where: { [cell]: [x, 0] }, resources: false }); });
+    let one = await snapshot({ world, by: saved, where: { [cell]: [x, 0] }, resources: false });
+    const chunkSnapshot = await timed(runs, () => {}, async () => { one = await snapshot({ world, by: saved, where: { [cell]: [x, 0] }, resources: false }); });
     if ("failure" in one && one.failure !== undefined) throw new Error(one.failure);
     const ready = one;
     let bytes = encode(ready);
     const chunkEncode = await timed(runs, () => {}, () => { bytes = encode(ready); });
-    const fullSnapshot = await timed(3, () => {}, () => snapshot({ world, resources: false }));
-    const rootSnapshot = await timed(3, () => {}, () => snapshot({ world, root: roots[x] ?? Entity.none }));
-    const decoded = decode(bytes);
+    const fullSnapshot = await timed(3, () => {}, () => snapshot({ world, by: saved, resources: false }));
+    const rootSnapshot = await timed(3, () => {}, () => snapshot({ world, by: saved, root: roots[x] ?? Entity.none }));
+    const decoded = decode(bytes, { by: saved });
     if ("failure" in decoded) throw new Error(decoded.failure);
     const loaded = decoded;
     let into = World.create({ [workers]: 0 });

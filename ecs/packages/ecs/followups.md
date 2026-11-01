@@ -17,7 +17,7 @@ correctness, then optimization. Remove an item once it's decided or done.
 - **Iterable lists:** `for (const row of list)` on index lookups' lists, binding each row as the loop reaches it with
   no allocation (the list is its own iterator, reset per loop), lowered by kernels to the indexed loop. `list[i]` and
   array methods stay out: indexing can't bind lazily without a Proxy, and the methods would widen the surface.
-- **`watch` by trait on changes finalizers:** `Finalizer.changes({ watch: "persist" }, …)`, `watch` taking a trait name as
+- **`watch` by trait on changes finalizers:** `Finalizer.changes({ watch: file }, …)`, `watch` taking a trait's key as
   well as a list of keys, typed as `Component.With<…>`, computed once per component id as `watches` already is. The
   hook external persistence would build on.
 - **Readonly systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities
@@ -63,6 +63,18 @@ correctness, then optimization. Remove an item once it's decided or done.
 - **Shared components as index key parts:** an index could key by an archetype's value per row; filtering by shared
   values is `where`'s for now.
 - **The `Finalizer` namespace** (from earlier open work; to be restated before it's discussed).
+- **A lint for an index its system's own query covers** (adobe/data#235): report an `Index.create({ key: [] })`, not
+  unique, that one system alone looks up, whose `with` and `not` that system's `components` already match, and whose
+  rows the body only iterates. The repository has no ESLint plugin or configuration yet, so it needs deciding where
+  such rules live, and whether it's a rule or a build warning, since the plugin sees every system and index.
+- **`despawnWhere` from the build:** a row system whose whole body is `commands.despawn(row.entity)` could be lowered to
+  `commands.despawnWhere` of its query; and `despawnWhere` on joined threads, through their command rings.
+- **A trait key a library declares** (adobe/data#239): the compiler reads a trait's key where an application's module
+  makes it with `Symbol()`. A library whose types declare one, `declare const key: unique symbol` in a `.d.ts`, would
+  need the compiler to take such a declaration as a key. No library declares one.
+- **Resources `spawnTables` sets in a run's changes:** a run asked for its changes reports the resources its systems
+  declare they write or reduce into; one a body sets through `commands.spawnTables(tables, { resources })` isn't
+  among them.
 
 ## Correctness
 
@@ -82,6 +94,9 @@ correctness, then optimization. Remove an item once it's decided or done.
   still held the one-run `changed` system, its schedule and runner, which the next collection freed (CI: schedules 2,
   then 1). The collector finishes compiles in flight before collecting, so something else holds it a while: find what,
   or take that count once it's settled. Skipped on CI until then.
+- **Vitest's module cache keeps the version ids had:** it keys each module's transform by its source, so after this
+  package's version changes, tests importing unchanged modules see ids of the old version until
+  `node_modules/.vitest-cache` is deleted. Key it by the package's version too, or clear it when the version changes.
 - **Transactions, future:** never by default, since they would cost every run. An explicit declarative option on a
   one-off system, making its run all or nothing.
 
@@ -114,8 +129,10 @@ correctness, then optimization. Remove an item once it's decided or done.
     build infers from its declaration written in place, which a snapshot's system, made at runtime from its input,
     doesn't have; a predicate there would read what the build can't follow. Possible: predicates reading no
     resources, or resources the caller names.
-  - **Incremental saves:** changes finalizers watching the `persist` trait (`watch` by trait, above) would give
-    autosaves and deltas.
+  - **Incremental saves:** changes finalizers watching the trait a snapshot is taken by (`watch` by trait, above)
+    would give autosaves and deltas.
+  - **Choosing keys by their other traits:** a snapshot could take `with` and `not` over other traits a key's
+    declaration carries, as a system's query does over components, to leave out, say, what's derived or transient.
   - **Migrations:** a snapshot holds each component's schema, and a load refuses one that differs; a declared
     migration could read the old schema's values instead.
   - **Tables on joined threads:** a joined thread refuses a readonly system reading tables.

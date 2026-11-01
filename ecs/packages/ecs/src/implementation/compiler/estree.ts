@@ -47,18 +47,21 @@ export const patternNames = (pattern: Pattern): readonly string[] => {
     }
 };
 
-/** Calls `declare` for each name declared anywhere inside `node`, once per declaration: variables, parameters, functions, classes and catch parameters. */
-export const declaredIn = (node: Node, declare: (name: string) => void): void => {
+/**
+ * Calls `declare` for each name declared anywhere inside `node`, once per declaration, with the pattern or name that
+ * declares it: variables, parameters, functions, classes and catch parameters.
+ */
+export const declaredIn = (node: Node, declare: (name: string, at: Node) => void): void => {
     switch (node.type) {
-        case "VariableDeclarator": for (const name of patternNames(node.id)) declare(name); break;
+        case "VariableDeclarator": for (const name of patternNames(node.id)) declare(name, node.id); break;
         case "FunctionDeclaration": case "FunctionExpression": case "ClassDeclaration": case "ClassExpression":
-            if (node.id) declare(node.id.name);
+            if (node.id) declare(node.id.name, node.id);
             break;
-        case "CatchClause": if (node.param) for (const name of patternNames(node.param)) declare(name); break;
+        case "CatchClause": if (node.param) for (const name of patternNames(node.param)) declare(name, node.param); break;
         default: break;
     }
     if (node.type === "ArrowFunctionExpression" || node.type === "FunctionExpression" || node.type === "FunctionDeclaration") {
-        for (const param of node.params) for (const name of patternNames(param)) declare(name);
+        for (const param of node.params) for (const name of patternNames(param)) declare(name, param);
     }
     for (const child of children(node)) declaredIn(child, declare);
 };

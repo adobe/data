@@ -46,7 +46,7 @@ const mutations: { readonly [chapter: number]: readonly (readonly [string, strin
     ],
     4: [["world.remove(advance);", ""]],
     5: [["after: [hit] ", ""], ["during: [update] ", ""]],
-    6: [["commands.add(hero, health, 5);", ""], ["commands.despawn(commands.spawn([health])({ [health]: 1 }));", "commands.spawn([health])({ [health]: 1 });"], ["watched.add(watch);", ""], ["const watch = System.create({ readonly: true, ", "const watch = System.create({ "]],
+    6: [["commands.add(hero, health, 5);", ""], ["after: [spawn] ", ""], ["commands.despawn(commands.spawn([health])({ [health]: 1 }));", "commands.spawn([health])({ [health]: 1 });"], ["watched.add(watch);", ""], ["const watch = System.create({ readonly: true, ", "const watch = System.create({ "]],
     7: [["resources: { changed: [level] } ", ""], [", changed: [score]", ""], [", not: [paused]", ""], ["is: [map], ", ""]],
     8: [["target: \"entity\",", ""]],
     9: [["with: [mesh], not: [hidden]", "with: [mesh]"], ["Rule.create({ components: { with: [sprite], not: [hidden] }, derive: [drawn] });", ""], ["Rule.create({ components: { with: [drawn] }, derive: [layer] });", ""]],

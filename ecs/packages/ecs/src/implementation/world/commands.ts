@@ -1,10 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Commands } from '../../interface/system/commands.js';
-import { addCommand, createBuffer, despawnCommand, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
+import { addCommand, createBuffer, despawnCommand, despawnWhereCommand, despawnWhereHolds, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
+import type { Archetype } from './archetype.js';
 import { reserve } from './entities.js';
 import { listShapeOf, presetSpawnerOf, spawnerOf, type ListShape } from './lists.js';
-import { commandIdOf, idOf, storedShared, type Key, type State } from './state.js';
+import { commandIdOf, idOf, queryIdOf, storedShared, type Key, type State } from './state.js';
 import { spawnTables } from './tables.js';
+import { holdsValuesOf } from './where.js';
+import { checkWhereValues } from '../../interface/system/check.js';
 import { declarationOf, isWorldWritten, kindOf, labelOf, threadOfDeclaration, whyUnregistered } from '../../interface/registry/index.js';
 import { matchesSchema } from '../../interface/registry/schemas.js';
 
@@ -83,6 +86,32 @@ const queueResources = (state: State, resources: object): void => {
 /** Values of a list add given none, which only an untyped caller does. */
 const empty = {};
 
+const noKeys: readonly unknown[] = [];
+
+/**
+ * Queues a `despawnWhere`, its ids resolved and its `where` checked first, so a key that isn't a component, or a `where`
+ * that isn't of shared values, queues nothing.
+ */
+const pushDespawnWhere = (state: State, buffer: CommandBuffer, query: Parameters<Commands["despawnWhere"]>[0]): void => {
+    const including: readonly unknown[] = query.with;
+    const excluding: readonly unknown[] = query.not ?? noKeys;
+    const { where } = query;
+    if (including.length === 0) throw new Error("commands.despawnWhere's `with` names at least one component.");
+    for (let k = 0; k < including.length; k++) queryIdOf(state, including[k]);
+    for (let k = 0; k < excluding.length; k++) queryIdOf(state, excluding[k]);
+    let holds: ((archetype: Archetype) => boolean) | null = null;
+    if (where !== undefined && Object.getOwnPropertySymbols(where).length > 0) {
+        checkWhereValues("commands.despawnWhere", "where", "a despawn", where, false);
+        const found = holdsValuesOf(state, where, false);
+        if (typeof found === "symbol") throw new Error(`commands.despawnWhere: where names "${labelOf(found)}", which isn't a shared component.`);
+        holds = found;
+    }
+    pushCommand(buffer, despawnWhereCommand, including.length);
+    for (let k = 0; k < including.length; k++) pushComponent(buffer, queryIdOf(state, including[k]), undefined);
+    for (let k = 0; k < excluding.length; k++) pushComponent(buffer, queryIdOf(state, excluding[k]), undefined);
+    if (holds !== null) pushComponent(buffer, despawnWhereHolds, holds);
+};
+
 /**
  * Commands that queue for the next sync point. A key that isn't a component commands may name throws here, inside the
  * issuing system, before anything is queued. Values are immutable by convention, so they aren't copied.
@@ -97,6 +126,7 @@ export const createCommands = (state: State, target: { readonly buffer: CommandB
     despawn: entity => {
         pushCommand(target.buffer, despawnCommand, entity);
     },
+    despawnWhere: query => pushDespawnWhere(state, target.buffer, query),
     add: (entity: number, components: symbol | readonly symbol[], values?: unknown) => {
         const { buffer } = target;
         if (typeof components === "symbol") {

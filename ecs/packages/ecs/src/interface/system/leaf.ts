@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from '../schema/schema.js';
+import type { CommandLists } from './access.js';
 import type { Resolved } from './declaration.js';
 import type { Name } from './name.js';
 
@@ -17,4 +18,9 @@ export type Leaf = {
     readonly declaration: Resolved;
     readonly input: InputSchema | undefined;
     readonly body: (...parameters: never[]) => void;
+    /**
+     * What its body's commands name, as the build inferred them: null where it couldn't follow them, undefined for
+     * none. Apart from its declaration, so a module evaluated again with other commands declares the same system.
+     */
+    readonly commands?: CommandLists | null;
 };

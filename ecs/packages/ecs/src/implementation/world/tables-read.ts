@@ -34,7 +34,7 @@ const columnOf = (key: Key, storage: Storage, count: number): Table.Column => {
  * matches it as one matches a system's `where`, required as `with` requires them.
  */
 export const tablesReader = (state: State, declaration: TablesDeclaration): (() => Tables) => {
-    const holds = declaration.where === undefined ? null : holdsValuesOf(state, declaration.where);
+    const holds = declaration.where === undefined ? null : holdsValuesOf(state, declaration.where, true);
     if (typeof holds === "symbol") throw new Error(`Tables' where names "${labelOf(holds)}", which isn't a shared component.`);
     const where = declaration.where === undefined ? [] : Object.getOwnPropertySymbols(declaration.where);
     return () => readTables(state, declaration, [...where, ...declaration.with ?? []], holds);

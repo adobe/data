@@ -20,6 +20,8 @@ import type { TaskChannel } from './remote-systems.js';
 import { resourceOffsetsOf, writeStops, type StopsOf } from './stop-lists.js';
 import { acquireLookups, refreshUses, type IndexLookups } from './indexes.js';
 import { indexWatchesOf } from './lookup-keys.js';
+import { takeResourceChanges, watchResource, type ResourceChange } from './resource-changes.js';
+import type { Resource } from '../../interface/resource/resource.js';
 
 /** A registered finalizer, resolved for a world: what it matches or watches, its context, and the buffer its commands go to. */
 export type FinalizerRunner = {
@@ -28,6 +30,8 @@ export type FinalizerRunner = {
     readonly excluded: readonly number[];
     /** For a changes finalizer: whether it watches a component, by id. */
     readonly watches: (id: number) => boolean;
+    /** For a changes finalizer: the resources it watches, by id. */
+    readonly resourceWatches: readonly number[];
     /** By archetype id: 1 if it matches, 2 if not, 0 until known. */
     readonly matches: number[];
     readonly context: Context;
@@ -61,9 +65,16 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
     // the objects a joined thread fills, whose storage here holds only tags.
     let watches = (id: number): boolean => !state.derived[id] && !state.resources.has(id) && state.remote[id] === undefined;
     const watch = finalizer.kind === "changes" ? finalizer.declaration.watch : undefined;
+    const resourceWatches: number[] = [];
     if (watch !== undefined) {
         // `Finalizer.changes` rejected derived components.
         const watched = new Set(watch.map(key => idOf(state, key)));
+        for (const id of watched) {
+            if (!state.resources.has(id)) continue;
+            watched.delete(id);
+            resourceWatches.push(id);
+            watchResource(state, id);
+        }
         watches = id => watched.has(id);
     }
     const target = { buffer: createBuffer() };
@@ -79,6 +90,7 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
         required: [...new Set([...reads, ...query?.has ?? []])].filter(key => !(query?.optional ?? []).includes(key)).map(key => idOf(state, key)),
         excluded: (query?.not ?? []).map(key => idOf(state, key)),
         watches,
+        resourceWatches,
         matches: [],
         context: createContext(state, declaration, commanding ? { commands, indexes: indexes.byName } : { indexes: indexes.byName }),
         target,
@@ -248,9 +260,14 @@ type Grouped = { from: Essential[] | null; to: Essential[] | null; added: Essent
 
 /** No components, shared by every group that replaces none. */
 const none: readonly number[] = [];
+const noResources: readonly never[] = [];
+const noResourceChanges: readonly ResourceChange[] = [];
 
-/** The sync point's structural changes to a changes finalizer's components, grouped by how they changed. */
-const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queued[]): ChangeSet<Essential> => {
+/**
+ * The sync point's structural changes to a changes finalizer's components, grouped by how they changed, and of
+ * `written`, the resources it watches.
+ */
+const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queued[], written: readonly ResourceChange[]): ChangeSet<Essential, Resource.Key> => {
     const { plan, archetypes, entities } = state;
     const { watches } = runner;
     const names = (archetype: Archetype | null): Essential[] | null =>
@@ -366,8 +383,12 @@ const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queue
         const value = commandValue(state, queued, entry, id);
         return isMissing(value) ? live(entity, id) : value;
     };
+    const resources = written.length === 0 || runner.resourceWatches.length === 0 ? noResources
+        : written.filter(change => runner.resourceWatches.includes(change.id)).map(({ id, previous, next }) => ({ key: newestKeyOf(state.keys[id]), previous, next }));
     return {
         groups: [...groups.values()],
+        // Stored values match each resource's registered schema, so they have its type.
+        resources: resources as ChangeSet<Essential, Resource.Key>["resources"],
         // Stored and commanded values match each component's registered schema, so they have its type.
         previous: <K extends Essential>(entity: Entity, key: K) => (bornHere(entity) ? null : live(entity, idOf(state, key))) as ReadonlyType<K> | null,
         next: <K extends Essential>(entity: Entity, key: K) => next(entity, idOf(state, key)) as ReadonlyType<K> | null,
@@ -388,6 +409,8 @@ const staged = (state: State): boolean => {
 export const runFinalizers = (state: State, queued: readonly Queued[], born: Map<number, number>, tick: number): Thrown[] => {
     const errors: Thrown[] = [];
     state.born = born;
+    // Taken before any finalizer runs, so what finalizers write is seen at the next sync point.
+    const written = state.resourcesSeen.size === 0 ? noResourceChanges : takeResourceChanges(state);
     try {
         for (const runner of state.finalizers) {
             const { finalizer, remote } = runner;
@@ -399,8 +422,8 @@ export const runFinalizers = (state: State, queued: readonly Queued[], born: Map
             if (finalizer.kind === "finalizer") finalizeStops(state, runner, finalizer, errors);
             else {
                 // The context is built to the finalizer's declaration, so its body accepts it.
-                const changes: { body(changes: ChangeSet<Essential>, context: object): void } = finalizer;
-                guarded(state, errors, finalizer, () => changes.body(changesOf(state, runner, queued), runner.context.value));
+                const changes: { body(changes: ChangeSet<Essential, Resource.Key>, context: object): void } = finalizer;
+                guarded(state, errors, finalizer, () => changes.body(changesOf(state, runner, queued, written), runner.context.value));
             }
             if (runner.target.buffer.count > 0) {
                 state.queued.push({ buffer: runner.target.buffer, guarded: true });

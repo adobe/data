@@ -3,6 +3,7 @@ import type { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import type { Essential, Shared } from '../component/value.js';
 import type { Table } from '../world/table/table.js';
+import type { SharedOnly } from './shared-only.js';
 import type { ValuesOf } from './values-of.js';
 
 /** The value an `add` of one component takes: none for a tag. */
@@ -63,6 +64,18 @@ export type Commands = {
         ...constant: RequiresPreset<C> extends true ? [constant?: P & SharedPreset<C> & Named<C, P>] : [constant?: P & Named<C, P>]
     ): (...values: SpawnValues<C, P>) => Entity;
     despawn(entity: Entity): void;
+    /**
+     * Despawns, as a `despawn` of each would, every entity that has each component of `with` and none of `not` once the
+     * commands issued before it apply, and every entity spawned at the same sync point that does, whenever spawned.
+     * Derived components may be named. `where` keeps it to the archetypes holding these values of shared components,
+     * each one required as `with` requires it, as a system's `where` of values does. Never the resource entity. Only on
+     * the world's thread: a joined thread's throws.
+     */
+    despawnWhere<const W extends object = {}>(query: {
+        readonly with: readonly [Component.Key, ...Component.Key[]];
+        readonly not?: readonly Component.Key[];
+        readonly where?: W & SharedOnly<NoInfer<W>> & { readonly [K in Shared]?: Component<K> };
+    }): void;
     /** Adds or replaces one component's value, marking it changed. */
     add<K extends Essential>(entity: Entity, component: K, ...value: ValueArgument<K>): void;
     /** Adds or replaces the values of `components`, marking them changed. */
@@ -77,9 +90,15 @@ export type Commands = {
      * outside them isn't spawned, nor anything it owns, through owner references, as despawning its owner would; a
      * weak reference to one is left out of its row, which is spawned without it; any other value naming one is
      * `Entity.none`. Returns, at once, each table's new entities, alive at the sync point. A column's stride must be its
-     * component's in this world, and its length its table's count. `resources` sets each resource it names, by key, at
-     * the sync point, as commands apply, each value checked against its resource's schema; not one only the world
-     * writes, nor one living on another thread. On the world's thread only.
+     * component's in this world, and its length its table's count. On the world's thread only.
+     * - `existing` maps entities to ones already alive in this world, which stand for them: a row whose entity it maps
+     *   isn't spawned, its entry in the result is the entity it maps to, and every value naming one it maps names that
+     *   entity, whether or not it's in the tables. Fails for one that isn't alive.
+     * - `resources` sets each resource it names, by key, at the sync point, as commands apply, each value checked
+     *   against its resource's schema; not one only the world writes, nor one living on another thread.
      */
-    spawnTables(tables: readonly Table[], resources?: { readonly [key: symbol]: unknown }): Table.Spawned;
+    spawnTables(tables: readonly Table[], options?: {
+        readonly resources?: { readonly [key: symbol]: unknown };
+        readonly existing?: ReadonlyMap<Entity, Entity>;
+    }): Table.Spawned;
 };

@@ -9,14 +9,23 @@ type Access = { readonly read: ReadonlySet<string>; readonly write: ReadonlySet<
 /** The keys a body reads, writes and contributes to, by module-scope binding name; null where the body doesn't show every use. */
 export type Used = {
     readonly query: Access | null;
+    /** Where and why the build lost track of the row, unless the declaration takes it whole on purpose. */
+    readonly rowLost?: { readonly at: Node; readonly why: string };
     readonly resources: (Access & { readonly reduce: ReadonlySet<string> }) | null;
     /** The components read from each lookup's results, by lookup name: null for one whose results aren't followed. */
     readonly lookups: ReadonlyMap<string, ReadonlySet<string> | null> | null;
     /** The components read from `up`. */
     readonly up: ReadonlySet<string> | null;
+    /**
+     * What its commands name, by kind: keys and lists of keys, as their module-scope bindings; whether it despawns.
+     * Null where the body passes its commands on, aliases them, or names what they take otherwise.
+     */
+    readonly commands: Commanded | null;
 };
 
-const unknown: Used = { query: null, resources: null, lookups: null, up: null };
+type Commanded = { readonly spawn: ReadonlySet<string>; readonly add: ReadonlySet<string>; readonly remove: ReadonlySet<string>; readonly despawn: boolean };
+
+const unknownAt = (at: Node, why: string): Used => ({ query: null, rowLost: { at, why }, resources: null, lookups: null, up: null, commands: null });
 
 /** Whether `node`, a child of `parent`, names a property or label, or declares a binding, rather than referring to one. */
 const isName = (node: Node, parent: Node | undefined): boolean => {
@@ -115,6 +124,13 @@ const indexLookupNames = (declaration: ObjectExpression): ReadonlySet<string> =>
 
 type Group = "resources" | "lookup" | "reduce" | "up";
 
+/** Whether a declaration's `components` says `whole: true`: its body uses its row whole, on purpose. */
+const takesRowWhole = (declaration: ObjectExpression): boolean => declaration.properties.some(property =>
+    property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === "components"
+    && property.value.type === "ObjectExpression" && property.value.properties.some(member =>
+        member.type === "Property" && !member.computed && member.key.type === "Identifier" && member.key.name === "whole"
+        && member.value.type === "Literal" && member.value.value === true));
+
 const isGroup = (name: string): name is Group => name === "resources" || name === "lookup" || name === "reduce" || name === "up";
 
 /**
@@ -123,15 +139,27 @@ const isGroup = (name: string): name is Group => name === "resources" || name ==
  * context's `resources`, `lookup` and `reduce` are indexed only by module-scope keys the body doesn't shadow, or
  * destructured by them, and never passed on, aliased or spread. A lookup's results are followed where each is indexed
  * by such keys or tested, directly or through a `const` declared once; a lookup through an index's lists where they're
- * read for `length` and `changed`, and their rows from `at` as a lookup's results are.
+ * read for `length` and `changed`, and their rows from `at` as a lookup's results are. A row whose declaration takes it
+ * `whole` isn't followed.
  */
 export const usedBy = (declaration: ObjectExpression, body: Node, module: ModuleScope, positions: { readonly row: number; readonly context: number }): Used => {
-    if (!isFunctionBody(body)) return unknown;
-    if (body.type === "FunctionExpression" && mentions(body.body, "arguments")) return unknown;
+    const used = followedBy(declaration, body, module, positions);
+    if (takesRowWhole(declaration)) return { query: null, resources: used.resources, lookups: used.lookups, up: used.up, commands: used.commands };
+    // A body without a row loses none.
+    return positions.row < 0 && used.rowLost !== undefined ? { query: used.query, resources: used.resources, lookups: used.lookups, up: used.up, commands: used.commands } : used;
+};
+
+const followedBy = (declaration: ObjectExpression, body: Node, module: ModuleScope, positions: { readonly row: number; readonly context: number }): Used => {
+    if (!isFunctionBody(body)) return unknownAt(body, "its body isn't a function written in place");
+    if (body.type === "FunctionExpression" && mentions(body.body, "arguments")) return unknownAt(body, "it reads `arguments`");
     // Code `eval` runs can use anything.
-    if (mentions(body, "eval")) return unknown;
+    if (mentions(body, "eval")) return unknownAt(body, "it calls `eval`");
     const counts = new Map<string, number>();
-    declaredIn(body.body, name => counts.set(name, (counts.get(name) ?? 0) + 1));
+    const declaredAt = new Map<string, Node>();
+    declaredIn(body.body, (name, at) => {
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+        if (!declaredAt.has(name)) declaredAt.set(name, at);
+    });
     const parameters = new Set(body.params.flatMap(parameter => patternNames(parameter)));
     const isKey = (name: string): boolean => module.has(name) && !counts.has(name) && !parameters.has(name);
     /** The key `node` names: a module-scope binding, or a namespace's member (`Shapes.circle`), as its source; null for any other. */
@@ -150,9 +178,15 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     const up = new Set<string>();
     let upKnown = true;
     const lookupReads = new Map<string, Set<string> | null>((lookups ?? []).map(name => [name, new Set<string>()]));
-    let queryKnown = true;
+    let rowLost: { readonly at: Node; readonly why: string } | undefined;
+    /** Stops following the row, at the first use it can't. */
+    const loseRow = (at: Node, why: string): void => { rowLost ??= { at, why }; };
     let resourcesKnown = true;
     let lookupsKnown = lookups !== null;
+    const commands = { spawn: new Set<string>(), add: new Set<string>(), remove: new Set<string>(), despawn: false };
+    let commandsKnown = true;
+    /** Names bound to the context's commands. */
+    const commandNames = new Set<string>();
     const unknownLookup = (lookup: string): void => { lookupReads.set(lookup, null); };
     const unknownGroup = (group: Group): void => {
         if (group === "lookup") lookupsKnown = false;
@@ -206,6 +240,11 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     };
     /** Binds the context's groups from a destructuring of it; `declaredOnce` says whether a bound name is safe to follow. */
     const contextNamed = (declaredOnce: (name: string) => boolean) => (property: string, value: Pattern): boolean => {
+        if (property === "commands") {
+            if (value.type === "Identifier" && declaredOnce(value.name)) commandNames.add(value.name);
+            else commandsKnown = false;
+            return true;
+        }
         if (!isGroup(property)) return true;
         if (value.type === "Identifier" && declaredOnce(value.name)) groups.set(value.name, property);
         else if (value.type === "ObjectPattern") destructureGroup(property, value);
@@ -216,13 +255,15 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
         resourcesKnown = false;
         lookupsKnown = false;
         upKnown = false;
+        commandsKnown = false;
     };
 
     const row = positions.row < 0 ? undefined : body.params[positions.row];
     const context = positions.context < 0 ? undefined : body.params[positions.context];
     const rowName = row?.type === "Identifier" && !counts.has(row.name) ? row.name : null;
     const contextName = context?.type === "Identifier" && !counts.has(context.name) ? context.name : null;
-    if (row !== undefined && rowName === null && !destructure(row, rowNamed, key => query.read.add(key))) queryKnown = false;
+    if (row?.type === "Identifier" && rowName === null) loseRow(declaredAt.get(row.name) ?? row, `it declares another \`${row.name}\` here, which hides its row: rename one`);
+    else if (row !== undefined && rowName === null && !destructure(row, rowNamed, key => query.read.add(key))) loseRow(row, "it destructures its row by something other than its keys and `entity`");
     if (context !== undefined && contextName === null && !destructure(context, contextNamed(name => !counts.has(name)), () => unknownContext())) unknownContext();
 
     /** A lookup's row `value`, a child of `ancestors[at]`: indexed by a key, read for `entity`, bound to a `const`, or tested. */
@@ -284,6 +325,44 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
         const lookup = list.type === "Identifier" ? results.get(list.name) : calledLookup(list);
         return lookup !== undefined && indexed.has(lookup) ? lookup : undefined;
     };
+    /** Whether `node` is `context.commands`. */
+    const isContextCommands = (node: Node): boolean => node.type === "MemberExpression" && !node.computed && node.object.type === "Identifier"
+        && node.object.name === contextName && node.property.type === "Identifier" && node.property.name === "commands";
+    /** The keys and lists of keys a command's argument names: a key or list by binding, or an array literal of them. */
+    const listOf = (node: Node | undefined): readonly string[] | null => {
+        if (node === undefined) return null;
+        const key = keyOf(node);
+        if (key !== null) return [key];
+        if (node.type !== "ArrayExpression") return null;
+        const names: string[] = [];
+        for (const element of node.elements) {
+            const named = element === null ? null : keyOf(element.type === "SpreadElement" ? element.argument : element);
+            if (named === null) return null;
+            names.push(named);
+        }
+        return names;
+    };
+    /** A use of the commands at `node`, a child of `ancestors[at]`: a call of one of them, whose keys are listed. */
+    const useCommands = (node: Node, ancestors: readonly Node[], at: number): void => {
+        const parent = ancestors[at];
+        const call = ancestors[at - 1];
+        if (parent?.type !== "MemberExpression" || parent.object !== node || parent.computed || parent.property.type !== "Identifier"
+            || call?.type !== "CallExpression" || call.callee !== parent) {
+            commandsKnown = false;
+            return;
+        }
+        const command = parent.property.name;
+        if (command === "despawn" || command === "despawnWhere") {
+            commands.despawn = true;
+            return;
+        }
+        const listed = command === "spawn" ? listOf(call.arguments[0]) : command === "add" || command === "remove" ? listOf(call.arguments[1]) : null;
+        if (listed === null || (command !== "spawn" && command !== "add" && command !== "remove")) {
+            commandsKnown = false;
+            return;
+        }
+        for (const name of listed) commands[command].add(name);
+    };
     /** Finds groups and lookups bound by `const` declarations declared once, and `const`s holding a lookup's result, before any reference is classified. */
     const collect = (node: Node, kind: string | undefined): void => {
         if (node.type === "VariableDeclarator" && kind === "const" && node.init) {
@@ -296,6 +375,10 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
                 if (listed !== undefined) rows.set(node.id.name, listed);
                 if (group !== undefined) {
                     groups.set(node.id.name, group);
+                    followed.add(node.init);
+                }
+                if (isContextCommands(node.init)) {
+                    commandNames.add(node.id.name);
                     followed.add(node.init);
                 }
             }
@@ -354,31 +437,36 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
             if (parent?.type === "MemberExpression" && parent.object === node) {
                 const { property } = parent;
                 if (!parent.computed) {
-                    if (property.type !== "Identifier" || !rowNamed(property.name)) queryKnown = false;
+                    if (property.type !== "Identifier" || !rowNamed(property.name)) loseRow(parent, "it reads a member of its row by name, and a row names only `entity`");
                     return;
                 }
                 const key = keyOf(property);
                 // A part of a value written, `row[key][0] = …`, writes it, which the compiler rejects as it must.
                 const use = key === null ? null : deepUseOf(parent, ancestors, ancestors.length - 2);
-                if (use === null || key === null) queryKnown = false;
+                if (key === null) loseRow(parent, "it indexes its row by something other than a module-scope key");
+                else if (use === null) loseRow(parent, "it deletes a member of its row");
                 else {
                     if (use.read) query.read.add(key);
                     if (use.write) query.write.add(key);
                     if (use.mutate) query.mutate.add(key);
                 }
             }
-            else if (!(parent?.type === "VariableDeclarator" && parent.init === node && destructure(parent.id, rowNamed, key => query.read.add(key)))) queryKnown = false;
+            else if (!(parent?.type === "VariableDeclarator" && parent.init === node && destructure(parent.id, rowNamed, key => query.read.add(key)))) {
+                loseRow(parent ?? node, "it passes its row on, aliases or spreads it");
+            }
         }
         else if (name === contextName) {
             if (parent?.type === "MemberExpression" && parent.object === node && !parent.computed && parent.property.type === "Identifier") {
                 const property = parent.property.name;
                 if (isGroup(property)) useGroup(property, parent, ancestors, ancestors.length - 2);
+                else if (property === "commands" && !followed.has(parent)) useCommands(parent, ancestors, ancestors.length - 2);
                 return;
             }
             if (!followed.has(node)) unknownContext();
         }
         else {
             const at = ancestors.length - 1;
+            if (commandNames.has(name)) return useCommands(node, ancestors, at);
             const group = groups.get(name);
             if (group !== undefined) return useGroup(group, node, ancestors, at);
             const caller = callers.get(name);
@@ -426,9 +514,11 @@ export const usedBy = (declaration: ObjectExpression, body: Node, module: Module
     for (const parameter of body.params) visitPattern(parameter);
     visit(body.body);
     return {
-        query: queryKnown ? query : null,
+        query: rowLost === undefined ? query : null,
+        ...rowLost === undefined ? {} : { rowLost },
         resources: resourcesKnown ? resources : null,
         lookups: lookupsKnown ? lookupReads : null,
         up: upKnown ? up : null,
+        commands: commandsKnown ? commands : null,
     };
 };

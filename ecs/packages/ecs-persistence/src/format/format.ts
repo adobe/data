@@ -117,11 +117,11 @@ const headerOf = (json: unknown): Header | null => {
 const sameSchema = (a: Schema, b: Schema): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 /**
- * The snapshot contents `bytes` holds, its components and resources by name as this program persists them, its blocks of
- * bytes viewed where they are; or why it can't be read: it isn't one, or names what this program doesn't persist, or
- * persists with another schema.
+ * The snapshot contents `bytes` holds, its components and resources by the names the trait `by` gives them, its blocks
+ * of bytes viewed where they are; or why it can't be read: it isn't one, or names what the trait doesn't cover, or
+ * covers with another schema.
  */
-export const decodeContents = (bytes: Uint8Array): Contents | Failure => {
+export const decodeContents = (bytes: Uint8Array, by: unknown): Contents | Failure => {
     if (bytes.byteLength < prefix || magic.some((byte, at) => bytes[at] !== byte)) return { failure: "These bytes aren't a snapshot." };
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const found = view.getUint32(4, true);
@@ -136,19 +136,19 @@ export const decodeContents = (bytes: Uint8Array): Contents | Failure => {
     }
     const header = headerOf(json);
     if (header === null) return { failure: "This snapshot's header isn't one this package writes." };
-    const program = programOf();
+    const program = programOf(by);
     if (typeof program === "string") return { failure: program };
     const components: Persisted<Component.Key>[] = [];
     for (const { name, schema } of header.components) {
         const persisted = program.components.get(name);
-        if (persisted === undefined) return { failure: `This snapshot holds component "${name}", which this program doesn't persist.` };
+        if (persisted === undefined) return { failure: `This snapshot holds component "${name}", which the trait doesn't cover.` };
         if (!sameSchema(persisted.schema, schema)) return { failure: `Component "${name}" has another schema here than in this snapshot.` };
         components.push(persisted);
     }
     const resources: { persisted: Persisted<Resource.Key>; value: unknown }[] = [];
     for (const { name, schema, value } of header.resources) {
         const persisted = program.resources.get(name);
-        if (persisted === undefined) return { failure: `This snapshot holds resource "${name}", which this program doesn't persist.` };
+        if (persisted === undefined) return { failure: `This snapshot holds resource "${name}", which the trait doesn't cover.` };
         if (!sameSchema(persisted.schema, schema)) return { failure: `Resource "${name}" has another schema here than in this snapshot.` };
         resources.push({ persisted, value: fromJson(schema, value) });
     }
@@ -181,5 +181,5 @@ export const decodeContents = (bytes: Uint8Array): Contents | Failure => {
         }
         tables.push({ count: table.count, entities: new Float64Array(blocks.buffer, base + table.entities, table.count), columns });
     }
-    return { components, tables, resources };
+    return { by: program.by, components, tables, resources };
 };

@@ -15,6 +15,8 @@ export default defineConfig({
         minify: false,
         sourcemap: true,
         lib: { entry: fileURLToPath(new URL("src/index.ts", import.meta.url)), formats: ["es"], fileName: "index" },
-        rolldownOptions: { external: ["@adobe/ecs", "@adobe/ecs/compiler"] },
+        // Its keys stay top-level `const` declarations, which an application's build requires of a key it reads, such as
+        // a trait's in its own declarations: library mode would make them `var`.
+        rolldownOptions: { external: ["@adobe/ecs", "@adobe/ecs/compiler"], output: { topLevelVar: false } },
     },
 });

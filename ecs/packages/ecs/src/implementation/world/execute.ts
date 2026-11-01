@@ -39,10 +39,10 @@ export type ExecuteContext = {
 };
 
 /**
- * Runs a schedule tier by tier, then applies one sync point, and reports what went wrong. Within a tier, kernels start
- * first so workers run while main-thread systems do; commands merge in tier order, then chunk order, whichever thread
- * ran them. A failing system stops the run after its tier finishes: later tiers are skipped, and commands so far still
- * apply. `system` is the one the run was given, which the GPU's errors are reported under.
+ * Runs a schedule tier by tier, applying a sync point after each tier its schedule says and after the last, and reports
+ * what went wrong. Within a tier, kernels start first so workers run while main-thread systems do; commands merge in
+ * tier order, then chunk order, whichever thread ran them. A failing system stops the run after its tier finishes:
+ * later tiers are skipped, and commands so far still apply. `system` is the one the run was given, which the GPU's errors are reported under.
  */
 export const execute = (context: ExecuteContext, schedule: Schedule, args: unknown, system: { readonly name: string }): RunReport | Promise<RunReport> => {
     const { gpu } = context.state;
@@ -128,6 +128,8 @@ type Prepared = {
     chunk: number;
     error: unknown;
     tierFailed: boolean;
+    /** How many commands the run's sync points dropped so far. */
+    dropped: number;
 };
 
 /** A schedule's tails: the schedule without them, and their runners, leaves and tiers in schedule order. */
@@ -139,6 +141,7 @@ const tailingOf = (context: ExecuteContext, schedule: Schedule): Tailing | null 
     const leaves: Leaf[] = [];
     const tiers: number[] = [];
     const rest: Leaf[][] = [];
+    const syncs: (Schedule["syncs"][number])[] = [];
     schedule.tiers.forEach((tier, t) => {
         const kept = tier.filter((leaf, i) => {
             if (!flags[t][i]) return true;
@@ -147,9 +150,13 @@ const tailingOf = (context: ExecuteContext, schedule: Schedule): Tailing | null 
             return false;
         });
         if (kept.length > 0) rest.push(kept);
+        // A sync point after a tier left empty follows the tier kept before it.
+        const reasons = schedule.syncs[t];
+        if (reasons !== null && rest.length > 0) syncs[rest.length - 1] = [...syncs[rest.length - 1] ?? [], ...reasons];
     });
     if (leaves.length === 0) return null;
-    return { schedule: { tiers: rest, reductions: schedule.reductions, observer: schedule.observer }, runners: leaves.map(context.runnerOf), leaves, tiers };
+    const kept = rest.map((_, t) => t < rest.length - 1 ? syncs[t] ?? null : null);
+    return { schedule: { tiers: rest, reductions: schedule.reductions, observer: schedule.observer, syncs: kept }, runners: leaves.map(context.runnerOf), leaves, tiers };
 };
 
 type Outcome = { failures: Failure[] | null; skipped: Leaf[] | null };
@@ -164,7 +171,7 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
             runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), remotes: schedule.tiers.map(() => 0), uses: schedule.tiers.map(() => []), version: -1,
             started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)),
             systems: [], tiers: [], tasks: new Map(), warnings: [], warningCount: 0, warned: null, outcome: { failures: null, skipped: null },
-            placement: -1, tailing: null, settling: 0, chunk: 0, error: undefined, tierFailed: false,
+            placement: -1, tailing: null, settling: 0, chunk: 0, error: undefined, tierFailed: false, dropped: 0,
         };
         bySchedule.set(schedule, prepared);
     }
@@ -315,8 +322,8 @@ const runFused = async (context: ExecuteContext, schedule: Schedule, prepared: P
     const { gpu } = state;
     let last = first;
     if (prepared.version !== state.runnersVersion) refresh(context, schedule, prepared);
-    // A tier using an index starts a task of its own, after the index is refreshed for it.
-    while (last + 1 < schedule.tiers.length && allOn(prepared.runners[last + 1], channel) && prepared.uses[last + 1].length === 0) last++;
+    // A tier using an index starts a task of its own, after the index is refreshed for it, as does one after a sync point.
+    while (last + 1 < schedule.tiers.length && schedule.syncs[last] === null && allOn(prepared.runners[last + 1], channel) && prepared.uses[last + 1].length === 0) last++;
     if (channel.busy()) await channel.idle();
     for (let v = first; v <= last; v++) {
         if (state.tails.length !== 0) {
@@ -431,7 +438,7 @@ const endTier = (state: State, gpu: GpuEngine | null, prepared: Prepared, schedu
 };
 
 /**
- * Runs a schedule tier by tier, then applies one sync point, and reports what went wrong (`execute`). Runs with no GPU,
+ * Runs a schedule tier by tier with its sync points, and reports what went wrong (`execute`). Runs with no GPU,
  * tails or observer posts awaiting nothing, so a run that waits for nothing allocates no async frame: at the first
  * tier on a joined thread, index build across the pool or chunk on workers, `executeFrom` goes on from there.
  */
@@ -454,11 +461,11 @@ const executeTiers = (context: ExecuteContext, whole: Schedule, args: unknown): 
     if (schedule.reductions.size !== 0) for (const [key, contributors] of schedule.reductions) (folds ??= new Map()).set(key, { target: null, values: [], remaining: contributors, ran: false, failed: false });
     const { outcome } = prepared;
     prepared.warningCount = 0;
+    prepared.dropped = 0;
     outcome.failures = null;
     outcome.skipped = null;
     if (state.gpu !== null || tailing !== null || state.tails.length !== 0 || state.observer.posts.length !== 0) return executeFrom(context, schedule, prepared, folds, args, tailing, 0, null, null);
     let handed: Promise<RunReport> | null = null;
-    let dropped = 0;
     try {
         for (let t = 0; t < schedule.tiers.length; t++) {
             // A tick in progress takes up runners replaced since it started from its next tier on.
@@ -474,37 +481,35 @@ const executeTiers = (context: ExecuteContext, whole: Schedule, args: unknown): 
             const waiting = settleTier(state, folds, prepared, schedule.tiers[t], t, nothing);
             if (waiting !== null) return handed = executeFrom(context, schedule, prepared, folds, args, null, t, null, waiting);
             if (endTier(state, null, prepared, schedule, t)) break;
+            if (schedule.syncs[t] !== null) syncNow(context, prepared, false);
         }
     }
     finally {
-        if (handed === null) dropped = finishSync(context, prepared);
+        if (handed === null) syncNow(context, prepared, true);
     }
-    return reportOf(state, prepared, dropped);
+    return reportOf(state, prepared);
 };
 
 /**
- * A run's sync point with nothing to wait for: no GPU, tails or observer posts, which `executeTiers` checked before
- * each tier and bodies can't add. Returns how many commands it dropped.
+ * A sync point with nothing to wait for: no GPU, tails or observer posts, which `executeTiers` checked before each
+ * tier and bodies can't add. The run's `last` lets go of strings no reader holds.
  */
-const finishSync = (context: ExecuteContext, prepared: Prepared): number => {
+const syncNow = (context: ExecuteContext, prepared: Prepared, last: boolean): void => {
     const { state, workers, publish } = context;
-    const { outcome } = prepared;
-    let dropped = 0;
-    // This run's tasks on joined threads are done: they return to their event loops while its sync point applies.
+    // The run's tasks on joined threads so far are done: they return to their event loops while its sync point applies.
     for (let k = 0; k < state.logs.length; k++) markRun(state.logs[k]);
     try {
         if (prepareSync(state)) {
-            dropped = state.plan.dropped;
-            for (const { finalizer, error, kind } of applySync(state)) (outcome.failures ??= []).push(failureOf(kind ?? "finalizer", finalizer, error));
+            prepared.dropped += state.plan.dropped;
+            for (const { finalizer, error, kind } of applySync(state)) (prepared.outcome.failures ??= []).push(failureOf(kind ?? "finalizer", finalizer, error));
         }
     }
     finally {
         // Strings let go before the last run's sync point have no reader left: this run's waited for every one.
-        state.strings?.settle();
+        if (last) state.strings?.settle();
         rewind(state, workers);
         publish();
     }
-    return dropped;
 };
 
 /**
@@ -512,12 +517,11 @@ const finishSync = (context: ExecuteContext, prepared: Prepared): number => {
  * indexes' build, is done, or once `settling`, what settling it waits for, settles.
  */
 const executeFrom = async (context: ExecuteContext, schedule: Schedule, prepared: Prepared, folds: Map<unknown, Fold> | null, args: unknown, tailing: Tailing | null, first: number, building: Promise<void> | null, settling: Promise<Settled> | null): Promise<RunReport> => {
-    const { state, workers, publish } = context;
+    const { state, workers } = context;
     const { gpu } = state;
     const { outcome } = prepared;
     let built = building;
     let waited = settling;
-    let dropped = 0;
     try {
         for (let t = first; t < schedule.tiers.length; t++) {
             const tier = schedule.tiers[t];
@@ -553,6 +557,10 @@ const executeFrom = async (context: ExecuteContext, schedule: Schedule, prepared
                     const last = await runFused(context, schedule, prepared, folds, args, t, only);
                     if (last < 0) break;
                     t = last;
+                    if (schedule.syncs[t] !== null) {
+                        const pending = syncPoint(context, prepared, false);
+                        if (pending !== null) await pending;
+                    }
                     continue;
                 }
                 if (gpu !== null) await readAhead(state, gpu, runners);
@@ -578,60 +586,15 @@ const executeFrom = async (context: ExecuteContext, schedule: Schedule, prepared
             let waiting = settleTier(state, folds, prepared, tier, t, value);
             while (waiting !== null) waiting = settleTier(state, folds, prepared, tier, t, await waiting);
             if (endTier(state, gpu, prepared, schedule, t)) break;
+            if (schedule.syncs[t] !== null) {
+                const pending = syncPoint(context, prepared, false);
+                if (pending !== null) await pending;
+            }
         }
     }
     finally {
-        // This run's tasks on joined threads are done: they return to their event loops while its sync point applies.
-        for (let k = 0; k < state.logs.length; k++) markRun(state.logs[k]);
-        try {
-            if (gpu !== null) {
-                gpu.submit();
-                gpu.beforeSync();
-            }
-            try {
-                // A sync point counts as a write to everything a tail still reads.
-                if (state.tails.length !== 0) {
-                    activate(state);
-                    const waiting = syncPending(state) ? settleAll(state) : null;
-                    if (waiting !== null) await waiting;
-                }
-                // Each sync point waits for observer systems on joined threads in progress, and cancels the rest.
-                if (state.observer.posts.length !== 0) {
-                    const waiting = settlePosts(state);
-                    if (waiting !== null) await waiting;
-                }
-                if (prepareSync(state)) {
-                    try {
-                        if (gpu !== null) {
-                            // The sync point moves and writes existing rows of these archetypes on the CPU, and
-                            // finalizers read them, so it needs the GPU's writes there first.
-                            const disturbed = disturbedBy(state);
-                            gpu.disturb(disturbed.archetypes);
-                            if (gpu.anyAhead()) await gpu.readback(disturbed.storages);
-                        }
-                    }
-                    finally {
-                        // Applied even when the readback fails, which only a lost device makes it do: the CPU state
-                        // stays whole.
-                        dropped = state.plan.dropped;
-                        for (const { finalizer, error, kind } of applySync(state)) (outcome.failures ??= []).push(failureOf(kind ?? "finalizer", finalizer, error));
-                    }
-                }
-            }
-            finally {
-                // Even a sync point that failed partway moved rows.
-                if (gpu !== null && state.touched !== null) {
-                    gpu.touched(state.touched);
-                    state.touched.clear();
-                }
-            }
-        }
-        finally {
-            // Strings let go before the last run's sync point have no reader left: this run's waited for every one.
-            state.strings?.settle();
-            rewind(state, workers);
-            publish();
-        }
+        const pending = syncPoint(context, prepared, true);
+        if (pending !== null) await pending;
     }
     if (tailing !== null) {
         // Placed again since, as when a joined thread is gone: they're found again next run.
@@ -644,12 +607,96 @@ const executeFrom = async (context: ExecuteContext, schedule: Schedule, prepared
             countRan(state, tailing.runners);
         }
     }
-    return reportOf(state, prepared, dropped);
+    return reportOf(state, prepared);
+};
+
+/**
+ * Applies the commands so far as a sync point, once what it changes is read: by tails and observer systems on joined
+ * threads still reading it, and where it moves rows, by the GPU. One within a run lets the tiers after it see them;
+ * the run's `last` lets go of strings no reader holds. Returns what to wait for, or null once it applied, so a sync
+ * point with nothing to wait for takes no turn of the event loop before what follows it.
+ */
+const syncPoint = (context: ExecuteContext, prepared: Prepared, last: boolean): Promise<void> | null => {
+    const { state } = context;
+    const { gpu } = state;
+    // The run's tasks on joined threads so far are done: they return to their event loops while its sync point applies.
+    for (let k = 0; k < state.logs.length; k++) markRun(state.logs[k]);
+    let pending: Promise<void> | null = null;
+    try {
+        if (gpu !== null) {
+            gpu.submit();
+            gpu.beforeSync();
+        }
+        const reading = readersDone(state);
+        pending = reading === null ? applyOnDevice(state, prepared) : reading.then(() => applyOnDevice(state, prepared) ?? undefined);
+    }
+    finally {
+        if (pending === null) afterSync(context, last);
+    }
+    return pending === null ? null : pending.finally(() => afterSync(context, last));
+};
+
+/**
+ * Waits for the readers a sync point changes what they read for: tails, as it counts as a write to everything they
+ * read, then observer systems on joined threads in progress, cancelling the rest; null when none needs waiting for.
+ */
+const readersDone = (state: State): Promise<void> | null => {
+    if (state.tails.length !== 0) {
+        activate(state);
+        const waiting = syncPending(state) ? settleAll(state) : null;
+        if (waiting !== null) return waiting.then(() => (state.observer.posts.length === 0 ? null : settlePosts(state)) ?? undefined);
+    }
+    return state.observer.posts.length === 0 ? null : settlePosts(state);
+};
+
+/**
+ * Prepares and applies a sync point, reading back first what the GPU wrote where it moves and writes existing rows,
+ * which finalizers read too; applied even when the readback fails, which only a lost device makes it do, so the CPU
+ * state stays whole.
+ */
+const applyOnDevice = (state: State, prepared: Prepared): Promise<void> | null => {
+    if (!prepareSync(state)) return null;
+    const { gpu } = state;
+    let reading: Promise<void> | null = null;
+    try {
+        if (gpu !== null) {
+            const disturbed = disturbedBy(state);
+            gpu.disturb(disturbed.archetypes);
+            if (gpu.anyAhead()) reading = gpu.readback(disturbed.storages);
+        }
+    }
+    finally {
+        if (reading === null) apply(state, prepared);
+    }
+    return reading === null ? null : reading.finally(() => apply(state, prepared));
+};
+
+const apply = (state: State, prepared: Prepared): void => {
+    prepared.dropped += state.plan.dropped;
+    for (const { finalizer, error, kind } of applySync(state)) (prepared.outcome.failures ??= []).push(failureOf(kind ?? "finalizer", finalizer, error));
+};
+
+/** Once a sync point applied or failed: the rows it moved, even partway, the strings it let go, and its buffers. */
+const afterSync = (context: ExecuteContext, last: boolean): void => {
+    const { state, workers, publish } = context;
+    const { gpu } = state;
+    try {
+        if (gpu !== null && state.touched !== null) {
+            gpu.touched(state.touched);
+            state.touched.clear();
+        }
+    }
+    finally {
+        // Strings let go before the last run's sync point have no reader left: this run's waited for every one.
+        if (last) state.strings?.settle();
+        rewind(state, workers);
+        publish();
+    }
 };
 
 /** A run's report once its sync point applied, its index conflicts included: a shared one when nothing went wrong. */
-const reportOf = (state: State, prepared: Prepared, dropped: number): RunReport => {
-    const { outcome } = prepared;
+const reportOf = (state: State, prepared: Prepared): RunReport => {
+    const { outcome, dropped } = prepared;
     // Conflicts unique indexes found while refreshing for finalizers.
     if (state.indexFailures.length !== 0) (outcome.failures ??= []).push(...state.indexFailures.splice(0));
     const { failures, skipped } = outcome;

@@ -13,6 +13,7 @@ const label = Symbol("commandsTypeTest/label");
 const player = Symbol("commandsTypeTest/player");
 const slot = Symbol("commandsTypeTest/slot");
 const time = Symbol("commandsTypeTest/time");
+const chunk = Symbol("commandsTypeTest/chunk");
 declare module '@adobe/ecs' {
     export interface Components {
         [position]: { type: number };
@@ -20,6 +21,7 @@ declare module '@adobe/ecs' {
         [label]: { type: string | null };
         [player]: { type: true };
         [slot]: { type: number; derived: true };
+        [chunk]: { type: number; shared: true };
     }
     export interface Resources {
         [time]: { type: number };
@@ -84,4 +86,33 @@ export const issue = (commands: Commands, entity: Entity): void => {
     // @ts-expect-error commands never remove a derived component
     commands.remove(entity, slot);
     commands.despawn(entity);
+
+    // `despawnWhere` takes a query of at least one component, derived ones included.
+    commands.despawnWhere({ with: [player] });
+    commands.despawnWhere({ with: [position, slot], not: [player] });
+    commands.despawnWhere({ with: particle });
+    // @ts-expect-error `with` names at least one component
+    commands.despawnWhere({ with: [] });
+    // @ts-expect-error a query names components, not resources
+    commands.despawnWhere({ with: [time] });
+    // @ts-expect-error in `not` too
+    commands.despawnWhere({ with: [player], not: [time] });
+    // @ts-expect-error it takes a query, not an entity
+    commands.despawnWhere(entity);
+    // Its `where` gives values of shared components, as a system's `where` of values does.
+    commands.despawnWhere({ with: [position], where: { [chunk]: 3 } });
+    const unloaded = { [chunk]: 4 } as const;
+    commands.despawnWhere({ with: [position], where: unloaded });
+    // @ts-expect-error a value of the component's type
+    commands.despawnWhere({ with: [position], where: { [chunk]: "3" } });
+    // @ts-expect-error where names only shared components
+    commands.despawnWhere({ with: [position], where: { [position]: 3 } });
+    // @ts-expect-error where takes values, not predicates
+    commands.despawnWhere({ with: [position], where: { [chunk]: (value: number) => value > 3 } });
+    const placed = { [position]: 3 } as const;
+    // @ts-expect-error where names only shared components, in a constant too
+    commands.despawnWhere({ with: [position], where: placed });
+    const mixed = { [chunk]: 3, [position]: 3 } as const;
+    // @ts-expect-error and in a constant naming a shared one beside it
+    commands.despawnWhere({ with: [position], where: mixed });
 };

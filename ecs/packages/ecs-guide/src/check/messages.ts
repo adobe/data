@@ -2,8 +2,8 @@
 import type { Diagnostic } from "../compile/diagnostic.js";
 import type { Source } from "../compile/messages.js";
 
-/** Checks a chapter's files, by their names: TypeScript's diagnostics for each, as of `version`. */
-export type CheckRequest = { readonly kind: "check"; readonly version: number; readonly files: readonly Source[] };
+/** Checks a chapter's files, examples of the package `owner`, by their names: TypeScript's diagnostics for each, as of `version`. */
+export type CheckRequest = { readonly kind: "check"; readonly version: number; readonly owner: string; readonly files: readonly Source[] };
 /** A check's diagnostics; `failure` says why TypeScript itself failed, null when it didn't. */
 export type CheckReply = { readonly kind: "checked"; readonly version: number; readonly diagnostics: readonly Diagnostic[]; readonly failure: string | null };
 
@@ -20,8 +20,8 @@ export type QuickInfo = {
     readonly tags: readonly { readonly name: string; readonly text: readonly Part[] }[];
 };
 
-/** Asks what's at `position` in the file named, of a chapter's files as they are now; `serial` tells replies apart. */
-export type InfoRequest = { readonly kind: "info"; readonly serial: number; readonly files: readonly Source[]; readonly file: string; readonly position: number };
+/** Asks what's at `position` in the file named, of a chapter's files as they are now, examples of `owner`; `serial` tells replies apart. */
+export type InfoRequest = { readonly kind: "info"; readonly serial: number; readonly owner: string; readonly files: readonly Source[]; readonly file: string; readonly position: number };
 /** What's there, null for nothing; `failure` says why TypeScript itself failed. */
 export type InfoReply = { readonly kind: "info"; readonly serial: number; readonly info: QuickInfo | null; readonly failure: string | null };
 
@@ -43,15 +43,18 @@ const isSources = (value: unknown): value is readonly Source[] => Array.isArray(
 export const infoRequestOf = (data: unknown): InfoRequest | null => {
     if (typeof data !== "object" || data === null || Reflect.get(data, "kind") !== "info") return null;
     const serial: unknown = Reflect.get(data, "serial");
+    const owner: unknown = Reflect.get(data, "owner");
     const files: unknown = Reflect.get(data, "files");
     const file: unknown = Reflect.get(data, "file");
     const position: unknown = Reflect.get(data, "position");
-    return typeof serial === "number" && isSources(files) && typeof file === "string" && typeof position === "number" ? { kind: "info", serial, files, file, position } : null;
+    return typeof serial === "number" && typeof owner === "string" && isSources(files) && typeof file === "string" && typeof position === "number"
+        ? { kind: "info", serial, owner, files, file, position } : null;
 };
 
 export const checkRequestOf = (data: unknown): CheckRequest | null => {
     if (typeof data !== "object" || data === null || Reflect.get(data, "kind") !== "check") return null;
     const version: unknown = Reflect.get(data, "version");
+    const owner: unknown = Reflect.get(data, "owner");
     const files: unknown = Reflect.get(data, "files");
-    return typeof version === "number" && isSources(files) ? { kind: "check", version, files } : null;
+    return typeof version === "number" && typeof owner === "string" && isSources(files) ? { kind: "check", version, owner, files } : null;
 };

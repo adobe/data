@@ -3,6 +3,7 @@ import { System, World } from "../index.js";
 
 const health = Symbol();
 const seen = Symbol();
+const seenEarly = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -10,6 +11,7 @@ declare module "@adobe/ecs" {
     }
     interface Resources {
         [seen]: { type: number };
+        [seenEarly]: { type: number };
     }
 }
 
@@ -22,19 +24,21 @@ const spawn = System.create(({ commands }) => {
 const count = System.create({ components: { with: [health] }, after: [spawn] }, (row, { resources }) => {
     resources[seen] += 1;
 });
-const frame = System.create([spawn, count]);
+const early = System.create({ components: { with: [health] } }, (row, { resources }) => {
+    resources[seenEarly] += 1;
+});
+const frame = System.create([spawn, count, early]);
 
 const watch = System.create({ readonly: true, components: { with: [health] } }, row => {
     console.log("health", row[health]);
 });
-const readSeen = System.create({ readonly: true }, ({ resources }) => resources[seen]);
+const readSeen = System.create({ readonly: true }, ({ resources }) => [resources[seen], resources[seenEarly]]);
 
 export const main = async (): Promise<void> => {
     await using world = World.create();
     await world.run(frame);
-    console.log("counted", await world.run(readSeen));
-    await world.run(count);
-    console.log("counted", await world.run(readSeen));
+    const [counted, countedEarly] = await world.run(readSeen);
+    console.log("counted", counted, "early", countedEarly);
 
     await using watched = World.create();
     watched.add(watch);

@@ -8,12 +8,12 @@ import { createRuns } from "../../compile/runs.js";
 
 /**
  * The guide's builds: TypeScript's checks and the ECS build's compiles of each chapter's files, off the main thread.
- * A request names the chapter and its files' revision; checks and compiles start once the files stop changing, a
+ * A request names the chapter, its files' revision and the package they're examples of; checks and compiles start once the files stop changing, a
  * chapter's first at once, and each result is dispatched on the page's root, as `guide-checked` and `guide-compiled`:
  * a failure of TypeScript or the compiler themselves among them, as a problem, and they're tried again on the next.
  */
 export type Builds = {
-    readonly request: (chapter: Entity, revision: number, files: readonly Source[]) => void;
+    readonly request: (chapter: Entity, revision: number, files: readonly Source[], owner: string) => void;
     /**
      * What TypeScript says is at `position` in a chapter's file, with `code` its text as it is now, the chapter's other
      * files as last requested; null for nothing, or a request a newer one replaced.
@@ -40,20 +40,22 @@ export const createBuilds = (root: HTMLElement): Builds => {
     const checker = createChecker();
     const runs = createRuns();
     const built = new Set<Entity>();
-    /** Each chapter's files as last requested, which a request for what's at a place reads the others of. */
-    const requested = new Map<Entity, readonly Source[]>();
+    /** Each chapter's files as last requested, and their package, which a request for what's at a place reads the others of. */
+    const requested = new Map<Entity, { readonly files: readonly Source[]; readonly owner: string }>();
     const timers = new Map<Entity, { check: ReturnType<typeof setTimeout>; compile: ReturnType<typeof setTimeout> }>();
     const send = <K extends keyof BuildEvents>(type: K, detail: BuildEvents[K]["detail"]): void => {
         root.dispatchEvent(new CustomEvent(type, { detail }));
     };
     return {
         info: (chapter, file, code, position) => {
-            const files = requested.get(chapter) ?? [];
+            const last = requested.get(chapter);
+            if (last === undefined) return Promise.resolve(null);
+            const { files, owner } = last;
             const current = files.some(source => source.name === file) ? files.map(source => source.name === file ? { name: file, code } : source) : [...files, { name: file, code }];
-            return checker.info(current, file, position);
+            return checker.info(owner, current, file, position);
         },
-        request: (chapter, revision, files) => {
-            requested.set(chapter, files);
+        request: (chapter, revision, files, owner) => {
+            requested.set(chapter, { files, owner });
             const pending = timers.get(chapter);
             if (pending !== undefined) {
                 clearTimeout(pending.check);
@@ -61,11 +63,11 @@ export const createBuilds = (root: HTMLElement): Builds => {
             }
             const first = !built.has(chapter);
             built.add(chapter);
-            const check = setTimeout(() => void checker.check(files).then(({ diagnostics, failure }) =>
+            const check = setTimeout(() => void checker.check(owner, files).then(({ diagnostics, failure }) =>
                 send("guide-checked", { chapter, revision, diagnostics: failure === null ? diagnostics : [problemOf("typescript", failure)] })), first ? 0 : quiet.check);
             const compile = setTimeout(() => {
                 timers.delete(chapter);
-                void runs.compile(files, reason => send("guide-retrying", { chapter, revision, reason })).then(({ run, diagnostics, page, compiled, systems, failure, superseded }) => {
+                void runs.compile(owner, files, reason => send("guide-retrying", { chapter, revision, reason })).then(({ run, diagnostics, page, compiled, systems, failure, superseded }) => {
                     // A request a later one replaced is that one's to answer.
                     if (superseded) return;
                     send("guide-compiled", { chapter, revision, run, page, compiled, systems, diagnostics: failure === null ? diagnostics : [problemOf("build", failure)], failed: failure !== null });

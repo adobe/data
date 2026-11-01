@@ -18,14 +18,17 @@ const chapter = (number: number) => {
     return found;
 };
 
-it.each(chapters.filter(chapter => chapter.files.length > 0).map(item => [item.slug, item.files.length, item.expected, item.part === "UI"]))("shows %s, and runs its program in a frame that's cross-origin isolated, printing what the guide shows", async (slug, files, expected, animates) => {
+/** Whether a chapter's program draws into its run's `#output`, which the guide then shows. */
+const draws = (chapter: (typeof chapters)[number]): boolean => chapter.files.some(file => file.source.includes(`"#output"`));
+
+it.each(chapters.filter(chapter => chapter.files.length > 0).map(item => [item.slug, item.files.length, item.expected, item.part === "UI", draws(item)]))("shows %s, and runs its program in a frame that's cross-origin isolated, printing what the guide shows", async (slug, files, expected, animates, drawn) => {
     const { page, errors } = await open(browser, `${inject("guide")}#${slug}`);
     try {
         await page.waitForFunction(lines => document.querySelector("guide-console")?.logged.entries.length === lines, expected.split("\n").length - 1);
         // An animation runs until its frame goes.
         expect(await statusOf(page, /Finished|Running|Failed/)).toBe(animates ? "Running…" : "Finished");
         expect(unversioned(await consoleOf(page))).toBe(unversioned(expected));
-        expect(await page.evaluate(() => document.querySelector("guide-tabs")?.selected)).toBe(animates ? "output" : "console");
+        expect(await page.evaluate(() => document.querySelector("guide-tabs")?.selected)).toBe(drawn ? "output" : "console");
         expect(await page.locator("guide-problems li").count()).toBe(0);
         expect(await page.locator("guide-nav sp-sidenav-item[selected]").getAttribute("value")).toBe(slug);
         expect(await page.locator("guide-files sp-tab").count()).toBe(files);

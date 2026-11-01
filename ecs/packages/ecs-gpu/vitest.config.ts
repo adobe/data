@@ -17,20 +17,34 @@ const isolation: Plugin = {
  */
 const gpu = process.env["ECS_GPU"] === "1" || process.env["CI"] === undefined;
 
-// Every test runs in Chromium. A test's timeout only guards against a hang, which no test asserts on.
+/** A test's timeout only guards against a hang, which no test asserts on. */
+const timeouts = { testTimeout: 30000, hookTimeout: 30000 };
+
+// The guide's chapters run in node, as the guide checks every package's; every other test runs in Chromium.
 export default defineConfig({
-    plugins: [Compiler.plugin(), isolation],
     test: {
-        include: ["src/**/*.test.ts"],
-        testTimeout: 30000,
-        hookTimeout: 30000,
-        fileParallelism: false,
-        provide: { gpu },
-        browser: {
-            enabled: true,
-            provider: playwright({ launchOptions: { channel: "chromium", args: gpu ? ["--enable-unsafe-webgpu"] : ["--disable-gpu"] } }),
-            headless: true,
-            instances: [{ browser: "chromium" }],
-        },
+        projects: [
+            {
+                plugins: [Compiler.plugin()],
+                test: { ...timeouts, name: "guide", include: ["src/guide/**/*.test.ts"], environment: "node" },
+            },
+            {
+                plugins: [Compiler.plugin(), isolation],
+                test: {
+                    ...timeouts,
+                    name: "browser",
+                    include: ["src/**/*.test.ts"],
+                    exclude: ["src/guide/**", "**/node_modules/**"],
+                    fileParallelism: false,
+                    provide: { gpu },
+                    browser: {
+                        enabled: true,
+                        provider: playwright({ launchOptions: { channel: "chromium", args: gpu ? ["--enable-unsafe-webgpu"] : ["--disable-gpu"] } }),
+                        headless: true,
+                        instances: [{ browser: "chromium" }],
+                    },
+                },
+            },
+        ],
     },
 });

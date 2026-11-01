@@ -77,7 +77,7 @@ const list = (names: Iterable<string>): string => `[${[...names].join(", ")}]`;
  * module-scope bindings the body indexes by, null for a group it couldn't follow, and `at` where the body is.
  */
 export const accessText = (used: Used, at: string, where?: ReadonlySet<string> | null): string => {
-    const { query, resources, lookups, up } = used;
+    const { query, resources, lookups, up, commands } = used;
     // Keys changed inside their values are listed only when there are some, for registration to judge by kind.
     const mutate = (keys: ReadonlySet<string>): string => keys.size === 0 ? "" : `, mutate: ${list(keys)}`;
     const components = query === null ? "null" : `{ read: ${list([...query.read].filter(key => !query.write.has(key)))}, write: ${list(query.write)}${mutate(query.mutate)} }`;
@@ -85,7 +85,9 @@ export const accessText = (used: Used, at: string, where?: ReadonlySet<string> |
     const lookupText = lookups === null ? "null" : `{ ${[...lookups].map(([name, read]) => `${JSON.stringify(name)}: ${read === null ? "null" : list(read)}`).join(", ")} }`;
     // The resources `where`'s predicates read, only with predicates.
     const whereText = where === undefined ? "" : `, where: ${where === null ? "null" : list(where)}`;
-    return `{ components: ${components}, resources: ${resourceText}, lookup: ${lookupText}, up: ${up === null ? "null" : list(up)}${whereText}, at: ${JSON.stringify(at)} }`;
+    // Lists of keys stay as their bindings name them, so a list imported from another module is read where it's made.
+    const commandText = commands === null ? "null" : `{ spawn: ${list(commands.spawn)}, add: ${list(commands.add)}, remove: ${list(commands.remove)}, despawn: ${commands.despawn} }`;
+    return `{ components: ${components}, resources: ${resourceText}, lookup: ${lookupText}, up: ${up === null ? "null" : list(up)}${whereText}, commands: ${commandText}, at: ${JSON.stringify(at)} }`;
 };
 
 /** A declaration's parts the build makes, located at `at`, so a failure in them points at the declaration. */

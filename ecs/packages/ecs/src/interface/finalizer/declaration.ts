@@ -4,6 +4,7 @@ import type { SystemLookupLists, ResourceLists } from '../system/access.js';
 import type { Lookup } from '../system/access.js';
 import type { Finalizer } from './finalizer.js';
 import type { Essential } from '../component/value.js';
+import type { Resource } from '../resource/resource.js';
 
 /**
  * What every finalizer declares. What its body reads of its row and lookups, and reads and writes of resources, the
@@ -26,9 +27,10 @@ export type Declaration = Shared & {
 
 /**
  * A finalizer that sees each sync point's structural changes to the components it watches: by default, every one that
- * isn't derived or an object a joined thread fills.
+ * isn't derived or an object a joined thread fills; and the resources it watches, none by default, written since the
+ * last sync point's finalizers ran.
  */
-export type ChangesDeclaration = Shared & { readonly watch?: readonly Essential[] };
+export type ChangesDeclaration = Shared & { readonly watch?: readonly (Essential | Resource.Key)[] };
 
 type Key = symbol;
 

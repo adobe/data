@@ -1,6 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
+import type { ChangeSet } from '../finalizer/body.js';
+import type { Essential } from '../component/value.js';
+import type { Resource } from '../resource/resource.js';
 
 /**
  * A world. Systems read and change it; readonly systems read it after each run's and tick's sync point. Every member's
@@ -23,6 +26,16 @@ export type World = {
      * added or GPU work, is reported out of band, as ticks' failures are (see `add`).
      */
     run<I, R>(system: System<I, R>, ...input: Input<NoInfer<I>>): Promise<R>;
+    /**
+     * Runs as `run` does, and resolves to this run's own changes, in the shape `Finalizer.changes` gives, rather than its
+     * value: the structural changes its commands made, rules and cascades included, to every component that isn't
+     * derived or an object a joined thread fills, the values its adds gave components entities had before and after, and
+     * each resource its systems write or reduce into whose value changed, compared as `Finalizer.changes` compares them;
+     * `previous` and `next` give values before and after the run. Commands the finalizers of an earlier sync point
+     * queued apply first, at a sync point of their own. Values written to rows aren't structural changes, so they're in
+     * none. The run pays for this only when asked. Only on the world's thread: a joined thread's rejects.
+     */
+    run<I, R>(system: System<I, R>, ...input: [...Input<NoInfer<I>>, options: { readonly changes: true }]): Promise<ChangeSet<Essential, Resource.Key>>;
     /**
      * Adds a system to every tick, from the next one on, ordered with those already added by its constraints, as a
      * composite's members are. A tick runs on a beat of the `cadence` resource where `always` is set, `wake` is due or

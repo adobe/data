@@ -144,3 +144,13 @@ describe("systems ordering their rows by an index", () => {
         expect(() => untypedRender(Index.create({ key: [amount] }))).toThrow(/orders its rows by index "index #\d+", which isn't sorted/);
     });
 });
+
+describe("Index.declarationOf", () => {
+    it("gives an index's declaration as registered, its with and not as declared, and nothing for a value Index.create didn't return", () => {
+        const byName = Index.create({ key: [name], unique: true, components: { with: [shown], not: [parent] } });
+        expect(Index.declarationOf(byName)).toEqual({ key: [name], components: { with: [shown], not: [parent] }, unique: true });
+        const byCell = Index.create({ key: [cell, amount], sorted: true });
+        expect(Index.declarationOf(byCell)).toEqual({ key: [cell, amount], components: {}, sorted: true });
+        expect(Index.declarationOf({ name: "not an index" })).toBeUndefined();
+    });
+});

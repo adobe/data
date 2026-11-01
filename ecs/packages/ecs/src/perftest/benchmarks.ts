@@ -35,6 +35,7 @@ import { Observe } from "../observe/index.js";
 import { entitiesWith } from "./observer.js";
 import { invariantBenchmarks } from "./invariants.js";
 import { journalBenchmarks } from "./journal.js";
+import { tableBenchmarks } from "./tables.js";
 
 /** A world whose kernels run on this thread, which the benchmarks without a placement measure; `workers` ones use the pool. */
 const inline = (): World => createWorld({ [workers]: 0 });
@@ -648,6 +649,22 @@ export const benchmarks: readonly Benchmark[] = [
             return best;
         },
     },
+    ...[10, 1_000, 100_000].flatMap(n => ([
+        ["rows", "a command per row", structural.despawnDoomedRows, 24],
+        ["where", "one `despawnWhere`", structural.despawnDoomedWhere, 16],
+    ] as const).map(([how, by, system, bytes]): Benchmark => {
+        const name = `despawn tagged ${n >= 1_000 ? `${n / 1_000}K` : n} ${how}`;
+        return {
+            name,
+            operation: `A run despawning the ${n >= 1_000 ? `${n / 1_000}K` : n} entities of a tag beside 100K others, by ${by}: clearing one kind, such as expired effects.`,
+            per: "despawns",
+            n,
+            typical: [10, 100_000],
+            best: { bytes, basis: bytes === 16 ? "Each despawn frees its 8-byte location and entity; the archetype empties, so no row moves." : "Each row reads its entity; each despawn frees its location and entity." },
+            run: () => structuralBest(1, world => world.run(structural.spawnDoomed, { count: n }), world => world.run(system),
+                async world => await countOf(world, [structural.doomed]) === 0, name),
+        };
+    })),
     ...([
         ["add tag", "Adding a tag to 100K entities of one archetype: a state flag set on many at once.", 1, structural.removeFlag, structural.addFlag, [structural.flag], 16],
         ["add tag kernel", "The same adds from a kernel.", 1, structural.removeFlagKernel, structural.addFlagKernel, [structural.flag], 20],
@@ -705,4 +722,5 @@ export const benchmarks: readonly Benchmark[] = [
     ...sharedBenchmarks,
     ...invariantBenchmarks,
     ...journalBenchmarks,
+    ...tableBenchmarks,
 ];

@@ -71,28 +71,28 @@ const positions = async (world: World): Promise<Vec2[]> =>
     (await readEach(world, await select(world, { required: [position], order: { [position]: true } }), position)).map(value => value ?? [NaN, NaN]);
 
 describe("World.create", () => {
-    it("spawns once from a changed resource, then integrates", async () => {
+    it("spawns once from a changed resource, then integrates, from the run that spawns", async () => {
         const world = createWorld();
         await world.run(main);
-        expect(await positions(world)).toEqual([[0, 0], [1, 0], [2, 0]]);
-        await world.run(main);
         expect(await positions(world)).toEqual([[0, 1], [1, 1], [2, 1]]);
+        await world.run(main);
+        expect(await positions(world)).toEqual([[0, 2], [1, 2], [2, 2]]);
         expect(await readResource(world, spawnCount)).toBe(3);
     });
 
     it("reports each change to a system exactly once", async () => {
         const world = createWorld();
         await world.run(main);
-        // Spawned at the sync point, after watch ran: seen on the next run.
-        expect(await readResource(world, seen)).toBe(0);
-        await world.run(main);
+        // Spawned at the sync point before move, which watch follows: seen in the same run.
         expect(await readResource(world, seen)).toBe(3);
+        await world.run(main);
+        expect(await readResource(world, seen)).toBe(6);
         // Moved before watch in the last run, so already reported.
         await world.run(watch);
-        expect(await readResource(world, seen)).toBe(3);
+        expect(await readResource(world, seen)).toBe(6);
         await world.run(move);
         await world.run(watch);
-        expect(await readResource(world, seen)).toBe(6);
+        expect(await readResource(world, seen)).toBe(9);
     });
 
     it("applies the net structural change of a sync point", async () => {

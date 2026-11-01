@@ -27,6 +27,12 @@ export type ComponentAccess = {
      * change filters, an archetype it skipped keeps its rows unseen until it passes again.
      */
     readonly where?: { readonly [K in Shared]?: Component<K> | ((value: Component<K>, context: { readonly resources: ReadResources }) => boolean) };
+    /**
+     * Takes its row whole, as a body passing it on does, where the build can't follow how it's used: every member counts
+     * as written, for order, conflicts and placement, but references and shared components, which change only through
+     * commands, as read. Without it, a body whose row the build can't follow fails the build.
+     */
+    readonly whole?: true;
 };
 
 /**
@@ -85,6 +91,8 @@ export type ComponentLists = {
     readonly where?: { readonly [key: symbol]: unknown };
     /** The resources its `where`'s predicates read, which the build infers: when one changed, they're evaluated again. */
     readonly whereReads?: readonly Key[];
+    /** Whether it takes its row whole, as its declaration said. */
+    readonly whole?: true;
 };
 
 /** A lookup as the world takes it, with what its body reads of its rows in `read`. */
@@ -104,4 +112,12 @@ export type ResourceLists = {
     readonly changed?: readonly Key[];
     readonly is?: readonly Key[];
     readonly not?: readonly Key[];
+};
+
+/** The components a system's commands name, by kind, and whether it despawns, as the build inferred them. */
+export type CommandLists = {
+    readonly spawn?: readonly Key[];
+    readonly add?: readonly Key[];
+    readonly remove?: readonly Key[];
+    readonly despawn?: true;
 };

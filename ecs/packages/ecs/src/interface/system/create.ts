@@ -16,8 +16,9 @@ import type { Listed, Property } from './property.js';
 import type { System } from './system.js';
 import type { OneThread, ThreadedBy, ThreadsOf } from './threads.js';
 import type { HeldBy } from './values.js';
+import type { SharedOnly } from './shared-only.js';
 import type { Shared } from '../component/value.js';
-import { accessOf, compact, componentLists, lookupsLists, resourceUses, upReads, whereReadsOf } from './resolve.js';
+import { accessOf, commandLists, compact, componentLists, lookupsLists, resourceUses, upReads, whereReadsOf } from './resolve.js';
 
 type Lookups<D> = Property<D, "lookup">;
 
@@ -68,9 +69,10 @@ type Targeted = {
     readonly order?: never;
 };
 
+
 /** `where` names only shared components, and keeps rows unordered across archetypes, so it's without `up`, `order` and a target. */
 type Where<D> = D extends { readonly components: { readonly where: infer W } }
-    ? { readonly components?: { readonly where?: { readonly [K in Exclude<keyof W, Shared>]: { readonly "error: where names only shared components, which each archetype holds one value of": K } } } }
+    ? { readonly components?: { readonly where?: SharedOnly<W> } }
         & (D extends { readonly up: object } | { readonly order: object } | { readonly target: string }
             ? { readonly components?: { readonly where?: { readonly "error: where can't be used with up, order or a target, which run rows across archetypes": true } } } : {})
     : {};
@@ -99,6 +101,7 @@ type Validate<D extends Declaration> =
         ? { readonly kernel?: boolean | { readonly "error: a GPU kernel can't have optional components yet": true } } : {})
     & (D extends { readonly readonly: true } ? Readonly : {})
     // Tables are copies a readonly system without components reads.
+    & (D extends { readonly tables: { readonly where: infer W } } ? { readonly tables?: { readonly where?: SharedOnly<W> } } : {})
     & (D extends { readonly tables: object }
         ? (D extends { readonly readonly: true } ? {} : { readonly tables?: { readonly "error: tables are read by a readonly system": true } })
         & (Property<D, "components"> extends undefined ? {} : { readonly tables?: { readonly "error: a system reading tables has no components": true } })
@@ -175,9 +178,10 @@ export function create(first: Declaration | Leaf["body"] | readonly System<unkno
     const body = typeof first === "function" ? first : second;
     if (body === undefined) throw new Error("A system needs a body, and a composite its systems.");
     const name = nameOf(first, id, "system");
-    const declaration = resolve(`System "${name}"`, declared, accessOf(`System "${name}"`, first));
+    const access = accessOf(`System "${name}"`, first);
+    const declaration = resolve(`System "${name}"`, declared, access);
     const schema = inputSchemaOf(name, body, declaration.components === undefined ? 1 : 2, input);
-    const system: Leaf & System<unknown> = { kind: "system", name, declaration, input: schema, body };
+    const system: Leaf & System<unknown> = { kind: "system", name, declaration, input: schema, body, commands: commandLists(access) };
     checkLeaf(system);
     claimSystem(system, id);
     return system;
@@ -194,7 +198,7 @@ const resolve = (what: string, declared: Declaration, access: ReturnType<typeof 
     for (const key of [...whereReads, ...declared.tables?.resources ?? []]) if (!uses.read.includes(key) && !uses.write.includes(key) && !conditions.includes(key)) uses.read.push(key);
     const resolved: Resolved = {
         ...rest,
-        ...components === undefined ? {} : { components: componentLists(components, access.components, reading, whereReads) },
+        ...components === undefined ? {} : { components: componentLists(components, components.whole === true ? null : access.components, reading, whereReads) },
         ...lookup === undefined ? {} : { lookup: lookupsLists(lookup, access) },
         ...up === undefined ? {} : { up: { through: up.through, read: upReads(what, access) } },
     };

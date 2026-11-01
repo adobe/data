@@ -96,6 +96,7 @@ export const render = <const D extends RenderDeclaration, B extends Body<D>>(
         },
         input: undefined,
         body,
+        commands: undefined,
     };
     if (uses.write.length > 0 || uses.reduce.length > 0) throw new Error(`${what} writes or reduces into resources; a render system only reads.`);
     checkLeaf(system);

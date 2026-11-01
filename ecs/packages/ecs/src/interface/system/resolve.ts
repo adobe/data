@@ -3,7 +3,7 @@ import { takeAccessOf } from '../registry/ids.js';
 import { indexDefinitionOf } from '../registry/indexes.js';
 import { declarationOf, labelOf } from '../registry/names.js';
 import { isString, isStruct } from '../registry/schemas.js';
-import type { ComponentAccess, ComponentLists, Lookup, SystemLookup, SystemLookupLists } from './access.js';
+import type { CommandLists, ComponentAccess, ComponentLists, Lookup, SystemLookup, SystemLookupLists } from './access.js';
 
 type Key = symbol;
 
@@ -23,10 +23,22 @@ export type Access = {
     readonly up: readonly Key[] | null;
     /** The resources the predicates of its declaration's `where` read; absent without predicates. */
     readonly where?: readonly Key[] | null;
+    /** What its commands name, keys or lists of them, by kind, and whether it despawns; absent where no build said. */
+    readonly commands?: unknown;
     readonly at: string;
 };
 
+type Named = readonly (Key | readonly Key[])[];
+type Commanded = { readonly spawn: Named; readonly add: Named; readonly remove: Named; readonly despawn: boolean };
+
 const isKeys = (value: unknown): value is readonly Key[] => Array.isArray(value) && value.every(key => typeof key === "symbol");
+
+const isNamed = (value: unknown): value is Named => Array.isArray(value) && value.every(item => typeof item === "symbol" || isKeys(item));
+
+/** A binding a command named that holds neither a key nor a list of them, as one declared below its system, isn't followed. */
+const isCommanded = (value: unknown): value is Commanded => typeof value === "object" && value !== null
+    && isNamed(Reflect.get(value, "spawn")) && isNamed(Reflect.get(value, "add")) && isNamed(Reflect.get(value, "remove"))
+    && typeof Reflect.get(value, "despawn") === "boolean";
 
 const isUsed = (value: unknown): value is Used => typeof value === "object" && value !== null
     && isKeys(Reflect.get(value, "read")) && isKeys(Reflect.get(value, "write"))
@@ -106,7 +118,7 @@ export const componentLists = (components: ComponentAccess, used: Used | null, r
         : used.write;
     const read = used === null ? without(held, write) : without(used.read, write);
     const has = [...without(members, read, write), ...without(filtered, read, write)];
-    return compact({ read, write, has, optional, not: components.not, added: components.added, changed: components.changed, where, whereReads });
+    return compact({ read, write, has, optional, not: components.not, added: components.added, changed: components.changed, where, whereReads, whole: components.whole });
 };
 
 /**
@@ -159,6 +171,17 @@ export const whereReadsOf = (what: string, components: ComponentAccess | undefin
     const reads = access.where;
     if (reads === undefined || reads === null) throw new Error(`${what}'s where predicates (${access.at}) read resources in a way the build can't follow, so it can't tell when to evaluate them again: index them by key directly, or destructure them by key, in a predicate written in place in a module built with Compiler.plugin().`);
     return reads;
+};
+
+/** What a body's commands name, as the world takes it: null where the build couldn't follow them, nothing for none. */
+export const commandLists = (access: Access): CommandLists | null | undefined => {
+    const { commands } = access;
+    if (commands === undefined) return undefined;
+    if (!isCommanded(commands)) return null;
+    if (!commands.despawn && commands.spawn.length + commands.add.length + commands.remove.length === 0) return undefined;
+    const flat = (named: Named): Key[] => [...new Set(named.flat())];
+    const lists = compact({ spawn: flat(commands.spawn), add: flat(commands.add), remove: flat(commands.remove), despawn: commands.despawn ? true as const : undefined });
+    return Object.keys(lists).length === 0 ? undefined : lists;
 };
 
 /** What a body reads of its parent's values. */

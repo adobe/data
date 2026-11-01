@@ -62,6 +62,11 @@ const readTotal = System.create({ readonly: true }, ({ resources }) => resources
 const mix = System.create({}, ({ resources }, input: { readonly level: number }) => {
     resources[levels] = [...resources[levels], input.level];
 });
+/** Runs on the thread claiming joinTestAudio, as `mix` does, and despawns by a query, which only the world's thread does. */
+const mixAndClear = System.create({}, ({ resources, commands }) => {
+    resources[levels] = [...resources[levels], 0];
+    commands.despawnWhere({ with: [marked] });
+});
 /** An observer system recording each total it reads into `into`. */
 const totalsInto = (into: number[]) => System.create({ readonly: true }, ({ resources }) => { into.push(resources[total]); });
 /** An observer system recording how many levels it reads into `into`. */
@@ -155,6 +160,12 @@ describe("joining", () => {
         await remote.dispose();
         await world.dispose();
     });
+    it("rejects a run asking for its changes, which only the world's thread records", async () => {
+        const { world, remote } = await joined();
+        await expect(remote.run(idle, { changes: true })).rejects.toThrow("a run's changes are recorded only on the world's thread");
+        await remote.dispose();
+        await world.dispose();
+    });
     it("rejects a run that failed, naming its system, and a run of a system without an id", async () => {
         const { world, remote } = await joined();
         await expect(remote.run(fail)).rejects.toThrow(/^System "fail" \(.*join\.test\.ts#fail\) failed: joinTest failure$/);
@@ -215,6 +226,14 @@ describe("the join signal", () => {
         expect(await statusOf(world, 0, "joined")).toEqual({ status: "joined", claims: ["joinTestAudio"] });
         await world.run(mix, { level: 1 });
         expect(await eventually(() => heard.includes(1))).toBe(true);
+    });
+    it("fails a system on a joined thread that despawns by a query, which runs on the world's thread", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        const channel = new MessageChannel();
+        const shared = world.share(channel.port1);
+        await using _remote = await join(channel.port2, { threads: ["joinTestAudio"] });
+        await shared;
+        await expect(world.run(mixAndClear)).rejects.toThrow("commands.despawnWhere runs on the world's thread");
     });
     it("resolves several joins at once, each with its own claims, and each of their observer systems sees the world's next run", async () => {
         await using world = createWorld({ [workers]: 0 });

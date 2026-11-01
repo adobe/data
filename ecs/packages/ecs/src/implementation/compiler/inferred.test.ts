@@ -26,7 +26,7 @@ const readOf = (declaration: ObjectExpression, name: string): readonly string[] 
 describe("resolvedDeclaration", () => {
     test("takes a lookup by entity whose rows the build didn't follow as reading all it requires", () => {
         const declaration = declarationOf("{ lookup: { targets: { with: [mass, position] } } }");
-        const resolved = resolvedDeclaration(declaration, { query: null, resources: null, lookups: new Map([["targets", null]]), up: null });
+        const resolved = resolvedDeclaration(declaration, { query: null, resources: null, lookups: new Map([["targets", null]]), up: null, commands: null });
         expect(readOf(resolved, "targets")).toEqual(["mass", "position"]);
     });
 });

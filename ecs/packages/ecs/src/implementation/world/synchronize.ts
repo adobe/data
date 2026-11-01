@@ -2,10 +2,10 @@
 import type { Views } from '../../interface/registry/layout.js';
 import { copyValue, ensureCapacity, swapRemove, writeF32, writeF32Lanes, writeF64, writeI32, writeU32, type Archetype, type Storage } from './archetype.js';
 import { blockShift, chunkShift } from './kernel.js';
-import { addCommand, clearBuffer, despawnCommand, endOf, referenceAt, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
+import { addCommand, clearBuffer, despawnCommand, despawnWhereCommand, despawnWhereHolds, endOf, referenceAt, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { readCell, writeCell } from './cells.js';
 import { commitBatches, commitStaged } from './batches.js';
-import { applyIndexChanges, cascadeReferences, indexChangesOf, type IndexChanges, type Written } from './cascade.js';
+import { applyIndexChanges, cascadeReferences, indexChangesOf, linkBorn, type IndexChanges, type Written } from './cascade.js';
 import { refreshDirectories } from './directories.js';
 import { createArrivals, logArrival } from './arrivals.js';
 import { noteEdge, noteEmptied, reclaimEmptied } from './reclaim.js';
@@ -21,6 +21,8 @@ import type { Plan } from './plan.js';
 import type { MoveLog } from './move-log.js';
 import { archetypeOf, movesOf, sharedNumberOf, withComponent, withoutComponent, withShared, type State } from './state.js';
 import { releaseValue } from './transfers.js';
+import { resourcesWritten } from './resource-changes.js';
+import { recordPlan } from './run-changes.js';
 
 /** Buffers queued for the next sync point, in merge order. Commands in guarded buffers can't touch the resource entity. */
 export type Queued = { readonly buffer: CommandBuffer; readonly guarded: boolean };
@@ -128,6 +130,56 @@ const releaseDropped = (state: State, buffer: CommandBuffer, command: number): v
 };
 
 /**
+ * Whether `archetype` has each component of `ids` from `start` to `middle` and none from there to `end`, and holds the
+ * values `holds` tells it holds, when it isn't null.
+ */
+const matches = (archetype: Archetype, ids: Int32Array, start: number, middle: number, end: number, holds: Function | null): boolean => {
+    const { storageById } = archetype;
+    for (let k = start; k < middle; k++) if (storageById[ids[k]] === undefined) return false;
+    for (let k = middle; k < end; k++) if (storageById[ids[k]] !== undefined) return false;
+    return holds === null || Reflect.apply(holds, undefined, [archetype]) === true;
+};
+
+/** The archetype an entity planned into `archetype` ends up in once derived. */
+const closedOf = (state: State, archetype: Archetype): Archetype => {
+    const cached = state.structure.closures[archetype.id] ?? -1;
+    return cached >= 0 ? state.archetypes[cached] : closureOf(state.structure, state.derived, archetype, (components, shared) => archetypeOf(state, components, shared), state.archetypes);
+};
+
+/**
+ * Despawns each entity a `despawnWhere` command selects given the plan so far: those planned, by where they're going,
+ * then the rest, by the archetype they're in. Never the resource entity.
+ */
+const despawnWhere = (state: State, buffer: CommandBuffer, command: number, within: boolean): void => {
+    const { plan, archetypes } = state;
+    const { ids } = buffer;
+    const start = buffer.starts[command];
+    const middle = start + buffer.entities[command];
+    const last = endOf(buffer, command);
+    const where = ids[last - 1] === despawnWhereHolds ? buffer.values[last - 1] : null;
+    const holds = typeof where === "function" ? where : null;
+    const end = holds === null ? last : last - 1;
+    for (let entry = 0; entry < plan.count; entry++) {
+        if (plan.despawned[entry] === 1 || plan.entity[entry] === state.resourceEntity) continue;
+        const to = archetypes[plan.to[entry]];
+        if (matches(within && plan.to[entry] !== plan.from[entry] ? closedOf(state, to) : to, ids, start, middle, end, holds)) plan.despawned[entry] = 1;
+    }
+    const { slots } = plan;
+    const count = archetypes.length;
+    for (let id = 0; id < count; id++) {
+        const archetype = archetypes[id];
+        if (archetype.resource || archetype.count === 0 || !matches(archetype, ids, start, middle, end, holds)) continue;
+        ensurePlanCapacity(state, plan.count + archetype.count);
+        const { entities } = archetype;
+        for (let row = 0; row < archetype.count; row++) {
+            const entity = entities[row];
+            const index = indexOf(entity);
+            if (slots[index] < 0) plan.despawned[addPlanned(state, entity, index, id, id)] = 1;
+        }
+    }
+};
+
+/**
  * Plan: the net change for each entity, in issue order. Commands against dead entities do nothing. Reference values
  * written by commands go to `written`, to check once despawns are known.
  */
@@ -146,6 +198,11 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
         ensurePlanCapacity(state, plan.count + buffer.count);
         for (let command = 0; command < buffer.count; command++) {
             const kind = kinds[command];
+            if (kind === despawnWhereCommand) {
+                despawnWhere(state, buffer, command, within);
+                ensurePlanCapacity(state, plan.count + buffer.count - command);
+                continue;
+            }
             const entity = entities[command];
             if (guarded && entity === state.resourceEntity) continue;
             const index = indexOf(entity);
@@ -631,7 +688,9 @@ const noneQueued: readonly Queued[] = [];
 export const syncPending = (state: State, queued: readonly Queued[] = state.queued): boolean =>
     anyCommands(queued) || reserved(state.entities) || state.carried !== null || state.structure.rederive
     // Failures for its run, as a gone thread's stops it never finalized are.
-    || state.unplaced.length > 0;
+    || state.unplaced.length > 0
+    // A watched resource written, which its changes finalizers see at a sync point.
+    || (state.resourcesSeen.size > 0 && resourcesWritten(state));
 
 /**
  * The first half of a sync point: commits batch spawns, plans every command, cascades references and closes the plan
@@ -688,22 +747,9 @@ const preparePending = (state: State, queued: readonly Queued[], isolated: boole
         if (deriving) for (let entry = 0; entry < plan.count; entry++) if (plan.despawned[entry] === 0) plan.to[entry] = close(state.archetypes[plan.to[entry]]).id;
         let index: IndexChanges | null = null;
         if (structure.referenceIds.length > 0) {
-            for (const [id, first] of born) {
-                const archetype = state.archetypes[id];
-                for (const component of structure.referenceIds) {
-                    const storage = archetype.storageById[component];
-                    if (storage === undefined) continue;
-                    for (let row = first; row < archetype.count; row++) written.push(archetype.entities[row], component, Number(readCell(storage, row)));
-                }
-            }
+            linkBorn(state, born, written, tick);
             cascadeReferences(state, queued, written, entity => entryOf(state, entity));
-            const fromOf = (entry: number): Archetype | null => {
-                const from = plan.from[entry];
-                if (from < 0) return null;
-                const first = born.get(from);
-                return first !== undefined && state.entities.row[indexOf(plan.entity[entry])] >= first ? null : state.archetypes[from];
-            };
-            index = indexChangesOf(state, queued, fromOf, [...born].map(([id, first]) => [state.archetypes[id], first] as const));
+            index = indexChangesOf(state, queued, entry => plan.from[entry] < 0 ? null : state.archetypes[plan.from[entry]]);
         }
         // References change only here: each component written to is stamped, and each holder journaled, as are spawns.
         for (let k = 1; k < written.length; k += 3) state.referencesWritten[written[k]] = tick;
@@ -741,6 +787,7 @@ export const applySync = (state: State): readonly Thrown[] => {
     let errors = nothingThrown;
     try {
         if (state.unplaced.length > 0 && !isolated) errors = state.unplaced.splice(0);
+        if (state.recording !== null && !isolated) recordPlan(state, state.recording, queued, born);
         if (state.finalizers.length > 0 && !isolated) {
             const thrown = runFinalizers(state, queued, born, tick);
             errors = errors.length === 0 ? thrown : [...errors, ...thrown];

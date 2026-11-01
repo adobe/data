@@ -195,10 +195,10 @@ describe("a shared component", () => {
         }));
         expect(looked.sort()).toEqual(["1 sees red", "2 sees red"]);
         const assign: (row: object) => void = row => { Reflect.set(row, team, "blue"); };
-        const assigning = System.create({ kernel: false, components: { with: [team, health] } }, row => {
+        // Taken whole, the row is written: every member but shared ones and references.
+        const assigning = System.create({ kernel: false, components: { with: [team, health], whole: true } }, row => {
             if (row[health] === 1) assign(row);
         });
-        // The build takes the row as written whole, since it can't follow it: every member but shared ones and references.
         expect((await runReported(world, assigning)).failures.map(failure => failure.message)).toEqual([
             expect.stringContaining(`"sharedTest/team" is shared: its value is its archetype's, so give it another with commands.add rather than assigning it`),
         ]);

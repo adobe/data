@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Index, System } from "@adobe/ecs";
-import { Chapter, chapter, chapterNumber, chapterOrder, part, prose, shown, slug, title } from "./data.js";
+import { Chapter, chapter, chapterNumber, chapterOrder, owner, part, prose, shown, slug, title } from "./data.js";
 
 /** A chapter as the guide's content gives it, its prose rendered. */
-export type ChapterContent = { readonly number: number; readonly slug: string; readonly title: string; readonly part: string; readonly prose: string };
+export type ChapterContent = { readonly number: number; readonly slug: string; readonly title: string; readonly part: string; readonly package: string; readonly prose: string };
 
 /** Chapters by their address. */
 const bySlug = Index.create({ key: [slug], unique: true, components: { with: [chapter] } });
@@ -11,7 +11,7 @@ const bySlug = Index.create({ key: [slug], unique: true, components: { with: [ch
 /** Adds the guide's chapters, in the guide's order. */
 export const addChapters = System.create({}, ({ commands }, input: { readonly chapters: readonly ChapterContent[] }) => {
     for (const [order, item] of input.chapters.entries()) {
-        commands.spawn(Chapter)({ [chapterNumber]: item.number, [chapterOrder]: order, [slug]: item.slug, [title]: item.title, [part]: item.part, [prose]: item.prose });
+        commands.spawn(Chapter)({ [chapterNumber]: item.number, [chapterOrder]: order, [slug]: item.slug, [title]: item.title, [part]: item.part, [owner]: item.package, [prose]: item.prose });
     }
 });
 

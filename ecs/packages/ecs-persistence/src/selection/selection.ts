@@ -4,19 +4,24 @@ import type { Failure } from "../failure.js";
 import type { Contents } from "../program/contents.js";
 import type { Program } from "../program/program.js";
 
+/** Values of shared components, which archetypes hold one of each: `where` as a system's of values. */
+type Where = { readonly [K in Component.With<"shared">]?: Component<K> };
+
 /**
- * Which entities a snapshot takes: those matching `with` and `not`, every one holding a persisted component by
- * default; or `root` and every entity it owns, directly or through others, by persisted owner references.
+ * Which entities a snapshot takes: those matching `with`, `not` and `where`, every one holding a component its trait
+ * covers by default; or `root` and every entity it owns, directly or through others, by owner references its trait
+ * covers.
  */
 export type Selection =
-    | { readonly with?: readonly Component.Key[]; readonly not?: readonly Component.Key[]; readonly resources?: boolean }
+    | { readonly with?: readonly Component.Key[]; readonly not?: readonly Component.Key[]; readonly where?: Where; readonly resources?: boolean }
     | { readonly root: Entity };
 
-/** Which tables a snapshot reads: those of its persisted components, matching `with` and `not`, and its resources. */
+/** Which tables a snapshot reads: those of the components its trait covers, matching `with`, `not` and `where`, and its resources. */
 type Reading = {
     readonly components: readonly Component.Key[];
     readonly with?: readonly Component.Key[];
     readonly not?: readonly Component.Key[];
+    readonly where?: Where;
     readonly resources?: readonly Resource.Key[];
 };
 
@@ -75,7 +80,7 @@ const subtreeOf = (tables: readonly World.Table[], owners: readonly Component.Ke
     return taken;
 };
 
-/** The persisted part of the entities `selection` takes from `world`, on its thread, or why it can't be read. */
+/** What `program`'s trait covers of the entities `selection` takes from `world`, on its thread, or why it can't be read. */
 export const select = async (world: World, program: Program, selection: Selection): Promise<Contents | Failure> => {
     const components = [...program.components.values()];
     const keys = components.map(persisted => persisted.key);
@@ -83,8 +88,17 @@ export const select = async (world: World, program: Program, selection: Selectio
     const resources = subtree || selection.resources === false ? [] : [...program.resources.values()];
     const declaration: Reading = subtree
         ? { components: keys }
-        : { components: keys, with: selection.with ?? [], not: selection.not ?? [], resources: resources.map(persisted => persisted.key) };
-    const read = await world.run(tablesSystemOf(declaration)).catch((error: unknown) => ({ failure: error instanceof Error ? error.message : String(error) }));
+        : { components: keys, with: selection.with ?? [], not: selection.not ?? [], where: selection.where ?? {}, resources: resources.map(persisted => persisted.key) };
+    const failed = (error: unknown): Failure => ({ failure: error instanceof Error ? error.message : String(error) });
+    let system: ReturnType<typeof tablesSystemOf>;
+    try {
+        system = tablesSystemOf(declaration);
+    }
+    catch (error) {
+        // A `where` naming what isn't a shared component, or giving one a value not of its type.
+        return failed(error);
+    }
+    const read = await world.run(system).catch(failed);
     if ("failure" in read) return read;
     let tables = read.archetypes;
     if (subtree) {
@@ -92,5 +106,5 @@ export const select = async (world: World, program: Program, selection: Selectio
         const taken = subtreeOf(tables, owners, selection.root);
         tables = tables.flatMap(table => rowsOf(table, entity => taken.has(entity)) ?? []);
     }
-    return { components, tables, resources: resources.map(persisted => ({ persisted, value: read.resources[persisted.key] })) };
+    return { by: program.by, components, tables, resources: resources.map(persisted => ({ persisted, value: read.resources[persisted.key] })) };
 };

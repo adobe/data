@@ -43,8 +43,8 @@ const chapterOf = async (world: World, name: string): Promise<Read> => {
 const guide = async (): Promise<World> => {
     const world = World.create({ [workers]: 0 });
     await world.run(addChapters, { chapters: [
-        { number: 0, slug: "setup", title: "Setup", part: "", prose: "" },
-        { number: 1, slug: "1-one", title: "One", part: "Basics", prose: "<p>one</p>" },
+        { number: 0, slug: "setup", title: "Setup", part: "", package: "first", prose: "" },
+        { number: 1, slug: "1-one", title: "One", part: "Basics", package: "first", prose: "<p>one</p>" },
     ] });
     await world.run(addExamples, { examples: [{ slug: "1-one", files: [{ name: "01-one.ts", code: "a" }, { name: "01-one.type-test.ts", code: "b" }] }] });
     await world.run(addBuilds);

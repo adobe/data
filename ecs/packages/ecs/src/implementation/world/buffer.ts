@@ -7,6 +7,13 @@ export const spawnCommand = 0;
 export const despawnCommand = 1;
 export const addCommand = 2;
 export const removeCommand = 3;
+/**
+ * Names the ids of its query's `with`, then of its `not`, and with a `where`, last, `despawnWhereHolds`, whose value is
+ * whether an archetype holds the `where`'s values; its entity is how many are of `with`.
+ */
+export const despawnWhereCommand = 4;
+/** The id a `despawnWhere` names its `where` by, which no component has. */
+export const despawnWhereHolds = -1;
 
 /** Rows `start` to `end` of a kernel's spawn batch, committed in its buffer's place in merge order. */
 export type Staged = { batch: SpawnBatch; start: number; end: number };

@@ -13,7 +13,8 @@ export type Column =
     | { readonly kind: "value"; readonly value: unknown };
 
 /**
- * What `commands.spawnTables` spawned: each table's new entities in its row order, `Entity.none` for a row it didn't
- * spawn, and how many rows it didn't, those owned by an entity outside the tables.
+ * What `commands.spawnTables` spawned: each table's entities in its row order, the one spawned for each row, the one
+ * existing for a row its `existing` maps, and `Entity.none` for a row it didn't spawn; and how many rows it didn't,
+ * those owned by an entity outside the tables.
  */
 export type Spawned = { readonly entities: readonly Float64Array[]; readonly dropped: number };

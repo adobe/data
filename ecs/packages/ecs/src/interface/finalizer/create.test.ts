@@ -75,7 +75,7 @@ describe("Finalizer.create and Finalizer.changes", () => {
         expect(() => untyped(Finalizer.create, { components: {} }, { resources: { reduce: [total] } })).toThrow("only systems contribute to a reduction");
         expect(() => untyped(Finalizer.create, { components: { with: [node, tags] } }, { read: [node, tags] })).toThrow('uses "typesFinalizerTest/node" on "main" and "typesFinalizerTest/tags" on "world"');
         expect(() => untyped(Finalizer.changes, { name: "derived", watch: [slot] })).toThrow("which is derived");
-        expect(() => untyped(Finalizer.changes, { name: "resource", watch: [time] })).toThrow("which isn't a registered component");
+        expect(() => untyped(Finalizer.changes, { name: "unregistered", watch: [Symbol("typesFinalizerTest/unregistered")] })).toThrow("which isn't a registered component or resource");
         expect(() => untyped(Finalizer.create, { components: { with: [time] } })).toThrow(`uses component "typesFinalizerTest/time", which isn't a registered component`);
         expect(() => untyped(Finalizer.create, { components: { with: [label] }, lookup: { others: { not: [Symbol("typesFinalizerTest/unregistered")] } } }, { read: [label] })).toThrow("which isn't a registered component");
         expect(programFinalizers()).toHaveLength(7);
@@ -92,6 +92,8 @@ describe("Finalizer.create and Finalizer.changes", () => {
         expect(() => untyped(Finalizer.changes, { watch: [tags] }, { resources: { read: [page] } }))
             .toThrow('uses "typesFinalizerTest/tags" on "world" and "typesFinalizerTest/page" on "main"');
         expect(() => untyped(Finalizer.changes, {}, { resources: { read: [page] } }))
+            .toThrow(`watches or reads values on thread "main"; a changes finalizer runs on the world's thread, in the sync point.`);
+        expect(() => untyped(Finalizer.changes, { name: "savePage", watch: [page] }))
             .toThrow(`watches or reads values on thread "main"; a changes finalizer runs on the world's thread, in the sync point.`);
         // Reading another thread's values, without writing or looking up, it's created.
         const detach = Finalizer.create({ components: { with: [node] } }, row => { void row[node]; });

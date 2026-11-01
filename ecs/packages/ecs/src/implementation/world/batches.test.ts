@@ -29,7 +29,7 @@ declare module "@adobe/ecs" {
 }
 
 describe("staged spawns", () => {
-    it("are seen once by `added` observers in earlier, the same and later tiers, and not before the sync point", async () => {
+    it("are seen once by `added` observers in earlier, the same and later tiers, from the sync point after them", async () => {
         const seen = { early: 0, same: 0, late: 0 };
         const spawned: Entity[] = [];
         const early = System.create({ components: { added: [score] } }, () => { seen.early++; });
@@ -42,8 +42,8 @@ describe("staged spawns", () => {
         const frame = System.create({ systems: [early, spawn, same, late] });
         const world = createWorld({ [workers]: 0 });
         await world.run(frame);
-        // Nothing saw the spawns during their own run.
-        expect(seen).toEqual({ early: 0, same: 0, late: 0 });
+        // Only what follows the spawn saw them in their own run, after the sync point it needs.
+        expect(seen).toEqual({ early: 0, same: 0, late: 100 });
         await world.run(frame);
         await world.run(frame);
         expect(seen).toEqual({ early: 100, same: 100, late: 100 });

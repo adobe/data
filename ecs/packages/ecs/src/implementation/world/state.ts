@@ -1,4 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import type { Recording } from './run-changes.js';
 import { createHolds, type Holds } from './stop-lists.js';
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Leaf } from '../../interface/system/leaf.js';
@@ -126,6 +127,13 @@ export type State = {
     reshapes: number;
     /** Sync points applied, which reclaiming counts. */
     syncs: number;
+    /**
+     * By id, each resource a changes finalizer watches: its value and change tick when its finalizers last ran, which a
+     * later write's report gives as its previous value. Empty while none watches one.
+     */
+    readonly resourcesSeen: Map<number, { value: unknown; tick: number }>;
+    /** What the run in progress records of its changes, when it was asked for them; null otherwise. */
+    recording: Recording | null;
     /** The records strings' columns name, in shared memory; null without it, where strings are held as objects. */
     readonly strings: StringStore | null;
     /** Whether each component is derived, so only rules add and remove it. */
@@ -317,6 +325,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         membership: { log: [], base: 0 },
         reshapes: 0,
         syncs: 0,
+        resourcesSeen: new Map(),
+        recording: null,
         strings: memory.shared ? createStrings(memory) : null,
         derived: [],
         transfers: [],
@@ -502,6 +512,15 @@ export const commandIdOf = (state: State, key: unknown): number => {
     if (state.derived[id]) throw new Error(`"${labelOf(key)}" is derived, so only rules add and remove it.`);
     state.commandable[id] = true;
     return id;
+};
+
+/** The id of a component a query names, derived ones included. Throws for a key that isn't a registered component. */
+export const queryIdOf = (state: State, key: unknown): number => {
+    const known = typeof key === "symbol" ? state.ids.get(key) : undefined;
+    if (known !== undefined && !state.resources.has(known)) return known;
+    if (typeof key !== "symbol") throw new Error(`"${labelOf(key)}" isn't a component: a component's key is a symbol.`);
+    if (kindOf(key) === "resource") throw new Error(`"${labelOf(key)}" is a resource, not a component.`);
+    return idOf(state, key);
 };
 
 /**

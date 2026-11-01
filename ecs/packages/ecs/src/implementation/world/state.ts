@@ -78,6 +78,14 @@ export const countRan = (state: State, runners: readonly RanRunner[]): void => {
     for (let k = 0; k < tier.logs.length; k++) ran.joined.add(tier.logs[k]);
 };
 
+/** Counts runners into `ran` that all ran here, none on a joined thread: on `main` unless a joined thread claims it. */
+export const countRanHere = (state: State, systems: number, gpu: boolean): void => {
+    const { ran } = state;
+    ran.systems += systems;
+    if (systems !== 0 && state.claims.get("main") === undefined) ran.main = true;
+    if (gpu) ran.gpu = true;
+};
+
 /** Starts gathering what a run ran. */
 export const startRan = (ran: Ran): void => {
     ran.systems = 0;

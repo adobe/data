@@ -3,7 +3,7 @@ import type { Leaf } from '../../interface/system/leaf.js';
 import type { Chunk, ChunkResult, Runner, Workers } from './runner.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
 import type { Archetype, Storage } from './archetype.js';
-import { countRan, idOf, startRan, type State } from './state.js';
+import { countRan, countRanHere, idOf, startRan, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
 import { applySync, prepareSync, syncPending } from './synchronize.js';
 import { resourcesWritten } from './resource-changes.js';
@@ -25,7 +25,6 @@ import { mergeUses, refreshUses, type IndexUse } from './indexes.js';
 /** Shared by every report without failures or skipped systems: they're read-only, so none needs its own. */
 const none: readonly never[] = [];
 const noChunks: readonly Chunk[] = [];
-const noRunners: readonly Runner[] = [];
 /** The report of a run with nothing to report. */
 export const clean: RunReport = { failures: none, skipped: none, dropped: 0, warnings: none };
 
@@ -109,8 +108,12 @@ type Prepared = {
      * tier for any other.
      */
     readonly passes: number[];
-    /** By tier starting a pass of several, the runners of the whole pass, which it counts as it ran at once. */
-    readonly passRunners: (readonly Runner[])[];
+    /**
+     * By tier within a pass of several, how many runners it and the pass's later tiers hold, and whether any runs on the
+     * GPU: what a pass entered there counts once it ran to its end.
+     */
+    readonly passSystems: number[];
+    readonly passGpu: boolean[];
     /** The world's `runnersVersion` its runners were read at. */
     version: number;
     readonly started: (readonly Chunk[])[][];
@@ -179,7 +182,7 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
     if (prepared === undefined) {
         prepared = {
             runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), remotes: schedule.tiers.map(() => 0), uses: schedule.tiers.map(() => []),
-            passes: schedule.tiers.map((_, t) => t), passRunners: schedule.tiers.map(() => noRunners), version: -1,
+            passes: schedule.tiers.map((_, t) => t), passSystems: schedule.tiers.map(() => 0), passGpu: schedule.tiers.map(() => false), version: -1,
             started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)),
             systems: [], tiers: [], tasks: new Map(), warnings: [], warningCount: 0, warned: null, outcome: { failures: null, skipped: null },
             placement: -1, tailing: null, settling: 0, chunk: 0, error: undefined, tierFailed: false, dropped: 0,
@@ -212,7 +215,7 @@ const asWritten = (runners: readonly Runner[]): boolean => {
 
 /** Finds a schedule's passes (`Prepared["passes"]`) from its runners as read now. */
 const passesOf = (schedule: Schedule, prepared: Prepared): void => {
-    const { runners, uses, passes, passRunners } = prepared;
+    const { runners, uses, passes, passSystems, passGpu } = prepared;
     let last = -1;
     for (let t = 0; t < schedule.tiers.length; t++) {
         if (!asWritten(runners[t])) last = t;
@@ -221,7 +224,14 @@ const passesOf = (schedule: Schedule, prepared: Prepared): void => {
             while (last + 1 < schedule.tiers.length && uses[last + 1].length === 0 && asWritten(runners[last + 1])) last++;
         }
         passes[t] = last;
-        passRunners[t] = last === t ? noRunners : runners.slice(t, last + 1).flat();
+    }
+    for (let t = schedule.tiers.length - 1; t >= 0; t--) {
+        const tier = runners[t];
+        const continues = passes[t] > t;
+        let gpu = continues && passGpu[t + 1];
+        for (let i = 0; i < tier.length; i++) if (tier[i].placement !== "cpu") gpu = true;
+        passSystems[t] = tier.length + (continues ? passSystems[t + 1] : 0);
+        passGpu[t] = gpu;
     }
 };
 
@@ -556,7 +566,7 @@ const runPass = (context: ExecuteContext, prepared: Prepared, schedule: Schedule
             return -1;
         }
     }
-    countRan(state, prepared.passRunners[first]);
+    countRanHere(state, prepared.passSystems[first], prepared.passGpu[first]);
     return last;
 };
 

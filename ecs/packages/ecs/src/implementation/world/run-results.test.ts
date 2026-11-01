@@ -354,6 +354,23 @@ describe("what a run gathers for tests", () => {
         expect(await runRan(world, System.create([nothing, raise]))).toEqual({ systems: 2, workers: 0, joined: 0, main: true, gpu: false });
         expect(await runRan(world, readLevel)).toEqual({ systems: 0, workers: 0, joined: 0, main: false, gpu: false });
     });
+
+    it("counts each system of a chain once, run whole or entered after a sync point that applies something", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        /** Systems each after the one before, the first after `first`. */
+        const chainOf = (length: number, first: readonly System<unknown>[]): System<unknown>[] => {
+            const links: System<unknown>[] = [];
+            for (let k = 0; k < length; k++) links.push(System.create({ after: links.length === 0 ? first : links.slice(-1) }, ({ resources }) => {
+                resources[frames] = k;
+            }));
+            return links;
+        };
+        expect(await runRan(world, System.create(chainOf(64, [])))).toEqual({ systems: 64, workers: 0, joined: 0, main: true, gpu: false });
+        const reads = System.create({ after: [spawn], components: { with: [amount] } }, row => {
+            counted += row[amount];
+        });
+        expect(await runRan(world, System.create([spawn, reads, ...chainOf(8, [reads])]))).toEqual({ systems: 10, workers: 0, joined: 0, main: true, gpu: false });
+    });
 });
 
 describe("a value a body returned", () => {

@@ -147,10 +147,11 @@ const closedOf = (state: State, archetype: Archetype): Archetype => {
 };
 
 /**
- * Despawns each entity a `despawnWhere` command selects given the plan so far: those planned, by where they're going,
- * then the rest, by the archetype they're in. Never the resource entity.
+ * Despawns each entity alive before the sync point that a `despawnWhere` command selects given the plan so far: those
+ * planned, by where they're going, then the rest, by the archetype they're in. Never the resource entity, nor an
+ * entity the sync point spawns: `born` holds the first row each archetype gained at it.
  */
-const despawnWhere = (state: State, buffer: CommandBuffer, command: number, within: boolean): void => {
+const despawnWhere = (state: State, buffer: CommandBuffer, command: number, within: boolean, born: ReadonlyMap<number, number>): void => {
     const { plan, archetypes } = state;
     const { ids } = buffer;
     const start = buffer.starts[command];
@@ -159,8 +160,12 @@ const despawnWhere = (state: State, buffer: CommandBuffer, command: number, with
     const where = ids[last - 1] === despawnWhereHolds ? buffer.values[last - 1] : null;
     const holds = typeof where === "function" ? where : null;
     const end = holds === null ? last : last - 1;
+    const { row } = state.entities;
     for (let entry = 0; entry < plan.count; entry++) {
-        if (plan.despawned[entry] === 1 || plan.entity[entry] === state.resourceEntity) continue;
+        const from = plan.from[entry];
+        if (plan.despawned[entry] === 1 || plan.entity[entry] === state.resourceEntity || from < 0) continue;
+        const first = born.get(from);
+        if (first !== undefined && row[indexOf(plan.entity[entry])] >= first) continue;
         const to = archetypes[plan.to[entry]];
         if (matches(within && plan.to[entry] !== plan.from[entry] ? closedOf(state, to) : to, ids, start, middle, end, holds)) plan.despawned[entry] = 1;
     }
@@ -171,8 +176,9 @@ const despawnWhere = (state: State, buffer: CommandBuffer, command: number, with
         if (archetype.resource || archetype.count === 0 || !matches(archetype, ids, start, middle, end, holds)) continue;
         ensurePlanCapacity(state, plan.count + archetype.count);
         const { entities } = archetype;
-        for (let row = 0; row < archetype.count; row++) {
-            const entity = entities[row];
+        const alive = born.get(id) ?? archetype.count;
+        for (let at = 0; at < alive; at++) {
+            const entity = entities[at];
             const index = indexOf(entity);
             if (slots[index] < 0) plan.despawned[addPlanned(state, entity, index, id, id)] = 1;
         }
@@ -183,7 +189,7 @@ const despawnWhere = (state: State, buffer: CommandBuffer, command: number, with
  * Plan: the net change for each entity, in issue order. Commands against dead entities do nothing. Reference values
  * written by commands go to `written`, to check once despawns are known.
  */
-const planOf = (state: State, queued: readonly Queued[], written: Written): void => {
+const planOf = (state: State, queued: readonly Queued[], written: Written, born: ReadonlyMap<number, number>): void => {
     const { plan, structure } = state;
     if (plan.slots.length < state.entities.length) plan.slots = new Int32Array(Math.max(state.entities.length, plan.slots.length * 2)).fill(-1);
     const { slots } = plan;
@@ -199,7 +205,7 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
         for (let command = 0; command < buffer.count; command++) {
             const kind = kinds[command];
             if (kind === despawnWhereCommand) {
-                despawnWhere(state, buffer, command, within);
+                despawnWhere(state, buffer, command, within, born);
                 ensurePlanCapacity(state, plan.count + buffer.count - command);
                 continue;
             }
@@ -742,7 +748,7 @@ const preparePending = (state: State, queued: readonly Queued[], isolated: boole
         if (!isolated) plan.spawned += commitBatches(state, tick, born, deriving ? close : null);
         plan.spawned += commitStaged(state, queued, tick, born, deriving ? close : null);
         const written: Written = [];
-        planOf(state, queued, written);
+        planOf(state, queued, written, born);
         if (structure.rederive && !isolated) rederive(state);
         if (deriving) for (let entry = 0; entry < plan.count; entry++) if (plan.despawned[entry] === 0) plan.to[entry] = close(state.archetypes[plan.to[entry]]).id;
         let index: IndexChanges | null = null;

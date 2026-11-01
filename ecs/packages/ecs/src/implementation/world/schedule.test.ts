@@ -8,17 +8,25 @@ import { scheduleOf } from "../../interface/registry/schedule.js";
 
 const value = Symbol("scheduleTest/value");
 const other = Symbol("scheduleTest/other");
+const voxel = Symbol("scheduleTest/voxel");
+const mark = Symbol("scheduleTest/mark");
+const size = Symbol("scheduleTest/size");
 
 declare module "@adobe/ecs" {
     export interface Components {
         [value]: { type: number };
         [other]: { type: number };
+        [voxel]: { type: true };
+        [mark]: { type: true };
+    }
+    export interface Resources {
+        [size]: { type: number };
     }
 }
 
 
 /** Systems built as values, not registered, so each test's are its own. */
-const leaf = (declaration: Resolved & { readonly name: string }): Leaf => ({ kind: "system", name: declaration.name, declaration, input: undefined, body: () => {} });
+const leaf = (declaration: Resolved & { readonly name: string }): Leaf => ({ kind: "system", name: declaration.name, declaration, input: undefined, body: () => {}, commands: () => undefined });
 const composite = (declaration: Composite["declaration"] & { readonly name: string }): Composite => ({ kind: "composite", name: declaration.name, declaration });
 
 const names = (system: Definition): string[][] => scheduleOf(system).tiers.map(tier => tier.map(leaf => leaf.name));
@@ -111,6 +119,39 @@ describe("scheduleOf", () => {
         const ordered = leaf({ ...b.declaration, name: b.name, after: [a] });
         expect(names(composite({ name: "root", systems: [a, ordered, c] })))
             .toEqual([["a", "c"], ["b"]]);
+    });
+
+    it("doesn't order two systems on a key both reach through rows that never match one entity", () => {
+        const voxels = leaf({ name: "voxels", components: { write: [value], has: [voxel], not: [mark] } });
+        const marks = leaf({ name: "marks", components: { write: [value], has: [mark] } });
+        const watching = leaf({ name: "watching", components: { read: [value], changed: [value], has: [mark] } });
+        expect(names(composite({ name: "root", systems: [voxels, marks] }))).toEqual([["voxels", "marks"]]);
+        expect(names(composite({ name: "root", systems: [voxels, watching] }))).toEqual([["voxels", "watching"]]);
+    });
+    it("orders two systems whose rows may match one entity, or that reach the key other than through their rows", () => {
+        const voxels = leaf({ name: "voxels", components: { write: [value], has: [voxel] } });
+        const marks = leaf({ name: "marks", components: { write: [value], has: [mark] } });
+        expect(() => scheduleOf(composite({ name: "root", systems: [voxels, marks] })))
+            .toThrow(`Systems "voxels" and "marks" both access "scheduleTest/value" and one writes it; order them with before or after, or, if they never match one entity, add a component of one to the other's not.`);
+        const apart = leaf({ name: "apart", components: { write: [value], has: [voxel], not: [mark] } });
+        const looking = leaf({ name: "looking", components: { has: [mark] }, lookup: { others: { read: [value] } } });
+        expect(() => scheduleOf(composite({ name: "root", systems: [apart, looking] })))
+            .toThrow(`Systems "apart" and "looking" both access "scheduleTest/value" and one writes it; order them with before or after.`);
+        // An optional component is read where an entity has it, so it excludes nothing it doesn't require.
+        const optional = leaf({ name: "optional", components: { read: [value, mark], optional: [mark] } });
+        expect(() => scheduleOf(composite({ name: "root", systems: [apart, optional] }))).toThrow('"apart" and "optional"');
+    });
+
+    it("orders a system before or after every other that uses a resource it lists, but those already ordered and those listing it too", () => {
+        const resize = leaf({ name: "resize", resources: { write: [size] }, before: [size] });
+        const frame = leaf({ name: "frame", resources: { read: [size] } });
+        const pick = leaf({ name: "pick", components: { read: [value] }, resources: { is: [size] } });
+        const old = leaf({ name: "old", resources: { read: [size] }, before: [resize] });
+        expect(names(composite({ name: "root", systems: [frame, pick, resize, old] }))).toEqual([["old"], ["resize"], ["frame", "pick"]]);
+        const last = leaf({ name: "last", resources: { read: [size] }, after: [size] });
+        expect(names(composite({ name: "root", systems: [last, frame, resize] }))).toEqual([["resize"], ["frame"], ["last"]]);
+        const again = leaf({ name: "again", resources: { write: [size] }, before: [size] });
+        expect(() => scheduleOf(composite({ name: "root", systems: [resize, again, frame] }))).toThrow(`Systems "resize" and "again" both access "scheduleTest/size"`);
     });
 
     it("schedules two systems of one name as two, and one listed twice as one", () => {

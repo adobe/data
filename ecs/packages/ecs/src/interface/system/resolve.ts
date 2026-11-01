@@ -23,7 +23,10 @@ export type Access = {
     readonly up: readonly Key[] | null;
     /** The resources the predicates of its declaration's `where` read; absent without predicates. */
     readonly where?: readonly Key[] | null;
-    /** What its commands name, keys or lists of them, by kind, and whether it despawns; absent where no build said. */
+    /**
+     * What its commands name, keys or lists of them, by kind, and whether it despawns, or a function giving that; absent
+     * where no build said.
+     */
     readonly commands?: unknown;
     readonly at: string;
 };
@@ -35,7 +38,7 @@ const isKeys = (value: unknown): value is readonly Key[] => Array.isArray(value)
 
 const isNamed = (value: unknown): value is Named => Array.isArray(value) && value.every(item => typeof item === "symbol" || isKeys(item));
 
-/** A binding a command named that holds neither a key nor a list of them, as one declared below its system, isn't followed. */
+/** A binding a command named that holds neither a key nor a list of them isn't followed. */
 const isCommanded = (value: unknown): value is Commanded => typeof value === "object" && value !== null
     && isNamed(Reflect.get(value, "spawn")) && isNamed(Reflect.get(value, "add")) && isNamed(Reflect.get(value, "remove"))
     && typeof Reflect.get(value, "despawn") === "boolean";
@@ -173,15 +176,47 @@ export const whereReadsOf = (what: string, components: ComponentAccess | undefin
     return reads;
 };
 
-/** What a body's commands name, as the world takes it: null where the build couldn't follow them, nothing for none. */
-export const commandLists = (access: Access): CommandLists | null | undefined => {
-    const { commands } = access;
+/**
+ * What a body's commands name, as the world takes it, read at the first call and kept: null where the build couldn't
+ * follow them, nothing for none. The build gives them as a function, so a list declared below the system is read once
+ * its module has loaded; one still uninitialized then, as an import cycle leaves it, throws naming it.
+ */
+export const commandListsOf = (what: string, access: Access): (() => CommandLists | null | undefined) => {
+    let read = false;
+    let lists: CommandLists | null | undefined;
+    return () => {
+        if (!read) {
+            lists = listsOf(what, access.commands);
+            read = true;
+        }
+        return lists;
+    };
+};
+
+/** The command lists of a system whose body issues none. */
+export const noCommands = (): undefined => undefined;
+
+const listsOf = (what: string, given: unknown): CommandLists | null | undefined => {
+    const commands = typeof given === "function" ? evaluated(what, () => Reflect.apply(given, undefined, [])) : given;
     if (commands === undefined) return undefined;
     if (!isCommanded(commands)) return null;
     if (!commands.despawn && commands.spawn.length + commands.add.length + commands.remove.length === 0) return undefined;
     const flat = (named: Named): Key[] => [...new Set(named.flat())];
     const lists = compact({ spawn: flat(commands.spawn), add: flat(commands.add), remove: flat(commands.remove), despawn: commands.despawn ? true as const : undefined });
     return Object.keys(lists).length === 0 ? undefined : lists;
+};
+
+/** What the build's function of a body's commands gives. */
+const evaluated = (what: string, commands: () => unknown): unknown => {
+    try {
+        return commands();
+    } catch (error) {
+        if (!(error instanceof ReferenceError)) throw error;
+        // Engines quote the binding in the message: "Cannot access 'standard' before initialization", or "can't access
+        // lexical declaration 'standard' before initialization".
+        const binding = /'([A-Za-z_$][\w$]*)'/.exec(error.message)?.[1];
+        throw new Error(`${what} names ${binding === undefined ? "a declaration" : `"${binding}"`} in its commands before it's initialized: declare it above the system.`, { cause: error });
+    }
 };
 
 /** What a body reads of its parent's values. */

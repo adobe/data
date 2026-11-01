@@ -17,9 +17,6 @@ correctness, then optimization. Remove an item once it's decided or done.
 - **Iterable lists:** `for (const row of list)` on index lookups' lists, binding each row as the loop reaches it with
   no allocation (the list is its own iterator, reset per loop), lowered by kernels to the indexed loop. `list[i]` and
   array methods stay out: indexing can't bind lazily without a Proxy, and the methods would widen the surface.
-- **`watch` by trait on changes finalizers:** `Finalizer.changes({ watch: file }, …)`, `watch` taking a trait's key as
-  well as a list of keys, typed as `Component.With<…>`, computed once per component id as `watches` already is. The
-  hook external persistence would build on.
 - **Readonly systems can't declare `up`**, and `order` can't be combined with `up`, so views as separate entities
    don't work as bindings. Proposal: allow `up` in readonly systems, since it only reads; let `order` take an index over
    the entity a reference names. (from the todo sample)
@@ -31,11 +28,6 @@ correctness, then optimization. Remove an item once it's decided or done.
 - **Frames in flight:** `run` resolves once its work is submitted, before the GPU finishes it, so a loop on a slow GPU
   queues frames without bound; the particles sample caps them at two with `onSubmittedWorkDone`. Possible: the world's
   loop skips a beat while a set number of submitted frames are unfinished, the number a resource.
-- **A resource holding objects that aren't data can't start as an empty map:** a `ReadonlyMap` of `GPUTexture`s, say,
-  gets no fresh map, and a namespace's `default` holding an empty one fails the build's deep readonly check at the
-  objects. Such a resource allows `null` instead, which `@adobe/ecs-gpu`'s `states` resources do, and every reader
-  handles it. Possible: a fresh empty `ReadonlyMap` or `ReadonlySet` for one of objects too, since emptiness doesn't
-  depend on what it would hold.
 - **Pipelines built from a device a body captured go stale** when `gpuDevice` changes: the world rebuilds its own GPU
   objects, and a consumer's must follow `changed: [gpuDevice]`. `System.render`'s and `gpuDevice`'s docs should say so.
 - **Descending sorted indexes:** an ordered render reads its index front to back, so a consumer painting back to front
@@ -68,7 +60,9 @@ correctness, then optimization. Remove an item once it's decided or done.
   rows the body only iterates. The repository has no ESLint plugin or configuration yet, so it needs deciding where
   such rules live, and whether it's a rule or a build warning, since the plugin sees every system and index.
 - **`despawnWhere` from the build:** a row system whose whole body is `commands.despawn(row.entity)` could be lowered to
-  `commands.despawnWhere` of its query; and `despawnWhere` on joined threads, through their command rings.
+  `commands.despawnWhere` of its query, which keeps its meaning while no command issued before it at its sync point
+  changes what the query matches, as a sync point between them ensures for a system ordered before it; and
+  `despawnWhere` on joined threads, through their command rings.
 - **A trait key a library declares** (adobe/data#239): the compiler reads a trait's key where an application's module
   makes it with `Symbol()`. A library whose types declare one, `declare const key: unique symbol` in a `.d.ts`, would
   need the compiler to take such a declaration as a key. No library declares one.

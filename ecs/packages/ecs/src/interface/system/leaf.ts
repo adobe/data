@@ -19,8 +19,9 @@ export type Leaf = {
     readonly input: InputSchema | undefined;
     readonly body: (...parameters: never[]) => void;
     /**
-     * What its body's commands name, as the build inferred them: null where it couldn't follow them, undefined for
-     * none. Apart from its declaration, so a module evaluated again with other commands declares the same system.
+     * What its body's commands name, as the build inferred them, read at first need: null where it couldn't follow
+     * them, undefined for none. Apart from its declaration, so a module evaluated again with other commands declares the
+     * same system.
      */
-    readonly commands?: CommandLists | null;
+    readonly commands: () => CommandLists | null | undefined;
 };

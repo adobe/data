@@ -115,6 +115,23 @@ describe("spawn with match", () => {
         expect(spawned.entities.get(savedSteel)).toBe(existingSteel);
     });
 
+    it("writes the snapshot's values onto the entities an index matches with update, through bytes too, leaving their other components", async () => {
+        await using from = inline();
+        await from.run(build, { materials: [{ name: "steel", friction: 0.5 }, { name: "wood", friction: 0.3 }], bodies: [{ label: "box", material: "steel" }] });
+        await using into = inline();
+        await into.run(build, { materials: [{ name: "steel", friction: 0.9 }], bodies: [] });
+        const existingSteel = (await read(into)).find(item => item.material === "steel")?.entity ?? Entity.none;
+        await into.run(System.create(({ commands }) => { commands.add(existingSteel, tag, "kept"); }));
+        const decoded = decode(encode(await taken(from)), { by: saved });
+        if (decoded.failure !== undefined) throw new Error(decoded.failure);
+        const spawned = await spawn({ world: into, snapshot: decoded, match: [materialByName], update: true });
+        if (spawned.failure !== undefined) throw new Error(spawned.failure);
+        expect(await described(into)).toEqual({ materials: { steel: 0.5, wood: 0.3 }, bodies: { box: "steel 0.5" } });
+        const tags: string[] = [];
+        await into.run(System.create({ readonly: true, components: { with: [tag] } }, row => { tags.push(row[tag]); }));
+        expect([tags, (await read(into)).filter(item => item.material === "steel").map(item => item.entity)]).toEqual([["kept"], [existingSteel]]);
+    });
+
     it("merges through bytes, as a snapshot encoded and decoded", async () => {
         await using from = inline();
         await from.run(build, { materials: [{ name: "steel", friction: 0.5 }], bodies: [{ label: "box", material: "steel" }] });

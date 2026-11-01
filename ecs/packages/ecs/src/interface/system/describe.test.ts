@@ -56,6 +56,25 @@ describe("System.describe", () => {
         const tally = System.create({ after: [count] }, ({ resources }) => { resources[hover] = resources[speed]; });
         expect(System.describe(System.create([clear, count, tally])).tiers.map(tier => tier.sync)).toEqual([[{ from: clear, to: count, keys: [] }], null, null]);
     });
+    it("lists no conflict on a key two systems reach through rows that never match one entity", () => {
+        const placeCells = System.create({ components: { with: [position, cell] } }, row => { row[cell] = row[position]; });
+        const clearCells = System.create({ components: { with: [cell], not: [position] }, after: [placeCells] }, row => { row[cell] = 0; });
+        expect(System.describe(System.create([placeCells, clearCells])).tiers[1]?.systems[0]?.after).toEqual([{ system: placeCells, name: "placeCells", because: "after", conflicts: [] }]);
+    });
+    it("says a system follows another by a resource one lists in before or after", () => {
+        const setSpeed = System.create({ before: [speed] }, ({ resources }) => { resources[speed] = 2; });
+        const readSpeed = System.create({ components: { with: [position] } }, (row, { resources }) => { row[position] = resources[speed]; });
+        const readHover = System.create({ after: [hover] }, ({ resources }) => resources[hover] + resources[speed]);
+        const setHover = System.create({ after: [setSpeed] }, ({ resources }) => { resources[hover] = 1; });
+        const described = System.describe(System.create([readHover, readSpeed, setHover, setSpeed]));
+        expect(described.tiers.map(tier => tier.systems.map(system => [system.name, system.after.map(placement => [placement.name, placement.because])]))).toEqual([
+            [["setSpeed", []]],
+            [["readSpeed", [["setSpeed", "before"]]], ["setHover", [["setSpeed", "after"]]]],
+            [["readHover", [["setHover", "after"]]]],
+        ]);
+        // @ts-expect-error ordering takes resources, not components
+        expect(() => System.create({ after: [position] }, () => {})).toThrow(`uses resource "describeTest/position", which isn't a registered resource`);
+    });
     it("gives a text form to read", () => {
         expect(System.describe(frame).text).toBe([
             "tier 0  spawnCells   commands  spawn describeTest/position",

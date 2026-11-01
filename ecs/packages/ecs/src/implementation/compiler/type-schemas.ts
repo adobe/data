@@ -424,11 +424,15 @@ export const createConverter = (host: TypeHost, root: string) => {
             case "TSBooleanKeyword": return { type: "boolean" };
             case "TSNullKeyword": return { type: "null" };
             case "TSUnknownKeyword": return notData(use, false);
+            // A symbol can't be cloned to another thread or saved.
+            case "TSSymbolKeyword": return use === "declaration" ? notData(use, false) : fail(module, type, `${a} is ${supported}`);
             case "TSFunctionType": case "TSConstructorType":
                 return use === "declaration" ? notData(use, false) : fail(module, type, `${a} is ${supported}`);
             case "TSParenthesizedType": return await convert(type.typeAnnotation, module, active, use);
             case "TSTypeOperator":
-                return type.operator === "readonly" ? await convert(type.typeAnnotation, module, active, use) : fail(module, type, `\`${type.operator}\` isn't ${a}: ${a} is ${supported}`);
+                if (type.operator === "readonly") return await convert(type.typeAnnotation, module, active, use);
+                // Keys, as `Resource.Key` and `unique symbol` are, may be symbols.
+                return use === "declaration" ? notData(use, false) : fail(module, type, `\`${type.operator}\` isn't ${a}: ${a} is ${supported}`);
             case "TSLiteralType": {
                 const { literal } = type;
                 if (literal.type === "Literal" && (typeof literal.value === "string" || typeof literal.value === "number" || typeof literal.value === "boolean")) return { const: literal.value };
@@ -677,7 +681,29 @@ export const createConverter = (host: TypeHost, root: string) => {
         return { anyOf: values.map(value => ({ const: value })) };
     };
 
-    return { convert, read, site, fail, typeNamed, constantNamed, returnTypeNamed, valueOfType };
+    /**
+     * `"Map"` or `"Set"` for a declared type that is a `ReadonlyMap` or `ReadonlySet`, read through aliases, which starts
+     * empty in each world whatever it holds; null for any other.
+     */
+    const freshOf = async (type: TypeNode, module: Module, seen: Set<Declared> = new Set()): Promise<"Map" | "Set" | null> => {
+        if (type.type === "TSParenthesizedType") return await freshOf(type.typeAnnotation, module, seen);
+        if (type.type === "TSTypeOperator" && type.operator === "readonly") return await freshOf(type.typeAnnotation, module, seen);
+        if (type.type !== "TSTypeReference") return null;
+        const path = nameParts(type.typeName);
+        const [only] = path;
+        const count = type.typeArguments?.params.length ?? 0;
+        if (path.length === 1 && only !== undefined && !module.types.has(only) && !module.imports.has(only)) {
+            if (only === "ReadonlyMap" && count === 2) return "Map";
+            if (only === "ReadonlySet" && count === 1) return "Set";
+        }
+        if (count !== 0) return null;
+        const found = await typeNamed(path, module);
+        if (found === null || typeof found === "string" || found.declaration.type !== "TSTypeAliasDeclaration" || seen.has(found.declaration)) return null;
+        seen.add(found.declaration);
+        return await freshOf(found.declaration.typeAnnotation, found.module, seen);
+    };
+
+    return { convert, freshOf, read, site, fail, typeNamed, constantNamed, returnTypeNamed, valueOfType };
 };
 
 /** A name and the properties read from it, `Entity.none` as `["Entity", "none"]`; null for any other expression. */

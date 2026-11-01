@@ -18,7 +18,7 @@ import type { OneThread, ThreadedBy, ThreadsOf } from './threads.js';
 import type { HeldBy } from './values.js';
 import type { SharedOnly } from './shared-only.js';
 import type { Shared } from '../component/value.js';
-import { accessOf, commandLists, compact, componentLists, lookupsLists, resourceUses, upReads, whereReadsOf } from './resolve.js';
+import { accessOf, commandListsOf, compact, componentLists, lookupsLists, resourceUses, upReads, whereReadsOf } from './resolve.js';
 
 type Lookups<D> = Property<D, "lookup">;
 
@@ -181,7 +181,7 @@ export function create(first: Declaration | Leaf["body"] | readonly System<unkno
     const access = accessOf(`System "${name}"`, first);
     const declaration = resolve(`System "${name}"`, declared, access);
     const schema = inputSchemaOf(name, body, declaration.components === undefined ? 1 : 2, input);
-    const system: Leaf & System<unknown> = { kind: "system", name, declaration, input: schema, body, commands: commandLists(access) };
+    const system: Leaf & System<unknown> = { kind: "system", name, declaration, input: schema, body, commands: commandListsOf(`System "${name}"`, access) };
     checkLeaf(system);
     claimSystem(system, id);
     return system;

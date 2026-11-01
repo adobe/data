@@ -26,10 +26,13 @@ const isEntities = (value: unknown): value is ReadonlyMap<Entity, Entity> => {
     return true;
 };
 
-/** Spawns its input's tables and sets its resources, a snapshot's, rewriting their entities, those `existing` maps standing for theirs. */
-const spawnTables = System.create({}, ({ commands }, input: { readonly tables: unknown; readonly resources: unknown; readonly existing: unknown }) => {
+/**
+ * Spawns its input's tables and sets its resources, a snapshot's, rewriting their entities, those `existing` maps
+ * standing for theirs, onto which `update` writes their rows.
+ */
+const spawnTables = System.create({}, ({ commands }, input: { readonly tables: unknown; readonly resources: unknown; readonly existing: unknown; readonly update: boolean }) => {
     if (!isTables(input.tables) || !isKeyed(input.resources) || !isEntities(input.existing)) throw new Error("A snapshot holds tables and resources.");
-    return commands.spawnTables(input.tables, { resources: input.resources, existing: input.existing });
+    return commands.spawnTables(input.tables, { resources: input.resources, existing: input.existing, update: input.update });
 });
 
 /**
@@ -42,6 +45,10 @@ const spawnTables = System.create({}, ({ commands }, input: { readonly tables: u
  *   with the key of one of the snapshot's it holds, stands for it, keeping its own values, and isn't spawned again. It
  *   fails for an index whose key, `with` or `not` names a component the snapshot's trait doesn't cover, or two of the
  *   snapshot's entities with one key.
+ * - `update: true` writes the saved components of each entity `match` found onto it, as `commands.add` would: adding
+ *   those it lacks, replacing and marking changed those it has, and leaving its other components as they are, its
+ *   entity values rewritten as a spawned entity's are, but a reference to an entity that isn't there, which is left
+ *   out. So an entity the application makes at startup takes the values it was saved with.
  * - `entities: false` leaves out the result's map of entities, which costs about 85 ms and 50 MB at a million.
  *
  * Fails, as data, for a column or resource that doesn't fit, spawning nothing.
@@ -55,14 +62,17 @@ export async function spawn(input: Spawning & { readonly entities?: boolean }): 
     for (const { persisted, value } of resources) values[persisted.key] = value;
     const existing = input.match === undefined || input.match.length === 0 ? new Map<number, number>() : await existingFor(input.world, from, input.match);
     if ("failure" in existing) return existing;
-    const spawned = await input.world.run(spawnTables, { tables, resources: values, existing }).catch((error: unknown) => ({ failure: error instanceof Error ? error.message : String(error) }));
+    const spawned = await input.world.run(spawnTables, { tables, resources: values, existing, update: input.update === true }).catch((error: unknown) => ({ failure: error instanceof Error ? error.message : String(error) }));
     if ("failure" in spawned) return spawned;
     if (input.entities === false) return { dropped: spawned.dropped };
     return { dropped: spawned.dropped, entities: entitiesOf(tables, spawned.entities) };
 }
 
-/** What `spawn` takes: the world spawned into, the snapshot, and the indexes saying which of its entities are there already. */
-type Spawning = { readonly world: World; readonly snapshot: Snapshot; readonly match?: readonly Matching[] };
+/**
+ * What `spawn` takes: the world spawned into, the snapshot, the indexes saying which of its entities are there already,
+ * and whether to write their saved components onto them.
+ */
+type Spawning = { readonly world: World; readonly snapshot: Snapshot; readonly match?: readonly Matching[]; readonly update?: boolean };
 
 /** Each of the tables' entities to the one spawned for it, the one existing for it, or null for one that wasn't. */
 const entitiesOf = (tables: readonly World.Table[], spawned: readonly Float64Array[]): ReadonlyMap<Entity, Entity | null> => {

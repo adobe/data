@@ -11,3 +11,8 @@ closes too.
 A *change set* is each sync point's structural changes to the components a `Finalizer.changes` watches, grouped by how
 entities changed. [`changes.previous` and `changes.next`](10-finalizers.ts#L32-L36) give a component's value before
 and after, `null` where the entity didn't have it: what saving and undo need.
+
+It watches what `watch` names: components, resources, whose writes it sees as `changes.resources`, and traits of your
+own, every component and resource declaring one, as each registers, so a list kept by hand never misses a key. Without
+`watch`, every component and no resource; `watch: { components: true, resources: [...] }` watches every component and
+the resources listed.

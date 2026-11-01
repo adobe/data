@@ -4,7 +4,7 @@ import { Rule } from "../../interface/rule/rule.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "../index.js";
 import { readResource } from "./reads.test-helper.js";
-import { Entity, F32, I32, Mat4x4, Quat, U32, Vec2, Vec3, Vec4 } from "../../index.js";
+import { Entity, F32, I32, Mat4x4, Quat, U32, Vec2, Vec3, Vec4, type Resource } from "../../index.js";
 
 const pool = Symbol();
 const names = Symbol();
@@ -14,6 +14,8 @@ const index = Symbol();
 const turn = Symbol();
 const least = Symbol();
 const all = Symbol();
+const written = Symbol();
+const keys = Symbol();
 
 /** A pool declared through an alias of ReadonlyMap. */
 type Pool = ReadonlyMap<string, number>;
@@ -30,6 +32,8 @@ declare module "@adobe/ecs" {
         [turn]: { type: Quat };
         [least]: { type: F32; reduce: "min" };
         [all]: { type: boolean; reduce: "&" };
+        [written]: { type: ReadonlyMap<Resource.Key, unknown> };
+        [keys]: { type: ReadonlySet<symbol> };
     }
 }
 
@@ -46,6 +50,25 @@ describe("a resource declared without a default", () => {
         expect(await readResource(first, pool)).toBe(firstPool);
         expect(await readResource(first, names)).toEqual(new Map());
         expect(await readResource(first, count)).toBe(0);
+    });
+});
+
+describe("a ReadonlyMap or ReadonlySet of what isn't data", () => {
+    it("starts at an empty one of each world's own, which a system replaces whole, keys and values kept as they are", async () => {
+        await using first = createWorld();
+        await using second = createWorld();
+        const [firstWritten, secondWritten] = [await readResource(first, written), await readResource(second, written)];
+        expect([firstWritten, secondWritten, await readResource(first, keys)]).toEqual([new Map(), new Map(), new Set()]);
+        expect(firstWritten).not.toBe(secondWritten);
+        const value = { at: 1 };
+        await first.run(System.create(({ resources }) => {
+            resources[written] = new Map([[count, value]]);
+            resources[keys] = new Set([count]);
+        }));
+        const read = await readResource(first, written);
+        expect([read.get(count), await readResource(first, keys)]).toEqual([value, new Set([count])]);
+        expect(read.get(count)).toBe(value);
+        expect(await readResource(second, written)).toBe(secondWritten);
     });
 });
 

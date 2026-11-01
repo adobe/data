@@ -5,6 +5,8 @@ import type { Lookup } from '../system/access.js';
 import type { Finalizer } from './finalizer.js';
 import type { Essential } from '../component/value.js';
 import type { Resource } from '../resource/resource.js';
+import type { Traits } from '../trait/types.js';
+import type { BuiltIn } from '../trait/key.js';
 
 /**
  * What every finalizer declares. What its body reads of its row and lookups, and reads and writes of resources, the
@@ -25,12 +27,23 @@ export type Declaration = Shared & {
     readonly components: { readonly with?: readonly Component.Key[]; readonly optional?: readonly Component.Key[]; readonly not?: readonly Component.Key[] };
 };
 
+/** A trait of your own, which watches every component and resource declaring it. */
+export type OwnTrait = Exclude<keyof Traits<never>, BuiltIn>;
+
 /**
- * A finalizer that sees each sync point's structural changes to the components it watches: by default, every one that
- * isn't derived or an object a joined thread fills; and the resources it watches, none by default, written since the
- * last sync point's finalizers ran.
+ * A finalizer that sees each sync point's structural changes to the components it watches, and the resources it
+ * watches written since the last sync point's finalizers ran. By default it watches every component that isn't derived
+ * or an object a joined thread fills, and no resource. `watch` lists components, resources and traits of your own, or,
+ * as an object, every component (`components: true`) or those listed, beside the resources listed. A trait watches each
+ * component and resource declaring it, as each registers, but those the default leaves out and resources on another
+ * thread.
  */
-export type ChangesDeclaration = Shared & { readonly watch?: readonly (Essential | Resource.Key)[] };
+export type ChangesDeclaration = Shared & {
+    readonly watch?: readonly (Essential | Resource.Key | OwnTrait)[] | {
+        readonly components: true | readonly (Essential | OwnTrait)[];
+        readonly resources: readonly (Resource.Key | OwnTrait)[];
+    };
+};
 
 type Key = symbol;
 
@@ -47,4 +60,16 @@ export type Resolved = ResolvedShared & {
     readonly components: { readonly read?: readonly Key[]; readonly has?: readonly Key[]; readonly optional?: readonly Key[]; readonly not?: readonly Key[] };
 };
 
-export type ResolvedChanges = ResolvedShared & { readonly watch?: readonly Key[] };
+/**
+ * A changes finalizer's declaration as the world takes it. It watches the components listed, or every one (`true`),
+ * and those declaring a trait of `componentTraits`; the resources listed, and those declaring a trait of
+ * `resourceTraits`.
+ */
+export type ResolvedChanges = ResolvedShared & {
+    readonly watch: {
+        readonly components: true | readonly Key[];
+        readonly componentTraits: readonly Key[];
+        readonly resources: readonly Key[];
+        readonly resourceTraits: readonly Key[];
+    };
+};

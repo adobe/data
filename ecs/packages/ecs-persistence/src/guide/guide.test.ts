@@ -6,7 +6,7 @@ const teaches: { readonly [chapter: number]: readonly string[] } = {
     1: ["[file]: \"position\"", "snapshot({ world, by: file })", "encode(", "decode(bytes, { by: file })", "spawn({ world", "entities", "failure"],
     2: ["snapshot({ world, by: file, root", "dropped", "entities: false", "entities", "match: [byLabel]"],
     3: ["shared: true", "where: { [chunk]: [2, 0] }", "despawnWhere", "match: [byTree]"],
-    4: ["snapshot({ world, by: file })", "snapshot({ world, by: settings })", "decode", "spawn"],
+    4: ["snapshot({ world, by: file })", "snapshot({ world, by: settings })", "decode", "spawn", "match: [byCamera]", "update: true"],
 };
 
 /**
@@ -21,6 +21,7 @@ const mutations: { readonly [chapter: number]: readonly (readonly [string, strin
         ["[panelOpen]: { type: boolean; default: false; [settings]: \"panel open\" }", "[panelOpen]: { type: boolean; default: false; [file]: \"panel open\" }"],
         ["const settingsAsDocument = decode(settingsBytes, { by: file });", "const settingsAsDocument = decode(settingsBytes, { by: settings });"],
         ["[tool]: { type: string; default: \"select\"; [settings]: \"tool\" }", "[tool]: { type: string; default: \"select\"; [settings]: \"tool\"; [file]: \"tool\" }"],
+        [", update: true", ""],
     ],
 };
 

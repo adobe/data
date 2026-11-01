@@ -11,7 +11,7 @@ import type { Body } from './body.js';
 import type { ReturnsNoPromise } from './input.js';
 import { accessorsOf } from '../gpu/accessors.js';
 import { checkLeaf } from './check.js';
-import { accessOf, compact, resourceUses } from './resolve.js';
+import { accessOf, compact, noCommands, resourceUses } from './resolve.js';
 import type { Leaf } from './leaf.js';
 import type { StructComponent } from './struct.js';
 import type { Shared } from '../component/value.js';
@@ -96,7 +96,7 @@ export const render = <const D extends RenderDeclaration, B extends Body<D>>(
         },
         input: undefined,
         body,
-        commands: undefined,
+        commands: noCommands,
     };
     if (uses.write.length > 0 || uses.reduce.length > 0) throw new Error(`${what} writes or reduces into resources; a render system only reads.`);
     checkLeaf(system);

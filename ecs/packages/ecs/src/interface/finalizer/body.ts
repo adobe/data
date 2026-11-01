@@ -5,9 +5,11 @@ import type { Commands } from '../system/commands.js';
 import type { Listed, Property } from '../system/property.js';
 import type { LookupFunction } from '../system/values.js';
 import type { WriteResources } from '../system/body.js';
-import type { ChangesDeclaration, Declaration } from './declaration.js';
+import type { ChangesDeclaration, Declaration, OwnTrait } from './declaration.js';
 import type { Essential, ReadonlyType } from '../component/value.js';
 import type { Resource } from '../resource/resource.js';
+import type { Resources } from '../resource/types.js';
+import type { Components } from '../component/types.js';
 import type { ReadonlyType as ResourceType } from '../resource/value.js';
 import type { Elsewhere, ThreadsOf } from '../system/threads.js';
 
@@ -30,11 +32,28 @@ export type Context<D extends Declaration | ChangesDeclaration> =
     })
     & (true extends Elsewhere<ThreadsOf<D>> ? {} : { readonly commands: Commands });
 
+/** The components declaring any of the traits `T`. */
+type ComponentsDeclaring<T> = { [K in Component.Key]: [Extract<keyof Components[K], T>] extends [never] ? never : K }[Component.Key];
+
+/** The resources declaring any of the traits `T`. */
+type ResourcesDeclaring<T> = { [K in Resource.Key]: [Extract<keyof Resources[K], T>] extends [never] ? never : K }[Resource.Key];
+
+/** The components keys `L` name: each, and each declaring a trait among them. */
+type ComponentsOf<L> = Extract<L, Essential> | Extract<ComponentsDeclaring<Extract<L, OwnTrait>>, Essential>;
+
+/** The resources keys `L` name: each, and each declaring a trait among them. */
+type ResourcesOf<L> = Extract<L, Resource.Key> | ResourcesDeclaring<Extract<L, OwnTrait>>;
+
+/** The keys a changes finalizer's `watch` lists, by kind: those of its list, or of its object's lists. */
+export type WatchListed<D extends ChangesDeclaration, Of extends "components" | "resources"> = Property<D, "watch"> extends readonly (infer E)[] ? E
+    : Property<D, "watch"> extends { readonly [P in Of]: readonly (infer E)[] } ? E : never;
+
 /** The components a changes finalizer sees. */
-export type Watched<D extends ChangesDeclaration> = Property<D, "watch"> extends readonly unknown[] ? Listed<D, "watch"> & Essential : Essential;
+export type Watched<D extends ChangesDeclaration> = Property<D, "watch"> extends readonly unknown[] | { readonly components: readonly unknown[] }
+    ? ComponentsOf<WatchListed<D, "components">> : Essential;
 
 /** The resources a changes finalizer sees: those it watches. */
-export type WatchedResources<D extends ChangesDeclaration> = Listed<D, "watch"> & Resource.Key;
+export type WatchedResources<D extends ChangesDeclaration> = ResourcesOf<WatchListed<D, "resources">>;
 
 /** Entities whose components changed the same way: `from` and `to` are null for those spawned and despawned. */
 export type Group<C extends Component.Key> = {

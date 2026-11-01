@@ -151,9 +151,10 @@ export const createCommands = (state: State, target: { readonly buffer: CommandB
     },
     spawnTables: (tables, options) => {
         const resources = options?.resources;
-        if (resources === undefined) return spawnTables(state, tables, options?.existing);
+        const updates = options?.update === true ? target.buffer : null;
+        if (resources === undefined) return spawnTables(state, tables, options?.existing, updates);
         checkResources(resources);
-        const spawned = spawnTables(state, tables, options?.existing);
+        const spawned = spawnTables(state, tables, options?.existing, updates);
         queueResources(state, resources);
         return spawned;
     },

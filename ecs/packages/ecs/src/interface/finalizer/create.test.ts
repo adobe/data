@@ -75,7 +75,10 @@ describe("Finalizer.create and Finalizer.changes", () => {
         expect(() => untyped(Finalizer.create, { components: {} }, { resources: { reduce: [total] } })).toThrow("only systems contribute to a reduction");
         expect(() => untyped(Finalizer.create, { components: { with: [node, tags] } }, { read: [node, tags] })).toThrow('uses "typesFinalizerTest/node" on "main" and "typesFinalizerTest/tags" on "world"');
         expect(() => untyped(Finalizer.changes, { name: "derived", watch: [slot] })).toThrow("which is derived");
-        expect(() => untyped(Finalizer.changes, { name: "unregistered", watch: [Symbol("typesFinalizerTest/unregistered")] })).toThrow("which isn't a registered component or resource");
+        expect(() => untyped(Finalizer.changes, { name: "unregistered", watch: [Symbol("typesFinalizerTest/unregistered")] })).toThrow("which isn't a registered component, resource or trait");
+        expect(() => untyped(Finalizer.changes, { watch: { components: [time], resources: [] } })).toThrow(`watches "typesFinalizerTest/time" among its components, which isn't a registered component or trait`);
+        expect(() => untyped(Finalizer.changes, { watch: { components: true, resources: [label] } })).toThrow(`watches "typesFinalizerTest/label" among its resources, which isn't a registered resource or trait`);
+        expect(() => untyped(Finalizer.changes, { watch: { components: [slot], resources: [] } })).toThrow("which is derived");
         expect(() => untyped(Finalizer.create, { components: { with: [time] } })).toThrow(`uses component "typesFinalizerTest/time", which isn't a registered component`);
         expect(() => untyped(Finalizer.create, { components: { with: [label] }, lookup: { others: { not: [Symbol("typesFinalizerTest/unregistered")] } } }, { read: [label] })).toThrow("which isn't a registered component");
         expect(programFinalizers()).toHaveLength(7);

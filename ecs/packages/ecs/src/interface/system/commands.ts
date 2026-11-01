@@ -65,9 +65,9 @@ export type Commands = {
     ): (...values: SpawnValues<C, P>) => Entity;
     despawn(entity: Entity): void;
     /**
-     * Despawns, as a `despawn` of each would, every entity that has each component of `with` and none of `not` once the
-     * commands issued before it apply, and every entity spawned at the same sync point that does, whenever spawned.
-     * Derived components may be named. `where` keeps it to the archetypes holding these values of shared components,
+     * Despawns, as a `despawn` of each would, every entity alive before its sync point that has each component of
+     * `with` and none of `not` once the commands issued before it apply, as a row system over the same query despawning
+     * each of its rows would; never one the sync point spawns, whenever spawned. Derived components may be named. `where` keeps it to the archetypes holding these values of shared components,
      * each one required as `with` requires it, as a system's `where` of values does. Never the resource entity. Only on
      * the world's thread: a joined thread's throws.
      */
@@ -94,11 +94,16 @@ export type Commands = {
      * - `existing` maps entities to ones already alive in this world, which stand for them: a row whose entity it maps
      *   isn't spawned, its entry in the result is the entity it maps to, and every value naming one it maps names that
      *   entity, whether or not it's in the tables. Fails for one that isn't alive.
+     * - `update` writes each row `existing` maps onto the entity standing for it, as `commands.add` of its table's
+     *   components would: adding those the entity lacks, replacing and marking changed those it has, and leaving its
+     *   other components as they are. Its entity values are rewritten as a spawned row's are, but a reference naming an
+     *   entity that isn't there, weak or owner, is left out, so the entity's own stands.
      * - `resources` sets each resource it names, by key, at the sync point, as commands apply, each value checked
      *   against its resource's schema; not one only the world writes, nor one living on another thread.
      */
     spawnTables(tables: readonly Table[], options?: {
         readonly resources?: { readonly [key: symbol]: unknown };
         readonly existing?: ReadonlyMap<Entity, Entity>;
+        readonly update?: boolean;
     }): Table.Spawned;
 };

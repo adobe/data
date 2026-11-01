@@ -14,7 +14,8 @@ import { idOf, type Key, type State } from './state.js';
 import type { Queued } from './synchronize.js';
 import type { Essential, ReadonlyType } from '../../interface/component/value.js';
 import type { Leaf } from '../../interface/finalizer/created.js';
-import { newestKeyOf, threadOf } from '../../interface/registry/index.js';
+import { declaredOf, declaresTrait, newestKeyOf, threadOf, threadOfDeclaration } from '../../interface/registry/index.js';
+import type { ResolvedChanges } from '../../interface/finalizer/declaration.js';
 import type { Layout } from '../../interface/registry/layout.js';
 import type { TaskChannel } from './remote-systems.js';
 import { resourceOffsetsOf, writeStops, type StopsOf } from './stop-lists.js';
@@ -30,8 +31,8 @@ export type FinalizerRunner = {
     readonly excluded: readonly number[];
     /** For a changes finalizer: whether it watches a component, by id. */
     readonly watches: (id: number) => boolean;
-    /** For a changes finalizer: the resources it watches, by id. */
-    readonly resourceWatches: readonly number[];
+    /** For a changes finalizer: the resources it watches, by id, which grow as resources declaring a trait it watches register. */
+    readonly resourceWatches: number[];
     /** By archetype id: 1 if it matches, 2 if not, 0 until known. */
     readonly matches: number[];
     readonly context: Context;
@@ -63,19 +64,23 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
     const reads = query?.read ?? [];
     // By default every component that isn't derived, including ones a world first meets later; never resources, nor
     // the objects a joined thread fills, whose storage here holds only tags.
-    let watches = (id: number): boolean => !state.derived[id] && !state.resources.has(id) && state.remote[id] === undefined;
-    const watch = finalizer.kind === "changes" ? finalizer.declaration.watch : undefined;
+    const everyComponent = (id: number): boolean => !state.derived[id] && !state.resources.has(id) && state.remote[id] === undefined;
+    let watches = everyComponent;
     const resourceWatches: number[] = [];
-    if (watch !== undefined) {
-        // `Finalizer.changes` rejected derived components.
-        const watched = new Set(watch.map(key => idOf(state, key)));
-        for (const id of watched) {
-            if (!state.resources.has(id)) continue;
-            watched.delete(id);
-            resourceWatches.push(id);
-            watchResource(state, id);
+    if (finalizer.kind === "changes") {
+        const { watch } = finalizer.declaration;
+        followResources(state, watch, resourceWatches);
+        if (watch.components !== true) {
+            // `Finalizer.changes` rejected derived components.
+            const listed = new Set(watch.components.map(key => idOf(state, key)));
+            const traits = watch.componentTraits;
+            if (traits.length === 0) watches = id => listed.has(id);
+            else {
+                /** By id: 1 where its key declares one of the traits, 2 where it doesn't. */
+                const declaring: number[] = [];
+                watches = id => listed.has(id) || (everyComponent(id) && (declaring[id] ??= declaresTrait(state.keys[id], traits) ? 1 : 2) === 1);
+            }
         }
-        watches = id => watched.has(id);
     }
     const target = { buffer: createBuffer() };
     const commands = createCommands(state, target);
@@ -100,6 +105,30 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
         indexes,
         remote: null,
     };
+};
+
+/**
+ * The resources a changes finalizer watches: those it lists, and those registered so far that declare a trait it
+ * watches, but those on another thread than the world's.
+ */
+export const watchedResourcesOf = (watch: ResolvedChanges["watch"]): readonly Key[] => {
+    if (watch.resourceTraits.length === 0) return watch.resources;
+    const found: Key[] = [...watch.resources];
+    for (const [key, declared] of declaredOf("resource")) {
+        const thread = threadOfDeclaration(declared);
+        if ((thread === null || thread === "world") && declaresTrait(key, watch.resourceTraits)) found.push(key);
+    }
+    return found;
+};
+
+/** Adds to `ids` each resource a changes finalizer watches that it doesn't hold, following its changes from now. */
+export const followResources = (state: State, watch: ResolvedChanges["watch"], ids: number[]): void => {
+    for (const key of watchedResourcesOf(watch)) {
+        const id = idOf(state, key);
+        if (ids.includes(id)) continue;
+        ids.push(id);
+        watchResource(state, id);
+    }
 };
 
 /**

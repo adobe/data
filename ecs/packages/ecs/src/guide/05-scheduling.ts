@@ -3,11 +3,15 @@ import { System, World } from "../index.js";
 
 const health = Symbol();
 const damage = Symbol();
+const difficulty = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
         [health]: { type: number };
         [damage]: { type: number };
+    }
+    interface Resources {
+        [difficulty]: { type: number; default: 1 };
     }
 }
 
@@ -35,6 +39,16 @@ const report = System.create({ components: { with: [health] }, during: [render] 
 });
 const phased = System.create([report, poison, update, render]);
 
+// Ordering by a resource: before every other system that uses it.
+const harden = System.create({ before: [difficulty] }, ({ resources }) => { resources[difficulty] = 2; });
+const scale = System.create({ components: { with: [damage] } }, (row, { resources }) => {
+    row[damage] = 4 * resources[difficulty];
+});
+const tuned = System.create([scale, harden]);
+const readDamage = System.create({ readonly: true, components: { with: [damage] } }, row => {
+    console.log("damage", row[damage]);
+});
+
 export const main = async (): Promise<void> => {
     await using world = World.create();
     await world.run(spawn);
@@ -43,4 +57,7 @@ export const main = async (): Promise<void> => {
     await world.run(read);
     // poison, then report.
     await world.run(phased);
+    // harden, then scale, 4 * 2.
+    await world.run(tuned);
+    await world.run(readDamage);
 };

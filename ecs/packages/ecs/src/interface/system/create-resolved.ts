@@ -3,6 +3,7 @@ import { nameOf } from '../registry/items.js';
 import { claimSystem } from '../registry/program.js';
 import { checkLeaf, inputSchemaOf } from './check.js';
 import type { Resolved } from './declaration.js';
+import { noCommands } from './resolve.js';
 import type { Leaf } from './leaf.js';
 import type { System } from './system.js';
 
@@ -14,7 +15,7 @@ import type { System } from './system.js';
 export const createResolved = (declaration: Resolved, body: Leaf["body"], input?: unknown): System<unknown> => {
     const name = nameOf(declaration, undefined, "system");
     const schema = inputSchemaOf(name, body, declaration.components === undefined ? 1 : 2, input);
-    const system: Leaf & System<unknown> = { kind: "system", name, declaration, input: schema, body, commands: undefined };
+    const system: Leaf & System<unknown> = { kind: "system", name, declaration, input: schema, body, commands: noCommands };
     checkLeaf(system);
     claimSystem(system, undefined);
     return system;

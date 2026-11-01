@@ -52,10 +52,16 @@ export type Declaration = {
     readonly target?: string;
     /** Makes this a render system (see `render`): its body records GPU work over the GPU copy of the components it names. */
     readonly shader?: Shader;
-    /** Hard constraint. */
-    readonly before?: readonly System<unknown>[];
-    /** Hard constraint. */
-    readonly after?: readonly System<unknown>[];
+    /**
+     * Hard constraint: runs before each system listed, and, for a resource listed, before every other system of the
+     * composite that uses it, but those its constraints already order before it and those listing it in `before` too.
+     */
+    readonly before?: readonly (System<unknown> | Resource.Key)[];
+    /**
+     * Hard constraint: runs after each system listed, and, for a resource listed, after every other system of the
+     * composite that uses it, but those its constraints already order after it and those listing it in `after` too.
+     */
+    readonly after?: readonly (System<unknown> | Resource.Key)[];
     /** Runs inside the span of the systems listed: after what they follow and before what follows them. */
     readonly during?: readonly System<unknown>[];
     /**

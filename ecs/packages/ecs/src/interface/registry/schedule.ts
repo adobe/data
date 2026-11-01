@@ -53,8 +53,8 @@ type Graph = {
     readonly successors: readonly Set<number>[];
     /** Each unit's members, by unit: none for a leaf. */
     readonly members: readonly (readonly number[])[];
-    /** The units a list of systems names, readonly systems left out. */
-    readonly resolve: (systems: readonly object[] | undefined) => readonly number[];
+    /** The units a list of systems names, readonly systems and resources left out. */
+    readonly resolve: (systems: readonly unknown[] | undefined) => readonly number[];
 };
 
 /**
@@ -79,8 +79,9 @@ const graphOf = (root: Definition): Graph => {
     visit(root);
     const successors = units.flatMap(() => [new Set<number>(), new Set<number>()]);
     // A readonly system is ordered with nothing, so constraints naming one are ignored.
-    const resolve = (systems: readonly object[] | undefined): readonly number[] =>
+    const resolve = (systems: readonly unknown[] | undefined): readonly number[] =>
         (systems ?? []).flatMap(system => {
+            if (typeof system !== "object" || system === null) return [];
             const unit = indexOf.get(firstItemOf(system));
             return unit === undefined || isObserver(units[unit]) ? [] : [unit];
         });
@@ -149,7 +150,7 @@ const depthsOf = ({ units, successors }: Graph, order: readonly number[]): numbe
     return depth;
 };
 
-type Access = { readonly reads: ReadonlySet<Key>; readonly writes: ReadonlySet<Key>; readonly reduces: ReadonlySet<Key> };
+type Access = { readonly reads: ReadonlySet<Key>; readonly writes: ReadonlySet<Key>; readonly reduces: ReadonlySet<Key>; readonly leaf: Leaf };
 
 /** The resources a leaf reduces into. */
 export const reducedBy = (leaf: Leaf): readonly Key[] => {
@@ -168,21 +169,53 @@ export const accessOf = (leaf: Leaf): Access => {
     for (const key of orderKeysOf(leaf.declaration)) reads.add(firstKeyOf(key));
     if (up !== undefined) for (const key of [up.through, ...up.read ?? []]) reads.add(firstKeyOf(key));
     const writes = new Set<Key>([...components?.write ?? [], ...resources?.write ?? []].map(firstKeyOf));
-    return { reads, writes, reduces: new Set(reducedBy(leaf).map(firstKeyOf)) };
+    return { reads, writes, reduces: new Set(reducedBy(leaf).map(firstKeyOf)), leaf };
 };
 
-/** Contributors to one resource don't conflict with each other: their fold doesn't depend on which runs first. */
+const names = (list: readonly Key[] | undefined, key: Key): boolean => list !== undefined && list.some(item => firstKeyOf(item) === key);
+
+/** Whether a leaf reaches a key only through its rows: neither looked up, read through `up`, indexed nor ordered by. */
+const onlyThroughRows = (leaf: Leaf, key: Key): boolean => {
+    const { components, lookup, up } = leaf.declaration;
+    if (!names(components?.read, key) && !names(components?.write, key) && !names(components?.added, key) && !names(components?.changed, key)) return false;
+    for (const name in lookup) if (names(lookup[name].read, key) || names(lookupKeysOf(lookup[name]), key)) return false;
+    if (names(orderKeysOf(leaf.declaration), key)) return false;
+    return up === undefined || (firstKeyOf(up.through) !== key && !names(up.read, key));
+};
+
+/** Whether no entity can match both leaves' rows: one requires a component the other's `not` lists. */
+const exclusive = (a: Leaf, b: Leaf): boolean => {
+    const requiresExcluded = (one: Leaf, other: Leaf): boolean => {
+        const { components } = one.declaration;
+        const not = other.declaration.components?.not;
+        if (components === undefined || not === undefined || not.length === 0) return false;
+        for (const list of [components.read, components.write, components.has, components.added, components.changed]) {
+            for (const key of list ?? []) if (!names(components.optional, firstKeyOf(key)) && names(not, firstKeyOf(key))) return true;
+        }
+        return false;
+    };
+    return requiresExcluded(a, b) || requiresExcluded(b, a);
+};
+
+/** Whether a conflict on `key` is waived: both reach it only through rows that never match one entity. */
+const waived = (a: Access, b: Access, key: Key): boolean => onlyThroughRows(a.leaf, key) && onlyThroughRows(b.leaf, key) && exclusive(a.leaf, b.leaf);
+
+/**
+ * The first key two accesses conflict on, one writing it, or undefined. Contributors to one resource don't conflict
+ * with each other: their fold doesn't depend on which runs first. Nor do two whose rows never match one entity on a key
+ * both reach only through their rows.
+ */
 const conflictOf = (a: Access, b: Access): Key | undefined => {
-    for (const key of a.writes) if (b.writes.has(key) || b.reads.has(key) || b.reduces.has(key)) return key;
-    for (const key of b.writes) if (a.reads.has(key) || a.reduces.has(key)) return key;
+    for (const key of a.writes) if ((b.writes.has(key) || b.reads.has(key) || b.reduces.has(key)) && !waived(a, b, key)) return key;
+    for (const key of b.writes) if ((a.reads.has(key) || a.reduces.has(key)) && !waived(a, b, key)) return key;
     return undefined;
 };
 
-/** Every key two accesses conflict on. */
+/** Every key two accesses conflict on, as `conflictOf` finds the first. */
 const conflictsOf = (a: Access, b: Access): readonly Key[] => [...new Set([
     ...[...a.writes].filter(key => b.writes.has(key) || b.reads.has(key) || b.reduces.has(key)),
     ...[...b.writes].filter(key => a.reads.has(key) || a.reduces.has(key)),
-])];
+])].filter(key => !waived(a, b, key));
 
 /** A system's leaves in its tiers, with their units and accesses, and its graph with readers of folds after their contributors. */
 const orderedOf = (system: Definition) => {
@@ -199,7 +232,46 @@ const orderedOf = (system: Definition) => {
             });
         }
     });
-    return { graph, leaves, accesses, reductions };
+    return { graph, leaves, accesses, reductions, keyed: orderByResources(graph, leaves, accesses) };
+};
+
+const noneKeyed: ReadonlyMap<string, "before" | "after"> = new Map();
+
+const listsResource = (list: readonly unknown[] | undefined): boolean => list !== undefined && list.some(item => typeof item === "symbol");
+
+/** The resources a list of `before` or `after` names, each by its first symbol. */
+const resourcesIn = (list: readonly unknown[] | undefined): readonly Key[] =>
+    (list ?? []).flatMap(item => typeof item === "symbol" ? [firstKeyOf(item)] : []);
+
+/**
+ * Orders each leaf naming a resource in `before` or `after` before or after every other leaf using it, adding the edges
+ * to `graph`: but one its constraints already order the other way, and one naming the resource in the same list. By
+ * unit, as `"<earlier> <later>"`, the list that ordered each pair.
+ */
+const orderByResources = (graph: Graph, leaves: readonly { readonly leaf: Leaf; readonly unit: number }[], accesses: readonly Access[]): ReadonlyMap<string, "before" | "after"> => {
+    if (!leaves.some(({ leaf }) => listsResource(leaf.declaration.before) || listsResource(leaf.declaration.after))) return noneKeyed;
+    const keyed = new Map<string, "before" | "after">();
+    const lists = leaves.map(({ leaf }) => ({ before: resourcesIn(leaf.declaration.before), after: resourcesIn(leaf.declaration.after) }));
+    const uses = leaves.map(({ leaf }, index) => new Set([...accesses[index].reads, ...accesses[index].writes, ...accesses[index].reduces,
+        ...[...leaf.declaration.resources?.is ?? [], ...leaf.declaration.resources?.not ?? []].map(firstKeyOf)]));
+    const reach = reachability(topologicalOrder(graph), graph.successors);
+    const edges: (readonly [number, number, "before" | "after"])[] = [];
+    leaves.forEach(({ unit }, index) => {
+        for (const list of ["before", "after"] as const) {
+            for (const key of lists[index][list]) {
+                leaves.forEach((other, o) => {
+                    if (o === index || !uses[o].has(key) || lists[o][list].includes(key)) return;
+                    const [earlier, later] = list === "before" ? [unit, other.unit] : [other.unit, unit];
+                    if (!reaches(reach, end(later), start(earlier))) edges.push([earlier, later, list]);
+                });
+            }
+        }
+    });
+    for (const [earlier, later, list] of edges) {
+        graph.successors[end(earlier)].add(start(later));
+        keyed.set(`${earlier} ${later}`, list);
+    }
+    return keyed;
 };
 
 /**
@@ -214,7 +286,7 @@ export type Placement = { readonly leaf: Leaf; readonly because: "after" | "befo
  * leaf of its tiers.
  */
 export const placementsOf = (system: Definition): ReadonlyMap<Leaf, readonly Placement[]> => {
-    const { graph, leaves, accesses } = orderedOf(system);
+    const { graph, leaves, accesses, keyed } = orderedOf(system);
     const reach = reachability(topologicalOrder(graph), graph.successors);
     const ancestors = graph.units.map(() => [] as number[]);
     graph.members.forEach((members, unit) => {
@@ -225,7 +297,7 @@ export const placementsOf = (system: Definition): ReadonlyMap<Leaf, readonly Pla
         for (const member of members) visit(member);
     });
     /** Whether `systems` names `unit` or a composite holding it. */
-    const names = (systems: readonly object[] | undefined, unit: number): boolean => {
+    const names = (systems: readonly unknown[] | undefined, unit: number): boolean => {
         const named = graph.resolve(systems);
         return named.includes(unit) || ancestors[unit].some(holder => named.includes(holder));
     };
@@ -239,7 +311,7 @@ export const placementsOf = (system: Definition): ReadonlyMap<Leaf, readonly Pla
             const other = leaves[a];
             const because = constrains(unit, "after", other.unit) ? "after"
                 : constrains(other.unit, "before", unit) ? "before"
-                : [...accesses[a].reduces].some(key => accesses[b].reads.has(key)) ? "reduction" : "during";
+                : keyed.get(`${other.unit} ${unit}`) ?? ([...accesses[a].reduces].some(key => accesses[b].reads.has(key)) ? "reduction" : "during");
             return { leaf: other.leaf, because, conflicts: conflictsOf(accesses[a], accesses[b]) };
         }));
     });
@@ -271,7 +343,8 @@ const createSchedule = (system: Definition): Schedule => {
             if (key !== undefined && !ordered(reach, leaves[a].unit, leaves[b].unit)) {
                 const whole = [leaves[a].leaf, leaves[b].leaf].filter(leaf => leaf.declaration.components?.whole === true)
                     .map(leaf => ` "${leaf.name}" takes its row whole (components.whole), so it writes every member.`).join("");
-                throw new Error(`Systems "${leaves[a].leaf.name}" and "${leaves[b].leaf.name}" both access "${labelOf(key)}" and one writes it; order them with before or after.${whole}`);
+                const rows = onlyThroughRows(leaves[a].leaf, key) && onlyThroughRows(leaves[b].leaf, key) ? ", or, if they never match one entity, add a component of one to the other's not" : "";
+                throw new Error(`Systems "${leaves[a].leaf.name}" and "${leaves[b].leaf.name}" both access "${labelOf(key)}" and one writes it; order them with before or after${rows}.${whole}`);
             }
         }
     }
@@ -305,7 +378,7 @@ export type SyncReason = { readonly from: Leaf; readonly to: Leaf; readonly keys
 
 /** The components a leaf's commands may add or remove, by spawn, add or remove; `"any"` once it despawns or isn't followed. */
 const structuralOf = (leaf: Leaf): ReadonlySet<Key> | "any" | null => {
-    const { commands } = leaf;
+    const commands = leaf.commands();
     if (commands === undefined) return null;
     if (commands === null || commands.despawn === true) return "any";
     const keys = new Set([...commands.spawn ?? [], ...commands.add ?? [], ...commands.remove ?? []].map(firstKeyOf));

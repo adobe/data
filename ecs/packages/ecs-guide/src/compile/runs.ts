@@ -1,10 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import * as ecs from "@adobe/ecs";
+import { modules } from "virtual:guide-runtime";
 import runtimeUrl from "../run/runtime.ts?worker&url";
-import { runtimeNames } from "../run/runtime-key.js";
 import serviceWorkerUrl from "../service-worker.ts?worker&url";
 import { isDiagnostic, type Diagnostic } from "./diagnostic.js";
-import { isFileSystems, type CompileReply, type CompileRequest, type FileSystems, type Source } from "./messages.js";
+import { isFileSystems, type CompileReply, type CompileRequest, type Exported, type FileSystems, type Source } from "./messages.js";
 import { createWorkerClient } from "../shared/worker-client.js";
 import { runsFolder } from "./run-files.js";
 
@@ -19,11 +18,14 @@ export type Compiled = {
 };
 
 /**
- * Compiles runs of examples off the main thread, for frames the service worker serves them to, or only compiles them
- * where the service worker can't register. Never rejects;
- * `retrying` hears when the compiler's worker failed and is starting again.
+ * Compiles runs of examples of the package `owner` off the main thread, for frames the service worker serves them to,
+ * or only compiles them where the service worker can't register. Never rejects; `retrying` hears when the compiler's
+ * worker failed and is starting again.
  */
-export type Runs = { readonly compile: (files: readonly Source[], retrying?: (reason: string) => void) => Promise<Compiled> };
+export type Runs = { readonly compile: (owner: string, files: readonly Source[], retrying?: (reason: string) => void) => Promise<Compiled> };
+
+/** Each of the guide's packages a run's frame imports, with the names it exports. */
+const packages: readonly Exported[] = Object.entries(modules).map(([name, exported]) => ({ name, names: Object.keys(exported) }));
 
 const replyOf = (data: unknown): CompileReply | null => {
     if (typeof data !== "object" || data === null || Reflect.get(data, "kind") !== "compiled") return null;
@@ -95,13 +97,13 @@ export const createRuns = (): Runs => {
         },
     });
     return {
-        compile: async (files, retrying = () => {}) => {
+        compile: async (owner, files, retrying = () => {}) => {
             const run = next++;
             const folder = await (runs ??= registered().catch((error: unknown) => {
                 console.warn(`The guide can't run examples on this host: its service worker didn't register (${reasonOf(error)})`);
                 return null;
             }));
-            const request: CompileRequest = { kind: "compile", run, files, runs: folder, runtime: new URL(runtimeUrl, location.href).href, names: [...Object.keys(ecs), ...runtimeNames] };
+            const request: CompileRequest = { kind: "compile", run, package: owner, files, runs: folder, runtime: new URL(runtimeUrl, location.href).href, packages };
             const reply = await new Promise<CompileReply>(resolve => {
                 waiting.set(run, { request, resolve, retrying });
                 worker.post(request);

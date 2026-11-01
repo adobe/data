@@ -19,6 +19,7 @@ A high-performance, multithreaded Entity Component System for web-based applicat
 - **[`ecs-guide`](packages/ecs-guide)**: the guide, each example edited in place, checked, compiled and run in the
   browser as it's typed.
 - **[`ecs-sample-browser`](packages/ecs-sample-browser)**: the sample browser, a tab for each sample.
+- **[`ecs-guide-checks`](packages/ecs-guide-checks)**: the checks every package's guide chapters pass.
 
 ## Online
 

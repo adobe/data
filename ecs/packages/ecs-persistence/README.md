@@ -45,9 +45,12 @@ if (loaded.failure !== undefined) throw new Error(loaded.failure);
 const spawned = await spawn({ world: other, snapshot: loaded });
 ```
 
-- `snapshot({ world, ... })` takes every entity holding a persisted component, those matching `with` and `not`, or
-  `root` and everything it owns through persisted owner references. Except with `root` or `resources: false`, it
-  takes the persisted resources too.
+- `snapshot({ world, ... })` takes every entity holding a persisted component, those matching `with`, `not` and
+  `where`, or `root` and everything it owns through persisted owner references. Except with `root` or
+  `resources: false`, it takes the persisted resources too.
+- **Chunks:** `where` takes values of shared components, as a system's `where` of values does:
+  `snapshot({ world, where: { [chunk]: [4, 0] } })` reads the archetypes holding them whole and no others, so one chunk's
+  snapshot costs what it holds, not the world. `spawn` puts each entity back into the archetype of its shared values.
 - `encode` writes it as bytes, and `decode` reads them back, viewing each column's bytes where they are in the buffer.
   It refuses bytes naming a component or resource this program doesn't persist, or persists with another schema.
 - `spawn({ world, snapshot, entities? })` spawns an entity for each of the snapshot's and sets its resources, its entity values
@@ -56,17 +59,24 @@ const spawned = await spawn({ world: other, snapshot: loaded });
   `dropped`; a weak reference to it is left out; any other value naming it is `Entity.none`. The result's `entities`
   maps each of the snapshot's entities to the one spawned for it, or null; `entities: false` leaves the map out, which
   saves about 85 ms and 50 MB at a million entities.
-- Copying entities from one world into another is a snapshot spawned there: `spawn({ world: to, snapshot: await snapshot({ world: from }) })`, without
-  bytes.
+- Copying entities from one world into another is a snapshot spawned there:
+  `spawn({ world: to, snapshot: await snapshot({ world: from }) })`, without bytes.
+- **Merging:** `match` takes unique indexes saying which of the snapshot's entities are already in the world:
+  `spawn({ world, snapshot, match: [materialByName] })`. An entity an index holds in the world, with the key of one
+  of the snapshot's it holds, stands for that one, keeping its own values, and every entity value naming the
+  snapshot's names it; `entities` maps the one to the other. Keys compare as stored, a number's or a vector's bytes and
+  a string's or an object's value. It fails for an index with a part of its key that isn't persisted, or two of the
+  snapshot's entities one index holds with one key.
 
 Each reports why it didn't happen as `{ failure }`, rather than throwing, and `result.failure !== undefined` tells
-which. A snapshot is opaque: only these functions
-read it.
+which. A snapshot is opaque: only these functions read it.
 
 ## Speed
 
 `pnpm test:perf` compares, at 100K and 1M entities with a `Vec3`, a number, an owner reference and a struct holding an
 entity, this package with reading rows and spawning entity by entity. At 1M entities, a snapshot takes about 6 ms
 against 110 ms, encoding 5 ms against 150 ms for `JSON.stringify` of the rows, and decoding views the bytes where they
-are. Spawning takes about 310 ms against 1,450 ms, most of it the world's bookkeeping of owner references at its sync
-point; without references, 1M entities spawn in about 26 ms.
+are. Spawning takes about 165 ms against 1,450 ms. Matching reads the world's entities each index holds, so its cost
+grows with those: a merge of 1M entities, each matched by a unique index on its `Vec3`, takes about 440 ms. One
+chunk of 10K among 1M entities, told apart by a shared component, snapshots in about 0.13 ms by `where`, against 6 ms
+for the whole world and 55 ms for its root's subtree, and spawns in about 2 ms.

@@ -1,24 +1,27 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import index from "../../../ecs/src/guide/README.md?raw";
+import { packages } from "virtual:guide-packages";
 import { chaptersOf, type Chapter } from "./chapters.js";
 
-/** The guide's files, read from the package as the guide builds: its prose, its programs and what they print. */
-const prose: { readonly [path: string]: string } = import.meta.glob("../../../ecs/src/guide/[0-9]*.md", { query: "?raw", import: "default", eager: true });
-const sources: { readonly [path: string]: string } = import.meta.glob("../../../ecs/src/guide/[0-9]*.ts", { query: "?raw", import: "default", eager: true });
-const outputs: { readonly [path: string]: string } = import.meta.glob("../../../ecs/src/guide/[0-9]*.out", { query: "?raw", import: "default", eager: true });
+/**
+ * A guide file as a reader sees it: importing its package by name, as a consumer does, where the file, one of the
+ * package's own, imports its sources' root as `../index.js`. Both resolve to the package where the guide compiles it,
+ * in the package's sources, and checks it, so the file is otherwise the same, line for line.
+ */
+export const asConsumer = (source: string, name: string): string => source.replaceAll(` from "../index.js";`, ` from ${JSON.stringify(name)};`);
 
-const named = (files: { readonly [path: string]: string }, read: (source: string) => string = source => source) => Object.entries(files)
-    .map(([path, source]) => ({ name: path.slice(path.lastIndexOf("/") + 1), source: read(source) }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+const byName = <T extends { readonly name: string }>(files: readonly T[]): readonly T[] => [...files].sort((a, b) => a.name.localeCompare(b.name));
 
 /**
- * A guide file as a reader sees it: importing the package as `@adobe/ecs`, as a consumer does, where the file, one of
- * the package's own, imports its sources' root as `../index.js`. Both resolve to the package where the guide compiles
- * it, in the package's sources, and checks it, so the file is otherwise the same, line for line.
+ * The guide's chapters: each package's, in the guide's order, numbered on from the chapters before them. The first
+ * package's chapters are in the parts its index gives; each other package's are in one part, titled by its name.
  */
-export const asConsumer = (source: string): string => source.replaceAll(` from "../index.js";`, ` from "@adobe/ecs";`);
+export const chapters: readonly Chapter[] = packages.reduce<readonly Chapter[]>((before, { name, index, prose, sources, outputs }, at) => [
+    ...before,
+    ...chaptersOf(
+        { package: name, after: before.filter(chapter => chapter.number > 0).length, part: at === 0 ? null : name },
+        index, byName(prose), byName(sources).map(file => ({ name: file.name, source: asConsumer(file.source, name) })), byName(outputs),
+    ),
+], []);
 
-export const chapters: readonly Chapter[] = chaptersOf(index, named(prose), named(sources, asConsumer), named(outputs));
-
-/** The chapter numbered `number`: `1` for Resources. */
+/** The chapter numbered `number` in the guide: `1` for Resources. */
 export const numbered = (number: number): Chapter | undefined => chapters.find(chapter => chapter.number === number && number > 0);

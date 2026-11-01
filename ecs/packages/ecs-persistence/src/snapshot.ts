@@ -11,8 +11,11 @@ export type Snapshot = { readonly failure?: undefined; readonly [contents]: Cont
 /**
  * A snapshot of some of `world`'s entities, read on its thread: by default every entity holding a persisted
  * component, and the persisted resources; with `with` and `not`, those a query matches, and the resources unless
- * `resources` is false; with `root`, it and every entity it owns, through persisted owner references, without
- * resources. Fails, as data, when the program's persisted keys can't be saved or the world can't be read.
+ * `resources` is false; with `where`, those of the archetypes holding its values of shared components, as a system's
+ * `where` of values keeps it to them, read whole, so a snapshot of one value's entities costs what they hold, not the
+ * world; with `root`, it and every entity it owns, through persisted owner references, without resources. Fails, as
+ * data, when the program's persisted keys can't be saved, `where` names what isn't a shared component or gives one a
+ * value not of its type, or the world can't be read.
  */
 export const snapshot = async (input: { readonly world: World } & Selection): Promise<Snapshot | Failure> => {
     const program = programOf();

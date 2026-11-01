@@ -119,10 +119,11 @@ export const createCommands = (state: State, target: { readonly buffer: CommandB
             pushComponent(buffer, ids[k], value === undefined ? starts[k] : value);
         }
     },
-    spawnTables: (tables, resources) => {
-        if (resources === undefined) return spawnTables(state, tables);
+    spawnTables: (tables, options) => {
+        const resources = options?.resources;
+        if (resources === undefined) return spawnTables(state, tables, options?.existing);
         checkResources(resources);
-        const spawned = spawnTables(state, tables);
+        const spawned = spawnTables(state, tables, options?.existing);
         queueResources(state, resources);
         return spawned;
     },

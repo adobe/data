@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Compiler } from "@adobe/ecs/compiler";
 import { defineConfig } from "vitest/config";
+import { plugins } from "./vite.plugins.ts";
 
 /** A test's timeout only guards against a hang, which no test asserts on: long enough for a machine busy elsewhere. */
 const timeouts = { testTimeout: 60000, hookTimeout: 120000 };
@@ -11,7 +12,7 @@ export default defineConfig({
     test: {
         projects: [
             {
-                plugins: [Compiler.plugin()],
+                plugins: [Compiler.plugin(), ...plugins()],
                 test: {
                     ...timeouts,
                     name: "node",
@@ -21,6 +22,7 @@ export default defineConfig({
                 },
             },
             {
+                plugins: plugins(),
                 test: {
                     ...timeouts,
                     name: "page",

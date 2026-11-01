@@ -5,7 +5,7 @@ import { blockShift, chunkShift } from './kernel.js';
 import { addCommand, clearBuffer, despawnCommand, endOf, referenceAt, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { readCell, writeCell } from './cells.js';
 import { commitBatches, commitStaged } from './batches.js';
-import { applyIndexChanges, cascadeReferences, indexChangesOf, type IndexChanges, type Written } from './cascade.js';
+import { applyIndexChanges, cascadeReferences, indexChangesOf, linkBorn, type IndexChanges, type Written } from './cascade.js';
 import { refreshDirectories } from './directories.js';
 import { createArrivals, logArrival } from './arrivals.js';
 import { noteEdge, noteEmptied, reclaimEmptied } from './reclaim.js';
@@ -688,22 +688,9 @@ const preparePending = (state: State, queued: readonly Queued[], isolated: boole
         if (deriving) for (let entry = 0; entry < plan.count; entry++) if (plan.despawned[entry] === 0) plan.to[entry] = close(state.archetypes[plan.to[entry]]).id;
         let index: IndexChanges | null = null;
         if (structure.referenceIds.length > 0) {
-            for (const [id, first] of born) {
-                const archetype = state.archetypes[id];
-                for (const component of structure.referenceIds) {
-                    const storage = archetype.storageById[component];
-                    if (storage === undefined) continue;
-                    for (let row = first; row < archetype.count; row++) written.push(archetype.entities[row], component, Number(readCell(storage, row)));
-                }
-            }
+            linkBorn(state, born, written, tick);
             cascadeReferences(state, queued, written, entity => entryOf(state, entity));
-            const fromOf = (entry: number): Archetype | null => {
-                const from = plan.from[entry];
-                if (from < 0) return null;
-                const first = born.get(from);
-                return first !== undefined && state.entities.row[indexOf(plan.entity[entry])] >= first ? null : state.archetypes[from];
-            };
-            index = indexChangesOf(state, queued, fromOf, [...born].map(([id, first]) => [state.archetypes[id], first] as const));
+            index = indexChangesOf(state, queued, entry => plan.from[entry] < 0 ? null : state.archetypes[plan.from[entry]]);
         }
         // References change only here: each component written to is stamped, and each holder journaled, as are spawns.
         for (let k = 1; k < written.length; k += 3) state.referencesWritten[written[k]] = tick;

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Archetype } from './archetype.js';
 import { readCell } from './cells.js';
-import { indexOf, locate } from './entities.js';
+import { generationOf, indexOf, locate } from './entities.js';
 import { commandValue, isMissing } from './finalizers.js';
 import { createHolders, fitHolders, forEachHolder, linkHolder, unlinkHolder } from './holders.js';
 import { closureOf, owner } from './structure.js';
@@ -9,8 +9,8 @@ import { archetypeOf, withoutComponent, type State } from './state.js';
 import type { Queued } from './synchronize.js';
 
 /**
- * A reference value written in this sync point: by spawn or add commands, or a batch spawn. `holder`, `component`
- * and `target` triples, checked once the plan's despawns are known.
+ * A reference value written in this sync point to check: by spawn or add commands, or of a row spawned that `linkBorn`
+ * leaves to the cascade. `holder`, `component` and `target` triples, checked once the plan's despawns are known.
  */
 export type Written = number[];
 
@@ -39,6 +39,48 @@ const aliveAfter = (state: State, target: number): boolean => {
     const entry = index < plan.slots.length ? plan.slots[index] : -1;
     if (entry >= 0 && plan.entity[entry] === target) return plan.despawned[entry] === 0;
     return locate(entities, target) >= 0;
+};
+
+/**
+ * Links each reference the rows spawned in this sync point hold to its target, before the cascade, so a target it
+ * despawns finds them as it finds any holder. One naming an entity that won't be alive isn't linked, and goes to
+ * `written` to cascade, as does every reference of a row a command touched, which the command may point elsewhere.
+ * The rows spawned into an archetype are those from `first`, by archetype id; an entity is one f64.
+ */
+export const linkBorn = (state: State, born: ReadonlyMap<number, number>, written: Written, tick: number): void => {
+    const { plan, structure, archetypes, entities, referencesWritten } = state;
+    const { slots } = plan;
+    for (const [id, first] of born) {
+        const archetype = archetypes[id];
+        const { count } = archetype;
+        if (first >= count) continue;
+        const rows = archetype.entities;
+        for (const component of structure.referenceIds) {
+            const storage = archetype.storageById[component];
+            if (storage === undefined) continue;
+            referencesWritten[component] = tick;
+            const lists = structure.holders[component] ??= createHolders();
+            fitHolders(lists, entities.length);
+            const { unitStride, unitOffset } = storage;
+            const values = storage.views.f64;
+            // `aliveAfter`, through locals, since it runs for each row spawned.
+            const { archetype: archetypeOfIndex, generation, length } = entities;
+            const { entity: planned, despawned } = plan;
+            for (let row = first; row < count; row++) {
+                const target = values[row * unitStride + unitOffset];
+                if (target === 0) continue;
+                const holder = rows[row];
+                const index = indexOf(holder);
+                const commanded = index < slots.length && slots[index] >= 0;
+                const into = indexOf(target);
+                const entry = into < slots.length ? slots[into] : -1;
+                const alive = entry >= 0 && planned[entry] === target ? despawned[entry] === 0
+                    : into < length && archetypeOfIndex[into] >= 0 && generation[into] === generationOf(target);
+                if (alive) linkHolder(lists, target, holder);
+                if (commanded || !alive) written.push(holder, component, target);
+            }
+        }
+    }
 };
 
 /**
@@ -91,7 +133,7 @@ export const cascadeReferences = (state: State, queued: readonly Queued[], writt
  */
 export type IndexChanges = { readonly remove: number[]; readonly add: number[] };
 
-export const indexChangesOf = (state: State, queued: readonly Queued[], fromOf: (entry: number) => Archetype | null, bornRows: readonly (readonly [Archetype, number])[]): IndexChanges => {
+export const indexChangesOf = (state: State, queued: readonly Queued[], fromOf: (entry: number) => Archetype | null): IndexChanges => {
     const { plan, structure, entities } = state;
     const changes: IndexChanges = { remove: [], add: [] };
     for (let entry = 0; entry < plan.count; entry++) {
@@ -104,24 +146,6 @@ export const indexChangesOf = (state: State, queued: readonly Queued[], fromOf: 
             if (before === after) continue;
             if (typeof before === "number" && before !== 0) changes.remove.push(before, holder, component);
             if (typeof after === "number" && after !== 0) changes.add.push(after, holder, component);
-        }
-    }
-    // Batch spawns no command touched still hold the references they were spawned with. An entity is one f64.
-    const { slots } = plan;
-    for (const [archetype, first] of bornRows) {
-        for (const component of structure.referenceIds) {
-            const storage = archetype.storageById[component];
-            if (storage === undefined) continue;
-            const { unitStride, unitOffset } = storage;
-            const values = storage.views.f64;
-            const rows = archetype.entities;
-            for (let row = first; row < archetype.count; row++) {
-                const holder = rows[row];
-                const index = indexOf(holder);
-                if (index < slots.length && slots[index] >= 0) continue;
-                const value = values[row * unitStride + unitOffset];
-                if (value !== 0) changes.add.push(value, holder, component);
-            }
         }
     }
     return changes;

@@ -87,12 +87,11 @@ correctness, then optimization. Remove an item once it's decided or done.
 
 ## Optimization
 
-- **Owner references at the sync point:** spawning 1M entities with an owner reference costs about 200 ms more at
-  the sync point than without one, whether through `commands.spawn` or `commands.spawnTables`: the holders' bookkeeping,
-  per entity. Bulk spawns of tables could record holders per block.
-- **A row system over many small archetypes** inlines its rows' per-archetype `bind` into its run only after a second
-  optimization, which V8 makes or not depending on what else the bundle holds: `small archetypes 1K` runs in 0.075 ms
-  or 0.083 ms with no change to its path. A binding that doesn't rely on being inlined would steady it.
+- **Owner references in bulk spawns:** `spawn tables 1M owner` takes 53 ms against 10 ms for `spawn tables 1M`, and
+  `spawn owned 1M` 64 ms. What's left is per row: `commands.spawnTables` places every entity of the tables and finds
+  each row's owner among them (about 25 ms at 1M), and the sync point links each holder to its target (about 20 ms),
+  random writes into the holder lists. Linking a block whose targets are themselves in it could skip the lists' random
+  reads; measure before trying.
 - **f64 SIMD for `Vec3` bodies:** automatic kernels' f64x2 lanes run only across dense single-f32 columns, so a body
   over `Vec3` components, as chapter 14's `move`, runs in WASM a row at a time. Measure lanes within a row's leaves.
 - Index step 5 items.
@@ -106,6 +105,10 @@ correctness, then optimization. Remove an item once it's decided or done.
 ## External utilities
 
 - **Persistence, next:** `@adobe/ecs-persistence` saves, loads and copies whole snapshots.
+  - **Predicates in tables' and snapshots' `where`:** they take values only. A system's predicates read resources the
+    build infers from its declaration written in place, which a snapshot's system, made at runtime from its input,
+    doesn't have; a predicate there would read what the build can't follow. Possible: predicates reading no
+    resources, or resources the caller names.
   - **Incremental saves:** changes finalizers watching the `persist` trait (`watch` by trait, above) would give
     autosaves and deltas.
   - **Migrations:** a snapshot holds each component's schema, and a load refuses one that differs; a declared
@@ -113,6 +116,10 @@ correctness, then optimization. Remove an item once it's decided or done.
   - **Tables on joined threads:** a joined thread refuses a readonly system reading tables.
   - **Layouts across versions:** a snapshot's bytes are checked by schema and stride; a layout placing a schema's
     fields differently in another version of the ECS would load wrongly. Possible: a layout's signature in the format.
+- **Matching many entities:** a merge of 1M, each matched, takes about 440 ms (vitest; 370 ms bundled). Keys are
+  found by their bytes, under 150 ms of it; most of the rest is the
+  `ReadonlyMap` of 1M entities `commands.spawnTables` takes as `existing`, about 65 ms to build, and spawnTables'
+  reads of it. Entities given by columns would avoid the map, but that changes `spawnTables`' interface.
 - **A test helper awaiting the next tick.** Tests watch `clock` with a readonly system today; a helper in
   `src/observe` would do it (from the todo sample).
 

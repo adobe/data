@@ -11,12 +11,12 @@ import { isQuickInfo, type CheckReply, type CheckRequest, type InfoReply, type I
  * check tries again.
  */
 export type Checker = {
-    readonly check: (files: readonly Source[]) => Promise<{ readonly diagnostics: readonly Diagnostic[]; readonly failure: string | null }>;
+    readonly check: (owner: string, files: readonly Source[]) => Promise<{ readonly diagnostics: readonly Diagnostic[]; readonly failure: string | null }>;
     /**
-     * What's at `position` in the file named, of `files` as they are now, or null: one asked at a time, and only the
-     * newest answered, a reply to one asked before another dropped.
+     * What's at `position` in the file named, of `files` as they are now, examples of `owner`, or null: one asked at a
+     * time, and only the newest answered, a reply to one asked before another dropped.
      */
-    readonly info: (files: readonly Source[], file: string, position: number) => Promise<QuickInfo | null>;
+    readonly info: (owner: string, files: readonly Source[], file: string, position: number) => Promise<QuickInfo | null>;
 };
 
 const infoReplyOf = (data: unknown): InfoReply | null => {
@@ -66,22 +66,22 @@ export const createChecker = (): Checker => {
             asking.clear();
         },
     });
-    const info = latestAnswer<{ readonly files: readonly Source[]; readonly file: string; readonly position: number }, QuickInfo | null>(({ files, file, position }) => {
-        const request: InfoRequest = { kind: "info", serial: ++serial, files, file, position };
+    const info = latestAnswer<{ readonly owner: string; readonly files: readonly Source[]; readonly file: string; readonly position: number }, QuickInfo | null>(({ owner, files, file, position }) => {
+        const request: InfoRequest = { kind: "info", serial: ++serial, owner, files, file, position };
         return new Promise(resolve => {
             asking.set(request.serial, { request, resolve });
             worker.post(request);
         });
     }, null);
     return {
-        check: async files => {
-            const request: CheckRequest = { kind: "check", version: next++, files };
+        check: async (owner, files) => {
+            const request: CheckRequest = { kind: "check", version: next++, owner, files };
             const reply = await new Promise<CheckReply>(resolve => {
                 waiting.set(request.version, { request, resolve });
                 worker.post(request);
             });
             return { diagnostics: reply.diagnostics, failure: reply.failure };
         },
-        info: (files, file, position) => info({ files, file, position }),
+        info: (owner, files, file, position) => info({ owner, files, file, position }),
     };
 };

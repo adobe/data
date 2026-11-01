@@ -5,13 +5,17 @@ import type { Diagnostic } from "./diagnostic.js";
 /** An example's source, by its file's name beside the guide. */
 export type Source = { readonly name: string; readonly code: string };
 
+/** A package a run's frame imports: its name, and the names it exports, which its exports module re-exports. */
+export type Exported = { readonly name: string; readonly names: readonly string[] };
+
 /**
- * Compiles a run's modules: on success puts its files in the cache under `runs`, the service worker's folder of runs,
- * its exports module loading `runtime` and re-exporting `names`; with `runs` null, only compiles them.
+ * Compiles a run's modules, examples of `package`: on success puts its files in the cache under `runs`, the service
+ * worker's folder of runs, its exports modules loading `runtime` and re-exporting each of `packages`' names from it;
+ * with `runs` null, only compiles them.
  */
 export type CompileRequest = {
-    readonly kind: "compile"; readonly run: number; readonly files: readonly Source[];
-    readonly runs: string | null; readonly runtime: string; readonly names: readonly string[];
+    readonly kind: "compile"; readonly run: number; readonly package: string; readonly files: readonly Source[];
+    readonly runs: string | null; readonly runtime: string; readonly packages: readonly Exported[];
 };
 
 /**
@@ -49,13 +53,17 @@ const isStrings = (value: unknown): value is readonly string[] => Array.isArray(
 const isSources = (value: unknown): value is readonly Source[] => Array.isArray(value)
     && value.every(item => typeof item === "object" && item !== null && typeof Reflect.get(item, "name") === "string" && typeof Reflect.get(item, "code") === "string");
 
+const isExported = (value: unknown): value is readonly Exported[] => Array.isArray(value)
+    && value.every(item => typeof item === "object" && item !== null && typeof Reflect.get(item, "name") === "string" && isStrings(Reflect.get(item, "names")));
+
 export const compileRequestOf = (data: unknown): CompileRequest | null => {
     if (typeof data !== "object" || data === null || Reflect.get(data, "kind") !== "compile") return null;
     const run: unknown = Reflect.get(data, "run");
+    const owner: unknown = Reflect.get(data, "package");
     const files: unknown = Reflect.get(data, "files");
     const runs: unknown = Reflect.get(data, "runs");
     const runtime: unknown = Reflect.get(data, "runtime");
-    const names: unknown = Reflect.get(data, "names");
-    return typeof run === "number" && isSources(files) && (runs === null || typeof runs === "string") && typeof runtime === "string" && isStrings(names)
-        ? { kind: "compile", run, files, runs, runtime, names } : null;
+    const packages: unknown = Reflect.get(data, "packages");
+    return typeof run === "number" && typeof owner === "string" && isSources(files) && (runs === null || typeof runs === "string") && typeof runtime === "string" && isExported(packages)
+        ? { kind: "compile", run, package: owner, files, runs, runtime, packages } : null;
 };

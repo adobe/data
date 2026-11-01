@@ -115,22 +115,48 @@ const predicateOf = (given: unknown): ((value: unknown, context: object) => unkn
     typeof given === "function" ? (value, context) => Reflect.apply(given, undefined, [value, context]) : null;
 
 /**
+ * `where`'s conditions in a world, each value interned there, by number, and pinned, so its number stays while no
+ * archetype holds it and one that comes to hold it again matches; or the key of a component that isn't shared.
+ */
+const conditionsOf = (state: State, where: { readonly [key: symbol]: unknown }): Condition[] | symbol => {
+    const conditions: Condition[] = [];
+    for (const key of Object.getOwnPropertySymbols(where)) {
+        const id = idOf(state, key);
+        const given: unknown = Reflect.get(where, key);
+        const predicate = predicateOf(given);
+        if (predicate !== null) {
+            conditions.push({ id, number: -1, predicate });
+            continue;
+        }
+        const values = state.shared[id];
+        if (values === undefined) return key;
+        const number = internShared(values, given);
+        if (number >= 0) holdShared(values, number);
+        conditions.push({ id, number, predicate: null });
+    }
+    return conditions;
+};
+
+/**
+ * Whether an archetype holds each of `where`'s values, as a system's `where` of values passes it, for a `where` naming
+ * only shared components and giving no predicate; or the key of one that isn't shared.
+ */
+export const holdsValuesOf = (state: State, where: { readonly [key: symbol]: unknown }): ((archetype: Valued) => boolean) | symbol => {
+    const conditions = conditionsOf(state, where);
+    if (typeof conditions === "symbol") return conditions;
+    return archetype => {
+        for (let c = 0; c < conditions.length; c++) if (archetype.shared[conditions[c].id] !== conditions[c].number) return false;
+        return true;
+    };
+};
+
+/**
  * A system's `where` in a world: its values interned there, by number, its predicates' context reading `reads`,
  * evaluated again once one of them changed since they last were.
  */
 export const createWhere = <A extends Valued>(state: State, where: { readonly [key: symbol]: unknown }, reads: readonly symbol[], leaf: Leaf): Where<A> => {
-    const conditions: Condition[] = Object.getOwnPropertySymbols(where).map(key => {
-        const id = idOf(state, key);
-        const given: unknown = Reflect.get(where, key);
-        const predicate = predicateOf(given);
-        if (predicate !== null) return { id, number: -1, predicate };
-        const values = state.shared[id];
-        if (values === undefined) throw new Error(`System "${leaf.name}": where names "${labelOf(key)}", which isn't a shared component.`);
-        const number = internShared(values, given);
-        // Pinned, so its number stays while no archetype holds it: one that comes to hold it again matches.
-        if (number >= 0) holdShared(values, number);
-        return { id, number, predicate: null };
-    });
+    const conditions = conditionsOf(state, where);
+    if (typeof conditions === "symbol") throw new Error(`System "${leaf.name}": where names "${labelOf(conditions)}", which isn't a shared component.`);
     const readIds = reads.map(key => idOf(state, key));
     // Its predicates' context: each resource read once per evaluation, since a struct's read copies it out.
     const cached: unknown[] = reads.map(() => undefined);

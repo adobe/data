@@ -8,5 +8,6 @@ packages:
   - 'packages/ecs-transfers-canvas'
   - 'packages/ecs-sample-browser'
   - 'packages/ecs-guide'
+  - 'packages/ecs-guide-checks'
 allowBuilds:
   esbuild: false

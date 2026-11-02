@@ -3,8 +3,8 @@ name: meta-build
 description: Iteratively build an application or game phase-by-phase in clean subagents, reviewing each phase and refining the build-* skills / rules until each is optimal, then summarizing.
 input: a prompt describing the application or game to build
 options:
-    target = build-application   # build command to exercise: build-application | build-game | build-feature | a single build-<phase>
-    maxIterations = 4            # attempts per phase before moving on
+    target: build-application   # build command to exercise: build-application | build-game | build-feature | a single build-<phase>
+    maxIterations: 4            # attempts per phase before moving on
 ---
 
 Purpose: exercise and **polish the build-* skills and the rules they reference**, using

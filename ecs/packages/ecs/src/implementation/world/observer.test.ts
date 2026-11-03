@@ -200,6 +200,15 @@ describe("observer systems", () => {
         await world.dispose();
     });
 
+    it("within an added composite run after the next run, as those added alone do, whether or not a member ticks", async () => {
+        reset();
+        await using world = inline();
+        world.add(System.create({ systems: [watchLevel] }));
+        world.add(System.create([nothing, count]));
+        await world.run(spawn);
+        expect([seen.levels, seen.counted]).toEqual([[0], [1]]);
+    });
+
     it("stay while added alone and within an added composite until both are removed", async () => {
         reset();
         await using world = inline();

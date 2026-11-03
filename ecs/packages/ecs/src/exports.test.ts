@@ -29,7 +29,7 @@ const install = (): void => {
 };
 
 const consumer = `
-import { Index, Rule, System, World, gpuDevice, workers } from "@adobe/ecs";
+import { Index, Plugin, Rule, System, World, gpuDevice, workers } from "@adobe/ecs";
 export const position = Symbol("exportsTest/position");
 export const element = Symbol("exportsTest/element");
 export const shown = Symbol("exportsTest/shown");
@@ -52,6 +52,10 @@ declare const port: MessagePort;
 export const joined: Promise<World> = World.join(port, { threads: ["main"] });
 export const read = System.create({ readonly: true, components: { with: [position] }, lookup: { at: { with: [position] } } }, () => {});
 export const added = world.add(read);
+declare module "@adobe/ecs" { interface PluginConfig { canvas: HTMLCanvasElement } }
+export const canvasPlugin: Plugin<"canvas"> = { systems: [move], connect: (_, { canvas }) => () => canvas.remove() };
+declare const canvas: HTMLCanvasElement;
+export const started: Disposable = Plugin.start(world, [canvasPlugin], { canvas });
 `;
 
 /** Every declaration file reachable from `file` by relative imports, relative to `directory`. */

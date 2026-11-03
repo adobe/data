@@ -1,9 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it } from "vitest";
-import { part, record } from "../../../shared/elements/elements.test-helper.js";
-import { TodoSummary } from "./todo-summary.js";
-import { TodoToggleAll } from "./todo-toggle-all.js";
-import { define } from "../../../shared/elements/define.js";
+import { part, record } from "../../page/view/elements.test-helper.js";
+import { TodoSummary, TodoToggleAll } from "./index.js";
+import { define } from "../../page/view/index.js";
 
 define({ "todo-summary": TodoSummary, "todo-toggle-all": TodoToggleAll });
 

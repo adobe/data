@@ -1,0 +1,58 @@
+{
+  "name": "@adobe/ecs-architecture",
+  "version": "0.1.0",
+  "description": "The architecture standard for @adobe/ecs applications: its checker, its diagrams and the agent rules for it",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "private": false,
+  "independentVersion": true,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "bin": {
+    "ecs-architecture": "./bin/ecs-architecture.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/*.test-helper.ts",
+    "!dist/**/*.test.*",
+    "!dist/**/*.test-helper.*",
+    "!dist/guide",
+    "rules",
+    "standard.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "cp ../../LICENSE . && tsc -p tsconfig.build.json",
+    "typecheck": "tsc && tsc -p tsconfig.build.json --noEmit",
+    "test": "vitest --run"
+  },
+  "peerDependencies": {
+    "@adobe/ecs": "workspace:*",
+    "typescript": ">=5.0.0"
+  },
+  "devDependencies": {
+    "@adobe/ecs": "workspace:*",
+    "@types/node": "^25.6.0",
+    "ecs-guide-checks": "workspace:*",
+    "typescript": "^5.8.3",
+    "vitest": "^5.0.5"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "guide": {
+    "files": [
+      "src/**/*.ts",
+      "dist/**/*.js"
+    ]
+  }
+}

@@ -1,13 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, expect, it } from "vitest";
 import { Entity, type World } from "@adobe/ecs";
-import { toggleAll } from "../features/completion/model.js";
-import { setFilter } from "../features/filter/model.js";
-import { addGenerated } from "../features/generate/model.js";
-import { TodoRow } from "../features/todos/elements/todo-row.js";
-import { addTodo, deleteTodo, editTodo, moveTodo, toggleTodo } from "../features/todos/model.js";
-import { entityOfElement } from "../shared/attach.js";
-import { nextTick, watchTicks } from "../shared/ticks.test-helper.js";
+import { toggleAll } from "../features/completion/model/index.js";
+import { setFilter } from "../features/filter/model/index.js";
+import { addGenerated } from "../features/generate/model/index.js";
+import { TodoRow } from "../features/todos/elements/index.js";
+import { addTodo, deleteTodo, editTodo, moveTodo, toggleTodo } from "../features/todos/model/index.js";
+import { entityOfElement } from "../features/page/view/index.js";
+import { nextTick, watchTicks } from "../features/page/view/ticks.test-helper.js";
 import { createApp } from "./app.js";
 
 /**

@@ -1,0 +1,15 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import { expect, it } from "vitest";
+import { labelsOf, todosOf, withTodos } from "../../todos/model/todos.test-helper.js";
+import { addGenerated } from "./index.js";
+import { generatedLabel } from "./shared/generated-label.js";
+
+it("adds generated todos after the ones there, each label numbered", async () => {
+    await using world = await withTodos("first");
+    await world.run(addGenerated, { count: 3 });
+    expect(await labelsOf(world)).toEqual(["first", generatedLabel(1), generatedLabel(2), generatedLabel(3)]);
+    expect(new Set(await labelsOf(world)).size).toBe(4);
+    const orders = (await todosOf(world)).map(item => item.order);
+    expect([...orders].sort((a, b) => a - b)).toEqual(orders);
+    expect(generatedLabel(0)).toBe("Buy milk #1");
+});

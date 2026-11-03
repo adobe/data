@@ -64,6 +64,24 @@ importers:
         specifier: 1.0.39
         version: 1.0.39
 
+  ecs/packages/ecs-architecture:
+    devDependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
+      ecs-guide-checks:
+        specifier: workspace:*
+        version: link:../ecs-guide-checks
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@25.6.0)(@vitest/browser-playwright@5.0.5)(jsdom@24.1.0)(vite@8.3.4)
+
   ecs/packages/ecs-gpu:
     dependencies:
       '@adobe/ecs':
@@ -125,6 +143,9 @@ importers:
       '@adobe/ecs':
         specifier: workspace:*
         version: link:../ecs
+      '@adobe/ecs-architecture':
+        specifier: workspace:*
+        version: link:../ecs-architecture
       '@adobe/ecs-gpu':
         specifier: workspace:*
         version: link:../ecs-gpu
@@ -299,6 +320,9 @@ importers:
         specifier: workspace:*
         version: link:../ecs
     devDependencies:
+      '@adobe/ecs-architecture':
+        specifier: workspace:*
+        version: link:../ecs-architecture
       '@types/node':
         specifier: ^25.6.0
         version: 25.6.0

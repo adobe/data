@@ -2,14 +2,14 @@
 /// <reference types="@vitest/browser-playwright" />
 import { it } from "vitest";
 import { cdp } from "vitest/browser";
-import { Entity, System, World, workers } from "@adobe/ecs";
-import { bindCompletion } from "../features/completion/dom.js";
-import { bindFilters, filterRows } from "../features/filter/dom.js";
-import { addGenerated } from "../features/generate/model.js";
-import { bindRows, createRows, placeRows } from "../features/todos/dom.js";
-import { toggleTodo } from "../features/todos/model.js";
-import { entityOfElement } from "../shared/attach.js";
-import { createApp, type App } from "./app.js";
+import { Entity, System, workers, World } from "@adobe/ecs";
+import { bindCompletion } from "../features/completion/view/index.js";
+import { bindFilters, filterRows } from "../features/filter/view/index.js";
+import { addGenerated } from "../features/generate/model/index.js";
+import { bindRows, createRows, placeRows } from "../features/todos/view/index.js";
+import { toggleTodo } from "../features/todos/model/index.js";
+import { entityOfElement } from "../features/page/view/index.js";
+import { type App, createApp } from "./app.js";
 
 /**
  * Where a run's fixed cost goes in Chromium: runs timed one at a time and back to back, in a world gaining the app's

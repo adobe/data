@@ -1,6 +1,6 @@
 {
   "name": "@adobe/ecs",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Adobe ECS",
   "license": "MIT",
   "type": "module",
@@ -31,6 +31,7 @@
     "!dist/observe",
     "!dist/**/*.tsbuildinfo",
     "src",
+    "rules",
     "LICENSE"
   ],
   "scripts": {

@@ -1,0 +1,5 @@
+---
+glob: "**/view/**"
+---
+- The view renders the model, binding the DOM or drawing, and connects this feature's widgets: it imports `model`, `elements` and `view`, never `ports`.
+- Order its systems against the model's with their own `before`/`after`; the model never names them.

@@ -1,10 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it } from "vitest";
-import { mutationsOf, part, record } from "../../../shared/elements/elements.test-helper.js";
-import { TodoEntry } from "./todo-entry.js";
-import { TodoList } from "./todo-list.js";
-import { TodoRow } from "./todo-row.js";
-import { define } from "../../../shared/elements/define.js";
+import { mutationsOf, part, record } from "../../page/view/elements.test-helper.js";
+import { TodoEntry, TodoList, TodoRow } from "./index.js";
+import { define } from "../../page/view/index.js";
 
 define({ "todo-entry": TodoEntry, "todo-list": TodoList, "todo-row": TodoRow });
 

@@ -1,0 +1,5 @@
+---
+glob: "**/model/**"
+---
+- The model runs headless: it imports only `model`, and uses no DOM, network, timers, `globalThis`, `Date.now` or `performance.now`; time is the `clock` resource. No `@adobe/ecs-gpu` or UI library.
+- A test drives it through its public systems, in a world of its own.

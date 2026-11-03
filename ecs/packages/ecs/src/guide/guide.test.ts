@@ -26,6 +26,7 @@ const teaches: { readonly [chapter: number]: readonly string[] } = {
     20: ["shared: true", "commands.spawn(Unit, {", "row[cell]", "commands.add", "where: { [cell]: [4, 0] }", "where", "changed: [position]"],
     21: ["thread: \"main\"", "cadence", "always", "commands.add", "is: [stage]", "style.translate", "changed: [position]"],
     22: ["changed: [clock]", "is: [pen]", "key: []", "clearRect(", "arc(", "fill()", "getImageData("],
+    23: ["interface PluginConfig", "Plugin<\"surface\">", "systems", "connect", "Plugin.start(", "using"],
 };
 
 /**
@@ -65,6 +66,7 @@ const mutations: { readonly [chapter: number]: readonly (readonly [string, strin
     ],
     21: [["row[dot].remove();", ""], ["commands.add(row.entity, dot, element);", ""]],
     22: [["context.fill();", ""]],
+    23: [["        return () => surface.removeEventListener(\"click\", listener);\n", "        return () => {};\n"], ["[clicking, reporting]", "[clicking]"]],
 };
 
 checkChapters({ folder: new URL(".", import.meta.url), teaches, mutations });

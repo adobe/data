@@ -765,9 +765,9 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     };
 
     /**
-     * Registers an observer system `add` was given: at once when it can register again as it was
-     * (`Registrar.reregister`), otherwise before the next run, unless it was removed meanwhile; its failure is reported
-     * out of band.
+     * Registers an observer system `add` was given, alone or within a composite: at once when it can register again as
+     * it was (`Registrar.reregister`), otherwise before the next run, unless it was removed meanwhile; its failure is
+     * reported out of band.
      */
     const registerObserver = (system: Leaf): void => {
         if (registrar.registered(system) !== undefined || registrar.reregister(system)) return;
@@ -1024,6 +1024,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             const definition = requireDefinition(system);
             loop.add(definition);
             if (isObserver(definition)) registerObserver(definition);
+            else for (const leaf of scheduleOf(definition).observer) registerObserver(leaf);
         },
         remove: system => {
             const definition = requireDefinition(system);

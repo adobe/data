@@ -40,3 +40,7 @@ and run in the browser.
 
 21. [Animating elements](21-dom.md)
 22. [Drawing on a canvas](22-canvas.md)
+
+## Applications
+
+23. [Plugins](23-plugins.md)

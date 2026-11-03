@@ -23,6 +23,7 @@ A high-performance, multithreaded Entity Component System for web-based applicat
   - Typed input, with its schema generated from the TypeScript type
   - Render systems that draw straight from component storage
   - Readonly systems for reading state into a UI
+  - Plugins: systems and a connection to the outside, added and removed as a unit and started with one typed config
 - **Changes**
   - Per-component added and changed ticks: an O(1) check per entity, with each change seen exactly once
   - Filters that skip unchanged chunks and 64-row blocks

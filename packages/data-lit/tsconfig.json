@@ -7,5 +7,6 @@
     "types": []
   },
   "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test-utils.ts", "src/**/*.type-test.ts"],
   "references": []
 }

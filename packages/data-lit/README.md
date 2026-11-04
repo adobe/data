@@ -30,19 +30,17 @@ Inline callbacks do not cause the observer to disconnect and reattach.
 
 ## Hooks and the disconnect lifecycle
 
-Hooks (`useState`, `useEffect`, `useObservable`, `useObservableValues`, `useMemo`, `useRef`, ...) follow
-React's unmount semantics. When a hook-using element is disconnected from the DOM, **all of its hook state is
-reset**:
+A hook-using element has two kinds of hook state with different lifetimes.
 
-- every `useEffect` cleanup runs, so observable subscriptions and event listeners are torn down, and
-- all stored values (`useState`, `useMemo`, `useRef`) are discarded.
+**Values and subscriptions** (`useState`, `useMemo`, `useRef`, `useEffect`, `useObservable`,
+`useObservableValues`, ...) belong to the element's mount. They survive a DOM *move*: removing the element
+and re-inserting it in the same task, as a `repeat` reorder or a reparent does, keeps every value and
+subscription, and the element renders once more. They are finalized only when the element is still
+disconnected at the next microtask: every `useEffect` cleanup runs, stored values are discarded, and a
+later connect renders fresh from initial hook state.
 
-On the next connect the element renders fresh from its initial hook state.
-
-> **Footgun:** because a disconnect is a full reset, a DOM *move* (`el.remove()` then re-appending it, or
-> reparenting the element) is treated as a full unmount followed by a remount. Any local UI state held in
-> hooks is silently lost across the move: toggle positions, uncontrolled input values, scroll offsets. If a
-> piece of state must survive a reparent, keep it in the `@adobe/data` database/service rather than in element
-> hook state.
+**Connectedness** (`useConnected`) follows every connect and disconnect synchronously, including both
+edges of a move. Use it for window or document listeners, portals, and drag sessions that must detach while
+the element is out of the DOM.
 
 See the `data-lit-todo` sample in this repository for a full example.

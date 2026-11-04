@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data-lit",
-  "version": "0.10.31",
+  "version": "0.10.32",
   "description": "Adobe data Lit bindings - hooks, elements, decorators",
   "type": "module",
   "private": false,
@@ -16,7 +16,7 @@
     "dev": "tsc -b -w",
     "link": "pnpm build && pnpm link --global",
     "test": "vitest --run --passWithNoTests",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json"
   },
   "dependencies": {
     "@adobe/data": "workspace:*"

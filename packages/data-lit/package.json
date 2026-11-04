@@ -16,7 +16,7 @@
     "dev": "tsc -b -w",
     "link": "pnpm build && pnpm link --global",
     "test": "vitest --run --passWithNoTests",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json"
   },
   "dependencies": {
     "@adobe/data": "workspace:*"

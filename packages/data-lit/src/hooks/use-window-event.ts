@@ -12,5 +12,5 @@ export function useWindowEvent<K extends keyof WindowEventMap>(
     useEffect(() => {
         window.addEventListener(event, callback);
         return () => window.removeEventListener(event, callback);
-    }, [callback]);
+    }, [event, callback]);
 }

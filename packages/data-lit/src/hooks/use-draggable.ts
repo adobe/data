@@ -25,86 +25,111 @@ export interface DraggableProps {
 export function useDraggable(element: HTMLElement, props: DraggableProps, dependencies: unknown[]) {
     const { minDragDistance = 10, dragCursor = 'grab', addPlaceholder = false, stopPropagation = false } = props;
     useEffect(() => {
-        let downPosition: Vec2 | null = null;
-        // the bounds of the element when the pointer was first pressed down.
+        const minDragDistanceSquared = minDragDistance * minDragDistance;
+        // The pointer that started the session; other pointers are ignored until it ends.
+        let pointerId: number | null = null;
+        let downPosition: Vec2 = [0, 0];
+        // The element position when the drag started, or null before the threshold is crossed.
         let dragStartOffset: Vec2 | null = null;
         let originalCursor = '';
         let placeholder: HTMLElement | null = null;
-        let movePosition: Vec2 = [0, 0];
-        function notify(e: PointerEvent, dragListener: DraggableProps["onDrag"]) {
-            const delta = Vec2.subtract(movePosition, downPosition!);
-            dragListener(e, Vec2.add(dragStartOffset!, delta), delta);
+
+        function notify(e: PointerEvent, start: Vec2, dragListener: DraggableProps["onDrag"]) {
+            const delta: Vec2 = [e.clientX - downPosition[0], e.clientY - downPosition[1]];
+            dragListener(e, Vec2.add(start, delta), delta);
+        }
+
+        function startDrag(e: PointerEvent): Vec2 {
+            const offset: Vec2 = [element.offsetLeft, element.offsetTop];
+            const start = (props.onDragStart(e) as Vec2 | undefined) ?? offset;
+            dragStartOffset = start;
+            if (dragCursor) {
+                originalCursor = element.style.cursor;
+                element.style.cursor = dragCursor;
+            }
+            // add a placeholder so the parent element doesn't change size when the element is dragged.
+            if (addPlaceholder) {
+                placeholder = document.createElement('div');
+                Object.assign(placeholder.style, {
+                    position: 'absolute',
+                    backgroundColor: 'pink',
+                    left: toCssUnitString(element.offsetLeft),
+                    top: toCssUnitString(element.offsetTop),
+                    width: toCssUnitString(element.offsetWidth),
+                    height: toCssUnitString(element.offsetHeight),
+                    visibility: 'hidden',
+                });
+                element.parentElement?.appendChild(placeholder);
+            }
+            return start;
         }
 
         function onPointerMove(e: PointerEvent) {
-            movePosition = [e.clientX, e.clientY];
-            if (Vec2.length(Vec2.subtract(movePosition, downPosition!)) >= minDragDistance) {
-                if (!dragStartOffset) {
-                    dragStartOffset = [element.offsetLeft, element.offsetTop];
-                    props.onDragStart(e);
-                    if (dragCursor) {
-                        originalCursor = element.style.cursor;
-                        element.style.cursor = dragCursor;
-                    }
-                    // add a placeholder so the parent element doesn't change size when the element is dragged.
-                    if (addPlaceholder) {
-                        placeholder = document.createElement('div');
-                        Object.assign(placeholder.style, {
-                            position: 'absolute',
-                            backgroundColor: 'pink',
-                            left: toCssUnitString(element.offsetLeft),
-                            top: toCssUnitString(element.offsetTop),
-                            width: toCssUnitString(element.offsetWidth),
-                            height: toCssUnitString(element.offsetHeight),
-                            visibility: 'hidden',
-                        });
-                        element.parentElement?.appendChild(placeholder);
-                    }
+            if (e.pointerId !== pointerId) return;
+            let start = dragStartOffset;
+            if (!start) {
+                const dx = e.clientX - downPosition[0];
+                const dy = e.clientY - downPosition[1];
+                if (dx * dx + dy * dy >= minDragDistanceSquared) {
+                    start = startDrag(e);
                 }
             }
-            if (dragStartOffset) {
-                notify(e, props.onDrag);
+            if (start) {
+                notify(e, start, props.onDrag);
             }
             if (stopPropagation) e.stopPropagation();
         }
-        function cleanup() {
+
+        /** Ends the session and restores the element; returns the drag start if a drag had started. */
+        function release(): Vec2 | null {
             // eslint-disable-next-line @typescript-eslint/no-use-before-define
             window.removeEventListener('pointerup', onPointerUp);
+            // eslint-disable-next-line @typescript-eslint/no-use-before-define
+            window.removeEventListener('pointercancel', onPointerCancel);
             window.removeEventListener('pointermove', onPointerMove);
-            if (dragCursor) {
+            const start = dragStartOffset;
+            if (start && dragCursor) {
                 element.style.cursor = originalCursor;
             }
-            if (placeholder) {
-                placeholder.remove();
-                placeholder = null;
-            }
+            placeholder?.remove();
+            placeholder = null;
+            pointerId = null;
+            dragStartOffset = null;
+            return start;
         }
+
         function onPointerUp(e: PointerEvent) {
-            cleanup();
-            if (dragStartOffset && props.onDragEnd) {
-                notify(e, props.onDragEnd);
+            if (e.pointerId !== pointerId) return;
+            const start = release();
+            if (start && props.onDragEnd) {
+                notify(e, start, props.onDragEnd);
             }
             if (stopPropagation) e.stopPropagation();
-            downPosition = null;
-            dragStartOffset = null;
         }
+
+        function onPointerCancel(e: PointerEvent) {
+            if (e.pointerId !== pointerId) return;
+            if (release()) {
+                props.onDragCancel?.();
+            }
+        }
+
         function onPointerDown(e: PointerEvent) {
             // Only start drag transaction for left mouse button clicks
-            if (e.button !== 0) return;
+            if (e.button !== 0 || pointerId !== null) return;
 
+            pointerId = e.pointerId;
+            downPosition = [e.clientX, e.clientY];
             window.addEventListener('pointermove', onPointerMove);
             window.addEventListener('pointerup', onPointerUp);
-            downPosition = [e.clientX, e.clientY];
+            window.addEventListener('pointercancel', onPointerCancel);
             if (stopPropagation) e.stopPropagation();
         }
 
         element?.addEventListener('pointerdown', onPointerDown);
         return () => {
             element?.removeEventListener('pointerdown', onPointerDown);
-            if (downPosition) {
-                cleanup();
-            }
-            if (dragStartOffset) {
+            if (pointerId !== null && release()) {
                 props.onDragCancel?.();
             }
         };

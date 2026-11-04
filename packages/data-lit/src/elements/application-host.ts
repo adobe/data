@@ -3,13 +3,12 @@
 import { LitElement, nothing, TemplateResult, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { Service } from '@adobe/data/service';
-import { ApplicationElement } from './application-element.js';
 
 const tagName = "application-host";
 
 declare global {
    interface HTMLElementTagNameMap {
-      'application-element': ApplicationElement<Service>;
+      'application-host': ApplicationHost;
    }
 }
 
@@ -31,9 +30,23 @@ export class ApplicationHost<MainService extends Service = Service> extends LitE
    @property({ attribute: false })
    public service!: MainService;
 
+   #pendingService?: Promise<MainService>;
+
+   /**
+    * Creates the service once per host: reconnecting, including a DOM move, reuses the
+    * service or the in-flight creation. A failed creation is retried on the next connect.
+    */
    override async connectedCallback() {
       super.connectedCallback();
-      this.service = await this.createService();
+      if (this.service) return;
+      const pending = this.#pendingService ??= this.createService();
+      try {
+         const service = await pending;
+         this.service ??= service;
+      } catch (error) {
+         if (this.#pendingService === pending) this.#pendingService = undefined;
+         throw error;
+      }
    }
 
    override render() {

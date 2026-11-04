@@ -1,13 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
+/** Yields `element` and its ancestors along the composed tree: assigned slots, parents, then shadow hosts. */
 export function* iterateSelfAndAncestors(element: Element): IterableIterator<Element> {
     let current: Element | null = element;
 
     while (current) {
         yield current;
 
-        if (current instanceof HTMLSlotElement && current.assignedSlot) {
-            // Move to the slot's parent if the current element is assigned to a slot
+        if (current.assignedSlot) {
             current = current.assignedSlot;
         } else if (current.parentNode instanceof Element) {
             // Move up to the parent node if it is an element

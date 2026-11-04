@@ -20,17 +20,27 @@ function isReactiveHost(host: Component): host is ReactiveHost {
  * Finalize a host: dispose every hook slot's cleanup and clear the slots so the
  * next render re-initializes from scratch. Only slots that expose a `dispose`
  * function (effects, subscriptions) are torn down; value slots (state, memo,
- * ref) are simply dropped.
+ * ref) are simply dropped. Every disposer runs even if an earlier one throws;
+ * the failures are rethrown afterwards.
  */
 function finalizeHooks(host: Component): void {
     const { hooks } = host;
-    if (hooks) {
-        for (const hook of hooks) {
-            (hook as { dispose?: () => void } | undefined)?.dispose?.();
-        }
-    }
     host.hooks = [];
     host.hookIndex = 0;
+    const errors: unknown[] = [];
+    for (const hook of hooks ?? []) {
+        try {
+            (hook as { dispose?: () => void } | undefined)?.dispose?.();
+        } catch (error) {
+            errors.push(error);
+        }
+    }
+    if (errors.length === 1) {
+        throw errors[0];
+    }
+    if (errors.length > 1) {
+        throw new AggregateError(errors, "Hook cleanup failed");
+    }
 }
 
 /**

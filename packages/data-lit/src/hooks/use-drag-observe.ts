@@ -2,6 +2,7 @@
 
 import { DraggableProps, useDraggable } from './use-draggable.js';
 import { useElement } from './use-element.js';
+import { useMemo } from './use-memo.js';
 import { Observe } from '@adobe/data/observe';
 import { Vec2 } from '@adobe/data/math';
 
@@ -37,7 +38,7 @@ export type DragState = DragStart | DragMove | DragEnd;
  * @returns
  */
 export function useDragObserve(props: DragObserveProps, dependencies: unknown[]) {
-    const [dragState, setDragState] = Observe.createEvent<DragState>();
+    const [dragState, setDragState] = useMemo(() => Observe.createEvent<DragState>(), dependencies);
     const element = useElement();
     useDraggable(element,
         {

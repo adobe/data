@@ -1,0 +1,11 @@
+writes ARCHITECTURE.md, todos/ARCHITECTURE.md
+  filter --> todos
+  app_3a_app --> filter
+| [filter](filter/model/README.md) | Which todos show |
+| [todos](todos/ARCHITECTURE.md) | Todos and what a user does to them |
+  todos_2f_view --> todos_2f_model
+| [model](model/README.md) | Todos and what a user does to them |
+| [view](view/README.md) | Rows bound to the todos |
+problems 0
+`filter`'s description is 82 characters, more than 64: "Which of the todos show in the list, by whether each is done, as the user picks it". Shorten the first sentence of its README, or the `> ` line.
+current once written: true

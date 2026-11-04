@@ -1,28 +1,23 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { World, workers } from "@adobe/ecs";
-import * as exported from "../features/index.js";
-import { all } from "../shared/connect.js";
-import { define } from "../shared/elements/define.js";
-import type { Resources } from "../shared/feature.js";
-
-/** The app's features, every one `features/index.ts` exports. Each knows only those it builds on; none knows the app. */
-const features = Object.values(exported);
+import { Plugin, World, workers } from "@adobe/ecs";
+import { completionPlugin, completionResources } from "../features/completion/view/index.js";
+import { filterPlugin, filterResources } from "../features/filter/view/index.js";
+import { generatePlugin } from "../features/generate/view/index.js";
+import { todosPlugin, todosResources } from "../features/todos/view/index.js";
 
 export type App = { readonly world: World; readonly dispose: () => Promise<void> };
 
 /**
- * Starts the app on the page within `root`, its elements defined: a world whose DOM systems drive the page, holding
- * the fixed elements its features find there, and whose runs the page's events start.
+ * Starts the app on the page within `root`: a world holding the fixed elements its features find there, with the
+ * features' plugins, which define their elements, add their DOM systems and start runs for the page's events.
  */
 export const createApp = (root: HTMLElement): App => {
-    for (const feature of features) define(feature.elements);
-    const world = World.create(features.reduce<Resources>((resources, feature) => ({ ...resources, ...feature.resources(root) }), { [workers]: 0 }));
-    for (const { system } of features) if (system !== null) world.add(system);
-    const disconnect = all(...features.map(feature => feature.connect(world, root)));
+    const world = World.create({ [workers]: 0, ...todosResources(root), ...filterResources(root), ...completionResources(root) });
+    const plugins = Plugin.start(world, [todosPlugin, filterPlugin, completionPlugin, generatePlugin], { root });
     return {
         world,
         dispose: async () => {
-            disconnect();
+            plugins[Symbol.dispose]();
             await world.dispose();
         },
     };

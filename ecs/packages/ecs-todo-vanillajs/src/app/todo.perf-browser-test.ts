@@ -1,15 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { it } from "vitest";
 import { Entity, System, workers, World } from "@adobe/ecs";
-import { toggleAll } from "../features/completion/model.js";
-import { filter } from "../features/filter/data.js";
-import { setFilter } from "../features/filter/model.js";
-import { addGenerated } from "../features/generate/model.js";
-import { done } from "../features/todos/data.js";
-import { createRows, dom, list } from "../features/todos/dom.js";
-import { addTodo, editTodo, moveTodo, toggleTodo } from "../features/todos/model.js";
-import { entityOfElement } from "../shared/attach.js";
-import { nextTick, watchTicks } from "../shared/ticks.test-helper.js";
+import { toggleAll } from "../features/completion/model/index.js";
+import { filter, setFilter } from "../features/filter/model/index.js";
+import { addGenerated } from "../features/generate/model/index.js";
+import { addTodo, done, editTodo, moveTodo, toggleTodo } from "../features/todos/model/index.js";
+import { createRows, list, systems } from "../features/todos/view/index.js";
+import { entityOfElement } from "../features/page/view/index.js";
+import { nextTick, watchTicks } from "../features/page/view/ticks.test-helper.js";
 import { createApp } from "./app.js";
 
 /**
@@ -183,7 +181,7 @@ const benchmarkListFilter = async (n: number): Promise<void> => {
     document.body.append(style, element);
     await using world = World.create({ [workers]: 0, [list]: element });
     await watchTicks(world);
-    for (const system of [dom, markList]) world.add(system);
+    for (const system of [...systems, markList]) world.add(system);
     await world.run(addGenerated, { count: n });
     await world.run(createRows);
     await world.run(halfDone);

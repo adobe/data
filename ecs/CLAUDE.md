@@ -95,3 +95,12 @@ packages' suites there too.
 CI runs no flaky test. A test that fails on CI and passes on a rerun is skipped there (`it.skipIf(process.env["CI"] !==
 undefined)`, with a comment pointing at its entry in `packages/ecs/followups.md`), still run locally, and enabled on CI
 again once it's hardened.
+
+## The architecture standard
+
+`AGENTS.md`, `.claude/rules/ecs/` and `.github/instructions/ecs/` are the rules of `@adobe/ecs-architecture`'s
+standard for applications, written by `ecs-architecture agents`: never edit them. The todo sample follows it, and its
+tests run `ecs-architecture check`. The libraries keep the layout above, so where a rule for applications disagrees
+with it, a library follows its own layout.
+
+@AGENTS.md

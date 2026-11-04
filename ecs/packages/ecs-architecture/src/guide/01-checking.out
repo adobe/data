@@ -1,0 +1,10 @@
+as written: 0 violation(s)
+deep import: 2 violation(s)
+  [deep-import] todos/view/function.show-title.ts: Import from the component's index.ts (../model/index.js)
+  [unused-export] todos/model/component.title.ts: Move its declaration into a private folder of the component, a folder without an index.ts such as todos/model/shared/, and drop it from index.ts
+model reads the page: 1 violation(s)
+  [model-is-headless] todos/model/system.add-todo.ts: The model runs headless: no DOM, network, timers or global object
+nothing runs a system: 1 violation(s)
+  [unlisted-system] todos/model/system.add-todo.ts: Add addTodo to systems in todos/model/constant.systems.ts (or the part's) if the world runs it each tick; for a one-off, call world.run(addTodo) where it's needed.
+an export nobody uses: 1 violation(s)
+  [unused-export] todos/model/constant.limit.ts: Move its declaration into a private folder of the component, a folder without an index.ts such as todos/model/shared/, and drop it from index.ts

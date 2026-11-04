@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@adobe/ecs": "workspace:*",
+    "@adobe/ecs-architecture": "workspace:*",
     "@adobe/ecs-gpu": "workspace:*",
     "@adobe/ecs-persistence": "workspace:*",
     "@codemirror/commands": "^6.11.1",

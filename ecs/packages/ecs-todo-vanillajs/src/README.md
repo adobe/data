@@ -31,7 +31,7 @@ filter, and generate 10 or 1,000 todos.
 - **Fixed elements showing counts** are bound by a readonly system that runs only when an index's entries changed:
   `bindCompletion` looks up `completion/byDone` with `changed: true`, so it writes the summary and the toggle-all box
   after a pass in which a todo was added, removed or toggled, and is skipped before its body otherwise.
-- **Events become runs** in each feature's `events.ts`: listeners on the page's root call `world.run(system, input)`
+- **Events become runs** in each feature's plugin: its listeners on the page's root call `world.run(system, input)`
   and leave the promise; a rejected run goes unhandled, which the browser logs. An event from a row names its todo
   through `entityOf(event)`, the entity the first target on its composed path shows: `createRows` attaches each row
   to its todo (`attach`), and a move's `item` and `before` are read with `entityOfElement`. Systems acting on one
@@ -42,40 +42,38 @@ filter, and generate 10 or 1,000 todos.
 
 ## Structure
 
+The sample follows the `@adobe/ecs` architecture standard (`@adobe/ecs-architecture`): its features are in
+`features/`, each split into layers, and [ARCHITECTURE.md](ARCHITECTURE.md) draws what uses what.
+
 ```
-index.html            the page: the fixed elements and their layout
-app/app.ts            defines the features' elements, creates the world through World.create and connects the events
-app/main.ts           starts the app on the page
-features/index.ts     exports every feature
-shared/feature.ts     Feature: what the app needs of a feature
-shared/connect.ts     on and all: listening for events, and stopping several listeners at once
-shared/attach.ts      attach, entityOf and entityOfElement: the entity an element shows, for its events
-shared/elements/      define: defining the elements features list
+index.html                 the page: the fixed elements and their layout
+app/app.ts                 creates the world, holding the page's fixed elements, and starts the features' plugins
+app/main.ts                starts the app on the page
 features/<feature>/
-    data.ts           components, resources, archetypes and indexes: the feature's data
-    model.ts          systems with input, one per thing a user does: they change data and know no DOM
-    dom.ts            the components and resources holding elements, and the composite of the systems that drive them
-    events.ts         connect: DOM events to runs of the model's systems
-    elements/         custom elements, importing only each other
-    feature.ts        the feature as the app composes it
+    model/                 components, resources, archetypes and indexes, and a system with input for each thing a
+                           user does: they change data and know no DOM
+    elements/              custom elements, importing only each other
+    view/                  the components and resources holding elements, the systems driving them, and the
+                           feature's plugin, which defines its elements and turns their events into runs
+features/page/view/        what every view uses of the page: attach, entityOf and entityOfElement, on, all, define
 ```
 
-The features are `todos`; `filter`, `completion` and `generate` build on it. A feature imports only the layers of a
-feature it builds on, never one built on it, and never the app. Within one, `model` imports only `data`; `dom` imports
-`data` and its elements; `events` imports `model` and `dom`. Registration happens as modules load, so a feature's
-components, indexes and finalizers exist wherever one of its modules is imported, and `feature.ts` lists only what
-the app must do with it: its elements, by tag name, which the app defines; how it finds its fixed elements; its DOM
-systems as one composite, which the app adds; and how it connects its events. Elements are defined by the app rather
-than as their modules load: the package's `sideEffects: false` lets a bundle drop a module imported only for that.
-Adding a feature is a folder and a line in `features/index.ts`.
+The features are `todos`; `filter`, `completion` and `generate` build on it, and every view uses `page`. Each
+feature's view exports its `Plugin<"root">`, whose systems are the view's DOM systems and its model's, and whose
+`connect` defines its elements and listens for their events on the page's root; and a function finding its fixed
+elements within the root, as the resources its systems read them from. The app creates the world with those
+resources and starts the four plugins with `Plugin.start(world, plugins, { root })`. Registration happens as modules
+load, so a feature's components, indexes and finalizers exist wherever one of its modules is imported. Elements are
+defined by the plugins rather than as their modules load: the package's `sideEffects: false` lets a bundle drop a
+module imported only for that.
 
 ## Tests
 
-- `*/model.test.ts`, in node: each feature's model systems against a world, read back through readonly systems.
+- `*/model/model.test.ts`, in node: each feature's model systems against a world, read back through readonly systems.
 - `*/elements/*.browser.test.ts`: elements alone, with no world: properties set, the render checked, events recorded.
-- `shared/attach.browser.test.ts`: the entity an element was attached to, found from an event on it or within its open
+- `features/page/view/attach.browser.test.ts`: the entity an element was attached to, found from an event on it or within its open
   shadow root, and none for others.
-- `*/dom.browser.test.ts`: a feature's DOM systems driving real elements, after the loop ticks: rows inserted,
+- `*/view/dom.browser.test.ts`: a feature's DOM systems driving real elements, after the loop ticks: rows inserted,
   removed without a node left, moved with only the moved row touched and its focus kept, filtered with focus moved
   off, edited; no rows without a list; none for a todo deleted before its tick; several runs before one tick; all
   removed on dispose.
@@ -84,9 +82,10 @@ Adding a feature is a folder and a line in `features/index.ts`.
   system's failures reported.
 - `app/proportional.browser.test.ts`: each operation's DOM mutations, and how often the DOM systems reach rows, are
   the same with 100 todos as with 2,000, less what each row it changed costs.
-- `imports.test.ts`: the layer rules above, elements importing nothing but each other, and worlds, the tests' and
-  benchmarks' too, made only through `World.create` from the package root, never through the implementation.
-  `build.test.ts`: the page builds.
+- `architecture.test.ts`: the architecture standard's check, and the diagrams and the repository's agent rules up to
+  date. `imports.test.ts`: the package imported only by its root, so worlds, the tests' and benchmarks' too, are made
+  through `World.create`, never through the implementation; the build plugin only in the configuration; and nothing
+  importing the app. `build.test.ts`: the page builds.
 - `app/todo.perf-browser-test.ts` and `app/profile.perf-browser-test.ts`, with `pnpm test:perf`:
   times, mutation counts and a profile, logged.
 
@@ -131,7 +130,7 @@ What the current API does and doesn't offer the DOM path, each with the change i
 - **No index finds an entity by its element.** Object parts of index keys are interned by structure
   (`index-keys.ts`, `canonical` is `JSON.stringify`), so every element is the same key `{}` and an index on `row`
   can't tell rows apart. The sample attaches the entity to the element where the row is made, under a symbol only
-  `shared/attach.ts` holds, which costs one property per row and nothing per run. *No change needed.*
+  `attach` holds, which costs one property per row and nothing per run. *No change needed.*
 - **A binding helper can't be typed** from the public types. A generic `bindProperties(element, { label, done })`
   builds `components: { read: [element, ...keys] }` with keys widened to `keyof Components`, and `System.create`
   rejects it: `Property '"error: its object components and resources live on different threads"' is missing`, since
@@ -163,9 +162,9 @@ What the current API does and doesn't offer the DOM path, each with the change i
 
 ## Not kept
 
-- **Layers at the top**, one `data.ts`, `model.ts`, `dom.ts` and `events.ts` holding every feature's part: 27 files
-  instead of 47 and half the imports, but a feature's parts are spread over four files, its tests share files with
-  the others', nothing shows which feature builds on which, and removing one means editing every layer.
+- **Layers at the top**, one set of layers holding every feature's part: fewer files and imports, but a feature's
+  parts are spread over every layer, its tests share files with the others', nothing shows which feature builds on
+  which, and removing one means editing every layer.
 - **The app composing each layer of each feature**, importing every feature's DOM systems, events, element
   definitions and resource keys, and taking the fixed elements in a `Page`: the app knew every feature's insides, in
   16 imports where it now has 4.

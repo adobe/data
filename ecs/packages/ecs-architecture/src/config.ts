@@ -19,4 +19,6 @@ export type Config = {
     readonly systems?: readonly string[];
     /** Modules a layer may not import, matched by prefix, each with the rule it breaks and how to fix it. */
     readonly banned?: { readonly [layer: string]: readonly { readonly module: string; readonly rule: string; readonly fix: string }[] };
+    /** The folder, relative to the package, that `ecs-architecture agents` writes in: the repository's root by default. */
+    readonly agents?: string;
 };

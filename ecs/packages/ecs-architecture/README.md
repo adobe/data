@@ -18,7 +18,8 @@ Run in the app's package folder:
 - `ecs-architecture diagrams [--check]` writes `ARCHITECTURE.md` at the source root, one for each feature with several
   layers, and a parts diagram in the README of a layer with three parts or more; `--check` exits 1 while one is out of
   date.
-- `ecs-architecture agents [--check]` writes the agent rules at the repository's root: a block in `AGENTS.md`, and
+- `ecs-architecture agents [--check]` writes the agent rules at the repository's root, or in the folder
+  `"agents"` names relative to the package: a block in `AGENTS.md`, and
   for each kind of file, by its path, the rules of this package and of `@adobe/ecs` in `.claude/rules/ecs/` for Claude
   Code and `.github/instructions/ecs/` for Copilot. A rule's file is named for the paths it covers:
   `system._.ts.md` for `**/system.*.ts`, `model/_.md` for `**/model/**`. A `CLAUDE.md` at the root gets
@@ -48,4 +49,5 @@ holds the standard's:
 ```
 
 `kinds`, `headless`, `systems` and `banned` set the kinds of public declarations, the layers that run headless, those
-that export systems and the modules a layer may not import.
+that export systems and the modules a layer may not import. `agents` is the folder the agent rules go in, for an app in
+a repository copied into another.

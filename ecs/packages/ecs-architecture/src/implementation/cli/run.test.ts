@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -53,7 +53,7 @@ describe('ecs-architecture check', () => {
         const root = repository({ ...valid, 'thing/model/component.thing.ts': '/** A thing. */\nexport const thing = Symbol();\n' }, { ecsArchitecture: { kinds: ['component', 'constant'] } });
         expect(run(['check'], join(root, 'app')).code).toBe(0);
         const wrong = repository(valid, { ecsArchitecture: { kind: [] } });
-        expect(run(['check'], join(wrong, 'app'))).toEqual({ output: '"ecsArchitecture.kind" isn\'t a setting: source, layers, kinds, apps, headless, systems or banned.\n', code: 2 });
+        expect(run(['check'], join(wrong, 'app'))).toEqual({ output: '"ecsArchitecture.kind" isn\'t a setting: source, layers, kinds, apps, headless, systems, banned or agents.\n', code: 2 });
     });
 });
 
@@ -80,6 +80,18 @@ describe('ecs-architecture agents', () => {
         expect(system).toContain('typed as its interface');
         expect(system).toContain('Read entities with a query');
         expect(readFileSync(join(root, '.github', 'instructions', 'ecs', 'model', '_.instructions.md'), 'utf8')).toContain('applyTo: "**/model/**"');
+        expect(run(['agents', '--check'], app)).toEqual({ output: 'agent rules ok\n', code: 0 });
+    });
+
+    it('writes them in the folder "ecsArchitecture.agents" names, relative to the package, inside a larger repository', () => {
+        const root = repository(valid, { ecsArchitecture: { agents: '..' } });
+        const nested = join(root, 'nested');
+        mkdirSync(nested);
+        const app = join(nested, 'app');
+        renameSync(join(root, 'app'), app);
+        expect(run(['agents'], app).code).toBe(0);
+        expect(readFileSync(join(nested, 'AGENTS.md'), 'utf8')).toContain('<!-- ecs-architecture:start -->');
+        expect(existsSync(join(root, 'AGENTS.md'))).toBe(false);
         expect(run(['agents', '--check'], app)).toEqual({ output: 'agent rules ok\n', code: 0 });
     });
 });

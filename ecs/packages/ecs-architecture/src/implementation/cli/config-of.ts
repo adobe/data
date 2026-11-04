@@ -17,9 +17,9 @@ export const configOf = (value: unknown): Config | string => {
     } = {};
     for (const [key, item] of entriesOf(value)) {
         switch (key) {
-            case 'source':
-                if (typeof item !== 'string') return '"ecsArchitecture.source" is a folder\'s path.';
-                config.source = item;
+            case 'source': case 'agents':
+                if (typeof item !== 'string') return `"ecsArchitecture.${key}" is a folder's path.`;
+                config[key] = item;
                 break;
             case 'kinds': case 'apps': case 'headless': case 'systems':
                 if (!isStrings(item)) return `"ecsArchitecture.${key}" is a list of names.`;
@@ -46,7 +46,7 @@ export const configOf = (value: unknown): Config | string => {
                 break;
             }
             default:
-                return `"ecsArchitecture.${key}" isn't a setting: source, layers, kinds, apps, headless, systems or banned.`;
+                return `"ecsArchitecture.${key}" isn't a setting: source, layers, kinds, apps, headless, systems, banned or agents.`;
         }
     }
     return config;

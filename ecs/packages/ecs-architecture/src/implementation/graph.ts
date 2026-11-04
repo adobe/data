@@ -5,8 +5,8 @@ import { defaults } from '../defaults.js';
 import { exportsOf, importsOf, parse, type Import, type Module } from './syntax.js';
 
 
-/** A configuration with every part given: the defaults' for those it leaves out. */
-export type Settings = Required<Config>;
+/** A configuration with every part the checks and diagrams read given: the defaults' for those it leaves out. */
+export type Settings = Required<Omit<Config, 'agents'>>;
 
 /** Whether a file is a test or a test's helper, which may import anything by its path. */
 export const isTest = (path: string): boolean => /[.-](test|type-test|test-helper)\.ts$/.test(path);

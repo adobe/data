@@ -29,7 +29,7 @@ export const run = (args: readonly string[], folder: string): Outcome => {
     switch (command) {
         case 'check': return runCheck(options, source, read);
         case 'diagrams': return runDiagrams(options.includes('--check'), source, read);
-        case 'agents': return runAgents(options.includes('--check'), folder);
+        case 'agents': return runAgents(options.includes('--check'), read.agents === undefined ? repositoryOf(folder) : join(folder, read.agents));
         default: return { output: usage, code: command === undefined || command === '--help' ? 0 : 2 };
     }
 };
@@ -144,11 +144,10 @@ const filesUnder = (root: string, folder: string): Record<string, string> => {
     return files;
 };
 
-const runAgents = (checking: boolean, folder: string): Outcome => {
+const runAgents = (checking: boolean, root: string): Outcome => {
     const ownRules = fileURLToPath(new URL('../../../rules/', import.meta.url));
     const ecs = ecsFolder();
     if (ecs === undefined) return { output: 'Can\'t find @adobe/ecs: install it beside @adobe/ecs-architecture.\n', code: 2 };
-    const root = repositoryOf(folder);
     const existing: Record<string, string> = { ...filesUnder(root, claudeRules), ...filesUnder(root, copilotInstructions) };
     for (const name of ['AGENTS.md', 'CLAUDE.md']) if (existsSync(join(root, name))) existing[name] = readFileSync(join(root, name), 'utf8');
     const summary = readFileSync(join(ownRules, 'AGENTS.md'), 'utf8');

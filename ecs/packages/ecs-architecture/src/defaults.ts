@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Config } from './config.js';
 
-/** The standard's organization, which a `Config` changes part by part. */
-export const defaults: Required<Config> = {
+/** The standard's organization, which a `Config` changes part by part; the agent rules go at the repository's root. */
+export const defaults: Required<Omit<Config, 'agents'>> = {
     source: 'src',
     layers: {
         elements: ['elements'],

@@ -97,4 +97,5 @@ single-layer feature's README, at most 64 characters. `--check` fails while one 
 
 Each part of the organization is configurable in the app's `package.json`, under `"ecsArchitecture"`: `source`
 (`"src"`), `layers` (each layer and those it may import), `kinds`, `apps` (folders holding apps rather than features),
-`headless`, `systems` (the layers exporting systems) and `banned` (modules a layer may not import).
+`headless`, `systems` (the layers exporting systems), `banned` (modules a layer may not import) and `agents` (the
+folder the agent rules go in, the repository's root by default).

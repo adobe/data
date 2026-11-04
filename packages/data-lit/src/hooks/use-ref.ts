@@ -1,8 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { useState } from "./use-state.js";
+import { Component_stack } from "./component/stack.js";
 
 export function useRef<T>(initialValue: T): { current: T } {
-    const [state] = useState({ current: initialValue });
-    return state;
+    const component = Component_stack.active();
+    const hookIndex = component.hookIndex++;
+    return component.hooks[hookIndex] ??= { current: initialValue };
 }

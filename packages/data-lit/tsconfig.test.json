@@ -1,0 +1,9 @@
+{
+  // Type-checks all of src, including the runtime and compile-time tests the build excludes.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true
+  },
+  "exclude": []
+}

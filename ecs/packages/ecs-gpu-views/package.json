@@ -16,10 +16,14 @@
     "@adobe/ecs-gpu": "workspace:*"
   },
   "devDependencies": {
+    "@adobe/ecs-architecture": "workspace:*",
     "@types/node": "^25.6.0",
     "@webgpu/types": "^0.1.61",
     "typescript": "^5.8.3",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
+  },
+  "ecsArchitecture": {
+    "agents": "../.."
   }
 }

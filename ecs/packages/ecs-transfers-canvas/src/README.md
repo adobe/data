@@ -10,27 +10,33 @@ counts the sprites and frames.
 
 ## Threads
 
-- **Main** (`main.ts`) owns the page. It starts both workers, hands each a port to the world, and joins the world. It
-  moves its `<canvas>` to the world's thread with `transferControlToOffscreen()`, as the input of a run of
+The three threads' entry points are in `app/`:
+
+- **Main** (`app/main.ts`) owns the page. It starts both workers, hands each a port to the world, and joins the
+  world. It moves its `<canvas>` to the world's thread with `transferControlToOffscreen()`, as the input of a run of
   `attachSurface`, and adds `show`, a readonly system that writes the counts into the overlay after each frame that
   changes them.
-- **The world's worker** (`world.ts`) creates the world, which ticks every frame, and shares it on the ports main
-  sends. The canvas becomes its `surface` resource.
-- **The loader's worker** (`loader.ts`) joins the world and makes one image every 120 ms: it draws a disc of its own
-  hue, encodes it as a PNG, decodes it to an `ImageBitmap` and runs `addSprite` with it. The bitmap is detached in the
-  loader once the run is posted.
+- **The world's worker** (`app/world.ts`) creates the world, which ticks every frame, adds the sprites' model and
+  view systems, and shares the world on the ports main sends. The canvas becomes its `surface` resource.
+- **The loader's worker** (`app/loader.ts`) joins the world and runs the sprites' `loadSprites`, which makes one image
+  every 120 ms: it draws a disc of its own hue, encodes it as a PNG, decodes it to an `ImageBitmap` and runs
+  `addSprite` with it. The bitmap is detached in the loader once the run is posted.
 
-## Data and systems
+## The sprites feature
 
-`sprites.ts` holds them, and every thread imports it:
+`features/sprites/` holds the data and systems every thread imports, in three layers:
 
-- `texture`, a component registered with `transfer: true`, holds a sprite's `ImageBitmap`; `position` and `velocity`
-  are `Vec2`s, in pixels and pixels per second.
-- `surface`, a resource registered with `transfer: true`, holds the `OffscreenCanvas`; `stats` counts sprites and
-  frames.
-- `attachSurface` and `addSprite` take what main and the loader move in their input. `frame`, the composite the world
-  adds, clears the canvas, moves each sprite, bouncing off the edges, and draws each one's texture where it is.
+- `model`: `texture`, a component registered with `transfer: true`, holds a sprite's `ImageBitmap`; `position` and
+  velocity are `Vec2`s, in pixels and pixels per second. `surface`, a resource registered with `transfer: true`, holds
+  the `OffscreenCanvas`; `stats` counts sprites and frames. `attachSurface` and `addSprite` take what main and the
+  loader move in their input, and `move` moves each sprite, bouncing off the edges.
+- `view`: each frame, clears the canvas and draws each sprite's texture where it is.
+- `ports`: `loadSprites`, the loader's textures.
+
+`ARCHITECTURE.md` draws the features and what uses what.
 
 ## Tests
 
-`build.test.ts`: the sample builds as an application, with the world's worker and the loader's.
+- `build.test.ts`: the sample builds as an application, with the world's worker and the loader's.
+- `architecture.test.ts`: the source follows the architecture standard, and its diagrams and the repository's agent
+  rules are up to date.

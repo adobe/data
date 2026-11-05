@@ -125,6 +125,9 @@ importers:
         specifier: workspace:*
         version: link:../ecs-gpu
     devDependencies:
+      '@adobe/ecs-architecture':
+        specifier: workspace:*
+        version: link:../ecs-architecture
       '@types/node':
         specifier: ^25.6.0
         version: 25.6.0
@@ -251,6 +254,9 @@ importers:
         specifier: workspace:*
         version: link:../ecs-gpu
     devDependencies:
+      '@adobe/ecs-architecture':
+        specifier: workspace:*
+        version: link:../ecs-architecture
       '@types/node':
         specifier: ^25.6.0
         version: 25.6.0
@@ -354,6 +360,9 @@ importers:
         specifier: workspace:*
         version: link:../ecs
     devDependencies:
+      '@adobe/ecs-architecture':
+        specifier: workspace:*
+        version: link:../ecs-architecture
       '@types/node':
         specifier: ^25.6.0
         version: 25.6.0

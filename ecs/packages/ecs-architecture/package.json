@@ -32,16 +32,16 @@
     "typecheck": "tsc && tsc -p tsconfig.build.json --noEmit",
     "test": "vitest --run"
   },
-  "dependencies": {
-    "typescript": "^5.8.3"
-  },
   "peerDependencies": {
-    "@adobe/ecs": "workspace:*"
+    "@adobe/ecs": "workspace:*",
+    "vite": "^8.0.0"
   },
   "devDependencies": {
     "@adobe/ecs": "workspace:*",
     "@types/node": "^25.6.0",
     "ecs-guide-checks": "workspace:*",
+    "typescript": "^5.8.3",
+    "vite": "^8.3.4",
     "vitest": "^5.0.5"
   },
   "exports": {

@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { basename, dirname, relative } from '../path.js';
-import ts from 'typescript';
+import type { ESTree } from 'vite';
 import { isTest, type Graph } from '../graph.js';
-import { isExported, isLocal, topLevelNames, walk } from '../syntax.js';
+import { exportedVariables, isLocal, nameOf, textOf, topLevelNames, walk, type Module, type Node } from '../syntax.js';
 import { camel, relativeSpec, type Context } from './context.js';
 import type { Imports } from './imports.js';
 
@@ -20,25 +20,23 @@ const listingOf = (graph: Graph, component: string): Listing | undefined => {
     if (!graph.files.has(path)) return undefined;
     const module = graph.moduleOf(path);
     const aliases = new Map<string, string>();
-    let declaration: ts.VariableDeclaration | undefined;
-    for (const statement of module.statements) {
-        if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
-            const bindings = statement.importClause?.namedBindings;
-            if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
-            for (const element of bindings.elements) if ((element.propertyName ?? element.name).text === 'systems') aliases.set(element.name.text, statement.moduleSpecifier.text);
-        } else if (ts.isVariableStatement(statement) && isExported(statement)) {
-            declaration ??= statement.declarationList.declarations.find(each => ts.isIdentifier(each.name) && each.name.text === 'systems');
+    for (const statement of module.program.body) {
+        if (statement.type !== 'ImportDeclaration') continue;
+        for (const specifier of statement.specifiers) {
+            if (specifier.type === 'ImportSpecifier' && nameOf(specifier.imported) === 'systems') aliases.set(specifier.local.name, statement.source.value);
         }
     }
+    const declaration = exportedVariables(module).flatMap(each => each.declarations).find(each => each.id.type === 'Identifier' && each.id.name === 'systems');
     const listed = new Set<string>();
     const spread = new Set<string>();
-    if (declaration?.initializer !== undefined && ts.isArrayLiteralExpression(declaration.initializer)) {
-        for (const element of declaration.initializer.elements) {
-            if (ts.isSpreadElement(element) && ts.isIdentifier(element.expression)) spread.add(aliases.get(element.expression.text) ?? element.expression.text);
-            else if (ts.isIdentifier(element)) listed.add(element.text);
+    if (declaration?.init?.type === 'ArrayExpression') {
+        for (const element of declaration.init.elements) {
+            if (element?.type === 'SpreadElement' && element.argument.type === 'Identifier') spread.add(aliases.get(element.argument.name) ?? element.argument.name);
+            else if (element?.type === 'Identifier') listed.add(element.name);
         }
     }
-    return { type: declaration?.type?.getText(module).replace(/\s+/g, ' '), listed, spread };
+    const annotation = declaration?.id.typeAnnotation;
+    return { type: annotation === undefined || annotation === null ? undefined : textOf(module, annotation.typeAnnotation).replace(/\s+/g, ' '), listed, spread };
 };
 
 /** The declaration a module's export `name` is, through its re-exports. */
@@ -48,24 +46,22 @@ const exportOrigin = (graph: Graph, file: string, name: string, seen = new Set<s
     seen.add(key);
     if (graph.exportsOf(file).includes(name)) {
         // `export { local as name }` names a local or an import of its own.
-        for (const statement of graph.moduleOf(file).statements) {
-            if (!ts.isExportDeclaration(statement) || statement.moduleSpecifier !== undefined || statement.exportClause === undefined || !ts.isNamedExports(statement.exportClause)) continue;
-            const element = statement.exportClause.elements.find(each => each.name.text === name);
-            if (element !== undefined) return bindingOrigin(graph, file, (element.propertyName ?? element.name).text, seen);
+        for (const statement of graph.moduleOf(file).program.body) {
+            if (statement.type !== 'ExportNamedDeclaration' || statement.source !== null) continue;
+            const specifier = statement.specifiers.find(each => nameOf(each.exported) === name);
+            if (specifier !== undefined) return bindingOrigin(graph, file, nameOf(specifier.local), seen);
         }
         return { file, name };
     }
-    for (const statement of graph.moduleOf(file).statements) {
-        if (!ts.isExportDeclaration(statement) || statement.moduleSpecifier === undefined || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
-        const target = graph.resolve(file, statement.moduleSpecifier.text);
-        if (target === undefined) continue;
-        const clause = statement.exportClause;
-        if (clause === undefined) {
-            const found = exportOrigin(graph, target, name, seen);
+    for (const statement of graph.moduleOf(file).program.body) {
+        if (statement.type === 'ExportAllDeclaration') {
+            const target = statement.exported === null ? graph.resolve(file, statement.source.value) : undefined;
+            const found = target === undefined ? undefined : exportOrigin(graph, target, name, seen);
             if (found !== undefined) return found;
-        } else if (ts.isNamedExports(clause)) {
-            const element = clause.elements.find(each => each.name.text === name);
-            if (element !== undefined) return exportOrigin(graph, target, (element.propertyName ?? element.name).text, seen);
+        } else if (statement.type === 'ExportNamedDeclaration' && statement.source !== null) {
+            const target = graph.resolve(file, statement.source.value);
+            const specifier = statement.specifiers.find(each => nameOf(each.exported) === name);
+            if (target !== undefined && specifier !== undefined) return exportOrigin(graph, target, nameOf(specifier.local), seen);
         }
     }
     return undefined;
@@ -73,43 +69,41 @@ const exportOrigin = (graph: Graph, file: string, name: string, seen = new Set<s
 
 /** The declaration a name bound in a module is: one of its own, or what it imports it from. */
 const bindingOrigin = (graph: Graph, file: string, local: string, seen = new Set<string>()): Origin | undefined => {
-    for (const statement of graph.moduleOf(file).statements) {
-        if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
-        const bindings = statement.importClause?.namedBindings;
-        if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
-        const element = bindings.elements.find(each => each.name.text === local);
-        if (element === undefined) continue;
-        const target = graph.resolve(file, statement.moduleSpecifier.text);
-        return target === undefined ? undefined : exportOrigin(graph, target, (element.propertyName ?? element.name).text, seen);
+    for (const statement of graph.moduleOf(file).program.body) {
+        if (statement.type !== 'ImportDeclaration') continue;
+        const specifier = statement.specifiers.find((each): each is ESTree.ImportSpecifier => each.type === 'ImportSpecifier' && each.local.name === local);
+        if (specifier === undefined) continue;
+        const target = graph.resolve(file, statement.source.value);
+        return target === undefined ? undefined : exportOrigin(graph, target, nameOf(specifier.imported), seen);
     }
     return { file, name: local };
 };
 
 /** The declaration `name` is in the module a namespace import, `import * as namespace`, binds. */
 const namespaceOrigin = (graph: Graph, file: string, namespace: string, name: string): Origin | undefined => {
-    for (const statement of graph.moduleOf(file).statements) {
-        if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
-        const bindings = statement.importClause?.namedBindings;
-        if (bindings === undefined || !ts.isNamespaceImport(bindings) || bindings.name.text !== namespace) continue;
-        const target = graph.resolve(file, statement.moduleSpecifier.text);
+    for (const statement of graph.moduleOf(file).program.body) {
+        if (statement.type !== 'ImportDeclaration' || !statement.specifiers.some(each => each.type === 'ImportNamespaceSpecifier' && each.local.name === namespace)) continue;
+        const target = graph.resolve(file, statement.source.value);
         return target === undefined ? undefined : exportOrigin(graph, target, name);
     }
     return undefined;
 };
 
+/** Whether a node reads a member by its name: `a.b`. */
+const isMember = (node: Node): node is ESTree.StaticMemberExpression => node.type === 'MemberExpression' && !node.computed && node.property.type === 'Identifier';
+
 /** Whether an expression is `@adobe/ecs`'s `System`: imported under any name, a namespace's member, or `System` unbound. */
-const isSystem = (module: ts.SourceFile, expression: ts.Expression): boolean => {
-    for (const statement of module.statements) {
-        if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== '@adobe/ecs') continue;
-        const bindings = statement.importClause?.namedBindings;
-        if (bindings === undefined) continue;
-        if (ts.isNamespaceImport(bindings)) {
-            if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression) && expression.expression.text === bindings.name.text && expression.name.text === 'System') return true;
-            continue;
+const isSystem = (module: Module, expression: Node): boolean => {
+    for (const statement of module.program.body) {
+        if (statement.type !== 'ImportDeclaration' || statement.source.value !== '@adobe/ecs') continue;
+        for (const specifier of statement.specifiers) {
+            if (specifier.type === 'ImportNamespaceSpecifier' && isMember(expression) && expression.object.type === 'Identifier'
+                && expression.object.name === specifier.local.name && expression.property.name === 'System') return true;
+            if (specifier.type === 'ImportSpecifier' && expression.type === 'Identifier' && specifier.local.name === expression.name
+                && nameOf(specifier.imported) === 'System') return true;
         }
-        if (ts.isIdentifier(expression) && bindings.elements.some(element => element.name.text === expression.text && (element.propertyName ?? element.name).text === 'System')) return true;
     }
-    return ts.isIdentifier(expression) && expression.text === 'System' && !topLevelNames(module).has('System');
+    return expression.type === 'Identifier' && expression.name === 'System' && !topLevelNames(module).has('System');
 };
 
 /**
@@ -118,26 +112,28 @@ const isSystem = (module: ts.SourceFile, expression: ts.Expression): boolean => 
  */
 const runSystems = (graph: Graph): Set<string> => {
     const reached = new Set<string>();
-    const reach = (file: string, expression: ts.Expression): void => {
-        const origin = ts.isIdentifier(expression) ? (isLocal(expression, expression.text) ? undefined : bindingOrigin(graph, file, expression.text))
-            : ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression) && !isLocal(expression, expression.expression.text)
-                ? namespaceOrigin(graph, file, expression.expression.text, expression.name.text) : undefined;
+    const reach = (module: Module, file: string, expression: Node): void => {
+        const origin = expression.type === 'Identifier' ? (isLocal(module, expression, expression.name) ? undefined : bindingOrigin(graph, file, expression.name))
+            : isMember(expression) && expression.object.type === 'Identifier' && !isLocal(module, expression, expression.object.name)
+                ? namespaceOrigin(graph, file, expression.object.name, expression.property.name) : undefined;
         if (origin !== undefined) reached.add(`${origin.file}#${origin.name}`);
     };
-    const reachAll = (file: string, list: ts.Expression): void => {
-        if (!ts.isArrayLiteralExpression(list)) return;
-        for (const element of list.elements) reach(file, ts.isSpreadElement(element) ? element.expression : element);
+    const reachAll = (module: Module, file: string, list: Node): void => {
+        if (list.type !== 'ArrayExpression') return;
+        for (const element of list.elements) if (element !== null) reach(module, file, element.type === 'SpreadElement' ? element.argument : element);
     };
     for (const file of graph.tsPaths) {
-        walk(graph.moduleOf(file), node => {
-            if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === 'systems' && node.initializer !== undefined) reachAll(file, node.initializer);
-            else if (ts.isPropertyAssignment(node) && (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) && node.name.text === 'systems') reachAll(file, node.initializer);
-            else if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-                const method = node.expression.name.text;
+        const module = graph.moduleOf(file);
+        walk(module, node => {
+            if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && node.id.name === 'systems' && node.init !== null) reachAll(module, file, node.init);
+            else if (node.type === 'Property' && module.parents.get(node)?.type === 'ObjectExpression' && node.kind === 'init' && !node.method && !node.shorthand && !node.computed
+                && (node.key.type === 'Identifier' ? node.key.name : node.key.type === 'Literal' ? node.key.value : undefined) === 'systems') reachAll(module, file, node.value);
+            else if (node.type === 'CallExpression' && isMember(node.callee)) {
+                const method = node.callee.property.name;
                 const [first] = node.arguments;
                 if (first === undefined) return;
-                if (method === 'run' || method === 'add') reach(file, first);
-                else if (method === 'create' && isSystem(graph.moduleOf(file), node.expression.expression)) reachAll(file, first);
+                if (method === 'run' || method === 'add') reach(module, file, first);
+                else if (method === 'create' && isSystem(module, node.callee.object)) reachAll(module, file, first);
             }
         });
     }

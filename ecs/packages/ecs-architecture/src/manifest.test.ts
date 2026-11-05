@@ -9,9 +9,9 @@ const field = (name: string): Record<string, unknown> => {
 };
 
 describe('the package manifest', () => {
-    it('parses with a TypeScript of its own, whatever compiler the app uses', () => {
+    it("parses with the app's Vite, as @adobe/ecs compiles with it, and needs no TypeScript at runtime", () => {
+        expect(field('peerDependencies')).toHaveProperty('vite', '^8.0.0');
         expect(field('peerDependencies')).not.toHaveProperty('typescript');
-        const range = field('dependencies')['typescript'];
-        expect(range).toMatch(/^\^[56]\./);
+        expect(field('dependencies')).not.toHaveProperty('typescript');
     });
 });

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { dirname, join, normalize } from '../path.js';
-import ts from 'typescript';
+import { nameOf } from '../syntax.js';
 import type { Context } from './context.js';
 import type { Imports } from './imports.js';
 
@@ -13,12 +13,10 @@ export const checkExports = ({ graph, violate }: Context, { uses }: Imports): vo
     /** The names a component's index re-exports by name from its parts, each with the part and its name there. */
     const partExports = (component: string): Map<string, { readonly part: string; readonly name: string }> => {
         const parts = new Map<string, { readonly part: string; readonly name: string }>();
-        for (const statement of graph.moduleOf(`${component}/index.ts`).statements) {
-            if (!ts.isExportDeclaration(statement) || statement.moduleSpecifier === undefined || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
-            const clause = statement.exportClause;
-            if (clause === undefined || !ts.isNamedExports(clause)) continue;
-            const part = normalize(join(component, dirname(statement.moduleSpecifier.text)));
-            for (const element of clause.elements) parts.set(element.name.text, { part, name: (element.propertyName ?? element.name).text });
+        for (const statement of graph.moduleOf(`${component}/index.ts`).program.body) {
+            if (statement.type !== 'ExportNamedDeclaration' || statement.source === null) continue;
+            const part = normalize(join(component, dirname(statement.source.value)));
+            for (const specifier of statement.specifiers) parts.set(nameOf(specifier.exported), { part, name: nameOf(specifier.local) });
         }
         return parts;
     };
@@ -31,9 +29,9 @@ export const checkExports = ({ graph, violate }: Context, { uses }: Imports): vo
     };
     for (const component of graph.components) {
         const declared: { readonly name: string; readonly file: string }[] = [];
-        for (const statement of graph.moduleOf(`${component}/index.ts`).statements) {
-            if (!ts.isExportDeclaration(statement) || statement.exportClause !== undefined || statement.moduleSpecifier === undefined || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
-            const file = join(component, `${statement.moduleSpecifier.text.slice(2, -3)}.ts`);
+        for (const statement of graph.moduleOf(`${component}/index.ts`).program.body) {
+            if (statement.type !== 'ExportAllDeclaration' || statement.exported !== null) continue;
+            const file = join(component, `${statement.source.value.slice(2, -3)}.ts`);
             if (graph.files.has(file)) for (const name of graph.exportsOf(file)) declared.push({ name, file });
         }
         for (const name of partExports(component).keys()) declared.push({ name, file: `${component}/index.ts` });

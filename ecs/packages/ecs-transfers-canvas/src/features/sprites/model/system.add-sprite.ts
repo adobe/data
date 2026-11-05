@@ -4,7 +4,7 @@ import { position } from './component.position.js';
 import { texture } from './component.texture.js';
 import { stats } from './resource.stats.js';
 import { surface } from './resource.surface.js';
-import { velocity } from './shared/velocity.js';
+import { velocity } from './shared/component.velocity.js';
 
 /** From the loader: a sprite with the texture it decoded, moved in the run's input, somewhere on the canvas, moving. */
 export const addSprite: System<{ readonly bitmap: ImageBitmap; readonly seed: number }> = System.create({}, ({ resources, commands }, input: { readonly bitmap: ImageBitmap; readonly seed: number }) => {

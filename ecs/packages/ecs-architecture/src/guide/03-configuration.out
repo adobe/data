@@ -1,3 +1,3 @@
-the standard's layers: folder-holds-only-folders, layer-name, root-file-name
+the standard's layers: file-name, folder-holds-only-folders, layer-name
 its own: none
 core importing ui: import-cycle, layer-rank

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System } from "@adobe/ecs";
 import { done, label, order, orderAfter, ordered, Todo } from "../../todos/model/index.js";
-import { generatedLabel } from "./shared/generated-label.js";
+import { generatedLabel } from "./shared/function.generated-label.js";
 
 /** Adds `count` todos with generated labels at the end of the list. */
 export const addGenerated: System<{ readonly count: number }> = System.create({

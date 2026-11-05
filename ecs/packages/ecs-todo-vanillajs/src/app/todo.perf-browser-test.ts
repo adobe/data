@@ -8,7 +8,7 @@ import { addTodo, done, editTodo, moveTodo, toggleTodo } from "../features/todos
 import { createRows, list, systems } from "../features/todos/view/index.js";
 import { entityOfElement } from "../features/page/view/index.js";
 import { nextTick, watchTicks } from "../features/page/view/ticks.test-helper.js";
-import { createApp } from "./app.js";
+import { createApp } from "./function.create-app.js";
 
 /**
  * How the app's DOM path scales, with 1K and 10K todos: each operation's run is timed, the observer systems that run

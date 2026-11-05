@@ -51,6 +51,13 @@ or keys, is a port's.
 - **Anything else is private:** a folder with no `index.ts`, such as `shared/` or `systems/`, or named for what it
   holds. Shared private code sits at the lowest common ancestor of its users; if something outside needs it, it becomes
   a public component.
+- **Every file of a component that exports is a declaration file,** in a private folder as at its root: named
+  `<kind>.<name>.ts`, exporting `name` alone, first. A function and the types it takes are files of their own:
+  `function.parse-todo.ts` beside `type.parsed-todo.ts`. A private file exporting nothing may be named for what it
+  does. (check)
+- **A test is named for the file it tests,** beside it, with only the suffix added: `system.add-todo.test.ts`
+  tests `system.add-todo.ts`, `.browser.test.ts` for one that runs in a browser. `index.test.ts` tests a
+  component through its interface; a test of the app as a whole sits at the source root. (check)
 - **`index.ts` re-exports and nothing else:** `export * from './<root file>.js'`, and named re-exports of parts a
   parent passes on. Components import each other only through `index.ts`: never a deep path, never into a private
   folder, and a part never imports its parent. (check)

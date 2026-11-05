@@ -2,7 +2,7 @@
 import { expect, it } from "vitest";
 import { labelsOf, todosOf, withTodos } from "../../todos/model/todos.test-helper.js";
 import { addGenerated } from "./index.js";
-import { generatedLabel } from "./shared/generated-label.js";
+import { generatedLabel } from "./shared/function.generated-label.js";
 
 it("adds generated todos after the ones there, each label numbered", async () => {
     await using world = await withTodos("first");

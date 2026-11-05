@@ -47,7 +47,7 @@ The sample follows the `@adobe/ecs` architecture standard (`@adobe/ecs-architect
 
 ```
 index.html                 the page: the fixed elements and their layout
-app/app.ts                 creates the world, holding the page's fixed elements, and starts the features' plugins
+app/function.create-app.ts creates the world, holding the page's fixed elements, and starts the features' plugins
 app/main.ts                starts the app on the page
 features/<feature>/
     model/                 components, resources, archetypes and indexes, and a system with input for each thing a
@@ -69,19 +69,18 @@ module imported only for that.
 
 ## Tests
 
-- `*/model/model.test.ts`, in node: each feature's model systems against a world, read back through readonly systems.
-- `*/elements/*.browser.test.ts`: elements alone, with no world: properties set, the render checked, events recorded.
-- `features/page/view/attach.browser.test.ts`: the entity an element was attached to, found from an event on it or within its open
-  shadow root, and none for others.
-- `*/view/dom.browser.test.ts`: a feature's DOM systems driving real elements, after the loop ticks: rows inserted,
+- `*/model/index.test.ts`, in node: each feature's model systems against a world, read back through readonly systems.
+- `*/elements/index.browser.test.ts`: elements alone, with no world: properties set, the render checked, events recorded.
+- `features/page/view/index.browser.test.ts`: the entity an element was attached to, found from an event on it or
+  within its open shadow root, and none for others.
+- `*/view/index.browser.test.ts`: a feature's DOM systems driving real elements, after the loop ticks: rows inserted,
   removed without a node left, moved with only the moved row touched and its focus kept, filtered with focus moved
   off, edited; no rows without a list; none for a todo deleted before its tick; several runs before one tick; all
   removed on dispose.
-- `app/app.browser.test.ts`: the whole app on the page's markup, used through DOM events as a user would, with no
-  console errors; edits committed on blur; a row's events after its todo is deleted; a tick's system's and readonly
-  system's failures reported.
-- `app/proportional.browser.test.ts`: each operation's DOM mutations, and how often the DOM systems reach rows, are
-  the same with 100 todos as with 2,000, less what each row it changed costs.
+- `app/function.create-app.browser.test.ts`: the whole app on the page's markup, used through DOM events as a user
+  would, with no console errors; edits committed on blur; a row's events after its todo is deleted; a tick's system's
+  and readonly system's failures reported; and each operation's DOM mutations, and how often the DOM systems reach
+  rows, the same with 100 todos as with 2,000, less what each row it changed costs.
 - `architecture.test.ts`: the architecture standard's check, and the diagrams and the repository's agent rules up to
   date. `imports.test.ts`: the package imported only by its root, so worlds, the tests' and benchmarks' too, are made
   through `World.create`, never through the implementation; the build plugin only in the configuration; and nothing

@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { basename, dirname } from '../path.js';
+import { basename, dirname, join } from '../path.js';
 import ts from 'typescript';
 import { isTest } from '../graph.js';
 import { bindingNames, firstLine, isExported, walk } from '../syntax.js';
@@ -88,7 +88,7 @@ export const checkComponents = ({ graph, settings, violate }: Context): void => 
         const bases = new Set(roots.map(file => file.slice(component.length + 1, -3)));
         for (const file of roots) {
             const base = file.slice(component.length + 1, -3);
-            checkRootFile({ graph, settings, violate }, file, base);
+            checkDeclarationFile({ graph, settings, violate }, file, base);
             if (!reexported.has(base)) violate(indexPath, 'index-exports-root-files', `index.ts doesn't re-export \`${base}.ts\`.`, `Add: export * from './${base}.js';`);
         }
         for (const name of reexported) {
@@ -99,23 +99,45 @@ export const checkComponents = ({ graph, settings, violate }: Context): void => 
     }
 };
 
-/** A root file: named for its kind and export, which it exports alone and first, a system typed as its interface. */
-const checkRootFile = ({ graph, settings, violate }: Context, file: string, base: string): void => {
+/** Every file in a component's private folders that exports something: like a root file, it exports one declaration, first. */
+export const checkFiles = ({ graph, settings, violate }: Context): void => {
+    for (const file of graph.tsPaths) {
+        const component = graph.componentOf(file);
+        if (component === undefined || dirname(file) === component || file.endsWith('.d.ts') || isTest(file)) continue;
+        if (exportedNames(graph.moduleOf(file), graph.exportsOf(file)).length > 0) checkDeclarationFile({ graph, settings, violate }, file, basename(file).slice(0, -3));
+    }
+};
+
+/** A test outside the source root is named for the file beside it that it tests. */
+export const checkTests = ({ graph, violate }: Context): void => {
+    for (const file of graph.tsPaths) {
+        const subject = /^(.+?)\.(?:browser\.)?(?:test|type-test)\.ts$/.exec(basename(file))?.[1];
+        if (subject === undefined || dirname(file) === '.' || graph.files.has(join(dirname(file), `${subject}.ts`))) continue;
+        violate(file, 'test-name', `\`${basename(file)}\` isn't named for a file beside it: there's no ${subject}.ts in ${dirname(file)}/.`,
+            'Name a test for the file it tests, with only the test suffix added: <file>.test.ts beside <file>.ts, or <file>.browser.test.ts. A component\'s test of its whole interface is index.test.ts; a test of the app as a whole sits at the source root.');
+    }
+};
+
+/** What a module exports: its declarations' names, and the first line of each re-export. */
+const exportedNames = (module: ts.SourceFile, declared: readonly string[]): string[] =>
+    [...declared, ...module.statements.filter(statement => ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined).map(statement => firstLine(module, statement))];
+
+/** A file declaring an export: named for its kind and export, which it exports alone and first, a system typed as its interface. */
+const checkDeclarationFile = ({ graph, settings, violate }: Context, file: string, base: string): void => {
     const match = /^([a-z]+)\.([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(base);
     const kind = match?.[1];
     const name = match?.[2];
     if (kind === undefined || name === undefined || !settings.kinds.includes(kind)) {
-        violate(file, 'root-file-name', `\`${base}.ts\` isn't named <kind>.<name>.ts with a known kind.`,
-            `Rename it <kind>.<kebab-name>.ts with its kind one of: ${settings.kinds.join(', ')}. Private helpers go in a folder without an index.ts.`);
+        violate(file, 'file-name', `\`${base}.ts\` isn't named <kind>.<name>.ts with a known kind.`,
+            `Rename it <kind>.<kebab-name>.ts with its kind one of: ${settings.kinds.join(', ')}. A file exports one declaration: give each other export a file of its own, in a folder without an index.ts if it's private.`);
         return;
     }
     const exported = camel(name);
     const module = graph.moduleOf(file);
-    const reexports = module.statements.filter(statement => ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined);
-    const names = [...graph.exportsOf(file), ...reexports.map(statement => firstLine(module, statement))];
+    const names = exportedNames(module, graph.exportsOf(file));
     if (names.length !== 1 || names[0]?.toLowerCase() !== exported.toLowerCase()) {
-        violate(file, 'root-file-exports-its-name', `\`${base}.ts\` exports [${names.join(', ')}]; it should export exactly one name, ${exported} (either case of the first letter).`,
-            `Export only ${exported} from this file, or rename the file for what it exports. Helpers belong in a private folder.`);
+        violate(file, 'file-exports-its-name', `\`${base}.ts\` exports [${names.join(', ')}]; it should export exactly one name, ${exported} (either case of the first letter).`,
+            `Export only ${exported} from this file, or rename the file for what it exports. Give each other export a file of its own, in a folder without an index.ts if it's private.`);
     }
     if (kind === 'system') {
         const declaration = module.statements.filter(ts.isVariableStatement).find(isExported)?.declarationList.declarations[0];
@@ -131,7 +153,7 @@ const checkRootFile = ({ graph, settings, violate }: Context, file: string, base
     const statements = module.statements.filter(statement => !ts.isImportDeclaration(statement));
     const at = statements.findIndex(statement => isExported(statement) || ts.isExportDeclaration(statement) || ts.isExportAssignment(statement));
     if (at < 0) {
-        violate(file, 'root-export-first', `\`${base}.ts\` declares nothing.`, `Declare and export \`${exported}\` here.`);
+        violate(file, 'export-first', `\`${base}.ts\` declares nothing.`, `Declare and export \`${exported}\` here.`);
         return;
     }
     const exportStatement = statements[at];
@@ -146,7 +168,7 @@ const checkRootFile = ({ graph, settings, violate }: Context, file: string, base
         const declared = declaredBy(statement);
         if (declared.some(each => used.has(each))) continue;
         const what = declared[0] === undefined ? 'a statement' : `\`${declared[0]}\``;
-        violate(file, 'root-export-first', `\`${base}.ts\` has ${what} above its export, which the export doesn't use.`,
+        violate(file, 'export-first', `\`${base}.ts\` has ${what} above its export, which the export doesn't use.`,
             `Put \`export const ${exported}\`, with its doc comment, first after the imports, and private constants, types and functions beneath it, so a reader sees the whole public interface at the top. Only what the export's own statement needs as the module loads, such as an \`Index\` its declaration names, may sit above it.`);
     }
 };

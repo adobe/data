@@ -3,14 +3,13 @@
 The ECS (`packages/ecs`, published as `@adobe/ecs`) and its samples. Each package's own CLAUDE.md guides work in it;
 `packages/ecs/CLAUDE.md` holds the ECS's rules, which its samples follow too.
 
-## This repository is the source of truth
+## Where changes are made
 
-adobe/data holds a copy of this whole repository at `ecs` while it still publishes the ECS and its site. A
-sync outside this repository replaces that copy from a commit here, deleting what's gone, and lists its packages in
-adobe/data's workspace. Make every change here; never edit the copy in adobe/data.
+Make every change here, in adobe/data's `ecs` folder, which publishes the ECS and its site. A private repository
+holding a copy of this folder is updated from it from time to time, and takes no changes of its own.
 
-Overrides of dependencies take effect only at a workspace's root, so keep any this repository needs scoped to the
-dependency they fix (`"parent>child"`): the sync carries them into adobe/data's root.
+Overrides of dependencies take effect only at a workspace's root, so keep any these packages need scoped to the
+dependency they fix (`"parent>child"`), in adobe/data's root `package.json`.
 
 ## Writing
 

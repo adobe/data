@@ -3,7 +3,7 @@ import { clock, System } from '@adobe/ecs';
 import { position } from './component.position.js';
 import { texture } from './component.texture.js';
 import { surface } from './resource.surface.js';
-import { velocity } from './shared/velocity.js';
+import { velocity } from './shared/component.velocity.js';
 
 /** Moves each sprite, bouncing off the canvas's edges. */
 export const move: System = System.create({

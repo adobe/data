@@ -4,7 +4,8 @@ import { color } from './component.color.js';
 import { enabled } from './component.enabled.js';
 import { position } from './component.position.js';
 import { visible } from './component.visible.js';
-import { mass, velocity } from './shared/motion.js';
+import { mass } from './shared/component.mass.js';
+import { velocity } from './shared/component.velocity.js';
 
 /** Spawns `count` particles over a field `width` by `height` pixels; entity i goes to archetype i % 4. */
 export const spawn: System<{ readonly count: number; readonly width: number; readonly height: number }> = System.create({

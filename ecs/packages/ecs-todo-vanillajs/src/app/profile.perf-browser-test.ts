@@ -9,7 +9,8 @@ import { addGenerated } from "../features/generate/model/index.js";
 import { bindRows, createRows, placeRows } from "../features/todos/view/index.js";
 import { toggleTodo } from "../features/todos/model/index.js";
 import { entityOfElement } from "../features/page/view/index.js";
-import { type App, createApp } from "./app.js";
+import { createApp } from "./function.create-app.js";
+import type { App } from "./type.app.js";
 
 /**
  * Where a run's fixed cost goes in Chromium: runs timed one at a time and back to back, in a world gaining the app's

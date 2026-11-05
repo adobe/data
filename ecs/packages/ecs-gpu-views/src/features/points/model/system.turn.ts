@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { clock, System } from '@adobe/ecs';
 import { place } from './component.place.js';
-import { spin } from './shared/spin.js';
+import { spin } from './shared/component.spin.js';
 
 /** Turns each point around the vertical axis, in a kernel on the GPU. */
 export const turn: System = System.create({ kernel: "gpu", components: { with: [place, spin] } }, (row, { resources }) => {

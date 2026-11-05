@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { clock, Mat4x4, System, type Vec3 } from '@adobe/ecs';
 import { Frame, Target, View } from '@adobe/ecs-gpu';
-import { camera } from '../shared/camera.js';
+import { camera } from '../shared/component.camera.js';
 
 /** Aims each view's camera, its projection fitting the view's shape on its surface. */
-export const aim = System.create({
+export const aim: System = System.create({
     components: { with: [camera, View.target, View.viewport, View.projection] },
     lookup: { targets: { with: [Target.size] } },
     before: [Frame.update],

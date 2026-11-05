@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System, type Vec3, type World } from '@adobe/ecs';
-import { position } from './shared/data.js';
-import { setDelta, step } from './shared/systems.js';
+import { position } from './shared/component.position.js';
+import { setDelta } from './shared/system.set-delta.js';
+import { step } from './shared/system.step.js';
 
 /** Runs a frame `seconds` long and returns every position it left, in spawn order. */
 export const frame = async (world: World, seconds: number): Promise<readonly Vec3[]> => {

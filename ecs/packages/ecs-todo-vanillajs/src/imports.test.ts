@@ -69,17 +69,17 @@ describe("the todo sample's imports", () => {
         const at = (...path: string[]): string => join(sample, ...path);
         const imports = new Map<string, string>([
             [join(packageRoot, "vite.config.ts"), `import { Compiler } from "@adobe/ecs/compiler"; import { sources } from "../ecs/vitest.plugins.ts";`],
-            [at("features", "generate", "view", "constant.generate-plugin.ts"), `import { createApp } from "../../../app/app.js"; import { thing } from "@adobe/ecs/dist/implementation/world/create.js";`],
-            [at("app", "app.ts"), `import { Compiler } from "@adobe/ecs/compiler";`],
-            [at("app", "app.test.ts"), `import { create } from "../../../ecs/src/implementation/index.js"; import { isolation } from "../../isolation.ts";`],
+            [at("features", "generate", "view", "constant.generate-plugin.ts"), `import { createApp } from "../../../app/function.create-app.js"; import { thing } from "@adobe/ecs/dist/implementation/world/create.js";`],
+            [at("app", "function.create-app.ts"), `import { Compiler } from "@adobe/ecs/compiler";`],
+            [at("app", "function.create-app.test.ts"), `import { create } from "../../../ecs/src/implementation/index.js"; import { isolation } from "../../isolation.ts";`],
         ]);
         expect(violations([...imports.keys()], file => imports.get(file) ?? "")).toEqual([
             "../vite.config.ts: ../ecs/vitest.plugins.ts: configuration imports what's outside the package by its path",
-            "features/generate/view/constant.generate-plugin.ts: ../../../app/app.js: imports the app",
+            "features/generate/view/constant.generate-plugin.ts: ../../../app/function.create-app.js: imports the app",
             "features/generate/view/constant.generate-plugin.ts: @adobe/ecs/dist/implementation/world/create.js: imports the package other than by its root",
-            "app/app.ts: @adobe/ecs/compiler: imports the build plugin outside the configuration",
-            "app/app.test.ts: ../../../ecs/src/implementation/index.js: imports what's outside the sample by its path",
-            "app/app.test.ts: ../../isolation.ts: imports what's outside the sample by its path",
+            "app/function.create-app.ts: @adobe/ecs/compiler: imports the build plugin outside the configuration",
+            "app/function.create-app.test.ts: ../../../ecs/src/implementation/index.js: imports what's outside the sample by its path",
+            "app/function.create-app.test.ts: ../../isolation.ts: imports what's outside the sample by its path",
         ]);
     });
 });

@@ -14,7 +14,7 @@ const declaration = {
  * Draws the visible and enabled particles as points into every view, wrapping positions so particles leaving one side
  * of the field come back on the other; a view draws once its pipeline is compiled.
  */
-export const draw = System.render(declaration, ({ device, encoder, tables }, { resources }) => {
+export const draw: System = System.render(declaration, ({ device, encoder, tables }, { resources }) => {
     for (const view of resources[View.states]?.values() ?? []) {
         const { pipeline } = pipelines(device, view.target.format);
         if (pipeline === null) continue;

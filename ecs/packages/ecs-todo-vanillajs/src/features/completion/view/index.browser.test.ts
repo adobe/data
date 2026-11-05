@@ -7,8 +7,8 @@ import * as todos from "../../todos/view/index.js";
 import { TodoList, TodoRow } from "../../todos/elements/index.js";
 import { addTodo, deleteTodo, editTodo, toggleTodo } from "../../todos/model/index.js";
 import { systems } from "./index.js";
-import { summary } from "./shared/summary.js";
-import { toggleAllBox } from "./shared/toggle-all-box.js";
+import { summary } from "./shared/resource.summary.js";
+import { toggleAllBox } from "./shared/resource.toggle-all-box.js";
 import { TodoSummary, TodoToggleAll } from "../elements/index.js";
 import { clearCompleted, toggleAll } from "../model/index.js";
 

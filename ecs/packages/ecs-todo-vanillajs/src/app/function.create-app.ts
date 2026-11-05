@@ -4,8 +4,7 @@ import { completionPlugin, completionResources } from "../features/completion/vi
 import { filterPlugin, filterResources } from "../features/filter/view/index.js";
 import { generatePlugin } from "../features/generate/view/index.js";
 import { todosPlugin, todosResources } from "../features/todos/view/index.js";
-
-export type App = { readonly world: World; readonly dispose: () => Promise<void> };
+import type { App } from "./type.app.js";
 
 /**
  * Starts the app on the page within `root`: a world holding the fixed elements its features find there, with the

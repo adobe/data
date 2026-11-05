@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System } from "@adobe/ecs";
 import { byDone } from "../model/index.js";
-import { summary } from "./shared/summary.js";
-import { toggleAllBox } from "./shared/toggle-all-box.js";
+import { summary } from "./shared/resource.summary.js";
+import { toggleAllBox } from "./shared/resource.toggle-all-box.js";
 
 /**
  * Writes the counts, read off the index's lists, and whether all are done, after a pass in which a todo was added,

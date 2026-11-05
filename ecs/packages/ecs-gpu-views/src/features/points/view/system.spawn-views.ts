@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { type Entity, Mat4x4, System } from '@adobe/ecs';
 import { View } from '@adobe/ecs-gpu';
-import { camera } from './shared/camera.js';
+import { camera } from './shared/component.camera.js';
 
 /** Two views side by side on the main surface, and one from above on the map's. */
 export const spawnViews: System<{ readonly main: Entity; readonly map: Entity }> = System.create({}, ({ commands }, input: { readonly main: Entity; readonly map: Entity }) => {

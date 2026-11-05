@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Entity } from "@adobe/ecs";
-import { shownBy } from "./shared/shown.js";
+import { shownBy } from "./shared/function.shown-by.js";
 
 /**
  * The entity the first target on an event's composed path shows, from where it was dispatched outward, or none when no

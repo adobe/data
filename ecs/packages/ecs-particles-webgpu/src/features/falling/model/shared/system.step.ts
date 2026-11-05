@@ -1,7 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System } from '@adobe/ecs';
 import { count } from '../resource.count.js';
-import { delta, position, velocity } from './data.js';
+import { position } from './component.position.js';
+import { velocity } from './component.velocity.js';
+import { delta } from './resource.delta.js';
 
 // Main thread: resource-only, runs when `count` changes, including the first run.
 const spawn = System.create({
@@ -30,9 +32,5 @@ const integrate = System.create({
     row[position] = [px + vx * t, py + vy * t, pz + vz * t];
 });
 
-/** Carries a frame's time into the world. */
-export const setDelta = System.create({}, ({ resources }, input: { readonly seconds: number }) => {
-    resources[delta] = input.seconds;
-});
-
-export const step = System.create({ systems: [spawn, gravity, integrate] });
+/** A frame: spawns the bodies `count` asks for, then pulls each down and moves it by `delta`. */
+export const step: System = System.create({ systems: [spawn, gravity, integrate] });

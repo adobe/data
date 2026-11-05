@@ -83,8 +83,8 @@ describe('layout', () => {
     });
 
     it('rejects a root file named wrongly or exporting something else', () => {
-        expect(rules({ ...valid(), 'thing/model/helper.ts': 'export const x = 1;\n' })).toContain('root-file-name');
-        expect(rules({ ...valid(), 'thing/model/component.thing.ts': valid()['thing/model/component.thing.ts'].replace('const thing', 'const other') })).toContain('root-file-exports-its-name');
+        expect(rules({ ...valid(), 'thing/model/helper.ts': 'export const x = 1;\n' })).toContain('file-name');
+        expect(rules({ ...valid(), 'thing/model/component.thing.ts': valid()['thing/model/component.thing.ts'].replace('const thing', 'const other') })).toContain('file-exports-its-name');
     });
 
     it('rejects an index that skips a root file or exports anything else', () => {
@@ -121,16 +121,46 @@ describe('root files: the export first, in any size', () => {
 
     it('allows a declaration above the export only when the export uses it, and rejects one it does not', () => {
         expect(rules(withFunction('const helper = 1;\n\n/** Does it. */\nexport const doIt = (): number => helper;\n'))).toEqual([]);
-        expect(rules(withFunction('const helper = 1;\nconst unrelated = 2;\n\n/** Does it. */\nexport const doIt = (): number => helper;\n'))).toContain('root-export-first');
+        expect(rules(withFunction('const helper = 1;\nconst unrelated = 2;\n\n/** Does it. */\nexport const doIt = (): number => helper;\n'))).toContain('export-first');
         expect(rules(withFunction("import { thing } from './component.thing.js';\n/** Does it. */\nexport const doIt = (): unknown => thing;\n"))).toEqual([]);
     });
 
     it('accepts a re-export of an implementation in a folder, for what cannot sit beneath its export', () => {
         const files = withFunction(
-            "import { doIt as implementation } from './function.do-it/do-it.js';\n\n/** Does it. */\nexport const doIt: () => void = implementation;\n",
-            { 'thing/model/function.do-it/do-it.ts': 'const first = 1;\nexport const doIt = (): number => first;\n' },
+            "import { doIt as implementation } from './function.do-it/function.do-it.js';\n\n/** Does it. */\nexport const doIt: () => void = implementation;\n",
+            { 'thing/model/function.do-it/function.do-it.ts': 'const first = 1;\nexport const doIt = (): number => first;\n' },
         );
         expect(rules(files)).toEqual([]);
+    });
+});
+
+describe('one export per file, and tests named for what they test', () => {
+    const withShared = (path: string, source: string): Files => ({
+        ...valid(),
+        'thing/view/function.show-thing.ts': `import { shown } from './shared/${path.replace(/\.ts$/, '.js')}';\n${valid()['thing/view/function.show-thing.ts'].replace('thingCard()]', 'thingCard(), shown]')}`,
+        [`thing/view/shared/${path}`]: source,
+    });
+
+    it('holds a file in a private folder to one export, first, the file named for it', () => {
+        expect(rules(withShared('constant.shown.ts', '/** Shown. */\nexport const shown = 1;\n'))).toEqual([]);
+        expect(rules(withShared('shown.ts', '/** Shown. */\nexport const shown = 1;\n'))).toContain('file-name');
+        expect(rules(withShared('constant.shown.ts', '/** Shown. */\nexport const shown = 1;\nexport type Shown = number;\n'))).toContain('file-exports-its-name');
+        expect(rules(withShared('constant.shown.ts', 'const unrelated = 2;\n\n/** Shown. */\nexport const shown = 1;\n'))).toContain('export-first');
+    });
+
+    it('lets a private file that exports nothing, or a file of an app, be named for what it does', () => {
+        expect(rules({ ...valid(), 'thing/view/shared/setup.ts': 'void 0;\n' })).toEqual([]);
+        expect(rules({ ...valid(), 'samples/app.ts': valid()['samples/app.ts'] + 'export const other = 1;\n' })).toEqual([]);
+    });
+
+    it('wants a test beside the file it tests, named for it, and lets a test at the source root test the whole', () => {
+        const withTest = (path: string): Files => ({ ...valid(), [path]: "import { it } from 'vitest';\nit('works', () => {});\n" });
+        expect(rules(withTest('thing/view/function.show-thing.test.ts'))).toEqual([]);
+        expect(rules(withTest('thing/elements/element.thing-card.browser.test.ts'))).toEqual([]);
+        expect(rules(withTest('thing/model/index.test.ts'))).toEqual([]);
+        expect(rules(withTest('whole.test.ts'))).toEqual([]);
+        expect(rules(withTest('thing/view/show-thing.test.ts'))).toContain('test-name');
+        expect(rules(withTest('thing/model/model.test.ts'))).toContain('test-name');
     });
 });
 
@@ -324,7 +354,7 @@ describe('what the first version of the check let through', () => {
     it('rejects a root file that exports a second name of any kind', () => {
         for (const extra of ['export interface Extra { readonly a: number }\n', 'export enum Mode { A }\n', 'export const other = 1, more = 2;\n']) {
             const files = { ...valid(), 'thing/model/component.thing.ts': valid()['thing/model/component.thing.ts'] + extra };
-            expect(rules(files), extra).toContain('root-file-exports-its-name');
+            expect(rules(files), extra).toContain('file-exports-its-name');
         }
     });
 
@@ -430,7 +460,7 @@ describe('tests', () => {
             ...valid(),
             'thing/model/index.ts': valid()['thing/model/index.ts'] + "export * from './constant.unused.js';\n",
             'thing/model/constant.unused.ts': '/** Only a test reads it. */\nexport const unused = 1;\n',
-            'thing/elements/elements.test.ts': "import { unused } from '../model/index.js';\nimport { thing } from '../model/component.thing.js';\nimport { helper } from '../view/shared/view.test-helper.js';\nvoid [unused, thing, helper];\n",
+            'thing/elements/index.test.ts': "import { unused } from '../model/index.js';\nimport { thing } from '../model/component.thing.js';\nimport { helper } from '../view/shared/view.test-helper.js';\nvoid [unused, thing, helper];\n",
             'thing/view/shared/view.test-helper.ts': 'export const helper = 1;\nvoid document;\n',
         };
         expect(rules(files)).toEqual([]);
@@ -461,7 +491,7 @@ describe('what review found', () => {
     });
 
     it('rejects a root file that re-exports beside its export', () => {
-        expect(rules({ ...valid(), 'thing/model/component.thing.ts': valid()['thing/model/component.thing.ts'] + "export { showThing } from '../view/index.js';\n" })).toContain('root-file-exports-its-name');
+        expect(rules({ ...valid(), 'thing/model/component.thing.ts': valid()['thing/model/component.thing.ts'] + "export { showThing } from '../view/index.js';\n" })).toContain('file-exports-its-name');
     });
 
     it('allows a chain of declarations above the export that the export needs as it loads', () => {

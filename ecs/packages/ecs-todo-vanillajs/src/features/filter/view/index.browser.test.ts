@@ -7,7 +7,7 @@ import * as todos from "../../todos/view/index.js";
 import { TodoList, TodoRow } from "../../todos/elements/index.js";
 import { addTodo, toggleTodo } from "../../todos/model/index.js";
 import { systems } from "./index.js";
-import { filters } from "./shared/filters.js";
+import { filters } from "./shared/resource.filters.js";
 import { TodoFilters } from "../elements/index.js";
 import { setFilter } from "../model/index.js";
 

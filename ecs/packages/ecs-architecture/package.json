@@ -1,6 +1,6 @@
 {
   "name": "@adobe/ecs-architecture",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The architecture standard for @adobe/ecs applications: its checker, its diagrams and the agent rules for it",
   "license": "MIT",
   "type": "module",

@@ -4,7 +4,7 @@ import { Cache, Frame, View } from '@adobe/ecs-gpu';
 import { hue, place, turn } from '../../model/index.js';
 
 /** Draws every point into every view. */
-export const draw = System.render({
+export const draw: System = System.render({
     shader: { group: 0, accessors: { pointPlace: place, pointHue: hue } },
     after: [turn, Frame.update],
     before: [Frame.present],

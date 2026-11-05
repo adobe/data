@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from "@adobe/ecs";
-import { type Attached, shown } from "./shared/shown.js";
+import { shown } from "./shared/constant.shown.js";
+import type { Attached } from "./shared/type.attached.js";
 
 /**
  * Records on `element` the entity it shows, for events from it, where the element is made for that entity, and

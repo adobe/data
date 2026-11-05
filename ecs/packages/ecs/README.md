@@ -52,6 +52,13 @@ export default defineConfig({ plugins: [Compiler.plugin()] });
 
 A library builds with `Compiler.plugin({ library: true })`, so its build ships the registrations its declarations give.
 
+An app can follow the architecture standard of [`@adobe/ecs-architecture`](https://www.npmjs.com/package/@adobe/ecs-architecture), whose rules teach it
+to Claude Code and GitHub Copilot, with this package's rules for using the ECS:
+
+```sh
+pnpm add -D @adobe/ecs-architecture && pnpm exec ecs-architecture agents
+```
+
 ## Guide
 
 See the [guide](https://opensource.adobe.com/data/ecs/samples/#ecs-guide) for how to use it, each chapter's program edited

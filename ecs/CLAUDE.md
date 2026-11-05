@@ -99,8 +99,8 @@ again once it's hardened.
 ## The architecture standard
 
 `AGENTS.md`, `.claude/rules/ecs/` and `.github/instructions/ecs/` are the rules of `@adobe/ecs-architecture`'s
-standard for applications, written by `ecs-architecture agents`: never edit them. The todo sample follows it, and its
-tests run `ecs-architecture check`. The libraries keep the layout above, so where a rule for applications disagrees
-with it, a library follows its own layout.
+standard for applications, written by `ecs-architecture agents`: never edit them. The four sample apps (todo,
+particles, views and transfers) follow it, and their tests run `ecs-architecture check`. The libraries keep the layout
+above, so where a rule for applications disagrees with it, a library follows its own layout.
 
 @AGENTS.md

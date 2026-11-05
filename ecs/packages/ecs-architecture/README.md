@@ -31,7 +31,9 @@ An app's tests can run all three with `--check`, so CI fails once the source, th
 ## Library
 
 `check(files, config?)` and `diagrams(files, config?)` take every `.ts` and `.md` file of the source folder, by its
-path there, to its text, and return what the commands report. They're pure, and run in a browser as well.
+path there, to its text, and resolve to what the commands report. They read no file and write none. In node they parse
+with the app's Vite; in a browser, built by Vite, with oxc's WebAssembly parser, `@oxc-parser/binding-wasm32-wasip1`,
+which the app installs to run them there. Each loads its parser on the first call.
 
 ## Configuration
 

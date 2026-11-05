@@ -20,7 +20,7 @@ const usage = `Usage: ecs-architecture <command> [options], in the app's package
 `;
 
 /** Runs a command, as `ecs-architecture` with `args`, for the package in `folder`. */
-export const run = (args: readonly string[], folder: string): Outcome => {
+export const run = async (args: readonly string[], folder: string): Promise<Outcome> => {
     const [command, ...options] = args;
     const read = readConfig(folder);
     if (typeof read === 'string') return { output: `${read}\n`, code: 2 };
@@ -70,12 +70,12 @@ const repositoryOf = (folder: string): string => {
 const escapeProperty = (text: string): string => text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A').replace(/:/g, '%3A').replace(/,/g, '%2C');
 const escapeData = (text: string): string => text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 
-const runCheck = (options: readonly string[], source: string, config: Config): Outcome => {
+const runCheck = async (options: readonly string[], source: string, config: Config): Promise<Outcome> => {
     const at = options.indexOf('--format');
     const format = at < 0 ? 'text' : options[at + 1];
     if (format !== 'text' && format !== 'github' && format !== 'json') return { output: `Unknown format ${format}: text, github or json.\n`, code: 2 };
     const files = filesOf(source);
-    const violations = check(files, config);
+    const violations = await check(files, config);
     const code = violations.length === 0 ? 0 : 1;
     if (format === 'json') return { output: `${JSON.stringify(violations, null, 2)}\n`, code };
     if (format === 'github') {
@@ -88,8 +88,8 @@ const runCheck = (options: readonly string[], source: string, config: Config): O
     return { output: `${listed}\n${violations.length} violation(s). The standard is node_modules/@adobe/ecs-architecture/standard.md.\n`, code };
 };
 
-const runDiagrams = (checking: boolean, source: string, config: Config): Outcome => {
-    const { updates, problems } = diagrams(filesOf(source), config);
+const runDiagrams = async (checking: boolean, source: string, config: Config): Promise<Outcome> => {
+    const { updates, problems } = await diagrams(filesOf(source), config);
     const lines = problems.map(problem => `problem: ${problem}`);
     const paths = Object.keys(updates).sort();
     if (checking) {

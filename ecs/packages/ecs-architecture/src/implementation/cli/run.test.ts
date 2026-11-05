@@ -34,71 +34,71 @@ const valid = {
 };
 
 describe('ecs-architecture check', () => {
-    it('reports a source that follows the standard, and exits 0', () => {
+    it('reports a source that follows the standard, and exits 0', async () => {
         const root = repository(valid);
-        expect(run(['check'], join(root, 'app'))).toEqual({ output: 'architecture ok: 5 files, no violations\n', code: 0 });
+        expect(await run(['check'], join(root, 'app'))).toEqual({ output: 'architecture ok: 5 files, no violations\n', code: 0 });
     });
 
-    it('reports each violation with its fix, as text or as GitHub annotations by the file\'s path in the repository, and exits 1', () => {
+    it('reports each violation with its fix, as text or as GitHub annotations by the file\'s path in the repository, and exits 1', async () => {
         const root = repository({ ...valid, 'stray.ts': 'export {};\n' });
-        const text = run(['check'], join(root, 'app'));
+        const text = await run(['check'], join(root, 'app'));
         expect(text.code).toBe(1);
         expect(text.output).toContain('stray.ts\n  [src-root-files]');
-        const github = run(['check', '--format', 'github'], join(root, 'app'));
+        const github = await run(['check', '--format', 'github'], join(root, 'app'));
         expect(github.output).toMatch(/^::error file=app\/src\/stray.ts,title=src-root-files::stray.ts is in the root/);
-        expect(JSON.parse(run(['check', '--format', 'json'], join(root, 'app')).output)).toEqual([expect.objectContaining({ file: 'stray.ts', rule: 'src-root-files' })]);
+        expect(JSON.parse((await run(['check', '--format', 'json'], join(root, 'app'))).output)).toEqual([expect.objectContaining({ file: 'stray.ts', rule: 'src-root-files' })]);
     });
 
-    it('reads its configuration from package.json, and says what\'s wrong with it', () => {
+    it('reads its configuration from package.json, and says what\'s wrong with it', async () => {
         const root = repository({ ...valid, 'thing/model/component.thing.ts': '/** A thing. */\nexport const thing = Symbol();\n' }, { ecsArchitecture: { kinds: ['component', 'constant'] } });
-        expect(run(['check'], join(root, 'app')).code).toBe(0);
+        expect((await run(['check'], join(root, 'app'))).code).toBe(0);
         const wrong = repository(valid, { ecsArchitecture: { kind: [] } });
-        expect(run(['check'], join(wrong, 'app'))).toEqual({ output: '"ecsArchitecture.kind" isn\'t a setting: source, layers, kinds, apps, headless, systems, banned or agents.\n', code: 2 });
+        expect(await run(['check'], join(wrong, 'app'))).toEqual({ output: '"ecsArchitecture.kind" isn\'t a setting: source, layers, kinds, apps, headless, systems, banned or agents.\n', code: 2 });
     });
 });
 
 describe('ecs-architecture diagrams', () => {
-    it('writes the diagrams, and then finds them current', () => {
+    it('writes the diagrams, and then finds them current', async () => {
         const root = repository(valid);
         const app = join(root, 'app');
-        expect(run(['diagrams', '--check'], app)).toEqual({ output: 'out of date: ARCHITECTURE.md (run ecs-architecture diagrams)\n', code: 1 });
-        expect(run(['diagrams'], app)).toEqual({ output: 'wrote ARCHITECTURE.md\n', code: 0 });
+        expect(await run(['diagrams', '--check'], app)).toEqual({ output: 'out of date: ARCHITECTURE.md (run ecs-architecture diagrams)\n', code: 1 });
+        expect(await run(['diagrams'], app)).toEqual({ output: 'wrote ARCHITECTURE.md\n', code: 0 });
         expect(readFileSync(join(app, 'src', 'ARCHITECTURE.md'), 'utf8')).toContain('<!-- architecture:start -->');
-        expect(run(['diagrams', '--check'], app)).toEqual({ output: 'diagrams ok\n', code: 0 });
+        expect(await run(['diagrams', '--check'], app)).toEqual({ output: 'diagrams ok\n', code: 0 });
     });
 });
 
 describe('ecs-architecture agents', () => {
-    it('writes the agent files at the repository\'s root from both packages\' rules, and then finds them current', () => {
+    it('writes the agent files at the repository\'s root from both packages\' rules, and then finds them current', async () => {
         const root = repository(valid);
         writeFileSync(join(root, 'CLAUDE.md'), '# Repository\n');
         const app = join(root, 'app');
-        expect(run(['agents', '--check'], app).code).toBe(1);
-        expect(run(['agents'], app).code).toBe(0);
+        expect((await run(['agents', '--check'], app)).code).toBe(1);
+        expect((await run(['agents'], app)).code).toBe(0);
         expect(readFileSync(join(root, 'CLAUDE.md'), 'utf8')).toBe('# Repository\n\n@AGENTS.md\n');
         const system = readFileSync(join(root, '.claude', 'rules', 'ecs', 'system._.ts.md'), 'utf8');
         expect(system).toContain('typed as its interface');
         expect(system).toContain('Read entities with a query');
         expect(readFileSync(join(root, '.github', 'instructions', 'ecs', 'model', '_.instructions.md'), 'utf8')).toContain('applyTo: "**/model/**"');
-        expect(run(['agents', '--check'], app)).toEqual({ output: 'agent rules ok\n', code: 0 });
+        expect(await run(['agents', '--check'], app)).toEqual({ output: 'agent rules ok\n', code: 0 });
     });
 
-    it('writes them in the folder "ecsArchitecture.agents" names, relative to the package, inside a larger repository', () => {
+    it('writes them in the folder "ecsArchitecture.agents" names, relative to the package, inside a larger repository', async () => {
         const root = repository(valid, { ecsArchitecture: { agents: '..' } });
         const nested = join(root, 'nested');
         mkdirSync(nested);
         const app = join(nested, 'app');
         renameSync(join(root, 'app'), app);
-        expect(run(['agents'], app).code).toBe(0);
+        expect((await run(['agents'], app)).code).toBe(0);
         expect(readFileSync(join(nested, 'AGENTS.md'), 'utf8')).toContain('<!-- ecs-architecture:start -->');
         expect(existsSync(join(root, 'AGENTS.md'))).toBe(false);
-        expect(run(['agents', '--check'], app)).toEqual({ output: 'agent rules ok\n', code: 0 });
+        expect(await run(['agents', '--check'], app)).toEqual({ output: 'agent rules ok\n', code: 0 });
     });
 });
 
 describe('a missing source folder', () => {
-    it('is reported, not taken for a source with nothing wrong', () => {
+    it('is reported, not taken for a source with nothing wrong', async () => {
         const root = repository(valid, { ecsArchitecture: { source: 'lib' } });
-        expect(run(['check'], join(root, 'app'))).toEqual({ output: `No source folder ${join(root, 'app', 'lib')}: set "ecsArchitecture.source" in package.json.\n`, code: 2 });
+        expect(await run(['check'], join(root, 'app'))).toEqual({ output: `No source folder ${join(root, 'app', 'lib')}: set "ecsArchitecture.source" in package.json.\n`, code: 2 });
     });
 });

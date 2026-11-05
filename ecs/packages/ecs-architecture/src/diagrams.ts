@@ -1,4 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { loadParser } from '#parser';
 import { basename, dirname, relative } from './implementation/path.js';
 import type { Config } from './config.js';
 import { classesOf, describedBy, escape, idOf, init, label, maxDescription, minPartsForDiagram, reduce, removeBlock, replaceBlock, summaryOf, table, unique } from './implementation/diagram-text.js';
@@ -15,9 +16,9 @@ type Diagrams = { readonly updates: Readonly<Record<string, string>>; readonly p
  * `<!-- architecture:end -->`; the descriptions, at most 64 characters, are written by people. `files` is as `check`
  * takes it.
  */
-export const diagrams = (files: Readonly<Record<string, string>>, config?: Config): Diagrams => {
+export const diagrams = async (files: Readonly<Record<string, string>>, config?: Config): Promise<Diagrams> => {
     const settings = settingsOf(config);
-    const graph = analyze(files, settings);
+    const graph = analyze(files, settings, await loadParser());
     const { components, componentOf, topOf, featureOf, layers } = graph;
     const texts = new Map(graph.files);
     const updates: Record<string, string> = {};

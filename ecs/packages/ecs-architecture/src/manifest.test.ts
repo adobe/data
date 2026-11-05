@@ -14,4 +14,10 @@ describe('the package manifest', () => {
         expect(field('peerDependencies')).not.toHaveProperty('typescript');
         expect(field('dependencies')).not.toHaveProperty('typescript');
     });
+
+    it("parses in a browser with oxc's WebAssembly parser, which only an app running it there installs", () => {
+        expect(field('peerDependencies')).toHaveProperty('@oxc-parser/binding-wasm32-wasip1');
+        expect(field('peerDependenciesMeta')).toHaveProperty(['@oxc-parser/binding-wasm32-wasip1', 'optional'], true);
+        expect(field('dependencies')).not.toHaveProperty('@oxc-parser/binding-wasm32-wasip1');
+    });
 });

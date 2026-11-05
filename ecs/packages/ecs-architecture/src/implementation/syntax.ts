@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { parseSync, type ESTree } from 'vite';
+import type { ESTree } from 'vite';
 
 export type Node = ESTree.Node;
 export type Statement = ESTree.Program['body'][number];
@@ -16,9 +16,15 @@ export type Module = {
 const isNode = (value: unknown): value is Node =>
     typeof value === 'object' && value !== null && 'type' in value && typeof value.type === 'string';
 
-/** A file that doesn't parse is read as far as the parser recovers it, which may be not at all; the compiler reports its errors. */
-export const parse = (path: string, text: string): Module => {
-    const { program } = parseSync(path, text, { lang: 'ts' });
+/** A parser: a module's ESTree program, as far as it recovers a file that doesn't parse, which may be not at all; the compiler reports its errors. */
+export type Parse = (path: string, text: string) => ESTree.Program;
+
+/** Loads a parser, once, as `#parser` gives it for where it runs. */
+export type LoadParser = () => Promise<Parse>;
+
+/** A module parsed by `parse`. */
+export const parseModule = (parse: Parse, path: string, text: string): Module => {
+    const program = parse(path, text);
     const children = new Map<Node, Node[]>();
     const parents = new Map<Node, Node>();
     const visit = (node: Node): void => {

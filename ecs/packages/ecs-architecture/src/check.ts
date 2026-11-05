@@ -1,4 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { loadParser } from '#parser';
 import type { Config } from './config.js';
 import { createContext } from './implementation/check/context.js';
 import { checkExports } from './implementation/check/exports.js';
@@ -12,9 +13,9 @@ import type { Violation } from './violation.js';
  * The violations of the standard in an application's source: `files` is every `.ts` and `.md` file of its source
  * folder, by its path in that folder, posix, to its text.
  */
-export const check = (files: Readonly<Record<string, string>>, config?: Config): readonly Violation[] => {
+export const check = async (files: Readonly<Record<string, string>>, config?: Config): Promise<readonly Violation[]> => {
     const settings = settingsOf(config);
-    const { context, violations } = createContext(analyze(files, settings), settings);
+    const { context, violations } = createContext(analyze(files, settings, await loadParser()), settings);
     checkRoot(context);
     checkFolders(context);
     checkComponents(context);

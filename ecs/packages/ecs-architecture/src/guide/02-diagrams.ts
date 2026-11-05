@@ -20,13 +20,13 @@ const files: Record<string, string> = {
 const shown = (text: string | undefined): string[] => (text ?? "").split("\n").filter(line => (line.includes(" --> ") && !line.startsWith("<!--")) || line.startsWith("| ["));
 
 export const main = async (): Promise<void> => {
-    const { updates, problems } = diagrams(files);
+    const { updates, problems } = await diagrams(files);
     console.log("writes", Object.keys(updates).sort().join(", "));
     for (const line of shown(updates["ARCHITECTURE.md"])) console.log(line);
     for (const line of shown(updates["todos/ARCHITECTURE.md"])) console.log(line);
     console.log("problems", problems.length);
-    const wordy = diagrams({ ...files, "filter/model/README.md": "# filter\n\nWhich of the todos show in the list, by whether each is done, as the user picks it.\n" });
+    const wordy = await diagrams({ ...files, "filter/model/README.md": "# filter\n\nWhich of the todos show in the list, by whether each is done, as the user picks it.\n" });
     for (const problem of wordy.problems) console.log(problem);
-    const again = diagrams({ ...files, ...updates });
+    const again = await diagrams({ ...files, ...updates });
     console.log("current once written:", Object.keys(again.updates).length === 0);
 };

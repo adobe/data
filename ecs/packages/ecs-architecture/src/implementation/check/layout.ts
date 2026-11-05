@@ -1,8 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { basename, dirname, join } from '../path.js';
-import ts from 'typescript';
 import { isTest } from '../graph.js';
-import { bindingNames, firstLine, isExported, walk } from '../syntax.js';
+import { declarationOf, declaredBy, exportedVariables, firstLine, isExport, isReExport, textOf, walk, type Module, type Node } from '../syntax.js';
 import { camel, type Context } from './context.js';
 
 
@@ -18,8 +17,8 @@ export const checkRoot = ({ graph, violate }: Context): void => {
     }
     if (!graph.files.has('index.ts')) return;
     const module = graph.moduleOf('index.ts');
-    for (const statement of module.statements) {
-        if (ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined) continue;
+    for (const statement of module.program.body) {
+        if (isReExport(statement)) continue;
         violate('index.ts', 'index-is-only-re-exports', `index.ts has a statement that isn't a re-export: ${firstLine(module, statement)}`,
             'The source root\'s index.ts re-exports the app\'s entry points and nothing else; the call that starts the app belongs in an app\'s file, which nothing imports.');
     }
@@ -75,9 +74,9 @@ export const checkComponents = ({ graph, settings, violate }: Context): void => 
         const indexPath = `${component}/index.ts`;
         const index = graph.moduleOf(indexPath);
         const reexported = new Set<string>();
-        for (const statement of index.statements) {
-            const exported = ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined && ts.isStringLiteral(statement.moduleSpecifier)
-                ? { spec: statement.moduleSpecifier.text, all: statement.exportClause === undefined } : undefined;
+        for (const statement of index.program.body) {
+            const exported = isReExport(statement)
+                ? { spec: statement.source.value, all: statement.type === 'ExportAllDeclaration' && statement.exported === null } : undefined;
             if (exported?.all === true && /^\.\/[^/]+\.js$/.test(exported.spec)) reexported.add(exported.spec.slice(2, -3));
             else if (!(exported?.all === false && /^\.\/[^/]+\/index\.js$/.test(exported.spec))) {
                 violate(indexPath, 'index-is-only-re-exports', `index.ts has a statement that isn't a re-export of a root file or a part: ${firstLine(index, statement)}`,
@@ -119,8 +118,8 @@ export const checkTests = ({ graph, violate }: Context): void => {
 };
 
 /** What a module exports: its declarations' names, and the first line of each re-export. */
-const exportedNames = (module: ts.SourceFile, declared: readonly string[]): string[] =>
-    [...declared, ...module.statements.filter(statement => ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined).map(statement => firstLine(module, statement))];
+const exportedNames = (module: Module, declared: readonly string[]): string[] =>
+    [...declared, ...module.program.body.filter(isReExport).map(statement => firstLine(module, statement))];
 
 /** A file declaring an export: named for its kind and export, which it exports alone and first, a system typed as its interface. */
 const checkDeclarationFile = ({ graph, settings, violate }: Context, file: string, base: string): void => {
@@ -140,8 +139,8 @@ const checkDeclarationFile = ({ graph, settings, violate }: Context, file: strin
             `Export only ${exported} from this file, or rename the file for what it exports. Give each other export a file of its own, in a folder without an index.ts if it's private.`);
     }
     if (kind === 'system') {
-        const declaration = module.statements.filter(ts.isVariableStatement).find(isExported)?.declarationList.declarations[0];
-        const type = declaration?.type?.getText(module);
+        const annotation = exportedVariables(module)[0]?.declarations[0]?.id.typeAnnotation;
+        const type = annotation === undefined || annotation === null ? undefined : textOf(module, annotation.typeAnnotation);
         if (type === undefined || !/^System(<|$)/.test(type)) {
             violate(file, 'system-typed', `system \`${base}.ts\` isn't typed as its interface (${type ?? 'no type'}).`,
                 `Declare it with its interface: export const ${exported}: System = …; with type arguments only for input and result (System<{ readonly x: number }, Entity>).`);
@@ -150,8 +149,8 @@ const checkDeclarationFile = ({ graph, settings, violate }: Context, file: strin
                 'Write System<void, Result>, or plain System with neither input nor result.');
         }
     }
-    const statements = module.statements.filter(statement => !ts.isImportDeclaration(statement));
-    const at = statements.findIndex(statement => isExported(statement) || ts.isExportDeclaration(statement) || ts.isExportAssignment(statement));
+    const statements = module.program.body.filter(statement => statement.type !== 'ImportDeclaration');
+    const at = statements.findIndex(isExport);
     if (at < 0) {
         violate(file, 'export-first', `\`${base}.ts\` declares nothing.`, `Declare and export \`${exported}\` here.`);
         return;
@@ -160,22 +159,15 @@ const checkDeclarationFile = ({ graph, settings, violate }: Context, file: strin
     if (exportStatement === undefined || at === 0) return;
     // A declaration above the export is allowed when the export's own statement uses it as it loads, or another so used does.
     const used = new Set<string>();
-    const use = (statement: ts.Node): void => walk(statement, node => { if (ts.isIdentifier(node)) used.add(node.text); });
+    const use = (statement: Node): void => walk(module, node => { if (node.type === 'Identifier') used.add(node.name); }, statement);
     use(exportStatement);
     const above = statements.slice(0, at);
-    for (const statement of [...above].reverse()) if (declaredBy(statement).some(each => used.has(each))) use(statement);
+    for (const statement of [...above].reverse()) if (declaredBy(declarationOf(statement)).some(each => used.has(each))) use(statement);
     for (const statement of above) {
-        const declared = declaredBy(statement);
+        const declared = declaredBy(declarationOf(statement));
         if (declared.some(each => used.has(each))) continue;
         const what = declared[0] === undefined ? 'a statement' : `\`${declared[0]}\``;
         violate(file, 'export-first', `\`${base}.ts\` has ${what} above its export, which the export doesn't use.`,
             `Put \`export const ${exported}\`, with its doc comment, first after the imports, and private constants, types and functions beneath it, so a reader sees the whole public interface at the top. Only what the export's own statement needs as the module loads, such as an \`Index\` its declaration names, may sit above it.`);
     }
-};
-
-const declaredBy = (statement: ts.Statement): string[] => {
-    if (ts.isVariableStatement(statement)) return statement.declarationList.declarations.flatMap(declaration => bindingNames(declaration.name));
-    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)
-        || ts.isEnumDeclaration(statement)) && statement.name !== undefined) return [statement.name.text];
-    return [];
 };

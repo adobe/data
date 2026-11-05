@@ -24,11 +24,11 @@ const print = (label: string, violations: readonly Violation[]): void => {
 };
 
 export const main = async (): Promise<void> => {
-    print("as written", check(files));
-    print("deep import", check({ ...files, "todos/view/function.show-title.ts": files["todos/view/function.show-title.ts"]?.replace("../model/index.js", "../model/component.title.js") ?? "" }));
-    print("model reads the page", check({ ...files, "todos/model/system.add-todo.ts": files["todos/model/system.add-todo.ts"]?.replace("() => {}", "() => void document.title") ?? "" }));
-    print("nothing runs a system", check({ ...files, "app/main.ts": files["app/main.ts"]?.replace("world.run(addTodo);\n", "export const add = addTodo;\n") ?? "" }));
-    print("an export nobody uses", check({
+    print("as written", await check(files));
+    print("deep import", await check({ ...files, "todos/view/function.show-title.ts": files["todos/view/function.show-title.ts"]?.replace("../model/index.js", "../model/component.title.js") ?? "" }));
+    print("model reads the page", await check({ ...files, "todos/model/system.add-todo.ts": files["todos/model/system.add-todo.ts"]?.replace("() => {}", "() => void document.title") ?? "" }));
+    print("nothing runs a system", await check({ ...files, "app/main.ts": files["app/main.ts"]?.replace("world.run(addTodo);\n", "export const add = addTodo;\n") ?? "" }));
+    print("an export nobody uses", await check({
         ...files,
         "todos/model/index.ts": `${files["todos/model/index.ts"] ?? ""}export * from './constant.limit.js';\n`,
         "todos/model/constant.limit.ts": "/** The most todos shown. */\nexport const limit = 100;\n",

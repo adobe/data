@@ -1,8 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { basename, dirname, relative } from '../path.js';
-import ts from 'typescript';
 import { isTest } from '../graph.js';
-import { isLocal, namesOnly, topLevelNames, walk, type Module } from '../syntax.js';
+import { isLocal, namesOnly, topLevelNames, walk, type Module, type Node } from '../syntax.js';
 import { relativeSpec, type Context } from './context.js';
 
 /** What the headless layers may not name: the DOM, the network, timers, storage and the global object. */
@@ -33,12 +32,12 @@ const isBanned = (spec: string, prefix: string): boolean => spec === prefix || s
 /** The headless globals a module reads: names no scope around their use declares. */
 const globalsIn = (module: Module): string[] => {
     const top = topLevelNames(module);
-    const global = (node: ts.Node, name: string): boolean => !top.has(name) && !isLocal(node, name);
+    const global = (node: Node, name: string): boolean => !top.has(name) && !isLocal(module, node, name);
     const found = new Set<string>();
     walk(module, node => {
-        if (ts.isIdentifier(node) && headlessGlobals.has(node.text) && !namesOnly(node) && global(node, node.text)) found.add(node.text);
-        else if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.name.text === 'now'
-            && (node.expression.text === 'Date' || node.expression.text === 'performance') && global(node, node.expression.text)) found.add(`${node.expression.text}.now`);
+        if (node.type === 'Identifier' && headlessGlobals.has(node.name) && !namesOnly(module, node) && global(node, node.name)) found.add(node.name);
+        else if (node.type === 'MemberExpression' && !node.computed && node.object.type === 'Identifier' && node.property.type === 'Identifier' && node.property.name === 'now'
+            && (node.object.name === 'Date' || node.object.name === 'performance') && global(node, node.object.name)) found.add(`${node.object.name}.now`);
     });
     return [...found];
 };

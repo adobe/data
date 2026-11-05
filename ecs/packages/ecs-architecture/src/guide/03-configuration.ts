@@ -19,12 +19,12 @@ const config: Config = {
     systems: [],
 };
 
-const rules = (source: Readonly<Record<string, string>>, given?: Config): string =>
-    [...new Set(check(source, given).map(violation => violation.rule))].sort().join(", ") || "none";
+const rules = async (source: Readonly<Record<string, string>>, given?: Config): Promise<string> =>
+    [...new Set((await check(source, given)).map(violation => violation.rule))].sort().join(", ") || "none";
 
 export const main = async (): Promise<void> => {
-    console.log("the standard's layers:", rules(files));
-    console.log("its own:", rules(files, config));
+    console.log("the standard's layers:", await rules(files));
+    console.log("its own:", await rules(files, config));
     const upward = { ...files, "scene/core/shader.fill.ts": "import { showScene } from '../ui/index.js';\n\n/** Fills each pixel. */\nexport const fill = `${showScene}`;\n" };
-    console.log("core importing ui:", rules(upward, config));
+    console.log("core importing ui:", await rules(upward, config));
 };

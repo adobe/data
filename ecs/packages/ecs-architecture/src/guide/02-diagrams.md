@@ -1,7 +1,7 @@
 # Diagrams
 
 `diagrams(files)` draws an app's architecture from what its code imports, as Mermaid diagrams GitHub shows, and
-gives the documents it would change as `updates`, with what a person has to fix as `problems`:
+resolves to the documents it would change as `updates`, with what a person has to fix as `problems`:
 
 - `ARCHITECTURE.md` at the source root shows the features, an arrow from each to what it uses, so the most core is at
   the bottom. Apps are yellow boxes. An arrow a longer path already implies is left out: the app uses `todos` through

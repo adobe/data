@@ -3,6 +3,7 @@
     "target": "esnext",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "customConditions": ["ecs-architecture-source"],
     "lib": ["ES2024", "ESNext.Disposable"],
     "types": ["node"],
     "skipLibCheck": true,

@@ -1,8 +1,8 @@
 # Checking an app
 
-`check(files)` reads every `.ts` and `.md` file of an app's source folder, by its path there, and gives each place it
-breaks the standard as a `Violation`: the `file`, the `rule` it breaks, the `problem` and the `fix`. It's pure: the
-files go in as text and nothing is read or written, so the CLI, a test and this program run it the same.
+`check(files)` reads every `.ts` and `.md` file of an app's source folder, by its path there, and resolves to each
+place it breaks the standard as a `Violation`: the `file`, the `rule` it breaks, the `problem` and the `fix`. It's
+pure: the files go in as text and nothing is read or written, so the CLI, a test and this program run it the same.
 
 [The app here](01-checking.ts#L8-L19) is a `todos` feature with a `model` and a `view`, and an app in `app/`:
 

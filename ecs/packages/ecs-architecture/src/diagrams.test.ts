@@ -43,8 +43,8 @@ describe('leaving out an arrow a longer path implies', () => {
     });
 });
 
-describe('the top diagram', () => {
-    const { updates, problems } = render(app());
+describe('the top diagram', async () => {
+    const { updates, problems } = await render(app());
     const root = updates['ARCHITECTURE.md'];
 
     it('has a box for each feature and each app, with arrows from what uses to what is used', () => {
@@ -74,9 +74,9 @@ describe('the top diagram', () => {
     });
 });
 
-describe('a feature\'s document', () => {
+describe('a feature\'s document', async () => {
     const files = app();
-    const { updates } = render(files);
+    const { updates } = await render(files);
     const mid = updates['mid/ARCHITECTURE.md'];
 
     it('is made for a feature with more than one layer, and not for one with a single layer', () => {
@@ -94,24 +94,24 @@ describe('a feature\'s document', () => {
         expect(mid).toContain('click uses__base "../base/model/README.md"');
     });
 
-    it('keeps what people wrote around the diagram, and is the same when made again', () => {
+    it('keeps what people wrote around the diagram, and is the same when made again', async () => {
         const written = '# mid\n\n> A hand-written description.\n\nA note before.\n\n' + `${start}\nold\n<!-- architecture:end -->\n\nA note after.\n`;
-        const again = render(after(after(files, updates), { 'mid/ARCHITECTURE.md': written }));
+        const again = await render(after(after(files, updates), { 'mid/ARCHITECTURE.md': written }));
         const text = again.updates['mid/ARCHITECTURE.md'];
         expect(text).toContain('> A hand-written description.');
         expect(text).toContain('A note before.');
         expect(text).toContain('A note after.');
         expect(text).toContain('mid_2f_view --> mid_2f_model');
-        const third = render(after(after(files, updates), again.updates));
+        const third = await render(after(after(files, updates), again.updates));
         expect(third.updates).toEqual({});
     });
 });
 
 describe('what a person has to fix', () => {
-    it('asks for a description a feature lacks and one that is too long', () => {
-        const none = render({ ...app(), 'base/model/README.md': '# base model\n' });
+    it('asks for a description a feature lacks and one that is too long', async () => {
+        const none = await render({ ...app(), 'base/model/README.md': '# base model\n' });
         expect(none.problems.join('\n')).toContain('`base` has no description');
-        const long = render({ ...app(), 'base/model/README.md': readme('base model', 'x'.repeat(maxDescription + 1) + '.') });
+        const long = await render({ ...app(), 'base/model/README.md': readme('base model', 'x'.repeat(maxDescription + 1) + '.') });
         expect(long.problems.join('\n')).toContain('`base`\'s description is');
     });
 });
@@ -119,8 +119,8 @@ describe('what a person has to fix', () => {
 describe('the parts of a big layer', () => {
     const parts = (names: readonly string[]): Files => Object.fromEntries(names.flatMap((name, i) => Object.entries(layer(`mid/model/${name}`, `${name}.`, '1', i > 0 ? [`../${names[i - 1]}/index.js`] : []))));
 
-    it('are drawn in the layer\'s README when there are enough of them, with the arrows between them', () => {
-        const { updates } = render({ ...app(), ...parts(['one', 'two', 'three']) });
+    it('are drawn in the layer\'s README when there are enough of them, with the arrows between them', async () => {
+        const { updates } = await render({ ...app(), ...parts(['one', 'two', 'three']) });
         const text = updates['mid/model/README.md'];
         expect(text).toContain(start);
         expect(text).toContain('mid_2f_model_2f_three --> mid_2f_model_2f_two');
@@ -128,22 +128,22 @@ describe('the parts of a big layer', () => {
         expect(text).toContain('More about it.');
     });
 
-    it('are not drawn when there are few', () => {
-        const { updates } = render({ ...app(), ...parts(['one', 'two']) });
+    it('are not drawn when there are few', async () => {
+        const { updates } = await render({ ...app(), ...parts(['one', 'two']) });
         expect(updates['mid/model/README.md']).toBeUndefined();
     });
 });
 
 describe('tests', () => {
-    it('draw no arrows: what a test imports is no use of the code', () => {
-        const { updates } = render({ ...app(), 'base/model/model.test.ts': "import { thing } from '../../top/model/index.js';\nvoid thing;\n" });
+    it('draw no arrows: what a test imports is no use of the code', async () => {
+        const { updates } = await render({ ...app(), 'base/model/model.test.ts': "import { thing } from '../../top/model/index.js';\nvoid thing;\n" });
         expect(updates['ARCHITECTURE.md']).not.toContain('base --> top');
     });
 });
 
 describe('node ids', () => {
-    it('are distinct for distinct paths, so two features never share a box', () => {
-        const { updates } = render({ ...layer('foo-bar/model', 'One.'), ...layer('foo/bar/model', 'Two.') });
+    it('are distinct for distinct paths, so two features never share a box', async () => {
+        const { updates } = await render({ ...layer('foo-bar/model', 'One.'), ...layer('foo/bar/model', 'Two.') });
         const root = updates['ARCHITECTURE.md'] ?? '';
         expect(root).toContain('foo_2d_bar["<b>foo-bar</b>');
         expect(root).toContain('foo_2f_bar["<b>foo/bar</b>');
@@ -151,18 +151,18 @@ describe('node ids', () => {
 });
 
 describe('a layer with fewer parts', () => {
-    it('loses its parts diagram once it has too few, keeping what people wrote', () => {
+    it('loses its parts diagram once it has too few, keeping what people wrote', async () => {
         const three = Object.fromEntries(['one', 'two', 'three'].flatMap(name => Object.entries(layer(`mid/model/${name}`, `${name}.`))));
-        const drawn = render({ ...app(), ...three }).updates['mid/model/README.md'] ?? '';
+        const drawn = (await render({ ...app(), ...three })).updates['mid/model/README.md'] ?? '';
         expect(drawn).toContain(start);
         const two = Object.fromEntries(Object.entries(three).filter(([path]) => !path.startsWith('mid/model/three/')));
-        const text = render({ ...app(), ...two, 'mid/model/README.md': drawn }).updates['mid/model/README.md'];
+        const text = (await render({ ...app(), ...two, 'mid/model/README.md': drawn })).updates['mid/model/README.md'];
         expect(text).toBe(app()['mid/model/README.md']);
     });
 
-    it('draws parts beneath a folder that isn\'t a component', () => {
+    it('draws parts beneath a folder that isn\'t a component', async () => {
         const parts = Object.fromEntries(['a/one', 'a/two', 'three'].flatMap(name => Object.entries(layer(`mid/model/${name}`, 'A part.'))));
-        const text = render({ ...app(), ...parts }).updates['mid/model/README.md'] ?? '';
+        const text = (await render({ ...app(), ...parts })).updates['mid/model/README.md'] ?? '';
         expect(text).toContain('<b>one</b>');
         expect(text).toContain('<b>two</b>');
     });

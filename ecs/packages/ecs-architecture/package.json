@@ -1,6 +1,6 @@
 {
   "name": "@adobe/ecs-architecture",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The architecture standard for @adobe/ecs applications: its checker, its diagrams and the agent rules for it",
   "license": "MIT",
   "type": "module",
@@ -34,19 +34,37 @@
   },
   "peerDependencies": {
     "@adobe/ecs": "workspace:*",
-    "typescript": ">=5.0.0"
+    "@oxc-parser/binding-wasm32-wasip1": "^0.155.0",
+    "vite": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@oxc-parser/binding-wasm32-wasip1": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@adobe/ecs": "workspace:*",
+    "@oxc-parser/binding-wasm32-wasip1": "0.155.0",
     "@types/node": "^25.6.0",
     "ecs-guide-checks": "workspace:*",
     "typescript": "^5.8.3",
+    "vite": "^8.3.4",
     "vitest": "^5.0.5"
   },
   "exports": {
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    }
+  },
+  "imports": {
+    "#parser": {
+      "ecs-architecture-source": {
+        "browser": "./src/implementation/parser/browser.ts",
+        "default": "./src/implementation/parser/node.ts"
+      },
+      "browser": "./dist/implementation/parser/browser.js",
+      "default": "./dist/implementation/parser/node.js"
     }
   },
   "guide": {

@@ -2,7 +2,7 @@
 import { basename, dirname, join, normalize } from './path.js';
 import type { Config } from '../config.js';
 import { defaults } from '../defaults.js';
-import { exportsOf, importsOf, parse, type Import, type Module } from './syntax.js';
+import { exportsOf, importsOf, parseModule, type Import, type Module, type Parse } from './syntax.js';
 
 
 /** A configuration with every part the checks and diagrams read given: the defaults' for those it leaves out. */
@@ -16,9 +16,9 @@ export const settingsOf = (config: Config = {}): Settings => ({ ...defaults, ...
 /**
  * What the checks and the diagrams know of an application's source: its files parsed, its components, layers,
  * features and apps, and the file each import resolves to. `input` is every file of the source folder, by its path in
- * that folder, posix, to its text.
+ * that folder, posix, to its text, each `.ts` file read by `parse`.
  */
-export const analyze = (input: Readonly<Record<string, string>>, settings: Settings) => {
+export const analyze = (input: Readonly<Record<string, string>>, settings: Settings, parse: Parse) => {
     const files = new Map(Object.entries(input).map(([path, text]) => [path, text.replace(/\r\n/g, '\n')]));
     const paths = [...files.keys()].sort();
     const tsPaths = paths.filter(path => path.endsWith('.ts'));
@@ -28,7 +28,7 @@ export const analyze = (input: Readonly<Record<string, string>>, settings: Setti
     const parsed = new Map<string, Module>();
     const moduleOf = (path: string): Module => {
         let module = parsed.get(path);
-        if (module === undefined) parsed.set(path, module = parse(path, textOf(path)));
+        if (module === undefined) parsed.set(path, module = parseModule(parse, path, textOf(path)));
         return module;
     };
     const exportsCache = new Map<string, readonly string[]>();

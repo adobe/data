@@ -17,7 +17,8 @@ import { Schema } from "@adobe/data/schema";
 AsyncDataService.createLazy({
   load: (...args: any[]) => Promise<Service>,
   schema: Schema,          // the service's object schema (e.g. MyService.schema)
-  preload?: boolean
+  preload?: boolean,
+  partial?: boolean        // the schema may describe a subset of the service
 }): (...args: Args) => Service
 ```
 
@@ -44,8 +45,21 @@ AsyncDataService.createLazy({
 - `{ type: "function", signature: { returns: { type: "generator", … } } }` → a function returning `AsyncGenerator<T>`
 - `{ type: "function", signature: { returns: { type: "promise", … } } }` → a function returning `Promise<T>`
 - `{ type: "function" }` (no `signature`) → a function returning `void`
+- `{ type: "object", properties: { … } }` → a nested group of members, wrapped recursively at any depth (e.g. an ECS database's `actions` / `computed`). Every depth resolves from the one root load, so calls made on members at different depths before load still run in the order they were made.
 
 The function constructor groups its `parameters`/`returns` under a nested `signature`, so those members live only on function schemas. The invocation policy `external` sits on the member schema itself (valid on any member). Use `value: {}` as a "don't-care" (resolves to `any`) when a member's precise value type doesn't matter for wrapping; fill in real value schemas when the schema is also a published contract. Function `signature.parameters` list only the **required** parameters. Publish the schema beside the service with the namespace pattern and validate it with `IsValidWithCompleteSchema`.
+
+### Partial schemas
+
+By default the schema must describe the loaded service completely. Pass `partial: true` to lazily expose **less** than the service has — e.g. the agent-visible subset of an app's main service. The gate then checks that the service satisfies the schema (every described member exists, with a type assignable to the described one), the lazy instance carries only the described members, and it is typed as the schema (plus `serviceName` / `schema`) rather than as the whole service.
+
+```typescript
+const createLazyEditor = AsyncDataService.createLazy({
+  load: (host: Host) => import('./editor').then(m => m.getOrCreateEditor(host)),
+  schema: editorAgentSchema,   // describes editor.actions.open and editor.computed.title only
+  partial: true,
+});
+```
 
 ## Type Safety Guarantees
 

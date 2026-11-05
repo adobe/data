@@ -1,6 +1,6 @@
 {
   "name": "@adobe/ecs-architecture",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The architecture standard for @adobe/ecs applications: its checker, its diagrams and the agent rules for it",
   "license": "MIT",
   "type": "module",
@@ -32,15 +32,16 @@
     "typecheck": "tsc && tsc -p tsconfig.build.json --noEmit",
     "test": "vitest --run"
   },
+  "dependencies": {
+    "typescript": "^5.8.3"
+  },
   "peerDependencies": {
-    "@adobe/ecs": "workspace:*",
-    "typescript": ">=5.0.0"
+    "@adobe/ecs": "workspace:*"
   },
   "devDependencies": {
     "@adobe/ecs": "workspace:*",
     "@types/node": "^25.6.0",
     "ecs-guide-checks": "workspace:*",
-    "typescript": "^5.8.3",
     "vitest": "^5.0.5"
   },
   "exports": {

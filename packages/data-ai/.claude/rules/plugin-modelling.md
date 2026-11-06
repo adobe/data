@@ -40,7 +40,7 @@ codebase grep, and "find all plugins" tooling match `**/*-plugin.ts`
 without inspecting contents.
 
 The exported constant's name depends on whether the folder also hosts a
-type namespace:
+TypeSpace:
 
 - **Pure-plugin folder** (no owned type) → export the concept name
   itself, lowercase. `node-plugin.ts` exports `node`. Import sites read

@@ -96,7 +96,7 @@ drift-guard (see `archetypes.md`).
 ## Layered composition (behaviour)
 
 Above the schema, behaviour is a chain of `Database.Plugin`s, each its own
-**namespace folder** — `<layer>-database/` holding the eponymous
+**TypeSpace folder** — `<layer>-database/` holding the eponymous
 `<layer>-database.ts` (the plugin, which `extends` the previous layer) plus the
 facet folder it adds. **Name each layer for the facet it adds — never for the
 feature or app.** A feature creates only the layers it uses:
@@ -128,7 +128,7 @@ export namespace IndexDatabase {
 computed / action / system). Consumers — `ui/`, the app entry, `services/main-service/conformance/`
 — need the *whole* feature database but must not name that layer, or adding or
 dropping a layer rewrites them all. Alias it once from the **folder-eponymous
-`main-service.ts`** (per `global/namespace.md`, a folder's primary export lives in
+`main-service.ts`** (per `global/typespace.md`, a folder's primary export lives in
 its same-named file), as a namespace so consumers reach `MainService.plugin` /
 `MainService.Store`:
 

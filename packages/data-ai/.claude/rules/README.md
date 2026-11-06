@@ -13,13 +13,13 @@ holds just enough to understand that folder; each child gets its own file:
 
 ```
 global/               # always-on conventions — deliberately repo-wide globs
-  namespace.md  cohesion.md  type-casts.md  function-references.md  react.md
+  typespace.md  cohesion.md  type-casts.md  function-references.md  react.md
 features/
   index.md            # the layering as a whole: data → services → spec | ecs → ui → app
   data/
     index.md          # pure Data declarations
     values.md  components.md  resources.md  entities.md
-  services/index.md   # service namespaces: interface, create, createFake
+  services/index.md   # service TypeSpaces: interface, create, createFake
   spec/index.md       # the State spec: actions, derivations, cases (test tier)
   ecs/
     index.md          # the layered database plugins + MainService

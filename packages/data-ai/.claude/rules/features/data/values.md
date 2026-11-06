@@ -5,7 +5,7 @@ paths:
 
 # data/values/ — Data types and pure helpers
 
-Each Data type is its own namespace folder (`global/namespace.md`): its hand-written
+Each Data type is its own TypeSpace folder (`global/typespace.md`): its hand-written
 type, its schema pinned to it, and its pure synchronous helpers.
 
 ```
@@ -30,7 +30,7 @@ data/values/player-mark/
   the wire. A type used only by the spec may have none.
 - **Helpers are synchronous and pure**, each with a sibling `*.test.ts`. They are the
   home for logic the spec and the ECS share.
-- **A helper-only namespace** (`motion`, `collision`) with no type of its own also
+- **A helper-only TypeSpace** (`motion`, `collision`) with no type of its own also
   lives here.
 - Objects of only 32-bit numeric values or sub-structs use
   `Schema.fromStructProperties` (linear-memory storage).

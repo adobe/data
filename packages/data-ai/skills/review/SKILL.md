@@ -9,7 +9,7 @@ output: a review — OPTIMAL, or a list of issues each tagged code | skill | rul
 Check a legacy feature (has `data/state/` or `services/main-service/`) against the legacy rules; don't flag the layout itself.
 
 Read the files under the given path and assess them against the relevant `features/`
-rules (each layer's rule and the cross-cutting rules — `namespace`, `data-modelling`,
+rules (each layer's rule and the cross-cutting rules — `typespace`, `data-modelling`,
 `type-casts`, `cohesion`, …):
 
 - **Correctness** — does it typecheck and follow the layer's required shape?

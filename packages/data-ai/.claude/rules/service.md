@@ -8,7 +8,7 @@ paths:
 
 > Inside a feature, `features/services/index.md` covers the service layer; database-bound factories in `ecs/services/` follow `features/ecs/services.md`.
 
-Asynchronous data services. Live in the `services/` layer. Adhere to the namespace rule for type and function organization.
+Asynchronous data services. Live in the `services/` layer. Adhere to the TypeSpace rule for type and function organization.
 
 **Data** = readonly JSON values, `ReadonlySet`, `ReadonlyMap`, or Blobs.
 

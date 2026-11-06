@@ -100,7 +100,7 @@ const particleDataPlugin = Database.Plugin.create({
 });
 ```
 
-- **Components**: per-entity data. Use schema imports (`Vec3`, `Vec4`, `F32` from `@adobe/data/math`) or type namespaces for custom shapes.
+- **Components**: per-entity data. Use schema imports (`Vec3`, `Vec4`, `F32` from `@adobe/data/math`) or TypeSpaces for custom shapes.
 - **Resources**: global state. Every resource carries a `default` (`{ ...Boolean.schema }`, or `{ default: 'dark' as ThemeColor }` to widen a literal).
 - **Archetypes**: one per entity kind. List all components that kind requires.
 

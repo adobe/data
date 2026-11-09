@@ -4,6 +4,8 @@ import { copyValue, ensureCapacity, swapRemove, writeF32, writeF32Lanes, writeF6
 import { blockShift, chunkShift } from './kernel.js';
 import { addCommand, clearBuffer, despawnCommand, despawnWhereCommand, despawnWhereHolds, endOf, referenceAt, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { readCell, writeCell } from './cells.js';
+import { isDespawnMatch, matchesValue, type DespawnMatch } from './matching.js';
+import { viewsOf } from '../../interface/registry/layout.js';
 import { commitBatches, commitStaged } from './batches.js';
 import { applyIndexChanges, cascadeReferences, indexChangesOf, linkBorn, type IndexChanges, type Written } from './cascade.js';
 import { refreshDirectories } from './directories.js';
@@ -130,14 +132,90 @@ const releaseDropped = (state: State, buffer: CommandBuffer, command: number): v
 };
 
 /**
- * Whether `archetype` has each component of `ids` from `start` to `middle` and none from there to `end`, and holds the
- * values `holds` tells it holds, when it isn't null.
+ * Whether `archetype` has each component of `ids` from `start` to `middle` and none from there to `end`, and its
+ * shared values pass `match`, when it isn't null.
  */
-const matches = (archetype: Archetype, ids: Int32Array, start: number, middle: number, end: number, holds: Function | null): boolean => {
+const matches = (archetype: Archetype, ids: Int32Array, start: number, middle: number, end: number, match: DespawnMatch | null): boolean => {
     const { storageById } = archetype;
     for (let k = start; k < middle; k++) if (storageById[ids[k]] === undefined) return false;
     for (let k = middle; k < end; k++) if (storageById[ids[k]] !== undefined) return false;
-    return holds === null || Reflect.apply(holds, undefined, [archetype]) === true;
+    return match === null || match.archetype(archetype);
+};
+
+/**
+ * Component `id`'s value for a planned entry as the commands before `before` in the sync point leave it: the last value
+ * one gives it, else the value in the row it leaves, else its start.
+ */
+const plannedValue = (state: State, queued: readonly Queued[], entry: number, id: number, before: { readonly buffer: number; readonly command: number }): unknown => {
+    const { plan } = state;
+    const ranges = plan.start[entry] < 0 ? [] : [plan.buffer[entry], plan.start[entry], plan.end[entry]];
+    const more = plan.more.get(entry);
+    if (more !== undefined) ranges.push(...more);
+    let givenBy: CommandBuffer | null = null;
+    let givenAt = -1;
+    for (let r = 0; r < ranges.length; r += 3) {
+        const b = ranges[r];
+        if (b > before.buffer) continue;
+        const { buffer } = queued[b];
+        const limit = b === before.buffer ? Math.min(ranges[r + 2], buffer.starts[before.command]) : ranges[r + 2];
+        for (let k = ranges[r + 1]; k < limit; k++) {
+            if (buffer.ids[k] !== id) continue;
+            givenBy = buffer;
+            givenAt = k;
+        }
+    }
+    if (givenBy !== null) {
+        const storage = state.archetypes[plan.to[entry]]?.storageById[id];
+        // A worker's struct arrives as bytes, in its storage's layout.
+        if (givenBy.bytes !== null && givenBy.offsets[givenAt] >= 0 && storage !== undefined && storage.layout.kind === "linear") {
+            const { stride } = storage.layout;
+            const scratch = viewsOf(new ArrayBuffer(stride), 0, stride);
+            scratch.u8.set(givenBy.bytes.u8.subarray(givenBy.offsets[givenAt], givenBy.offsets[givenAt] + stride));
+            return storage.layout.read(scratch, 0);
+        }
+        return givenBy.values[givenAt];
+    }
+    const from = plan.from[entry] < 0 ? undefined : state.archetypes[plan.from[entry]].storageById[id];
+    return from === undefined ? state.starts[id] : readCell(from, state.entities.row[indexOf(plan.entity[entry])]);
+};
+
+/** Whether a planned entry's values as the commands before `before` leave them pass `match`'s row tests. */
+const plannedMatches = (state: State, queued: readonly Queued[], entry: number, match: DespawnMatch, before: { readonly buffer: number; readonly command: number }): boolean => {
+    if (match.rows === null) return true;
+    for (const [id, matching] of match.values) {
+        if (state.shared[id] !== undefined) continue;
+        if (!matchesValue(plannedValue(state, queued, entry, id, before), matching)) return false;
+    }
+    return true;
+};
+
+/**
+ * Whether a sync point may despawn whole archetypes without an entry for each entity: when nothing that reads each
+ * despawn, its entity or its row, is kept, so releasing each entity and emptying the archetype says all there is.
+ */
+const clearsWhole = (state: State): boolean =>
+    state.finalizers.length === 0 && state.recording === null && state.structure.referenceIds.length === 0 && state.journal.readers === 0
+    && !state.claimed && !state.arrivals && state.touched === null && !state.counting && !state.transferring && state.holds.size === 0 && state.logs.length === 0;
+
+/** Whether an archetype can be emptied whole: none of its rows planned or spawned here, and nothing per row to let go. */
+const clearable = (state: State, archetype: Archetype, born: ReadonlyMap<number, number>): boolean => {
+    if (archetype.resource || archetype.strings.length !== 0 || archetype.logs !== null || born.has(archetype.id)) return false;
+    const { slots } = state.plan;
+    const { entities } = archetype;
+    for (let row = 0; row < archetype.count; row++) if (slots[indexOf(entities[row])] >= 0) return false;
+    return true;
+};
+
+/** Empties the archetypes `despawnWhere`s cleared: each entity released, each row's objects let go, no row moved. */
+const clearArchetypes = (state: State): void => {
+    const { plan, entities } = state;
+    for (const id of plan.cleared) {
+        const archetype = state.archetypes[id];
+        const count = archetype.count;
+        for (let row = 0; row < count; row++) release(entities, indexOf(archetype.entities[row]));
+        if (archetype.objects) for (const storage of archetype.storages) if (storage.layout.kind === "object" && storage.remote === null) storage.values.fill(undefined, 0, count);
+        archetype.count = 0;
+    }
 };
 
 /** The archetype an entity planned into `archetype` ends up in once derived. */
@@ -148,18 +226,22 @@ const closedOf = (state: State, archetype: Archetype): Archetype => {
 
 /**
  * Despawns each entity alive before the sync point that a `despawnWhere` command selects given the plan so far: those
- * planned, by where they're going, then the rest, by the archetype they're in. Never the resource entity, nor an
- * entity the sync point spawns: `born` holds the first row each archetype gained at it.
+ * planned, by where they're going and the values the commands before it give them, then the rest, by the archetype
+ * they're in and their rows' values. Never the resource entity, nor an entity the sync point spawns: `born` holds the
+ * first row each archetype gained at it. An archetype every row of which it selects is emptied whole, where the sync
+ * point allows it, without an entry for each.
  */
-const despawnWhere = (state: State, buffer: CommandBuffer, command: number, within: boolean, born: ReadonlyMap<number, number>): void => {
+const despawnWhere = (state: State, queued: readonly Queued[], b: number, command: number, within: boolean, born: ReadonlyMap<number, number>): void => {
     const { plan, archetypes } = state;
+    const { buffer } = queued[b];
     const { ids } = buffer;
     const start = buffer.starts[command];
     const middle = start + buffer.entities[command];
     const last = endOf(buffer, command);
-    const where = ids[last - 1] === despawnWhereHolds ? buffer.values[last - 1] : null;
-    const holds = typeof where === "function" ? where : null;
-    const end = holds === null ? last : last - 1;
+    const given = ids[last - 1] === despawnWhereHolds ? buffer.values[last - 1] : null;
+    const match = isDespawnMatch(given) ? given : null;
+    const end = match === null ? last : last - 1;
+    const before = { buffer: b, command };
     const { row } = state.entities;
     for (let entry = 0; entry < plan.count; entry++) {
         const from = plan.from[entry];
@@ -167,20 +249,33 @@ const despawnWhere = (state: State, buffer: CommandBuffer, command: number, with
         const first = born.get(from);
         if (first !== undefined && row[indexOf(plan.entity[entry])] >= first) continue;
         const to = archetypes[plan.to[entry]];
-        if (matches(within && plan.to[entry] !== plan.from[entry] ? closedOf(state, to) : to, ids, start, middle, end, holds)) plan.despawned[entry] = 1;
+        if (!matches(within && plan.to[entry] !== plan.from[entry] ? closedOf(state, to) : to, ids, start, middle, end, match)) continue;
+        if (match === null || plannedMatches(state, queued, entry, match, before)) plan.despawned[entry] = 1;
     }
     const { slots } = plan;
     const count = archetypes.length;
+    const whole = clearsWhole(state);
+    if (plan.clearing.length < count) {
+        const grown = new Uint8Array(Math.max(count, plan.clearing.length * 2));
+        grown.set(plan.clearing);
+        plan.clearing = grown;
+    }
     for (let id = 0; id < count; id++) {
         const archetype = archetypes[id];
-        if (archetype.resource || archetype.count === 0 || !matches(archetype, ids, start, middle, end, holds)) continue;
+        if (archetype.resource || archetype.count === 0 || plan.clearing[id] === 1 || !matches(archetype, ids, start, middle, end, match)) continue;
+        const test = match?.rows?.(archetype) ?? null;
+        if (test === null && whole && clearable(state, archetype, born)) {
+            plan.clearing[id] = 1;
+            plan.cleared.push(id);
+            continue;
+        }
         ensurePlanCapacity(state, plan.count + archetype.count);
         const { entities } = archetype;
         const alive = born.get(id) ?? archetype.count;
         for (let at = 0; at < alive; at++) {
             const entity = entities[at];
             const index = indexOf(entity);
-            if (slots[index] < 0) plan.despawned[addPlanned(state, entity, index, id, id)] = 1;
+            if (slots[index] < 0 && (test === null || test(at))) plan.despawned[addPlanned(state, entity, index, id, id)] = 1;
         }
     }
 };
@@ -205,7 +300,7 @@ const planOf = (state: State, queued: readonly Queued[], written: Written, born:
         for (let command = 0; command < buffer.count; command++) {
             const kind = kinds[command];
             if (kind === despawnWhereCommand) {
-                despawnWhere(state, buffer, command, within, born);
+                despawnWhere(state, queued, b, command, within, born);
                 ensurePlanCapacity(state, plan.count + buffer.count - command);
                 continue;
             }
@@ -236,7 +331,7 @@ const planOf = (state: State, queued: readonly Queued[], written: Written, born:
                     }
                 }
                 else {
-                    if (locate(state.entities, entity) < 0) {
+                    if (locate(state.entities, entity) < 0 || (plan.cleared.length > 0 && plan.clearing[state.entities.archetype[index]] === 1)) {
                         plan.dropped++;
                         if (state.transferring) releaseDropped(state, buffer, command);
                         continue;
@@ -394,6 +489,7 @@ const writeValues = (state: State, queued: readonly Queued[], entry: number, to:
  * between, keeping the row it leaves.
  */
 const sort = (state: State, queued: readonly Queued[], tick: number): void => {
+    if (state.plan.cleared.length > 0) clearArchetypes(state);
     const { entities, archetypes, plan } = state;
     const { pairs } = plan;
     const width = archetypes.length + 1;
@@ -663,6 +759,8 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     plan.dropped = 0;
     plan.more.clear();
     plan.fresh.clear();
+    for (const id of plan.cleared) plan.clearing[id] = 0;
+    plan.cleared.length = 0;
     const { pairs } = plan;
     pairs.byKey.clear();
     pairs.from.length = pairs.to.length = pairs.count.length = pairs.start.length = 0;

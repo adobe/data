@@ -2,7 +2,7 @@
 import { System, type World } from "@adobe/ecs";
 import {
     complexSystems, complexSystemsUpdate, createEntities, createHalfComponentEntities, createMixedUpdateEntities, createUpdateEntities,
-    destroyEntities, probeEntities, probeFullEntities, removeAddComponent, systemsUpdate, unpackOneComponent,
+    destroyEntities, destroyEntitiesWhere, probeEntities, probeFullEntities, removeAddComponent, systemsUpdate, unpackOneComponent,
     unpackThreeComponents, unpackTwoComponents,
 } from "../scenarios/model/index.js";
 import { measureRuns } from "./function.measure-runs.js";
@@ -28,6 +28,15 @@ export const scenarios: readonly Scenario[] = [
             await world.run(destroyEntities);
             await world.run(createEntities, { count });
         }, world => world.run(destroyEntities)),
+    },
+    {
+        name: "Ours_DestroyEntitiesWhere",
+        // BM_DestroyEntities's entities despawned by one query, which empties their archetype whole.
+        measure: (create, count) => measureWorlds(create, async world => {
+            await world.run(createEntities, { count });
+            await world.run(destroyEntitiesWhere);
+            await world.run(createEntities, { count });
+        }, world => world.run(destroyEntitiesWhere)),
     },
     { name: "BM_UnpackOneComponent", measure: (create, count) => gets(create(), world => world.run(createEntities, { count }), world => world.run(probeEntities), world => world.run(unpackOneComponent)) },
     { name: "BM_UnpackTwoComponents", measure: (create, count) => gets(create(), world => world.run(createEntities, { count }), world => world.run(probeEntities), world => world.run(unpackTwoComponents)) },

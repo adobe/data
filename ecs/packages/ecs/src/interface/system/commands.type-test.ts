@@ -14,6 +14,8 @@ const player = Symbol("commandsTypeTest/player");
 const slot = Symbol("commandsTypeTest/slot");
 const time = Symbol("commandsTypeTest/time");
 const chunk = Symbol("commandsTypeTest/chunk");
+const health = Symbol("commandsTypeTest/health");
+const cell = Symbol("commandsTypeTest/cell");
 declare module '@adobe/ecs' {
     export interface Components {
         [position]: { type: number };
@@ -22,6 +24,8 @@ declare module '@adobe/ecs' {
         [player]: { type: true };
         [slot]: { type: number; derived: true };
         [chunk]: { type: number; shared: true };
+        [health]: { type: { readonly hp: number; readonly alive: boolean; readonly cell: readonly [number, number] } };
+        [cell]: { type: readonly [number, number]; shared: true };
     }
     export interface Resources {
         [time]: { type: number };
@@ -99,20 +103,30 @@ export const issue = (commands: Commands, entity: Entity): void => {
     commands.despawnWhere({ with: [player], not: [time] });
     // @ts-expect-error it takes a query, not an entity
     commands.despawnWhere(entity);
-    // Its `where` gives values of shared components, as a system's `where` of values does.
+    // Its `where` gives what components' values match: a value, bounds on a number, or matches of a struct's or
+    // tuple's members, the others left free. A shared component's is tested once per archetype.
     commands.despawnWhere({ with: [position], where: { [chunk]: 3 } });
+    commands.despawnWhere({ with: [position], where: { [position]: 3 } });
+    commands.despawnWhere({ with: [position], where: { [position]: { "<": 0 } } });
+    commands.despawnWhere({ with: [health], where: { [health]: { hp: { "<=": 0 } } } });
+    commands.despawnWhere({ with: [health], where: { [health]: { alive: false, cell: { 0: { ">=": 8, "<": 16 } } } } });
+    commands.despawnWhere({ with: [health], where: { [health]: { hp: 0, alive: true, cell: [1, 2] } } });
+    commands.despawnWhere({ with: [position], where: { [cell]: { 1: { "!==": 0 } } } });
+    commands.despawnWhere({ with: [position], where: { [label]: "gone" } });
     const unloaded = { [chunk]: 4 } as const;
     commands.despawnWhere({ with: [position], where: unloaded });
+    const doomed = { [health]: { hp: { "<=": 0 } } } as const;
+    commands.despawnWhere({ with: [health], where: doomed });
     // @ts-expect-error a value of the component's type
     commands.despawnWhere({ with: [position], where: { [chunk]: "3" } });
-    // @ts-expect-error where names only shared components
-    commands.despawnWhere({ with: [position], where: { [position]: 3 } });
-    // @ts-expect-error where takes values, not predicates
+    // @ts-expect-error bounds only on numbers
+    commands.despawnWhere({ with: [health], where: { [health]: { alive: { "<": 1 } } } });
+    // @ts-expect-error a bound is a number
+    commands.despawnWhere({ with: [position], where: { [position]: { "<": "0" } } });
+    // @ts-expect-error only the struct's members
+    commands.despawnWhere({ with: [health], where: { [health]: { mana: 0 } } });
+    // @ts-expect-error where takes values and bounds, not predicates
     commands.despawnWhere({ with: [position], where: { [chunk]: (value: number) => value > 3 } });
-    const placed = { [position]: 3 } as const;
-    // @ts-expect-error where names only shared components, in a constant too
-    commands.despawnWhere({ with: [position], where: placed });
-    const mixed = { [chunk]: 3, [position]: 3 } as const;
-    // @ts-expect-error and in a constant naming a shared one beside it
-    commands.despawnWhere({ with: [position], where: mixed });
+    // @ts-expect-error nor resources
+    commands.despawnWhere({ with: [position], where: { [time]: 3 } });
 };

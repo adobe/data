@@ -8,6 +8,7 @@ export * from "./system.create-half-component-entities.js";
 export * from "./system.create-mixed-update-entities.js";
 export * from "./system.create-update-entities.js";
 export * from "./system.destroy-entities.js";
+export * from "./system.destroy-entities-where.js";
 export * from "./system.probe-entities.js";
 export * from "./system.probe-full-entities.js";
 export * from "./system.remove-add-component.js";

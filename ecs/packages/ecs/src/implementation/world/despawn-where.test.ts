@@ -26,6 +26,9 @@ const trigger = Symbol("despawnWhereTest/trigger");
 const level = Symbol("despawnWhereTest/level");
 const journal = Symbol("despawnWhereTest/journal");
 const chunk = Symbol("despawnWhereTest/chunk");
+const stats = Symbol("despawnWhereTest/stats");
+const pair = Symbol("despawnWhereTest/pair");
+const name = Symbol("despawnWhereTest/name");
 // Never declared, so never registered.
 const unregistered = Symbol("despawnWhereTest/unregistered");
 
@@ -43,6 +46,9 @@ declare module "@adobe/ecs" {
         [watched]: { type: number };
         [trigger]: { type: true };
         [chunk]: { type: number; shared: true };
+        [stats]: { type: { readonly hp: number; readonly alive: boolean } };
+        [pair]: { type: readonly [number, number] };
+        [name]: { type: string };
     }
     export interface Resources {
         [level]: { type: number };
@@ -294,16 +300,55 @@ describe("despawnWhere", () => {
         await world.dispose();
     });
 
-    it("throws for a where that isn't values of shared components, queuing nothing", async () => {
+    it("keeps to the entities whose values match: a value, bounds on a number, or members of a struct or tuple", async () => {
+        const { world, run } = withCommands();
+        const spawned: Entity[] = [];
+        await run(commands => {
+            for (let i = 0; i < 6; i++) spawned.push(commands.spawn([mark, value, stats, pair, name])({ [value]: i, [stats]: { hp: i - 2, alive: i % 2 === 0 }, [pair]: [i, 10 - i], [name]: `n${i}` }));
+        });
+        await run(commands => commands.despawnWhere({ with: [mark], where: { [value]: 5 } }));
+        expect(await aliveEach(world, spawned)).toEqual([true, true, true, true, true, false]);
+        await run(commands => commands.despawnWhere({ with: [mark], where: { [stats]: { hp: { "<=": -1 }, alive: true } } }));
+        expect(await aliveEach(world, spawned)).toEqual([false, true, true, true, true, false]);
+        await run(commands => commands.despawnWhere({ with: [mark], where: { [pair]: { 1: { "<": 8, "!==": 6 } }, [name]: "n3" } }));
+        expect(await aliveEach(world, spawned)).toEqual([false, true, true, false, true, false]);
+        await run(commands => commands.despawnWhere({ with: [mark], where: { [value]: { ">": 0, "<": 3 }, [chunk]: 1 } }));
+        expect(await aliveEach(world, spawned)).toEqual([false, true, true, false, true, false]);
+        await run(commands => commands.despawnWhere({ with: [mark], where: { [stats]: { hp: 0, alive: true }, [pair]: [2, 8] } }));
+        expect(await aliveEach(world, spawned)).toEqual([false, true, false, false, true, false]);
+        await world.dispose();
+    });
+
+    it("tests the values the commands before it give, as the sync point applies them", async () => {
+        const { world, run } = withCommands();
+        let lowered = Entity.none, raised = Entity.none, after = Entity.none;
+        await run(commands => {
+            lowered = commands.spawn([mark, value])({ [value]: 5 });
+            raised = commands.spawn([mark, value])({ [value]: 1 });
+            after = commands.spawn([mark, value])({ [value]: 5 });
+        });
+        await run(commands => {
+            commands.add(lowered, value, 1);
+            commands.add(raised, value, 5);
+            commands.despawnWhere({ with: [mark], where: { [value]: { "<": 2 } } });
+            commands.add(after, value, 1);
+        });
+        expect(await aliveEach(world, [lowered, raised, after])).toEqual([false, true, true]);
+        await world.dispose();
+    });
+
+    it("throws for a where naming what isn't a component, giving a predicate, or a match its type can't make, queuing nothing", async () => {
         const { world, run } = withCommands();
         let entity = Entity.none;
-        await run(commands => { entity = commands.spawn([mark, chunk], { [chunk]: 1 })(); });
-        // @ts-expect-error where names only shared components
-        await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [value]: 1 } }))).rejects.toThrow(/where names "despawnWhereTest\/value", which isn't a shared component/);
-        // @ts-expect-error where takes values, not predicates
+        await run(commands => { entity = commands.spawn([mark, chunk, stats], { [chunk]: 1 })({ [stats]: { hp: 1, alive: true } }); });
+        // @ts-expect-error where names components
+        await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [level]: 1 } }))).rejects.toThrow(/where names "despawnWhereTest\/level", which isn't a component/);
+        // @ts-expect-error where takes values and bounds, not predicates
         await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [chunk]: (given: number) => given === 1 } }))).rejects.toThrow(/gives "despawnWhereTest\/chunk" a predicate/);
         // @ts-expect-error a value of the component's type
-        await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [chunk]: "1" } }))).rejects.toThrow(/isn't one of its type's values/);
+        await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [chunk]: "1" } }))).rejects.toThrow(/which none of its type's values match/);
+        // @ts-expect-error bounds only on numbers
+        await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [stats]: { alive: { "<": 1 } } } }))).rejects.toThrow(/which none of its type's values match/);
         expect(await alive(world, entity)).toBe(true);
         await world.dispose();
     });

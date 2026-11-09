@@ -3,7 +3,7 @@ import { type Entity, System, World, workers } from "@adobe/ecs";
 import { describe, expect, it } from "vitest";
 import {
     complexSystemsUpdate, createEntities, createHalfComponentEntities, createMixedUpdateEntities, createUpdateEntities,
-    destroyEntities, probeEntities, probeFullEntities, removeAddComponent, systemsUpdate, unpackOneComponent,
+    destroyEntities, destroyEntitiesWhere, probeEntities, probeFullEntities, removeAddComponent, systemsUpdate, unpackOneComponent,
     unpackThreeComponents, unpackTwoComponents,
 } from "./index.js";
 import { mixedUpdateEntities, next, generator, type Reference, update, updateEntities } from "./reference.test-helper.js";
@@ -145,6 +145,9 @@ describe("the scenarios", () => {
                 await world.run(removeAddComponent);
                 expect(await countOf(world)).toEqual({ both: 1000, velocityOnly: 0 });
                 await world.run(destroyEntities);
+                expect(await countOf(world)).toEqual({ both: 0, velocityOnly: 0 });
+                await world.run(createEntities, { count: 1000 });
+                await world.run(destroyEntitiesWhere);
                 expect(await countOf(world)).toEqual({ both: 0, velocityOnly: 0 });
             });
         });

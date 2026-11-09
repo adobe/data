@@ -31,6 +31,12 @@ export type Plan = {
     readonly fresh: Map<number, number[]>;
     /** Where each entity index's entry is, or -1; reset after each sync point. */
     slots: Int32Array;
+    /**
+     * Archetypes a `despawnWhere` despawns every row of without an entry each, in the order planned, and by archetype id
+     * whether one is: a command after it to one of their entities does nothing, as to a despawned one.
+     */
+    readonly cleared: number[];
+    clearing: Uint8Array;
 };
 
 /**
@@ -69,4 +75,6 @@ export const createPlan = (): Plan => ({
     more: new Map(),
     fresh: new Map(),
     slots: new Int32Array(0),
+    cleared: [],
+    clearing: new Uint8Array(0),
 });

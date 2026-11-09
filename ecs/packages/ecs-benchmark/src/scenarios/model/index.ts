@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 export * from "./constant.complex-systems.js";
 export * from "./constant.systems.js";
+export * from "./system.clear-entities.js";
 export * from "./system.complex-systems-update.js";
 export * from "./system.create-entities.js";
 export * from "./system.create-half-component-entities.js";

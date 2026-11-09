@@ -152,6 +152,7 @@ const op = {
     i32Eq: 0x46, i32LtS: 0x48, i32LeS: 0x4c, i32Clz: 0x67, i32Ctz: 0x68, i32Popcnt: 0x69, i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32And: 0x71, i32Or: 0x72, i32Xor: 0x73, i32Shl: 0x74, i32ShrS: 0x75, i32ShrU: 0x76,
     f64Abs: 0x99, f64Neg: 0x9a, f64Ceil: 0x9b, f64Floor: 0x9c, f64Trunc: 0x9d, f64Sqrt: 0x9f,
     f64Add: 0xa0, f64Sub: 0xa1, f64Mul: 0xa2, f64Div: 0xa3, f64Min: 0xa4, f64Max: 0xa5,
+    i64Add: 0x7c, i64Sub: 0x7d, i64Mul: 0x7e, i64ExtendI32S: 0xac, i64ExtendI32U: 0xad, i32RemS: 0x6f,
     i32WrapI64: 0xa7, i32GeU: 0x4f, i32Ne: 0x47, i64Const: 0x42, i64ShrU: 0x88, i64RemS: 0x81, f64ConvertI64S: 0xb9, f64Copysign: 0xa6, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
 } as const;
 const f64Type = 0x7c;
@@ -178,6 +179,18 @@ const signed = (value: number): number[] => {
         const byte = value & 0x7f;
         value >>= 7;
         if ((value === 0 && (byte & 0x40) === 0) || (value === -1 && (byte & 0x40) !== 0)) return [...bytes, byte];
+        bytes.push(byte | 0x80);
+    }
+};
+
+/** An integer's signed LEB128 bytes as an i64 immediate: exact to 2^53 in magnitude, past the 32 bits `signed` keeps. */
+const signed64 = (value: number): number[] => {
+    const bytes: number[] = [];
+    let rest = BigInt(value);
+    for (;;) {
+        const byte = Number(rest & 0x7fn);
+        rest >>= 7n;
+        if ((rest === 0n && (byte & 0x40) === 0) || (rest === -1n && (byte & 0x40) !== 0)) return [...bytes, byte];
         bytes.push(byte | 0x80);
     }
 };
@@ -441,7 +454,8 @@ export const generateWasmOrReason = (
             }
             default: break;
         }
-        return integerKind(expression) != null ? 2 ** 32 : typeOf(expression) === "boolean" ? 1 : null;
+        const kind = integerKind(expression);
+        return kind === "i32" ? 2 ** 31 : kind === "u32" ? 2 ** 32 - 1 : typeOf(expression) === "boolean" ? 1 : null;
     };
     /**
      * Whether computing a value costs no more than a few instructions and calls nothing: reads of columns, locals and
@@ -603,6 +617,30 @@ export const generateWasmOrReason = (
         code.push(...i64TruncSatF64S, op.i32WrapI64);
     };
 
+    /** Leaves an exact integer's value as an i64, its integer operations computed in i64. */
+    const emitInteger64 = (expression: Expression): void => {
+        const kind = integerKind(expression) ?? null;
+        if (!hoisted.has(expression)) {
+            if (kind !== null) {
+                emitInteger(expression);
+                code.push(kind === "i32" ? op.i64ExtendI32S : op.i64ExtendI32U);
+                return;
+            }
+            if (expression.kind === "number" && Number.isInteger(expression.value)) {
+                code.push(op.i64Const, ...signed64(expression.value));
+                return;
+            }
+            if (expression.kind === "binary" && (expression.operator === "+" || expression.operator === "-" || expression.operator === "*") && exactInteger(expression.left) && exactInteger(expression.right) && typeOf(expression.left) !== "boolean" && typeOf(expression.right) !== "boolean") {
+                emitInteger64(expression.left);
+                emitInteger64(expression.right);
+                code.push(expression.operator === "+" ? op.i64Add : expression.operator === "-" ? op.i64Sub : op.i64Mul);
+                return;
+            }
+        }
+        emit(expression);
+        code.push(...i64TruncSatF64S);
+    };
+
     /** Converts the f64 on the stack, a value of `kind`, to its i32 bits: exact, since it's an integer of that kind. */
     const emitIntegerOfNumber = (kind: IntegerKind): void => {
         code.push(...(kind === "i32" ? i32TruncSatF64S : truncations.i32TruncSatF64U));
@@ -654,14 +692,35 @@ export const generateWasmOrReason = (
                     return;
                 }
                 break;
-            case "binary":
-                if (expression.operator in bitwise) {
-                    emitInteger(expression.left);
-                    emitInteger(expression.right);
-                    code.push(bitwise[expression.operator as keyof typeof bitwise]);
+            case "binary": {
+                const { operator, left, right } = expression;
+                if (operator in bitwise) {
+                    emitInteger(left);
+                    emitInteger(right);
+                    code.push(bitwise[operator as keyof typeof bitwise]);
+                    return;
+                }
+                // An exact sum, difference or product's ToInt32 is its operands' ToInt32s' i32 result, modulo 2^32 as both are.
+                if ((operator === "+" || operator === "-" || operator === "*") && exactInteger(expression) && typeOf(left) !== "boolean" && typeOf(right) !== "boolean") {
+                    emitInteger(left);
+                    emitInteger(right);
+                    code.push(operator === "+" ? op.i32Add : operator === "-" ? op.i32Sub : op.i32Mul);
+                    return;
+                }
+                // A remainder takes the whole dividend: in i32 where it fits, else in i64, exact either way.
+                if (operator === "%" && right.kind === "number" && right.value !== 0 && integral(right) && exactInteger(left)) {
+                    const bound = integerBound(left) ?? 2 ** 53;
+                    if (bound < 2 ** 31 && Math.abs(right.value) < 2 ** 31) {
+                        emitInteger(left);
+                        code.push(op.i32Const, ...signed(right.value), op.i32RemS);
+                        return;
+                    }
+                    emitInteger64(left);
+                    code.push(op.i64Const, ...signed(right.value), op.i64RemS, op.i32WrapI64);
                     return;
                 }
                 break;
+            }
             case "math":
                 if (expression.name === "imul") {
                     emitInteger(expression.arguments[0] ?? { kind: "number", value: 0 });

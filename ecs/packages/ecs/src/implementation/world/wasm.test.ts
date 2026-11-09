@@ -769,3 +769,35 @@ describe("generateWasm branch-free conditionals", () => {
         expect([...new Set(values.subarray(2 ** blockShift, 2 * 2 ** blockShift))]).toEqual([4]);
     });
 });
+
+describe("generateWasm exact integer arithmetic", () => {
+    it("stores sums, differences, products and remainders of integers as JS does, at the edges of 32 bits", () => {
+        const input: Expression = { kind: "column", column: 0 };
+        const number = (value: number): Expression => ({ kind: "number", value });
+        const binary = (operator: Extract<Expression, { kind: "binary" }>["operator"], left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+        const values = [0, 1, -1, 999999, 2147483647, -2147483648, 123456789];
+        const cases: [Expression, (x: number) => number][] = [
+            [binary("%", binary("+", input, number(1)), number(1000000)), x => (x + 1) % 1000000],
+            [binary("+", input, number(2147483647)), x => x + 2147483647],
+            [binary("*", input, number(3)), x => x * 3],
+            [binary("-", number(-5), input), x => -5 - x],
+            [binary("%", binary("*", input, number(65536)), number(7)), x => (x * 65536) % 7],
+            [binary("%", binary("+", input, number(2 ** 40)), number(1000)), x => (x + 2 ** 40) % 1000],
+        ];
+        for (const [value, expected] of cases) {
+            for (const output of ["i32", "u32"] as const) {
+                const columns: WasmColumn[] = [{ view: "i32", stride: 4, offset: 0, boolean: false, component: 0 }, dense(output, 1)];
+                const kernel = generateWasm({ locals: 0, body: [{ kind: "store", column: 1, value }] }, columns, () => "number");
+                if (kernel === null) throw new Error("expected a kernel");
+                expect(kernel.imports).toEqual([]);
+                const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+                new Int32Array(memory.buffer, 0, values.length).set(values);
+                const result = new views[output](memory.buffer, 4096, values.length);
+                const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+                if (typeof run !== "function") throw new Error("no run export");
+                run(0, values.length, 0, -1, 0, 4096);
+                expect([output, [...result]]).toEqual([output, viaTypedArray(output, values.map(expected))]);
+            }
+        }
+    });
+});

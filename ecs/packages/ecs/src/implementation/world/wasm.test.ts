@@ -1181,15 +1181,35 @@ describe("generateWasm interleaved rows", () => {
                     alternate: [{
                         kind: "if", test: logical("&&", binary(">=", hp, maxhp), binary("!==", status, number(2))),
                         consequent: [{ kind: "store", column: 0, value: maxhp }, { kind: "store", column: 2, value: number(2) }, stamp],
-                        // No row takes this arm: every row's status is a word, and none is 4096.
+                        // No row takes this arm, which runs masked like the rest: every row's status is a word, and none is 4096.
                         alternate: [{ kind: "if", test: binary("===", status, number(4096)), consequent: [{ kind: "store", column: 1, value: number(-1) }, stamp], alternate: [] }],
                     }],
                 }],
             }],
         };
         const { vector, scalar, wat } = bothWays(program, columns, 3, 4 * 300 + 2);
-        expect(wat).toContain("v128.any_true");
+        expect(wat).toContain("v128.bitselect");
+        expect(wat).not.toContain("v128.any_true");
         expect(wat).toContain("v128.store32_lane");
+        expect(vector).toEqual(scalar);
+    });
+
+    it("gathers a component's lone fields into vectors and stores from them, read again after a store, as row by row does", () => {
+        // A status among two other fields, a type among four, a character alone, and a u8 level.
+        const columns = [leaf("u32", 0, 12, 8), leaf("u32", 1, 20, 16), leaf("u32", 2, 4, 0), { view: "u8", stride: 1, offset: 0, boolean: false, component: 3 } satisfies WasmColumn];
+        const choose = (value: Expression, cases: readonly (readonly [number, number])[], otherwise: number): Expression =>
+            cases.reduceRight<Expression>((alternate, [when, then]) => ({ kind: "conditional", test: binary("===", value, number(when)), consequent: number(then), alternate }), number(otherwise));
+        const program: Program = {
+            locals: 1,
+            body: [
+                { kind: "set", local: 0, value: choose(binary("&", column(1), number(3)), [[0, 64], [1, 107], [2, 104]], 32) },
+                { kind: "store", column: 2, value: choose(binary("&", column(0), number(3)), [[2, 0], [1, 124], [0, 95]], 32) },
+                { kind: "if", test: binary("===", column(2), number(0)), consequent: [{ kind: "store", column: 2, value: local(0) }], alternate: [] },
+                { kind: "if", test: binary(">", column(2), number(100)), consequent: [{ kind: "store", column: 3, value: binary("+", column(3), column(2)) }], alternate: [] },
+            ],
+        };
+        const { vector, scalar, wat } = bothWays(program, columns, 1, 4 * 40 + 3);
+        expect(wat).toContain("v128.bitselect");
         expect(vector).toEqual(scalar);
     });
 

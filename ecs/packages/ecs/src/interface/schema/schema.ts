@@ -172,7 +172,6 @@ export namespace Schema {
         T extends ArraySchema<infer U> ? ArrayToType<T, Schema.ToType<U>> :
         T extends SetSchema<infer U> ? ReadonlySet<Schema.ToType<U>> :
         T extends MapSchema<infer K, infer V> ? ReadonlyMap<Schema.ToType<K>, Schema.ToType<V>> :
-        T extends TypedArraySchema ? TypedArrays[T['array']] :
         T extends NumberSchema ? number :
         T extends IntegerSchema ? number :
         T extends BooleanSchema ? boolean :

@@ -760,6 +760,8 @@ export const generateWasmOrReason = (
      * leaves a component holds within 16 bytes, loaded once a row and transposed.
      */
     const vectorRegisters = new Map<number, number>();
+    /** The columns of the interleaved group's spans, whose registers are stored back at the group's end. */
+    const spanned = new Set<number>();
     /** Leaves a local's value in its own type: in a lane of the interleaved loop, its value in that lane's row. */
     const getLocal = (index: number): void => {
         const vector = lane === null ? -1 : vectorLocals[index] ?? -1;
@@ -2660,6 +2662,48 @@ export const generateWasmOrReason = (
      */
     const work = { spent: 0 };
 
+    /**
+     * Whether `integerVector` computes an expression's value across the lanes itself, rather than a lane at a time: then a
+     * store of it goes from the vector, and otherwise a lane at a time, each lane's straight from its scalar.
+     */
+    const vectorizes = (expression: Expression): boolean => {
+        if (hoisted.has(expression) || rowIndependent(expression) || typeOf(expression) === "boolean") return true;
+        switch (expression.kind) {
+            case "local": return (vectorLocals[expression.local] ?? -1) >= 0;
+            case "column": return vectorRegisters.has(expression.column) || gatherable(expression.column);
+            case "unary":
+                return expression.operator === "~" || (expression.operator === "+" && integerKind(expression) !== null)
+                    || (expression.operator === "-" && exactInteger(expression) && typeOf(expression.operand) !== "boolean");
+            case "binary": {
+                const { operator, left, right } = expression;
+                if (operator in bitwiseVector) return !(operator === "<<" || operator === ">>" || operator === ">>>") || rowIndependent(right);
+                return (operator === "+" || operator === "-" || operator === "*") && exactInteger(expression) && typeOf(left) !== "boolean" && typeOf(right) !== "boolean";
+            }
+            case "math":
+                return expression.name === "imul" || ((expression.name === "min" || expression.name === "max") && expression.arguments.length > 0
+                    && (expression.arguments.every(signedInteger) || expression.arguments.every(unsignedInteger)));
+            case "conditional": return integerKind(expression) !== null || (exactInteger(expression.consequent) && exactInteger(expression.alternate));
+            default: return false;
+        }
+    };
+    /** Whether a column outside every span is gathered into a register when vectors read it: an integer one, not a boolean. */
+    const gatherable = (column: number): boolean => {
+        const { view, boolean, component } = columns[column];
+        return component >= 0 && !boolean && (view === "i32" || view === "u32" || view === "u8");
+    };
+    /**
+     * Loads a column's four rows into a register, a lane at a time, which reads and stores of it in the group use after:
+     * the interleaved loop runs straight through a group, so where it's loaded comes before every later use.
+     */
+    const gather = (column: number): number => {
+        const register = scratch(v128Type);
+        work.spent += 8;
+        byLane(() => emitInteger({ kind: "column", column }));
+        code.push(op.localSet, ...unsigned(register));
+        vectorRegisters.set(column, register);
+        return register;
+    };
+
     /** Leaves the vector of an i32 computed one lane at a time, each lane's by `each` in that lane's row. */
     const byLane = (each: () => void): void => {
         code.push(...simd(vop.const), ...new Array<number>(16).fill(0));
@@ -2695,7 +2739,7 @@ export const generateWasmOrReason = (
                 return;
             }
             case "column": {
-                const vector = vectorRegisters.get(expression.column);
+                const vector = vectorRegisters.get(expression.column) ?? (gatherable(expression.column) ? gather(expression.column) : undefined);
                 if (vector === undefined) break;
                 code.push(op.localGet, ...unsigned(vector));
                 return;
@@ -2872,6 +2916,32 @@ export const generateWasmOrReason = (
         }
     };
 
+    /**
+     * Stores an integer column outside every span from the value's vector, lane by lane, where the mask is set; its
+     * register, gathered for the mask if need be, holds the new vector for what reads it after.
+     */
+    const storeGathered = (column: number, value: Expression): void => {
+        const { view } = columns[column];
+        integerVector(value);
+        if (mask !== null) {
+            const old = vectorRegisters.get(column) ?? gather(column);
+            code.push(op.localGet, ...unsigned(old));
+            blendAfterOld();
+        }
+        const register = vectorRegisters.get(column) ?? scratch(v128Type);
+        code.push(op.localSet, ...unsigned(register));
+        vectorRegisters.set(column, register);
+        work.spent += 4;
+        for (let k = 0; k < 4; k++) {
+            lane = k;
+            address(column);
+            code.push(op.localGet, ...unsigned(register));
+            if (view === "u8") code.push(...simd(vop.i32ExtractLane), k, op.i32Store8, 0, ...unsigned(columnOffset(column)));
+            else code.push(...simd(vop.store32Lane), 2, ...unsigned(columnOffset(column)), k);
+            lane = null;
+        }
+    };
+
     /** Stamps the group's four rows' ticks where the mask is set, two rows a store, and their blocks and chunks. */
     const stampGroup = (current: Extract<Statement, { kind: "stamp" }>): void => {
         if (columns[current.column].muted !== true) {
@@ -2886,11 +2956,29 @@ export const generateWasmOrReason = (
                 code.push(...simd(vop.store), 3, ...unsigned(16 * half));
             }
         }
-        // The group may straddle two blocks or chunks; under a mask this can stamp one no row changed, which only costs a scan.
-        stampDense(current.blocks, blockShift, 0);
-        stampDense(current.blocks, blockShift, 3);
-        stampDense(current.chunks, chunkShift, 0);
-        stampDense(current.chunks, chunkShift, 3);
+        // The group may straddle two blocks or chunks. Under a mask each row whose lane is set stamps its own, the others
+        // writing back the tick there.
+        if (mask === null) {
+            stampDense(current.blocks, blockShift, 0);
+            stampDense(current.blocks, blockShift, 3);
+            stampDense(current.chunks, chunkShift, 0);
+            stampDense(current.chunks, chunkShift, 3);
+            return;
+        }
+        for (const [dense, shift] of [[current.blocks, blockShift], [current.chunks, chunkShift]] as const) {
+            if (columns[dense].muted === true || everyRow.has(dense)) continue;
+            for (let k = 0; k < 4; k++) {
+                const denseAddress = (): void => {
+                    code.push(op.localGet, ...unsigned(columnParameter(dense)), op.localGet, ...unsigned(rowLocal), op.i32Const, k, op.i32Add, op.i32Const, ...signed(shift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add);
+                };
+                denseAddress();
+                code.push(op.localGet, 2);
+                denseAddress();
+                code.push(op.f64Load, 3, 0);
+                maskLane(k);
+                code.push(op.select, op.f64Store, 3, 0);
+            }
+        }
     };
 
     const interleavedStatement = (current: Statement): void => {
@@ -2920,7 +3008,8 @@ export const generateWasmOrReason = (
                 return;
             }
             case "store": {
-                const vector = vectorRegisters.get(current.column);
+                const vector = spanned.has(current.column) ? vectorRegisters.get(current.column) : undefined;
+                if (vector === undefined && gatherable(current.column) && vectorizes(current.value)) return storeGathered(current.column, current.value);
                 if (vector === undefined) return storeEachLane(current.column, current.value);
                 integerVector(current.value);
                 if (mask !== null) code.push(op.localGet, ...unsigned(vector));
@@ -2942,12 +3031,11 @@ export const generateWasmOrReason = (
                         if (negate) code.push(...simd(vop.not));
                     }
                     else code.push(op.localGet, ...unsigned(outer), op.localGet, ...unsigned(test), ...simd(negate ? vop.andNot : vop.and));
-                    // An arm no row of the group takes is skipped.
-                    code.push(op.localTee, ...unsigned(inner), ...simd(vop.anyTrue), op.if, 0x40);
+                    // Arms are few operations, so each runs for every group: branching to skip one no row takes mispredicts on mixed rows.
+                    code.push(op.localSet, ...unsigned(inner));
                     mask = inner;
                     for (const statement of statements) interleavedStatement(statement);
                     mask = outer;
-                    code.push(op.end);
                 };
                 branch(current.consequent, false);
                 branch(current.alternate, true);
@@ -2997,6 +3085,7 @@ export const generateWasmOrReason = (
             // A program the loop gives up on, by throwing `notVectorizable`, leaves the next mode nothing of its state.
             rowAddresses.clear();
             vectorRegisters.clear();
+            spanned.clear();
             vectorLocals = [];
             laneLocals = [];
             lane = null;
@@ -3007,7 +3096,6 @@ export const generateWasmOrReason = (
         const used = columnsUsed(program.body, new Set());
         const stored = storedColumns(program.body, new Set());
         const spans = planSpans(used, stored);
-        if (spans.length === 0) throw notVectorizable;
         groupRows = 4;
         vectorLocals = Array.from({ length: program.locals }, (_, k) => booleanLocals[k] || (integerLocal(k) !== null && !wideLocals[k]) ? scratch(v128Type) : -1);
         laneLocals = [1, 2, 3].map(() => Array.from({ length: program.locals }, (_, k) =>
@@ -3037,7 +3125,10 @@ export const generateWasmOrReason = (
             const own = addresses.get(span.owner) ?? 0;
             rows.forEach((row, k) => code.push(op.localGet, ...unsigned(own), ...simd(vop.load), 2, ...unsigned(span.base + k * span.stride), op.localSet, ...unsigned(row)));
             transpose(rows, leaves);
-            for (const [column, leaf] of span.lanes) vectorRegisters.set(column, leaves[leaf]);
+            for (const [column, leaf] of span.lanes) {
+                vectorRegisters.set(column, leaves[leaf]);
+                spanned.add(column);
+            }
         });
         mask = null;
         // Each span's four loads and eight shuffles, and back, or a store a lane for each leaf stored.

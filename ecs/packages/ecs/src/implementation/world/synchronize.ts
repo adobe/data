@@ -226,6 +226,54 @@ const copyRows = (from: Storage, to: Storage, fromStart: number, count: number, 
     }
 };
 
+/** Repeats the first `words` words from `start` until `count` copies fill the range, doubling what each copy takes. */
+const replicate = (words: Uint32Array, start: number, width: number, count: number): void => {
+    const total = width * count;
+    for (let filled = width; filled < total;) {
+        const next = Math.min(filled, total - filled);
+        words.copyWithin(start + filled, start, start + next);
+        filled += next;
+    }
+};
+
+/** Stamps `tick` on rows `start` to `start + count`, and their blocks and chunks, of tick columns. */
+const stampRange = (ticks: Float64Array, blocks: Float64Array, chunks: Float64Array, start: number, count: number, tick: number): void => {
+    ticks.fill(tick, start, start + count);
+    blocks.fill(tick, start >> blockShift, ((start + count - 1) >> blockShift) + 1);
+    chunks.fill(tick, start >> chunkShift, ((start + count - 1) >> chunkShift) + 1);
+};
+
+/**
+ * Writes the values of a block's `count` adds from `command` into rows from `toStart`: a component every add gives the
+ * same value is written once and its words repeated, as an add of a constant gives; any other row by row.
+ */
+const writeBlockValues = (buffer: CommandBuffer, command: number, count: number, to: Archetype, toStart: number, from: Archetype, tick: number): void => {
+    const first = buffer.starts[command];
+    const width = endOf(buffer, command) - first;
+    for (let i = 0; i < width; i++) {
+        const id = buffer.ids[first + i];
+        const storage = to.storageById[id];
+        if (storage === undefined) continue;
+        const value = buffer.values[first + i];
+        let same = buffer.bytes === null && storage.words > 0 && storage.remote === null && storage.layout.kind === "linear";
+        for (let k = 1; k < count && same; k++) same = buffer.values[buffer.starts[command + k] + i] === value;
+        if (!same) {
+            for (let k = 0; k < count; k++) {
+                const at = buffer.starts[command + k] + i;
+                writeRange(buffer, at, at + 1, to, toStart + k, from, undefined, tick);
+            }
+            continue;
+        }
+        writeCell(storage, toStart, value);
+        replicate(storage.views.u32, toStart * storage.words, storage.words, count);
+        if (!storage.ticked) continue;
+        const starts = from.storageById[id] === undefined;
+        // A constant's `changed` ticks are its `added` ticks, and its value can't change: only a new start stamps it.
+        if (storage.changed !== storage.added || starts) stampRange(storage.changed, storage.blockChanged, storage.chunkChanged, toStart, count, tick);
+        if (starts) stampRange(storage.added, storage.blockAdded, storage.chunkAdded, toStart, count, tick);
+    }
+};
+
 /** Lets go of the objects rows 0 to `count` of an archetype hold, which leave it. */
 const releaseObjects = (archetype: Archetype, count: number): void => {
     if (archetype.objects) for (const storage of archetype.storages) if (storage.layout.kind === "object" && storage.remote === null) storage.values.fill(undefined, 0, count);
@@ -265,7 +313,7 @@ const applyBlocks = (state: State, queued: readonly Queued[], tick: number): voi
         const { buffer } = queued[block.buffer];
         if (block.kind === addCommand) {
             state.valuesWritten = tick;
-            for (let k = 0; k < count; k++) writeRange(buffer, buffer.starts[block.command + k], endOf(buffer, block.command + k), to, toStart + k, from, undefined, tick);
+            writeBlockValues(buffer, block.command, count, to, toStart, from, tick);
         }
         for (let k = 0; k < count; k++) {
             const index = indexOf(from.entities[row + k]);

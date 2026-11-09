@@ -48,6 +48,7 @@ const removeTagged = System.create({ components: { with: [tagged] } }, (row, { c
 const addTagged = System.create({ components: { with: [amount], not: [tagged] } }, (row, { commands }) => { commands.add(row.entity, tagged); });
 const removePoint = System.create({ kernel: true, components: { with: [point, amount] } }, (row, { commands }) => { commands.remove(row.entity, point); });
 const addPoint = System.create({ kernel: true, components: { with: [amount], not: [point] } }, (row, { commands }) => { commands.add(row.entity, point, { x: row[amount], y: -row[amount] }); });
+const addConstant = System.create({ kernel: true, components: { with: [amount], not: [point] } }, (row, { commands }) => { commands.add(row.entity, point, { x: 7, y: -7 }); });
 const despawnTagged = System.create({ components: { with: [tagged] } }, (row, { commands }) => { commands.despawn(row.entity); });
 
 /** The amounts of the rows a system with `changed: [point]` passes. */
@@ -160,6 +161,20 @@ describe("commands naming a whole archetype", () => {
         await world.run(removeAbsent);
         expect(await count(world, { required: [tagged, amount, point, note] })).toBe(30);
         expect(await readEach(world, entities, amount)).toEqual(entities.map((_, i) => i * 2));
+        await world.dispose();
+    });
+
+    it("write a value every command gives alike once, repeated to each row, stamped as added and changed", async () => {
+        const { world, run } = withCommands();
+        const entities: Entity[] = [];
+        await run(commands => spawnMany(commands, entities, 1000));
+        await world.run(readChanged);
+        await world.run(removePoint);
+        changedPoints.length = 0;
+        await world.run(addConstant);
+        await world.run(readChanged);
+        expect(await readEach(world, entities, point)).toEqual(entities.map(() => ({ x: 7, y: -7 })));
+        expect(changedPoints.length).toBe(1000);
         await world.dispose();
     });
 });

@@ -8,7 +8,7 @@ import type { PackageCopies } from './package-copies.js';
 import { createLists } from './lists.js';
 import type { Module } from './module-scope.js';
 import { resolve, type Out } from './out.js';
-import type { Statement } from './ir.js';
+import type { Expression, Statement } from './ir.js';
 import { localName, printStatements } from './print.js';
 import { toProgram } from './program.js';
 import { serialize } from './serialize.js';
@@ -20,6 +20,20 @@ import type { Reduction } from '../../interface/resource/reduction.js';
 import { rowLabel, statement } from './statement.js';
 import { createUnit } from './unit.js';
 import type { Value } from './value.js';
+
+/** Whether an expression makes an array or a record, which a row would otherwise make anew. */
+const made = (expression: Expression): boolean => expression.kind === "observe" ? made(expression.value) : expression.kind === "array" || expression.kind === "record";
+
+/** Whether an expression is made of literals alone: numbers, booleans, strings, nullish values, and arrays and records of them. */
+const literal = (expression: Expression): boolean => {
+    switch (expression.kind) {
+        case "number": case "boolean": case "string": case "nullish": return true;
+        case "observe": return literal(expression.value);
+        case "array": return expression.items.every(literal);
+        case "record": return expression.fields.every(([, item]) => literal(item));
+        default: return false;
+    }
+};
 
 /** A kernel body takes its row, its context and its input, the run's arguments. */
 const parameterValues: readonly Value[] = [{ kind: "row" }, { kind: "context" }, { kind: "dynamic", expression: { kind: "args", path: [] } }];
@@ -80,17 +94,30 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         statement({ type: "ExpressionStatement", expression: body.body, start: body.body.start, end: body.body.end }, scope, rows);
     }
     const statements = [...resolve(prelude), ...resolve(rows)];
-    for (const [chunks, perCall] of unconditionalChunks(resolve(rows))) unit.stampedPerCall.set(chunks, perCall);
-    const kernel = printStatements(unit, resolve(rows));
+    // A command's value made of literals alone, as `{ x: 0, y: 0 }`, is the same for every row, and values are immutable,
+    // so it's made once per call rather than once per row.
+    const assigned = new Map<number, number>();
+    const countSets = (body: readonly Statement[]): void => {
+        for (const item of body) {
+            if (item.kind === "set") assigned.set(item.local, (assigned.get(item.local) ?? 0) + 1);
+            else if (item.kind === "if") { countSets(resolve(item.consequent)); countSets(resolve(item.alternate)); }
+            else if (item.kind === "block" || item.kind === "loop" || item.kind === "intrinsic") countSets(resolve(item.body));
+        }
+    };
+    countSets(resolve(rows));
+    const hoisted = resolve(rows).filter(item => item.kind === "set" && item.declare === "const" && assigned.get(item.local) === 1 && made(item.value) && literal(item.value));
+    const perRow = resolve(rows).filter(item => !hoisted.includes(item));
+    for (const [chunks, perCall] of unconditionalChunks(perRow)) unit.stampedPerCall.set(chunks, perCall);
+    const kernel = printStatements(unit, perRow);
     // Which optional components a call's archetype has is the same for every row, so a kernel with them runs loops
     // specialized for all present and all absent, and the general one only for archetypes with some of them.
     const specialized = unit.presences.size === 0 ? null : ([true, false] as const).map(present => {
         unit.presentAs = present;
-        const body = printStatements(unit, resolve(rows));
+        const body = printStatements(unit, perRow);
         unit.presentAs = null;
         return body;
     });
-    const preludeCode = printStatements(unit, resolve(prelude));
+    const preludeCode = printStatements(unit, [...resolve(prelude), ...hoisted]);
     const accumulators = unit.accumulators.map(entry => entry.local);
     const { signature: { resources, lookups, up, ordered, filtered, reduced }, columns, booleans, keys } = unit;
     /** Whether it runs a list of rows, which needn't be consecutive: `up`'s depth order, or an index's. */

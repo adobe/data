@@ -1,23 +1,32 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 // Runs the suite's benchmarks on the ECS, bundled for plain node as an app ships, each benchmark at each count of
-// entities in a process of its own, and writes results/ours/<lane>.json in Google Benchmark's shape.
+// entities in a process of its own, writes results/ours/<lane>.json in Google Benchmark's shape, and compares each
+// result with the last one this machine recorded.
 //
-//   node scripts/ours.mjs [--lane js|wasm|threads] [--filter <regular expression>] [--sizes <a,b,…>] [--skip-build]
+//   node scripts/ours.mjs [--lane js|wasm|threads] [--filter <regular expression>] [--sizes <a,b,…>] [--quick]
+//                         [--skip-build] [--record]
+//
+// --quick measures 16K, 256K and 1M entities only. --record appends the results to results/history/<machine>.jsonl,
+// which later runs compare with. Results are kept per machine, since times only compare on the same hardware.
 //
 // Lanes: js, kernels in JS on one thread, as a page without cross-origin isolation runs them; wasm, kernels in WASM on
 // one thread; threads, kernels in WASM on the world's thread and a pool worker for every other hardware thread.
 
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { availableParallelism, cpus, totalmem } from "node:os";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { arch, availableParallelism, cpus, platform, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const results = join(root, "results", "ours");
+const history = join(root, "results", "history");
+/** A change within this fraction is noise. */
+const noise = 0.1;
 const main = join(root, "dist", "perftest", "main.js");
 
 const defaultSizes = [1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 2097152];
+const quickSizes = [16384, 262144, 1048576];
 
 const options = (() => {
     const args = process.argv.slice(2);
@@ -28,12 +37,41 @@ const options = (() => {
     return {
         lanes: value("--lane") === undefined ? ["js", "wasm", "threads"] : [value("--lane")],
         filter: value("--filter") === undefined ? null : new RegExp(value("--filter")),
-        sizes: value("--sizes")?.split(",").map(Number) ?? defaultSizes,
+        sizes: value("--sizes")?.split(",").map(Number) ?? (args.includes("--quick") ? quickSizes : defaultSizes),
         skipBuild: args.includes("--skip-build"),
+        record: args.includes("--record"),
     };
 })();
 
 const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+
+const machineKey = () => `${cpus()[0]?.model.trim() ?? "unknown cpu"} ${cpus().length} cores ${Math.round(totalmem() / 2 ** 30)}gb ${platform()} ${arch()}`
+    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const historyFile = join(history, `${machineKey()}.jsonl`);
+const readHistory = () => existsSync(historyFile) ? readFileSync(historyFile, "utf8").split("\n").filter(line => line.trim() !== "").map(line => JSON.parse(line)) : [];
+
+/** Each result's nanoseconds per entity against the newest record of it on this lane, and the changes beyond noise. */
+const compareWithHistory = (lane, measured) => {
+    const records = readHistory().filter(record => record.lane === lane).reverse();
+    const changes = [];
+    for (const [name, time] of measured) {
+        const record = records.find(candidate => candidate.results[name] !== undefined);
+        if (record === undefined) continue;
+        const ratio = time / record.results[name];
+        if (Math.abs(ratio - 1) > noise) changes.push({ name, ratio, before: record.results[name], after: time, commit: record.commit });
+    }
+    const compared = measured.filter(([name]) => records.some(record => record.results[name] !== undefined)).length;
+    if (records.length === 0) {
+        console.log(`${lane}: no record on this machine yet; --record makes one`);
+        return;
+    }
+    const slower = changes.filter(change => change.ratio > 1).sort((a, b) => b.ratio - a.ratio);
+    const faster = changes.filter(change => change.ratio < 1).sort((a, b) => a.ratio - b.ratio);
+    const line = change => `  ${change.name.padEnd(48)} ${(change.before / 1e3).toFixed(1).padStart(12)} → ${(change.after / 1e3).toFixed(1).padStart(12)} µs  ${change.ratio > 1 ? "+" : ""}${((change.ratio - 1) * 100).toFixed(0)}%  (against ${change.commit})`;
+    console.log(`${lane}: ${compared} compared with the last record, ${slower.length} slower and ${faster.length} faster by more than ${noise * 100}%`);
+    if (slower.length > 0) console.log(["REGRESSIONS", ...slower.map(line)].join("\n"));
+    if (faster.length > 0) console.log(["improvements", ...faster.map(line)].join("\n"));
+};
 
 /** Runs one benchmark in a fresh process and resolves with the result line it prints. */
 const measure = (lane, name, count) => new Promise((done, failed) => {
@@ -68,6 +106,15 @@ const runAll = async () => {
                 );
             }
         }
+        const measured = benchmarks.filter(entry => entry.aggregate_name === "median").map(entry => [entry.run_name, entry.real_time]);
+        compareWithHistory(lane, measured);
+        if (options.record) {
+            mkdirSync(history, { recursive: true });
+            appendFileSync(historyFile, `${JSON.stringify({
+                date: new Date().toISOString(), commit: git("rev-parse", "--short", "HEAD"), dirty: git("status", "--porcelain", "--", "..", ":!results") !== "",
+                ecs: version, node: process.versions.node, lane, threads: lane === "threads" ? threads + 1 : 1, results: Object.fromEntries(measured),
+            })}\n`);
+        }
         const context = {
             date: new Date().toISOString(),
             "framework.name": `@adobe/ecs (${lane})`,
@@ -82,8 +129,8 @@ const runAll = async () => {
         };
         // A run of some benchmarks replaces theirs in the lane's file and keeps the rest.
         const file = join(results, `${lane}.json`);
-        const measured = new Set(benchmarks.map(entry => entry.run_name));
-        const kept = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).benchmarks.filter(entry => !measured.has(entry.run_name)) : [];
+        const replaced = new Set(benchmarks.map(entry => entry.run_name));
+        const kept = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).benchmarks.filter(entry => !replaced.has(entry.run_name)) : [];
         writeFileSync(file, `${JSON.stringify({ context, benchmarks: [...kept, ...benchmarks] }, null, 2)}\n`);
     }
 };

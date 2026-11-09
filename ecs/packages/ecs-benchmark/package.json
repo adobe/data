@@ -11,6 +11,8 @@
     "lint": "ecs-architecture check && ecs-architecture diagrams --check",
     "test": "vitest --run",
     "bench": "node scripts/ours.mjs",
+    "bench:quick": "node scripts/ours.mjs --quick",
+    "bench:record": "node scripts/ours.mjs --record",
     "bench:cpp": "node scripts/cpp.mjs",
     "bench:all": "node scripts/cpp.mjs && node scripts/ours.mjs && node scripts/compare.mjs",
     "compare": "node scripts/compare.mjs"

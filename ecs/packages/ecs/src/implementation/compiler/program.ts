@@ -21,6 +21,8 @@ const union = (a: Guards, b: Guards): Guards => new Set([...a, ...b]);
 const none: Guards = new Set();
 /** The handle standing for `up`, which isn't looked up. */
 const upHandle = -1;
+/** The guard that the entity found into `handle` holds its lookup's optional read `read`: negative, below `upHandle`. */
+const holdsGuard = (handle: number, read: number): number => -2 - handle * 1024 - read;
 
 /**
  * Derives a `Program` from the lowered body, or null if it uses what WASM kernels don't support. Locals are renumbered
@@ -29,7 +31,7 @@ const upHandle = -1;
  * guard proving the lookup found its entity, since JS would throw where WASM reads NaN. With `nameOf`, the program
  * carries each local's name.
  */
-export const toProgram = (statements: readonly Statement[], nameOf?: (local: number) => string, accumulators: readonly number[] = [], upLocal: number | null = null, listed = upLocal !== null): Program | null => {
+export const toProgram = (statements: readonly Statement[], nameOf?: (local: number) => string, accumulators: readonly number[] = [], upLocal: number | null = null, listed = upLocal !== null, optionalReads: (lookup: number) => ReadonlySet<number> = () => new Set()): Program | null => {
     const locals = new Map<number, number>();
     const localIndex = (local: number): number => {
         const existing = locals.get(local);
@@ -39,6 +41,61 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
     };
     /** Handles by the local holding a lookup result. */
     const handles = new Map<number, number>();
+    /** By handle of a lookup by entity, its lookup. */
+    const lookupOf = new Map<number, number>();
+    /**
+     * Locals holding a component a lookup found, `const three = found[data]`: the lookup result and the static keys
+     * into it, which a read through the local continues.
+     */
+    const aliases = new Map<number, { readonly root: Expression; readonly keys: readonly Expression[] }>();
+    /** A static access into a lookup result, through aliases: the handle and its keys, or undefined if `node` isn't one. */
+    const accessOf = (node: Expression): { readonly handle: number; readonly keys: readonly Expression[]; readonly optional: boolean } | undefined => {
+        const keys: Expression[] = [];
+        let first: Expression = unwrap(node);
+        let optional = false;
+        for (;;) {
+            if (first.kind === "element") {
+                keys.unshift(first.index);
+                optional ||= first.optional;
+                first = unwrap(first.object);
+                continue;
+            }
+            const alias = first.kind === "local" ? aliases.get(first.local) : undefined;
+            if (alias === undefined) break;
+            keys.unshift(...alias.keys);
+            first = unwrap(alias.root);
+        }
+        const handle = handleOf(first);
+        return handle === undefined || keys.length === 0 ? undefined : { handle, keys, optional };
+    };
+    /** The handle and read of a component an entity found may lack, `found[data]` or a local holding it. */
+    const optionalRead = (node: Expression): { readonly handle: number; readonly read: number } | undefined => {
+        const access = accessOf(node);
+        const [read] = access?.keys ?? [];
+        if (access === undefined || access.keys.length !== 1 || read?.kind !== "number") return undefined;
+        const lookup = lookupOf.get(access.handle);
+        return lookup !== undefined && optionalReads(lookup).has(read.value) ? { handle: access.handle, read: read.value } : undefined;
+    };
+    /** How many times each local is assigned, over every statement. */
+    const assignments = new Map<number, number>();
+    const countAssignments = (body: readonly Statement[]): void => {
+        for (const item of body) {
+            if (item.kind === "set") assignments.set(item.local, (assignments.get(item.local) ?? 0) + 1);
+            else if (item.kind === "if") { countAssignments(resolve(item.consequent)); countAssignments(resolve(item.alternate)); }
+            else if (item.kind === "block" || item.kind === "loop" || item.kind === "intrinsic") countAssignments(resolve(item.body));
+        }
+    };
+    countAssignments(statements);
+    const isUndefined = (node: Expression): boolean => {
+        const inner = unwrap(node);
+        return inner.kind === "nullish" && inner.value === "undefined";
+    };
+    /** `found[data] !== undefined` and its variants: the optional read and whether the test means "holds it". */
+    const holdsTest = (node: Expression): { readonly handle: number; readonly read: number; readonly holds: boolean } | undefined => {
+        if (node.kind !== "binary" || !["===", "!==", "==", "!="].includes(node.operator)) return undefined;
+        const tested = isUndefined(node.right) ? optionalRead(node.left) : isUndefined(node.left) ? optionalRead(node.right) : undefined;
+        return tested === undefined ? undefined : { ...tested, holds: node.operator === "!==" || node.operator === "!=" };
+    };
     const handleOf = (node: Expression): number | undefined => {
         const inner = unwrap(node);
         // A row a lookup through an index gave tests as found, as a lookup's result does.
@@ -71,25 +128,25 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
         if (handle !== undefined) return truthy ? new Set([handle]) : none;
         const test = nullTest(inner);
         if (test !== undefined) return test.found === truthy ? new Set([test.handle]) : none;
+        const held = optionalRead(inner);
+        if (held !== undefined) return truthy ? new Set([held.handle, holdsGuard(held.handle, held.read)]) : none;
+        const holds = holdsTest(inner);
+        if (holds !== undefined) return holds.holds === truthy ? new Set([holds.handle, holdsGuard(holds.handle, holds.read)]) : none;
         if (inner.kind === "unary" && inner.operator === "!") return proves(inner.operand, !truthy);
         if (inner.kind === "logical" && inner.operator === (truthy ? "&&" : "||")) return union(proves(inner.left, truthy), proves(inner.right, truthy));
         return none;
     };
     /** A static leaf access into a lookup result, or undefined if `node` isn't one. */
     const leaf = (node: Expression, guards: Guards): Program.Expression | null | undefined => {
-        const keys: Expression[] = [];
-        let first: Expression = node;
-        let optional = false;
-        while (first.kind === "element") {
-            keys.unshift(first.index);
-            optional = first.optional;
-            first = first.object;
-        }
-        const handle = handleOf(first);
-        if (handle === undefined) return undefined;
+        const access = accessOf(node);
+        if (access === undefined) return undefined;
+        const { handle, keys, optional } = access;
         if (handle === upHandle) return null;
         const [read, ...rest] = keys;
         if (read?.kind !== "number" || (!optional && !guards.has(handle))) return null;
+        // A component the entity may lack is read only where a test proves it holds it, since JS throws reading into undefined.
+        const lookup = lookupOf.get(handle);
+        if (lookup !== undefined && optionalReads(lookup).has(read.value) && !guards.has(holdsGuard(handle, read.value))) return null;
         const path: (number | string)[] = [];
         for (const key of rest) {
             if (key.kind !== "number" && key.kind !== "string") return null;
@@ -107,6 +164,13 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
             const tested = found(check.handle);
             return check.found ? tested : { kind: "unary", operator: "!", operand: tested };
         }
+        const held = test ? optionalRead(node) : undefined;
+        if (held !== undefined) return { kind: "lookupHas", handle: held.handle, read: held.read };
+        const holds = holdsTest(node);
+        if (holds !== undefined) {
+            const tested: Program.Expression = { kind: "lookupHas", handle: holds.handle, read: holds.read };
+            return holds.holds ? tested : { kind: "unary", operator: "!", operand: tested };
+        }
         switch (node.kind) {
             case "number": case "boolean": case "column": case "resource": case "args": case "shared":
                 return node;
@@ -114,7 +178,8 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
             case "present": return { kind: "boolean", value: true };
             // JS throws reading a parent that isn't there, so WASM reads one only where a test proves it is.
             case "upColumn": return guards.has(upHandle) ? { kind: "upLeaf", column: node.column } : undefined;
-            case "local": return { kind: "local", local: localIndex(node.local) };
+            // A local holding a found component reads as the result does: a scalar one as itself, a struct through its leaves.
+            case "local": return aliases.has(node.local) ? leaf(node, guards) ?? undefined : { kind: "local", local: localIndex(node.local) };
             case "unary": {
                 const operand = expression(node.operand, guards, node.operator === "!");
                 return operand && { kind: "unary", operator: node.operator, operand };
@@ -175,6 +240,12 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
     const statement = (node: Statement, labels: readonly number[], guards: Guards): Program.Statement[] | undefined => {
         switch (node.kind) {
             case "set": {
+                // A component a lookup found, held whole, is read through the local as through the result.
+                const access = accessOf(node.value);
+                if (access !== undefined && access.handle !== upHandle && access.keys.length === 1 && assignments.get(node.local) === 1) {
+                    aliases.set(node.local, { root: unwrap(node.value).kind === "element" ? unwrap(node.value) : node.value, keys: [] });
+                    return [];
+                }
                 const value = expression(node.value, guards, false);
                 return value && [{ kind: "set", local: localIndex(node.local), value }];
             }
@@ -220,6 +291,7 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
                 const entity = expression(node.entity, guards, false);
                 const handle = handles.get(node.local) ?? handles.size;
                 handles.set(node.local, handle);
+                lookupOf.set(handle, node.lookup);
                 return entity && [{ kind: "find", handle, lookup: node.lookup, entity }];
             }
             default: return undefined;

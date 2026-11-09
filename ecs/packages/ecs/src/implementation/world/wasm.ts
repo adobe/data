@@ -329,7 +329,7 @@ export const generateWasmOrReason = (
             case "logical": return join(typeOf(expression.left), typeOf(expression.right));
             case "conditional": return join(typeOf(expression.consequent), typeOf(expression.alternate));
             case "math": return "number";
-            case "found": case "upFound": return "boolean";
+            case "found": case "upFound": case "lookupHas": return "boolean";
             case "upLeaf": return upColumns[expression.column]?.boolean === true ? "boolean" : "number";
             case "lookupLeaf": {
                 const lookup = lookupOfHandle.get(expression.handle);
@@ -844,6 +844,7 @@ export const generateWasmOrReason = (
                 code.push(op.localGet, ...unsigned(handleLocal(expression.handle, "found")), op.f64ConvertI32U);
                 return;
             case "lookupLeaf": return emitLookupLeaf(expression.handle, expression.read, expression.path);
+            case "lookupHas": return emitLookupHas(expression.handle, expression.read);
             case "listLength": return emitListLength(expression.handle);
             case "listChanged": return emitListChanged(expression.handle);
             case "rowLeaf": return emitRowLeaf(expression.handle, expression.leaf);
@@ -1137,6 +1138,15 @@ export const generateWasmOrReason = (
         else if (view === "u8") code.push(op.i32Load8u, ...memory(0), op.f64ConvertI32U);
         else code.push(op.f64Load, ...memory(3));
         code.push(op.else, op.f64Const, ...float64(NaN), op.end);
+        labels.pop();
+    };
+
+    /** Whether the entity found holds optional read `read`: its record's address of it isn't 0. 0 if nothing was found. */
+    const emitLookupHas = (handle: number, read: number): void => {
+        code.push(op.localGet, ...unsigned(handleLocal(handle, "found")), op.if, f64Type);
+        labels.push("if");
+        code.push(op.localGet, ...unsigned(handleLocal(handle, "record")), op.i32Load, 2, ...unsigned(4 * (1 + read)), op.i32Const, 0, op.i32Ne, op.f64ConvertI32U);
+        code.push(op.else, op.f64Const, ...float64(0), op.end);
         labels.pop();
     };
 
@@ -1940,7 +1950,7 @@ export const generateWasmOrReason = (
                 for (const parameter of expression.arguments) rowsEmit(parameter);
                 emitVectorMath(expression.name, expression.arguments.length);
                 return;
-            case "found": case "lookupLeaf": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": throw notVectorizable;
+            case "found": case "lookupLeaf": case "lookupHas": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": throw notVectorizable;
         }
     };
 

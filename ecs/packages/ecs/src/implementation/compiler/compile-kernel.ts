@@ -98,8 +98,12 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     // WASM doesn't read components an archetype may lack yet, so such a kernel runs as JS.
     // WASM reads a lookup's rows only where every component it reads is there.
     const optionalListed = unit.optionalColumns.size + unit.presences.size > 0 && listed;
-    const optionalLookups = unit.signature.lookups.some(lookup => lookup.optional);
-    const program = optionalListed || optionalLookups ? null : toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators, unit.up, listed);
+    /** By lookup, the indexes in its read of the components an entity it finds may lack. */
+    const optionalReads = (lookup: number): ReadonlySet<number> => {
+        const declared = unit.signature.lookups[lookup];
+        return new Set(declared === undefined ? [] : declared.read.flatMap((name, read) => declared.optionalComponents.includes(name) ? [read] : []));
+    };
+    const program = optionalListed ? null : toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators, unit.up, listed, optionalReads);
     if (target === "gpu") {
         if (lookups.length > 0) fail(declaration, "a GPU kernel can't use lookups yet");
         if (filtered) fail(declaration, "a GPU kernel can't use change filters yet");
@@ -135,9 +139,8 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     ].join("\n");
     const explain = (): KernelExplanation => ({
         statements,
-        program: program === null ? null : target === "gpu" ? program : toProgram(statements, local => localName(unit, local), accumulators, unit.up, listed),
-        unprogrammed: optionalListed ? "WASM doesn't read optional components of rows run as a list, in `up`'s or an index's order, yet"
-            : optionalLookups ? "WASM doesn't read a lookup's optional components yet" : null,
+        program: program === null ? null : target === "gpu" ? program : toProgram(statements, local => localName(unit, local), accumulators, unit.up, listed, optionalReads),
+        unprogrammed: optionalListed ? "WASM doesn't read optional components of rows run as a list, in `up`'s or an index's order, yet" : null,
         columns: [...unit.columnIndex.keys()],
         upColumns: [...unit.upColumnIndex.keys()],
         signature: unit.signature,

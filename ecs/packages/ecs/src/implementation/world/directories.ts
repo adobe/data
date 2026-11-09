@@ -11,6 +11,8 @@ import type { State } from './state.js';
 export type Directory = {
     readonly entities: boolean;
     readonly read: readonly number[];
+    /** Of `read`, those an entity found may lack: they don't decide a match, and their address is 0 where it does. */
+    readonly optional: readonly number[];
     readonly watched: readonly number[];
     readonly has: readonly number[];
     readonly not: readonly number[];
@@ -37,17 +39,19 @@ export const refreshDirectory = (state: State, directory: Directory, layout = la
         freeArray(state.memory, directory.records);
         directory.records = allocateArray(state.memory, Int32Array, Math.max(length, directory.records.length * 2));
     }
-    const { records, read, has, not, watched } = directory;
+    const { records, read, optional, has, not, watched } = directory;
     state.archetypes.forEach((archetype, id) => {
         const base = id * words(directory);
         const { storageById } = archetype;
-        const matches = !archetype.resource && [...read, ...has].every(component => storageById[component] !== undefined) && not.every(component => storageById[component] === undefined);
+        const matches = !archetype.resource && [...read, ...has].every(component => optional.includes(component) || storageById[component] !== undefined) && not.every(component => storageById[component] === undefined);
         records[base] = matches ? 1 : 0;
         const first = directory.entities ? 2 : 1;
         if (directory.entities) records[base + 1] = matches ? archetype.entities.byteOffset : 0;
         read.forEach((component, i) => {
             const storage = storageById[component];
-            records[base + first + i] = matches && storage !== undefined ? storage.views.u8.byteOffset : 0;
+            // An optional component held without bytes, a tag, still reads as held.
+            const address = matches && storage !== undefined ? storage.views.u8.byteOffset : 0;
+            records[base + first + i] = address === 0 && storage !== undefined && matches && optional.includes(component) ? -1 : address;
         });
         watched.forEach((component, i) => {
             const storage = storageById[component];
@@ -58,8 +62,8 @@ export const refreshDirectory = (state: State, directory: Directory, layout = la
     directory.built = layout;
 };
 
-export const createDirectory = (state: State, read: readonly number[], has: readonly number[], not: readonly number[], entities = false, watched: readonly number[] = []): Directory => {
-    const directory: Directory = { entities, read, watched, has, not, records: allocateArray(state.memory, Int32Array, 16), count: 0, built: -1 };
+export const createDirectory = (state: State, read: readonly number[], has: readonly number[], not: readonly number[], entities = false, watched: readonly number[] = [], optional: readonly number[] = []): Directory => {
+    const directory: Directory = { entities, read, optional, watched, has, not, records: allocateArray(state.memory, Int32Array, 16), count: 0, built: -1 };
     state.directories.add(directory);
     refreshDirectory(state, directory);
     return directory;

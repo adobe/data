@@ -286,7 +286,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;
     const useWasm = state.wasm && state.memory.shared && description.program !== null;
     // A lookup through an index's directory also holds each archetype's entities, which its rows' `entity` reads.
-    const directories = useWasm ? setup.lookups.map((lookupSetup, k) => createDirectory(state, lookupSetup.read, lookupSetup.has, lookupSetup.not, indexes[k] !== null, lookupSetup.changed ?? [])) : [];
+    const directories = useWasm ? setup.lookups.map((lookupSetup, k) => createDirectory(state, lookupSetup.read, lookupSetup.has, lookupSetup.not, indexes[k] !== null, lookupSetup.changed ?? [], lookupSetup.optional)) : [];
     const wasmLookups: WasmLookup[] = setup.lookups.map((lookupSetup, k) => ({
         reads: lookupSetup.read.length + (indexes[k] === null ? 0 : 1),
         watched: lookupSetup.changed?.length ?? 0,

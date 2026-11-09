@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import type { Program } from "./kernel.js";
+import { blockShift, type Program } from "./kernel.js";
 import { printWat } from "../compiler/wat.js";
 import { generateWasm, importsOf, type WasmColumn } from "./wasm.js";
 
@@ -733,5 +733,39 @@ describe("generateWasm branch-free conditionals", () => {
         if ("failure" in wat) throw new Error(wat.failure);
         expect(wat.wat).not.toMatch(/\bif\b/);
         expect(wat.wat).toMatch(/\bselect\b/);
+    });
+
+    it("stamps the row, block and chunk ticks of only the rows whose predicate holds", () => {
+        const stamped: Program = {
+            locals: 0,
+            body: [{
+                kind: "if", test: binary(">", column(0), number(0)),
+                consequent: [{ kind: "store", column: 0, value: binary("-", column(0), number(1)) }, { kind: "stamp", column: 1, chunks: 2, blocks: 3 }],
+                alternate: [],
+            }],
+        };
+        const ticks = (component: number): WasmColumn => ({ view: "f64", stride: 8, offset: 0, boolean: false, component });
+        const kernel = generateWasm(stamped, [{ view: "i32", stride: 4, offset: 0, boolean: false, component: 0 }, ticks(-1), ticks(-1), ticks(-1)], () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        const wat = printWat(kernel.bytes);
+        if ("failure" in wat) throw new Error(wat.failure);
+        expect(wat.wat).not.toMatch(/\bif\b/);
+        const rows = 2 ** blockShift * 3;
+        const memory = new WebAssembly.Memory({ initial: 4, maximum: 65536, shared: true });
+        const values = new Int32Array(memory.buffer, 0, rows);
+        // Only rows of the middle block pass.
+        values.fill(0);
+        values.fill(5, 2 ** blockShift, 2 * 2 ** blockShift);
+        const rowTicks = new Float64Array(memory.buffer, 65536, rows).fill(3);
+        const chunkTicks = new Float64Array(memory.buffer, 2 * 65536, 4).fill(3);
+        const blockTicks = new Float64Array(memory.buffer, 3 * 65536, 4).fill(3);
+        const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, rows, 9, -1, 0, 65536, 2 * 65536, 3 * 65536);
+        expect([...new Set(rowTicks.subarray(0, 2 ** blockShift))]).toEqual([3]);
+        expect([...new Set(rowTicks.subarray(2 ** blockShift, 2 * 2 ** blockShift))]).toEqual([9]);
+        expect([...blockTicks.subarray(0, 3)]).toEqual([3, 9, 3]);
+        expect(chunkTicks[0]).toBe(9);
+        expect([...new Set(values.subarray(2 ** blockShift, 2 * 2 ** blockShift))]).toEqual([4]);
     });
 });

@@ -1624,10 +1624,11 @@ export const generateWasmOrReason = (
      * spends a few instructions on every row to save mispredicting on rows whose data decides the branch.
      */
     const predicable = (current: Extract<Statement, { kind: "if" }>): boolean => {
-        const budget = { left: 6 };
+        const budget = { left: 8 };
         const fits = (statements: readonly Statement[]): boolean => statements.every(inner => {
             if (--budget.left < 0) return false;
             switch (inner.kind) {
+                case "stamp": return true;
                 case "store": return columns[inner.column].component >= 0 && rowAddresses.has(inner.column) && cheap(inner.value);
                 case "set": return !accumulators.includes(inner.local) && cheap(inner.value);
                 case "if": return cheap(inner.test) && fits(inner.consequent) && fits(inner.alternate);
@@ -1686,6 +1687,22 @@ export const generateWasmOrReason = (
                         code.push(op.f64Load, ...memory(3));
                         emitPredicate();
                         code.push(op.select, op.f64Store, ...memory(3));
+                }
+            }
+            else if (inner.kind === "stamp") {
+                // The tick, or the one there where the predicate doesn't hold, at the row and at its block and chunk.
+                const stampAt = (emitAddress: () => void): void => {
+                    emitAddress();
+                    code.push(op.localGet, 2);
+                    emitAddress();
+                    code.push(op.f64Load, 3, 0);
+                    emitPredicate();
+                    code.push(op.select, op.f64Store, 3, 0);
+                };
+                if (columns[inner.column].muted !== true) stampAt(() => address(inner.column));
+                for (const [dense, shift] of [[inner.blocks, blockShift], [inner.chunks, chunkShift]] as const) {
+                    if (columns[dense].muted === true || everyRow.has(dense)) continue;
+                    stampAt(() => code.push(op.localGet, ...unsigned(columnParameter(dense)), op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(shift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add));
                 }
             }
             else if (inner.kind === "if") {

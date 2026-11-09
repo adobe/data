@@ -114,4 +114,20 @@ describe("simplifyProgram", () => {
             { kind: "loop", body: [{ kind: "store", column: 1, value: local(1) }] },
         ]);
     });
+
+    it("drops the read of a member only the dropped store wrote back", () => {
+        const program: Program = {
+            locals: 2,
+            body: [
+                { kind: "set", local: 0, value: column(0) },
+                { kind: "set", local: 1, value: column(1) },
+                { kind: "store", column: 0, value: local(0) },
+                { kind: "store", column: 1, value: binary("+", local(1), number(1)) },
+            ],
+        };
+        expect(simplifyProgram(program).body).toEqual([
+            { kind: "set", local: 1, value: column(1) },
+            { kind: "store", column: 1, value: binary("+", local(1), number(1)) },
+        ]);
+    });
 });

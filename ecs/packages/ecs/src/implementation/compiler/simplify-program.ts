@@ -247,5 +247,10 @@ export const simplifyProgram = (program: Program): Program => {
         body = folded;
         if (unchanged) break;
     }
-    return { ...program, body: dropUnchangedStores(body, new Map()) };
+    const stored = dropUnchangedStores(body, new Map());
+    // Locals read only by the stores dropped are left unread.
+    const sets = new Map<number, number>();
+    const reads = new Map<number, number>();
+    countUses(stored, sets, reads);
+    return { ...program, body: dropAssignments(stored, new Set([...sets.keys()].filter(local => !accumulators.has(local) && (reads.get(local) ?? 0) === 0))) };
 };

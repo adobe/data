@@ -152,7 +152,7 @@ const op = {
     i32Eq: 0x46, i32LtS: 0x48, i32LeS: 0x4c, i32Clz: 0x67, i32Ctz: 0x68, i32Popcnt: 0x69, i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32And: 0x71, i32Or: 0x72, i32Xor: 0x73, i32Shl: 0x74, i32ShrS: 0x75, i32ShrU: 0x76,
     f64Abs: 0x99, f64Neg: 0x9a, f64Ceil: 0x9b, f64Floor: 0x9c, f64Trunc: 0x9d, f64Sqrt: 0x9f,
     f64Add: 0xa0, f64Sub: 0xa1, f64Mul: 0xa2, f64Div: 0xa3, f64Min: 0xa4, f64Max: 0xa5,
-    i64Add: 0x7c, i64Sub: 0x7d, i64Mul: 0x7e, i64ExtendI32S: 0xac, i64ExtendI32U: 0xad, i32RemS: 0x6f,
+    i64Add: 0x7c, i64Sub: 0x7d, i64Mul: 0x7e, i64ExtendI32S: 0xac, i64ExtendI32U: 0xad, i32RemS: 0x6f, i32RemU: 0x70,
     i32WrapI64: 0xa7, i32GeU: 0x4f, i32Ne: 0x47, i64Const: 0x42, i64ShrU: 0x88, i64RemS: 0x81, f64ConvertI64S: 0xb9, f64Copysign: 0xa6, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
 } as const;
 const f64Type = 0x7c;
@@ -218,6 +218,8 @@ const unsupported = (reason: string): Error => {
 const notVectorizable = Symbol("notVectorizable");
 
 const join = (a: Type, b: Type): Type => a === b ? a : "mixed";
+
+const integerComparisons = { "<": op.i32LtS, ">": op.i32GtS, "<=": op.i32LeS, ">=": op.i32GeS, "==": op.i32Eq, "!=": op.i32Ne, "===": op.i32Eq, "!==": op.i32Ne } as const;
 
 const bitwise = { "&": op.i32And, "|": op.i32Or, "^": op.i32Xor, "<<": op.i32Shl, ">>": op.i32ShrS, ">>>": op.i32ShrU } as const;
 
@@ -710,7 +712,7 @@ export const generateWasmOrReason = (
                 // A remainder takes the whole dividend: in i32 where it fits, else in i64, exact either way.
                 if (operator === "%" && right.kind === "number" && right.value !== 0 && integral(right) && exactInteger(left)) {
                     const bound = integerBound(left) ?? 2 ** 53;
-                    if (bound < 2 ** 31 && Math.abs(right.value) < 2 ** 31) {
+                    if ((bound < 2 ** 31 || integerKind(left) === "i32") && Math.abs(right.value) < 2 ** 31) {
                         emitInteger(left);
                         code.push(op.i32Const, ...signed(right.value), op.i32RemS);
                         return;
@@ -789,6 +791,13 @@ export const generateWasmOrReason = (
                 const leftType = typeOf(expression.left);
                 const rightType = typeOf(expression.right);
                 const strict = expression.operator === "===" || expression.operator === "!==";
+                // Integers within i32 compare as their i32s.
+                if (leftType === "number" && rightType === "number" && signedInteger(expression.left) && signedInteger(expression.right)) {
+                    emitInteger(expression.left);
+                    emitInteger(expression.right);
+                    code.push(integerComparisons[expression.operator as keyof typeof integerComparisons]);
+                    return;
+                }
                 if (!strict || (leftType === rightType && leftType !== "mixed")) {
                     emit(expression.left);
                     emit(expression.right);
@@ -810,6 +819,12 @@ export const generateWasmOrReason = (
         }
         emit(expression);
         emitTruthy(typeOf(expression));
+    };
+
+    /** Whether a value is an integer an i32 holds, `-0` its 0. */
+    const signedInteger = (expression: Expression): boolean => {
+        const bound = integerBound(expression);
+        return bound !== null && bound < 2 ** 31 && integerKind(expression) !== "u32";
     };
 
     /** Whether a conditional's arms are cheap enough to compute both and `select`, rather than branch. */
@@ -969,6 +984,12 @@ export const generateWasmOrReason = (
                 code.push(op.f64Const, ...float64(operator === "===" ? 0 : 1));
                 return;
             }
+        }
+        // A u32 by a positive literal: never negative, so an unsigned i32 remainder is exact.
+        if (operator === "%" && integerKind(left) === "u32" && right.kind === "number" && Number.isInteger(right.value) && right.value > 0 && right.value < 2 ** 31) {
+            emitInteger(left);
+            code.push(op.i32Const, ...signed(right.value), op.i32RemU, op.f64ConvertI32U);
+            return;
         }
         // Integers by a nonzero literal: i64 remainder is exact, and copysign gives JS's -0 for a negative dividend.
         if (operator === "%" && exactInteger(left) && right.kind === "number" && right.value !== 0 && integral(right)) {

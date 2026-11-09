@@ -801,3 +801,33 @@ describe("generateWasm exact integer arithmetic", () => {
         }
     });
 });
+
+describe("generateWasm integer comparisons and remainders", () => {
+    it("tests and stores remainders of i32 and u32 columns as JS does, -0 included", () => {
+        const number = (value: number): Expression => ({ kind: "number", value });
+        const binary = (operator: Extract<Expression, { kind: "binary" }>["operator"], left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+        const values = [0, 1, -1, -10, 10, 2147483647, -2147483648, 17, 4294967295, 123456789];
+        for (const view of ["i32", "u32"] as const) {
+            const column: Expression = { kind: "column", column: 0 };
+            const cases: [Expression, (x: number) => number][] = [
+                [{ kind: "conditional", test: binary("===", binary("%", column, number(10)), number(0)), consequent: number(1), alternate: number(2) }, x => x % 10 === 0 ? 1 : 2],
+                [{ kind: "conditional", test: binary("<", binary("%", column, number(10)), number(-3)), consequent: number(1), alternate: number(2) }, x => x % 10 < -3 ? 1 : 2],
+                [binary("/", number(1), binary("%", column, number(17))), x => 1 / (x % 17)],
+                [binary("+", binary("%", column, number(17)), number(3)), x => (x % 17) + 3],
+            ];
+            for (const [value, expected] of cases) {
+                const columns: WasmColumn[] = [{ view, stride: 4, offset: 0, boolean: false, component: 0 }, dense("f64", 1)];
+                const kernel = generateWasm({ locals: 0, body: [{ kind: "store", column: 1, value }] }, columns, () => "number");
+                if (kernel === null) throw new Error("expected a kernel");
+                const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+                const input = view === "i32" ? new Int32Array(memory.buffer, 0, values.length) : new Uint32Array(memory.buffer, 0, values.length);
+                input.set(values);
+                const result = new Float64Array(memory.buffer, 4096, values.length);
+                const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+                if (typeof run !== "function") throw new Error("no run export");
+                run(0, values.length, 0, -1, 0, 4096);
+                expect([view, [...result]]).toEqual([view, [...input].map(expected)]);
+            }
+        }
+    });
+});

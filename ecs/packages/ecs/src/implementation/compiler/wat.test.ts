@@ -80,6 +80,8 @@ const simdInstruction = (subopcode: number): number[] => {
     if (subopcode === 93) return [0xfd, subopcode, 3, 8];
     if (subopcode === 90) return [0xfd, subopcode, 2, 8, 2];
     if (subopcode === 91) return [0xfd, subopcode, 3, 8, 1];
+    if (subopcode === 13) return [0xfd, subopcode, ...[0, 1, 2, 3, 16, 17, 18, 19, 4, 5, 6, 7, 20, 21, 22, 23]];
+    if (subopcode === 27 || subopcode === 28) return [0xfd, subopcode, 3];
     return [0xfd, ...unsigned(subopcode)];
 };
 
@@ -93,6 +95,14 @@ describe("the WAT printer", () => {
         const bytes = moduleOf(body);
         const printed = printWat(bytes);
         if ("failure" in printed) throw new Error(printed.failure);
+        expect(await assemble(printed.wat)).toEqual(bytes);
+    });
+
+    it("names each splat by its lanes' shape", async () => {
+        const bytes = moduleOf([0x0f, 0x10, 0x11, 0x12, 0x13, 0x14].flatMap(subopcode => [0xfd, subopcode]));
+        const printed = printWat(bytes);
+        if ("failure" in printed) throw new Error(printed.failure);
+        expect(printed.wat).toContain("i8x16.splat");
         expect(await assemble(printed.wat)).toEqual(bytes);
     });
 

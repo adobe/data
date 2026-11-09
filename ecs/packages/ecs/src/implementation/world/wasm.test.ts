@@ -726,8 +726,8 @@ describe("generateWasm branch-free conditionals", () => {
         expect(results).toEqual(rows.map(row => reference({ ...row, damage: Math.fround(row.damage) })));
     });
 
-    it("branches only on a test whose arms hold an if, running the ifs without one branch-free", () => {
-        const kernel = generateWasm(program, fields, () => "number");
+    it("one row at a time, branches only on a test whose arms hold an if, running the ifs without one branch-free", () => {
+        const kernel = generateWasm(program, fields, () => "number", false);
         if (kernel === null) throw new Error("expected a kernel");
         const wat = printWat(kernel.bytes);
         if ("failure" in wat) throw new Error(wat.failure);
@@ -1080,5 +1080,176 @@ describe("generateWasm row addresses", () => {
             run(3, rows, 0, -1, 0, 1024, 2048);
             expect([simd, Array.from({ length: rows }, (_, r) => sums[3 * r + 2])]).toEqual([simd, Array.from({ length: rows }, (_, r) => r < 3 || r % 5 === 0 ? -1 : r + r * 0.5)]);
         }
+    });
+});
+
+describe("generateWasm interleaved rows", () => {
+    const local = (index: number): Expression => ({ kind: "local", local: index });
+    const column = (index: number): Expression => ({ kind: "column", column: index });
+    const number = (value: number): Expression => ({ kind: "number", value });
+    const binary = (operator: Extract<Expression, { kind: "binary" }>["operator"], left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+    const logical = (operator: "&&" | "||", left: Expression, right: Expression): Expression => ({ kind: "logical", operator, left, right });
+    const math = (name: string, ...parameters: Expression[]): Expression => ({ kind: "math", name, arguments: parameters });
+    const not = (operand: Expression): Expression => ({ kind: "unary", operator: "!", operand });
+    const rotate = (value: Expression, bits: number): Expression => binary("|", binary("<<", value, number(bits)), binary(">>>", value, number(32 - bits)));
+    const leaf = (view: WasmColumn["view"], component: number, stride: number, offset: number): WasmColumn => ({ view, stride, offset, boolean: view === "u8", component });
+    const ticks = (component: number): WasmColumn => ({ view: "f64", stride: 8, offset: 0, boolean: false, component });
+
+    /** Bytes 32-bit words of interesting values fill, the same every call. */
+    const fill = (bytes: Uint8Array): void => {
+        const words = new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+        const special = [0, 1, 2, 7, 0xFFFFFFFF, 0x80000000, 0x7FFFFFFF, 100, 999999, 0xFFFFFFFE];
+        let seed = 12345;
+        for (let k = 0; k < words.length; k++) {
+            seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+            words[k] = (seed & 3) === 0 ? special[(seed >>> 8) % special.length] : seed;
+        }
+    };
+
+    /**
+     * Runs a program over rows `start` to `end` of components laid out from 64 KiB on, a region each, with SIMD and
+     * without, and returns both memories' regions and the SIMD kernel's text.
+     */
+    const bothWays = (program: Program, columns: readonly WasmColumn[], start: number, end: number, storagePrecision = true) => {
+        const region = 65536;
+        const regions = new Map<number, number>();
+        const regionOf = (column: WasmColumn, index: number): number => {
+            const key = column.component < 0 ? -1 - index : column.component;
+            let at = regions.get(key);
+            if (at === undefined) regions.set(key, at = region * (1 + regions.size));
+            return at;
+        };
+        const addresses = columns.map(regionOf);
+        const runOnce = (simd: boolean): { readonly bytes: Uint8Array; readonly wat: string } => {
+            const kernel = generateWasm(program, columns, () => "number", simd, 0, [], [], [], [], [], storagePrecision);
+            if (kernel === null) throw new Error("expected a kernel");
+            const printed = printWat(kernel.bytes);
+            if ("failure" in printed) throw new Error(printed.failure);
+            const memory = new WebAssembly.Memory({ initial: 1 + regions.size, maximum: 65536, shared: true });
+            const bytes = new Uint8Array(memory.buffer, region, region * regions.size);
+            fill(bytes);
+            const runKernel = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+            if (typeof runKernel !== "function") throw new Error("no run export");
+            runKernel(start, end, 9, -1, ...addresses);
+            return { bytes: bytes.slice(), wat: printed.wat };
+        };
+        const vector = runOnce(true);
+        const scalar = runOnce(false);
+        return { vector: vector.bytes, scalar: scalar.bytes, wat: vector.wat };
+    };
+
+    it("steps a struct's generator four rows at a time, its four words a span stored whole, as row by row does", () => {
+        // An i32 counter, an f64, a boolean, an unused u32, four u32 words and a u32 output, in 48-byte elements.
+        const columns = [leaf("i32", 0, 48, 0), leaf("f64", 0, 48, 8), leaf("u8", 0, 48, 16), ...[24, 28, 32, 36].map(offset => leaf("u32", 0, 48, offset)), leaf("u32", 0, 48, 40)];
+        const program: Program = {
+            locals: 5,
+            body: [
+                { kind: "set", local: 0, value: math("imul", column(4), number(5)) },
+                { kind: "set", local: 1, value: binary("<<", column(4), number(9)) },
+                { kind: "set", local: 2, value: binary("^", column(5), column(3)) },
+                { kind: "set", local: 3, value: binary("^", column(6), column(4)) },
+                { kind: "set", local: 4, value: binary("^", column(4), local(2)) },
+                { kind: "store", column: 0, value: binary("%", binary("+", column(0), number(1)), number(1000000)) },
+                { kind: "store", column: 1, value: binary("+", column(1), number(0.25)) },
+                { kind: "store", column: 2, value: not(column(2)) },
+                { kind: "store", column: 3, value: binary(">>>", binary("^", column(3), local(3)), number(0)) },
+                { kind: "store", column: 4, value: binary(">>>", local(4), number(0)) },
+                { kind: "store", column: 5, value: binary(">>>", binary("^", local(2), local(1)), number(0)) },
+                { kind: "store", column: 6, value: binary(">>>", rotate(local(3), 11), number(0)) },
+                { kind: "store", column: 7, value: binary(">>>", math("imul", rotate(local(0), 7), number(9)), number(0)) },
+            ],
+        };
+        const { vector, scalar, wat } = bothWays(program, columns, 5, 4 * 37 + 8);
+        expect(wat).toContain("i8x16.shuffle");
+        expect(wat).toContain("i32x4.mul");
+        expect(vector).toEqual(scalar);
+    });
+
+    it("runs a chain of tests as masks, stamping only the rows whose arm stores, as row by row does", () => {
+        // hp, maxhp and status in 12-byte elements, so a span's 16 bytes reach the next row's and store lane by lane.
+        const columns = [leaf("i32", 0, 12, 0), leaf("i32", 0, 12, 4), leaf("u32", 0, 12, 8), ticks(-1), ticks(-1), ticks(-1)];
+        const stamp: Program.Statement = { kind: "stamp", column: 3, chunks: 4, blocks: 5 };
+        const hp = column(0), maxhp = column(1), status = column(2);
+        const program: Program = {
+            locals: 0,
+            body: [{
+                kind: "if", test: logical("&&", binary("<=", hp, number(0)), binary("!==", status, number(1))),
+                consequent: [{ kind: "store", column: 0, value: number(0) }, { kind: "store", column: 2, value: number(1) }, stamp],
+                alternate: [{
+                    kind: "if", test: logical("&&", binary("===", status, number(1)), binary("===", hp, number(0))),
+                    consequent: [{ kind: "store", column: 0, value: maxhp }, { kind: "store", column: 2, value: number(0) }, stamp],
+                    alternate: [{
+                        kind: "if", test: logical("&&", binary(">=", hp, maxhp), binary("!==", status, number(2))),
+                        consequent: [{ kind: "store", column: 0, value: maxhp }, { kind: "store", column: 2, value: number(2) }, stamp],
+                        // No row takes this arm: every row's status is a word, and none is 4096.
+                        alternate: [{ kind: "if", test: binary("===", status, number(4096)), consequent: [{ kind: "store", column: 1, value: number(-1) }, stamp], alternate: [] }],
+                    }],
+                }],
+            }],
+        };
+        const { vector, scalar, wat } = bothWays(program, columns, 3, 4 * 300 + 2);
+        expect(wat).toContain("v128.any_true");
+        expect(wat).toContain("v128.store32_lane");
+        expect(vector).toEqual(scalar);
+    });
+
+    it("runs a program four rows would cost more than one at a time row by row, from the first row's addresses", () => {
+        // hp in 12-byte elements beside two i32s in 8-byte ones: a span, but a difference no 32-bit kind holds, a lane at a time.
+        const columns = [leaf("i32", 0, 12, 0), leaf("i32", 1, 8, 0), leaf("i32", 1, 8, 4)];
+        const total = local(0);
+        const program: Program = {
+            locals: 1,
+            body: [{ kind: "set", local: 0, value: binary("-", column(1), column(2)) }, {
+                kind: "if", test: logical("&&", binary(">", column(0), number(0)), binary(">", total, number(0))),
+                consequent: [{ kind: "store", column: 0, value: math("max", binary("-", column(0), total), number(0)) }],
+                alternate: [],
+            }],
+        };
+        for (const storagePrecision of [true, false]) {
+            const { vector, scalar, wat } = bothWays(program, columns, 3, 4 * 20 + 1, storagePrecision);
+            expect(wat).not.toContain("i8x16.shuffle");
+            expect(vector).toEqual(scalar);
+        }
+    });
+
+    it("fuses within rows a program four rows would cost more, from its own addresses", () => {
+        // A vec4 of f32s, which fuses within a row, beside a span of two i32s.
+        const columns = [0, 4, 8, 12].map(offset => leaf("f32", 0, 16, offset)).concat([leaf("i32", 1, 8, 0), leaf("i32", 1, 8, 4)]);
+        const program: Program = {
+            locals: 0,
+            body: [
+                ...[0, 1, 2, 3].map((k): Program.Statement => ({ kind: "store", column: k, value: binary("+", binary("*", column(k), number(0.5)), number(1)) })),
+                { kind: "store", column: 4, value: binary("^", column(4), column(5)) },
+            ],
+        };
+        const { vector, scalar, wat } = bothWays(program, columns, 3, 4 * 20 + 1);
+        expect(wat).not.toContain("i8x16.shuffle");
+        expect(wat).toContain("f32x4.mul");
+        expect(vector).toEqual(scalar);
+    });
+
+    it("keeps integer and boolean locals as vectors and the rest a lane at a time, storing around a leaf a lane stores, as row by row does", () => {
+        // An i32, an i32, an f32 and a u32 in 16-byte elements, the f32 inside their span; two i32s in 8-byte elements.
+        const columns = [leaf("i32", 0, 16, 0), leaf("i32", 0, 16, 4), leaf("f32", 0, 16, 8), leaf("u32", 0, 16, 12), leaf("i32", 1, 8, 0), leaf("i32", 1, 8, 4)];
+        const program: Program = {
+            locals: 4,
+            body: [
+                { kind: "set", local: 0, value: binary("|", binary("^", column(0), column(4)), number(0)) },
+                { kind: "set", local: 1, value: logical("&&", binary("<", column(0), column(1)), binary(">", column(3), number(7))) },
+                { kind: "set", local: 2, value: binary("+", binary("*", column(2), number(0.5)), local(0)) },
+                { kind: "set", local: 3, value: binary(">>>", column(3), binary("&", column(4), number(31))) },
+                {
+                    kind: "if", test: local(1),
+                    consequent: [{ kind: "store", column: 2, value: local(2) }, { kind: "store", column: 0, value: math("max", column(0), column(5)) }],
+                    alternate: [{ kind: "store", column: 3, value: math("min", column(3), number(100)) }, { kind: "store", column: 1, value: { kind: "unary", operator: "-", operand: column(1) } }],
+                },
+                { kind: "store", column: 4, value: { kind: "conditional", test: local(1), consequent: { kind: "unary", operator: "~", operand: local(0) }, alternate: local(3) } },
+                { kind: "store", column: 5, value: binary("+", binary("%", column(0), number(7)), binary("*", local(0), number(3))) },
+            ],
+        };
+        const { vector, scalar, wat } = bothWays(program, columns, 0, 4 * 50 + 1);
+        expect(wat).toContain("i32x4.max_s");
+        expect(wat).toContain("i32x4.min_u");
+        expect(vector).toEqual(scalar);
     });
 });

@@ -38,11 +38,14 @@ const saturating = "i32.trunc_sat_f32_s i32.trunc_sat_f32_u i32.trunc_sat_f64_s 
 
 /**
  * The 0xfd-prefixed SIMD instructions, by subopcode: those taking a memory argument with their natural alignment's
- * log2, and those that also take a lane.
+ * log2, those that also take a lane, and those taking `lanes` lane indexes alone.
  */
-const simd: { readonly [subopcode: number]: { readonly name: string; readonly align?: number; readonly lane?: true } } = {
-    0: { name: "v128.load", align: 4 }, 11: { name: "v128.store", align: 4 }, 12: { name: "v128.const" },
-    15: { name: "i32x4.splat" }, 16: { name: "i64x2.splat" }, 19: { name: "f32x4.splat" }, 20: { name: "f64x2.splat" },
+const simd: { readonly [subopcode: number]: { readonly name: string; readonly align?: number; readonly lane?: true; readonly lanes?: number } } = {
+    0: { name: "v128.load", align: 4 }, 11: { name: "v128.store", align: 4 }, 12: { name: "v128.const" }, 13: { name: "i8x16.shuffle", lanes: 16 },
+    15: { name: "i8x16.splat" }, 16: { name: "i16x8.splat" }, 17: { name: "i32x4.splat" }, 18: { name: "i64x2.splat" }, 19: { name: "f32x4.splat" }, 20: { name: "f64x2.splat" },
+    27: { name: "i32x4.extract_lane", lanes: 1 }, 28: { name: "i32x4.replace_lane", lanes: 1 },
+    55: { name: "i32x4.eq" }, 56: { name: "i32x4.ne" }, 57: { name: "i32x4.lt_s" }, 58: { name: "i32x4.lt_u" }, 59: { name: "i32x4.gt_s" },
+    60: { name: "i32x4.gt_u" }, 61: { name: "i32x4.le_s" }, 62: { name: "i32x4.le_u" }, 63: { name: "i32x4.ge_s" }, 64: { name: "i32x4.ge_u" },
     65: { name: "f32x4.eq" }, 66: { name: "f32x4.ne" }, 67: { name: "f32x4.lt" }, 68: { name: "f32x4.gt" }, 69: { name: "f32x4.le" }, 70: { name: "f32x4.ge" },
     71: { name: "f64x2.eq" }, 72: { name: "f64x2.ne" }, 73: { name: "f64x2.lt" }, 74: { name: "f64x2.gt" }, 75: { name: "f64x2.le" }, 76: { name: "f64x2.ge" },
     77: { name: "v128.not" }, 78: { name: "v128.and" }, 79: { name: "v128.andnot" }, 80: { name: "v128.or" }, 81: { name: "v128.xor" },
@@ -60,6 +63,9 @@ const simd: { readonly [subopcode: number]: { readonly name: string; readonly al
     230: { name: "f32x4.mul" }, 231: { name: "f32x4.div" }, 232: { name: "f32x4.min" }, 233: { name: "f32x4.max" },
     236: { name: "f64x2.abs" }, 237: { name: "f64x2.neg" }, 239: { name: "f64x2.sqrt" }, 240: { name: "f64x2.add" }, 241: { name: "f64x2.sub" },
     242: { name: "f64x2.mul" }, 243: { name: "f64x2.div" }, 244: { name: "f64x2.min" }, 245: { name: "f64x2.max" },
+    161: { name: "i32x4.neg" }, 171: { name: "i32x4.shl" }, 172: { name: "i32x4.shr_s" }, 173: { name: "i32x4.shr_u" }, 174: { name: "i32x4.add" },
+    177: { name: "i32x4.sub" }, 181: { name: "i32x4.mul" }, 182: { name: "i32x4.min_s" }, 183: { name: "i32x4.min_u" }, 184: { name: "i32x4.max_s" },
+    185: { name: "i32x4.max_u" },
 };
 
 /** Control and variable instructions without immediates, or with those `instruction` reads. */
@@ -328,6 +334,7 @@ export const printWat = (bytes: Uint8Array): Wat => {
                     if (vector === undefined) return failure(`opcode 0xfd ${subopcode} isn't one the printer reads`);
                     if (subopcode === 12) instruction = `v128.const ${vectorConstant(take(16))}`;
                     else if (vector.align !== undefined) instruction = `${vector.name}${memoryArgument(vector.align)}${vector.lane === true ? ` ${byte()}` : ""}`;
+                    else if (vector.lanes !== undefined) instruction = `${vector.name} ${[...take(vector.lanes)].join(" ")}`;
                     else instruction = vector.name;
                 }
                 else return failure(`opcode 0x${opcode.toString(16)} isn't one the printer reads`);

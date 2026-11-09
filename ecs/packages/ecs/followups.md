@@ -70,13 +70,6 @@ correctness, then optimization. Remove an item once it's decided or done.
   declare they write or reduce into; one a body sets through `commands.spawnTables(tables, { resources })` isn't
   among them.
 
-- **`despawnWhere` by values and comparisons:** `commands.despawnWhere({ with, not, where })` takes only shared
-  components' values in `where`. Taking ordinary components' values and declarative comparisons, such as
-  `{ [health]: { hp: { "<=": 0 } } }`, would let the sync point scan columns and drop matched runs of rows with no
-  plan entry per entity, and a `where` on shared components drop whole archetypes' tables. Many one-off systems
-  despawn by a query. Design the public form before building it; `ecs-benchmark` would time it beside the suite's
-  per-entity `BM_DestroyEntities`, which it doesn't replace.
-
 ## Correctness
 
 - **The guide sometimes runs a chapter it's leaving once more.** On CI's runners, about one run in three, going from

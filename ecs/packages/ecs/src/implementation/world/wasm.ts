@@ -738,6 +738,8 @@ export const generateWasmOrReason = (
     let laneLocals: readonly (readonly number[])[] = [];
     /** In the interleaved loop, by program local, the v128 local holding its value in the group's four rows, or -1. */
     let vectorLocals: readonly number[] = [];
+    /** In the interleaved loop, the program locals held as f32 lanes: numbers every assignment gives an f32 exactly. */
+    let floatLocals: readonly boolean[] = [];
     const local = (index: number): number => lane === null || lane === 0 ? localBase + index : laneLocals[lane - 1][index];
     const scratch = (type: number): number => {
         extraLocals.push(type);
@@ -769,6 +771,10 @@ export const generateWasmOrReason = (
             code.push(op.localGet, ...unsigned(local(index)));
             return;
         }
+        if (floatLocals[index] === true) {
+            code.push(op.localGet, ...unsigned(vector), ...simd(vop.f32ExtractLane), lane ?? 0, op.f64PromoteF32);
+            return;
+        }
         // A boolean's vector holds lane masks, of which a lane's 1 or 0 is the low bit.
         code.push(op.localGet, ...unsigned(vector), ...simd(vop.i32ExtractLane), lane ?? 0);
         if (booleanLocals[index]) code.push(op.i32Const, 1, op.i32And);
@@ -784,7 +790,7 @@ export const generateWasmOrReason = (
         }
         const vector = lane === null ? undefined : vectorRegisters.get(column);
         if (vector === undefined) return false;
-        code.push(op.localGet, ...unsigned(vector), ...simd(vop.i32ExtractLane), lane ?? 0);
+        code.push(op.localGet, ...unsigned(vector), ...simd(columns[column].view === "f32" ? vop.f32ExtractLane : vop.i32ExtractLane), lane ?? 0);
         return true;
     };
     const address = (column: number): void => {
@@ -2301,6 +2307,7 @@ export const generateWasmOrReason = (
     const vop = {
         load: 0, store: 11, const: 12, shuffle: 13, i32Splat: 17, f32Splat: 19, f64Splat: 20, i32ExtractLane: 27, i32ReplaceLane: 28,
         i32Eq: 55, i32Ne: 56, i32LtS: 57, i32LtU: 58, i32GtS: 59, i32GtU: 60, i32LeS: 61, i32LeU: 62, i32GeS: 63, i32GeU: 64, xor: 81,
+        f32ExtractLane: 31, f32ReplaceLane: 32, i32TruncSatF32S: 248,
         i32Neg: 161, i32Shl: 171, i32ShrS: 172, i32ShrU: 173, i32Add: 174, i32Sub: 177, i32Mul: 181, i32MinS: 182, i32MinU: 183, i32MaxS: 184, i32MaxU: 185,
         f32Eq: 65, f32Ne: 66, f32Lt: 67, f32Gt: 68, f32Le: 69, f32Ge: 70,
         f64Gt: 74, not: 77, and: 78, andNot: 79, or: 80, bitselect: 82, anyTrue: 83,
@@ -2602,7 +2609,7 @@ export const generateWasmOrReason = (
     };
 
     /**
-     * The spans of the columns statements use: from each component's lowest 32-bit integer leaf, those starting within
+     * The spans of the columns statements use: from each component's lowest 32-bit integer or f32 leaf, those starting within
      * 16 bytes of it, then from the next; a span of one leaf costs more than it saves. A span stores its rows whole
      * when its 16 bytes are inside the element and no column outside it stores into them.
      */
@@ -2610,7 +2617,7 @@ export const generateWasmOrReason = (
         const byComponent = new Map<string, number[]>();
         for (const column of used) {
             const { component, stride, view, boolean } = columns[column];
-            if (component < 0 || boolean || (view !== "i32" && view !== "u32")) continue;
+            if (component < 0 || boolean || (view !== "i32" && view !== "u32" && view !== "f32")) continue;
             const key = `${component}:${stride}`;
             byComponent.set(key, [...byComponent.get(key) ?? [], column]);
         }
@@ -2648,10 +2655,14 @@ export const generateWasmOrReason = (
             default: return 1;
         }
     };
-    /** The operations of statements, each store and assignment one. */
+    /**
+     * The operations of statements, each store and assignment one, and an element store ten more: its bounds check, and
+     * the load and select that make it branch-free.
+     */
     const statementsSize = (statements: readonly Statement[]): number => statements.reduce((total, statement) => {
         switch (statement.kind) {
             case "set": case "store": return total + 1 + size(statement.value);
+            case "resourceStore": return total + 11 + size(statement.element) + size(statement.value);
             case "if": return total + size(statement.test) + statementsSize(statement.consequent) + statementsSize(statement.alternate);
             default: return total + 1;
         }
@@ -2669,8 +2680,8 @@ export const generateWasmOrReason = (
     const vectorizes = (expression: Expression): boolean => {
         if (hoisted.has(expression) || rowIndependent(expression) || typeOf(expression) === "boolean") return true;
         switch (expression.kind) {
-            case "local": return (vectorLocals[expression.local] ?? -1) >= 0;
-            case "column": return vectorRegisters.has(expression.column) || gatherable(expression.column);
+            case "local": return (vectorLocals[expression.local] ?? -1) >= 0 && (floatLocals[expression.local] !== true || (guarded.get(expression.local) ?? Infinity) < 2 ** 31);
+            case "column": return columns[expression.column].view !== "f32" && (vectorRegisters.has(expression.column) || gatherable(expression.column));
             case "unary":
                 return expression.operator === "~" || (expression.operator === "+" && integerKind(expression) !== null)
                     || (expression.operator === "-" && exactInteger(expression) && typeOf(expression.operand) !== "boolean");
@@ -2720,7 +2731,83 @@ export const generateWasmOrReason = (
     const unsignedVector: { readonly [operator: string]: number } = { "<": vop.i32LtU, ">": vop.i32GtU, "<=": vop.i32LeU, ">=": vop.i32GeU, "==": vop.i32Eq, "!=": vop.i32Ne, "===": vop.i32Eq, "!==": vop.i32Ne };
     const bitwiseVector: { readonly [operator: string]: number } = { "&": vop.and, "|": vop.or, "^": vop.xor, "<<": vop.i32Shl, ">>": vop.i32ShrS, ">>>": vop.i32ShrU };
 
+    /** The f32x4 comparisons by operator: numbers compare as JS's do, NaN unequal to all. */
+    const floatComparisons: { readonly [operator: string]: number } = { "<": vop.f32Lt, ">": vop.f32Gt, "<=": vop.f32Le, ">=": vop.f32Ge, "==": vop.f32Eq, "!=": vop.f32Ne, "===": vop.f32Eq, "!==": vop.f32Ne };
+    /**
+     * Whether a number is an f32's, computed exactly in f32 lanes: f32 fields, literals an f32 holds, locals held as f32
+     * lanes, and their roundings, absolute values, negations and choices. Sums and products round otherwise in f32.
+     */
+    const floatExact = (expression: Expression): boolean => {
+        switch (expression.kind) {
+            case "number": return Object.is(Math.fround(expression.value), expression.value) || Number.isNaN(expression.value);
+            case "column": return columns[expression.column].view === "f32" && !columns[expression.column].boolean;
+            case "local": return floatLocals[expression.local] === true;
+            case "unary": return expression.operator === "-" && floatExact(expression.operand);
+            case "math": {
+                const [only] = expression.arguments;
+                return ["trunc", "floor", "ceil", "abs", "fround"].includes(expression.name) && expression.arguments.length === 1 && only !== undefined && floatExact(only);
+            }
+            case "conditional": return floatExact(expression.consequent) && floatExact(expression.alternate);
+            default: return false;
+        }
+    };
+    /** Leaves the f32 lanes of a number computed one lane at a time, each lane's f64 by `each` in that lane's row, demoted. */
+    const floatLanes = (each: () => void): void => {
+        code.push(...simd(vop.const), ...new Array<number>(16).fill(0));
+        for (let k = 0; k < 4; k++) {
+            lane = k;
+            each();
+            lane = null;
+            code.push(op.f32DemoteF64, ...simd(vop.f32ReplaceLane), k);
+        }
+    };
+    /** Leaves, for each of the four rows, an f32-exact number as f32 lanes. */
+    const floatVector = (expression: Expression): void => {
+        work.spent++;
+        if (hoisted.has(expression) || rowIndependent(expression)) {
+            emit(expression);
+            code.push(op.f32DemoteF64, ...simd(vop.f32Splat));
+            return;
+        }
+        switch (expression.kind) {
+            case "local": {
+                const vector = vectorLocals[expression.local] ?? -1;
+                if (vector < 0 || floatLocals[expression.local] !== true) break;
+                code.push(op.localGet, ...unsigned(vector));
+                return;
+            }
+            case "column": {
+                const vector = spanned.has(expression.column) ? vectorRegisters.get(expression.column) : undefined;
+                if (vector === undefined) break;
+                code.push(op.localGet, ...unsigned(vector));
+                return;
+            }
+            case "unary":
+                floatVector(expression.operand);
+                code.push(...simd(vop.f32Neg));
+                return;
+            case "math": {
+                const [only] = expression.arguments;
+                const operation = expression.name === "trunc" ? vop.f32Trunc : expression.name === "floor" ? vop.f32Floor : expression.name === "ceil" ? vop.f32Ceil : expression.name === "abs" ? vop.f32Abs : null;
+                if (only === undefined) break;
+                floatVector(only);
+                if (operation !== null) code.push(...simd(operation));
+                return;
+            }
+            case "conditional":
+                floatVector(expression.consequent);
+                floatVector(expression.alternate);
+                maskVector(expression.test);
+                code.push(...simd(vop.bitselect));
+                return;
+            default: break;
+        }
+        work.spent += 4 * size(expression);
+        floatLanes(() => emit(expression));
+    };
+
     /** Leaves, for each of the four rows, the JS `ToInt32` of an expression's value, as `emitInteger` does for one. */
+
     const integerVector = (expression: Expression): void => {
         work.spent++;
         if (hoisted.has(expression) || rowIndependent(expression)) {
@@ -2733,12 +2820,19 @@ export const generateWasmOrReason = (
             case "local": {
                 const vector = vectorLocals[expression.local] ?? -1;
                 if (vector < 0) break;
+                if (floatLocals[expression.local] === true) {
+                    // An f32 a test proves an integer within i32 truncates exactly.
+                    if ((guarded.get(expression.local) ?? Infinity) >= 2 ** 31) break;
+                    code.push(op.localGet, ...unsigned(vector), ...simd(vop.i32TruncSatF32S));
+                    return;
+                }
                 code.push(op.localGet, ...unsigned(vector));
                 // A boolean's mask of -1 is its 1.
                 if (booleanLocals[expression.local]) code.push(...simd(vop.i32Neg));
                 return;
             }
             case "column": {
+                if (columns[expression.column].view === "f32") break;
                 const vector = vectorRegisters.get(expression.column) ?? (gatherable(expression.column) ? gather(expression.column) : undefined);
                 if (vector === undefined) break;
                 code.push(op.localGet, ...unsigned(vector));
@@ -2849,6 +2943,12 @@ export const generateWasmOrReason = (
                     code.push(...simd((signed ? signedVector : unsignedVector)[operator]));
                     return;
                 }
+                if (leftType === "number" && rightType === "number" && floatExact(left) && floatExact(right)) {
+                    floatVector(left);
+                    floatVector(right);
+                    code.push(...simd(floatComparisons[operator]));
+                    return;
+                }
                 if (leftType === "boolean" && rightType === "boolean" && (operator === "==" || operator === "!=" || strict)) {
                     maskVector(left);
                     maskVector(right);
@@ -2942,7 +3042,40 @@ export const generateWasmOrReason = (
         }
     };
 
+    /**
+     * Writes a typed array resource's element for each of the group's rows, in row order, where the mask is set and the
+     * element is one of its indexes, as `storeResourceElement` does for one; integer elements and values only.
+     */
+    const storeElements = (resource: number, element: Expression, value: Expression): void => {
+        const name = arrayOf(resource);
+        if (!(signedInteger(element) || unsignedInteger(element)) || name === "Uint8ClampedArray" || name === "Float32Array" || name === "Float64Array") throw notVectorizable;
+        const { load, store: storeOperation, align } = elementAccess[name];
+        const positions = scratch(v128Type);
+        const within = scratch(v128Type);
+        const values = scratch(v128Type);
+        integerVector(element);
+        code.push(op.localTee, ...unsigned(positions));
+        arrayParameter(resource, "length");
+        code.push(...simd(vop.i32Splat), ...simd(vop.i32LtU));
+        if (mask !== null) code.push(op.localGet, ...unsigned(mask), ...simd(vop.and));
+        code.push(op.localSet, ...unsigned(within));
+        integerVector(value);
+        code.push(op.localSet, ...unsigned(values));
+        work.spent += 4 * 8;
+        const position = scratch(i32Type);
+        const holds = scratch(i32Type);
+        for (let k = 0; k < 4; k++) {
+            code.push(op.localGet, ...unsigned(within), ...simd(vop.i32ExtractLane), k, op.localSet, ...unsigned(holds));
+            code.push(op.localGet, ...unsigned(positions), ...simd(vop.i32ExtractLane), k, op.i32Const, 0, op.localGet, ...unsigned(holds), op.select, op.localSet, ...unsigned(position));
+            arrayElementAddress(resource, position);
+            code.push(op.localGet, ...unsigned(values), ...simd(vop.i32ExtractLane), k);
+            arrayElementAddress(resource, position);
+            code.push(load, align, 0, op.localGet, ...unsigned(holds), op.select, storeOperation, align, 0);
+        }
+    };
+
     /** Stamps the group's four rows' ticks where the mask is set, two rows a store, and their blocks and chunks. */
+
     const stampGroup = (current: Extract<Statement, { kind: "stamp" }>): void => {
         if (columns[current.column].muted !== true) {
             for (let half = 0; half < 2; half++) {
@@ -2987,6 +3120,7 @@ export const generateWasmOrReason = (
                 const vector = vectorLocals[current.local] ?? -1;
                 if (vector >= 0) {
                     if (booleanLocals[current.local]) maskVector(current.value);
+                    else if (floatLocals[current.local] === true) floatVector(current.value);
                     else integerVector(current.value);
                     if (mask !== null) code.push(op.localGet, ...unsigned(vector));
                     blendAfterOld();
@@ -3011,7 +3145,13 @@ export const generateWasmOrReason = (
                 const vector = spanned.has(current.column) ? vectorRegisters.get(current.column) : undefined;
                 if (vector === undefined && gatherable(current.column) && vectorizes(current.value)) return storeGathered(current.column, current.value);
                 if (vector === undefined) return storeEachLane(current.column, current.value);
-                integerVector(current.value);
+                if (columns[current.column].view !== "f32") integerVector(current.value);
+                // An f32 field stores its value rounded to f32, which f32 lanes hold.
+                else if (floatExact(current.value)) floatVector(current.value);
+                else {
+                    work.spent += 4 * size(current.value);
+                    floatLanes(() => emit(current.value));
+                }
                 if (mask !== null) code.push(op.localGet, ...unsigned(vector));
                 blendAfterOld();
                 code.push(op.localSet, ...unsigned(vector));
@@ -3037,10 +3177,11 @@ export const generateWasmOrReason = (
                     for (const statement of statements) interleavedStatement(statement);
                     mask = outer;
                 };
-                branch(current.consequent, false);
+                withFacts(current.test, () => branch(current.consequent, false));
                 branch(current.alternate, true);
                 return;
             }
+            case "resourceStore": return storeElements(current.index, current.element, current.value);
             default: throw notVectorizable;
         }
     };
@@ -3059,6 +3200,7 @@ export const generateWasmOrReason = (
     const interleavableStatements = (statements: readonly Statement[]): boolean => statements.every(statement => {
         switch (statement.kind) {
             case "set": case "store": return interleavable(statement.value);
+            case "resourceStore": return interleavable(statement.element) && interleavable(statement.value);
             case "stamp": return true;
             case "if": return interleavable(statement.test) && interleavableStatements(statement.consequent) && interleavableStatements(statement.alternate);
             default: return false;
@@ -3087,6 +3229,7 @@ export const generateWasmOrReason = (
             vectorRegisters.clear();
             spanned.clear();
             vectorLocals = [];
+            floatLocals = [];
             laneLocals = [];
             lane = null;
         }
@@ -3097,7 +3240,29 @@ export const generateWasmOrReason = (
         const stored = storedColumns(program.body, new Set());
         const spans = planSpans(used, stored);
         groupRows = 4;
-        vectorLocals = Array.from({ length: program.locals }, (_, k) => booleanLocals[k] || (integerLocal(k) !== null && !wideLocals[k]) ? scratch(v128Type) : -1);
+        // Rows' writes to an element must land in row order: one store to each typed array, which nothing reads.
+        const stores = new Map<number, number>();
+        const countStores = (statements: readonly Statement[]): void => {
+            for (const statement of statements) {
+                if (statement.kind === "resourceStore") stores.set(statement.index, (stores.get(statement.index) ?? 0) + 1);
+                else if (statement.kind === "if") { countStores(statement.consequent); countStores(statement.alternate); }
+            }
+        };
+        countStores(program.body);
+        if ([...stores.values()].some(count => count > 1)) throw notVectorizable;
+        const floats = Array.from({ length: program.locals }, (_, k) => localTypes[k] === "number" && integerLocal(k) === null && !wideLocals[k] && !booleanLocals[k] && assignedValues.has(k));
+        floatLocals = floats;
+        for (let changed = true; changed;) {
+            changed = false;
+            for (const [index, values] of assignedValues) {
+                if (floats[index] && !values.every(floatExact)) {
+                    floats[index] = false;
+                    changed = true;
+                }
+            }
+        }
+        vectorLocals = Array.from({ length: program.locals }, (_, k) => booleanLocals[k] || floats[k] || (integerLocal(k) !== null && !wideLocals[k]) ? scratch(v128Type) : -1);
+
         laneLocals = [1, 2, 3].map(() => Array.from({ length: program.locals }, (_, k) =>
             vectorLocals[k] >= 0 ? -1 : scratch(wideLocals[k] ? i64Type : integerLocal(k) === null && !booleanLocals[k] ? f64Type : i32Type)));
         // A component's columns of one stride view its bytes from one address, the group's first row's element.

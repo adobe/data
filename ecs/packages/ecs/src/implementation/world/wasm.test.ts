@@ -1347,3 +1347,97 @@ describe("generateWasm integers a test bounds", () => {
         for (const { ints } of runPairs(program, pairs)) expect(ints).toEqual(expected);
     });
 });
+
+describe("generateWasm interleaved rows of f32s and typed array elements", () => {
+    const local = (index: number): Expression => ({ kind: "local", local: index });
+    const column = (index: number): Expression => ({ kind: "column", column: index });
+    const number = (value: number): Expression => ({ kind: "number", value });
+    const binary = (operator: Extract<Expression, { kind: "binary" }>["operator"], left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+    const and = (...items: Expression[]): Expression => items.reduce((left, right) => ({ kind: "logical", operator: "&&", left, right }));
+    const trunc = (value: Expression): Expression => ({ kind: "math", name: "trunc", arguments: [value] });
+    const edges = [NaN, Infinity, -Infinity, -0, -0.75, 0.1, 3.5, 19.99, 20, 2e9, 7.25];
+
+    /**
+     * Runs a program over rows of an f32 pair in 8-byte elements (columns 0 and 1), a u32 (column 2) and an f32 (column 3),
+     * writing a Uint8Array resource of 200 elements, with SIMD and without: both memories' bytes and the SIMD kernel's text.
+     */
+    const run = (program: Program) => {
+        const columns: WasmColumn[] = [
+            { view: "f32", stride: 8, offset: 0, boolean: false, component: 0 }, { view: "f32", stride: 8, offset: 4, boolean: false, component: 0 },
+            { view: "u32", stride: 4, offset: 0, boolean: false, component: 1 }, { view: "f32", stride: 4, offset: 0, boolean: false, component: 2 },
+        ];
+        const rows = edges.length * edges.length;
+        return [true, false].map(simd => {
+            const kernel = generateWasm(program, columns, () => "number", simd, 0, [], [], [], [], [], true, () => "Uint8Array");
+            if (kernel === null) throw new Error("expected a kernel");
+            const memory = new WebAssembly.Memory({ initial: 2, maximum: 65536, shared: true });
+            const pairs = new Float32Array(memory.buffer, 0, 2 * rows);
+            const words = new Uint32Array(memory.buffer, 8192, rows);
+            const floats = new Float32Array(memory.buffer, 16384, rows);
+            const cells = new Uint8Array(memory.buffer, 65536, 200);
+            edges.forEach((x, i) => edges.forEach((y, j) => { const row = i * edges.length + j; pairs[2 * row] = x; pairs[2 * row + 1] = y; words[row] = 7 * row + 1; floats[row] = y; }));
+            const scalars = kernel.scalars.map(scalar => scalar.source === "resource" && scalar.path[0] === "byteOffset" ? 65536 : scalar.source === "resource" && scalar.path[0] === "length" ? 200 : NaN);
+            const runKernel = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+            if (typeof runKernel !== "function") throw new Error("no run export");
+            runKernel(1, rows, 0, -1, 0, 0, 8192, 16384, ...scalars);
+            const printed = printWat(kernel.bytes);
+            const text = (values: Float32Array): string[] => [...values].map(value => Object.is(value, -0) ? "-0" : String(value));
+            return { cells: [...cells], words: [...words], pairs: text(pairs), floats: text(floats), wat: "wat" in printed ? printed.wat : printed.failure };
+        });
+    };
+
+    it("draws at the cells positions truncate to, a test bounding them, the later row winning, as row by row does", () => {
+        const program: Program = {
+            locals: 2,
+            body: [
+                { kind: "set", local: 0, value: trunc(column(0)) },
+                { kind: "set", local: 1, value: trunc(column(1)) },
+                {
+                    kind: "if", test: and(binary(">=", local(1), number(0)), binary("<", local(1), number(10)), binary(">=", local(0), number(0)), binary("<", local(0), number(20))),
+                    consequent: [{ kind: "resourceStore", index: 0, element: binary("+", local(0), binary("*", local(1), number(20))), value: column(2) }],
+                    alternate: [],
+                },
+            ],
+        };
+        const [vector, scalar] = run(program);
+        expect(vector?.wat).toContain("f32x4.trunc");
+        expect(vector?.wat).toContain("i32x4.trunc_sat_f32x4_s");
+        expect(vector?.cells).toEqual(scalar?.cells);
+        expect(scalar?.cells.some(cell => cell !== 0)).toBe(true);
+    });
+
+    it("compare in f32 only numbers an f32 holds, and store an f32 field of a span from f32 lanes, as row by row does", () => {
+        const program: Program = {
+            locals: 1,
+            body: [
+                { kind: "set", local: 0, value: { kind: "math", name: "floor", arguments: [column(1)] } },
+                {
+                    kind: "if", test: and(binary("<=", column(0), number(0.1)), binary(">", local(0), number(-2))),
+                    consequent: [{ kind: "store", column: 2, value: binary("^", binary("^", column(2), binary("<<", column(2), number(13))), binary(">>>", column(2), number(7))) }],
+                    alternate: [{ kind: "store", column: 2, value: binary("|", binary("^", column(2), binary("<<", column(2), number(5))), binary("&", binary(">>>", column(2), number(3)), number(255))) }],
+                },
+                { kind: "store", column: 0, value: { kind: "unary", operator: "-", operand: local(0) } },
+            ],
+        };
+        const [vector, scalar] = run(program);
+        expect(vector?.wat).toContain("f32x4.floor");
+        // -2 is an f32's, compared in lanes; 0.1 isn't, compared a lane at a time as the body does.
+        expect(vector?.wat).toContain("f32x4.gt");
+        expect(vector?.wat).not.toContain("f32x4.le");
+        expect(vector?.words).toEqual(scalar?.words);
+        expect(vector?.pairs).toEqual(scalar?.pairs);
+    });
+
+    it("run row by row a program storing to one typed array twice, so rows' writes land in their order", () => {
+        const program: Program = {
+            locals: 0,
+            body: [
+                { kind: "resourceStore", index: 0, element: number(5), value: column(2) },
+                { kind: "resourceStore", index: 0, element: number(6), value: column(2) },
+            ],
+        };
+        const [vector, scalar] = run(program);
+        expect(vector?.wat).not.toContain("i8x16.shuffle");
+        expect(vector?.cells).toEqual(scalar?.cells);
+    });
+});

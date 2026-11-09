@@ -18,6 +18,13 @@ describe("values as JSON", () => {
         expect(through(schema, { counts: new Map([["a", 1]]), seen: new Set(["x"]) })).toEqual({ counts: new Map([["a", 1]]), seen: new Set(["x"]) });
     });
 
+    it("read back typed arrays as the typed arrays they were, with numbers JSON lacks", () => {
+        expect(through({ type: "typedArray", array: "Uint8Array", length: 3 }, new Uint8Array([1, 2, 255]))).toEqual(new Uint8Array([1, 2, 255]));
+        const floats = through({ type: "typedArray", array: "Float64Array", length: 3 }, new Float64Array([NaN, -0, 1.5]));
+        expect(floats).toBeInstanceOf(Float64Array);
+        expect(floats instanceof Float64Array && Object.is(floats[1], -0) && Number.isNaN(floats[0])).toBe(true);
+    });
+
     it("read back a union's values as the members they were, a string as a string and a number as a number", () => {
         const schema: Schema = { anyOf: [{ type: "string" }, { type: "number" }, { type: "null" }, { type: "set", items: { type: "number" } }, { type: "array", items: { type: "number" } }] };
         const values = ["NaN", NaN, 2, null, new Set([1]), [1]];

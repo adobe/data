@@ -16,7 +16,7 @@ import { sprite } from "./shared/component.sprite.js";
 import { velocity } from "./shared/component.velocity.js";
 import { checksum } from "./shared/resource.checksum.js";
 import { defaultData } from "./shared/constant.default-data.js";
-import { frameBuffer } from "./shared/constant.frame-buffer.js";
+import { frameBuffer } from "./shared/resource.frame-buffer.js";
 import { playerSeed } from "./shared/function.player-seed.js";
 import { randomRange } from "./shared/function.random-range.js";
 import { seedRandom } from "./shared/function.seed-random.js";
@@ -78,6 +78,8 @@ const countOf = async (world: World): Promise<{ readonly both: number; readonly 
 };
 
 const readChecksum = System.create({ readonly: true }, ({ resources }) => resources[checksum]);
+/** The frame buffer's cells, copied out of the world's. */
+const readFrame = System.create({ readonly: true }, ({ resources }) => resources[frameBuffer].slice());
 
 const frames = 25;
 
@@ -113,7 +115,7 @@ describe("the scenarios", () => {
                         // Entities drawn at one cell in one frame overwrite each other in the order a library stores them, so each
                         // cell holds one of the characters drawn there in the last frame that drew it.
                         const drawn = new Map<number, { frame: number; characters: Set<number> }>();
-                        frameBuffer.fill(0);
+                        let cells: Uint8Array = new Uint8Array(0);
                         await using(lane, async world => {
                             const entities = await world.run(create, { count });
                             expect(await stateOf(world, entities)).toEqual(expected);
@@ -126,8 +128,9 @@ describe("the scenarios", () => {
                                 });
                             }
                             expect(await stateOf(world, entities)).toEqual(expected);
+                            cells = await world.run(readFrame);
                         });
-                        const misdrawn = [...frameBuffer].flatMap((character, cell) => {
+                        const misdrawn = [...cells].flatMap((character, cell) => {
                             const candidates = drawn.get(cell)?.characters ?? new Set([0]);
                             return candidates.has(character) ? [] : [{ cell, character, candidates: [...candidates] }];
                         });

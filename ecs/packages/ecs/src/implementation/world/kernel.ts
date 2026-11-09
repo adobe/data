@@ -114,6 +114,11 @@ export namespace Program {
         | { readonly kind: "column"; readonly column: number }
         /** A scalar inside `resources[index]`, or inside `args`. */
         | { readonly kind: "resource"; readonly index: number; readonly path: Path }
+        /**
+         * Element `element` of `resources[index]`, a typed array the kernel reads in place: NaN where `element` isn't
+         * one of its indexes, as `undefined` reads in arithmetic.
+         */
+        | { readonly kind: "resourceElement"; readonly index: number; readonly element: Expression }
         | { readonly kind: "args"; readonly path: Path }
         /** A scalar inside the call's archetype's value of `KernelDescription.shared[index]`, a parameter of each call. */
         | { readonly kind: "shared"; readonly index: number; readonly path: Path }
@@ -161,6 +166,8 @@ export namespace Program {
         | { readonly kind: "set"; readonly local: number; readonly value: Expression }
         /** `columns[column][row] = value`, with typed-array conversion. */
         | { readonly kind: "store"; readonly column: number; readonly value: Expression }
+        /** `resources[index][element] = value`, of a typed array in place: nothing where `element` isn't one of its indexes. */
+        | { readonly kind: "resourceStore"; readonly index: number; readonly element: Expression; readonly value: Expression }
         /**
          * `columns[column][row] = tick`, `columns[chunks][row >> chunkShift] = tick` and
          * `columns[blocks][row >> blockShift] = tick`, for a changed column and its chunk and block columns.
@@ -249,6 +256,11 @@ export type KernelDescription = {
     readonly url: string;
     /** The same body for WASM, or `null` when it uses what WASM kernels don't support: commands, or non-scalar values. */
     readonly program: Program | null;
+    /**
+     * The resources, by index into `resources`, whose elements it writes in place: typed arrays, which the call gives
+     * in place, and which its rows write in order on one thread.
+     */
+    readonly writes?: readonly number[];
     /** The leaves of resources the kernel reduces into, one partial each, with their operators. */
     readonly reductions: readonly Reduced[];
     /** The leaves of each value contributed whole, by resource. Registration checks they are all of the schema's leaves. */

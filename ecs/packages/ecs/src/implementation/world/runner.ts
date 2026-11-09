@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
-import type { Archetype } from './archetype.js';
+import { stampChanged, type Archetype } from './archetype.js';
 import { kernelOf } from './attach-kernel.js';
 import { readCell } from './cells.js';
 import { createCommands } from './commands.js';
@@ -260,6 +260,13 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         : createOrderedRender(indexLookups.ordered, ordered, accessors.map(accessor => idOf(state, accessor.component)), declaration.shader?.group ?? 0, `${leafNumber}:`);
     const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
     const writes = (query?.write ?? []).map(key => idOf(state, key));
+    /** The typed array resources it writes, whose elements change in place, stamped changed once each run. */
+    const arrayWrites = (declaration.resources?.write ?? []).filter(key => {
+        const layout = state.layouts[idOf(state, key)];
+        return layout?.kind === "linear" && layout.array !== undefined;
+    });
+    /** A kernel writing typed arrays in place runs its rows in order on one thread, so the last write to an element is the same every run. */
+    const inOrder = kernel !== null && (kernel.description.writes?.length ?? 0) > 0;
     const looks = [...new Set([...Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []), ...declaration.up?.read ?? [], ...declaration.tables?.components ?? []])].map(key => idOf(state, key));
     /** Record keys by archetype. */
     const keys = new Map<Archetype, string>();
@@ -1159,7 +1166,8 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         }
     };
 
-    const start = (input: unknown, workers: Workers | null, index: number): readonly Chunk[] => {
+    const start = (input: unknown, offered: Workers | null, index: number): readonly Chunk[] => {
+        const workers = inOrder ? null : offered;
         ran = false;
         result = undefined;
         // Removed during the run it's in: its body isn't called again.
@@ -1172,6 +1180,10 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         if (indexesOnly && !indexesChanged) return noChunks;
         const tick = ++state.tick;
         for (let k = 0; k < writes.length; k++) state.written[writes[k]] = tick;
+        for (const key of arrayWrites) {
+            const { storage, row } = resourceCell(state, key);
+            stampChanged(storage, row, tick);
+        }
         lookupSince.value = lastRun;
         const args = ownInput(input);
         slotsUsed = 0;
@@ -1220,7 +1232,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             }
             const values = kernel === null || kernel.description.resources.length === 0 ? noValues : kernel.description.resources.map(key => {
                 const { storage, row } = resourceCell(state, key);
-                return readCell(storage, row);
+                // A typed array is given in place, which its kernel reads and writes.
+                const { layout } = storage;
+                return layout.kind === "linear" && layout.array !== undefined ? layout.array.live(storage.views, row) : readCell(storage, row);
             });
             if (placement === "gpu") {
                 refreshRunList();

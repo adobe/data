@@ -211,6 +211,10 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
                 return value && { kind: "lane", intrinsic: node.intrinsic, lane: node.lane, value };
             }
             case "element": return leaf(node, guards) ?? undefined;
+            case "resourceElement": {
+                const element = expression(node.element, guards, false);
+                return element && { kind: "resourceElement", index: node.index, element };
+            }
             // A row's leaves read NaN where there's no row, in JS kernels as in WASM, so they need no guard.
             case "listLength": return { kind: "listLength", handle: handleFor(node.list) };
             case "listChanged": return { kind: "listChanged", handle: handleFor(node.list) };
@@ -255,6 +259,11 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
             case "store": {
                 const value = expression(node.value, guards, false);
                 return value && [{ kind: "store", column: node.column, value }];
+            }
+            case "resourceStore": {
+                const element = expression(node.element, guards, false);
+                const value = expression(node.value, guards, false);
+                return element && value && [{ kind: "resourceStore", index: node.index, element, value }];
             }
             case "stamp": case "next":
                 return [node];

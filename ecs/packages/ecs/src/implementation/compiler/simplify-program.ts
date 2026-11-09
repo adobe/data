@@ -89,6 +89,7 @@ const foldExpression = (expression: Expression, constants: Constants): Expressio
             return { ...expression, arguments: parameters };
         }
         case "lane": return { ...expression, value: fold(expression.value) };
+        case "resourceElement": return { ...expression, element: fold(expression.element) };
         default: return expression;
     }
 };
@@ -103,6 +104,7 @@ const countUses = (statements: readonly Statement[], sets: Map<number, number>, 
             case "conditional": read(expression.test); read(expression.consequent); read(expression.alternate); return;
             case "math": expression.arguments.forEach(read); return;
             case "lane": read(expression.value); return;
+            case "resourceElement": read(expression.element); return;
             default: return;
         }
     };
@@ -110,6 +112,7 @@ const countUses = (statements: readonly Statement[], sets: Map<number, number>, 
         switch (statement.kind) {
             case "set": sets.set(statement.local, (sets.get(statement.local) ?? 0) + 1); read(statement.value); break;
             case "store": read(statement.value); break;
+            case "resourceStore": read(statement.element); read(statement.value); break;
             case "if": read(statement.test); countUses(statement.consequent, sets, reads); countUses(statement.alternate, sets, reads); break;
             case "block": case "loop": countUses(statement.body, sets, reads); break;
             case "branchIf": read(statement.test); break;
@@ -141,6 +144,7 @@ const foldStatements = (statements: readonly Statement[], inherited: Constants, 
                 break;
             }
             case "store": result.push({ ...statement, value: fold(statement.value) }); break;
+            case "resourceStore": result.push({ ...statement, element: fold(statement.element), value: fold(statement.value) }); break;
             case "if": {
                 const test = fold(statement.test);
                 if (isLiteral(test)) result.push(...nested(test.value ? statement.consequent : statement.alternate));

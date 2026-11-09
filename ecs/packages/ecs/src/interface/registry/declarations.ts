@@ -5,7 +5,7 @@ import { declarationsName } from './ids.js';
 import { layoutOf } from './layout.js';
 import { claimKey, declarationOf, failRegistration, firstKeyOf, installCatchUp, kindOf, labelOf, recordFailure, requireKey, sameDeclaration } from './names.js';
 import { isReduction } from './reduction.js';
-import { allowsNull, hasBoolean, isComparable, isEntity, isString, isStruct, matchesSchema } from './schemas.js';
+import { allowsNull, hasBoolean, isComparable, isEntity, isString, isStruct, isTypedArray, matchesSchema } from './schemas.js';
 import { addTrait, isTrait } from './traits.js';
 
 /**
@@ -35,7 +35,7 @@ const isInstance = (value: unknown, name: string): boolean => {
  * else its `thread` or `"world"`. Only a value with a struct or string schema is known to be one.
  */
 export const threadOfDeclaration = (declaration: AnyDeclaration): string | null => {
-    if (declaration.type !== undefined && (isStruct(declaration.type) || isString(declaration.type))) return null;
+    if (declaration.type !== undefined && (isStruct(declaration.type) || isString(declaration.type) || isTypedArray(declaration.type))) return null;
     // A shared component's value is its archetype's, which every thread reads.
     if (declaration.shared === true) return null;
     return typeof declaration.thread === "string" ? declaration.thread : "world";
@@ -71,7 +71,7 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
     // A start however the build found it, a literal, its type's namespace's or an identity, is one of its type's values.
     if (type !== undefined && "default" in declaration && !matchesSchema(type, declaration.default)) fail(`its default, ${labelOf(declaration.default)}, isn't one of its type's values.`);
     try {
-        layoutOf(type);
+        layoutOf(withLength(declaration).type);
     }
     catch (error) {
         fail(error instanceof Error ? error.message : String(error));
@@ -114,6 +114,19 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
         if (declaration.derived !== undefined) fail("a derived component isn't shared: its rule adds it with its default.");
         if (declaration.reference !== undefined) fail("a reference isn't shared: its target despawning acts on each holder.");
     }
+    const { length } = declaration;
+    if (length !== undefined) {
+        if (kind !== "resource") fail("only a resource has a length: a typed array's.");
+        if (type === undefined || !isTypedArray(type)) fail("only a typed array has a length.");
+        if (typeof length !== "number" || !Number.isInteger(length) || length < 0) fail("length is a whole number.");
+    }
+    if (type !== undefined && isTypedArray(type)) {
+        if (kind !== "resource") fail("only a resource is a typed array.");
+        if (length === undefined && type.length === undefined) fail("a typed array has a length: declare its `length`.");
+        if (length !== undefined && type.length !== undefined && length !== type.length) fail("its length and its type's differ.");
+        if (thread !== undefined) fail("a typed array lives in shared memory, so it has no thread.");
+        if ("default" in declaration) fail("a typed array starts as its length of zeros, so it has no default.");
+    }
     const { transfer } = declaration;
     if (transfer !== undefined) {
         if (transfer !== true) fail("transfer is true.");
@@ -130,9 +143,16 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
 const createRegistry = (kind: "component" | "resource") => (key: unknown, declaration: AnyDeclaration): void => {
     const symbol = requireKey(kind, key);
     const existing = kindOf(symbol);
-    if (existing === kind && sameDeclaration(declarationOf(symbol), declaration)) return;
+    const registered = withLength(declaration);
+    if (existing === kind && sameDeclaration(declarationOf(symbol), registered)) return;
     if (existing === undefined) check(kind, symbol, declaration);
-    claimKey(symbol, kind, declaration);
+    claimKey(symbol, kind, registered);
+};
+
+/** A typed array's declaration with its `length` in its schema, which every layout of it is made from. */
+const withLength = (declaration: AnyDeclaration): AnyDeclaration => {
+    const { type, length } = declaration;
+    return type !== undefined && isTypedArray(type) && type.length === undefined && typeof length === "number" ? { ...declaration, type: { ...type, length } } : declaration;
 };
 
 /** Registers a component: the package's own, and tests' keys made at runtime; the build declares every other. */

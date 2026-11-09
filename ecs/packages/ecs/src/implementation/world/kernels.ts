@@ -8,6 +8,7 @@ import { createArrayLookup } from './rows.js';
 import type { Since } from './index-lookups.js';
 import { commandIdOf, idOf, type Key, type State } from './state.js';
 import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
+import type { TypedArrays } from '../../interface/schema/schema.js';
 import { createDirectory, lookupParameters, type Directory } from './directories.js';
 import { generateWgsl, type ScalarKind, type WgslKernel } from './wgsl.js';
 import { declarationOf } from '../../interface/registry/index.js';
@@ -280,9 +281,17 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         return columns;
     };
     const argsLayout = leaf.input === undefined ? null : layoutOf(leaf.input);
+    /** By resource, the typed array it is, or null. */
+    const arrays = (resource: number): keyof TypedArrays | null => {
+        const key = description.resources[resource];
+        const layout = key === undefined ? undefined : state.layouts[idOf(state, key)];
+        return layout?.kind === "linear" ? layout.array?.name ?? null : null;
+    };
     const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
         : scalar.source === "shared" ? (sharedLeaf(scalar) === null ? null : sharedLeaf(scalar)?.scalar === "boolean" ? "boolean" : "number")
+        // A typed array's in-place view gives its address and length.
+        : arrays(scalar.index) !== null ? (scalar.path.length === 1 && (scalar.path[0] === "byteOffset" || scalar.path[0] === "length") ? "number" : null)
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;
     const useWasm = state.wasm && state.memory.shared && description.program !== null;
     // A lookup through an index's directory also holds each archetype's entities, which its rows' `entity` reads.
@@ -314,7 +323,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     const generate = (muted: readonly boolean[]): WasmKernel | null => useWasm && description.program !== null
         ? generateWasm(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, state.simd, filterCount, wasmLookups, upWasmColumns,
             description.reductions.map(reduction => reduction.operator), indexes.map(bound => bound?.wasm ?? null), (description.probes ?? []).map(probe => probe.lookup),
-            description.storagePrecision === true)
+            description.storagePrecision === true, arrays)
         : null;
     let muted = mutedNow();
     let index = state.kernelIndexes.get(description.url);

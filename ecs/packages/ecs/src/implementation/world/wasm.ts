@@ -2,6 +2,7 @@
 import { blockShift, chunkShift, type Program } from './kernel.js';
 import type { Reduction } from '../../interface/resource/reduction.js';
 import { bytesOf, type View } from '../../interface/registry/layout.js';
+import type { TypedArrays } from '../../interface/schema/schema.js';
 import { withoutIntrinsics } from './intrinsics.js';
 
 type Expression = Program.Expression;
@@ -145,7 +146,7 @@ export const importsOf = (names: readonly string[]): { readonly [name: string]: 
 const op = {
     block: 0x02, loop: 0x03, if: 0x04, else: 0x05, end: 0x0b, br: 0x0c, brIf: 0x0d, call: 0x10, drop: 0x1a, select: 0x1b,
     localGet: 0x20, localSet: 0x21, localTee: 0x22,
-    i32Load: 0x28, f32Load: 0x2a, f64Load: 0x2b, i32Load8u: 0x2d, i32Store: 0x36, f32Store: 0x38, f64Store: 0x39, i32Store8: 0x3a,
+    i32Load: 0x28, f32Load: 0x2a, f64Load: 0x2b, i32Load8s: 0x2c, i32Load8u: 0x2d, i32Load16s: 0x2e, i32Load16u: 0x2f, i32Store: 0x36, f32Store: 0x38, f64Store: 0x39, i32Store8: 0x3a, i32Store16: 0x3b, f64Nearest: 0x9e,
     i32Const: 0x41, f64Const: 0x44, i32ReinterpretF32: 0xbc, i64ReinterpretF64: 0xbd, i32LtU: 0x49, i32GtU: 0x4b, i32LeU: 0x4d, i32GtS: 0x4a, f64Load2: 0x2b,
     i32Eqz: 0x45, i32GeS: 0x4e,
     i64Eq: 0x51, i64Ne: 0x52, i64LtS: 0x53, i64GtS: 0x55, i64LeS: 0x57, i64GeS: 0x59,
@@ -280,6 +281,8 @@ export const generateWasmOrReason = (
      * Without it lanes are f64, two values a vector, promoted from f32 and demoted only on store, as the body computes.
      */
     storagePrecision = true,
+    /** By resource, the typed array it is, which `resourceElement` and `resourceStore` address in place; null for any other. */
+    arrays: (resource: number) => keyof TypedArrays | null = () => null,
     named = false,
 ): WasmKernel | string => {
     const program = withoutIntrinsics(source);
@@ -346,6 +349,7 @@ export const generateWasmOrReason = (
             case "boolean": return "boolean";
             case "column": return columns[expression.column].boolean ? "boolean" : "number";
             case "resource": case "args": case "shared": return scalarTypes(scalarOfExpression(expression)) ?? "mixed";
+            case "resourceElement": return "number";
             case "local": return localTypes[expression.local] ?? "number";
             case "unary": return expression.operator === "!" ? "boolean" : "number";
             case "binary": return ["<", ">", "<=", ">=", "==", "!=", "===", "!=="].includes(expression.operator) ? "boolean" : "number";
@@ -427,6 +431,11 @@ export const generateWasmOrReason = (
     };
     // Accumulators start at their partials, which needn't be integers.
     const integralLocals = new Array<boolean>(program.locals).fill(true).map((integral, index) => integral && !accumulators.includes(index));
+    /**
+     * In the arm of an `if` whose test bounds them, each local whole when finite with its bound, an integer there until
+     * it's assigned again: NaN and the infinities fail every bound.
+     */
+    const guarded = new Map<number, number>();
     /** By local, a bound on its magnitude while it's integral: the largest of what's assigned it, at the fixed point. */
     const localBounds = new Array<number>(program.locals).fill(0);
     /**
@@ -438,7 +447,7 @@ export const generateWasmOrReason = (
         switch (expression.kind) {
             case "number": return Number.isInteger(expression.value) ? Math.abs(expression.value) : null;
             case "boolean": return 1;
-            case "local": return integralLocals[expression.local] ? localBounds[expression.local] : null;
+            case "local": return integralLocals[expression.local] ? localBounds[expression.local] : guarded.get(expression.local) ?? null;
             case "unary": return expression.operator === "-" || expression.operator === "+" ? integerBound(expression.operand) : expression.operator === "!" ? 1 : 2 ** 32;
             case "binary": {
                 if (expression.operator in bitwise) return 2 ** 32;
@@ -549,6 +558,57 @@ export const generateWasmOrReason = (
             changed = true;
         }
     }
+    /** Locals holding an integer whenever they hold a finite number, at the fixed point: assigned integers, or `Math` roundings. */
+    const wholeWhenFinite = new Array<boolean>(program.locals).fill(true).map((whole, index) => whole && !accumulators.includes(index));
+    const roundsToWhole = (expression: Expression): boolean =>
+        integerBound(expression) !== null
+        || (expression.kind === "math" && ["trunc", "floor", "ceil", "round"].includes(expression.name) && expression.arguments.length > 0)
+        || (expression.kind === "local" && wholeWhenFinite[expression.local]);
+    for (let changed = true; changed;) {
+        changed = false;
+        for (const [index, values] of assignedValues) {
+            if (wholeWhenFinite[index] && !values.every(roundsToWhole)) {
+                wholeWhenFinite[index] = false;
+                changed = true;
+            }
+        }
+    }
+    for (let index = 0; index < program.locals; index++) if (!assignedValues.has(index)) wholeWhenFinite[index] = false;
+    /** The bounds an `if`'s test proves true of locals whole when finite, which it bounds on both sides: each an integer there. */
+    const factsOf = (test: Expression): Map<number, number> => {
+        const lower = new Map<number, number>();
+        const upper = new Map<number, number>();
+        const visit = (node: Expression): void => {
+            if (node.kind === "logical" && node.operator === "&&") {
+                visit(node.left);
+                visit(node.right);
+                return;
+            }
+            if (node.kind !== "binary") return;
+            const { operator, left, right } = node;
+            const [own, other, flipped] = left.kind === "local" ? [left, right, false] : [right, left, true];
+            if (own.kind !== "local" || other.kind !== "number" || !Number.isFinite(other.value) || !wholeWhenFinite[own.local]) return;
+            const below = flipped ? operator === ">" || operator === ">=" : operator === "<" || operator === "<=";
+            const above = flipped ? operator === "<" || operator === "<=" : operator === ">" || operator === ">=";
+            if (below) upper.set(own.local, Math.min(upper.get(own.local) ?? Infinity, other.value));
+            if (above) lower.set(own.local, Math.max(lower.get(own.local) ?? -Infinity, other.value));
+        };
+        visit(test);
+        const facts = new Map<number, number>();
+        for (const [local, high] of upper) {
+            const low = lower.get(local);
+            if (low !== undefined) facts.set(local, Math.max(Math.abs(low), Math.abs(high)));
+        }
+        return facts;
+    };
+    /** Runs `arm` knowing what `test` proves of the locals it bounds. */
+    const withFacts = (test: Expression, arm: () => void): void => {
+        const outer = new Map(guarded);
+        for (const [local, bound] of factsOf(test)) if (!integralLocals[local] && bound < 2 ** 53) guarded.set(local, Math.min(bound, guarded.get(local) ?? Infinity));
+        arm();
+        guarded.clear();
+        for (const [local, bound] of outer) guarded.set(local, bound);
+    };
     /** Locals never assigned -0, at the fixed point: true until something that may be -0 is assigned. */
     const signedZeroFree = new Array<boolean>(program.locals).fill(true);
     /** Locals never assigned a negative value or -0, at the fixed point. */
@@ -743,6 +803,7 @@ export const generateWasmOrReason = (
                 case "conditional": read(expression.test); read(expression.consequent); read(expression.alternate); return;
                 case "math": expression.arguments.forEach(read); return;
                 case "lane": read(expression.value); return;
+                case "resourceElement": read(expression.element); return;
                 default: return;
             }
         };
@@ -750,6 +811,7 @@ export const generateWasmOrReason = (
             switch (statement.kind) {
                 case "set": read(statement.value); break;
                 case "store": used.add(statement.column); read(statement.value); break;
+                case "resourceStore": read(statement.element); read(statement.value); break;
                 case "stamp": used.add(statement.column); break;
                 case "if": read(statement.test); columnsUsed(statement.consequent, used); columnsUsed(statement.alternate, used); break;
                 case "block": case "loop": columnsUsed(statement.body, used); break;
@@ -860,7 +922,10 @@ export const generateWasmOrReason = (
             case "local": {
                 const own = integerLocal(expression.local);
                 getLocal(expression.local);
+                const bound = guarded.get(expression.local);
                 if (wideLocals[expression.local]) code.push(op.i32WrapI64);
+                // An integer a test proves within i32 truncates exactly.
+                else if (own === null && !booleanLocals[expression.local] && bound !== undefined && bound < 2 ** 31) code.push(...i32TruncSatF64S);
                 else if (own === null && !booleanLocals[expression.local]) emitToInt32();
                 return;
             }
@@ -1150,6 +1215,7 @@ export const generateWasmOrReason = (
             case "found":
                 code.push(op.localGet, ...unsigned(handleLocal(expression.handle, "found")), op.f64ConvertI32U);
                 return;
+            case "resourceElement": return emitResourceElement(expression.index, expression.element);
             case "lookupLeaf": return emitLookupLeaf(expression.handle, expression.read, expression.path);
             case "lookupHas": return emitLookupHas(expression.handle, expression.read);
             case "listLength": return emitListLength(expression.handle);
@@ -1267,6 +1333,148 @@ export const generateWasmOrReason = (
             return;
         }
         code.push(comparisons[operator as keyof typeof comparisons], op.f64ConvertI32U);
+    };
+
+    // ---- Typed array resources, read and written in place at their elements. ----
+
+    /** Each typed array's loads and stores by its elements' type, with their alignment's log2. */
+    const elementAccess: { readonly [N in keyof TypedArrays]: { readonly load: number; readonly store: number; readonly align: number } } = {
+        Int8Array: { load: op.i32Load8s, store: op.i32Store8, align: 0 },
+        Uint8Array: { load: op.i32Load8u, store: op.i32Store8, align: 0 },
+        Uint8ClampedArray: { load: op.i32Load8u, store: op.i32Store8, align: 0 },
+        Int16Array: { load: op.i32Load16s, store: op.i32Store16, align: 1 },
+        Uint16Array: { load: op.i32Load16u, store: op.i32Store16, align: 1 },
+        Int32Array: { load: op.i32Load, store: op.i32Store, align: 2 },
+        Uint32Array: { load: op.i32Load, store: op.i32Store, align: 2 },
+        Float32Array: { load: op.f32Load, store: op.f32Store, align: 2 },
+        Float64Array: { load: op.f64Load, store: op.f64Store, align: 3 },
+    };
+    const arrayOf = (resource: number): keyof TypedArrays => {
+        const name = arrays(resource);
+        if (name === null) throw unsupported("it indexes a resource that isn't a typed array at runtime");
+        return name;
+    };
+    /** By typed array resource and field, the i32 local its scalar is converted into once a call, before the rows. */
+    const arrayLocals = new Map<string, number>();
+    /** Leaves, as an i32, a typed array resource's `byteOffset` in memory or its `length`, from the scalar of its in-place view. */
+    const arrayParameter = (resource: number, field: "byteOffset" | "length"): void => {
+        const converted = arrayLocals.get(`${resource} ${field}`);
+        if (converted !== undefined) return void code.push(op.localGet, ...unsigned(converted));
+        code.push(op.localGet, ...unsigned(scalarParameter(scalarOf({ source: "resource", index: resource, path: [field] }))), ...truncations.i32TruncSatF64U);
+    };
+    /** Converts each typed array resource's address and length the program indexes, once, into its local. */
+    const convertArrayParameters = (): void => {
+        arrayLocals.clear();
+        const resources = new Set<number>();
+        const visit = (expression: Expression): void => {
+            if (expression.kind === "resourceElement") resources.add(expression.index);
+            switch (expression.kind) {
+                case "unary": return visit(expression.operand);
+                case "binary": case "logical": visit(expression.left); visit(expression.right); return;
+                case "conditional": visit(expression.test); visit(expression.consequent); visit(expression.alternate); return;
+                case "math": return expression.arguments.forEach(visit);
+                case "resourceElement": return visit(expression.element);
+                default: return;
+            }
+        };
+        const walk = (statements: readonly Statement[]): void => {
+            for (const statement of statements) {
+                switch (statement.kind) {
+                    case "set": case "store": visit(statement.value); break;
+                    case "resourceStore": resources.add(statement.index); visit(statement.element); visit(statement.value); break;
+                    case "if": visit(statement.test); walk(statement.consequent); walk(statement.alternate); break;
+                    case "block": case "loop": walk(statement.body); break;
+                    case "branchIf": visit(statement.test); break;
+                    default: break;
+                }
+            }
+        };
+        walk(program.body);
+        for (const resource of resources) {
+            for (const field of ["byteOffset", "length"] as const) {
+                const converted = scratch(i32Type);
+                arrayParameter(resource, field);
+                code.push(op.localSet, ...unsigned(converted));
+                arrayLocals.set(`${resource} ${field}`, converted);
+            }
+        }
+    };
+    /**
+     * Into i32 locals: whether an element is one of a typed array resource's indexes, an integer from 0 below its
+     * length, as -0 is 0's; and its index there, 0 where it isn't, so its address is always the array's.
+     */
+    const elementAt = (resource: number, element: Expression): { readonly position: number; readonly within: number } => {
+        const position = scratch(i32Type);
+        const within = scratch(i32Type);
+        if (signedInteger(element) || unsignedInteger(element)) {
+            // A negative i32 is past every length, compared unsigned.
+            emitInteger(element);
+            code.push(op.localTee, ...unsigned(position));
+            arrayParameter(resource, "length");
+            code.push(op.i32LtU, op.localSet, ...unsigned(within));
+        }
+        else {
+            const value = scratch(f64Type);
+            emit(element);
+            code.push(op.localTee, ...unsigned(value), op.f64Trunc, op.localGet, ...unsigned(value), op.f64Eq);
+            code.push(op.localGet, ...unsigned(value), op.f64Const, ...float64(0), op.f64Ge, op.i32And);
+            code.push(op.localGet, ...unsigned(value));
+            arrayParameter(resource, "length");
+            code.push(op.f64ConvertI32U, op.f64Lt, op.i32And, op.localSet, ...unsigned(within));
+            code.push(op.localGet, ...unsigned(value), ...truncations.i32TruncSatF64U, op.localSet, ...unsigned(position));
+        }
+        code.push(op.localGet, ...unsigned(position), op.i32Const, 0, op.localGet, ...unsigned(within), op.select, op.localSet, ...unsigned(position));
+        return { position, within };
+    };
+    /** Leaves the address of a typed array resource's element at `position`. */
+    const arrayElementAddress = (resource: number, position: number): void => {
+        const { align } = elementAccess[arrayOf(resource)];
+        arrayParameter(resource, "byteOffset");
+        code.push(op.localGet, ...unsigned(position));
+        if (align > 0) code.push(op.i32Const, align, op.i32Shl);
+        code.push(op.i32Add);
+    };
+    /** Leaves a typed array resource's element as an f64, NaN where it isn't one of its indexes, as `undefined` reads in arithmetic. */
+    const emitResourceElement = (resource: number, element: Expression): void => {
+        const name = arrayOf(resource);
+        const { load, align } = elementAccess[name];
+        const { position, within } = elementAt(resource, element);
+        arrayElementAddress(resource, position);
+        code.push(load, align, 0);
+        if (name === "Float32Array") code.push(op.f64PromoteF32);
+        else if (name === "Int8Array" || name === "Int16Array" || name === "Int32Array") code.push(op.f64ConvertI32S);
+        else if (name !== "Float64Array") code.push(op.f64ConvertI32U);
+        code.push(op.f64Const, ...float64(NaN), op.localGet, ...unsigned(within), op.select);
+    };
+    /**
+     * Writes a typed array resource's element where it's one of its indexes, and where `predicate` holds when given,
+     * converted as the typed array converts it, without branching: elsewhere it writes element 0 the value there. A
+     * kernel writing a typed array runs alone, on one thread, so nothing writes element 0 between.
+     */
+    const storeResourceElement = (resource: number, element: Expression, value: Expression, predicate?: () => void): void => {
+        const name = arrayOf(resource);
+        const { load, store: storeOperation, align } = elementAccess[name];
+        const { position, within } = elementAt(resource, element);
+        if (predicate !== undefined) {
+            code.push(op.localGet, ...unsigned(within));
+            predicate();
+            code.push(op.i32And, op.localSet, ...unsigned(within));
+            code.push(op.localGet, ...unsigned(position), op.i32Const, 0, op.localGet, ...unsigned(within), op.select, op.localSet, ...unsigned(position));
+        }
+        arrayElementAddress(resource, position);
+        if (name === "Float32Array") {
+            emit(value);
+            code.push(op.f32DemoteF64);
+        }
+        else if (name === "Float64Array") emit(value);
+        else if (name === "Uint8ClampedArray") {
+            // Clamped to 0 and 255, rounded half to even; NaN is 0, as the saturating truncation makes it.
+            emit(value);
+            code.push(op.f64Nearest, op.f64Const, ...float64(0), op.f64Max, op.f64Const, ...float64(255), op.f64Min, ...truncations.i32TruncSatF64U);
+        }
+        else emitInteger(value);
+        arrayElementAddress(resource, position);
+        code.push(load, align, 0, op.localGet, ...unsigned(within), op.select, storeOperation, align, 0);
     };
 
     /** Labels from innermost: program blocks and loops count toward IR depths; `if`s and the row block don't. */
@@ -1967,6 +2175,7 @@ export const generateWasmOrReason = (
                 case "stamp": return true;
                 case "store": return columns[inner.column].component >= 0 && rowAddresses.has(inner.column) && cheap(inner.value);
                 case "set": return !accumulators.includes(inner.local) && cheap(inner.value);
+                case "resourceStore": return cheap(inner.element) && cheap(inner.value);
                 default: return false;
             }
         });
@@ -1985,6 +2194,7 @@ export const generateWasmOrReason = (
                 code.push(op.localGet, ...unsigned(local(inner.local)));
                 emitPredicate();
                 code.push(op.select, op.localSet, ...unsigned(local(inner.local)));
+                guarded.delete(inner.local);
             }
             else if (inner.kind === "store") {
                 const { view } = columns[inner.column];
@@ -1996,6 +2206,7 @@ export const generateWasmOrReason = (
                 emitPredicate();
                 code.push(op.select, op.localSet, ...unsigned(register));
             }
+            else if (inner.kind === "resourceStore") storeResourceElement(inner.index, inner.element, inner.value, emitPredicate);
             else if (inner.kind === "stamp") {
                 // The tick, or the one there where the predicate doesn't hold, at the row and at its block and chunk.
                 const stampAt = (emitAddress: () => void): void => {
@@ -2020,8 +2231,10 @@ export const generateWasmOrReason = (
             case "set":
                 emitAssigned(current.local, current.value);
                 code.push(op.localSet, ...unsigned(local(current.local)));
+                guarded.delete(current.local);
                 return;
             case "store": return store(current.column, current.value);
+            case "resourceStore": return storeResourceElement(current.index, current.element, current.value);
             // A chunk column stays when its row column is muted, for a component held on the GPU.
             case "stamp":
                 if (columns[current.column].muted !== true) store(current.column, "tick");
@@ -2040,7 +2253,7 @@ export const generateWasmOrReason = (
                     const predicate = scratch(i32Type);
                     emitCondition(current.test);
                     code.push(op.localSet, ...unsigned(predicate));
-                    predicated(current.consequent, predicate, false);
+                    withFacts(current.test, () => predicated(current.consequent, predicate, false));
                     predicated(current.alternate, predicate, true);
                     for (const column of stored) {
                         address(column);
@@ -2052,7 +2265,7 @@ export const generateWasmOrReason = (
                 emitCondition(current.test);
                 code.push(op.if, 0x40);
                 labels.push("if");
-                for (const inner of current.consequent) statement(inner);
+                withFacts(current.test, () => { for (const inner of current.consequent) statement(inner); });
                 if (current.alternate.length > 0) {
                     code.push(op.else);
                     for (const inner of current.alternate) statement(inner);
@@ -2247,7 +2460,7 @@ export const generateWasmOrReason = (
                 for (const parameter of expression.arguments) rowsEmit(parameter);
                 emitVectorMath(expression.name, expression.arguments.length);
                 return;
-            case "found": case "lookupLeaf": case "lookupHas": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": throw notVectorizable;
+            case "found": case "lookupLeaf": case "lookupHas": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": case "resourceElement": throw notVectorizable;
         }
     };
 
@@ -3165,12 +3378,17 @@ export const generateWasmOrReason = (
                     visit(expression.alternate);
                     return;
                 case "math": return expression.arguments.forEach(visit);
+                case "resourceElement": return visit(expression.element);
                 default: return;
             }
         };
         for (const current of statements) {
             switch (current.kind) {
                 case "set": case "store": visit(current.value); break;
+                case "resourceStore":
+                    visit(current.element);
+                    visit(current.value);
+                    break;
                 case "if":
                     visit(current.test);
                     hoist(current.consequent);
@@ -3423,6 +3641,7 @@ export const generateWasmOrReason = (
             code.push(op.localGet, 0, op.localSet, ...unsigned(rowLocal));
             hoisted.clear();
             hoist(program.body);
+            convertArrayParameters();
             accumulators.forEach((accumulator, k) => {
                 code.push(op.localGet, ...unsigned(partialsParameter), op.f64Load, 3, ...unsigned(8 * k), op.localSet, ...unsigned(local(accumulator)));
             });

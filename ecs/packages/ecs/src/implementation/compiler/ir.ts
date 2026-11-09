@@ -28,6 +28,8 @@ export type Expression =
     /** A column of the row's parent, at the parent's row: `Unit.upColumns`. */
     | { readonly kind: "upColumn"; readonly column: number }
     | { readonly kind: "resource"; readonly index: number; readonly path: Path }
+    /** Element `element` of resource `index`, a typed array's in place for a kernel; an array's own for one that isn't. */
+    | { readonly kind: "resourceElement"; readonly index: number; readonly element: Expression }
     | { readonly kind: "args"; readonly path: Path }
     /** A leaf of the call's archetype's value of shared component `index`, in `Signature.shared` order: a parameter of the call. */
     | { readonly kind: "shared"; readonly index: number; readonly path: Path }
@@ -59,6 +61,8 @@ export type Statement =
     /** Declares `let` locals that every path assigns before reading. */
     | { readonly kind: "declare"; readonly locals: readonly number[] }
     | { readonly kind: "store"; readonly column: number; readonly value: Expression }
+    /** Writes element `element` of resource `index`, a typed array, in place, as the typed array converts it. */
+    | { readonly kind: "resourceStore"; readonly index: number; readonly element: Expression; readonly value: Expression }
     /** Stamps a changed column at the row, and its chunk and block columns at the row's chunk and block. */
     | { readonly kind: "stamp"; readonly column: number; readonly chunks: number; readonly blocks: number }
     | { readonly kind: "if"; readonly test: Expression; readonly consequent: Out; readonly alternate: Out }
@@ -99,6 +103,7 @@ export const references = (expression: Expression, matches: (node: Expression) =
         case "math": return expression.arguments.some(item => references(item, matches));
         case "observe": case "lane": return references(expression.value, matches);
         case "element": return references(expression.object, matches) || references(expression.index, matches);
+        case "resourceElement": return references(expression.element, matches);
         case "array": return expression.items.some(item => references(item, matches));
         case "record": return expression.fields.some(([, item]) => references(item, matches));
         default: return false;

@@ -16,11 +16,26 @@ import { fresh } from './unit.js';
 import { describeValue, type Value } from './value.js';
 
 /** One scalar store. `component` is set for row writes, which stamp the changed column. */
-type Target = { readonly kind: "local"; readonly local: number } | { readonly kind: "column"; readonly column: number };
+type Target =
+    | { readonly kind: "local"; readonly local: number }
+    | { readonly kind: "column"; readonly column: number }
+    | { readonly kind: "element"; readonly index: number; readonly element: Expression };
 type Store = { readonly target: Target; readonly value: Expression; readonly component: string | undefined };
 
-const localTarget = (node: Node, expression: Expression): Target =>
-    expression.kind === "local" ? { kind: "local", local: expression.local } : fail(node, "this can't be assigned in a kernel");
+/** An element of a resource, at a runtime or literal index: a typed array's, which a kernel writes in place. */
+const elementOf = (expression: Expression): { readonly index: number; readonly element: Expression } | null => {
+    if (expression.kind === "resourceElement") return { index: expression.index, element: expression.element };
+    const [only] = expression.kind === "resource" ? expression.path : [];
+    return expression.kind === "resource" && expression.path.length === 1 && typeof only === "number" ? { index: expression.index, element: number(only) } : null;
+};
+
+const localTarget = (node: Node, expression: Expression, scope: Scope): Target => {
+    if (expression.kind === "local") return { kind: "local", local: expression.local };
+    const element = elementOf(expression);
+    if (element === null) return fail(node, "this can't be assigned in a kernel");
+    scope.unit.resourceWrites.add(element.index);
+    return { kind: "element", ...element };
+};
 
 const root = (node: Node): string | undefined =>
     node.type === "Identifier" ? node.name : node.type === "MemberExpression" ? root(node.object) : undefined;
@@ -40,6 +55,8 @@ const targetValue = (node: SourceExpression | Pattern, scope: Scope, out: Out): 
         if (value.path.length > 0) return fail(node, "component values are immutable; write the whole value");
         return value;
     }
+    // A typed array resource's elements are written in place.
+    if (value.kind === "dynamic" && elementOf(value.expression) !== null) return value;
     if (node.type !== "Identifier") return fail(node, "values are immutable; assign a whole new value to a let local");
     const name = root(node);
     const local = name === undefined ? undefined : findLocal(scope, name);
@@ -67,7 +84,7 @@ const pair = (node: Node, target: Value, data: Data, scope: Scope): readonly Sto
                 target: { kind: "local", local: snapshotLeaf(unit, target.snapshot, [...target.path, ...leaf.path]) }, value: leaf.expression, component: undefined,
             }));
         case "scalar": case "dynamic":
-            return data.kind === "leaf" ? [{ target: localTarget(node, target.expression), value: data.expression, component: undefined }] : fail(node, "can't assign a tuple or struct to a scalar");
+            return data.kind === "leaf" ? [{ target: localTarget(node, target.expression, scope), value: data.expression, component: undefined }] : fail(node, "can't assign a tuple or struct to a scalar");
         case "tuple":
             return data.kind === "tuple" && data.items.length === target.items.length
                 ? target.items.flatMap((item, index) => pair(node, item, data.items[index], scope))
@@ -103,7 +120,8 @@ const collect = (pattern: Pattern, value: Value, scope: Scope, out: Out): readon
 /** Whether `value` reads what `target` writes. */
 const reads = (value: Expression, target: Target): boolean => references(value, node => target.kind === "local"
     ? node.kind === "local" && node.local === target.local
-    : node.kind === "column" && node.column === target.column);
+    : target.kind === "column" ? node.kind === "column" && node.column === target.column
+    : (node.kind === "resourceElement" || node.kind === "resource") && node.index === target.index);
 
 /**
  * Emits stores as if every right-hand leaf were evaluated first, so `[a, b] = [b, a]` swaps: a leaf that reads an
@@ -117,9 +135,12 @@ const emit = (stores: readonly Store[], scope: Scope, out: Out): void => {
         out.push(set(unit, temporary, store.value, "const"));
         return local(temporary);
     });
-    stores.forEach((store, index) => out.push(store.target.kind === "local"
-        ? set(unit, store.target.local, values[index], undefined)
-        : { kind: "store", column: store.target.column, value: values[index] }));
+    stores.forEach((store, index) => {
+        const { target } = store;
+        out.push(target.kind === "local" ? set(unit, target.local, values[index], undefined)
+            : target.kind === "column" ? { kind: "store", column: target.column, value: values[index] }
+            : { kind: "resourceStore", index: target.index, element: target.element, value: values[index] });
+    });
     for (const component of new Set(stores.flatMap(store => store.component === undefined ? [] : [store.component]))) {
         out.push({ kind: "stamp", ...changedColumns(unit, component) });
     }
@@ -142,8 +163,11 @@ const compoundStore = (node: SourceExpression | Pattern, operator: string, opera
             const leaf = snapshotLeaf(unit, target.snapshot, target.path);
             return { target: { kind: "local", local: leaf }, value: combine(local(leaf)), component: undefined };
         }
-        case "scalar": case "dynamic":
-            return { target: localTarget(node, target.expression), value: combine(target.expression), component: undefined };
+        case "scalar": case "dynamic": {
+            const stored = localTarget(node, target.expression, scope);
+            const current = stored.kind === "element" ? { kind: "resourceElement" as const, index: stored.index, element: stored.element } : target.expression;
+            return { target: stored, value: combine(current), component: undefined };
+        }
         default:
             return fail(node, `compound assignment needs a scalar, not ${describeValue(target)}`);
     }

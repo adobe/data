@@ -8,7 +8,7 @@ import type { PackageCopies } from './package-copies.js';
 import { createLists } from './lists.js';
 import type { Module } from './module-scope.js';
 import { resolve, type Out } from './out.js';
-import type { Expression, Statement } from './ir.js';
+import { references, type Expression, type Statement } from './ir.js';
 import { localName, printStatements } from './print.js';
 import { toProgram } from './program.js';
 import { serialize } from './serialize.js';
@@ -75,6 +75,18 @@ const loops = (statements: readonly Program.Statement[]): boolean => statements.
     }
 });
 
+/** Whether statements read or write a resource's elements at runtime, which WGSL can't yet. */
+const indexesResources = (statements: readonly Statement[]): boolean => statements.some(statement => {
+    const indexes = (expression: Expression): boolean => references(expression, node => node.kind === "resourceElement");
+    switch (statement.kind) {
+        case "resourceStore": return true;
+        case "set": case "store": return indexes(statement.value);
+        case "if": return indexes(statement.test) || indexesResources(resolve(statement.consequent)) || indexesResources(resolve(statement.alternate));
+        case "block": case "loop": case "intrinsic": return indexesResources(resolve(statement.body));
+        default: return false;
+    }
+});
+
 /** `target` "gpu" also checks, before anything runs, what only a GPU kernel can't do; schemas are checked at registration. */
 export const compileKernel = (declaration: ObjectExpression, body: Node, module: Module, target: "cpu" | "gpu" = "cpu", link: Link | null = null, tried = false, packages: PackageCopies | null = link?.packages ?? null): CompiledKernel => {
     if (body.type !== "ArrowFunctionExpression" && body.type !== "FunctionExpression") {
@@ -136,6 +148,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         if (filtered) fail(declaration, "a GPU kernel can't use change filters yet");
         if (reduced.length > 0) fail(declaration, "a GPU kernel can't use reductions yet");
         if (program === null) fail(body, "a GPU kernel can't issue commands or use values that aren't numbers or booleans");
+        else if (indexesResources(statements)) fail(body, "a GPU kernel can't index a resource at runtime or write one yet");
         else if (loops(program.body)) fail(body, "a GPU kernel can't use loops or labeled blocks yet");
     }
     // Chunk, block and presence columns aren't read at a row's element.
@@ -181,6 +194,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             `columns: [${columns.join(", ")}],`,
             `shapes: [${[...unit.shapes].join(", ")}],`,
             `resources: [${resources.join(", ")}],`,
+            ...unit.resourceWrites.size === 0 ? [] : [`writes: ${JSON.stringify([...unit.resourceWrites].sort((a, b) => a - b))},`],
             ...unit.signature.shared.length === 0 ? [] : [`shared: [${unit.signature.shared.join(", ")}],`],
             `lookups: [${lookups.map(lookup => JSON.stringify(lookup.name)).join(", ")}],`,
             ...unit.probes.length === 0 ? [] : [`probes: [${unit.probes.join(", ")}],`, `rowLeaves: [${unit.rowLeaves.join(", ")}],`],

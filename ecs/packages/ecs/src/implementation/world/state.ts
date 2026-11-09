@@ -20,7 +20,7 @@ import type { FinalizerRunner, Thrown } from './finalizers.js';
 import { createPlan, type Plan } from './plan.js';
 import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
 import { layoutOf, objectLayout, type Layout } from '../../interface/registry/layout.js';
-import { numberConstants } from '../../interface/registry/schemas.js';
+import { isTypedArray, numberConstants } from '../../interface/registry/schemas.js';
 import { createMemory, type Memory } from './memory.js';
 import { createStrings, type StringStore } from './strings.js';
 import { createLayoutDirectory, type LayoutDirectory } from './layout-directory.js';
@@ -491,8 +491,9 @@ export const idOf = (state: State, key: Key): number => {
 };
 
 /**
- * What a resource or derived component starts at: a new empty `Map` or `Set` when it starts fresh, so each world has
- * its own; its declaration's default, which the build gives; or `null` when its type allows leaving it out.
+ * What a resource or derived component starts at: a new empty `Map` or `Set` when it starts fresh, and a typed
+ * array's length of zeros, so each world has its own; its declaration's default, which the build gives; or `null`
+ * when its type allows leaving it out.
  */
 export const defaultOf = (key: Key): unknown => {
     const declaration = declarationOf(key);
@@ -502,6 +503,10 @@ export const defaultOf = (key: Key): unknown => {
     if ("default" in declaration) return declaration.default;
     const { type } = declaration;
     if (type === undefined) return null;
+    if (isTypedArray(type)) {
+        const constructor: unknown = Reflect.get(globalThis, type.array);
+        return typeof constructor === "function" ? Reflect.construct(constructor, [type.length ?? 0]) : null;
+    }
     // A union of number constants starts at its first, so its value is always one of them.
     return numberConstants(type)?.[0] ?? null;
 };

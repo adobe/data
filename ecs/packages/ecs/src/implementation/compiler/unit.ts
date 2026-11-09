@@ -46,6 +46,8 @@ export type Unit = {
     readonly stampedPerCall: Map<number, PerCall>;
     /** Columns read where a boolean's identity is observable, so they need conversion. */
     readonly booleans: Set<number>;
+    /** The resources, by index into the signature's, whose elements the body writes in place. */
+    readonly resourceWrites: Set<number>;
     /** Columns of optional components, each by the index in `keys` of its component, which an archetype may lack. */
     readonly optionalColumns: Map<number, number>;
     /** Each optional component's presence column, by its binding name. */
@@ -97,7 +99,7 @@ export const createUnit = (signature: Signature, module: Module, lists: Lists, e
     const up = signature.up === null ? null : counter++;
     if (up !== null) names.set(up, "up");
     return {
-        signature, module, lists, link, packages, target, tried, columns: [], columnIndex: new Map(), chunks: new Set(), blocks: new Set(), stampedPerCall: new Map(), booleans: new Set(), optionalColumns: new Map(), presences: new Map(), presentAs: null, assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
+        signature, module, lists, link, packages, target, tried, columns: [], columnIndex: new Map(), chunks: new Set(), blocks: new Set(), stampedPerCall: new Map(), booleans: new Set(), resourceWrites: new Set(), optionalColumns: new Map(), presences: new Map(), presentAs: null, assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
         used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map(), up: new Set() },
         up, upColumns: [], upColumnIndex: new Map(), upBooleans: new Set(), probes: [], rowLeaves: [], handles: new Set(),
         next: () => counter++, expression, statement,

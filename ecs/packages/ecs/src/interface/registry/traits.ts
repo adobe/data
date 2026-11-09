@@ -2,7 +2,7 @@
 import { claimKey, kindOf } from './names.js';
 import type { BuiltIn } from '../trait/key.js';
 
-const builtIn: ReadonlySet<unknown> = new Set<BuiltIn>(["type", "derived", "within", "reference", "reduce", "thread", "transfer", "shared"]);
+const builtIn: ReadonlySet<unknown> = new Set<BuiltIn>(["type", "derived", "within", "reference", "reduce", "thread", "transfer", "shared", "length"]);
 
 /** Whether `name` is a trait: a built-in one's string, or a registered trait's symbol. */
 export const isTrait = (name: unknown): boolean => builtIn.has(name) || kindOf(name) === "trait";

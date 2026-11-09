@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { reductionOperators } from '../../interface/registry/reduction.js';
-import { isComparable, isEntity, isString, isStruct, matchesSchema } from '../../interface/registry/schemas.js';
+import { isComparable, isEntity, isString, isStruct, isTypedArray, matchesSchema } from '../../interface/registry/schemas.js';
 import type { Schema } from '../../interface/schema/schema.js';
 import { declarationsName } from '../../interface/registry/ids.js';
 import type { PassResult } from './input-schemas.js';
@@ -215,6 +215,7 @@ const zeroOf = (schema: Schema): Start => {
         case "null": return { value: null };
         case "set": return { fresh: "Set" };
         case "map": return { fresh: "Map" };
+        case "typedArray": return { none: "a typed array starts as its length of zeros, in each world" };
         case "array": {
             const count = schema.minItems ?? 0;
             if (count === 0) return { value: [] };
@@ -819,6 +820,16 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
                     if (error.notData.node && !thread) fail(module, member, `${key.name} is a DOM Node, which lives on "main": declare \`thread: "main"\``);
                 }
                 await checkBuiltIns(key.name, kind, typeNode, schema, builtIns);
+                const length = builtIns.get("length");
+                if (schema !== undefined && isTypedArray(schema)) {
+                    if (kind !== "resource") fail(module, member, `${key.name} is a component: only a resource is a typed array`);
+                    if (length === undefined) fail(module, member, `${key.name} is a typed array: declare its \`length\`, a literal whole number`);
+                    if (length !== undefined && !/^\d+$/.test(length.text)) fail(module, length.node, `${key.name}'s length is a literal whole number`);
+                    if (defaultNode !== undefined) fail(module, defaultNode, `${key.name} is a typed array, which starts as its length of zeros in each world: leave its default out`);
+                    if (builtIns.has("thread")) fail(module, member, `${key.name} is a typed array: a typed array lives in shared memory, so it has no thread`);
+                    schema = { ...schema, length: Number(length?.text) };
+                }
+                else if (length !== undefined) fail(module, length.node, `${key.name} isn't a typed array: only a typed array resource has a length`);
                 const freshType = schema !== undefined ? null : await converter.freshOf(typeNode, module);
                 const emptied = schema !== undefined && "type" in schema && (schema.type === "map" || schema.type === "set") ? (schema.type === "map" ? "Map" : "Set") : freshType;
                 if (defaultNode !== undefined && emptied !== null) fail(module, defaultNode, `${key.name} is a Readonly${emptied}, which starts empty in each world: leave its default out`);
@@ -828,7 +839,8 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
                 let fresh: "Map" | "Set" | null = null;
                 // Without a literal, only resources and derived components need a start of their own, and a component
                 // holding an object, whose start a joined thread knows by identity.
-                const needed = kind === "resource" || builtIns.has("derived");
+                // A typed array starts as its length of zeros, which each world makes.
+                const needed = (kind === "resource" && (schema === undefined || !isTypedArray(schema))) || builtIns.has("derived");
                 const oneObject = kind === "component" && (schema === undefined || !isStruct(schema));
                 const reduced = builtIns.get("reduce");
                 const operator: unknown = kind === "resource" && reduced !== undefined ? JSON.parse(reduced.text) : null;

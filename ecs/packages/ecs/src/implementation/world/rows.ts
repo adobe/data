@@ -539,14 +539,26 @@ export const createContext = (state: State, declaration: Pick<Resolved, "lookup"
     let row = 0;
     if (keys.length > 0) {
         const values = own();
+        /** By key, a typed array's view in place, while its storage's bytes and row are the ones it was made of. */
+        const live: ({ readonly bytes: Uint8Array; readonly row: number; readonly array: unknown } | undefined)[] = keys.map(() => undefined);
+        /** A resource's value: a typed array's view in place, which the body reads and writes; any other's copy. */
+        const valueIn = (i: number, storage: Storage, at: number): unknown => {
+            const { layout } = storage;
+            if (layout.kind !== "linear" || layout.array === undefined) return readCell(storage, at);
+            const cached = live[i];
+            if (cached !== undefined && cached.bytes === storage.views.u8 && cached.row === at) return cached.array;
+            const array = layout.array.live(storage.views, at);
+            live[i] = { bytes: storage.views.u8, row: at, array };
+            return array;
+        };
         keys.forEach((key, i) => {
             Object.defineProperty(values, key, {
                 get: () => {
                     const storage = storages[i];
-                    if (storage !== undefined) return readCell(storage, row);
+                    if (storage !== undefined) return valueIn(i, storage, row);
                     // Throws, as for a resource not in this world.
                     const cell = resourceCell(state, key);
-                    return readCell(cell.storage, cell.row);
+                    return valueIn(i, cell.storage, cell.row);
                 },
                 set: writes.has(key) ? (next: unknown) => {
                     let storage = storages[i];

@@ -1253,3 +1253,77 @@ describe("generateWasm interleaved rows", () => {
         expect(vector).toEqual(scalar);
     });
 });
+
+describe("generateWasm integers a test bounds", () => {
+    const local = (index: number): Expression => ({ kind: "local", local: index });
+    const column = (index: number): Expression => ({ kind: "column", column: index });
+    const number = (value: number): Expression => ({ kind: "number", value });
+    const binary = (operator: Extract<Expression, { kind: "binary" }>["operator"], left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+    const and = (...items: Expression[]): Expression => items.reduce((left, right) => ({ kind: "logical", operator: "&&", left, right }));
+    const trunc = (value: Expression): Expression => ({ kind: "math", name: "trunc", arguments: [value] });
+    const inputs = [NaN, Infinity, -Infinity, -0.5, -1, 0, 0.75, 319.9, 320, 1e10, 239.5, 240, 3.25];
+
+    /** Runs a program over pairs of f64 inputs in columns 0 and 1, into an i32 column 2 and an f64 column 3, with SIMD and without. */
+    const runPairs = (program: Program, pairs: readonly (readonly [number, number])[]) => {
+        const columns: WasmColumn[] = [0, 1].map(component => ({ view: "f64", stride: 8, offset: 0, boolean: false, component }));
+        columns.push({ view: "i32", stride: 4, offset: 0, boolean: false, component: 2 }, { view: "f64", stride: 8, offset: 0, boolean: false, component: 3 });
+        return [true, false].map(simd => {
+            const kernel = generateWasm(program, columns, () => "number", simd);
+            if (kernel === null) throw new Error("expected a kernel");
+            const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+            const [a, b] = [0, 8192].map(at => new Float64Array(memory.buffer, at, pairs.length));
+            pairs.forEach(([x, y], k) => { a[k] = x; b[k] = y; });
+            const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+            if (typeof run !== "function") throw new Error("no run export");
+            run(0, pairs.length, 0, -1, 0, 8192, 16384, 24576);
+            const printed = printWat(kernel.bytes);
+            return { ints: [...new Int32Array(memory.buffer, 16384, pairs.length)], numbers: [...new Float64Array(memory.buffer, 24576, pairs.length)], wat: "wat" in printed ? printed.wat : printed.failure };
+        });
+    };
+    const pairs = inputs.flatMap(x => inputs.map(y => [x, y] as const));
+
+    it("compute in i32 what an if's test proves an integer, as JS computes it", () => {
+        const program: Program = {
+            locals: 2,
+            body: [
+                { kind: "set", local: 0, value: trunc(column(0)) },
+                { kind: "set", local: 1, value: trunc(column(1)) },
+                {
+                    kind: "if", test: and(binary(">=", local(1), number(0)), binary("<", local(1), number(240)), binary(">=", local(0), number(0)), binary("<", local(0), number(320))),
+                    consequent: [{ kind: "store", column: 2, value: binary("+", local(0), binary("*", local(1), number(320))) }, { kind: "store", column: 3, value: binary("*", local(0), number(-3)) }],
+                    alternate: [],
+                },
+            ],
+        };
+        const expected = pairs.map(([a, b]) => {
+            const x = Math.trunc(a), y = Math.trunc(b);
+            return y >= 0 && y < 240 && x >= 0 && x < 320 ? { int: (x + y * 320) | 0, number: x * -3 } : { int: 0, number: 0 };
+        });
+        for (const { ints, numbers, wat } of runPairs(program, pairs)) {
+            expect(ints).toEqual(expected.map(value => value.int));
+            expect(numbers).toEqual(expected.map(value => value.number));
+            // The sum converts each operand by an exact truncation, not JS's ToInt32 of any number.
+            expect(wat).toContain("i32.trunc_sat_f64_s");
+            expect(wat).not.toContain("2.3283064365386963e-10");
+        }
+    });
+
+    it("forget what a test proved of a local assigned again in its arm", () => {
+        const program: Program = {
+            locals: 1,
+            body: [
+                { kind: "set", local: 0, value: trunc(column(0)) },
+                {
+                    kind: "if", test: and(binary(">=", local(0), number(0)), binary("<", local(0), number(320))),
+                    consequent: [{ kind: "set", local: 0, value: trunc(binary("*", local(0), number(1e10))) }, { kind: "store", column: 2, value: binary("|", local(0), number(0)) }],
+                    alternate: [],
+                },
+            ],
+        };
+        const expected = pairs.map(([a]) => {
+            const x = Math.trunc(a);
+            return x >= 0 && x < 320 ? Math.trunc(x * 1e10) | 0 : 0;
+        });
+        for (const { ints } of runPairs(program, pairs)) expect(ints).toEqual(expected);
+    });
+});

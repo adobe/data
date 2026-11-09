@@ -343,7 +343,10 @@ export const describeSystems = async (sites: TransformedSites, format: (code: st
         // An `up` kernel's runner passes only the rows that pass its filters.
         const filters = signature.up !== null ? 0 : listLength(declaration, ["components", "added"], count) + listLength(declaration, ["components", "changed"], count);
         const generated = generateWasmOrReason(explanation.program, placed.columns, placed.scalarType, true, filters, placed.lookups, placed.upColumns,
-            explanation.operators, [], [], explanation.storagePrecision, true);
+            explanation.operators, [], [], explanation.storagePrecision, resource => {
+                const layout = layoutNamed(signature.resources[resource] ?? "");
+                return typeof layout === "object" && layout.kind === "linear" ? layout.array?.name ?? null : null;
+            }, true);
         if (typeof generated === "string") return { backend: { kind: "none", reason: generated }, lanes: null };
         const printed = printWat(generated.bytes);
         if ("failure" in printed) return { backend: { kind: "none", reason: `its WASM can't be printed: ${printed.failure}` }, lanes: null };

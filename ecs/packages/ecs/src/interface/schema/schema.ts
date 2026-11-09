@@ -84,6 +84,30 @@ interface MapSchema<K extends Schema, V extends Schema> {
     readonly default?: never;
 }
 
+/** The typed arrays a resource may be, by their constructors' names. */
+export type TypedArrays = {
+    readonly Int8Array: Int8Array;
+    readonly Uint8Array: Uint8Array;
+    readonly Uint8ClampedArray: Uint8ClampedArray;
+    readonly Int16Array: Int16Array;
+    readonly Uint16Array: Uint16Array;
+    readonly Int32Array: Int32Array;
+    readonly Uint32Array: Uint32Array;
+    readonly Float32Array: Float32Array;
+    readonly Float64Array: Float64Array;
+};
+
+/**
+ * A typed array of `length` elements in shared memory, which systems read and write in place: a resource's, its
+ * `length` its declaration's trait. JSON has no typed array, so `'typedArray'` isn't a JSON Schema type.
+ */
+interface TypedArraySchema {
+    readonly type: 'typedArray';
+    readonly array: keyof TypedArrays;
+    readonly length?: number;
+    readonly default?: never;
+}
+
 /** Matches exactly one JSON value of any shape. */
 interface ConstSchema {
     /** The value alone fully describes the schema; combining it with `type` is redundant and disallowed. */
@@ -107,7 +131,7 @@ interface OrSchema {
  * `{ type: 'map', keys, values }`. A schema describes values and holds no `default`: a value's start comes from its
  * declaration or its type's namespace, `T.default`.
  */
-export type Schema = EntitySchema | ObjectSchema | StringSchema | ArraySchema<Schema> | NumberSchema | IntegerSchema | BooleanSchema | NullSchema | SetSchema<Schema> | MapSchema<Schema, Schema> | ConstSchema | AndSchema | OrSchema;
+export type Schema = EntitySchema | ObjectSchema | StringSchema | ArraySchema<Schema> | NumberSchema | IntegerSchema | BooleanSchema | NullSchema | SetSchema<Schema> | MapSchema<Schema, Schema> | TypedArraySchema | ConstSchema | AndSchema | OrSchema;
 
 type UnionToIntersection<U> = (U extends unknown ? (x: U) => void : never) extends (x: infer I) => void ? I : never;
 
@@ -148,6 +172,7 @@ export namespace Schema {
         T extends ArraySchema<infer U> ? ArrayToType<T, Schema.ToType<U>> :
         T extends SetSchema<infer U> ? ReadonlySet<Schema.ToType<U>> :
         T extends MapSchema<infer K, infer V> ? ReadonlyMap<Schema.ToType<K>, Schema.ToType<V>> :
+        T extends TypedArraySchema ? TypedArrays[T['array']] :
         T extends NumberSchema ? number :
         T extends IntegerSchema ? number :
         T extends BooleanSchema ? boolean :

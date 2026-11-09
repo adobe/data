@@ -32,6 +32,24 @@ const registrations = async (body: string, files: { readonly [path: string]: str
 const keys = (...names: readonly string[]) => names.map(name => `const ${name} = Symbol();`).join("\n") + "\n";
 
 describe("augmentationInsertions", () => {
+    test("records a typed array resource with its length in its schema, and no start, which each world makes", async () => {
+        expect(await registrations(`${keys("frame", "heights")}declare module "@adobe/ecs" {
+    interface Resources { [frame]: { type: Uint8Array; length: 76800 }; [heights]: { type: Float32Array<ArrayBuffer>; length: 4 } }
+}`)).toEqual([
+            `declare$(frame, "resource", { type: {"type":"typedArray","array":"Uint8Array","length":76800}, length: 76800 });`,
+            `declare$(heights, "resource", { type: {"type":"typedArray","array":"Float32Array","length":4}, length: 4 });`,
+        ]);
+    });
+
+    test("fails a typed array without a length or with a start, and a length on any other value", async () => {
+        const declared = (record: string) => passed(`${keys("frame")}declare module "@adobe/ecs" {\n    interface Resources { [frame]: ${record} }\n}`);
+        expect(await declared("{ type: Uint8Array }")).toMatch(/frame is a typed array: declare its `length`/);
+        expect(await declared("{ type: Uint8Array; length: 2.5 }")).toMatch(/frame's length is a literal whole number/);
+        expect(await declared("{ type: Uint8Array; length: 4; default: 0 }")).toMatch(/leave its default out/);
+        expect(await declared("{ type: number; length: 4 }")).toMatch(/frame isn't a typed array/);
+        expect(await passed(`${keys("frame")}declare module "@adobe/ecs" {\n    interface Components { [frame]: { type: Uint8Array; length: 4 } }\n}`)).toMatch(/only a resource is a typed array/);
+    });
+
     test("registers each component and resource with the schema of its type", async () => {
         expect(await registrations(`${keys("position", "done", "label", "speed", "count")}declare module "@adobe/ecs" {
     interface Components { [position]: { type: Vec3 }; [done]: { type: boolean }; [label]: { type: string } }

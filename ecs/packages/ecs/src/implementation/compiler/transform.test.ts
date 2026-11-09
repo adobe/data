@@ -128,6 +128,12 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                     return booleans[node.column] === true ? value !== 0 : value;
                 }
                 case "resource": return scalarAt(resources[node.index], node.path);
+                case "resourceElement": {
+                    const array = resources[node.index];
+                    const element = Number(evaluate(node.element));
+                    const value: unknown = Reflect.get(Object(array), element);
+                    return typeof value === "number" ? value : NaN;
+                }
                 case "args": return scalarAt(args, node.path);
                 case "shared": return scalarAt(shared[node.index], node.path);
                 case "local": return locals[node.local] ?? NaN;
@@ -204,6 +210,13 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
             switch (statement.kind) {
                 case "set": locals[statement.local] = evaluate(statement.value); return normal;
                 case "store": { const column = columns[statement.column]; if (column) column[at(statement.column, row)] = Number(evaluate(statement.value)); return normal; }
+                case "resourceStore": {
+                    const array: unknown = resources[statement.index];
+                    const element = Number(evaluate(statement.element));
+                    const value = Number(evaluate(statement.value));
+                    if (ArrayBuffer.isView(array)) Reflect.set(array, element, value);
+                    return normal;
+                }
                 case "stamp": {
                     const column = columns[statement.column];
                     const chunks = columns[statement.chunks];
@@ -776,11 +789,21 @@ describe("program", () => {
         expect(JSON.stringify(kernel.program)).toContain(`{"kind":"args","path":["scale"]}`);
     });
 
-    test("runtime indexing into a resource has no program", async () => {
+    test("runtime indexing into a resource reads its element, which WASM addresses in a typed array", async () => {
         const kernel = await compile(`const kernel = System.create({ kernel: true, components: { with: [mass, score] } }, (row, { resources: { [delta]: d } }) => {
             row[score] = d[row[mass]];
         });`);
-        expect(run(kernel, 1, { mass: { "[]": [1] } }, { resources: [[5, 6]], program: false }).field("score")).toEqual([6]);
+        expect(run(kernel, 3, { mass: { "[]": [1, 0, 7] } }, { resources: [[5, 6]] }).field("score")).toEqual([6, 5, NaN]);
+    });
+
+    test("an element assigned at a runtime index is written in place, the resource listed as written", async () => {
+        const kernel = await compile(`const kernel = System.create({ kernel: true, components: { with: [mass, score] } }, (row, { resources }) => {
+            resources[delta][row[mass]] = row[score] * 2;
+        });`);
+        const cells = new Float64Array(3);
+        run(kernel, 4, { mass: { "[]": [2, 0, 5, 2] }, score: { "[]": [1, 3, 4, 8] } }, { resources: [cells] });
+        expect([...cells]).toEqual([6, 0, 16]);
+        expect(kernel.writes).toEqual([0]);
     });
 });
 

@@ -85,6 +85,20 @@ describe("registering a resource", () => {
         expect(() => register(Symbol("typesResourceTest/both"), { fresh: "Map", default: null })).toThrow("it starts fresh, so it has no default.");
         expect(() => register(Symbol("typesResourceTest/set"), { type: { type: "set", items: { type: "string" } }, fresh: "Map" })).toThrow("a set starts as a fresh Set.");
     });
+    it("folds a typed array's length into its schema, and checks it's a resource's, whole and without a start or thread", () => {
+        const frame = Symbol("typesResourceTest/frame");
+        register(frame, { type: { type: "typedArray", array: "Uint8Array" }, length: 6 });
+        expect(declarationOf(frame)).toEqual({ type: { type: "typedArray", array: "Uint8Array", length: 6 }, length: 6 });
+        expect(threadOfDeclaration(declarationOf(frame) ?? {})).toBeNull();
+        expect(() => register(frame, { type: { type: "typedArray", array: "Uint8Array" }, length: 6 })).not.toThrow();
+        const typed = { type: "typedArray", array: "Int16Array" } as const;
+        expect(() => register(Symbol("typesResourceTest/noLength"), { type: typed })).toThrow(/typed array has a length/);
+        expect(() => register(Symbol("typesResourceTest/half"), { type: typed, length: 2.5 })).toThrow("length is a whole number");
+        expect(() => register(Symbol("typesResourceTest/started"), { type: typed, length: 2, default: new Int16Array(2) })).toThrow("so it has no default");
+        expect(() => register(Symbol("typesResourceTest/threaded"), { type: typed, length: 2, thread: "main" })).toThrow("a typed array lives in shared memory");
+        expect(() => register(Symbol("typesResourceTest/count"), { type: { type: "number" }, default: 0, length: 2 })).toThrow("only a typed array has a length");
+        expect(() => registerComponent(Symbol("typesResourceTest/cells"), { type: typed, length: 2 })).toThrow("only a resource has a length");
+    });
     it("checks reductions", () => {
         expect(() => register(Symbol("typesResourceTest/badOperator"), { type: { type: "number" }, default: 0, reduce: "-" })).toThrow('reduce is one of "+"');
         expect(() => register(Symbol("typesResourceTest/sumFlags"), { type: { type: "boolean" }, default: false, reduce: "+" })).toThrow('booleans reduce with "&", "|" or "^"');

@@ -557,3 +557,84 @@ describe("generateWasm with f64 lanes, as kernels computing at the body's precis
         expect([kernel?.vectorized, new Float32Array(memory.buffer, 12288, 1)[0]]).toEqual([true, 0]);
     });
 });
+
+describe("generateWasm integer operations", () => {
+    const local = (index: number): Expression => ({ kind: "local", local: index });
+    const column = (index: number): Expression => ({ kind: "column", column: index });
+    const number = (value: number): Expression => ({ kind: "number", value });
+    const binary = (operator: Extract<Expression, { kind: "binary" }>["operator"], left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+    const imul = (left: Expression, right: Expression): Expression => ({ kind: "math", name: "imul", arguments: [left, right] });
+    const rotate = (value: Expression, bits: number): Expression => binary("|", binary("<<", value, number(bits)), binary(">>>", value, number(32 - bits)));
+
+    /** A step of xoshiro128** over u32 columns 0 to 3, into columns 4 to 7, its output into column 8. */
+    const xoshiro: Program = {
+        locals: 5,
+        body: [
+            { kind: "set", local: 0, value: imul(column(1), number(5)) },
+            { kind: "store", column: 8, value: binary(">>>", imul(rotate(local(0), 7), number(9)), number(0)) },
+            { kind: "set", local: 1, value: binary("<<", column(1), number(9)) },
+            { kind: "set", local: 2, value: binary("^", column(2), column(0)) },
+            { kind: "set", local: 3, value: binary("^", column(3), column(1)) },
+            { kind: "set", local: 4, value: binary("^", column(1), local(2)) },
+            { kind: "store", column: 4, value: binary(">>>", binary("^", column(0), local(3)), number(0)) },
+            { kind: "store", column: 5, value: binary(">>>", local(4), number(0)) },
+            { kind: "store", column: 6, value: binary(">>>", binary("^", local(2), local(1)), number(0)) },
+            { kind: "store", column: 7, value: binary(">>>", rotate(local(3), 11), number(0)) },
+        ],
+    };
+    const jsStep = ([s0, s1, s2, s3]: readonly number[]): number[] => {
+        const scrambled = Math.imul(s1, 5);
+        const value = Math.imul((scrambled << 7) | (scrambled >>> 25), 9) >>> 0;
+        const t = s1 << 9, t2 = s2 ^ s0, t3 = s3 ^ s1;
+        return [(s0 ^ t3) >>> 0, (s1 ^ t2) >>> 0, (t2 ^ t) >>> 0, ((t3 << 11) | (t3 >>> 21)) >>> 0, value];
+    };
+    const states = [[0, 0, 0, 0], [1, 2, 3, 4], [0xFFFFFFFF, 0x80000000, 0x7FFFFFFF, 1], [340383, 2654435769, 123456789, 987654321]];
+    const word = (component: number): WasmColumn => ({ view: "u32", stride: 4, offset: 0, boolean: false, component });
+
+    const runXoshiro = (kernel: { readonly bytes: Uint8Array; readonly imports: readonly string[] }): number[][] => {
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        const words = Array.from({ length: 9 }, (_, k) => new Uint32Array(memory.buffer, 512 * k, states.length));
+        states.forEach((state, row) => state.forEach((value, k) => { words[k][row] = value; }));
+        const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, states.length, 0, -1, ...words.map((_, k) => 512 * k));
+        return states.map((_, row) => [4, 5, 6, 7, 8].map(k => words[k][row]));
+    };
+
+    it("computes a xoshiro128** step as JS does", () => {
+        const kernel = generateWasm(xoshiro, Array.from({ length: 9 }, (_, k) => word(k)), () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        expect(runXoshiro(kernel)).toEqual(states.map(jsStep));
+    });
+
+    it("keeps integers in i32 between integer operations, never reducing them through f64", () => {
+        const kernel = generateWasm(xoshiro, Array.from({ length: 9 }, (_, k) => word(k)), () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        // ToInt32 of an f64 that may be any number scales it by 2^-32 first.
+        const scale = [0x44, ...new Uint8Array(new Float64Array([2 ** -32]).buffer)];
+        const bytes = [...kernel.bytes];
+        expect(bytes.some((_, at) => scale.every((byte, k) => bytes[at + k] === byte))).toBe(false);
+    });
+
+    it("converts integer locals and operations to numbers exactly where they're read as numbers", () => {
+        const program: Program = {
+            locals: 2,
+            body: [
+                { kind: "set", local: 0, value: binary(">>>", column(0), number(0)) },
+                { kind: "set", local: 1, value: binary("|", column(0), number(0)) },
+                { kind: "store", column: 1, value: binary("+", local(0), binary("*", local(1), number(0.5))) },
+            ],
+        };
+        const values = [0, -1, 2 ** 31, -(2 ** 31), 2 ** 32 - 1, 3.7, -3.7, 2 ** 53, NaN, Infinity];
+        const columns: WasmColumn[] = [{ view: "f64", stride: 8, offset: 0, boolean: false, component: 0 }, { view: "f64", stride: 8, offset: 0, boolean: false, component: 1 }];
+        const kernel = generateWasm(program, columns, () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        new Float64Array(memory.buffer, 0, values.length).set(values);
+        const output = new Float64Array(memory.buffer, 4096, values.length);
+        const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, values.length, 0, -1, 0, 4096);
+        expect([...output]).toEqual(values.map(x => (x >>> 0) + (x | 0) * 0.5));
+    });
+});

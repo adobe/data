@@ -158,6 +158,7 @@ const f64Type = 0x7c;
 const i32Type = 0x7f;
 /** Saturating truncations, 0xfc-prefixed opcodes. */
 const i64TruncSatF64S = [0xfc, 0x06];
+const i32TruncSatF64S = [0xfc, 0x02];
 const truncations = { i32TruncSatF64U: [0xfc, 0x03], i64TruncSatF64U: [0xfc, 0x07] } as const;
 
 const unsigned = (value: number): number[] => {
@@ -204,6 +205,11 @@ const unsupported = (reason: string): Error => {
 const notVectorizable = Symbol("notVectorizable");
 
 const join = (a: Type, b: Type): Type => a === b ? a : "mixed";
+
+const bitwise = { "&": op.i32And, "|": op.i32Or, "^": op.i32Xor, "<<": op.i32Shl, ">>": op.i32ShrS, ">>>": op.i32ShrU } as const;
+
+/** A value that is always a 32-bit integer, signed or unsigned, which WASM keeps as the i32 of its bits. */
+type IntegerKind = "i32" | "u32";
 
 /** The operators whose folds rotate through lanes: each one's identity, -0 for sums so a sum of -0 stays -0, and its instruction. */
 const rotated = {
@@ -361,8 +367,42 @@ export const generateWasmOrReason = (
     };
     for (let pass = 0; pass < program.locals + 2 && inferLocals(program.body); pass++);
 
-    /** Whether a value is an integer below 2^32 in magnitude: integer column reads, small integer literals, and locals of only those. */
     const accumulators = program.reductions ?? [];
+    /**
+     * Locals every assignment gives a 32-bit integer of one signedness, by the fixed point over assignments, which
+     * are kept in i32 locals: `undefined` until an assignment is seen.
+     */
+    const integerLocals: (IntegerKind | null | undefined)[] = new Array(program.locals);
+    for (const accumulator of accumulators) integerLocals[accumulator] = null;
+    const integerColumn = (column: WasmColumn | undefined): IntegerKind | null =>
+        column === undefined || column.boolean ? null : column.view === "i32" ? "i32" : column.view === "u32" || column.view === "u8" ? "u32" : null;
+    /**
+     * Whether a value is always a 32-bit integer, and of which signedness: bitwise results, `Math.imul` and `Math.clz32`,
+     * integer column reads, integer literals within 32 bits, and locals of only those. `undefined` for a local not yet
+     * seen assigned, while locals are inferred.
+     */
+    const integerKind = (expression: Expression): IntegerKind | null | undefined => {
+        switch (expression.kind) {
+            case "number": {
+                const { value } = expression;
+                if (!Number.isInteger(value) || Object.is(value, -0)) return null;
+                return value >= -(2 ** 31) && value < 2 ** 31 ? "i32" : value >= 0 && value < 2 ** 32 ? "u32" : null;
+            }
+            case "column": return integerColumn(columns[expression.column]);
+            case "upLeaf": return integerColumn(upColumns[expression.column]);
+            case "local": return integerLocals[expression.local];
+            case "unary": return expression.operator === "~" ? "i32" : expression.operator === "+" ? integerKind(expression.operand) : null;
+            case "binary": return expression.operator === ">>>" ? "u32" : expression.operator in bitwise ? "i32" : null;
+            case "math": return expression.name === "imul" ? "i32" : expression.name === "clz32" ? "u32" : null;
+            case "conditional": {
+                const consequent = integerKind(expression.consequent);
+                const alternate = integerKind(expression.alternate);
+                return consequent === undefined ? alternate : alternate === undefined || alternate === consequent ? consequent : null;
+            }
+            default: return null;
+        }
+    };
+    /** Whether a value is an integer below 2^32 in magnitude: integer column reads, small integer literals, and locals of only those. */
     // Accumulators start at their partials, which needn't be integers.
     const integralLocals = new Array<boolean>(program.locals).fill(true).map((integral, index) => integral && !accumulators.includes(index));
     const integral = (expression: Expression): boolean => {
@@ -377,7 +417,7 @@ export const generateWasmOrReason = (
             }
             case "number": return Number.isInteger(expression.value) && Math.abs(expression.value) <= 0x7FFFFFFF;
             case "local": return integralLocals[expression.local];
-            default: return false;
+            default: return integerKind(expression) != null;
         }
     };
     const inferIntegral = (statements: readonly Statement[]): boolean => {
@@ -393,6 +433,29 @@ export const generateWasmOrReason = (
         return changed;
     };
     while (inferIntegral(program.body));
+
+    const inferIntegerLocals = (statements: readonly Statement[]): boolean => {
+        let changed = false;
+        for (const statement of statements) {
+            if (statement.kind === "set") {
+                const current = integerLocals[statement.local];
+                if (current === null) continue;
+                const kind = integerKind(statement.value);
+                // A copy of a local not yet seen assigned waits for it.
+                if (kind === undefined) continue;
+                const next = current === undefined || current === kind ? kind : null;
+                if (next !== current) {
+                    integerLocals[statement.local] = next;
+                    changed = true;
+                }
+            }
+            else if (statement.kind === "if") changed = inferIntegerLocals(statement.consequent) || inferIntegerLocals(statement.alternate) || changed;
+            else if (statement.kind === "block" || statement.kind === "loop") changed = inferIntegerLocals(statement.body) || changed;
+        }
+        return changed;
+    };
+    while (inferIntegerLocals(program.body));
+    const integerLocal = (index: number): IntegerKind | null => integerLocals[index] ?? null;
 
     // Parameters: start, end, tick, lastRun, column addresses, filter row, chunk and block tick addresses, scalars, and with reductions the partials address.
     const columnParameter = (column: number): number => 4 + column;
@@ -451,6 +514,95 @@ export const generateWasmOrReason = (
         code.push(...i64TruncSatF64S, op.i32WrapI64);
     };
 
+    /** Converts the f64 on the stack, a value of `kind`, to its i32 bits: exact, since it's an integer of that kind. */
+    const emitIntegerOfNumber = (kind: IntegerKind): void => {
+        code.push(...(kind === "i32" ? i32TruncSatF64S : truncations.i32TruncSatF64U));
+    };
+
+    /** Converts the i32 on the stack, a value of `kind`, to the f64 it is. */
+    const emitNumberOfInteger = (kind: IntegerKind): void => {
+        code.push(kind === "i32" ? op.f64ConvertI32S : op.f64ConvertI32U);
+    };
+
+    /**
+     * Leaves the JS `ToInt32` of an expression's value as an i32, computing integer operations in i32 throughout and
+     * converting from f64 only what isn't an integer kind.
+     */
+    const emitInteger = (expression: Expression): void => {
+        const kind = integerKind(expression) ?? null;
+        const hoistedLocal = hoisted.get(expression);
+        if (hoistedLocal !== undefined) {
+            code.push(op.localGet, ...unsigned(hoistedLocal));
+            if (kind === null) emitToInt32();
+            else emitIntegerOfNumber(kind);
+            return;
+        }
+        switch (expression.kind) {
+            case "number":
+                code.push(op.i32Const, ...signed(expression.value | 0));
+                return;
+            case "local": {
+                const own = integerLocal(expression.local);
+                code.push(op.localGet, ...unsigned(local(expression.local)));
+                if (own === null) emitToInt32();
+                return;
+            }
+            case "column": {
+                const column = columns[expression.column];
+                if (integerColumn(column) === null) break;
+                address(expression.column);
+                code.push(column.view === "u8" ? op.i32Load8u : op.i32Load, ...(column.view === "u8" ? [0] : [2]), ...unsigned(column.offset));
+                return;
+            }
+            case "unary":
+                if (expression.operator === "~") {
+                    emitInteger(expression.operand);
+                    code.push(op.i32Const, ...signed(-1), op.i32Xor);
+                    return;
+                }
+                if (expression.operator === "+" && kind !== null) {
+                    emitInteger(expression.operand);
+                    return;
+                }
+                break;
+            case "binary":
+                if (expression.operator in bitwise) {
+                    emitInteger(expression.left);
+                    emitInteger(expression.right);
+                    code.push(bitwise[expression.operator as keyof typeof bitwise]);
+                    return;
+                }
+                break;
+            case "math":
+                if (expression.name === "imul") {
+                    emitInteger(expression.arguments[0] ?? { kind: "number", value: 0 });
+                    emitInteger(expression.arguments[1] ?? { kind: "number", value: 0 });
+                    code.push(op.i32Mul);
+                    return;
+                }
+                if (expression.name === "clz32") {
+                    emitInteger(expression.arguments[0] ?? { kind: "number", value: 0 });
+                    code.push(op.i32Clz);
+                    return;
+                }
+                break;
+            case "conditional":
+                if (kind === null) break;
+                emit(expression.test);
+                emitTruthy(typeOf(expression.test));
+                code.push(op.if, i32Type);
+                emitInteger(expression.consequent);
+                code.push(op.else);
+                emitInteger(expression.alternate);
+                code.push(op.end);
+                return;
+            default: break;
+        }
+        emit(expression);
+        if (kind === null) emitToInt32();
+        else emitIntegerOfNumber(kind);
+    };
+
     /** Leaves 1 (i32) if the f64 on the stack is truthy: not 0, -0 or NaN. */
     const emitTruthy = (type: Type): void => {
         if (type === "boolean") {
@@ -474,7 +626,12 @@ export const generateWasmOrReason = (
         switch (expression.kind) {
             case "number": code.push(op.f64Const, ...float64(expression.value)); return;
             case "boolean": code.push(op.f64Const, ...float64(expression.value ? 1 : 0)); return;
-            case "local": code.push(op.localGet, ...unsigned(local(expression.local))); return;
+            case "local": {
+                code.push(op.localGet, ...unsigned(local(expression.local)));
+                const own = integerLocal(expression.local);
+                if (own !== null) emitNumberOfInteger(own);
+                return;
+            }
             case "resource": case "args": case "shared": {
                 code.push(op.localGet, ...unsigned(scalarParameter(scalarOf(scalarOfExpression(expression)))));
                 return;
@@ -500,15 +657,16 @@ export const generateWasmOrReason = (
                 }
             }
             case "unary":
+                if (expression.operator === "~") {
+                    emitInteger(expression);
+                    code.push(op.f64ConvertI32S);
+                    return;
+                }
                 emit(expression.operand);
                 if (expression.operator === "-") code.push(op.f64Neg);
                 else if (expression.operator === "!") {
                     emitTruthy(typeOf(expression.operand));
                     code.push(op.i32Eqz, op.f64ConvertI32U);
-                }
-                else if (expression.operator === "~") {
-                    emitToInt32();
-                    code.push(op.i32Const, ...signed(-1), op.i32Xor, op.f64ConvertI32S);
                 }
                 return;
             case "binary": return emitBinary(expression);
@@ -572,16 +730,12 @@ export const generateWasmOrReason = (
                 return;
             }
             case "imul":
-                emit(parameters[0] ?? { kind: "number", value: 0 });
-                emitToInt32();
-                emit(parameters[1] ?? { kind: "number", value: 0 });
-                emitToInt32();
-                code.push(op.i32Mul, op.f64ConvertI32S);
+                emitInteger({ kind: "math", name: "imul", arguments: parameters });
+                code.push(op.f64ConvertI32S);
                 return;
             case "clz32":
-                emit(parameters[0] ?? { kind: "number", value: 0 });
-                emitToInt32();
-                code.push(op.i32Clz, op.f64ConvertI32U);
+                emitInteger({ kind: "math", name: "clz32", arguments: parameters });
+                code.push(op.f64ConvertI32U);
                 return;
             case "fround":
                 emit(parameters[0] ?? { kind: "number", value: NaN });
@@ -598,7 +752,6 @@ export const generateWasmOrReason = (
 
     const comparisons = { "<": op.f64Lt, ">": op.f64Gt, "<=": op.f64Le, ">=": op.f64Ge, "==": op.f64Eq, "!=": op.f64Ne, "===": op.f64Eq, "!==": op.f64Ne } as const;
     const arithmetic = { "+": op.f64Add, "-": op.f64Sub, "*": op.f64Mul, "/": op.f64Div } as const;
-    const bitwise = { "&": op.i32And, "|": op.i32Or, "^": op.i32Xor, "<<": op.i32Shl, ">>": op.i32ShrS, ">>>": op.i32ShrU } as const;
 
     const emitBinary = (expression: Extract<Expression, { kind: "binary" }>): void => {
         const { operator, left, right } = expression;
@@ -638,15 +791,12 @@ export const generateWasmOrReason = (
             emitCall(operator === "%" ? "remainder" : "power");
             return;
         }
-        emit(left);
         if (operator in bitwise) {
-            emitToInt32();
-            emit(right);
-            emitToInt32();
-            code.push(bitwise[operator as keyof typeof bitwise]);
+            emitInteger(expression);
             code.push(operator === ">>>" ? op.f64ConvertI32U : op.f64ConvertI32S);
             return;
         }
+        emit(left);
         emit(right);
         if (operator in arithmetic) {
             code.push(arithmetic[operator as keyof typeof arithmetic]);
@@ -668,13 +818,18 @@ export const generateWasmOrReason = (
     const store = (column: number, value: Expression | "tick"): void => {
         const { view, offset } = columns[column];
         address(column);
-        if (value === "tick") code.push(op.localGet, 2);
+        const integer = view === "i32" || view === "u32" || view === "u8";
+        if (value === "tick") {
+            code.push(op.localGet, 2);
+            if (integer) emitToInt32();
+        }
+        else if (integer) emitInteger(value);
         else emit(value);
         const memory = (align: number): number[] => [align, ...unsigned(offset)];
         switch (view) {
             case "f32": code.push(op.f32DemoteF64, op.f32Store, ...memory(2)); return;
-            case "i32": case "u32": emitToInt32(); code.push(op.i32Store, ...memory(2)); return;
-            case "u8": emitToInt32(); code.push(op.i32Store8, ...memory(0)); return;
+            case "i32": case "u32": code.push(op.i32Store, ...memory(2)); return;
+            case "u8": code.push(op.i32Store8, ...memory(0)); return;
             default: code.push(op.f64Store, ...memory(3)); return;
         }
     };
@@ -1320,7 +1475,11 @@ export const generateWasmOrReason = (
 
     const statement = (current: Statement): void => {
         switch (current.kind) {
-            case "set": emit(current.value); code.push(op.localSet, ...unsigned(local(current.local))); return;
+            case "set":
+                if (integerLocal(current.local) === null) emit(current.value);
+                else emitInteger(current.value);
+                code.push(op.localSet, ...unsigned(local(current.local)));
+                return;
             case "store": return store(current.column, current.value);
             // A chunk column stays when its row column is muted, for a component held on the GPU.
             case "stamp":
@@ -2334,7 +2493,7 @@ export const generateWasmOrReason = (
             return section(0, [...name("name"), ...section(1, vector(functions)), ...section(2, vector(locals))]);
         };
         const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(3 * filters).fill(i32Type), ...new Array<number>(lookupParameters).fill(f64Type), ...new Array<number>(indexParameters).fill(f64Type), ...new Array<number>(upParameters).fill(i32Type), ...scalars.map(() => f64Type), ...accumulators.length > 0 ? [i32Type] : []];
-        const localTypesList = [...new Array<number>(program.locals).fill(f64Type)];
+        const localTypesList = Array.from({ length: program.locals }, (_, k) => integerLocal(k) === null ? f64Type : i32Type);
         // Locals in order: program locals, then extras in creation order; the row index was the first extra.
         const declared = [...localTypesList.map(type => [1, type]), ...extraLocals.map(type => [1, type])];
         const body = [...vector(declared.map(([count, type]) => [...unsigned(count), type])), ...code];

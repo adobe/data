@@ -402,23 +402,50 @@ export const generateWasmOrReason = (
             default: return null;
         }
     };
-    /** Whether a value is an integer below 2^32 in magnitude: integer column reads, small integer literals, and locals of only those. */
     // Accumulators start at their partials, which needn't be integers.
     const integralLocals = new Array<boolean>(program.locals).fill(true).map((integral, index) => integral && !accumulators.includes(index));
-    const integral = (expression: Expression): boolean => {
+    /**
+     * A bound on the magnitude of a value that is always an integer, or null when it may not be one: integer kinds,
+     * booleans, integer literals and integral locals, below 2^32, and sums, differences, products and remainders of
+     * those, so `(count + 1) % 1000` is known an integer.
+     */
+    const integerBound = (expression: Expression): number | null => {
         switch (expression.kind) {
-            case "column": {
-                const { view, boolean } = columns[expression.column];
-                return !boolean && (view === "i32" || view === "u32" || view === "u8");
+            case "number": return Number.isInteger(expression.value) ? Math.abs(expression.value) : null;
+            case "boolean": return 1;
+            case "local": return integralLocals[expression.local] ? 2 ** 32 : null;
+            case "unary": return expression.operator === "-" || expression.operator === "+" ? integerBound(expression.operand) : expression.operator === "!" ? 1 : 2 ** 32;
+            case "binary": {
+                if (expression.operator in bitwise) return 2 ** 32;
+                if (typeOf(expression) === "boolean") return 1;
+                const left = integerBound(expression.left);
+                const right = integerBound(expression.right);
+                if (left === null || right === null) return null;
+                switch (expression.operator) {
+                    case "+": case "-": return left + right;
+                    case "*": return left * right;
+                    // A remainder by zero is NaN.
+                    case "%": return expression.right.kind === "number" && expression.right.value !== 0 ? Math.min(left, right) : null;
+                    default: return null;
+                }
             }
-            case "upLeaf": {
-                const column = upColumns[expression.column];
-                return column !== undefined && !column.boolean && (column.view === "i32" || column.view === "u32" || column.view === "u8");
+            case "conditional": {
+                const consequent = integerBound(expression.consequent);
+                const alternate = integerBound(expression.alternate);
+                return consequent === null || alternate === null ? null : Math.max(consequent, alternate);
             }
-            case "number": return Number.isInteger(expression.value) && Math.abs(expression.value) <= 0x7FFFFFFF;
-            case "local": return integralLocals[expression.local];
-            default: return integerKind(expression) != null;
+            default: return integerKind(expression) != null ? 2 ** 32 : typeOf(expression) === "boolean" ? 1 : null;
         }
+    };
+    /** Whether a value is an integer below 2^32 in magnitude. */
+    const integral = (expression: Expression): boolean => {
+        const bound = integerBound(expression);
+        return bound !== null && bound <= 2 ** 32;
+    };
+    /** Whether a value is an integer f64 arithmetic computes exactly, below 2^53 in magnitude. */
+    const exactInteger = (expression: Expression): boolean => {
+        const bound = integerBound(expression);
+        return bound !== null && bound < 2 ** 53;
     };
     const inferIntegral = (statements: readonly Statement[]): boolean => {
         let changed = false;
@@ -502,8 +529,45 @@ export const generateWasmOrReason = (
     let rowLocal = 0;
     /** For `up`: the current row's parent row. */
     let parentLocal = 0;
+    /** By column, an i32 local holding its element's address in the current row, while a row's statements run as scalars. */
+    const rowAddresses = new Map<number, number>();
     const address = (column: number): void => {
+        const own = rowAddresses.get(column);
+        if (own !== undefined) {
+            code.push(op.localGet, ...unsigned(own));
+            return;
+        }
         code.push(op.localGet, ...unsigned(columnParameter(column)), op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(columns[column].stride), op.i32Mul, op.i32Add);
+    };
+    /** The columns statements read or store to, at the row. */
+    const columnsUsed = (statements: readonly Statement[], used: Set<number>): Set<number> => {
+        const read = (expression: Expression): void => {
+            switch (expression.kind) {
+                case "column": used.add(expression.column); return;
+                case "unary": read(expression.operand); return;
+                case "binary": case "logical": read(expression.left); read(expression.right); return;
+                case "conditional": read(expression.test); read(expression.consequent); read(expression.alternate); return;
+                case "math": expression.arguments.forEach(read); return;
+                case "lane": read(expression.value); return;
+                default: return;
+            }
+        };
+        for (const statement of statements) {
+            switch (statement.kind) {
+                case "set": read(statement.value); break;
+                case "store": used.add(statement.column); read(statement.value); break;
+                case "stamp": used.add(statement.column); break;
+                case "if": read(statement.test); columnsUsed(statement.consequent, used); columnsUsed(statement.alternate, used); break;
+                case "block": case "loop": columnsUsed(statement.body, used); break;
+                case "branchIf": read(statement.test); break;
+                case "find": read(statement.entity); break;
+                case "probe": statement.values.forEach(read); break;
+                case "listRow": read(statement.index); break;
+                case "intrinsic": statement.operands.forEach(lanes => lanes.forEach(read)); columnsUsed(statement.body, used); break;
+                default: break;
+            }
+        }
+        return used;
     };
 
     /** Leaves the JS `ToInt32` of the f64 on the stack as an i32: exact for every finite value; NaN and infinities give 0. */
@@ -598,9 +662,17 @@ export const generateWasmOrReason = (
                 return;
             default: break;
         }
+        if (expression.kind === "unary" && expression.operator === "!") {
+            emit(expression.operand);
+            emitTruthy(typeOf(expression.operand));
+            code.push(op.i32Eqz);
+            return;
+        }
         emit(expression);
-        if (kind === null) emitToInt32();
-        else emitIntegerOfNumber(kind);
+        if (kind !== null) emitIntegerOfNumber(kind);
+        // An integer below 2^63 in magnitude truncates exactly to i64, whose low word is its ToInt32.
+        else if (exactInteger(expression)) code.push(...i64TruncSatF64S, op.i32WrapI64);
+        else emitToInt32();
     };
 
     /** Leaves 1 (i32) if the f64 on the stack is truthy: not 0, -0 or NaN. */
@@ -766,7 +838,7 @@ export const generateWasmOrReason = (
             }
         }
         // Integers by a nonzero literal: i64 remainder is exact, and copysign gives JS's -0 for a negative dividend.
-        if (operator === "%" && integral(left) && right.kind === "number" && right.value !== 0 && integral(right)) {
+        if (operator === "%" && exactInteger(left) && right.kind === "number" && right.value !== 0 && integral(right)) {
             const dividend = scratch(f64Type);
             emit(left);
             code.push(op.localTee, ...unsigned(dividend), ...i64TruncSatF64S, op.i64Const, ...signed(right.value), op.i64RemS, op.f64ConvertI64S, op.localGet, ...unsigned(dividend), op.f64Copysign);
@@ -2412,7 +2484,24 @@ export const generateWasmOrReason = (
             if (mode === "lanes" && !wide) fused = emitLaneBody();
             else {
                 if (mode === "lanes") fused = across;
+                // Each column's element address once a row, rather than at every read and store; a component's
+                // columns view its bytes from one address, so its fields share one.
+                const byComponent = new Map<number, number>();
+                for (const column of columnsUsed(program.body, new Set())) {
+                    const { component, stride } = columns[column];
+                    const shared = component < 0 ? undefined : byComponent.get(component);
+                    if (shared !== undefined && columns[shared].stride === stride) {
+                        rowAddresses.set(column, rowAddresses.get(shared) ?? 0);
+                        continue;
+                    }
+                    const own = scratch(i32Type);
+                    address(column);
+                    code.push(op.localSet, ...unsigned(own));
+                    rowAddresses.set(column, own);
+                    if (component >= 0 && shared === undefined) byComponent.set(component, column);
+                }
                 for (const current of program.body) statement(current);
+                rowAddresses.clear();
             }
             labels.pop();
             code.push(op.end);

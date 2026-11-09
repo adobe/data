@@ -638,3 +638,26 @@ describe("generateWasm integer operations", () => {
         expect([...output]).toEqual(values.map(x => (x >>> 0) + (x | 0) * 0.5));
     });
 });
+
+describe("generateWasm integer remainders of sums", () => {
+    it("matches JS for a counter stepped and wrapped, stored as an integer, without the imported remainder", () => {
+        const counter: Expression = { kind: "binary", operator: "%", left: { kind: "binary", operator: "+", left: { kind: "column", column: 0 }, right: { kind: "number", value: 1 } }, right: { kind: "number", value: 1000000 } };
+        const negated: Expression = { kind: "binary", operator: "%", left: { kind: "unary", operator: "-", operand: { kind: "column", column: 0 } }, right: { kind: "number", value: 7 } };
+        const values = [0, 1, 999999, -1, -1000000, 2147483647, -2147483648];
+        for (const [value, expected] of [[counter, (x: number) => (x + 1) % 1000000], [negated, (x: number) => -x % 7]] as const) {
+            for (const output of ["i32", "f64"] as const) {
+                const columns: WasmColumn[] = [{ view: "i32", stride: 4, offset: 0, boolean: false, component: 0 }, dense(output, 1)];
+                const kernel = generateWasm({ locals: 0, body: [{ kind: "store", column: 1, value }] }, columns, () => "number");
+                if (kernel === null) throw new Error("expected a kernel");
+                expect(kernel.imports).toEqual([]);
+                const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+                new Int32Array(memory.buffer, 0, values.length).set(values);
+                const result = new views[output](memory.buffer, 4096, values.length);
+                const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+                if (typeof run !== "function") throw new Error("no run export");
+                run(0, values.length, 0, -1, 0, 4096);
+                expect([output, [...result]]).toEqual([output, viaTypedArray(output, values.map(expected))]);
+            }
+        }
+    });
+});

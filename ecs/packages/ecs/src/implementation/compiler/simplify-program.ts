@@ -170,10 +170,69 @@ const dropAssignments = (statements: readonly Statement[], unread: ReadonlySet<n
     }
 });
 
+/** By column, the local known to hold the value in it. */
+type Holding = ReadonlyMap<number, number>;
+
+/** What both of two `Holding`s know. */
+const both = (a: Holding, b: Holding): Map<number, number> => new Map([...a].filter(([column, local]) => b.get(column) === local));
+
+/**
+ * Statements without stores that write a column the value already in it: a local that was read from the column, with
+ * neither assigned since, as writing a struct back with members it copied stores them. `held` is what's known at the
+ * start, and is left as what's known at the end.
+ */
+const dropUnchangedStores = (statements: readonly Statement[], held: Map<number, number>): Statement[] => {
+    const forget = (local: number): void => {
+        for (const [column, holder] of held) if (holder === local) held.delete(column);
+    };
+    const result: Statement[] = [];
+    for (const statement of statements) {
+        switch (statement.kind) {
+            case "set":
+                forget(statement.local);
+                if (statement.value.kind === "column") held.set(statement.value.column, statement.local);
+                result.push(statement);
+                break;
+            case "store": {
+                const { value } = statement;
+                if (value.kind === "local" && held.get(statement.column) === value.local) break;
+                if (value.kind === "local") held.set(statement.column, value.local);
+                else held.delete(statement.column);
+                result.push(statement);
+                break;
+            }
+            case "if": {
+                const consequentHeld = new Map(held);
+                const alternateHeld = new Map(held);
+                const consequent = dropUnchangedStores(statement.consequent, consequentHeld);
+                const alternate = dropUnchangedStores(statement.alternate, alternateHeld);
+                held.clear();
+                for (const [column, local] of both(consequentHeld, alternateHeld)) held.set(column, local);
+                result.push({ ...statement, consequent, alternate });
+                break;
+            }
+            // A loop's body may run again after what follows in it, and a branch leaves from inside: nothing is known across them.
+            case "block": case "loop": case "intrinsic": {
+                held.clear();
+                const body = dropUnchangedStores(statement.body, new Map());
+                result.push({ ...statement, body });
+                break;
+            }
+            case "branch": case "branchIf": case "next":
+                result.push(statement);
+                break;
+            default:
+                result.push(statement);
+        }
+    }
+    return result;
+};
+
 /**
  * A program computing what `program` does with its constants propagated and folded, as inlined calls leave them: a
  * parameter given a literal argument is a local assigned that literal once, so `% (high - low + 1)` becomes `% 17`.
- * Assignments to locals nothing reads any more are dropped. Accumulators keep every assignment.
+ * Assignments to locals nothing reads any more are dropped, and stores of a value a column already holds. Accumulators
+ * keep every assignment.
  */
 export const simplifyProgram = (program: Program): Program => {
     const accumulators = new Set(program.reductions ?? []);
@@ -188,5 +247,5 @@ export const simplifyProgram = (program: Program): Program => {
         body = folded;
         if (unchanged) break;
     }
-    return { ...program, body };
+    return { ...program, body: dropUnchangedStores(body, new Map()) };
 };

@@ -89,4 +89,29 @@ describe("simplifyProgram", () => {
         };
         expect(simplifyProgram(program).body).toEqual([{ kind: "set", local: 0, value: number(5) }]);
     });
+
+    it("drops a store of the value a column holds, read into a local neither assigned since", () => {
+        const program: Program = {
+            locals: 3,
+            body: [
+                { kind: "set", local: 0, value: column(0) },
+                { kind: "set", local: 1, value: column(1) },
+                { kind: "set", local: 2, value: column(2) },
+                { kind: "if", test: column(3), consequent: [{ kind: "set", local: 2, value: number(5) }], alternate: [] },
+                { kind: "store", column: 0, value: binary("+", local(0), number(1)) },
+                { kind: "store", column: 1, value: local(1) },
+                { kind: "store", column: 2, value: local(2) },
+                { kind: "loop", body: [{ kind: "store", column: 1, value: local(1) }] },
+            ],
+        };
+        expect(simplifyProgram(program).body).toEqual([
+            { kind: "set", local: 0, value: column(0) },
+            { kind: "set", local: 1, value: column(1) },
+            { kind: "set", local: 2, value: column(2) },
+            { kind: "if", test: column(3), consequent: [{ kind: "set", local: 2, value: number(5) }], alternate: [] },
+            { kind: "store", column: 0, value: binary("+", local(0), number(1)) },
+            { kind: "store", column: 2, value: local(2) },
+            { kind: "loop", body: [{ kind: "store", column: 1, value: local(1) }] },
+        ]);
+    });
 });

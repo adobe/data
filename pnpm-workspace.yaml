@@ -12,6 +12,7 @@ packages:
   - 'ecs/packages/ecs-sample-browser'
   - 'ecs/packages/ecs-guide'
   - 'ecs/packages/ecs-guide-checks'
+  - 'ecs/packages/ecs-benchmark'
   - 'packages/data-testing'
   - 'packages/data-persistence'
   - 'packages/data-sync'

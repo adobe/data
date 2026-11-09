@@ -9,13 +9,22 @@ plain OOP baseline, on one thread and on many. This machine's results are in [`r
 | Script | What it does |
 |---|---|
 | `pnpm test` | Checks, on every lane, that the ported systems compute what the suite's C++ does, frame by frame, against a plain JS reference of it; and that create, destroy, remove-and-add and the gets do what they're asked. Fast, and needs no C++ toolchain. |
-| `pnpm bench` | `scripts/ours.mjs`: bundles the benchmarks for node and runs each benchmark at each count of entities in a process of its own, on three lanes, into `results/ours/<lane>.json`. |
+| `pnpm bench` | `scripts/ours.mjs`: bundles the benchmarks for node and runs each benchmark at each count of entities in a process of its own, on three lanes, into `results/ours/<lane>.json`, and compares each result with the last this machine recorded, listing what's more than 10% slower as regressions. |
+| `pnpm bench:quick` | `bench` at 16K, 256K and 1M entities only. |
+| `pnpm bench:record` | `bench`, appending its results to `results/history/<machine>.jsonl`, which later runs compare with. |
 | `pnpm bench:cpp` | `scripts/cpp.mjs`: fetches the suite at its pinned commit into `cpp/` (gitignored), applies `patches/`, builds it Release with CMake and Ninja, and runs its Google Benchmark binaries, single-threaded and with the patch's threads, into `results/cpp/<lane>/<binary>.json`. Needs CMake, Ninja, a C++20 compiler and git. `--suite <checkout>` copies an existing checkout of the pinned commit instead of cloning. |
 | `pnpm compare` | `scripts/compare.mjs`: merges the results into `results/comparison.md`. |
 | `pnpm bench:all` | All three, in order. Takes about an hour and a quarter here; run it on an idle machine, under `caffeinate -i` on macOS. |
 
 `bench` and `bench:cpp` take `--sizes 1024,1048576` and `--lane`; `bench` takes `--filter <regular expression>` over
-benchmark names. CI runs only `test`.
+benchmark names, `--quick` and `--record`. CI runs only `test`.
+
+Times compare only on the same hardware, so the history is kept per machine. Record after a change to the ECS that
+should move these numbers, and run `pnpm bench:quick` before one to see what it moved.
+
+Besides the suite's benchmarks, `Ours_ComplexMixed_Through_<System>` times a frame of the systems of
+`BM_ComplexSystemsUpdateMixedEntities` up to and including that one. One less the one before is what that system costs
+as a frame runs it, with the data in the state the systems before it leave, which timing a system alone doesn't give.
 
 ## What runs
 

@@ -42,12 +42,14 @@ export const scenarios: readonly Scenario[] = [
     { name: "BM_UnpackTwoComponents", measure: (create, count) => gets(create(), world => world.run(createEntities, { count }), world => world.run(probeEntities), world => world.run(unpackTwoComponents)) },
     { name: "BM_UnpackThreeComponents", measure: (create, count) => gets(create(), world => world.run(createHalfComponentEntities, { count }), world => world.run(probeFullEntities), world => world.run(unpackThreeComponents)) },
     { name: "BM_RemoveAddComponent", measure: (create, count) => frames(create(), world => world.run(createEntities, { count }), world => world.run(removeAddComponent)) },
-    // A frame of `BM_ComplexSystemsUpdateMixedEntities`'s systems up to each, which the suite doesn't time: one less
-    // another is what the system costs as a frame runs it, the data in the state the systems before it leave.
-    ...complexSystems.map(([name], k): Scenario => {
+    // A frame of the 7-system benchmarks' systems up to each but the last, as the C++ runs them with
+    // ECS_BENCHMARK_SYSTEMS: one less the one before is what the system costs as a frame runs it, the data in the
+    // state the systems before it leave.
+    ...(["BM_ComplexSystemsUpdate", "BM_ComplexSystemsUpdateMixedEntities"] as const).flatMap(benchmark => complexSystems.slice(0, -1).map(([name], k): Scenario => {
         const through = System.create(complexSystems.slice(0, k + 1).map(([, system]) => system));
-        return { name: `Ours_ComplexMixed_Through_${name}`, measure: (create, count) => frames(create(), world => world.run(createMixedUpdateEntities, { count }), world => world.run(through)) };
-    }),
+        const setup = benchmark === "BM_ComplexSystemsUpdate" ? createUpdateEntities : createMixedUpdateEntities;
+        return { name: `${benchmark}_Through_${name}`, measure: (create, count) => frames(create(), world => world.run(setup, { count }), world => world.run(through)) };
+    })),
 ];
 
 /**

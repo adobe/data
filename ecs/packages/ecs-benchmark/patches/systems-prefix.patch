@@ -1,0 +1,93 @@
+diff -ru a/src/flecs/flecs/FlecsApplication.h b/src/flecs/flecs/FlecsApplication.h
+--- a/src/flecs/flecs/FlecsApplication.h	2026-11-09 11:01:47
++++ b/src/flecs/flecs/FlecsApplication.h	2026-11-09 11:01:47
+@@ -12,6 +12,7 @@
+ #include "flecs/systems/MovementSystem.h"
+ #include "flecs/systems/RenderSystem.h"
+ #include "flecs/systems/SpriteSystem.h"
++#include <cstdlib>
+ 
+ namespace ecs::benchmarks::flecs {
+ class FlecsApplication {
+@@ -43,34 +44,37 @@
+ #else
+     constexpr bool multi_threaded = false;
+ #endif
+-    m_world
++    // ECS_BENCHMARK_SYSTEMS, when set, adds only that many of the systems, in order, to time each one by difference.
++    const char* const limit = std::getenv("ECS_BENCHMARK_SYSTEMS");
++    const int systems = limit == nullptr ? 7 : std::atoi(limit);
++    if (systems > 0) m_world
+         .system<ecs::benchmarks::base::components::PositionComponent,
+                 const ecs::benchmarks::base::components::VelocityComponent>()
+         .multi_threaded(multi_threaded)
+         .run(systems::MovementSystem::update);
+-    m_world.system<ecs::benchmarks::base::components::DataComponent>().multi_threaded(multi_threaded).run(
++    if (systems > 1) m_world.system<ecs::benchmarks::base::components::DataComponent>().multi_threaded(multi_threaded).run(
+         systems::DataSystem::update);
+     if (m_addMoreComplexSystem == base::add_more_complex_system_t::UseMoreComplexSystems) {
+-      m_world
++      if (systems > 2) m_world
+           .system<const ecs::benchmarks::base::components::PositionComponent,
+                   ecs::benchmarks::base::components::VelocityComponent,
+                   ecs::benchmarks::base::components::DataComponent>()
+           .multi_threaded(multi_threaded)
+           .each(systems::MoreComplexSystem::update);
+-      m_world.system<ecs::benchmarks::base::components::HealthComponent>().multi_threaded(multi_threaded).each(
++      if (systems > 3) m_world.system<ecs::benchmarks::base::components::HealthComponent>().multi_threaded(multi_threaded).each(
+           systems::HealthSystem::update);
+-      m_world
++      if (systems > 4) m_world
+           .system<ecs::benchmarks::base::components::HealthComponent,
+                   const ecs::benchmarks::base::components::DamageComponent>()
+           .multi_threaded(multi_threaded)
+           .each(systems::DamageSystem::update);
+-      m_world
++      if (systems > 5) m_world
+           .system<ecs::benchmarks::base::components::SpriteComponent,
+                   const ecs::benchmarks::base::components::PlayerComponent,
+                   const ecs::benchmarks::base::components::HealthComponent>()
+           .multi_threaded(multi_threaded)
+           .each(systems::SpriteSystem::update);
+-      m_world
++      if (systems > 6) m_world
+           .system<const ecs::benchmarks::base::components::PositionComponent,
+                   const ecs::benchmarks::base::components::SpriteComponent>()
+           .each([this](const ecs::benchmarks::base::components::PositionComponent& position,
+diff -ru a/src/mustache/mustache/MustacheApplication.h b/src/mustache/mustache/MustacheApplication.h
+--- a/src/mustache/mustache/MustacheApplication.h	2026-11-09 11:01:47
++++ b/src/mustache/mustache/MustacheApplication.h	2026-11-09 11:01:47
+@@ -14,6 +14,8 @@
+ #include "mustache/systems/SpriteSystem.h"
+ #include <mustache/ecs/ecs.hpp>
+ 
++#include <cstdlib>
++
+ namespace ecs::benchmarks::mustache {
+ class MustacheApplication {
+ public:
+@@ -37,14 +39,17 @@
+   inline EntityManager& getEntities() { return m_world.entities(); }
+ 
+   void init() {
+-    m_world.systems().addSystem<systems::MovementSystem>();
+-    m_world.systems().addSystem<systems::DataSystem>();
++    // ECS_BENCHMARK_SYSTEMS, when set, adds only that many of the systems, in order, to time each one by difference.
++    const char* const limit = std::getenv("ECS_BENCHMARK_SYSTEMS");
++    const int systems = limit == nullptr ? 7 : std::atoi(limit);
++    if (systems > 0) m_world.systems().addSystem<systems::MovementSystem>();
++    if (systems > 1) m_world.systems().addSystem<systems::DataSystem>();
+     if (m_addMoreComplexSystem == base::add_more_complex_system_t::UseMoreComplexSystems) {
+-      m_world.systems().addSystem<systems::MoreComplexSystem>();
+-      m_world.systems().addSystem<systems::HealthSystem>();
+-      m_world.systems().addSystem<systems::DamageSystem>();
+-      m_world.systems().addSystem<systems::SpriteSystem>();
+-      m_world.systems().addSystem<systems::RenderSystem>(m_frameBuffer);
++      if (systems > 2) m_world.systems().addSystem<systems::MoreComplexSystem>();
++      if (systems > 3) m_world.systems().addSystem<systems::HealthSystem>();
++      if (systems > 4) m_world.systems().addSystem<systems::DamageSystem>();
++      if (systems > 5) m_world.systems().addSystem<systems::SpriteSystem>();
++      if (systems > 6) m_world.systems().addSystem<systems::RenderSystem>(m_frameBuffer);
+     }
+     m_world.init();
+   }

@@ -2,12 +2,16 @@
 // Fetches the ecs_benchmark suite at its pinned commit, builds it Release with CMake and Ninja, and runs its Google
 // Benchmark binaries, writing their JSON to results/cpp/<lane>/<binary>.json.
 //
-//   node scripts/cpp.mjs [--suite <checkout>] [--lane single|threads] [--repetitions <n>] [--skip-build] [--skip-run] [--sizes <a,b,…>]
+//   node scripts/cpp.mjs [--suite <checkout>] [--lane single|threads] [--repetitions <n>] [--skip-build] [--skip-run] [--through-only] [--sizes <a,b,…>]
 //
 // - The suite is copied into cpp/source, from --suite or a clone of the pinned commit, and the patches in patches/
 //   applied: pin-dependencies.patch fetches the libraries the suite follows on a branch (entityx, ginseng, mustache,
 //   pico_headers) at their last commit before the suite's; multi-threaded.patch changes nothing without ECS_BENCHMARK_THREADS, so cpp/build-single builds the suite as
-//   published, and cpp/build-threads defines it as the thread count.
+//   published, and cpp/build-threads defines it as the thread count; systems-prefix.patch changes nothing without
+//   ECS_BENCHMARK_SYSTEMS, which adds only the first that many of the seven systems to Flecs's and mustache's apps.
+// - The 7-system benchmarks of Flecs and mustache run again with each shorter prefix of the systems, as
+//   BM_ComplexSystemsUpdate[MixedEntities]_Through_<System>, in results/cpp/<lane>/<library>-through.json;
+//   --through-only runs just those.
 // - vcpkg, which the suite's CMake fetches, lives in cpp/home, so nothing is written outside the package.
 
 import { execFileSync, spawnSync } from "node:child_process";
@@ -38,6 +42,9 @@ const libraries = ["entt", "entityx", "ginseng", "mustache", "flecs", "pico-ecs"
 /** The libraries the patch runs on several threads; gaia-ecs 0.8.6 has no parallel query execution to switch on. */
 const threadedLibraries = ["flecs", "mustache"];
 
+/** The seven systems of the 7-system benchmarks, in the order a frame runs them. */
+const complexSystems = ["MovementSystem", "DataSystem", "MoreComplexSystem", "HealthSystem", "DamageSystem", "SpriteSystem", "RenderSystem"];
+
 const entityBenchmarks = ["CreateEntities", "DestroyEntities", "UnpackOneComponent", "UnpackTwoComponents", "UnpackThreeComponents", "RemoveAddComponent"];
 
 const options = (() => {
@@ -52,6 +59,7 @@ const options = (() => {
         repetitions: Number(value("--repetitions") ?? 3),
         skipBuild: args.includes("--skip-build"),
         skipRun: args.includes("--skip-run"),
+        throughOnly: args.includes("--through-only"),
         sizes: value("--sizes")?.split(",").map(Number) ?? defaultSizes,
     };
 })();
@@ -138,7 +146,16 @@ const benchmark = (lane, sizes) => {
     mkdirSync(directory, { recursive: true });
     const compiler = output("c++", ["--version"]).split("\n")[0];
     const machine = { cpu: cpus()[0]?.model ?? "unknown", threads: availableParallelism(), memory: `${Math.round(totalmem() / 2 ** 30)} GB`, platform: `${process.platform} ${process.arch}` };
-    for (const [folder, binary, filter] of binariesOf(lane, sizes)) {
+    const record = (report, out) => {
+        report.context["ecs_benchmark.commit"] = commit;
+        report.context["ecs_benchmark.lane"] = lane;
+        report.context["ecs_benchmark.threads"] = lane === "threads" ? threads : 1;
+        report.context["ecs_benchmark.compiler"] = compiler;
+        report.context["ecs_benchmark.machine"] = machine;
+        report.context["ecs_benchmark.libraries"] = libraryCommits(lane);
+        writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
+    };
+    for (const [folder, binary, filter] of options.throughOnly ? [] : binariesOf(lane, sizes)) {
         const path = join(buildDirectory(lane), "benchmark", "benchmarks", folder, `ecs-benchmark-${binary}`);
         const out = join(directory, `${binary}.json`);
         run(path, [
@@ -149,14 +166,31 @@ const benchmark = (lane, sizes) => {
             "--benchmark_out_format=json",
             "--benchmark_format=console",
         ]);
-        const report = JSON.parse(readFileSync(out, "utf8"));
-        report.context["ecs_benchmark.commit"] = commit;
-        report.context["ecs_benchmark.lane"] = lane;
-        report.context["ecs_benchmark.threads"] = lane === "threads" ? threads : 1;
-        report.context["ecs_benchmark.compiler"] = compiler;
-        report.context["ecs_benchmark.machine"] = machine;
-        report.context["ecs_benchmark.libraries"] = libraryCommits(lane);
-        writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
+        record(JSON.parse(readFileSync(out, "utf8")), out);
+    }
+    const counts = `(${sizes.join("|")})`;
+    for (const library of threadedLibraries) {
+        const binary = `${library}-extended`;
+        const path = join(buildDirectory(lane), "benchmark", "benchmarks", binary, `ecs-benchmark-${binary}`);
+        const scratch = join(directory, `${library}-through.partial.json`);
+        const merged = [];
+        let context;
+        for (let k = 0; k < complexSystems.length - 1; k++) {
+            run(path, [
+                `--benchmark_filter=^BM_ComplexSystemsUpdate(MixedEntities)?/${counts}$`,
+                `--benchmark_repetitions=${options.repetitions}`,
+                "--benchmark_report_aggregates_only=true",
+                `--benchmark_out=${scratch}`,
+                "--benchmark_out_format=json",
+                "--benchmark_format=console",
+            ], { env: { ...process.env, ECS_BENCHMARK_SYSTEMS: String(k + 1) } });
+            const report = JSON.parse(readFileSync(scratch, "utf8"));
+            context = report.context;
+            const rename = name => name.replace(/^(BM_ComplexSystemsUpdate(?:MixedEntities)?)\//, `$1_Through_${complexSystems[k]}/`);
+            merged.push(...report.benchmarks.map(entry => ({ ...entry, name: rename(entry.name), run_name: rename(entry.run_name ?? entry.name) })));
+        }
+        rmSync(scratch, { force: true });
+        record({ context, benchmarks: merged }, join(directory, `${library}-through.json`));
     }
 };
 

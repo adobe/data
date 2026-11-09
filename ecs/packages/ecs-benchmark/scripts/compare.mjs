@@ -39,7 +39,7 @@ const cppLane = lane => {
     const byLibrary = new Map();
     for (const file of readdirSync(directory).filter(name => name.endsWith(".json")).sort()) {
         const report = read(join(directory, file));
-        const library = file.replace(/\.json$/, "").replace(/-(entities|extended|complex)$/, "");
+        const library = file.replace(/\.json$/, "").replace(/-(entities|extended|complex|through)$/, "");
         const merged = byLibrary.get(library) ?? { context: report.context, medians: new Map() };
         for (const [name, time] of mediansOf(report)) merged.medians.set(name, time);
         byLibrary.set(library, merged);
@@ -70,6 +70,32 @@ const table = (columns, sizesOf) => {
             const values = columns.map(([, medians]) => medians.get(`${scenario}/${size}`)).map(time => time === undefined ? undefined : time / Math.max(1, size));
             const fastest = Math.min(...values.filter(value => value !== undefined));
             lines.push(`| ${count(size)} | ${values.map(value => value === undefined ? "" : value === fastest ? `**${number(value)}**` : number(value)).join(" | ")} |`);
+        }
+        lines.push("");
+    }
+    return lines.join("\n");
+};
+
+/** The seven systems of the 7-system benchmarks, in the order a frame runs them. */
+const complexSystems = ["MovementSystem", "DataSystem", "MoreComplexSystem", "HealthSystem", "DamageSystem", "SpriteSystem", "RenderSystem"];
+
+/**
+ * Each system's cost in the 7-system benchmarks, at the largest count every column with `_Through_` frames has: a frame
+ * through it less a frame through the one before, the last the whole benchmark's frame less the frame through the sixth.
+ */
+const systemsTable = columns => {
+    const lines = [];
+    for (const [scenario, title] of scenarios.filter(([name]) => name.startsWith("BM_ComplexSystemsUpdate"))) {
+        const through = (medians, k, size) => k < 0 ? 0 : medians.get(k === complexSystems.length - 1 ? `${scenario}/${size}` : `${scenario}_Through_${complexSystems[k]}/${size}`);
+        const timed = columns.filter(([, medians]) => [...medians.keys()].some(name => name.startsWith(`${scenario}_Through_`)));
+        const size = Math.max(0, ...sizesOf(`${scenario}_Through_${complexSystems[0]}`, timed).filter(candidate => timed.every(([, medians]) => complexSystems.every((_, k) => through(medians, k, candidate) !== undefined))));
+        if (timed.length === 0 || size === 0) continue;
+        lines.push(`### Each system of ${title} at ${count(size)}`, "", "ns per entity a frame spends in each system; lower is faster. **Bold** is the fastest.", "");
+        lines.push(`| System | ${timed.map(([label]) => label).join(" | ")} |`, `|:---|${timed.map(() => "---:").join("|")}|`);
+        for (let k = 0; k < complexSystems.length; k++) {
+            const values = timed.map(([, medians]) => (through(medians, k, size) - through(medians, k - 1, size)) / size);
+            const fastest = Math.min(...values);
+            lines.push(`| ${complexSystems[k]} | ${values.map(value => value === fastest ? `**${number(value)}**` : number(value)).join(" | ")} |`);
         }
         lines.push("");
     }
@@ -116,9 +142,11 @@ const text = [
     "## One thread",
     "Every library on one thread; ours with kernels in JS, as a page without cross-origin isolation runs them, and in WASM.",
     table(singleColumns, sizesOf),
+    systemsTable(singleColumns),
     "## Many threads",
     "The libraries whose threading the patch switches on, against ours on its worker pool, and ours on one thread for scale. The C++ suite runs only its frames on several threads.",
     table(threadsColumns, sizesOf),
+    systemsTable(threadsColumns),
 ].join("\n\n");
 writeFileSync(join(results, "comparison.md"), `${text}\n`);
 console.log(`wrote ${join(results, "comparison.md")}`);

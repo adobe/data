@@ -22,9 +22,11 @@ benchmark names, `--quick` and `--record`. CI runs only `test`.
 Times compare only on the same hardware, so the history is kept per machine. Record after a change to the ECS that
 should move these numbers, and run `pnpm bench:quick` before one to see what it moved.
 
-Besides the suite's benchmarks, `Ours_ComplexMixed_Through_<System>` times a frame of the systems of
-`BM_ComplexSystemsUpdateMixedEntities` up to and including that one. One less the one before is what that system costs
-as a frame runs it, with the data in the state the systems before it leave, which timing a system alone doesn't give.
+Besides the suite's benchmarks, `BM_ComplexSystemsUpdate_Through_<System>` and
+`BM_ComplexSystemsUpdateMixedEntities_Through_<System>` time a frame of the 7-system benchmark's systems up to and
+including that one, ours and, with `patches/systems-prefix.patch`, Flecs's and mustache's. One less the one before is
+what that system costs as a frame runs it, with the data in the state the systems before it leave, which timing a
+system alone doesn't give. The comparison lists each system's cost so.
 
 ## What runs
 

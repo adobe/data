@@ -434,7 +434,32 @@ export const generateWasmOrReason = (
                 const alternate = integerBound(expression.alternate);
                 return consequent === null || alternate === null ? null : Math.max(consequent, alternate);
             }
-            default: return integerKind(expression) != null ? 2 ** 32 : typeOf(expression) === "boolean" ? 1 : null;
+            case "math": {
+                if (!["min", "max", "abs", "floor", "ceil", "trunc"].includes(expression.name) || expression.arguments.length === 0) break;
+                const bounds = expression.arguments.map(integerBound);
+                return bounds.every(bound => bound !== null) ? Math.max(...bounds.map(bound => bound ?? 0)) : null;
+            }
+            default: break;
+        }
+        return integerKind(expression) != null ? 2 ** 32 : typeOf(expression) === "boolean" ? 1 : null;
+    };
+    /**
+     * Whether computing a value costs no more than a few instructions and calls nothing: reads of columns, locals and
+     * parameters, and operators and native `Math` on them. Values are pure, so one that's cheap may be computed where
+     * it wouldn't be, as a branch-free `select` does.
+     */
+    const cheap = (expression: Expression, budget = { left: 24 }): boolean => {
+        if (--budget.left < 0) return false;
+        switch (expression.kind) {
+            case "number": case "boolean": case "local": case "column": case "resource": case "args": case "shared": case "found": case "upFound": return true;
+            case "unary": return cheap(expression.operand, budget);
+            case "binary":
+                if (expression.operator === "**" || (expression.operator === "%" && !(expression.right.kind === "number" && expression.right.value !== 0 && exactInteger(expression.left) && integral(expression.right)))) return false;
+                return cheap(expression.left, budget) && cheap(expression.right, budget);
+            case "logical": return cheap(expression.left, budget) && cheap(expression.right, budget);
+            case "conditional": return cheap(expression.test, budget) && cheap(expression.consequent, budget) && cheap(expression.alternate, budget);
+            case "math": return native.has(expression.name) && expression.arguments.every(argument => cheap(argument, budget));
+            default: return false;
         }
     };
     /** Whether a value is an integer below 2^32 in magnitude. */
@@ -651,9 +676,15 @@ export const generateWasmOrReason = (
                 }
                 break;
             case "conditional":
-                if (kind === null) break;
-                emit(expression.test);
-                emitTruthy(typeOf(expression.test));
+                if (kind === null && !(exactInteger(expression.consequent) && exactInteger(expression.alternate))) break;
+                if (selects(expression)) {
+                    emitInteger(expression.consequent);
+                    emitInteger(expression.alternate);
+                    emitCondition(expression.test);
+                    code.push(op.select);
+                    return;
+                }
+                emitCondition(expression.test);
                 code.push(op.if, i32Type);
                 emitInteger(expression.consequent);
                 code.push(op.else);
@@ -688,6 +719,42 @@ export const generateWasmOrReason = (
     const emitCall = (functionName: string): void => {
         code.push(op.call, ...unsigned(importOf(functionName)));
     };
+
+    /**
+     * Leaves 1 (i32) if an expression's value is truthy: comparisons as the i32 they compute, `!` as its negation, and
+     * `&&` and `||` of cheap operands without a branch, since both are pure.
+     */
+    const emitCondition = (expression: Expression): void => {
+        if (!hoisted.has(expression)) {
+            if (expression.kind === "binary" && expression.operator in comparisons) {
+                const leftType = typeOf(expression.left);
+                const rightType = typeOf(expression.right);
+                const strict = expression.operator === "===" || expression.operator === "!==";
+                if (!strict || (leftType === rightType && leftType !== "mixed")) {
+                    emit(expression.left);
+                    emit(expression.right);
+                    code.push(comparisons[expression.operator as keyof typeof comparisons]);
+                    return;
+                }
+            }
+            if (expression.kind === "unary" && expression.operator === "!") {
+                emitCondition(expression.operand);
+                code.push(op.i32Eqz);
+                return;
+            }
+            if (expression.kind === "logical" && cheap(expression.right)) {
+                emitCondition(expression.left);
+                emitCondition(expression.right);
+                code.push(expression.operator === "&&" ? op.i32And : op.i32Or);
+                return;
+            }
+        }
+        emit(expression);
+        emitTruthy(typeOf(expression));
+    };
+
+    /** Whether a conditional's arms are cheap enough to compute both and `select`, rather than branch. */
+    const selects = (expression: Extract<Expression, { kind: "conditional" }>): boolean => cheap(expression.consequent) && cheap(expression.alternate);
 
     const emit = (expression: Expression): void => {
         const hoistedLocal = hoisted.get(expression);
@@ -758,8 +825,14 @@ export const generateWasmOrReason = (
                 return;
             }
             case "conditional":
-                emit(expression.test);
-                emitTruthy(typeOf(expression.test));
+                if (selects(expression)) {
+                    emit(expression.consequent);
+                    emit(expression.alternate);
+                    emitCondition(expression.test);
+                    code.push(op.select);
+                    return;
+                }
+                emitCondition(expression.test);
                 code.push(op.if, f64Type);
                 emit(expression.consequent);
                 code.push(op.else);
@@ -1545,6 +1618,92 @@ export const generateWasmOrReason = (
         code.push(op.i32Const, ...signed(shift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add, op.localGet, 2, op.f64Store, 3, 0);
     };
 
+    /**
+     * Whether an `if` runs branch-free: each branch only stores to row columns and assigns locals, or holds such `if`s,
+     * with cheap values and a few of them. Its stores then write the new value or the one there, by the predicate, which
+     * spends a few instructions on every row to save mispredicting on rows whose data decides the branch.
+     */
+    const predicable = (current: Extract<Statement, { kind: "if" }>): boolean => {
+        const budget = { left: 6 };
+        const fits = (statements: readonly Statement[]): boolean => statements.every(inner => {
+            if (--budget.left < 0) return false;
+            switch (inner.kind) {
+                case "store": return columns[inner.column].component >= 0 && rowAddresses.has(inner.column) && cheap(inner.value);
+                case "set": return !accumulators.includes(inner.local) && cheap(inner.value);
+                case "if": return cheap(inner.test) && fits(inner.consequent) && fits(inner.alternate);
+                default: return false;
+            }
+        });
+        return cheap(current.test) && fits(current.consequent) && fits(current.alternate);
+    };
+
+    /** Runs statements where the i32 `predicate` holds, or where it doesn't with `negated`, without branching. */
+    const predicated = (statements: readonly Statement[], predicate: number, negated: boolean): void => {
+        const emitPredicate = (): void => {
+            code.push(op.localGet, ...unsigned(predicate));
+            if (negated) code.push(op.i32Eqz);
+        };
+        for (const inner of statements) {
+            if (inner.kind === "set") {
+                const own = integerLocal(inner.local);
+                if (own === null) emit(inner.value);
+                else emitInteger(inner.value);
+                code.push(op.localGet, ...unsigned(local(inner.local)));
+                emitPredicate();
+                code.push(op.select, op.localSet, ...unsigned(local(inner.local)));
+            }
+            else if (inner.kind === "store") {
+                const { view, offset, boolean } = columns[inner.column];
+                const memory = (align: number): number[] => [align, ...unsigned(offset)];
+                address(inner.column);
+                switch (view) {
+                    case "f32":
+                        emit(inner.value);
+                        code.push(op.f32DemoteF64);
+                        address(inner.column);
+                        code.push(op.f32Load, ...memory(2));
+                        emitPredicate();
+                        code.push(op.select, op.f32Store, ...memory(2));
+                        break;
+                    case "i32": case "u32":
+                        emitInteger(inner.value);
+                        address(inner.column);
+                        code.push(op.i32Load, ...memory(2));
+                        emitPredicate();
+                        code.push(op.select, op.i32Store, ...memory(2));
+                        break;
+                    case "u8":
+                        if (boolean) emitCondition(inner.value);
+                        else emitInteger(inner.value);
+                        address(inner.column);
+                        code.push(op.i32Load8u, ...memory(0));
+                        emitPredicate();
+                        code.push(op.select, op.i32Store8, ...memory(0));
+                        break;
+                    default:
+                        emit(inner.value);
+                        address(inner.column);
+                        code.push(op.f64Load, ...memory(3));
+                        emitPredicate();
+                        code.push(op.select, op.f64Store, ...memory(3));
+                }
+            }
+            else if (inner.kind === "if") {
+                const nested = scratch(i32Type);
+                emitCondition(inner.test);
+                emitPredicate();
+                code.push(op.i32And, op.localSet, ...unsigned(nested));
+                predicated(inner.consequent, nested, false);
+                const otherwise = scratch(i32Type);
+                emitCondition(inner.test);
+                code.push(op.i32Eqz);
+                emitPredicate();
+                code.push(op.i32And, op.localSet, ...unsigned(otherwise));
+                predicated(inner.alternate, otherwise, false);
+            }
+        }
+    };
+
     const statement = (current: Statement): void => {
         switch (current.kind) {
             case "set":
@@ -1560,8 +1719,15 @@ export const generateWasmOrReason = (
                 stampDense(current.chunks, chunkShift, 0);
                 return;
             case "if":
-                emit(current.test);
-                emitTruthy(typeOf(current.test));
+                if (predicable(current)) {
+                    const predicate = scratch(i32Type);
+                    emitCondition(current.test);
+                    code.push(op.localSet, ...unsigned(predicate));
+                    predicated(current.consequent, predicate, false);
+                    predicated(current.alternate, predicate, true);
+                    return;
+                }
+                emitCondition(current.test);
                 code.push(op.if, 0x40);
                 labels.push("if");
                 for (const inner of current.consequent) statement(inner);
@@ -1581,8 +1747,7 @@ export const generateWasmOrReason = (
                 return;
             case "branch": code.push(op.br, ...unsigned(wasmDepth(current.depth))); return;
             case "branchIf":
-                emit(current.test);
-                emitTruthy(typeOf(current.test));
+                emitCondition(current.test);
                 code.push(op.brIf, ...unsigned(wasmDepth(current.depth)));
                 return;
             case "next": code.push(op.br, ...unsigned(labels.length - 1 - labels.lastIndexOf("next"))); return;

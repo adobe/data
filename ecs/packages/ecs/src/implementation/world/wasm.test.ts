@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import type { Program } from "./kernel.js";
+import { printWat } from "../compiler/wat.js";
 import { generateWasm, importsOf, type WasmColumn } from "./wasm.js";
 
 type Expression = Program.Expression;
@@ -659,5 +660,78 @@ describe("generateWasm integer remainders of sums", () => {
                 expect([output, [...result]]).toEqual([output, viaTypedArray(output, values.map(expected))]);
             }
         }
+    });
+});
+
+describe("generateWasm branch-free conditionals", () => {
+    const column = (index: number): Expression => ({ kind: "column", column: index });
+    const number = (value: number): Expression => ({ kind: "number", value });
+    const binary = (operator: Extract<Expression, { kind: "binary" }>["operator"], left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+    /** Fields of one component, 16 bytes a row: hp and maxhp (i32), status (u32), alive (boolean u8). */
+    const fields: WasmColumn[] = [
+        { view: "i32", stride: 16, offset: 0, boolean: false, component: 0 },
+        { view: "i32", stride: 16, offset: 4, boolean: false, component: 0 },
+        { view: "u32", stride: 16, offset: 8, boolean: false, component: 0 },
+        { view: "u8", stride: 16, offset: 12, boolean: true, component: 0 },
+        { view: "f32", stride: 4, offset: 0, boolean: false, component: 1 },
+    ];
+    const [hp, maxhp, status, alive, damage] = [0, 1, 2, 3, 4].map(column);
+    /** HealthSystem's chain, then a damage step under `&&`, and a ternary of constants. */
+    const program: Program = {
+        locals: 0,
+        body: [
+            {
+                kind: "if", test: binary("<=", hp, number(0)),
+                consequent: [{ kind: "store", column: 2, value: number(2) }, { kind: "store", column: 3, value: { kind: "boolean", value: false } }],
+                alternate: [{
+                    kind: "if", test: binary(">=", hp, maxhp),
+                    consequent: [{ kind: "store", column: 0, value: maxhp }, { kind: "store", column: 2, value: number(1) }],
+                    alternate: [{ kind: "store", column: 2, value: number(3) }],
+                }],
+            },
+            {
+                kind: "if", test: { kind: "logical", operator: "&&", left: binary(">", hp, number(0)), right: binary(">", damage, number(0)) },
+                consequent: [{ kind: "store", column: 0, value: { kind: "math", name: "max", arguments: [binary("-", hp, damage), number(0)] } }, { kind: "store", column: 4, value: binary("*", damage, number(0.5)) }],
+                alternate: [],
+            },
+            { kind: "store", column: 1, value: { kind: "conditional", test: alive, consequent: binary("+", maxhp, number(1)), alternate: maxhp } },
+        ],
+    };
+    type Row = { hp: number; maxhp: number; status: number; alive: boolean; damage: number };
+    const reference = (row: Row): Row => {
+        const next = { ...row };
+        if (next.hp <= 0) { next.status = 2; next.alive = false; }
+        else if (next.hp >= next.maxhp) { next.hp = next.maxhp; next.status = 1; }
+        else next.status = 3;
+        if (next.hp > 0 && next.damage > 0) { next.hp = Math.max(next.hp - next.damage, 0) | 0; next.damage = Math.fround(next.damage * 0.5); }
+        next.maxhp = (next.alive ? next.maxhp + 1 : next.maxhp) | 0;
+        return next;
+    };
+
+    it("stores what the branches would, row by row, for every combination of predicates", () => {
+        const kernel = generateWasm(program, fields, () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        expect(kernel.imports).toEqual([]);
+        const rows: Row[] = [];
+        for (const hpValue of [-5, 0, 3, 10, 12]) for (const damageValue of [-1, 0, 2.5, 20]) for (const aliveValue of [false, true]) rows.push({ hp: hpValue, maxhp: 10, status: 0, alive: aliveValue, damage: damageValue });
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        const words = new Int32Array(memory.buffer, 0, rows.length * 4);
+        const bytes = new Uint8Array(memory.buffer, 0, rows.length * 16);
+        const damages = new Float32Array(memory.buffer, 8192, rows.length);
+        rows.forEach((row, k) => { words[4 * k] = row.hp; words[4 * k + 1] = row.maxhp; words[4 * k + 2] = row.status; bytes[16 * k + 12] = row.alive ? 1 : 0; damages[k] = row.damage; });
+        const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, rows.length, 0, -1, 0, 0, 0, 0, 8192);
+        const results = rows.map((_, k): Row => ({ hp: words[4 * k], maxhp: words[4 * k + 1], status: words[4 * k + 2], alive: bytes[16 * k + 12] === 1, damage: damages[k] }));
+        expect(results).toEqual(rows.map(row => reference({ ...row, damage: Math.fround(row.damage) })));
+    });
+
+    it("branches only to loop over rows", () => {
+        const kernel = generateWasm(program, fields, () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        const wat = printWat(kernel.bytes);
+        if ("failure" in wat) throw new Error(wat.failure);
+        expect(wat.wat).not.toMatch(/\bif\b/);
+        expect(wat.wat).toMatch(/\bselect\b/);
     });
 });

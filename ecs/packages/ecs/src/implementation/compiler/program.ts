@@ -2,6 +2,7 @@
 import type { Path, Program } from '../world/kernel.js';
 import type { Expression, Statement } from './ir.js';
 import { resolve } from './out.js';
+import { simplifyProgram } from './simplify-program.js';
 
 const all = <T, R>(items: readonly T[], map: (item: T) => R | undefined): R[] | undefined => {
     const result: R[] = [];
@@ -228,8 +229,8 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
     if (body === undefined) return null;
     const counted = { ...intrinsics === 0 ? {} : { intrinsics }, ...accumulators.length === 0 ? {} : { reductions: accumulators.map(localIndex) } };
     if (listed) Object.assign(counted, { up: true });
-    if (nameOf === undefined) return { locals: locals.size, handles: handles.size, ...counted, body };
+    if (nameOf === undefined) return simplifyProgram({ locals: locals.size, handles: handles.size, ...counted, body });
     const names: string[] = [];
     for (const [original, dense] of locals) names[dense] = nameOf(original);
-    return { locals: locals.size, handles: handles.size, names, ...counted, body };
+    return simplifyProgram({ locals: locals.size, handles: handles.size, names, ...counted, body });
 };

@@ -12,6 +12,7 @@ import type { TypedArrays } from '../../interface/schema/schema.js';
 import { createDirectory, lookupParameters, type Directory } from './directories.js';
 import { generateWgsl, type ScalarKind, type WgslKernel } from './wgsl.js';
 import { declarationOf } from '../../interface/registry/index.js';
+import { integerRangeAt } from '../../interface/registry/schemas.js';
 import { labelOf } from '../../interface/registry/index.js';
 import { absentColumn, emptyViews } from './arrays.js';
 import type { WorldIndex } from './indexes.js';
@@ -132,7 +133,9 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         booleans.push(found.scalar === "boolean");
         strides.push(found.unitStride);
         offsets.push(found.unitOffset);
-        wasmColumns.push({ view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean", component: id });
+        const type = declarationOf(column.component)?.type;
+        const range = type === undefined || found.scalar === "boolean" ? null : integerRangeAt(type, column.path);
+        wasmColumns.push({ view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean", component: id, ...range === null ? {} : { range } });
         return { kind: "field", id, leaf: index };
     });
     const declaredLookups = description.lookups.map(lookupName => lookup?.[lookupName] ?? fail(`unknown lookup "${lookupName}".`));

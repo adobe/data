@@ -24,6 +24,8 @@ export type WasmColumn = {
     readonly component: number;
     /** A tick column nothing observes: its stamps are dropped. */
     readonly muted?: boolean;
+    /** The least and greatest integer an integer column's values are declared to hold; a value outside them is unspecified. */
+    readonly range?: readonly [number, number];
 };
 
 /**
@@ -520,6 +522,11 @@ export const generateWasmOrReason = (
         switch (expression.kind) {
             case "number": return Number.isInteger(expression.value) ? Math.abs(expression.value) : null;
             case "boolean": return 1;
+            case "column": {
+                const { range } = columns[expression.column];
+                if (range !== undefined && integerKind(expression) !== null) return Math.max(Math.abs(range[0]), Math.abs(range[1]));
+                break;
+            }
             case "local": return integralLocals[expression.local] ? localBounds[expression.local] : guarded.get(expression.local) ?? null;
             case "unary": return expression.operator === "-" || expression.operator === "+" ? integerBound(expression.operand) : expression.operator === "!" ? 1 : 2 ** 32;
             case "binary": {
@@ -695,6 +702,7 @@ export const generateWasmOrReason = (
         switch (expression.kind) {
             case "number": return expression.value >= 0 && !Object.is(expression.value, -0);
             case "boolean": return true;
+            case "column": if ((columns[expression.column].range?.[0] ?? -1) >= 0 && integerKind(expression) !== null) return true; break;
             case "local": return nonNegativeLocals[expression.local];
             case "binary":
                 if (expression.operator === "+" || expression.operator === "*") return nonNegative(expression.left) && nonNegative(expression.right);
@@ -1081,6 +1089,24 @@ export const generateWasmOrReason = (
                 if (expression.name === "clz32") {
                     emitInteger(expression.arguments[0] ?? { kind: "number", value: 0 });
                     code.push(op.i32Clz);
+                    return;
+                }
+                // The least or greatest of integers one 32-bit kind holds is one of them, its own ToInt32.
+                if ((expression.name === "min" || expression.name === "max") && expression.arguments.length > 0) {
+                    const signed = expression.arguments.every(signedInteger);
+                    if (!signed && !expression.arguments.every(unsignedInteger)) break;
+                    const [first, ...rest] = expression.arguments;
+                    const result = scratch(i32Type);
+                    const next = scratch(i32Type);
+                    emitInteger(first ?? { kind: "number", value: 0 });
+                    code.push(op.localSet, ...unsigned(result));
+                    for (const argument of rest) {
+                        emitInteger(argument);
+                        code.push(op.localSet, ...unsigned(next));
+                        code.push(op.localGet, ...unsigned(result), op.localGet, ...unsigned(next), op.localGet, ...unsigned(result), op.localGet, ...unsigned(next));
+                        code.push(expression.name === "min" ? (signed ? op.i32LtS : op.i32LtU) : (signed ? op.i32GtS : op.i32GtU), op.select, op.localSet, ...unsigned(result));
+                    }
+                    code.push(op.localGet, ...unsigned(result));
                     return;
                 }
                 break;

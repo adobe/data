@@ -1541,3 +1541,58 @@ describe("generateWasm 32-bit integers at storage precision", () => {
         expect(numbers).toEqual(pairs.map(([x, y]) => ((x + y) % 1000) + (x - y)));
     });
 });
+
+describe("generateWasm declared integer ranges", () => {
+    const column = (index: number): Expression => ({ kind: "column", column: index });
+    const number = (value: number): Expression => ({ kind: "number", value });
+    const binary = (operator: Extract<Expression, { kind: "binary" }>["operator"], left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+    const ranged = (component: number, range?: readonly [number, number]): WasmColumn => ({ view: "i32", stride: 8, offset: 4 * (component % 2), boolean: false, component: component >> 1, ...range === undefined ? {} : { range } });
+
+    /** `hp = max(hp - (atk - def), 0)` where both are positive, over i32 pairs declared within the ranges given. */
+    const damage = (range?: readonly [number, number]) => {
+        const columns = [ranged(0, range), ranged(1, range), ranged(2, range), ranged(3, range)];
+        const total = binary("-", column(0), column(1));
+        const program: Program = {
+            locals: 0,
+            body: [{
+                kind: "if", test: { kind: "logical", operator: "&&", left: binary(">", column(2), number(0)), right: binary(">", total, number(0)) },
+                consequent: [{ kind: "store", column: 2, value: { kind: "math", name: "max", arguments: [binary("-", column(2), total), number(0)] } }],
+                alternate: [],
+            }],
+        };
+        const values = [0, 1, 3, 7, 10, 250, 999, 1000];
+        const rows = values.flatMap(a => values.flatMap(b => values.map(h => [a, b, h] as const)));
+        return [true, false].map(simd => {
+            const kernel = generateWasm(program, columns, () => "number", simd, 0, [], [], [], [], [], false);
+            if (kernel === null) throw new Error("expected a kernel");
+            const memory = new WebAssembly.Memory({ initial: 2, maximum: 65536, shared: true });
+            const [damages, healths] = [0, 1].map(k => new Int32Array(memory.buffer, 32768 * k, 2 * rows.length));
+            rows.forEach(([atk, def, hp], r) => { damages[2 * r] = atk; damages[2 * r + 1] = def; healths[2 * r] = hp; healths[2 * r + 1] = 100; });
+            const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+            if (typeof run !== "function") throw new Error("no run export");
+            run(0, rows.length, 0, -1, 0, 0, 32768, 32768);
+            const printed = printWat(kernel.bytes);
+            return {
+                hp: rows.map((_, r) => healths[2 * r]),
+                expected: rows.map(([atk, def, hp]) => hp > 0 && atk - def > 0 ? Math.max(hp - (atk - def), 0) : hp),
+                wat: "wat" in printed ? printed.wat : printed.failure,
+            };
+        });
+    };
+
+    it("keep in i32 arithmetic on fields whose declared ranges it can't overflow, computing as written", () => {
+        for (const { hp, expected, wat } of damage([0, 1000])) {
+            expect(hp).toEqual(expected);
+            expect(wat).not.toContain("i64.");
+        }
+        const [vector] = damage([0, 1000]);
+        expect(vector?.wat).toContain("i32x4.sub");
+    });
+
+    it("keep exact in i64 a difference of fields declared with no range", () => {
+        for (const { hp, expected, wat } of damage()) {
+            expect(hp).toEqual(expected);
+            expect(wat).toContain("i64.sub");
+        }
+    });
+});

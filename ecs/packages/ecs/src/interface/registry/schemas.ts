@@ -94,6 +94,24 @@ export const conditional = (schema: Schema): boolean =>
     allowsNull(schema) || ("type" in schema && schema.type === "boolean") || ("const" in schema && schema.const === false)
     || ("anyOf" in schema && schema.anyOf.some(conditional));
 
+/**
+ * The least and greatest integer a value's leaf at `path` is declared to hold: an integer schema's `minimum` and
+ * `maximum`, both given, or a union of integer constants'. Null for any other leaf, or a path that names none.
+ */
+export const integerRangeAt = (schema: Schema, path: readonly (number | string)[]): readonly [number, number] | null => {
+    let leaf: Schema | undefined = schema;
+    for (const key of path) {
+        if (leaf === undefined || !("type" in leaf)) return null;
+        leaf = leaf.type === "object" ? leaf.properties[String(key)] : leaf.type === "array" ? leaf.items : undefined;
+    }
+    if (leaf === undefined) return null;
+    const constants = numberConstants(leaf);
+    if (constants !== null) return constants.every(Number.isInteger) ? [Math.min(...constants), Math.max(...constants)] : null;
+    if (!("type" in leaf) || leaf.type !== "integer" || "format" in leaf) return null;
+    const { minimum, maximum } = leaf;
+    return minimum !== undefined && maximum !== undefined && Number.isFinite(minimum) && Number.isFinite(maximum) ? [minimum, maximum] : null;
+};
+
 /** Whether a schema is a typed array's, which lives in shared memory and is written in place. */
 export const isTypedArray = (schema: Schema): schema is Extract<Schema, { readonly type: "typedArray" }> => "type" in schema && schema.type === "typedArray";
 

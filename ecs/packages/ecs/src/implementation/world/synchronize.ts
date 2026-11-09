@@ -255,8 +255,21 @@ const writeBlockValues = (buffer: CommandBuffer, command: number, count: number,
         const storage = to.storageById[id];
         if (storage === undefined) continue;
         const value = buffer.values[first + i];
-        let same = buffer.bytes === null && storage.words > 0 && storage.remote === null && storage.layout.kind === "linear";
-        for (let k = 1; k < count && same; k++) same = buffer.values[buffer.starts[command + k] + i] === value;
+        const { words } = storage;
+        const { bytes, offsets } = buffer;
+        // A worker's structs arrive as bytes: alike when every add's words are the first's.
+        const offset = bytes === null ? -1 : offsets[first + i];
+        let same = words > 0 && storage.remote === null && storage.layout.kind === "linear" && (bytes === null || (offset >= 0 && (offset & 3) === 0));
+        if (bytes === null) for (let k = 1; k < count && same; k++) same = buffer.values[buffer.starts[command + k] + i] === value;
+        else {
+            const source = bytes.u32;
+            const base = offset >> 2;
+            for (let k = 1; k < count && same; k++) {
+                const other = offsets[buffer.starts[command + k] + i];
+                if (other < 0 || (other & 3) !== 0) same = false;
+                else for (let w = 0; w < words && same; w++) same = source[(other >> 2) + w] === source[base + w];
+            }
+        }
         if (!same) {
             for (let k = 0; k < count; k++) {
                 const at = buffer.starts[command + k] + i;
@@ -264,8 +277,9 @@ const writeBlockValues = (buffer: CommandBuffer, command: number, count: number,
             }
             continue;
         }
-        writeCell(storage, toStart, value);
-        replicate(storage.views.u32, toStart * storage.words, storage.words, count);
+        if (bytes === null) writeCell(storage, toStart, value);
+        else copyBytes(storage, toStart, bytes, offset);
+        replicate(storage.views.u32, toStart * words, words, count);
         if (!storage.ticked) continue;
         const starts = from.storageById[id] === undefined;
         // A constant's `changed` ticks are its `added` ticks, and its value can't change: only a new start stamps it.

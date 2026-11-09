@@ -1,0 +1,1 @@
+../../packages/data-ai/.claude/rules/global/typespace.md

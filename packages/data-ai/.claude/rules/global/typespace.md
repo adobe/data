@@ -3,9 +3,13 @@ paths:
   - '**/*.ts'
 ---
 
-# Type namespace pattern
+# TypeSpace pattern
 
-Single import surface per type: `<type-name>/<type-name>.ts`. Schema in `-schema.ts`, namespace re-export from `public.js`. Types live in
+**TypeSpace** = a type plus its functions, schema and constants, exposed under one name. The type and the namespace-like value share
+the name (`Point` is the type, `Point.add` is a function), implemented with `export * as <Name> from './public.js'`. It is **not** a
+TypeScript `namespace` declaration, and not a generic grouping of code.
+
+Single import surface per type: `<type-name>/<type-name>.ts`. Schema in `-schema.ts`, TypeSpace re-export from `public.js`. Types live in
 the `types/` layer. **In a feature**, Data types live in `features/<name>/data/values/<type>/` with the schema in `schema.ts`
 (`features/data/values.md`).
 
@@ -37,18 +41,18 @@ patterns (e.g., inline `export namespace` in shared files) that do not conform �
   `schema.ts` inside the folder), named `schema` (not `<type-name>Schema`), and is **written to match the hand-authored type and pinned
   to it** with `Assert<Equal<Schema.ToType<typeof schema>, <TypeName>>>` — never the other way around. `Schema.ToType` appears only in
   that assertion, never as the exported type.
-- Export namespace: `export * as <type-name> from "./public.js"`
+- Export the TypeSpace: `export * as <type-name> from "./public.js"`
 - In public.ts, re-export every public constant file
 - Filenames map deterministically to single export:
   - `foo.ts` → `export type Foo = ...`
   - `do-bar.ts` → `export function doBar() { }`
   - DO NOT append other suffixes like `-type` etc.
-- Function files: name by purpose only (e.g., `add.ts`, `sub.ts`). **Do not prefix** with the type name — the folder provides the namespace
+- Function files: name by purpose only (e.g., `add.ts`, `sub.ts`). **Do not prefix** with the type name — the folder provides the TypeSpace
   context.
 
 ## Constants file
 
-Constants are the **one exception** to one-declaration-per-file. A namespace folder MAY have a single `constants.ts` exporting several
+Constants are the **one exception** to one-declaration-per-file. A TypeSpace folder MAY have a single `constants.ts` exporting several
 plain `const` literals (no functions, no types), re-exported through `public.ts` so callers reach them as `<TypeName>.<constant>`:
 
 ```ts
@@ -68,17 +72,19 @@ literal, it is a function and does not belong in `constants.ts`.
 
 ## Anti-patterns (do not copy)
 
-- **`export namespace <TypeName> { ... }`** — Use `export * as <TypeName> from "./public.js"` instead.
+- **`export namespace <TypeName> { ... }` containing values** — Use `export * as <TypeName> from "./public.js"` instead; the standard pattern keeps
+  every member tree-shakeable and an inline namespace does not. An inline namespace that contains **only types** is allowed (it has no runtime
+  existence).
 - **Prefixing function files with the type name** (e.g., `vec2-add.ts`) — Use `add.ts`; the folder provides context.
 - **Importing from `public.js` or `-schema.js`** outside the type folder — Consumers must import only from `<type-name>/<type-name>.ts`.
-- **A generic `functions/` folder for helpers** — a helper lives on the namespace of the type it most closely relates to (or, for a single caller, as a private declaration in that caller); never a typeless `functions/` bucket.
+- **A generic `functions/` folder for helpers** — a helper lives on the TypeSpace of the type it most closely relates to (or, for a single caller, as a private declaration in that caller); never a typeless `functions/` bucket.
 
 ## Consumers
 
 **Never:**
 
-- Import from `public.js` outside the type namespace folder
-- Import from `<type-name>-schema.js` outside the type namespace folder
+- Import from `public.js` outside the TypeSpace folder
+- Import from `<type-name>-schema.js` outside the TypeSpace folder
 
 **Do:**
 
@@ -117,7 +123,7 @@ export const length = ({ x, y }: Point) => Math.hypot(x, y);
 export const add = ({ x: x1, y: y1 }: Point, { x: x2, y: y2 }: Point): Point => ({ x: x1 + x2, y: y1 + y2 });
 ```
 
-After applying the namespace pattern:
+After applying the TypeSpace pattern:
 
 ```ts
 // src/types/point/point.ts
@@ -140,14 +146,14 @@ export const add = ({ x: x1, y: y1 }: Point, { x: x2, y: y2 }: Point): Point => 
 1. **Follow this rule** — Do not copy patterns from existing code; apply this standard.
 2. Identify constants in the current file.
 3. Extract them into the standard pattern.
-4. Identify all consumers of public namespaces.
+4. Identify all consumers of public TypeSpaces.
 5. Check each consumer: ensure imports use `<type-name>.ts` only, never public.js or -schema.js.
 6. Ensure unit tests exist per function file, splitting as needed.
 
 ## Single file pattern
 
 This pattern is ONLY allowed if there is only a single value export and every other export is just a type.
-As soon as there is more than one value type it MUST be promoted to the full namespace pattern.
+As soon as there is more than one value type it MUST be promoted to the full TypeSpace pattern.
 
 Example — a type merged with one value export and any number of type-only members:
 

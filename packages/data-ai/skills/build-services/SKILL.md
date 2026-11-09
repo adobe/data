@@ -9,7 +9,7 @@ Legacy feature (has `data/state/` or `services/main-service/`)? Extend it in pla
 
 Skip if the feature talks to nothing outside itself.
 
-Create one `services/<name>-service/` namespace per service: the interface (an async
+Create one `services/<name>-service/` TypeSpace per service: the interface (an async
 data service, validated with `AsyncDataService.IsValid`), `create` (the
 implementation, or a factory that throws when the app must inject it),
 `createFake`, and `public.ts`. Add `services/services.ts` with the `Services` map when

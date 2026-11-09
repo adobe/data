@@ -5,10 +5,10 @@ input: feature
 output: feature
 ---
 
-Create the feature's `services/` layer: one `<name>-service/` namespace folder per async
+Create the feature's `services/` layer: one `<name>-service/` TypeSpace folder per async
 contract — an `interface` (validated with `AsyncDataService.IsValid`), async-only members,
 and `create*` factories.
 
 Only if the feature talks to the outside world. Comes after `data/`, before `ecs/`.
 
-The how is in the auto-loading `features/services/index.md` rule (and `namespace.md`).
+The how is in the auto-loading `features/services/index.md` rule (and `typespace.md`).

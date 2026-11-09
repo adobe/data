@@ -6,7 +6,7 @@ output: a review — OPTIMAL, or a list of issues each tagged code | skill | rul
 ---
 
 Read the files under the given path and assess them against the relevant `features/`
-rules (each layer's rule and the cross-cutting rules — `namespace`, `data-modelling`,
+rules (each layer's rule and the cross-cutting rules — `typespace`, `data-modelling`,
 `type-casts`, `cohesion`, …):
 
 - **Correctness** — does it typecheck and follow the layer's required shape?

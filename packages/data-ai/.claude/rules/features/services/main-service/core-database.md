@@ -9,8 +9,8 @@ paths:
 
 A thin assembler: `Database.Plugin.create({ components?, resources?, archetypes? })`
 over the facet files, exposed through the `CoreDatabase` namespace. This is the
-single-file namespace form (one value export — `plugin` — everything else a type;
-see `global/namespace.md`).
+single-file TypeSpace form (one value export — `plugin` — everything else a type;
+see `global/typespace.md`).
 
 ```ts
 import { Database, type Store } from "@adobe/data/ecs";

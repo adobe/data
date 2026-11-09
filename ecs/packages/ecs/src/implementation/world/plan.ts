@@ -37,7 +37,16 @@ export type Plan = {
      */
     readonly cleared: number[];
     clearing: Uint8Array;
+    /**
+     * Commands naming rows of an archetype in row order, the same `remove`, `add` or `despawn` each, kept whole rather
+     * than an entry each: `count` of them in one buffer from `command`, naming `from`'s rows from `row`, moving them to
+     * `to` or despawning them. An archetype's blocks name all its rows, or are planned as entries. Their entities'
+     * slots hold the block's code; a void one's commands were planned as entries.
+     */
+    readonly blocks: Block[];
 };
+
+export type Block = { readonly from: number; readonly to: number; readonly row: number; readonly buffer: number; readonly command: number; readonly count: number; readonly kind: number; void: boolean };
 
 /**
  * Source and target archetype pairs, reused across sync points: `from[p]` (-1 for spawns) and `to[p]`, the number of
@@ -77,4 +86,5 @@ export const createPlan = (): Plan => ({
     slots: new Int32Array(0),
     cleared: [],
     clearing: new Uint8Array(0),
+    blocks: [],
 });

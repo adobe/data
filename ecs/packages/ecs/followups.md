@@ -107,13 +107,14 @@ correctness, then optimization. Remove an item once it's decided or done.
   random writes into the holder lists. Linking a block whose targets are themselves in it could skip the lists' random
   reads; measure before trying.
 - **Structural changes at sync points:** every command becomes a plan entry across about ten arrays, read and written
-  by five to seven passes; `BM_DestroyEntities` 1M costs 43 ns per entity (EnTT 21, pico_ecs 10) and
-  `BM_RemoveAddComponent` 178 (EnTT 17), about the same per entity at 16K, so it's instructions, not memory. A loop of
-  only the planning stores costs 9 ns per entity against the sync point's 17. Planned: first the general path's
-  passes trimmed (counting fused into `sort`, consecutive rows copied in bulk); then a path for sync points that touch
-  no finalizer, reference, index reader, joined thread, derived or shared component, string, GPU residency or
-  recording, applying commands in one pass grouped by source archetype, with tests that both paths leave identical
-  worlds. Write its design here before building it.
+  by five to seven passes; `BM_DestroyEntities` 1M costs 41 ns per entity (EnTT 21, pico_ecs 10) and
+  `BM_RemoveAddComponent` 158 (EnTT 17), about the same per entity at 16K, so it's instructions, not memory. A loop of
+  only the planning stores costs 9 ns per entity against the sync point's 17. In progress: commands that name every row
+  of an archetype in row order, the same `remove`, `add` or `despawn` each, as a row system over the archetype issues
+  them, are kept as one block rather than an entry each, where the sync point keeps nothing that reads each change
+  (the gates of `despawnWhere` emptying archetypes whole) and derives nothing; the block applies as the archetype
+  moving or despawning whole. A later command naming one of its entities replays its commands as entries, as does a
+  `despawnWhere`, so the result never depends on the block.
 - **f64 SIMD for `Vec3` bodies:** automatic kernels' f64x2 lanes run only across dense single-f32 columns, so a body
   over `Vec3` components, as chapter 14's `move`, runs in WASM a row at a time. Measure lanes within a row's leaves.
 - Index step 5 items.

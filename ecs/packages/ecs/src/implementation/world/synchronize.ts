@@ -206,6 +206,80 @@ const clearable = (state: State, archetype: Archetype, born: ReadonlyMap<number,
     return true;
 };
 
+/** Copies `count` rows of `from`'s cells from `fromStart` to `to`'s from `toStart`, values and ticks, each column as one block. */
+const copyRows = (from: Storage, to: Storage, fromStart: number, count: number, toStart: number): void => {
+    const { words } = from;
+    if (words > 0) to.views.u32.set(from.views.u32.subarray(fromStart * words, (fromStart + count) * words), toStart * words);
+    else if (from.layout.kind !== "constant") for (let k = 0; k < count; k++) copyValue(from, fromStart + k, to, toStart + k);
+    if (!to.ticked) return;
+    to.added.set(from.added.subarray(fromStart, fromStart + count), toStart);
+    to.changed.set(from.changed.subarray(fromStart, fromStart + count), toStart);
+    // A block's and a chunk's tick are the newest of their rows, so rows moving in can raise them.
+    for (let k = 0; k < count; k++) {
+        const added = from.added[fromStart + k];
+        const changed = from.changed[fromStart + k];
+        const target = toStart + k;
+        if (added > to.blockAdded[target >> blockShift]) to.blockAdded[target >> blockShift] = added;
+        if (changed > to.blockChanged[target >> blockShift]) to.blockChanged[target >> blockShift] = changed;
+        if (added > to.chunkAdded[target >> chunkShift]) to.chunkAdded[target >> chunkShift] = added;
+        if (changed > to.chunkChanged[target >> chunkShift]) to.chunkChanged[target >> chunkShift] = changed;
+    }
+};
+
+/** Lets go of the objects rows 0 to `count` of an archetype hold, which leave it. */
+const releaseObjects = (archetype: Archetype, count: number): void => {
+    if (archetype.objects) for (const storage of archetype.storages) if (storage.layout.kind === "object" && storage.remote === null) storage.values.fill(undefined, 0, count);
+};
+
+/**
+ * Applies the blocks, which name archetypes' every row: an archetype's entities despawned, each released, or moved to
+ * its target as one block of rows after the target's, in their order, its shared cells copied a column at a time, then
+ * each command's values written and each entity placed. Each archetype is left empty, before entries arrive in it.
+ */
+const applyBlocks = (state: State, queued: readonly Queued[], tick: number): void => {
+    const { plan, entities, archetypes } = state;
+    /** By archetype emptied, the row its rows start at in their target, which has made room for them; -1 for a despawn. */
+    const starts = new Map<number, number>();
+    for (const block of plan.blocks) {
+        if (block.void) continue;
+        const from = archetypes[block.from];
+        if (!starts.has(block.from)) {
+            if (block.kind === despawnCommand) starts.set(block.from, -1);
+            else {
+                const to = archetypes[block.to];
+                ensureCapacity(state.memory, to, to.count + from.count);
+                starts.set(block.from, to.count);
+                to.count += from.count;
+            }
+        }
+        const { row, count } = block;
+        if (block.kind === despawnCommand) {
+            for (let k = 0; k < count; k++) release(entities, indexOf(from.entities[row + k]));
+            continue;
+        }
+        const to = archetypes[block.to];
+        const toStart = (starts.get(block.from) ?? 0) + row;
+        to.entities.set(from.entities.subarray(row, row + count), toStart);
+        const moves = movesOf(from, to);
+        for (let m = 0; m < moves.length; m += 2) copyRows(moves[m], moves[m + 1], row, count, toStart);
+        const { buffer } = queued[block.buffer];
+        if (block.kind === addCommand) {
+            state.valuesWritten = tick;
+            for (let k = 0; k < count; k++) writeRange(buffer, buffer.starts[block.command + k], endOf(buffer, block.command + k), to, toStart + k, from, undefined, tick);
+        }
+        for (let k = 0; k < count; k++) {
+            const index = indexOf(from.entities[row + k]);
+            entities.archetype[index] = to.id;
+            entities.row[index] = toStart + k;
+        }
+    }
+    for (const id of starts.keys()) {
+        const from = archetypes[id];
+        releaseObjects(from, from.count);
+        from.count = 0;
+    }
+};
+
 /** Empties the archetypes `despawnWhere`s cleared: each entity released, each row's objects let go, no row moved. */
 const clearArchetypes = (state: State): void => {
     const { plan, entities } = state;
@@ -280,6 +354,218 @@ const despawnWhere = (state: State, queued: readonly Queued[], b: number, comman
     }
 };
 
+/** What planning a sync point's commands keeps across them. */
+type Planning = { readonly within: boolean; readonly references: boolean; readonly empty: number; readonly written: Written; readonly born: ReadonlyMap<number, number> };
+
+/** Plans one command, in issue order: the net change for its entity. Commands against dead entities do nothing. */
+const planCommand = (state: State, queued: readonly Queued[], b: number, command: number, planning: Planning): void => {
+    const { plan, structure, archetypes } = state;
+    const { slots } = plan;
+    const { buffer, guarded } = queued[b];
+    const { kinds, entities, starts, ids } = buffer;
+    const { within, references, empty, written, born } = planning;
+    const kind = kinds[command];
+    if (kind === despawnWhereCommand) {
+        despawnWhere(state, queued, b, command, within, born);
+        ensurePlanCapacity(state, plan.count + buffer.count - command);
+        return;
+    }
+    const entity = entities[command];
+    if (guarded && entity === state.resourceEntity) return;
+    const index = indexOf(entity);
+    let entry: number;
+    // Only the world spawns through a command, its resource entity: systems' and kernels' spawns are staged.
+    if (kind === spawnCommand) {
+        entry = addPlanned(state, entity, index, -1, empty);
+        plan.spawned++;
+        const start = starts[command];
+        const end = endOf(buffer, command);
+        let to = archetypes[empty];
+        for (let k = start; k < end; k++) to = state.shared[ids[k]] === undefined ? withComponent(state, to, ids[k]) : withShared(state, to, ids[k], sharedNumberOf(state, ids[k], buffer.values[k]));
+        plan.to[entry] = to.id;
+        if (end > start) addRange(state, entry, b, start, end);
+        if (references) for (let k = start; k < end; k++) if (structure.references[ids[k]] !== 0) written.push(entity, ids[k], referenceAt(buffer, k));
+        return;
+    }
+    else {
+        entry = slots[index];
+        if (entry >= 0) {
+            if (plan.entity[entry] !== entity || plan.despawned[entry] === 1) {
+                plan.dropped++;
+                if (state.transferring) releaseDropped(state, buffer, command);
+                return;
+            }
+        }
+        else {
+            if (locate(state.entities, entity) < 0 || (plan.cleared.length > 0 && plan.clearing[state.entities.archetype[index]] === 1)) {
+                plan.dropped++;
+                if (state.transferring) releaseDropped(state, buffer, command);
+                return;
+            }
+            const from = state.entities.archetype[index];
+            entry = addPlanned(state, entity, index, from, from);
+        }
+    }
+    if (kind === despawnCommand) {
+        plan.despawned[entry] = 1;
+        return;
+    }
+    const start = starts[command];
+    const end = endOf(buffer, command);
+    let to = archetypes[plan.to[entry]];
+    // A list's command resolves its target from each source archetype once.
+    const shape = buffer.shapes[command] < 0 ? null : state.shapes[buffer.shapes[command]];
+    if (kind === removeCommand) {
+        const known = shape === null ? undefined : shape.removing[to.id];
+        if (known !== undefined) {
+            plan.to[entry] = known;
+            return;
+        }
+        const source = to.id;
+        for (let k = start; k < end; k++) {
+            to = withoutComponent(state, to, ids[k]);
+            if (within) to = withoutDependents(state, to, ids[k]);
+        }
+        if (shape !== null) {
+            shape.removing[source] = to.id;
+            noteEdge(shape.removing, source, undefined, archetypes[source], to);
+        }
+        plan.to[entry] = to.id;
+        return;
+    }
+    const from = plan.from[entry] < 0 ? null : archetypes[plan.from[entry]];
+    // A list naming a shared component goes where its values say, so its target isn't kept by source.
+    const keeps = shape !== null && shape.shared.length === 0;
+    const known = keeps ? shape.adding[to.id] : undefined;
+    const source = to.id;
+    for (let k = start; k < end; k++) {
+        const id = ids[k];
+        // Removed earlier in this sync point and added again: a new start, so a new `added` tick.
+        if (from !== null && from !== to && to.storageById[id] === undefined && from.storageById[id] !== undefined) {
+            let fresh = plan.fresh.get(entry);
+            if (fresh === undefined) plan.fresh.set(entry, fresh = []);
+            fresh.push(id);
+        }
+        if (known === undefined) to = state.shared[id] === undefined ? withComponent(state, to, id) : withShared(state, to, id, sharedNumberOf(state, id, buffer.values[k]));
+        if (references && structure.references[id] !== 0) written.push(entity, id, referenceAt(buffer, k));
+    }
+    if (known !== undefined) to = archetypes[known];
+    else if (keeps) {
+        shape.adding[source] = to.id;
+        noteEdge(shape.adding, source, undefined, archetypes[source], to);
+    }
+    plan.to[entry] = to.id;
+    if (end > start) addRange(state, entry, b, start, end);
+};
+
+/** A block's code in `plan.slots`, below -1, from its index in `plan.blocks`. */
+const blockCode = (block: number): number => -2 - block;
+
+/**
+ * Plans a block's commands as entries after all, as a later command naming one of its entities or a `despawnWhere`
+ * needs: they come before anything planned after them that names its entities, so planning them late plans the same.
+ */
+const unblock = (state: State, queued: readonly Queued[], block: number, planning: Planning): void => {
+    const { plan } = state;
+    const found = plan.blocks[block];
+    if (found.void) return;
+    found.void = true;
+    const { entities } = queued[found.buffer].buffer;
+    for (let k = 0; k < found.count; k++) plan.slots[indexOf(entities[found.command + k])] = -1;
+    ensurePlanCapacity(state, plan.count + found.count);
+    for (let k = 0; k < found.count; k++) planCommand(state, queued, found.buffer, found.command + k, planning);
+};
+
+/** Plans every block's commands as entries. */
+const unblockAll = (state: State, queued: readonly Queued[], planning: Planning): void => {
+    for (let block = 0; block < state.plan.blocks.length; block++) unblock(state, queued, block, planning);
+};
+
+/** The fewest commands kept as a block: below it, entries cost no more. */
+const blockMinimum = 16;
+
+/**
+ * Keeps the commands from `command` on as a block when they name rows of the first one's archetype in row order, as a
+ * row system's or a worker's share of one does, each the same `remove`, `add` or `despawn` of the same components, none
+ * shared, none of their entities planned and no row spawned at this sync point; returns how many it kept, 0 for none.
+ * Once every command is planned, an archetype's blocks are kept only if together they name all its rows.
+ */
+const blockAt = (state: State, queued: readonly Queued[], b: number, command: number, born: ReadonlyMap<number, number>): number => {
+    const { plan, archetypes } = state;
+    const { buffer, guarded } = queued[b];
+    const { kinds, entities, starts, ids } = buffer;
+    const kind = kinds[command];
+    if (kind !== removeCommand && kind !== addCommand && kind !== despawnCommand) return 0;
+    if (buffer.count - command < blockMinimum) return 0;
+    const entity = entities[command];
+    const index = indexOf(entity);
+    if (index >= state.entities.length) return 0;
+    const fromId = state.entities.archetype[index];
+    if (fromId < 0) return 0;
+    const from = archetypes[fromId];
+    const row = state.entities.row[index];
+    if (from.entities[row] !== entity || from.count - row < blockMinimum || from.resource || from.strings.length !== 0 || from.logs !== null || born.has(fromId) || plan.clearing[fromId] === 1) return 0;
+    if (guarded && entity === state.resourceEntity) return 0;
+    const first = starts[command];
+    const width = endOf(buffer, command) - first;
+    for (let k = first; k < first + width; k++) if (state.shared[ids[k]] !== undefined) return 0;
+    const { slots } = plan;
+    const limit = Math.min(buffer.count - command, from.count - row);
+    let count = 0;
+    for (; count < limit; count++) {
+        const at = command + count;
+        if (kinds[at] !== kind || entities[at] !== from.entities[row + count] || slots[indexOf(entities[at])] !== -1) break;
+        const start = starts[at];
+        if (endOf(buffer, at) - start !== width) break;
+        let same = true;
+        for (let i = 0; i < width && same; i++) same = ids[start + i] === ids[first + i];
+        if (!same) break;
+    }
+    if (count < blockMinimum) return 0;
+    let to = -1;
+    if (kind !== despawnCommand) {
+        let target = from;
+        for (let k = first; k < first + width; k++) target = kind === removeCommand ? withoutComponent(state, target, ids[k]) : withComponent(state, target, ids[k]);
+        to = target.id;
+    }
+    const code = blockCode(plan.blocks.length);
+    for (let k = 0; k < count; k++) slots[indexOf(entities[command + k])] = code;
+    plan.blocks.push({ from: fromId, to, row, buffer: b, command, count, kind, void: false });
+    return count;
+};
+
+/**
+ * Plans as entries the blocks of each archetype they don't name every row of together, each the same change, so the
+ * blocks left move or despawn archetypes whole.
+ */
+const settleBlocks = (state: State, queued: readonly Queued[], planning: Planning): void => {
+    const { plan } = state;
+    const byArchetype = new Map<number, number[]>();
+    plan.blocks.forEach((block, index) => {
+        if (block.void) return;
+        const list = byArchetype.get(block.from);
+        if (list === undefined) byArchetype.set(block.from, [index]);
+        else list.push(index);
+    });
+    for (const [id, indexes] of byArchetype) {
+        const listed = indexes.map(index => plan.blocks[index]).sort((a, c) => a.row - c.row);
+        let next = 0;
+        let whole = true;
+        for (const block of listed) {
+            if (block.row !== next || block.kind !== listed[0].kind || block.to !== listed[0].to) whole = false;
+            next = block.row + block.count;
+        }
+        if (whole && next === state.archetypes[id].count) continue;
+        for (const index of indexes) unblock(state, queued, index, planning);
+    }
+};
+
+/**
+ * Whether a sync point keeps commands naming a whole archetype as blocks: where it keeps nothing reading each change, as
+ * `despawnWhere` emptying archetypes needs, and derives nothing, whose closures entries take.
+ */
+const blocks = (state: State): boolean => clearsWhole(state) && !derives(state.structure) && !state.structure.rederive;
+
 /**
  * Plan: the net change for each entity, in issue order. Commands against dead entities do nothing. Reference values
  * written by commands go to `written`, to check once despawns are known.
@@ -287,111 +573,36 @@ const despawnWhere = (state: State, queued: readonly Queued[], b: number, comman
 const planOf = (state: State, queued: readonly Queued[], written: Written, born: ReadonlyMap<number, number>): void => {
     const { plan, structure } = state;
     if (plan.slots.length < state.entities.length) plan.slots = new Int32Array(Math.max(state.entities.length, plan.slots.length * 2)).fill(-1);
-    const { slots } = plan;
-    const empty = archetypeOf(state, []).id;
-    const { archetypes } = state;
-    const within = derives(structure);
-    const references = structure.referenceIds.length > 0;
+    if (plan.clearing.length < state.archetypes.length) {
+        const grown = new Uint8Array(Math.max(state.archetypes.length, plan.clearing.length * 2));
+        grown.set(plan.clearing);
+        plan.clearing = grown;
+    }
+    const planning: Planning = { within: derives(structure), references: structure.referenceIds.length > 0, empty: archetypeOf(state, []).id, written, born };
+    const blocking = blocks(state);
     for (let b = 0; b < queued.length; b++) {
-        const { buffer, guarded } = queued[b];
-        const { kinds, entities, starts, ids } = buffer;
+        const { buffer } = queued[b];
+        const { kinds, entities } = buffer;
         // Each command adds at most one entry.
         ensurePlanCapacity(state, plan.count + buffer.count);
         for (let command = 0; command < buffer.count; command++) {
             const kind = kinds[command];
-            if (kind === despawnWhereCommand) {
-                despawnWhere(state, queued, b, command, within, born);
-                ensurePlanCapacity(state, plan.count + buffer.count - command);
-                continue;
+            if (kind === despawnWhereCommand) unblockAll(state, queued, planning);
+            else if (plan.blocks.length > 0 && kind !== spawnCommand) {
+                const slot = plan.slots[indexOf(entities[command])];
+                if (slot < -1) unblock(state, queued, -2 - slot, planning);
             }
-            const entity = entities[command];
-            if (guarded && entity === state.resourceEntity) continue;
-            const index = indexOf(entity);
-            let entry: number;
-            // Only the world spawns through a command, its resource entity: systems' and kernels' spawns are staged.
-            if (kind === spawnCommand) {
-                entry = addPlanned(state, entity, index, -1, empty);
-                plan.spawned++;
-                const start = starts[command];
-                const end = endOf(buffer, command);
-                let to = archetypes[empty];
-                for (let k = start; k < end; k++) to = state.shared[ids[k]] === undefined ? withComponent(state, to, ids[k]) : withShared(state, to, ids[k], sharedNumberOf(state, ids[k], buffer.values[k]));
-                plan.to[entry] = to.id;
-                if (end > start) addRange(state, entry, b, start, end);
-                if (references) for (let k = start; k < end; k++) if (structure.references[ids[k]] !== 0) written.push(entity, ids[k], referenceAt(buffer, k));
-                continue;
-            }
-            else {
-                entry = slots[index];
-                if (entry >= 0) {
-                    if (plan.entity[entry] !== entity || plan.despawned[entry] === 1) {
-                        plan.dropped++;
-                        if (state.transferring) releaseDropped(state, buffer, command);
-                        continue;
-                    }
-                }
-                else {
-                    if (locate(state.entities, entity) < 0 || (plan.cleared.length > 0 && plan.clearing[state.entities.archetype[index]] === 1)) {
-                        plan.dropped++;
-                        if (state.transferring) releaseDropped(state, buffer, command);
-                        continue;
-                    }
-                    const from = state.entities.archetype[index];
-                    entry = addPlanned(state, entity, index, from, from);
-                }
-            }
-            if (kind === despawnCommand) {
-                plan.despawned[entry] = 1;
-                continue;
-            }
-            const start = starts[command];
-            const end = endOf(buffer, command);
-            let to = archetypes[plan.to[entry]];
-            // A list's command resolves its target from each source archetype once.
-            const shape = buffer.shapes[command] < 0 ? null : state.shapes[buffer.shapes[command]];
-            if (kind === removeCommand) {
-                const known = shape === null ? undefined : shape.removing[to.id];
-                if (known !== undefined) {
-                    plan.to[entry] = known;
+            if (blocking && kind !== despawnWhereCommand) {
+                const kept = blockAt(state, queued, b, command, born);
+                if (kept > 0) {
+                    command += kept - 1;
                     continue;
                 }
-                const source = to.id;
-                for (let k = start; k < end; k++) {
-                    to = withoutComponent(state, to, ids[k]);
-                    if (within) to = withoutDependents(state, to, ids[k]);
-                }
-                if (shape !== null) {
-                    shape.removing[source] = to.id;
-                    noteEdge(shape.removing, source, undefined, archetypes[source], to);
-                }
-                plan.to[entry] = to.id;
-                continue;
             }
-            const from = plan.from[entry] < 0 ? null : archetypes[plan.from[entry]];
-            // A list naming a shared component goes where its values say, so its target isn't kept by source.
-            const keeps = shape !== null && shape.shared.length === 0;
-            const known = keeps ? shape.adding[to.id] : undefined;
-            const source = to.id;
-            for (let k = start; k < end; k++) {
-                const id = ids[k];
-                // Removed earlier in this sync point and added again: a new start, so a new `added` tick.
-                if (from !== null && from !== to && to.storageById[id] === undefined && from.storageById[id] !== undefined) {
-                    let fresh = plan.fresh.get(entry);
-                    if (fresh === undefined) plan.fresh.set(entry, fresh = []);
-                    fresh.push(id);
-                }
-                if (known === undefined) to = state.shared[id] === undefined ? withComponent(state, to, id) : withShared(state, to, id, sharedNumberOf(state, id, buffer.values[k]));
-                if (references && structure.references[id] !== 0) written.push(entity, id, referenceAt(buffer, k));
-            }
-            if (known !== undefined) to = archetypes[known];
-            else if (keeps) {
-                shape.adding[source] = to.id;
-                noteEdge(shape.adding, source, undefined, archetypes[source], to);
-            }
-            plan.to[entry] = to.id;
-            if (end > start) addRange(state, entry, b, start, end);
+            planCommand(state, queued, b, command, planning);
         }
     }
+    if (plan.blocks.length > 0) settleBlocks(state, queued, planning);
 };
 
 /** Copies a value's bytes, in its storage's layout, into row `row`: by 32-bit word where its layout has whole words. */
@@ -490,6 +701,7 @@ const writeValues = (state: State, queued: readonly Queued[], entry: number, to:
  */
 const sort = (state: State, queued: readonly Queued[], tick: number): void => {
     if (state.plan.cleared.length > 0) clearArchetypes(state);
+    if (state.plan.blocks.length > 0) applyBlocks(state, queued, tick);
     const { entities, archetypes, plan } = state;
     const { pairs } = plan;
     const width = archetypes.length + 1;
@@ -761,6 +973,12 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     plan.fresh.clear();
     for (const id of plan.cleared) plan.clearing[id] = 0;
     plan.cleared.length = 0;
+    for (const block of plan.blocks) {
+        if (block.void) continue;
+        const { entities } = queued[block.buffer].buffer;
+        for (let k = 0; k < block.count; k++) plan.slots[indexOf(entities[block.command + k])] = -1;
+    }
+    plan.blocks.length = 0;
     const { pairs } = plan;
     pairs.byKey.clear();
     pairs.from.length = pairs.to.length = pairs.count.length = pairs.start.length = 0;

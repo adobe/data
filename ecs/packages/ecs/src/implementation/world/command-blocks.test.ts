@@ -149,4 +149,17 @@ describe("commands naming a whole archetype", () => {
         expect(changedPoints).toEqual([]);
         await world.dispose();
     });
+
+    it("leave in place an archetype whose commands replace values or remove what it lacks, as entries", async () => {
+        const { world, run } = withCommands();
+        const entities: Entity[] = [];
+        await run(commands => spawnMany(commands, entities, 30));
+        const replace = System.create({ components: { with: [tagged, amount] } }, (row, { commands }) => { commands.add(row.entity, amount, row[amount] * 2); });
+        const removeAbsent = System.create({ components: { with: [tagged] } }, (row, { commands }) => { commands.remove(row.entity, extra); });
+        await world.run(replace);
+        await world.run(removeAbsent);
+        expect(await count(world, { required: [tagged, amount, point, note] })).toBe(30);
+        expect(await readEach(world, entities, amount)).toEqual(entities.map((_, i) => i * 2));
+        await world.dispose();
+    });
 });

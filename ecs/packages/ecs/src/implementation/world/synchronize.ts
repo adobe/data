@@ -526,6 +526,8 @@ const blockAt = (state: State, queued: readonly Queued[], b: number, command: nu
     if (kind !== despawnCommand) {
         let target = from;
         for (let k = first; k < first + width; k++) target = kind === removeCommand ? withoutComponent(state, target, ids[k]) : withComponent(state, target, ids[k]);
+        // Commands that leave the archetype as it is only replace values: entries write them in place.
+        if (target === from) return 0;
         to = target.id;
     }
     const code = blockCode(plan.blocks.length);

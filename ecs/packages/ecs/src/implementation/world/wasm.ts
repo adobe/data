@@ -419,6 +419,8 @@ export const generateWasmOrReason = (
     };
     // Accumulators start at their partials, which needn't be integers.
     const integralLocals = new Array<boolean>(program.locals).fill(true).map((integral, index) => integral && !accumulators.includes(index));
+    /** By local, a bound on its magnitude while it's integral: below 2^32 until narrowed by what's assigned it. */
+    const localBounds: (number | null)[] = new Array<number | null>(program.locals).fill(null);
     /**
      * A bound on the magnitude of a value that is always an integer, or null when it may not be one: integer kinds,
      * booleans, integer literals and integral locals, below 2^32, and sums, differences, products and remainders of
@@ -428,7 +430,7 @@ export const generateWasmOrReason = (
         switch (expression.kind) {
             case "number": return Number.isInteger(expression.value) ? Math.abs(expression.value) : null;
             case "boolean": return 1;
-            case "local": return integralLocals[expression.local] ? 2 ** 32 : null;
+            case "local": return integralLocals[expression.local] ? localBounds[expression.local] ?? 2 ** 32 : null;
             case "unary": return expression.operator === "-" || expression.operator === "+" ? integerBound(expression.operand) : expression.operator === "!" ? 1 : 2 ** 32;
             case "binary": {
                 if (expression.operator in bitwise) return 2 ** 32;
@@ -501,6 +503,22 @@ export const generateWasmOrReason = (
         return changed;
     };
     while (inferIntegral(program.body));
+    // Each pass bounds a local by the largest bound of what's assigned it, given the bounds before, which stay true.
+    const assignedValues = new Map<number, Expression[]>();
+    const collectAssigned = (statements: readonly Statement[]): void => {
+        for (const statement of statements) {
+            if (statement.kind === "set" && integralLocals[statement.local]) assignedValues.set(statement.local, [...assignedValues.get(statement.local) ?? [], statement.value]);
+            else if (statement.kind === "if") { collectAssigned(statement.consequent); collectAssigned(statement.alternate); }
+            else if (statement.kind === "block" || statement.kind === "loop") collectAssigned(statement.body);
+        }
+    };
+    collectAssigned(program.body);
+    for (let pass = 0; pass < 4; pass++) {
+        for (const [index, values] of assignedValues) {
+            const bound = Math.max(...values.map(value => integerBound(value) ?? 2 ** 32));
+            localBounds[index] = Math.min(localBounds[index] ?? 2 ** 32, bound);
+        }
+    }
 
     const inferIntegerLocals = (statements: readonly Statement[]): boolean => {
         let changed = false;
@@ -824,7 +842,8 @@ export const generateWasmOrReason = (
     /** Whether a value is an integer an i32 holds, `-0` its 0. */
     const signedInteger = (expression: Expression): boolean => {
         const bound = integerBound(expression);
-        return bound !== null && bound < 2 ** 31 && integerKind(expression) !== "u32";
+        const kind = integerKind(expression);
+        return bound !== null && (bound < 2 ** 31 || kind === "i32") && kind !== "u32";
     };
 
     /** Whether a conditional's arms are cheap enough to compute both and `select`, rather than branch. */

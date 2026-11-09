@@ -451,6 +451,13 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
         pairs.count[pair]++;
     }
     pairs.leaving = leaving;
+    // Each archetype grows once to fit the entities moving or spawning into it, from its pairs' counts.
+    const incoming = new Map<number, number>();
+    for (let pair = 0; pair < pairs.to.length; pair++) incoming.set(pairs.to[pair], (incoming.get(pairs.to[pair]) ?? 0) + pairs.count[pair]);
+    for (const [id, count] of incoming) {
+        const archetype = archetypes[id];
+        ensureCapacity(state.memory, archetype, archetype.count + count);
+    }
     if (pairs.order.length < plan.count) pairs.order = new Int32Array(Math.max(plan.count, pairs.order.length * 2));
     const { order } = pairs;
     // Each pair's block is its own range of entries.
@@ -476,10 +483,18 @@ const copyColumn = (from: Storage, to: Storage, plan: Plan, order: Int32Array, f
     if (words > 0) {
         const source = from.views.u32;
         const target = to.views.u32;
-        for (let k = 0; k < count; k++) {
-            const s = plan.row[order[first + k]] * words;
-            const t = (toStart + k) * words;
-            for (let i = 0; i < words; i++) target[t + i] = source[s + i];
+        // Runs of rows next to each other, as a whole archetype moving gives, copy as one block.
+        for (let k = 0; k < count;) {
+            const row = plan.row[order[first + k]];
+            let run = 1;
+            while (k + run < count && plan.row[order[first + k + run]] === row + run) run++;
+            if (run === 1) {
+                const s = row * words;
+                const t = (toStart + k) * words;
+                for (let i = 0; i < words; i++) target[t + i] = source[s + i];
+            }
+            else target.set(source.subarray(row * words, (row + run) * words), (toStart + k) * words);
+            k += run;
         }
     }
     else if (from.layout.kind !== "constant") {
@@ -613,17 +628,6 @@ const leaveLogged = (state: State, entry: number): void => {
         if (from.logs !== null) for (const log of from.logs) logSwap(log, from.id, from.count - 1, row);
     }
     leave(state, entry);
-};
-
-/** Grows each archetype once to fit the entities moving or spawning into it. */
-const presize = (state: State): void => {
-    const { plan } = state;
-    const incoming = new Int32Array(state.archetypes.length);
-    for (let entry = 0; entry < plan.count; entry++) if (plan.despawned[entry] === 0 && plan.from[entry] !== plan.to[entry]) incoming[plan.to[entry]]++;
-    for (let id = 0; id < incoming.length; id++) {
-        const archetype = state.archetypes[id];
-        if (incoming[id] > 0) ensureCapacity(state.memory, archetype, archetype.count + incoming[id]);
-    }
 };
 
 const merged = (carried: Reserved | null, reservations: Reserved): Reserved => {
@@ -766,7 +770,6 @@ const preparePending = (state: State, queued: readonly Queued[], isolated: boole
                 for (let row = first; row < archetype.count; row++) record(state.journal, indexOf(archetype.entities[row]), state.entities.length);
             }
         }
-        presize(state);
         state.syncing = { queued, reservations, reserved: state.entities.length, tick, born, index, deriving, isolated, unreserved };
     }
     catch (error) {

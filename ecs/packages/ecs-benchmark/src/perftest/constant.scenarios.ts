@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { World } from "@adobe/ecs";
 import {
-    complexSystemsUpdate, createEntities, createHalfComponentEntities, createMixedUpdateEntities, createUpdateEntities,
+    complexSystems, complexSystemsUpdate, createEntities, createHalfComponentEntities, createMixedUpdateEntities, createUpdateEntities,
     destroyEntities, probeEntities, probeFullEntities, removeAddComponent, systemsUpdate, unpackOneComponent,
     unpackThreeComponents, unpackTwoComponents,
 } from "../scenarios/model/index.js";
@@ -33,6 +33,11 @@ export const scenarios: readonly Scenario[] = [
     { name: "BM_UnpackTwoComponents", measure: (create, count) => gets(create(), world => world.run(createEntities, { count }), world => world.run(probeEntities), world => world.run(unpackTwoComponents)) },
     { name: "BM_UnpackThreeComponents", measure: (create, count) => gets(create(), world => world.run(createHalfComponentEntities, { count }), world => world.run(probeFullEntities), world => world.run(unpackThreeComponents)) },
     { name: "BM_RemoveAddComponent", measure: (create, count) => frames(create(), world => world.run(createEntities, { count }), world => world.run(removeAddComponent)) },
+    // Each system of `BM_ComplexSystemsUpdateMixedEntities` alone, which the suite doesn't time, to see where a frame goes.
+    ...complexSystems.map(([name, system]): Scenario => ({
+        name: `Ours_ComplexMixed_${name}`,
+        measure: (create, count) => frames(create(), world => world.run(createMixedUpdateEntities, { count }), world => world.run(system)),
+    })),
 ];
 
 /**

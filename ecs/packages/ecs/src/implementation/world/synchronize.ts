@@ -573,27 +573,44 @@ const blockAt = (state: State, queued: readonly Queued[], b: number, command: nu
     for (let k = first; k < first + width; k++) if (state.shared[ids[k]] !== undefined) return 0;
     const { slots } = plan;
     const limit = Math.min(buffer.count - command, from.count - row);
+    const fromEntities = from.entities;
+    const code = blockCode(plan.blocks.length);
+    const id = ids[first];
+    // Checks and marks each command's entity in one pass; a run too short to keep is unmarked.
     let count = 0;
     for (; count < limit; count++) {
         const at = command + count;
-        if (kinds[at] !== kind || entities[at] !== from.entities[row + count] || slots[indexOf(entities[at])] !== -1) break;
+        const named = entities[at];
+        const slot = indexOf(named);
+        if (kinds[at] !== kind || named !== fromEntities[row + count] || slots[slot] !== -1) break;
         const start = starts[at];
-        if (endOf(buffer, at) - start !== width) break;
-        let same = true;
-        for (let i = 0; i < width && same; i++) same = ids[start + i] === ids[first + i];
-        if (!same) break;
+        const end = at + 1 < buffer.count ? starts[at + 1] : buffer.named;
+        if (end - start !== width) break;
+        if (width === 1) {
+            if (ids[start] !== id) break;
+        }
+        else {
+            let same = true;
+            for (let i = 0; i < width && same; i++) same = ids[start + i] === ids[first + i];
+            if (!same) break;
+        }
+        slots[slot] = code;
     }
-    if (count < blockMinimum) return 0;
+    if (count < blockMinimum) {
+        for (let k = 0; k < count; k++) slots[indexOf(entities[command + k])] = -1;
+        return 0;
+    }
     let to = -1;
     if (kind !== despawnCommand) {
         let target = from;
         for (let k = first; k < first + width; k++) target = kind === removeCommand ? withoutComponent(state, target, ids[k]) : withComponent(state, target, ids[k]);
         // Commands that leave the archetype as it is only replace values: entries write them in place.
-        if (target === from) return 0;
+        if (target === from) {
+            for (let k = 0; k < count; k++) slots[indexOf(entities[command + k])] = -1;
+            return 0;
+        }
         to = target.id;
     }
-    const code = blockCode(plan.blocks.length);
-    for (let k = 0; k < count; k++) slots[indexOf(entities[command + k])] = code;
     plan.blocks.push({ from: fromId, to, row, buffer: b, command, count, kind, void: false });
     return count;
 };

@@ -170,6 +170,27 @@ const dropAssignments = (statements: readonly Statement[], unread: ReadonlySet<n
     }
 });
 
+/**
+ * Statements with what both arms of an `if` end with moved after it, as either arm runs them last, and an `if` left
+ * with nothing in either arm dropped, its test being pure. `if`s count toward no branch depth, so a branch moves too.
+ */
+const mergeTails = (statements: readonly Statement[]): Statement[] => statements.flatMap((statement): Statement[] => {
+    switch (statement.kind) {
+        case "if": {
+            const consequent = mergeTails(statement.consequent);
+            const alternate = mergeTails(statement.alternate);
+            let shared = 0;
+            while (shared < consequent.length && shared < alternate.length
+                && JSON.stringify(consequent[consequent.length - 1 - shared]) === JSON.stringify(alternate[alternate.length - 1 - shared])) shared++;
+            const tail = consequent.slice(consequent.length - shared);
+            const kept = { ...statement, consequent: consequent.slice(0, consequent.length - shared), alternate: alternate.slice(0, alternate.length - shared) };
+            return [...kept.consequent.length === 0 && kept.alternate.length === 0 ? [] : [kept], ...tail];
+        }
+        case "block": case "loop": case "intrinsic": return [{ ...statement, body: mergeTails(statement.body) }];
+        default: return [statement];
+    }
+});
+
 /** By column, the local known to hold the value in it. */
 type Holding = ReadonlyMap<number, number>;
 
@@ -231,8 +252,8 @@ const dropUnchangedStores = (statements: readonly Statement[], held: Map<number,
 /**
  * A program computing what `program` does with its constants propagated and folded, as inlined calls leave them: a
  * parameter given a literal argument is a local assigned that literal once, so `% (high - low + 1)` becomes `% 17`.
- * Assignments to locals nothing reads any more are dropped, and stores of a value a column already holds. Accumulators
- * keep every assignment.
+ * Assignments to locals nothing reads any more are dropped, and stores of a value a column already holds, and what
+ * both arms of an `if` end with runs once after it. Accumulators keep every assignment.
  */
 export const simplifyProgram = (program: Program): Program => {
     const accumulators = new Set(program.reductions ?? []);
@@ -242,7 +263,7 @@ export const simplifyProgram = (program: Program): Program => {
         const reads = new Map<number, number>();
         countUses(body, sets, reads);
         const single = new Set([...sets].filter(([local, count]) => count === 1 && !accumulators.has(local)).map(([local]) => local));
-        const folded = dropAssignments(foldStatements(body, new Map(), single), new Set([...sets.keys()].filter(local => !accumulators.has(local) && (reads.get(local) ?? 0) === 0)));
+        const folded = dropAssignments(foldStatements(mergeTails(body), new Map(), single), new Set([...sets.keys()].filter(local => !accumulators.has(local) && (reads.get(local) ?? 0) === 0)));
         const unchanged = JSON.stringify(folded) === JSON.stringify(body);
         body = folded;
         if (unchanged) break;

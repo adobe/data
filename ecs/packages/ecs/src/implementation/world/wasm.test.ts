@@ -726,13 +726,13 @@ describe("generateWasm branch-free conditionals", () => {
         expect(results).toEqual(rows.map(row => reference({ ...row, damage: Math.fround(row.damage) })));
     });
 
-    it("branches only to loop over rows", () => {
+    it("branches only on a test whose arms hold an if, running the ifs without one branch-free", () => {
         const kernel = generateWasm(program, fields, () => "number");
         if (kernel === null) throw new Error("expected a kernel");
         const wat = printWat(kernel.bytes);
         if ("failure" in wat) throw new Error(wat.failure);
-        expect(wat.wat).not.toMatch(/\bif\b/);
-        expect(wat.wat).toMatch(/\bselect\b/);
+        expect(wat.wat.match(/\bif\b/g)).toHaveLength(1);
+        expect(wat.wat.match(/\bselect\b/g)?.length).toBeGreaterThanOrEqual(5);
     });
 
     it("stamps the row, block and chunk ticks of only the rows whose predicate holds", () => {
@@ -828,6 +828,257 @@ describe("generateWasm integer comparisons and remainders", () => {
                 run(0, values.length, 0, -1, 0, 4096);
                 expect([view, [...result]]).toEqual([view, [...input].map(expected)]);
             }
+        }
+    });
+});
+
+describe("generateWasm integers through locals", () => {
+    const local = (index: number): Expression => ({ kind: "local", local: index });
+    const column = (index: number): Expression => ({ kind: "column", column: index });
+    const number = (value: number): Expression => ({ kind: "number", value });
+    const binary = (operator: Extract<Expression, { kind: "binary" }>["operator"], left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+    const math = (name: "min" | "max", ...parameters: Expression[]): Expression => ({ kind: "math", name, arguments: parameters });
+    const choose = (test: Expression, consequent: Expression, alternate: Expression): Expression => ({ kind: "conditional", test, consequent, alternate });
+
+    /** From i32 columns 0 to 2 and u32 column 3: a difference held in a local, its uses, and compares across signedness. */
+    const program: Program = {
+        locals: 2,
+        body: [
+            { kind: "set", local: 0, value: binary("-", column(1), column(2)) },
+            { kind: "set", local: 1, value: binary("-", column(0), local(0)) },
+            { kind: "store", column: 4, value: choose({ kind: "logical", operator: "&&", left: binary(">", column(0), number(0)), right: binary(">", local(0), number(0)) }, math("max", local(1), number(0)), column(0)) },
+            { kind: "store", column: 5, value: choose(binary(">", column(3), column(0)), number(1), number(2)) },
+            { kind: "store", column: 6, value: choose(binary("===", column(3), number(4294967295)), number(1), choose(binary("<=", column(3), number(2)), number(2), number(3))) },
+            { kind: "store", column: 7, value: math("min", column(0), column(1), { kind: "unary", operator: "-", operand: local(0) }) },
+            { kind: "store", column: 8, value: local(1) },
+        ],
+    };
+    const reference = ([hp, atk, def, status]: readonly number[]): number[] => {
+        const total = atk - def;
+        const value = hp - total;
+        return [hp > 0 && total > 0 ? Math.max(value, 0) : hp, status > hp ? 1 : 2, status === 4294967295 ? 1 : status <= 2 ? 2 : 3, Math.min(hp, atk, -total), value];
+    };
+    const edges = [0, 1, -1, 2, 2147483647, -2147483648, 1000];
+    const rows = edges.flatMap(hp => edges.flatMap(atk => edges.map(def => [hp, atk, def, [0, 2, 3, 2147483648, 4294967295][(hp + atk + def) & 3 & 0xff] ?? 0])));
+    const views8 = ["i32", "i32", "i32", "u32", "i32", "f64", "f64", "i32", "f64"] as const;
+    const columns: WasmColumn[] = views8.map((view, component): WasmColumn => ({ view, stride: view === "f64" ? 8 : 4, offset: 0, boolean: false, component }));
+
+    it("compute as JS does at the edges of 32 bits, stored as typed arrays convert", () => {
+        const kernel = generateWasm(program, columns, () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        const memory = new WebAssembly.Memory({ initial: 4, maximum: 65536, shared: true });
+        const size = 8 * rows.length;
+        const arrays = views8.map((view, k) => new views[view](memory.buffer, size * k, rows.length));
+        rows.forEach((row, r) => row.forEach((value, k) => { arrays[k][r] = value; }));
+        const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, rows.length, 0, -1, ...views8.map((_, k) => size * k));
+        const stored = rows.map((_, r) => [4, 5, 6, 7, 8].map(k => arrays[k][r]));
+        expect(stored).toEqual(rows.map(row => reference(row).map((value, k) => viaTypedArray(views8[4 + k], [value])[0])));
+    });
+
+    it("keep -0 where a local may hold it, as a negation, product or remainder of integers gives", () => {
+        const signs: Program = {
+            locals: 3,
+            body: [
+                { kind: "set", local: 0, value: { kind: "unary", operator: "-", operand: column(0) } },
+                { kind: "set", local: 1, value: binary("*", column(0), number(-3)) },
+                { kind: "set", local: 2, value: binary("%", column(0), number(5)) },
+                { kind: "store", column: 1, value: binary("/", number(1), local(0)) },
+                { kind: "store", column: 2, value: binary("/", number(1), local(1)) },
+                { kind: "store", column: 3, value: binary("/", number(1), local(2)) },
+            ],
+        };
+        const signColumns: WasmColumn[] = [{ view: "i32", stride: 4, offset: 0, boolean: false, component: 0 }, ...[1, 2, 3].map(component => dense("f64", component))];
+        const kernel = generateWasm(signs, signColumns, () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        const values = [0, -5, 5, -10, 7];
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        new Int32Array(memory.buffer, 0, values.length).set(values);
+        const results = [1, 2, 3].map(k => new Float64Array(memory.buffer, 1024 * k, values.length));
+        const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, values.length, 0, -1, 0, 1024, 2048, 3072);
+        expect(results.map(result => [...result])).toEqual([(x: number) => 1 / -x, (x: number) => 1 / (x * -3), (x: number) => 1 / (x % 5)].map(f => values.map(f)));
+    });
+
+    it("hold in i64 a local only ever given an integer from +0 up, as an unsigned remainder is", () => {
+        const range: Program = {
+            locals: 1,
+            body: [
+                { kind: "set", local: 0, value: binary("%", column(0), number(17)) },
+                { kind: "store", column: 1, value: binary("-", local(0), number(10)) },
+                { kind: "store", column: 2, value: binary("/", number(1), local(0)) },
+            ],
+        };
+        const rangeColumns: WasmColumn[] = [{ view: "u32", stride: 4, offset: 0, boolean: false, component: 0 }, { view: "i32", stride: 4, offset: 0, boolean: false, component: 1 }, dense("f64", 2)];
+        const kernel = generateWasm(range, rangeColumns, () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        const values = [0, 16, 17, 4294967295, 2147483648];
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        new Uint32Array(memory.buffer, 0, values.length).set(values);
+        const differences = new Int32Array(memory.buffer, 1024, values.length);
+        const inverses = new Float64Array(memory.buffer, 2048, values.length);
+        const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, values.length, 0, -1, 0, 1024, 2048);
+        expect([[...differences], [...inverses]]).toEqual([values.map(x => (x % 17) - 10), values.map(x => 1 / (x % 17))]);
+        const wat = printWat(kernel.bytes);
+        if ("failure" in wat) throw new Error(wat.failure);
+        expect(wat.wat).toMatch(/\(local i64\)/);
+    });
+
+    it("keep integer operations and comparisons off f64, converting only what's stored as f64", () => {
+        const kernel = generateWasm(program, columns, () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        const wat = printWat(kernel.bytes);
+        if ("failure" in wat) throw new Error(wat.failure);
+        expect(wat.wat).not.toMatch(/f64\.(eq|ne|lt|gt|le|ge|min|max|sub|trunc)\b/);
+        expect(wat.wat.match(/f64\.convert/g) ?? []).toHaveLength(1);
+    });
+});
+
+describe("generateWasm boolean locals", () => {
+    const local = (index: number): Expression => ({ kind: "local", local: index });
+    const column = (index: number): Expression => ({ kind: "column", column: index });
+    const program: Program = {
+        locals: 2,
+        body: [
+            { kind: "set", local: 0, value: column(0) },
+            { kind: "set", local: 1, value: { kind: "binary", operator: ">", left: column(1), right: { kind: "number", value: 3 } } },
+            { kind: "store", column: 2, value: { kind: "unary", operator: "!", operand: local(0) } },
+            { kind: "store", column: 3, value: { kind: "logical", operator: "&&", left: local(0), right: local(1) } },
+            { kind: "store", column: 4, value: local(1) },
+        ],
+    };
+    const flag = (component: number): WasmColumn => ({ view: "u8", stride: 1, offset: 0, boolean: true, component });
+    const columns: WasmColumn[] = [flag(0), { view: "i32", stride: 4, offset: 0, boolean: false, component: 1 }, flag(2), flag(3), dense("f64", 4)];
+    const rows = [[0, 0], [1, 0], [0, 4], [1, 4], [1, -5], [0, 2147483647]];
+
+    it("hold booleans as i32 0 and 1, read as JS reads them, converting only what's stored as a number", () => {
+        const kernel = generateWasm(program, columns, () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        const flags = new Uint8Array(memory.buffer, 0, rows.length);
+        const counts = new Int32Array(memory.buffer, 1024, rows.length);
+        rows.forEach(([on, count], r) => { flags[r] = on; counts[r] = count; });
+        const outputs = [new Uint8Array(memory.buffer, 2048, rows.length), new Uint8Array(memory.buffer, 3072, rows.length), new Float64Array(memory.buffer, 4096, rows.length)];
+        const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, rows.length, 0, -1, 0, 1024, 2048, 3072, 4096);
+        expect(rows.map((_, r) => outputs.map(output => output[r]))).toEqual(rows.map(([on, count]) => [Number(!on), Number(on === 1 && count > 3), Number(count > 3)]));
+        const wat = printWat(kernel.bytes);
+        if ("failure" in wat) throw new Error(wat.failure);
+        expect(wat.wat.match(/f64\.[a-z_0-9]+/g)).toEqual(["f64.convert_i32_u", "f64.store"]);
+    });
+});
+
+describe("generateWasm nested branch-free conditionals", () => {
+    it("test a nested if once, before either arm writes what the test reads", () => {
+        const column = (index: number): Expression => ({ kind: "column", column: index });
+        const number = (value: number): Expression => ({ kind: "number", value });
+        const program: Program = {
+            locals: 0,
+            body: [{
+                kind: "if", test: { kind: "binary", operator: ">", left: column(0), right: number(0) },
+                consequent: [{
+                    kind: "if", test: { kind: "binary", operator: "<=", left: column(1), right: number(0) },
+                    consequent: [{ kind: "store", column: 1, value: number(5) }],
+                    alternate: [{ kind: "store", column: 1, value: number(0) }],
+                }],
+                alternate: [],
+            }],
+        };
+        const columns: WasmColumn[] = [0, 1].map(component => ({ view: "i32", stride: 4, offset: 0, boolean: false, component }));
+        const kernel = generateWasm(program, columns, () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        const rows = [[1, 0], [1, 3], [1, -2], [0, 0], [0, 3]];
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        const [on, hp] = [0, 1].map(k => new Int32Array(memory.buffer, 1024 * k, rows.length));
+        rows.forEach(([a, b], r) => { on[r] = a; hp[r] = b; });
+        const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, rows.length, 0, -1, 0, 1024);
+        expect([...hp]).toEqual(rows.map(([a, b]) => a > 0 ? (b <= 0 ? 5 : 0) : b));
+    });
+    /** An i32 field and an f32 field, each stored twice in one branch-free if, read back between, and a flag given a number. */
+    const fields: Program = {
+        locals: 0,
+        body: [{
+            kind: "if", test: { kind: "binary", operator: ">", left: { kind: "column", column: 0 }, right: { kind: "number", value: 0 } },
+            consequent: [
+                { kind: "store", column: 0, value: { kind: "binary", operator: "*", left: { kind: "column", column: 0 }, right: { kind: "number", value: 2 } } },
+                { kind: "store", column: 1, value: { kind: "binary", operator: "+", left: { kind: "column", column: 1 }, right: { kind: "column", column: 0 } } },
+                { kind: "store", column: 0, value: { kind: "binary", operator: "-", left: { kind: "column", column: 0 }, right: { kind: "number", value: 1 } } },
+                { kind: "store", column: 2, value: { kind: "column", column: 0 } },
+            ],
+            alternate: [{ kind: "store", column: 1, value: { kind: "number", value: 0.1 } }],
+        }],
+    };
+    const fieldColumns: WasmColumn[] = [
+        { view: "i32", stride: 4, offset: 0, boolean: false, component: 0 },
+        { view: "f32", stride: 4, offset: 0, boolean: false, component: 1 },
+        { view: "u8", stride: 1, offset: 0, boolean: true, component: 2 },
+    ];
+
+    it("hold what an if stores in a local across its arms, read back as stored, written once after it", () => {
+        const kernel = generateWasm(fields, fieldColumns, () => "number", false);
+        if (kernel === null) throw new Error("expected a kernel");
+        const rows: [number, number][] = [[3, 1.5], [-1, 2.25], [0, 7], [200, 0.1], [2147483647, -3]];
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        const counts = new Int32Array(memory.buffer, 0, rows.length);
+        const amounts = new Float32Array(memory.buffer, 1024, rows.length);
+        const flags = new Uint8Array(memory.buffer, 2048, rows.length);
+        rows.forEach(([count, amount], r) => { counts[r] = count; amounts[r] = amount; flags[r] = 9; });
+        const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, rows.length, 0, -1, 0, 1024, 2048);
+        const reference = rows.map(([count, amount]) => {
+            const row = { count: new Int32Array([count]), amount: new Float32Array([amount]), flag: new Uint8Array([9]) };
+            if (row.count[0] > 0) {
+                row.count[0] = row.count[0] * 2;
+                row.amount[0] = row.amount[0] + row.count[0];
+                row.count[0] = row.count[0] - 1;
+                row.flag[0] = row.count[0];
+            }
+            else row.amount[0] = 0.1;
+            return [row.count[0], row.amount[0], row.flag[0]];
+        });
+        expect(rows.map((_, r) => [counts[r], amounts[r], flags[r]])).toEqual(reference);
+        const wat = printWat(kernel.bytes);
+        if ("failure" in wat) throw new Error(wat.failure);
+        expect([/i32\.load\b/g, /f32\.load\b/g, /i32\.load8_u\b/g, /i32\.store\b/g, /f32\.store\b/g, /i32\.store8\b/g].map(pattern => wat.wat.match(pattern)?.length ?? 0)).toEqual([1, 1, 1, 1, 1, 1]);
+    });
+});
+
+describe("generateWasm row addresses", () => {
+    it("step each column's address from the start row, through rows that end early", () => {
+        const column = (index: number): Expression => ({ kind: "column", column: index });
+        const program: Program = {
+            locals: 0,
+            body: [
+                { kind: "if", test: { kind: "binary", operator: "<", left: column(0), right: { kind: "number", value: 0 } }, consequent: [{ kind: "next" }], alternate: [] },
+                { kind: "store", column: 2, value: { kind: "binary", operator: "+", left: column(0), right: column(1) } },
+            ],
+        };
+        const columns: WasmColumn[] = [
+            { view: "i32", stride: 12, offset: 4, boolean: false, component: 0 },
+            { view: "f64", stride: 8, offset: 0, boolean: false, component: 1 },
+            { view: "f64", stride: 24, offset: 16, boolean: false, component: 2 },
+        ];
+        for (const simd of [true, false]) {
+            const kernel = generateWasm(program, columns, () => "number", simd);
+            if (kernel === null) throw new Error("expected a kernel");
+            const rows = 23;
+            const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+            const counts = new Int32Array(memory.buffer, 0, 3 * rows);
+            const amounts = new Float64Array(memory.buffer, 1024, rows);
+            const sums = new Float64Array(memory.buffer, 2048, 3 * rows);
+            for (let r = 0; r < rows; r++) { counts[3 * r + 1] = r % 5 === 0 ? -r : r; amounts[r] = r * 0.5; sums[3 * r + 2] = -1; }
+            const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+            if (typeof run !== "function") throw new Error("no run export");
+            run(3, rows, 0, -1, 0, 1024, 2048);
+            expect([simd, Array.from({ length: rows }, (_, r) => sums[3 * r + 2])]).toEqual([simd, Array.from({ length: rows }, (_, r) => r < 3 || r % 5 === 0 ? -1 : r + r * 0.5)]);
         }
     });
 });

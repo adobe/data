@@ -130,4 +130,26 @@ describe("simplifyProgram", () => {
             { kind: "store", column: 1, value: binary("+", local(1), number(1)) },
         ]);
     });
+    it("runs once after an if what both its arms end with, dropping an if left empty", () => {
+        const store = (value: Expression): Program.Statement => ({ kind: "store", column: 1, value });
+        const program: Program = {
+            locals: 1,
+            body: [
+                { kind: "set", local: 0, value: column(0) },
+                {
+                    kind: "if", test: binary(">", local(0), number(0)),
+                    consequent: [{ kind: "store", column: 2, value: number(1) }, store(local(0)), { kind: "next" }],
+                    alternate: [store(local(0)), { kind: "next" }],
+                },
+                { kind: "if", test: binary("<", local(0), number(9)), consequent: [store(number(3))], alternate: [store(number(3))] },
+            ],
+        };
+        expect(simplifyProgram(program).body).toEqual([
+            { kind: "set", local: 0, value: column(0) },
+            { kind: "if", test: binary(">", local(0), number(0)), consequent: [{ kind: "store", column: 2, value: number(1) }], alternate: [] },
+            store(local(0)),
+            { kind: "next" },
+            store(number(3)),
+        ]);
+    });
 });

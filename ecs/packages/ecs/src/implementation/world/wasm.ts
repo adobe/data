@@ -280,7 +280,7 @@ export const generateWasmOrReason = (
      * Whether SIMD lanes may compute at storage precision, as only an explicit kernel's may: f32 rounds each step.
      * Without it lanes are f64, two values a vector, promoted from f32 and demoted only on store, as the body computes.
      */
-    storagePrecision = true,
+    storagePrecision = false,
     /** By resource, the typed array it is, which `resourceElement` and `resourceStore` address in place; null for any other. */
     arrays: (resource: number) => keyof TypedArrays | null = () => null,
     named = false,
@@ -409,6 +409,8 @@ export const generateWasmOrReason = (
      * seen assigned, while locals are inferred.
      */
     const integerKind = (expression: Expression): IntegerKind | null | undefined => {
+        const wrapped = wrappedKind(expression);
+        if (wrapped !== null) return wrapped;
         switch (expression.kind) {
             case "number": {
                 const { value } = expression;
@@ -429,6 +431,75 @@ export const generateWasmOrReason = (
             default: return null;
         }
     };
+    /**
+     * At storage precision, the declared 32-bit integer kind of a value, which its arithmetic wraps at as the integers
+     * it's stored as do: a field declared i32 or u32 (a u8 promotes, as a C integer does, and doesn't wrap), a local every
+     * assignment gives one kind, and their sums, differences, products, remainders by a literal, negations (of i32s),
+     * choices, least and greatest; a literal takes the other operand's kind. Values JS operators make 32-bit, as `>>> 0`
+     * does, compute as written. Null for any other value, or a body computing as written; `undefined` while a local's
+     * kind isn't yet known.
+     */
+    const declaredKind = (expression: Expression): IntegerKind | null | undefined => {
+        if (!storagePrecision) return null;
+        const literal = (operand: Expression): boolean => operand.kind === "number" && Number.isInteger(operand.value) && !Object.is(operand.value, -0) && Math.abs(operand.value) < 2 ** 31;
+        /** One kind of two operands, either of which may be a literal; null when neither has a kind, or they differ. */
+        const both = (left: Expression, right: Expression): IntegerKind | null | undefined => {
+            const leftKind = literal(left) ? null : declaredKind(left);
+            const rightKind = literal(right) ? null : declaredKind(right);
+            if (leftKind === undefined || rightKind === undefined) return undefined;
+            if ((leftKind === null && !literal(left)) || (rightKind === null && !literal(right))) return null;
+            return leftKind === null ? rightKind : rightKind === null || rightKind === leftKind ? leftKind : null;
+        };
+        switch (expression.kind) {
+            case "column": {
+                const { view, boolean } = columns[expression.column];
+                return boolean ? null : view === "i32" ? "i32" : view === "u32" ? "u32" : null;
+            }
+            case "local": return declaredLocals[expression.local];
+            case "unary": {
+                if (expression.operator !== "-") return null;
+                const kind = declaredKind(expression.operand);
+                return kind === undefined ? undefined : kind === "i32" ? "i32" : null;
+            }
+            case "binary": {
+                const { operator, left, right } = expression;
+                if (operator === "%") return right.kind === "number" && literal(right) && right.value !== 0 ? declaredKind(left) : null;
+                return operator === "+" || operator === "-" || operator === "*" ? both(left, right) : null;
+            }
+            case "conditional": return both(expression.consequent, expression.alternate);
+            case "math": {
+                const [first, second] = expression.arguments;
+                return (expression.name === "min" || expression.name === "max") && expression.arguments.length === 2 && first !== undefined && second !== undefined ? both(first, second) : null;
+            }
+            default: return null;
+        }
+    };
+    /** At storage precision, the kind arithmetic on declared 32-bit integers wraps at: as `declaredKind`, for the operations that may overflow. */
+    const wrappedKind = (expression: Expression): IntegerKind | null | undefined =>
+        (expression.kind === "binary" && ["+", "-", "*", "%"].includes(expression.operator)) || (expression.kind === "unary" && expression.operator === "-") ? declaredKind(expression) : null;
+    /** By local, the declared kind every assignment gives it, at the fixed point; `undefined` until an assignment is seen. */
+    const declaredLocals: (IntegerKind | null | undefined)[] = new Array(program.locals);
+    for (const accumulator of accumulators) declaredLocals[accumulator] = null;
+    const inferDeclaredLocals = (statements: readonly Statement[]): boolean => {
+        let changed = false;
+        for (const statement of statements) {
+            if (statement.kind === "set") {
+                const current = declaredLocals[statement.local];
+                if (current === null) continue;
+                const kind = declaredKind(statement.value);
+                if (kind === undefined) continue;
+                const next = current === undefined || current === kind ? kind : null;
+                if (next !== current) {
+                    declaredLocals[statement.local] = next;
+                    changed = true;
+                }
+            }
+            else if (statement.kind === "if") changed = inferDeclaredLocals(statement.consequent) || inferDeclaredLocals(statement.alternate) || changed;
+            else if (statement.kind === "block" || statement.kind === "loop") changed = inferDeclaredLocals(statement.body) || changed;
+        }
+        return changed;
+    };
+    while (inferDeclaredLocals(program.body));
     // Accumulators start at their partials, which needn't be integers.
     const integralLocals = new Array<boolean>(program.locals).fill(true).map((integral, index) => integral && !accumulators.includes(index));
     /**
@@ -444,6 +515,8 @@ export const generateWasmOrReason = (
      * those, so `(count + 1) % 1000` is known an integer.
      */
     const integerBound = (expression: Expression): number | null => {
+        const wrapped = wrappedKind(expression);
+        if (wrapped !== null && wrapped !== undefined) return wrapped === "i32" ? 2 ** 31 : 2 ** 32 - 1;
         switch (expression.kind) {
             case "number": return Number.isInteger(expression.value) ? Math.abs(expression.value) : null;
             case "boolean": return 1;
@@ -955,6 +1028,13 @@ export const generateWasmOrReason = (
                     emitInteger(expression.operand);
                     return;
                 }
+                // An exact integer's negation's ToInt32 is its ToInt32's, negated modulo 2^32, as a wrapped one's is.
+                if (expression.operator === "-" && (kind !== null || exactInteger(expression)) && typeOf(expression.operand) !== "boolean") {
+                    code.push(op.i32Const, 0);
+                    emitInteger(expression.operand);
+                    code.push(op.i32Sub);
+                    return;
+                }
                 break;
             case "binary": {
                 const { operator, left, right } = expression;
@@ -969,6 +1049,12 @@ export const generateWasmOrReason = (
                     emitInteger(left);
                     emitInteger(right);
                     code.push(operator === "+" ? op.i32Add : operator === "-" ? op.i32Sub : op.i32Mul);
+                    return;
+                }
+                // A u32's remainder by a positive literal is never negative, so an unsigned one is exact.
+                if (operator === "%" && integerKind(left) === "u32" && right.kind === "number" && Number.isInteger(right.value) && right.value > 0 && right.value < 2 ** 31) {
+                    emitInteger(left);
+                    code.push(op.i32Const, ...signed(right.value), op.i32RemU);
                     return;
                 }
                 // A remainder takes the whole dividend: in i32 where it fits, else in i64, exact either way.
@@ -1181,6 +1267,12 @@ export const generateWasmOrReason = (
                     code.push(op.f64ConvertI32S);
                     return;
                 }
+                // A negation at storage precision wraps, as its integer does.
+                if (expression.operator === "-" && (wrappedKind(expression) ?? null) !== null) {
+                    emitInteger(expression);
+                    code.push(op.f64ConvertI32S);
+                    return;
+                }
                 emit(expression.operand);
                 if (expression.operator === "-") code.push(op.f64Neg);
                 else if (expression.operator === "!") {
@@ -1282,6 +1374,13 @@ export const generateWasmOrReason = (
 
     const emitBinary = (expression: Extract<Expression, { kind: "binary" }>): void => {
         const { operator, left, right } = expression;
+        // At storage precision, 32-bit integers' arithmetic wraps as they do.
+        const wrapped = wrappedKind(expression) ?? null;
+        if (wrapped !== null) {
+            emitInteger(expression);
+            code.push(wrapped === "i32" ? op.f64ConvertI32S : op.f64ConvertI32U);
+            return;
+        }
         if (operator === "===" || operator === "!==") {
             const leftType = typeOf(left);
             const rightType = typeOf(right);
@@ -2216,7 +2315,7 @@ export const generateWasmOrReason = (
             }
             else if (inner.kind === "resourceStore") storeResourceElement(inner.index, inner.element, inner.value, emitPredicate);
             else if (inner.kind === "stamp") {
-                // The tick, or the one there where the predicate doesn't hold, at the row and at its block and chunk.
+                // The tick, or the one there where the predicate doesn't hold, at the row, which is this call's alone.
                 const stampAt = (emitAddress: () => void): void => {
                     emitAddress();
                     code.push(op.localGet, 2);
@@ -2226,9 +2325,13 @@ export const generateWasmOrReason = (
                     code.push(op.select, op.f64Store, 3, 0);
                 };
                 if (columns[inner.column].muted !== true) stampAt(() => address(inner.column));
+                // A block or chunk is other workers' rows' too, so where the predicate holds it's written the tick, and
+                // never written back what was read.
                 for (const [dense, shift] of [[inner.blocks, blockShift], [inner.chunks, chunkShift]] as const) {
                     if (columns[dense].muted === true || everyRow.has(dense)) continue;
-                    stampAt(() => code.push(op.localGet, ...unsigned(columnParameter(dense)), op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(shift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add));
+                    emitPredicate();
+                    code.push(op.if, 0x40, op.localGet, ...unsigned(columnParameter(dense)), op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(shift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add);
+                    code.push(op.localGet, 2, op.f64Store, 3, 0, op.end);
                 }
             }
         }
@@ -2307,7 +2410,7 @@ export const generateWasmOrReason = (
     const vop = {
         load: 0, store: 11, const: 12, shuffle: 13, i32Splat: 17, f32Splat: 19, f64Splat: 20, i32ExtractLane: 27, i32ReplaceLane: 28,
         i32Eq: 55, i32Ne: 56, i32LtS: 57, i32LtU: 58, i32GtS: 59, i32GtU: 60, i32LeS: 61, i32LeU: 62, i32GeS: 63, i32GeU: 64, xor: 81,
-        f32ExtractLane: 31, f32ReplaceLane: 32, i32TruncSatF32S: 248,
+        f32ExtractLane: 31, f32ReplaceLane: 32, i32TruncSatF32S: 248, f32ConvertI32S: 250, f32ConvertI32U: 251,
         i32Neg: 161, i32Shl: 171, i32ShrS: 172, i32ShrU: 173, i32Add: 174, i32Sub: 177, i32Mul: 181, i32MinS: 182, i32MinU: 183, i32MaxS: 184, i32MaxU: 185,
         f32Eq: 65, f32Ne: 66, f32Lt: 67, f32Gt: 68, f32Le: 69, f32Ge: 70,
         f64Gt: 74, not: 77, and: 78, andNot: 79, or: 80, bitselect: 82, anyTrue: 83,
@@ -2734,10 +2837,17 @@ export const generateWasmOrReason = (
     /** The f32x4 comparisons by operator: numbers compare as JS's do, NaN unequal to all. */
     const floatComparisons: { readonly [operator: string]: number } = { "<": vop.f32Lt, ">": vop.f32Gt, "<=": vop.f32Le, ">=": vop.f32Ge, "==": vop.f32Eq, "!=": vop.f32Ne, "===": vop.f32Eq, "!==": vop.f32Ne };
     /**
-     * Whether a number is an f32's, computed exactly in f32 lanes: f32 fields, literals an f32 holds, locals held as f32
-     * lanes, and their roundings, absolute values, negations and choices. Sums and products round otherwise in f32.
+     * Whether a number computes in f32 lanes: an f32's exactly, as f32 fields, literals an f32 holds, locals held as f32
+     * lanes, and their roundings, absolute values, negations and choices are; and at storage precision, rounding each step
+     * to f32, their sums, differences, products, quotients, square roots, least and greatest.
      */
     const floatExact = (expression: Expression): boolean => {
+        if (storagePrecision && expression.kind === "binary" && (expression.operator === "+" || expression.operator === "-" || expression.operator === "*" || expression.operator === "/")) {
+            return floatExact(expression.left) && floatExact(expression.right);
+        }
+        if (storagePrecision && expression.kind === "math" && (expression.name === "sqrt" || ((expression.name === "min" || expression.name === "max") && expression.arguments.length > 0))) {
+            return expression.arguments.every(floatExact);
+        }
         switch (expression.kind) {
             case "number": return Object.is(Math.fround(expression.value), expression.value) || Number.isNaN(expression.value);
             case "column": return columns[expression.column].view === "f32" && !columns[expression.column].boolean;
@@ -2786,7 +2896,26 @@ export const generateWasmOrReason = (
                 floatVector(expression.operand);
                 code.push(...simd(vop.f32Neg));
                 return;
+            case "binary": {
+                const operation = { "+": vop.f32Add, "-": vop.f32Sub, "*": vop.f32Mul, "/": vop.f32Div }[expression.operator as string];
+                if (operation === undefined || !floatExact(expression)) break;
+                floatVector(expression.left);
+                floatVector(expression.right);
+                code.push(...simd(operation));
+                return;
+            }
             case "math": {
+                if ((expression.name === "min" || expression.name === "max" || expression.name === "sqrt") && floatExact(expression)) {
+                    const [first, ...rest] = expression.arguments;
+                    if (first === undefined) break;
+                    floatVector(first);
+                    if (expression.name === "sqrt") code.push(...simd(vop.f32Sqrt));
+                    for (const argument of rest) {
+                        floatVector(argument);
+                        code.push(...simd(expression.name === "min" ? vop.f32Min : vop.f32Max));
+                    }
+                    return;
+                }
                 const [only] = expression.arguments;
                 const operation = expression.name === "trunc" ? vop.f32Trunc : expression.name === "floor" ? vop.f32Floor : expression.name === "ceil" ? vop.f32Ceil : expression.name === "abs" ? vop.f32Abs : null;
                 if (only === undefined) break;
@@ -3089,8 +3218,8 @@ export const generateWasmOrReason = (
                 code.push(...simd(vop.store), 3, ...unsigned(16 * half));
             }
         }
-        // The group may straddle two blocks or chunks. Under a mask each row whose lane is set stamps its own, the others
-        // writing back the tick there.
+        // The group may straddle two blocks or chunks. Under a mask each row whose lane is set stamps its own: a block or
+        // chunk is other workers' rows' too, so it's only ever written the tick, never written back what was read.
         if (mask === null) {
             stampDense(current.blocks, blockShift, 0);
             stampDense(current.blocks, blockShift, 3);
@@ -3101,15 +3230,10 @@ export const generateWasmOrReason = (
         for (const [dense, shift] of [[current.blocks, blockShift], [current.chunks, chunkShift]] as const) {
             if (columns[dense].muted === true || everyRow.has(dense)) continue;
             for (let k = 0; k < 4; k++) {
-                const denseAddress = (): void => {
-                    code.push(op.localGet, ...unsigned(columnParameter(dense)), op.localGet, ...unsigned(rowLocal), op.i32Const, k, op.i32Add, op.i32Const, ...signed(shift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add);
-                };
-                denseAddress();
-                code.push(op.localGet, 2);
-                denseAddress();
-                code.push(op.f64Load, 3, 0);
                 maskLane(k);
-                code.push(op.select, op.f64Store, 3, 0);
+                code.push(op.if, 0x40);
+                code.push(op.localGet, ...unsigned(columnParameter(dense)), op.localGet, ...unsigned(rowLocal), op.i32Const, k, op.i32Add, op.i32Const, ...signed(shift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add);
+                code.push(op.localGet, 2, op.f64Store, 3, 0, op.end);
             }
         }
     };
@@ -3148,6 +3272,11 @@ export const generateWasmOrReason = (
                 if (columns[current.column].view !== "f32") integerVector(current.value);
                 // An f32 field stores its value rounded to f32, which f32 lanes hold.
                 else if (floatExact(current.value)) floatVector(current.value);
+                // A 32-bit integer rounds to f32 as its f64 does, to nearest.
+                else if (integerKind(current.value) === "i32" || integerKind(current.value) === "u32") {
+                    integerVector(current.value);
+                    code.push(...simd(integerKind(current.value) === "i32" ? vop.f32ConvertI32S : vop.f32ConvertI32U));
+                }
                 else {
                     work.spent += 4 * size(current.value);
                     floatLanes(() => emit(current.value));
@@ -3886,6 +4015,8 @@ export const generateWasmOrReason = (
          * `lanes`: fuse statements within each row.
          */
         let fused = false;
+        /** Whether lanes mode runs only as whole elements across rows, giving up otherwise. */
+        let acrossOnly = false;
         const generate = (scalarCount: number, mode: Mode): void => {
             code.length = 0;
             extraLocals.length = 0;
@@ -3926,6 +4057,7 @@ export const generateWasmOrReason = (
                 const plan = planLanes();
                 across = acrossElements(plan);
                 if (across) elementsLoop(plan);
+                else if (acrossOnly) throw notVectorizable;
             }
             // for (; row < end; row++) { block next { body } }, where with `up` the row and its parent's are rows[n] and parents[n].
             const slot = rowLocal;
@@ -4035,15 +4167,16 @@ export const generateWasmOrReason = (
         // precision run one row at a time.
         let mode: Mode = !simdEnabled || accumulators.length > 0 || upMode || (wide && filters > 0) ? "scalar" : filters > 0 ? "lanes" : "rows";
         // A SIMD mode throws `notVectorizable` for a program it can't run, and the next is tried.
-        const candidates: readonly Mode[] = mode === "rows" ? ["rows", "interleaved", "lanes"] : [mode];
-        for (const candidate of candidates) {
-            mode = candidate;
+        // Whole elements across rows, where the plan covers the body, outrun interleaved rows, which outrun fusing within rows.
+        const candidates: readonly (readonly [Mode, boolean])[] = mode === "rows" ? [["rows", false], ["lanes", true], ["interleaved", false], ["lanes", false]] : [[mode, false]];
+        for (let k = 0; k < candidates.length; k++) {
+            [mode, acrossOnly] = candidates[k] ?? ["scalar", false];
             try {
                 generate(0, mode);
                 break;
             }
             catch (error) {
-                if (error !== notVectorizable || candidate === candidates[candidates.length - 1]) throw error;
+                if (error !== notVectorizable || k === candidates.length - 1) throw error;
             }
         }
         if (mode === "lanes" && !fused) {

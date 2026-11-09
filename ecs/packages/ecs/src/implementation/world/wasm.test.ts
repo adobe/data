@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { blockShift, type Program } from "./kernel.js";
 import { printWat } from "../compiler/wat.js";
-import { generateWasm, importsOf, type WasmColumn } from "./wasm.js";
+import { generateWasm, generateWasmOrReason, importsOf, type WasmColumn } from "./wasm.js";
 
 type Expression = Program.Expression;
 
@@ -131,8 +131,9 @@ describe("generateWasm", () => {
 
 describe("generateWasm with SIMD", () => {
     /** Runs a program over `rows` rows; `layout` gives each column's element stride, offset and component. */
+    /** Runs at storage precision, as an explicit kernel does, its f32 lanes rounding each step. */
     const runVector = (program: Program, columns: readonly WasmColumn[], fill: (views: Float32Array[], ticks: Float64Array) => void, rows: number, tick = 7) => {
-        const kernel = generateWasm(program, columns, () => "number");
+        const kernel = generateWasm(program, columns, () => "number", true, 0, [], [], [], [], [], true);
         if (kernel === null) throw new Error("expected a kernel");
         const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
         const bases = columns.map(column => 4096 * (Math.max(0, column.component) + 1));
@@ -745,11 +746,19 @@ describe("generateWasm branch-free conditionals", () => {
             }],
         };
         const ticks = (component: number): WasmColumn => ({ view: "f64", stride: 8, offset: 0, boolean: false, component });
-        const kernel = generateWasm(stamped, [{ view: "i32", stride: 4, offset: 0, boolean: false, component: 0 }, ticks(-1), ticks(-1), ticks(-1)], () => "number");
+        const stampedColumns = [{ view: "i32", stride: 4, offset: 0, boolean: false, component: 0 } satisfies WasmColumn, ticks(-1), ticks(-1), ticks(-1)];
+        const kernel = generateWasm(stamped, stampedColumns, () => "number");
         if (kernel === null) throw new Error("expected a kernel");
-        const wat = printWat(kernel.bytes);
-        if ("failure" in wat) throw new Error(wat.failure);
-        expect(wat.wat).not.toMatch(/\bif\b/);
+        // A block or chunk is other workers' rows' too: it's only ever written the tick, never read and written back.
+        for (const simd of [true, false]) {
+            const named = generateWasmOrReason(stamped, stampedColumns, () => "number", simd, 0, [], [], [], [], [], false, () => null, true);
+            if (typeof named === "string") throw new Error(named);
+            const printed = printWat(named.bytes);
+            if ("failure" in printed) throw new Error(printed.failure);
+            const lines = printed.wat.split("\n").map(line => line.trim());
+            const reads = lines.flatMap((line, k) => /^local\.get \$c[23]$/.test(line) && lines.slice(k + 1, k + 9).some(next => next.startsWith("f64.load")) ? [k] : []);
+            expect(reads).toEqual([]);
+        }
         const rows = 2 ** blockShift * 3;
         const memory = new WebAssembly.Memory({ initial: 4, maximum: 65536, shared: true });
         const values = new Int32Array(memory.buffer, 0, rows);
@@ -1225,21 +1234,21 @@ describe("generateWasm interleaved rows", () => {
                 alternate: [],
             }],
         };
-        for (const storagePrecision of [true, false]) {
-            const { vector, scalar, wat } = bothWays(program, columns, 3, 4 * 20 + 1, storagePrecision);
-            expect(wat).not.toContain("i8x16.shuffle");
-            expect(vector).toEqual(scalar);
-        }
+        const { vector, scalar, wat } = bothWays(program, columns, 3, 4 * 20 + 1, false);
+        expect(wat).not.toContain("i8x16.shuffle");
+        expect(vector).toEqual(scalar);
     });
 
     it("fuses within rows a program four rows would cost more, from its own addresses", () => {
-        // A vec4 of f32s, which fuses within a row, beside a span of two i32s.
-        const columns = [0, 4, 8, 12].map(offset => leaf("f32", 0, 16, offset)).concat([leaf("i32", 1, 8, 0), leaf("i32", 1, 8, 4)]);
+        // A vec4 of f32s, which fuses within a row, beside a span of two i32s and an f64 whose arithmetic runs a lane at a time.
+        const columns = [0, 4, 8, 12].map(offset => leaf("f32", 0, 16, offset)).concat([leaf("i32", 1, 8, 0), leaf("i32", 1, 8, 4), leaf("f64", 2, 8, 0)]);
+        const f64 = column(6);
         const program: Program = {
             locals: 0,
             body: [
                 ...[0, 1, 2, 3].map((k): Program.Statement => ({ kind: "store", column: k, value: binary("+", binary("*", column(k), number(0.5)), number(1)) })),
                 { kind: "store", column: 4, value: binary("^", column(4), column(5)) },
+                ...[1.5, 2.5, 3.5].map((scale): Program.Statement => ({ kind: "store", column: 6, value: binary("+", binary("*", f64, number(scale)), binary("/", binary("-", f64, number(3)), binary("+", f64, number(7)))) })),
             ],
         };
         const { vector, scalar, wat } = bothWays(program, columns, 3, 4 * 20 + 1);
@@ -1428,6 +1437,29 @@ describe("generateWasm interleaved rows of f32s and typed array elements", () =>
         expect(vector?.pairs).toEqual(scalar?.pairs);
     });
 
+    it("at storage precision, compute f32 arithmetic in f32 lanes, rounding each step, and convert integers stored to f32s", () => {
+        const program: Program = {
+            locals: 0,
+            body: [
+                { kind: "store", column: 0, value: binary("+", binary("*", column(0), column(1)), number(0.5)) },
+                { kind: "store", column: 1, value: binary("-", column(2), number(10)) },
+                { kind: "store", column: 2, value: binary("^", column(2), binary(">>>", column(2), number(3))) },
+            ],
+        };
+        const [vector] = run(program);
+        expect(vector?.wat).toContain("f32x4.mul");
+        expect(vector?.wat).toContain("f32x4.convert_i32x4_u");
+        const pairs = edges.flatMap(x => edges.map(y => [x, y] as const));
+        // Row 0 runs as written; the rest in lanes, a row of four lanes from row 1.
+        const expected = pairs.map(([x, y], row) => {
+            const word = 7 * row + 1;
+            const scaled = row === 0 ? Math.fround(Math.fround(x) * Math.fround(y) + 0.5) : Math.fround(Math.fround(Math.fround(x) * Math.fround(y)) + Math.fround(0.5));
+            return [scaled, Math.fround((word - 10) >>> 0)].map(value => Object.is(value, -0) ? "-0" : String(value));
+        }).flat();
+        const lanes = (vector?.pairs ?? []).slice(2 * 1, 2 * (1 + 4 * Math.floor((pairs.length - 1) / 4)));
+        expect(lanes).toEqual(expected.slice(2, 2 + lanes.length));
+    });
+
     it("run row by row a program storing to one typed array twice, so rows' writes land in their order", () => {
         const program: Program = {
             locals: 0,
@@ -1439,5 +1471,73 @@ describe("generateWasm interleaved rows of f32s and typed array elements", () =>
         const [vector, scalar] = run(program);
         expect(vector?.wat).not.toContain("i8x16.shuffle");
         expect(vector?.cells).toEqual(scalar?.cells);
+    });
+});
+
+describe("generateWasm 32-bit integers at storage precision", () => {
+    const column = (index: number): Expression => ({ kind: "column", column: index });
+    const number = (value: number): Expression => ({ kind: "number", value });
+    const binary = (operator: Extract<Expression, { kind: "binary" }>["operator"], left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+    const negate = (operand: Expression): Expression => ({ kind: "unary", operator: "-", operand });
+    const words = [0, 1, -1, 7, -7, 2 ** 31 - 1, -(2 ** 31), 123456789, -987654321];
+
+    /** Runs a program over pairs of i32s in columns 0 and 1 and pairs of u32s in 2 and 3, into i32 column 4, u32 column 5 and f64 column 6. */
+    const runPairs = (program: Program, simd: boolean, storagePrecision: boolean) => {
+        const columns: WasmColumn[] = [
+            ...(["i32", "i32", "u32", "u32", "i32", "u32"] as const).map((view, component) => ({ view, stride: 4, offset: 0, boolean: false, component })),
+            { view: "f64", stride: 8, offset: 0, boolean: false, component: 6 },
+        ];
+        const pairs = words.flatMap(a => words.map(b => [a, b] as const));
+        const kernel = generateWasm(program, columns, () => "number", simd, 0, [], [], [], [], [], storagePrecision);
+        if (kernel === null) throw new Error("expected a kernel");
+        const memory = new WebAssembly.Memory({ initial: 2, maximum: 65536, shared: true });
+        const addresses = columns.map((_, k) => 8192 * k);
+        const [a, b] = [0, 1].map(k => new Int32Array(memory.buffer, addresses[k], pairs.length));
+        const [c, d] = [2, 3].map(k => new Uint32Array(memory.buffer, addresses[k], pairs.length));
+        pairs.forEach(([x, y], k) => { a[k] = x; b[k] = y; c[k] = x; d[k] = y; });
+        const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(0, pairs.length, 0, -1, ...addresses);
+        return {
+            pairs, wat: printWat(kernel.bytes),
+            signed: [...new Int32Array(memory.buffer, addresses[4], pairs.length)], unsigned: [...new Uint32Array(memory.buffer, addresses[5], pairs.length)], numbers: [...new Float64Array(memory.buffer, addresses[6], pairs.length)],
+        };
+    };
+    const program: Program = {
+        locals: 0,
+        body: [
+            { kind: "store", column: 4, value: binary("+", binary("*", column(0), column(1)), negate(column(0))) },
+            { kind: "store", column: 5, value: binary("-", binary("*", column(2), number(3)), column(3)) },
+            { kind: "store", column: 6, value: binary("+", binary("%", binary("+", column(0), column(1)), number(1000)), binary("-", column(0), column(1))) },
+        ],
+    };
+
+    it("wrap sums, differences, products and negations at 32 bits as their kind, read back as numbers too", () => {
+        for (const simd of [true, false]) {
+            const { pairs, signed, unsigned, numbers } = runPairs(program, simd, true);
+            expect(signed).toEqual(pairs.map(([x, y]) => (Math.imul(x, y) - x) | 0));
+            expect(unsigned).toEqual(pairs.map(([x, y]) => (Math.imul(x >>> 0, 3) - (y >>> 0)) >>> 0));
+            // The sum of two wrapped values wraps too, and a remainder of integers is never -0.
+            expect(numbers).toEqual(pairs.map(([x, y]) => ((((x + y) | 0) % 1000) + ((x - y) | 0)) | 0));
+        }
+    });
+
+    it("compute as written what JS operators make 32-bit, a u32 of `>>> 0` less 10 going below 0", () => {
+        const exact: Program = {
+            locals: 1,
+            body: [
+                { kind: "set", local: 0, value: binary(">>>", binary("%", binary(">>>", column(2), number(0)), number(17)), number(0)) },
+                { kind: "store", column: 6, value: binary("-", { kind: "local", local: 0 }, number(10)) },
+            ],
+        };
+        for (const simd of [true, false]) {
+            const { pairs, numbers } = runPairs(exact, simd, true);
+            expect(numbers).toEqual(pairs.map(([x]) => ((x >>> 0) % 17 >>> 0) - 10));
+        }
+    });
+
+    it("compute as written without storage precision", () => {
+        const { pairs, numbers } = runPairs(program, false, false);
+        expect(numbers).toEqual(pairs.map(([x, y]) => ((x + y) % 1000) + (x - y)));
     });
 });

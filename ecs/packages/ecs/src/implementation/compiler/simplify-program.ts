@@ -195,6 +195,76 @@ const mergeTails = (statements: readonly Statement[]): Statement[] => statements
     }
 });
 
+/** An expression with its reads of locals `renamed` maps read as the locals they map to. */
+const renameExpression = (expression: Expression, renamed: ReadonlyMap<number, number>): Expression => {
+    switch (expression.kind) {
+        case "local": return { ...expression, local: renamed.get(expression.local) ?? expression.local };
+        case "unary": return { ...expression, operand: renameExpression(expression.operand, renamed) };
+        case "binary": case "logical": return { ...expression, left: renameExpression(expression.left, renamed), right: renameExpression(expression.right, renamed) };
+        case "conditional": return { ...expression, test: renameExpression(expression.test, renamed), consequent: renameExpression(expression.consequent, renamed), alternate: renameExpression(expression.alternate, renamed) };
+        case "math": return { ...expression, arguments: expression.arguments.map(argument => renameExpression(argument, renamed)) };
+        case "lane": return { ...expression, value: renameExpression(expression.value, renamed) };
+        case "resourceElement": return { ...expression, element: renameExpression(expression.element, renamed) };
+        default: return expression;
+    }
+};
+
+/** Statements with their reads of locals renamed, in every expression they hold. */
+const renameStatements = (statements: readonly Statement[], renamed: ReadonlyMap<number, number>): Statement[] => statements.map((statement): Statement => {
+    const rename = (expression: Expression): Expression => renameExpression(expression, renamed);
+    switch (statement.kind) {
+        case "set": return { ...statement, value: rename(statement.value) };
+        case "store": return { ...statement, value: rename(statement.value) };
+        case "resourceStore": return { ...statement, element: rename(statement.element), value: rename(statement.value) };
+        case "if": return { ...statement, test: rename(statement.test), consequent: renameStatements(statement.consequent, renamed), alternate: renameStatements(statement.alternate, renamed) };
+        case "block": case "loop": return { ...statement, body: renameStatements(statement.body, renamed) };
+        case "branchIf": return { ...statement, test: rename(statement.test) };
+        case "find": return { ...statement, entity: rename(statement.entity) };
+        case "probe": return { ...statement, values: statement.values.map(rename) };
+        case "listRow": return { ...statement, index: rename(statement.index) };
+        case "intrinsic": return { ...statement, operands: statement.operands.map(lanes => lanes.map(rename)), body: renameStatements(statement.body, renamed) };
+        default: return statement;
+    }
+});
+
+/** Of an arm, the index of each `set` its arm's earlier statements leave free to run before the `if`, by what it reads. */
+const movable = (arm: readonly Statement[], index: number, single: ReadonlySet<number>): boolean => {
+    const statement = arm[index];
+    if (statement === undefined || statement.kind !== "set" || !single.has(statement.local)) return false;
+    const locals = new Set<number>();
+    const columns = new Set<number>();
+    return readsOf(statement.value, locals, columns) && !changes(arm.slice(0, index), locals, columns);
+};
+
+/**
+ * Statements with what both arms of an `if` compute alike run once before it: a `set` of the first arm whose value,
+ * nothing before it in the arm changes, is that of a `set` of the second, its locals read as the first's, moves out
+ * and the second's local reads as the first's. Arms left choosing between a few values run without a branch.
+ */
+const hoistCommon = (statements: readonly Statement[], single: ReadonlySet<number>): Statement[] => statements.flatMap((statement): Statement[] => {
+    if (statement.kind === "block" || statement.kind === "loop") return [{ ...statement, body: hoistCommon(statement.body, single) }];
+    if (statement.kind !== "if") return [statement];
+    let consequent = hoistCommon(statement.consequent, single);
+    let alternate = hoistCommon(statement.alternate, single);
+    const hoisted: Statement[] = [];
+    for (let moved = true; moved;) {
+        moved = false;
+        for (let first = 0; first < consequent.length && !moved; first++) {
+            const own = consequent[first];
+            if (own === undefined || own.kind !== "set" || !movable(consequent, first, single)) continue;
+            const value = JSON.stringify(own.value);
+            const second = alternate.findIndex((other, index) => other.kind === "set" && JSON.stringify(other.value) === value && movable(alternate, index, single));
+            const other = alternate[second];
+            if (other === undefined || other.kind !== "set") continue;
+            hoisted.push(own);
+            consequent = consequent.filter((_, index) => index !== first);
+            alternate = renameStatements(alternate.filter((_, index) => index !== second), new Map([[other.local, own.local]]));
+            moved = true;
+        }
+    }
+    return [...hoisted, { ...statement, consequent, alternate }];
+});
+
 /** By column, the local known to hold the value in it. */
 type Holding = ReadonlyMap<number, number>;
 
@@ -330,7 +400,7 @@ export const simplifyProgram = (program: Program): Program => {
         const reads = new Map<number, number>();
         countUses(body, sets, reads);
         const single = new Set([...sets].filter(([local, count]) => count === 1 && !accumulators.has(local)).map(([local]) => local));
-        const folded = dropAssignments(foldStatements(mergeTails(body), new Map(), single), new Set([...sets.keys()].filter(local => !accumulators.has(local) && (reads.get(local) ?? 0) === 0)));
+        const folded = dropAssignments(foldStatements(mergeTails(hoistCommon(body, single)), new Map(), single), new Set([...sets.keys()].filter(local => !accumulators.has(local) && (reads.get(local) ?? 0) === 0)));
         const unchanged = JSON.stringify(folded) === JSON.stringify(body);
         body = folded;
         if (unchanged) break;

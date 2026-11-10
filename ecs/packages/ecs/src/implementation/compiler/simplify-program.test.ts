@@ -176,3 +176,24 @@ describe("simplifyProgram sinking", () => {
         kept([...reads, store(2, number(5)), branch(test, [store(3, local(1))])]);
     });
 });
+
+describe("simplifyProgram hoisting", () => {
+    const store = (target: number, value: Expression): Program.Statement => ({ kind: "store", column: target, value });
+    const set = (target: number, value: Expression): Program.Statement => ({ kind: "set", local: target, value });
+    const branch = (test: Expression, consequent: Program.Statement[], alternate: Program.Statement[]): Program.Statement => ({ kind: "if", test, consequent, alternate });
+    const test = binary(">", column(0), column(1));
+    /** A step of each arm, local 0 or 2 from column 2, then local 1 or 3 from it, each arm storing them in its own way. */
+    const steps = (first: number) => [set(first, binary("*", column(2), number(5))), set(first + 1, binary("^", local(first), number(9)))];
+
+    it("runs once before an if what both arms compute alike, the second's locals read as the first's", () => {
+        const program: Program = { locals: 4, body: [branch(test, [...steps(0), store(3, local(1))], [...steps(2), store(4, local(3))])] };
+        expect(simplifyProgram(program).body).toEqual([...steps(0), branch(test, [store(3, local(1))], [store(4, local(1))])]);
+    });
+
+    it("leaves in an arm what something before it in the arm changes, or the other arm computes otherwise", () => {
+        const changed: Program = { locals: 4, body: [branch(test, [store(2, number(1)), ...steps(0), store(3, local(1))], [...steps(2), store(4, local(3))])] };
+        expect(simplifyProgram(changed).body).toEqual(changed.body);
+        const differs: Program = { locals: 4, body: [branch(test, [set(0, column(2)), store(3, local(0))], [set(2, column(3)), store(4, local(2))])] };
+        expect(simplifyProgram(differs).body).toEqual(differs.body);
+    });
+});

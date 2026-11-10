@@ -345,7 +345,7 @@ export const describeSystems = async (sites: TransformedSites, format: (code: st
         const generated = generateWasmOrReason(explanation.program, placed.columns, placed.scalarType, true, filters, placed.lookups, placed.upColumns,
             explanation.operators, [], [], explanation.storagePrecision, resource => {
                 const layout = layoutNamed(signature.resources[resource] ?? "");
-                return typeof layout === "object" && layout.kind === "linear" ? layout.array?.name ?? null : null;
+                return typeof layout === "object" && layout.kind === "linear" ? layout.array ?? null : null;
             }, true);
         if (typeof generated === "string") return { backend: { kind: "none", reason: generated }, lanes: null };
         const printed = printWat(generated.bytes);

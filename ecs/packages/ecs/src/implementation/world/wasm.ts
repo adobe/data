@@ -263,6 +263,9 @@ const identifierOf = (text: string): string => text.replace(/[^A-Za-z0-9_.]/g, "
  * As `generateWasm`, or why exact equivalence can't be guaranteed. `named` appends a name section naming the function,
  * its imports, parameters and locals, for printing it as text; the world never asks for one.
  */
+/** A typed array resource as kernels address it: its elements' type and how many it has. */
+export type WasmArray = { readonly name: keyof TypedArrays; readonly length: number };
+
 export const generateWasmOrReason = (
     source: Program,
     columns: readonly WasmColumn[],
@@ -284,7 +287,7 @@ export const generateWasmOrReason = (
      */
     storagePrecision = false,
     /** By resource, the typed array it is, which `resourceElement` and `resourceStore` address in place; null for any other. */
-    arrays: (resource: number) => keyof TypedArrays | null = () => null,
+    arrays: (resource: number) => WasmArray | null = () => null,
     named = false,
 ): WasmKernel | string => {
     const program = withoutIntrinsics(source);
@@ -681,13 +684,87 @@ export const generateWasmOrReason = (
         }
         return facts;
     };
+    /** The least and greatest integers a test proves of locals whole when finite, which it bounds on both sides. */
+    const rangesOf = (test: Expression): Map<number, readonly [number, number]> => {
+        const lower = new Map<number, number>();
+        const upper = new Map<number, number>();
+        const visit = (node: Expression): void => {
+            if (node.kind === "logical" && node.operator === "&&") {
+                visit(node.left);
+                visit(node.right);
+                return;
+            }
+            if (node.kind !== "binary") return;
+            const { left, right } = node;
+            const [own, other, flipped] = left.kind === "local" ? [left, right, false] : [right, left, true];
+            if (own.kind !== "local" || other.kind !== "number" || !Number.isFinite(other.value) || !wholeWhenFinite[own.local]) return;
+            const flips: { readonly [operator: string]: string } = { "<": ">", "<=": ">=", ">": "<", ">=": "<=" };
+            const operator = flipped ? flips[node.operator] : node.operator;
+            const { value } = other;
+            const high = operator === "<" ? Math.ceil(value) - 1 : operator === "<=" ? Math.floor(value) : null;
+            const low = operator === ">" ? Math.floor(value) + 1 : operator === ">=" ? Math.ceil(value) : null;
+            if (high !== null) upper.set(own.local, Math.min(upper.get(own.local) ?? Infinity, high));
+            if (low !== null) lower.set(own.local, Math.max(lower.get(own.local) ?? -Infinity, low));
+        };
+        visit(test);
+        const ranges = new Map<number, readonly [number, number]>();
+        for (const [local, high] of upper) {
+            const low = lower.get(local);
+            if (low !== undefined) ranges.set(local, [low, high]);
+        }
+        return ranges;
+    };
+    /** In the arm of an `if` whose test bounds them, the least and greatest integer of each local whole when finite. */
+    const guardedRanges = new Map<number, readonly [number, number]>();
     /** Runs `arm` knowing what `test` proves of the locals it bounds. */
     const withFacts = (test: Expression, arm: () => void): void => {
         const outer = new Map(guarded);
+        const outerRanges = new Map(guardedRanges);
         for (const [local, bound] of factsOf(test)) if (!integralLocals[local] && bound < 2 ** 53) guarded.set(local, Math.min(bound, guarded.get(local) ?? Infinity));
+        for (const [local, [low, high]] of rangesOf(test)) {
+            const [outerLow, outerHigh] = guardedRanges.get(local) ?? [-Infinity, Infinity];
+            guardedRanges.set(local, [Math.max(low, outerLow), Math.min(high, outerHigh)]);
+        }
         arm();
         guarded.clear();
         for (const [local, bound] of outer) guarded.set(local, bound);
+        guardedRanges.clear();
+        for (const [local, range] of outerRanges) guardedRanges.set(local, range);
+    };
+    /**
+     * The least and greatest an integer value can be, or null where that isn't known: integer literals, columns' declared
+     * ranges, locals an enclosing test bounds, and sums, differences, products and negations of those.
+     */
+    const rangeOf = (expression: Expression): readonly [number, number] | null => {
+        switch (expression.kind) {
+            case "number": return Number.isInteger(expression.value) ? [expression.value, expression.value] : null;
+            case "column": {
+                const { range } = columns[expression.column];
+                return range !== undefined && integerKind(expression) !== null ? range : null;
+            }
+            case "local": return guardedRanges.get(expression.local) ?? null;
+            case "unary": {
+                const operand = expression.operator === "-" || expression.operator === "+" ? rangeOf(expression.operand) : null;
+                return operand === null ? null : expression.operator === "-" ? [-operand[1], -operand[0]] : operand;
+            }
+            case "binary": {
+                const left = rangeOf(expression.left);
+                const right = rangeOf(expression.right);
+                if (left === null || right === null) return null;
+                const [a, b] = left;
+                const [c, d] = right;
+                switch (expression.operator) {
+                    case "+": return [a + c, b + d];
+                    case "-": return [a - d, b - c];
+                    case "*": {
+                        const products = [a * c, a * d, b * c, b * d];
+                        return [Math.min(...products), Math.max(...products)];
+                    }
+                    default: return null;
+                }
+            }
+            default: return null;
+        }
     };
     /** Locals never assigned -0, at the fixed point: true until something that may be -0 is assigned. */
     const signedZeroFree = new Array<boolean>(program.locals).fill(true);
@@ -821,6 +898,24 @@ export const generateWasmOrReason = (
     let vectorLocals: readonly number[] = [];
     /** In the interleaved loop, the program locals held as f32 lanes: numbers every assignment gives an f32 exactly. */
     let floatLocals: readonly boolean[] = [];
+    /**
+     * While the interleaved loop is generated: the vectors the same in every group, by what they hold, each computed once
+     * into its local by `code` inserted at `at`, before the groups.
+     */
+    let invariants: { readonly at: number; readonly code: number[]; readonly vectors: Map<string, number> } | null = null;
+    /** Leaves a vector the same in every row, which `emitVector` computes: in the interleaved loop, once, before its groups. */
+    const invariantVector = (key: string, emitVector: () => void): void => {
+        if (invariants === null) return emitVector();
+        let local = invariants.vectors.get(key);
+        if (local === undefined) {
+            const start = code.length;
+            emitVector();
+            local = scratch(v128Type);
+            invariants.code.push(...code.splice(start), op.localSet, ...unsigned(local));
+            invariants.vectors.set(key, local);
+        }
+        code.push(op.localGet, ...unsigned(local));
+    };
     const local = (index: number): number => lane === null || lane === 0 ? localBase + index : laneLocals[lane - 1][index];
     const scratch = (type: number): number => {
         extraLocals.push(type);
@@ -1491,9 +1586,14 @@ export const generateWasmOrReason = (
         Float64Array: { load: op.f64Load, store: op.f64Store, align: 3 },
     };
     const arrayOf = (resource: number): keyof TypedArrays => {
-        const name = arrays(resource);
-        if (name === null) throw unsupported("it indexes a resource that isn't a typed array at runtime");
-        return name;
+        const array = arrays(resource);
+        if (array === null) throw unsupported("it indexes a resource that isn't a typed array at runtime");
+        return array.name;
+    };
+    /** Whether an element is always one of a typed array resource's indexes, by its range. */
+    const alwaysWithin = (resource: number, element: Expression): boolean => {
+        const range = rangeOf(element);
+        return range !== null && range[0] >= 0 && range[1] < (arrays(resource)?.length ?? 0);
     };
     /** By typed array resource and field, the i32 local its scalar is converted into once a call, before the rows. */
     const arrayLocals = new Map<string, number>();
@@ -1548,6 +1648,11 @@ export const generateWasmOrReason = (
     const elementAt = (resource: number, element: Expression, writing = false): { readonly position: number; readonly within: number } => {
         const position = scratch(i32Type);
         const within = scratch(i32Type);
+        if ((signedInteger(element) || unsignedInteger(element)) && alwaysWithin(resource, element)) {
+            emitInteger(element);
+            code.push(op.localSet, ...unsigned(position), op.i32Const, 1, op.localSet, ...unsigned(within));
+            return { position, within };
+        }
         if (signedInteger(element) || unsignedInteger(element)) {
             // A negative i32 is past every length, compared unsigned.
             emitInteger(element);
@@ -2489,6 +2594,10 @@ export const generateWasmOrReason = (
     const isArithmetic = (operator: string): operator is keyof typeof arithmeticVector => operator in arithmeticVector;
     /** A value that's the same for every lane, splatted: demoted to f32 for f32 lanes, as a lane computes. */
     const emitSplat = (expression: Expression): void => {
+        if (expression.kind === "number") {
+            code.push(...vectorConstant(new Array<number>(4).fill(expression.value)));
+            return;
+        }
         emit(expression);
         if (wide) code.push(...simd(vop.f64Splat));
         else code.push(op.f32DemoteF64, ...simd(vop.f32Splat));
@@ -2714,8 +2823,11 @@ export const generateWasmOrReason = (
     // component holds within 16 bytes are a span: each row's are one load, transposed into a vector per leaf, and back.
     // Integer and boolean values compute in i32 lanes; the rest, one lane at a time, as the scalar path does.
 
-    /** A component's 32-bit integer leaves within 16 bytes from `base`, by column and its lane. */
-    type Span = { readonly base: number; readonly stride: number; readonly owner: number; readonly lanes: ReadonlyMap<number, number>; readonly whole: boolean };
+    /**
+     * A component's 32-bit leaves within 16 bytes from `base`, by column and its lane. A packed span's elements are 4 or 8
+     * bytes, so its four rows are one or two whole vectors, loaded and stored as they lie; its lanes are words of the element.
+     */
+    type Span = { readonly base: number; readonly stride: number; readonly owner: number; readonly lanes: ReadonlyMap<number, number>; readonly whole: boolean; readonly packed: boolean };
 
     /** Byte shuffles of two vectors' 32-bit lanes: low or high halves interleaved, and low or high 64 bits joined. */
     const interleaveLow = [0, 1, 2, 3, 16, 17, 18, 19, 4, 5, 6, 7, 20, 21, 22, 23];
@@ -2738,6 +2850,15 @@ export const generateWasmOrReason = (
         shuffle(joinHigh, halves[1], halves[3], into[3]);
     };
 
+    /** Of two vectors of four 8-byte elements, the byte shuffle gathering word `word` of each into a vector. */
+    const packedLeaf = (word: number): number[] => [0, 8, 16, 24].flatMap(start => [0, 1, 2, 3].map(byte => start + 4 * word + byte));
+    /**
+     * Of vector `half` of four 8-byte elements and a leaf's vector, the byte shuffle putting the leaf's lanes for those two
+     * rows in word `word` of each element, the vector's other words kept.
+     */
+    const packedRows = (word: number, half: number): number[] => [0, 1, 2, 3].flatMap(slot => [0, 1, 2, 3].map(byte =>
+        slot % 2 === word ? 16 + 4 * (2 * half + (slot >> 1)) + byte : 4 * slot + byte));
+
     /** The program's stores, by column. */
     const storedColumns = (statements: readonly Statement[], stored: Set<number>): Set<number> => {
         for (const statement of statements) {
@@ -2749,8 +2870,9 @@ export const generateWasmOrReason = (
 
     /**
      * The spans of the columns statements use: from each component's lowest 32-bit integer or f32 leaf, those starting within
-     * 16 bytes of it, then from the next; a span of one leaf costs more than it saves. A span stores its rows whole
-     * when its 16 bytes are inside the element and no column outside it stores into them.
+     * 16 bytes of it, then from the next; a span of one leaf costs more than it saves, but in a packed span. A span
+     * stores its rows whole when its 16 bytes, or a packed span's elements, are inside the element and no column outside
+     * it stores into them.
      */
     const planSpans = (used: ReadonlySet<number>, stored: ReadonlySet<number>): readonly Span[] => {
         const byComponent = new Map<string, number[]>();
@@ -2763,6 +2885,12 @@ export const generateWasmOrReason = (
         const spans: Span[] = [];
         for (const members of byComponent.values()) {
             members.sort((a, b) => columns[a].offset - columns[b].offset);
+            const { component, stride } = columns[members[0]];
+            if (stride === 4 || stride === 8) {
+                const overlapping = [...stored].some(column => !members.includes(column) && columns[column].component === component && columns[column].stride === stride);
+                spans.push({ base: 0, stride, owner: members[0], lanes: new Map(members.map(column => [column, columns[column].offset / 4])), whole: !overlapping, packed: true });
+                continue;
+            }
             for (let first = 0; first < members.length;) {
                 const base = columns[members[first]].offset;
                 let next = first;
@@ -2773,7 +2901,7 @@ export const generateWasmOrReason = (
                 const { component, stride } = columns[inside[0]];
                 const overlapping = [...stored].some(column => !inside.includes(column) && columns[column].component === component
                     && columns[column].offset < base + 16 && columns[column].offset + bytesOf(columns[column].view) > base);
-                spans.push({ base, stride, owner: inside[0], lanes: new Map(inside.map(column => [column, (columns[column].offset - base) / 4])), whole: base + 16 <= stride && !overlapping });
+                spans.push({ base, stride, owner: inside[0], lanes: new Map(inside.map(column => [column, (columns[column].offset - base) / 4])), whole: base + 16 <= stride && !overlapping, packed: false });
             }
         }
         return spans;
@@ -2910,9 +3038,15 @@ export const generateWasmOrReason = (
     /** Leaves, for each of the four rows, an f32-exact number as f32 lanes. */
     const floatVector = (expression: Expression): void => {
         work.spent++;
+        if (expression.kind === "number") {
+            code.push(...simd(vop.const), ...[0, 1, 2, 3].flatMap(() => float32(expression.value)));
+            return;
+        }
         if (hoisted.has(expression) || rowIndependent(expression)) {
-            emit(expression);
-            code.push(op.f32DemoteF64, ...simd(vop.f32Splat));
+            invariantVector(`f32 ${JSON.stringify(expression)}`, () => {
+                emit(expression);
+                code.push(op.f32DemoteF64, ...simd(vop.f32Splat));
+            });
             return;
         }
         switch (expression.kind) {
@@ -2975,9 +3109,17 @@ export const generateWasmOrReason = (
 
     const integerVector = (expression: Expression): void => {
         work.spent++;
+        if (expression.kind === "number") {
+            // `| 0` is JS's ToInt32, as `emitInteger` computes it.
+            const bytes = new Uint8Array(new Int32Array(4).fill(expression.value | 0).buffer);
+            code.push(...simd(vop.const), ...bytes);
+            return;
+        }
         if (hoisted.has(expression) || rowIndependent(expression)) {
-            emitInteger(expression);
-            code.push(...simd(vop.i32Splat));
+            invariantVector(`i32 ${JSON.stringify(expression)}`, () => {
+                emitInteger(expression);
+                code.push(...simd(vop.i32Splat));
+            });
             return;
         }
         const kind = integerKind(expression) ?? null;
@@ -3076,11 +3218,72 @@ export const generateWasmOrReason = (
     };
 
     /** Leaves, for each of the four rows, whether an expression's value is truthy, as a lane mask: -1 where it is. */
+    /** The vector of four i32 lanes of `value`. */
+    const integerConstant = (value: number): number[] => [...simd(vop.const), ...new Uint8Array(new Int32Array(4).fill(value).buffer)];
+    /**
+     * A conjunction's mask, where it bounds f32 vector locals whole when finite on both sides by integers: each such
+     * local's bounds one unsigned compare of its i32 lanes, which saturate past the i32 range, and NaN, which truncates
+     * to 0, failing them; the conjunction's other terms as they are. Returns false, emitting nothing, where none is.
+     */
+    const wholeRangesMask = (expression: Expression): boolean => {
+        const terms: Expression[] = [];
+        const flatten = (node: Expression): void => {
+            if (node.kind === "logical" && node.operator === "&&") {
+                flatten(node.left);
+                flatten(node.right);
+            }
+            else terms.push(node);
+        };
+        flatten(expression);
+        const bounds = new Map<number, { low: number; high: number; readonly terms: Expression[] }>();
+        const flips: { readonly [operator: string]: string } = { "<": ">", "<=": ">=", ">": "<", ">=": "<=" };
+        for (const term of terms) {
+            if (term.kind !== "binary" || !(term.operator in flips)) continue;
+            const [own, other, flipped] = term.left.kind === "local" ? [term.left, term.right, false] : [term.right, term.left, true];
+            if (own.kind !== "local" || other.kind !== "number" || !Number.isFinite(other.value)) continue;
+            if (floatLocals[own.local] !== true || (vectorLocals[own.local] ?? -1) < 0 || !wholeWhenFinite[own.local]) continue;
+            const operator = flipped ? flips[term.operator] : term.operator;
+            const { value } = other;
+            const entry = bounds.get(own.local) ?? { low: -Infinity, high: Infinity, terms: [] };
+            if (operator === "<") entry.high = Math.min(entry.high, Math.ceil(value) - 1);
+            if (operator === "<=") entry.high = Math.min(entry.high, Math.floor(value));
+            if (operator === ">") entry.low = Math.max(entry.low, Math.floor(value) + 1);
+            if (operator === ">=") entry.low = Math.max(entry.low, Math.ceil(value));
+            entry.terms.push(term);
+            bounds.set(own.local, entry);
+        }
+        const ranged = [...bounds].filter(([, { low, high }]) => low > -(2 ** 31) && high < 2 ** 31 - 1 && low <= high);
+        if (ranged.length === 0) return false;
+        const covered = new Set(ranged.flatMap(([, { terms: own }]) => own));
+        let first = true;
+        const and = (): void => {
+            if (!first) code.push(...simd(vop.and));
+            first = false;
+        };
+        for (const [local, { low, high }] of ranged) {
+            const vector = unsigned(vectorLocals[local] ?? 0);
+            work.spent += 4;
+            code.push(op.localGet, ...vector, ...simd(vop.i32TruncSatF32S));
+            if (low !== 0) code.push(...integerConstant(low), ...simd(vop.i32Sub));
+            code.push(...integerConstant(high - low + 1), ...simd(vop.i32LtU));
+            if (low <= 0 && high >= 0) code.push(op.localGet, ...vector, op.localGet, ...vector, ...simd(vop.f32Eq), ...simd(vop.and));
+            and();
+        }
+        for (const term of terms) {
+            if (covered.has(term)) continue;
+            maskVector(term);
+            and();
+        }
+        return true;
+    };
+
     const maskVector = (expression: Expression): void => {
         work.spent++;
         if (hoisted.has(expression) || rowIndependent(expression)) {
-            emitCondition(expression);
-            code.push(...simd(vop.i32Splat), ...simd(vop.i32Neg));
+            invariantVector(`mask ${JSON.stringify(expression)}`, () => {
+                emitCondition(expression);
+                code.push(...simd(vop.i32Splat), ...simd(vop.i32Neg));
+            });
             return;
         }
         switch (expression.kind) {
@@ -3130,6 +3333,7 @@ export const generateWasmOrReason = (
                 return;
             // Both sides are pure, so both are computed; the value's truthiness is theirs combined.
             case "logical":
+                if (expression.operator === "&&" && wholeRangesMask(expression)) return;
                 maskVector(expression.left);
                 maskVector(expression.right);
                 code.push(...simd(expression.operator === "&&" ? vop.and : vop.or));
@@ -3220,19 +3424,33 @@ export const generateWasmOrReason = (
         const lengths = scratch(v128Type);
         const values = scratch(v128Type);
         // Each lane's index, or where it isn't one, or the mask is clear, the element past the end.
-        arrayParameter(resource, "length");
-        code.push(...simd(vop.i32Splat), op.localSet, ...unsigned(lengths));
+        const within = alwaysWithin(resource, element);
+        if (!within || mask !== null) {
+            invariantVector(`length ${resource}`, () => {
+                arrayParameter(resource, "length");
+                code.push(...simd(vop.i32Splat));
+            });
+            code.push(op.localSet, ...unsigned(lengths));
+        }
         integerVector(element);
-        code.push(op.localTee, ...unsigned(positions), op.localGet, ...unsigned(lengths), op.localGet, ...unsigned(positions), op.localGet, ...unsigned(lengths), ...simd(vop.i32LtU));
-        if (mask !== null) code.push(op.localGet, ...unsigned(mask), ...simd(vop.and));
-        code.push(...simd(vop.bitselect), op.localSet, ...unsigned(positions));
+        if (!within) {
+            code.push(op.localTee, ...unsigned(positions), op.localGet, ...unsigned(lengths), op.localGet, ...unsigned(positions), op.localGet, ...unsigned(lengths), ...simd(vop.i32LtU));
+            if (mask !== null) code.push(op.localGet, ...unsigned(mask), ...simd(vop.and));
+            code.push(...simd(vop.bitselect));
+        }
+        else if (mask !== null) code.push(op.localGet, ...unsigned(lengths), op.localGet, ...unsigned(mask), ...simd(vop.bitselect));
+        // Each lane's address, from the array's.
+        if (align > 0) code.push(op.i32Const, align, ...simd(vop.i32Shl));
+        invariantVector(`byteOffset ${resource}`, () => {
+            arrayParameter(resource, "byteOffset");
+            code.push(...simd(vop.i32Splat));
+        });
+        code.push(...simd(vop.i32Add), op.localSet, ...unsigned(positions));
         integerVector(value);
         code.push(op.localSet, ...unsigned(values));
-        work.spent += 4 * 5;
-        const position = scratch(i32Type);
+        work.spent += 4 * 2 + (within ? 2 : 5);
         for (let k = 0; k < 4; k++) {
-            code.push(op.localGet, ...unsigned(positions), ...simd(vop.i32ExtractLane), k, op.localSet, ...unsigned(position));
-            arrayElementAddress(resource, position);
+            code.push(op.localGet, ...unsigned(positions), ...simd(vop.i32ExtractLane), k);
             code.push(op.localGet, ...unsigned(values), ...simd(vop.i32ExtractLane), k, storeOperation, align, 0);
         }
     };
@@ -3391,6 +3609,7 @@ export const generateWasmOrReason = (
             rowAddresses.clear();
             vectorRegisters.clear();
             spanned.clear();
+            invariants = null;
             vectorLocals = [];
             floatLocals = [];
             laneLocals = [];
@@ -3463,6 +3682,7 @@ export const generateWasmOrReason = (
         const spanVectors = spans.map(() => ({ rows: [0, 1, 2, 3].map(() => scratch(v128Type)), leaves: [0, 1, 2, 3].map(() => scratch(v128Type)) }));
         const vectorEnd = scratch(i32Type);
         code.push(op.localGet, 1, op.localGet, 0, op.i32Sub, op.i32Const, ...signed(-4), op.i32And, op.localGet, 0, op.i32Add, op.localSet, ...unsigned(vectorEnd));
+        invariants = { at: code.length, code: [], vectors: new Map() };
         code.push(op.block, 0x40, op.loop, 0x40);
         code.push(op.localGet, ...unsigned(rowLocal), op.localGet, ...unsigned(vectorEnd), op.i32GeS, op.brIf, 1);
         for (const { column, own } of owners.values()) {
@@ -3473,6 +3693,17 @@ export const generateWasmOrReason = (
         spans.forEach((span, s) => {
             const { rows, leaves } = spanVectors[s];
             const own = addresses.get(span.owner) ?? 0;
+            if (span.packed) {
+                for (let k = 0; k < span.stride / 4; k++) code.push(op.localGet, ...unsigned(own), ...simd(vop.load), 2, ...unsigned(16 * k), op.localSet, ...unsigned(rows[k]));
+                for (const [column, word] of span.lanes) {
+                    if (span.stride === 4) code.push(op.localGet, ...unsigned(rows[0]));
+                    else code.push(op.localGet, ...unsigned(rows[0]), op.localGet, ...unsigned(rows[1]), ...simd(vop.shuffle), ...packedLeaf(word));
+                    code.push(op.localSet, ...unsigned(leaves[word]));
+                    vectorRegisters.set(column, leaves[word]);
+                    spanned.add(column);
+                }
+                return;
+            }
             rows.forEach((row, k) => code.push(op.localGet, ...unsigned(own), ...simd(vop.load), 2, ...unsigned(span.base + k * span.stride), op.localSet, ...unsigned(row)));
             transpose(rows, leaves);
             for (const [column, leaf] of span.lanes) {
@@ -3481,12 +3712,13 @@ export const generateWasmOrReason = (
             }
         });
         mask = null;
-        // Each span's four loads and eight shuffles, and back, or a store a lane for each leaf stored.
-        work.spent = 12 * spans.length;
+        // Each span's four loads and eight shuffles, and back, or a store a lane for each leaf stored; a packed span's
+        // one or two loads and a shuffle a leaf, and back.
+        work.spent = spans.reduce((total, span) => total + (span.packed ? span.stride / 4 + (span.stride === 8 ? span.lanes.size : 0) : 12), 0);
         for (const current of program.body) interleavedStatement(current);
         for (const span of spans) {
             const written = [...span.lanes.keys()].filter(column => stored.has(column)).length;
-            if (written > 0) work.spent += span.whole ? 12 : 4 * written;
+            if (written > 0) work.spent += !span.whole ? 4 * written : span.packed ? span.stride / 4 + (span.stride === 8 ? 2 * written : 0) : 12;
         }
         // Four rows one at a time, as the scalar loop runs them, must cost clearly more.
         if (work.spent > 0.7 * 4 * statementsSize(program.body)) throw notVectorizable;
@@ -3495,6 +3727,14 @@ export const generateWasmOrReason = (
             const own = addresses.get(span.owner) ?? 0;
             const written = [...span.lanes].filter(([column]) => stored.has(column));
             if (written.length === 0) return;
+            if (span.packed && span.whole) {
+                for (const [, word] of written) {
+                    if (span.stride === 4) code.push(op.localGet, ...unsigned(leaves[word]), op.localSet, ...unsigned(rows[0]));
+                    else for (let k = 0; k < 2; k++) code.push(op.localGet, ...unsigned(rows[k]), op.localGet, ...unsigned(leaves[word]), ...simd(vop.shuffle), ...packedRows(word, k), op.localSet, ...unsigned(rows[k]));
+                }
+                for (let k = 0; k < span.stride / 4; k++) code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(rows[k]), ...simd(vop.store), 2, ...unsigned(16 * k));
+                return;
+            }
             if (span.whole) {
                 transpose(leaves, rows);
                 rows.forEach((row, k) => code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(row), ...simd(vop.store), 2, ...unsigned(span.base + k * span.stride)));
@@ -3506,6 +3746,8 @@ export const generateWasmOrReason = (
         });
         code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, 4, op.i32Add, op.localSet, ...unsigned(rowLocal), op.br, 0);
         code.push(op.end, op.end);
+        code.splice(invariants.at, 0, ...invariants.code);
+        invariants = null;
     };
 
     // ---- Within a row (SLP): statements over a component's leaves that match lane for lane become one f32x4 operation. ----

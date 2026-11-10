@@ -7,7 +7,7 @@ import type { LookupSetup, Source , KernelSetup } from './protocol.js';
 import { createArrayLookup } from './rows.js';
 import type { Since } from './index-lookups.js';
 import { commandIdOf, idOf, type Key, type State } from './state.js';
-import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
+import { generateWasm, instantiateWasm, type Type, type WasmArray, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
 import type { TypedArrays } from '../../interface/schema/schema.js';
 import { createDirectory, lookupParameters, type Directory } from './directories.js';
 import { generateWgsl, type ScalarKind, type WgslKernel } from './wgsl.js';
@@ -290,10 +290,10 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     };
     const argsLayout = leaf.input === undefined ? null : layoutOf(leaf.input);
     /** By resource, the typed array it is, or null. */
-    const arrays = (resource: number): keyof TypedArrays | null => {
+    const arrays = (resource: number): WasmArray | null => {
         const key = description.resources[resource];
         const layout = key === undefined ? undefined : state.layouts[idOf(state, key)];
-        return layout?.kind === "linear" ? layout.array?.name ?? null : null;
+        return layout?.kind === "linear" ? layout.array ?? null : null;
     };
     const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
@@ -417,7 +417,7 @@ export type KernelFusion = {
     readonly columns: readonly WasmColumn[];
     readonly sources: readonly Source[];
     readonly scalarType: (scalar: WasmScalar) => Type | null;
-    readonly arrays: (resource: number) => keyof TypedArrays | null;
+    readonly arrays: (resource: number) => WasmArray | null;
     /** Which of its tick columns its last load muted, or null before it loaded. */
     readonly loaded: string | null;
 };

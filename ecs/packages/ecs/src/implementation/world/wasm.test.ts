@@ -1390,7 +1390,7 @@ describe("generateWasm interleaved rows of f32s and typed array elements", () =>
         ];
         const rows = edges.length * edges.length;
         return [true, false].map(simd => {
-            const kernel = generateWasm(program, columns, () => "number", simd, 0, [], [], [], [], [], true, () => "Uint8Array");
+            const kernel = generateWasm(program, columns, () => "number", simd, 0, [], [], [], [], [], true, () => ({ name: "Uint8Array", length: 200 }));
             if (kernel === null) throw new Error("expected a kernel");
             const memory = new WebAssembly.Memory({ initial: 2, maximum: 65536, shared: true });
             const pairs = new Float32Array(memory.buffer, 0, 2 * rows);
@@ -1426,6 +1426,57 @@ describe("generateWasm interleaved rows of f32s and typed array elements", () =>
         expect(vector?.wat).toContain("i32x4.trunc_sat_f32x4_s");
         expect(vector?.cells).toEqual(scalar?.cells);
         expect(scalar?.cells.some(cell => cell !== 0)).toBe(true);
+    });
+
+    /** Draws column 2 at the cell `x + y * 20` of the truncated pair, where `test` of the truncated x (local 0) and y (local 1) holds. */
+    const draw = (test: Expression): Program => ({
+        locals: 2,
+        body: [
+            { kind: "set", local: 0, value: trunc(column(0)) },
+            { kind: "set", local: 1, value: trunc(column(1)) },
+            { kind: "if", test, consequent: [{ kind: "resourceStore", index: 0, element: binary("+", local(0), binary("*", local(1), number(20))), value: column(2) }], alternate: [] },
+        ],
+    });
+    const count = (text: string | undefined, operation: string): number => (text ?? "").split(operation).length - 1;
+
+    it("load four rows of 8-byte elements as two vectors and of 4-byte ones as one, as row by row reads them", () => {
+        const [vector, scalar] = run(draw(and(binary(">=", local(1), number(0)), binary("<", local(1), number(10)), binary(">=", local(0), number(0)), binary("<", local(0), number(20)))));
+        expect(count(vector?.wat, "v128.load")).toBe(3);
+        expect(vector?.wat).not.toContain("replace_lane");
+        expect(vector?.cells).toEqual(scalar?.cells);
+    });
+
+    for (const [name, x, nan] of [
+        ["from 0", and(binary(">=", local(0), number(0)), binary("<", local(0), number(20))), true],
+        ["around 0, strictly", and(binary(">", local(0), number(-3)), binary("<=", local(0), number(7.5))), true],
+        ["above 0, flipped", and(binary("<=", number(2), local(0)), binary(">", number(5), local(0))), false],
+    ] as const) {
+        it(`bound whole f32s ${name} in one integer compare, NaN failing it, as row by row does`, () => {
+            const [vector, scalar] = run(draw(and(binary(">=", local(1), number(0)), binary("<", local(1), number(10)), x)));
+            for (const comparison of ["f32x4.ge", "f32x4.gt", "f32x4.lt", "f32x4.le"]) expect(vector?.wat).not.toContain(comparison);
+            // y's range holds 0, which NaN truncates to; x's only where it does.
+            expect(count(vector?.wat, "f32x4.eq")).toBe(nan ? 2 : 1);
+            expect(vector?.cells).toEqual(scalar?.cells);
+            expect(scalar?.cells.some(cell => cell !== 0)).toBe(true);
+        });
+    }
+
+    it("splat what every row shares once, before the groups of four rows", () => {
+        const [vector, scalar] = run(draw(and(binary(">=", local(1), number(0)), binary("<", local(1), number(11)), binary(">=", local(0), number(0)), binary("<", local(0), number(20)))));
+        const text = vector?.wat ?? "";
+        // The array's length and address.
+        expect(count(text, "i32x4.splat")).toBe(2);
+        expect(text.lastIndexOf("i32x4.splat")).toBeLessThan(text.indexOf("loop"));
+        expect(vector?.cells).toEqual(scalar?.cells);
+    });
+
+    it("write without checking an element its test proves one of the array's indexes, and check one it doesn't", () => {
+        const within = run(draw(and(binary(">=", local(1), number(0)), binary("<", local(1), number(10)), binary(">=", local(0), number(0)), binary("<", local(0), number(20)))));
+        const beyond = run(draw(and(binary(">=", local(1), number(0)), binary("<", local(1), number(11)), binary(">=", local(0), number(0)), binary("<", local(0), number(20)))));
+        // The vector kernel's two range checks, and in the second its elements' bounds; the scalar kernel's elements' bounds.
+        expect([count(within[0]?.wat, "i32x4.lt_u"), count(beyond[0]?.wat, "i32x4.lt_u")]).toEqual([2, 3]);
+        expect([count(within[1]?.wat, "i32.lt_u"), count(beyond[1]?.wat, "i32.lt_u")]).toEqual([0, 1]);
+        for (const [vector, scalar] of [within, beyond]) expect(vector?.cells).toEqual(scalar?.cells);
     });
 
     it("compare in f32 only numbers an f32 holds, and store an f32 field of a span from f32 lanes, as row by row does", () => {

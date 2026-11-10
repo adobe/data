@@ -8,6 +8,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { createWorld } from "./create.js";
 import { runReported } from "./outcomes.test-helper.js";
 import { readEach, select } from "./reads.test-helper.js";
+import { tablesAfterCollecting } from "./lifetime.test-helper.js";
 
 const hp = Symbol("fusionTest/hp");
 const armor = Symbol("fusionTest/armor");
@@ -72,7 +73,7 @@ const filled = async (fuse: boolean) => {
 /** Each entity's hp, shown and score, in entity order. */
 const stateOf = async (world: Awaited<ReturnType<typeof filled>>) => {
     const entities = await select(world, { required: [hp] });
-    return { hp: await readEach(world, entities, hp), shown: await readEach(world, entities, shown) };
+    return { hp: await readEach(world, entities, hp), shown: await readEach(world, entities, shown), score: await readEach(world, entities, score) };
 };
 
 const compile = WebAssembly.compile;
@@ -112,5 +113,22 @@ describe("fused kernels", () => {
     it("leave a kernel reading nothing the one before it touches to run alone", async () => {
         const pair = System.create([raise, mark]);
         expect(await counted(true, pair)).toBe(await counted(false, pair));
+    });
+
+    /** Runs `count` new composites of the chain beside a new system, each once, as a loop does as systems come and go. */
+    const runBesideFresh = async (world: Awaited<ReturnType<typeof filled>>, count: number): Promise<void> => {
+        for (let k = 0; k < count; k++) await world.run(System.create([chain, System.create(() => {})]));
+    };
+
+    it("hold the groups of the schedules that live, as systems beside them come and go", async () => {
+        const world = await filled(true);
+        await world.run(chain);
+        await runBesideFresh(world, 1);
+        const before = await tablesAfterCollecting(world);
+        await runBesideFresh(world, 50);
+        const after = await tablesAfterCollecting(world);
+        expect(before.fusedGroups).toBeGreaterThan(0);
+        expect(after.fusedGroups).toBe(before.fusedGroups);
+        await world.dispose();
     });
 });

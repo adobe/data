@@ -34,8 +34,8 @@ const fits = (schema: Schema, value: unknown): boolean => {
         case "array": return Array.isArray(value);
         case "set": return value instanceof Set;
         case "map": return value instanceof Map;
-        case "typedArray": return isNumbers(value);
-        case "object": return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Set) && !(value instanceof Map);
+        case "typedArray": return isNumbers(value) && value instanceof Reflect.get(globalThis, schema.array) && (schema.length === undefined || value.length === schema.length);
+        case "object": return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Set) && !(value instanceof Map) && !ArrayBuffer.isView(value);
         default: return true;
     }
 };

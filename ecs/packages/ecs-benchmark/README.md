@@ -23,7 +23,7 @@ hour, so it's for refreshing the committed results, not for every change: measur
 `--filter` and `--sizes`.
 
 Times compare only on the same hardware, so the history is kept per machine. Record after a change to the ECS that
-should move these numbers, and run `pnpm bench:quick` before one to see what it moved.
+should move these numbers, and run `pnpm bench` before one to see what it moved.
 
 Besides the suite's benchmarks, with `--through`, `BM_ComplexSystemsUpdate_Through_<System>` and
 `BM_ComplexSystemsUpdateMixedEntities_Through_<System>` time a frame of the 7-system benchmark's systems up to and

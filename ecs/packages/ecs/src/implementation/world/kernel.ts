@@ -144,6 +144,8 @@ export namespace Program {
         | { readonly kind: "lookupLeaf"; readonly handle: number; readonly read: number; readonly path: Path }
         /** Whether the last `find` into `handle` found an entity holding component `read`, one its lookup has optional. */
         | { readonly kind: "lookupHas"; readonly handle: number; readonly read: number }
+        /** Whether the last `find` into `handle` found an entity holding optional component `read` with a truthy value. */
+        | { readonly kind: "lookupTruthy"; readonly handle: number; readonly read: number }
         /** Whether the rows of the call have a parent with every component `up` reads. */
         | { readonly kind: "upFound" }
         /** `upColumns[column]` at the row's parent row; only under a test proving `upFound`. */

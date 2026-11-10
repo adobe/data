@@ -571,6 +571,14 @@ const blockAt = (state: State, queued: readonly Queued[], b: number, command: nu
     const first = starts[command];
     const width = endOf(buffer, command) - first;
     for (let k = first; k < first + width; k++) if (state.shared[ids[k]] !== undefined) return 0;
+    let to = -1;
+    if (kind !== despawnCommand) {
+        let target = from;
+        for (let k = first; k < first + width; k++) target = kind === removeCommand ? withoutComponent(state, target, ids[k]) : withComponent(state, target, ids[k]);
+        // Commands that leave the archetype as it is only replace values: entries write them in place.
+        if (target === from) return 0;
+        to = target.id;
+    }
     const { slots } = plan;
     const limit = Math.min(buffer.count - command, from.count - row);
     const fromEntities = from.entities;
@@ -600,17 +608,6 @@ const blockAt = (state: State, queued: readonly Queued[], b: number, command: nu
         for (let k = 0; k < count; k++) slots[indexOf(entities[command + k])] = -1;
         return 0;
     }
-    let to = -1;
-    if (kind !== despawnCommand) {
-        let target = from;
-        for (let k = first; k < first + width; k++) target = kind === removeCommand ? withoutComponent(state, target, ids[k]) : withComponent(state, target, ids[k]);
-        // Commands that leave the archetype as it is only replace values: entries write them in place.
-        if (target === from) {
-            for (let k = 0; k < count; k++) slots[indexOf(entities[command + k])] = -1;
-            return 0;
-        }
-        to = target.id;
-    }
     plan.blocks.push({ from: fromId, to, row, buffer: b, command, count, kind, void: false });
     return count;
 };
@@ -637,6 +634,12 @@ const settleBlocks = (state: State, queued: readonly Queued[], planning: Plannin
             next = block.row + block.count;
         }
         if (whole && next === state.archetypes[id].count) continue;
+        for (const index of indexes) unblock(state, queued, index, planning);
+        byArchetype.delete(id);
+    }
+    // An archetype blocks empty takes no block's rows, which emptying it would lose.
+    for (const indexes of byArchetype.values()) {
+        if (!byArchetype.has(plan.blocks[indexes[0]].to)) continue;
         for (const index of indexes) unblock(state, queued, index, planning);
     }
 };

@@ -216,8 +216,8 @@ export type State = {
     readonly simd: boolean;
     /** Whether kernels a schedule runs one after another over shared components run fused (`fusion.ts`); tests turn it off to compare. */
     fuse: boolean;
-    /** The fused groups of the schedules runs read, which workers load as they load kernels. */
-    readonly fusedGroups: Set<FusedGroup>;
+    /** The fused groups of the schedules runs read, held as long as their schedules, which workers load as they load kernels. */
+    readonly fusedGroups: Set<WeakRef<FusedGroup>>;
     /** Groups, by their members' kernels, whose fused kernel wouldn't outrun them: their members run alone. */
     readonly refusedFusions: Set<string>;
     /**

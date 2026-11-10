@@ -181,6 +181,7 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                 case "conditional": return evaluate(node.test) ? evaluate(node.consequent) : evaluate(node.alternate);
                 case "found": return handles[node.handle] !== null;
                 case "lookupHas": return (handles[node.handle] ?? null)?.[node.read] !== undefined;
+                case "lookupTruthy": return Boolean((handles[node.handle] ?? null)?.[node.read]);
                 case "lookupLeaf": {
                     // Not found reads NaN, as the WASM generator does.
                     const values = handles[node.handle];

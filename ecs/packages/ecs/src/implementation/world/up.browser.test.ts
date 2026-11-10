@@ -3,13 +3,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
-import { readEach, select } from "./reads.test-helper.js";
+import { readEach, readResource, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const parent = Symbol("upBrowserTest/parent");
 const offset = Symbol("upBrowserTest/offset");
 const placed = Symbol("upBrowserTest/placed");
 const marked = Symbol("upBrowserTest/marked");
+const depths = Symbol("upBrowserTest/depths");
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -17,6 +18,9 @@ declare module "@adobe/ecs" {
         [offset]: { type: F32 };
         [placed]: { type: F32 };
         [marked]: { type: true };
+    }
+    interface Resources {
+        [depths]: { type: Uint8Array; length: 12 };
     }
 }
 
@@ -31,6 +35,14 @@ const place = System.create({
     up: { through: parent },
 }, (row, { up }) => {
     row[placed] = up === null ? row[offset] : up[placed] + row[offset];
+});
+/** Marks each depth that has a row, at its offset, which is its depth for the rows `plant` leaves unmarked. */
+const markDepths = System.create({
+    kernel: "gpu",
+    components: { with: [offset, placed], not: [marked] },
+    up: { through: parent },
+}, (row, { up, resources }) => {
+    resources[depths][row[offset] % 12] = up === null ? 1 : 2;
 });
 /** Trees whose children are in two archetypes, so a depth's rows have parents in several. */
 const plant = System.create({}, ({ commands }) => {
@@ -71,5 +83,17 @@ describe("up on the GPU", () => {
     it.runIf(gpu)("runs depth by depth, a dispatch per group, as on the CPU", async () => {
         const cpu = await placements(null);
         expect(await placements(await device())).toEqual(cpu);
+    });
+    it.runIf(gpu)("reads back the typed array resources it writes", async () => {
+        const marks = async (gpu: GPUDevice | null) => {
+            const ecs = createWorld({ [workers]: 0, [gpuDevice]: gpu });
+            disposals.push(ecs);
+            await ecs.run(plant);
+            await ecs.run(markDepths);
+            return [...await readResource(ecs, depths)];
+        };
+        const cpu = await marks(null);
+        expect(cpu.some(value => value === 2)).toBe(true);
+        expect(await marks(await device())).toEqual(cpu);
     });
 });

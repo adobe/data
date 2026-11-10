@@ -69,12 +69,12 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
         return handle === undefined || keys.length === 0 ? undefined : { handle, keys, optional };
     };
     /** The handle and read of a component an entity found may lack, `found[data]` or a local holding it. */
-    const optionalRead = (node: Expression): { readonly handle: number; readonly read: number } | undefined => {
+    const optionalRead = (node: Expression): { readonly handle: number; readonly read: number; readonly optional: boolean } | undefined => {
         const access = accessOf(node);
         const [read] = access?.keys ?? [];
         if (access === undefined || access.keys.length !== 1 || read?.kind !== "number") return undefined;
         const lookup = lookupOf.get(access.handle);
-        return lookup !== undefined && optionalReads(lookup).has(read.value) ? { handle: access.handle, read: read.value } : undefined;
+        return lookup !== undefined && optionalReads(lookup).has(read.value) ? { handle: access.handle, read: read.value, optional: access.optional } : undefined;
     };
     /** How many times each local is assigned, over every statement. */
     const assignments = new Map<number, number>();
@@ -165,7 +165,8 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
             return check.found ? tested : { kind: "unary", operator: "!", operand: tested };
         }
         const held = test ? optionalRead(node) : undefined;
-        if (held !== undefined) return { kind: "lookupHas", handle: held.handle, read: held.read };
+        // JS throws reading into a lookup that found nothing, unless through `?.`.
+        if (held !== undefined) return held.optional || guards.has(held.handle) ? { kind: "lookupTruthy", handle: held.handle, read: held.read } : undefined;
         const holds = holdsTest(node);
         if (holds !== undefined) {
             const tested: Program.Expression = { kind: "lookupHas", handle: holds.handle, read: holds.read };

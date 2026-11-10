@@ -597,6 +597,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         resourceWrites: resourceWritesOf(state, declaration),
         resourceUses: resourceUsesOf(state, declaration),
         matched,
+        isMatched: archetype => matched().includes(archetype),
         indexes: lookups.holding.uses,
         load: async () => {},
         setup: () => null,

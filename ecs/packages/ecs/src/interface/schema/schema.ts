@@ -127,9 +127,9 @@ interface OrSchema {
 }
 
 /**
- * A JSON Schema of the forms the ECS reads, and two forms JSON lacks: `{ type: 'set', items }` and
- * `{ type: 'map', keys, values }`. A schema describes values and holds no `default`: a value's start comes from its
- * declaration or its type's namespace, `T.default`.
+ * A JSON Schema of the forms the ECS reads, and three forms JSON lacks: `{ type: 'set', items }`,
+ * `{ type: 'map', keys, values }` and `{ type: 'typedArray', array, length }`. A schema describes values and holds no
+ * `default`: a value's start comes from its declaration or its type's namespace, `T.default`.
  */
 export type Schema = EntitySchema | ObjectSchema | StringSchema | ArraySchema<Schema> | NumberSchema | IntegerSchema | BooleanSchema | NullSchema | SetSchema<Schema> | MapSchema<Schema, Schema> | TypedArraySchema | ConstSchema | AndSchema | OrSchema;
 
@@ -159,8 +159,8 @@ export namespace Schema {
         R["length"] extends N ? R : Tuple<N, E, readonly [...R, E]>;
 
     /**
-     * A literal `const` narrows the type, a fixed-length array is a tuple, and a set or map is a `ReadonlySet` or
-     * `ReadonlyMap`; otherwise the structural type is used.
+     * A literal `const` narrows the type, a fixed-length array is a tuple, a set or map is a `ReadonlySet` or
+     * `ReadonlyMap`, and a typed array is the one its constructor names; otherwise the structural type is used.
      */
     export type ToType<T extends Schema> =
         T extends AndSchema ? UnionToIntersection<Schema.ToType<T['allOf'][number]>> :
@@ -172,6 +172,7 @@ export namespace Schema {
         T extends ArraySchema<infer U> ? ArrayToType<T, Schema.ToType<U>> :
         T extends SetSchema<infer U> ? ReadonlySet<Schema.ToType<U>> :
         T extends MapSchema<infer K, infer V> ? ReadonlyMap<Schema.ToType<K>, Schema.ToType<V>> :
+        T extends TypedArraySchema ? TypedArrays[T['array']] :
         T extends NumberSchema ? number :
         T extends IntegerSchema ? number :
         T extends BooleanSchema ? boolean :
@@ -197,6 +198,9 @@ export namespace Schema {
     type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
     type ForTypeEach<T> = T extends unknown ? ForType<T> : never;
 
+    /** The names of the typed-array constructors whose instances `T` is. */
+    type TypedArrayName<T> = { [N in keyof TypedArrays]: [T] extends [TypedArrays[N]] ? N : never }[keyof TypedArrays];
+
     type ForNonUnion<T> =
         [T] extends [null] ? NullSchema :
         [T] extends [true] ? ConstSchema & { const: T } :
@@ -208,6 +212,7 @@ export namespace Schema {
         T extends readonly (infer U)[] ? ArraySchema<ForType<U> & Schema> :
         T extends ReadonlyMap<infer K, infer V> ? MapSchema<ForType<K> & Schema, ForType<V> & Schema> :
         T extends ReadonlySet<infer U> ? SetSchema<ForType<U> & Schema> :
+        T extends TypedArrays[keyof TypedArrays] ? TypedArraySchema & { array: TypedArrayName<T> } :
         // An optional property's schema describes its value when present.
         T extends object ? ObjectSchema<Extract<keyof T, string>> & { properties: { [P in keyof T]-?: ForType<Exclude<T[P], undefined>> } } :
         never;

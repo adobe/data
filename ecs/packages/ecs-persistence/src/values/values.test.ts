@@ -30,4 +30,19 @@ describe("values as JSON", () => {
         const values = ["NaN", NaN, 2, null, new Set([1]), [1]];
         expect(values.map(value => through(schema, value))).toEqual(values);
     });
+    it("read back a union's typed arrays as the typed array members they were", () => {
+        const schema: Schema = { anyOf: [{ type: "typedArray", array: "Uint8Array" }, { type: "typedArray", array: "Float64Array" }] };
+        const values = [new Uint8Array([1, 255]), new Float64Array([1.5, -0])];
+        expect(values.map(value => through(schema, value))).toEqual(values);
+    });
+
+    it("write a union's typed array as the member of its length", () => {
+        const schema: Schema = { anyOf: [{ type: "typedArray", array: "Float32Array", length: 2 }, { type: "typedArray", array: "Float32Array", length: 3 }] };
+        expect(toJson(schema, new Float32Array([1, 2, 3]))).toEqual([1, [1, 2, 3]]);
+    });
+
+    it("read back a union's typed array as a typed array when an object member comes before it", () => {
+        const schema: Schema = { anyOf: [{ type: "object", properties: {} }, { type: "typedArray", array: "Float64Array" }] };
+        expect(through(schema, new Float64Array([1.5]))).toEqual(new Float64Array([1.5]));
+    });
 });

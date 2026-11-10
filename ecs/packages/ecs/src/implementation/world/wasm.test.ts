@@ -881,7 +881,8 @@ describe("generateWasm integers through locals", () => {
         return [hp > 0 && total > 0 ? Math.max(value, 0) : hp, status > hp ? 1 : 2, status === 4294967295 ? 1 : status <= 2 ? 2 : 3, Math.min(hp, atk, -total), value];
     };
     const edges = [0, 1, -1, 2, 2147483647, -2147483648, 1000];
-    const rows = edges.flatMap(hp => edges.flatMap(atk => edges.map(def => [hp, atk, def, [0, 2, 3, 2147483648, 4294967295][(hp + atk + def) & 3 & 0xff] ?? 0])));
+    const statuses = [0, 2, 3, 2147483648, 4294967295];
+    const rows = edges.flatMap(hp => edges.flatMap(atk => edges.flatMap(def => statuses.map(status => [hp, atk, def, status]))));
     const views8 = ["i32", "i32", "i32", "u32", "i32", "f64", "f64", "i32", "f64"] as const;
     const columns: WasmColumn[] = views8.map((view, component): WasmColumn => ({ view, stride: view === "f64" ? 8 : 4, offset: 0, boolean: false, component }));
 

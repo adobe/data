@@ -16,7 +16,7 @@ import { readCell, writeCell } from './cells.js';
 import { finalizeAll, refreshFinalizerIndexes, type Thrown } from './finalizers.js';
 import { startWatches } from './indexes.js';
 import { clean as cleanReport, execute, prepareFusion, type ExecuteContext } from './execute.js';
-import { groupOnWorkers, groupSetup, loadGroup, type FusedGroup } from './fusion.js';
+import { groupOnWorkers, groupSetup, liveGroups, loadGroup, type FusedGroup } from './fusion.js';
 import { errorOfRun, failureOf, type Failure, type RunReport } from './failures.js';
 import { createOutOfBand } from './out-of-band.js';
 import { startRan } from './state.js';
@@ -139,6 +139,8 @@ export type Tables = {
     readonly phasedBuilds: number;
     readonly pooledBuilds: number;
     readonly journalReaders: number;
+    /** Fused groups of schedules it keeps (`fusion.ts`). */
+    readonly fusedGroups: number;
     /** Entities filtered `up`s were told changed, held until their next run. */
     readonly touched: number;
     /** Bytes the arena holds. */
@@ -367,16 +369,12 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     /** What the pool's workers had loaded, once it ends. */
     const unloadOnWorkers = (): void => {
         for (const runner of registrar.kernels()) runner.kernel?.unloadedOnWorkers();
-        for (const group of state.fusedGroups) group.workersFor = null;
+        for (const group of liveGroups(state)) group.workersFor = null;
     };
 
     /** Fused groups whose members all live, compiled as their members are loaded, that workers lack as they are. */
     const groupsBehind = async (): Promise<FusedGroup[]> => {
-        const groups = [...state.fusedGroups].filter(group => {
-            const live = !group.members.some(member => member.holdings.removed);
-            if (!live) state.fusedGroups.delete(group);
-            return live;
-        });
+        const groups = liveGroups(state);
         await Promise.all(groups.map(group => loadGroup(state, group)));
         return groups.filter(group => group.fused !== null && !groupOnWorkers(group));
     };
@@ -1120,6 +1118,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 phasedBuilds: state.phasedBuilds,
                 pooledBuilds: state.pooledBuilds,
                 journalReaders: state.journal.readers,
+                fusedGroups: liveGroups(state).length,
                 touched: touchedHeld(state),
                 arena: state.memory.held(),
                 archetypes: state.archetypes.length,

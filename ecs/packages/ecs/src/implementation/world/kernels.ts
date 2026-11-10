@@ -315,6 +315,11 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             const found = layout.leaves.find(leaf => samePath(leaf.path, path));
             return found === undefined ? null : { view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean" };
         },
+        structured: read => {
+            const component = lookupSetup.read[read];
+            const layout = component === undefined ? undefined : state.layouts[component];
+            return layout?.kind === "linear" && !layout.leaves.some(leaf => leaf.path.length === 0);
+        },
     }));
     /**
      * Changed, chunk and block columns of components no registered system filters on are muted: nothing reads those

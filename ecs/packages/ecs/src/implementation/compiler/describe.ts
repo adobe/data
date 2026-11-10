@@ -308,6 +308,10 @@ export const describeSystems = async (sites: TransformedSites, format: (code: st
                     const found = layout.leaves.find(leaf => samePath(leaf.path, path));
                     return found === undefined ? null : { view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean" };
                 },
+                structured: read => {
+                    const layout = layoutNamed(lookup.read[read] ?? "");
+                    return layout !== undefined && typeof layout !== "string" && layout.kind === "linear" && !layout.leaves.some(leaf => leaf.path.length === 0);
+                },
             });
         }
         for (const resource of signature.resources) if (layoutNamed(resource) === undefined) return { registration: elsewhere(resource) };

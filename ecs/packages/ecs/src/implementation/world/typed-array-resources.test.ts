@@ -10,6 +10,7 @@ import { readResource } from "./reads.test-helper.js";
 const cells = Symbol("typedArrayResourcesTest/cells");
 const levels = Symbol("typedArrayResourcesTest/levels");
 const clamped = Symbol("typedArrayResourcesTest/clamped");
+const frame = Symbol("typedArrayResourcesTest/frame");
 const cell = Symbol("typedArrayResourcesTest/cell");
 const level = Symbol("typedArrayResourcesTest/level");
 
@@ -18,6 +19,7 @@ declare module "@adobe/ecs" {
         [cells]: { type: Uint8Array; length: 16 };
         [levels]: { type: Int16Array; length: 8 };
         [clamped]: { type: Uint8ClampedArray; length: 5 };
+        [frame]: { type: Uint8Array; length: 1048576 };
     }
     interface Components {
         [cell]: { type: number };
@@ -63,6 +65,13 @@ describe("typed array resources", () => {
         expect(firstCells[0]).toBe(100);
         await first.world.dispose();
         await second.world.dispose();
+    });
+
+    it("hold one row of their elements: a world with a 1 MiB one holds under 4 MiB of its arena", async () => {
+        const world = createWorld({ [workers]: 0 });
+        expect((await readResource(world, frame)).length).toBe(1048576);
+        expect((await world.tables()).arena).toBeLessThan(4 * 1048576);
+        await world.dispose();
     });
 
     it("count as changed in a run of a system writing their elements", async () => {

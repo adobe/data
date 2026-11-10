@@ -152,6 +152,14 @@ describe("simplifyProgram", () => {
             store(number(3)),
         ]);
     });
+
+    it("keeps both arms of an if whose ends differ only in NaN, an infinity or the sign of zero", () => {
+        const store = (value: Expression): Program.Statement => ({ kind: "store", column: 1, value });
+        for (const [one, other] of [[NaN, Infinity], [Infinity, -Infinity], [0, -0]]) {
+            const program: Program = { locals: 0, body: [{ kind: "if", test: column(0), consequent: [store(number(one))], alternate: [store(number(other))] }] };
+            expect(simplifyProgram(program).body).toEqual(program.body);
+        }
+    });
 });
 
 describe("simplifyProgram sinking", () => {
@@ -195,5 +203,12 @@ describe("simplifyProgram hoisting", () => {
         expect(simplifyProgram(changed).body).toEqual(changed.body);
         const differs: Program = { locals: 4, body: [branch(test, [set(0, column(2)), store(3, local(0))], [set(2, column(3)), store(4, local(2))])] };
         expect(simplifyProgram(differs).body).toEqual(differs.body);
+    });
+
+    it("leaves in their arms values that differ only in NaN, an infinity or the sign of zero", () => {
+        for (const [one, other] of [[NaN, Infinity], [Infinity, -Infinity], [0, -0]]) {
+            const differs: Program = { locals: 2, body: [branch(test, [set(0, binary("+", column(2), number(one))), store(3, local(0))], [set(1, binary("+", column(2), number(other))), store(4, local(1))])] };
+            expect(simplifyProgram(differs).body).toEqual(differs.body);
+        }
     });
 });

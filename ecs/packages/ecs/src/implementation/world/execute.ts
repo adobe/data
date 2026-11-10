@@ -2,7 +2,7 @@
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Chunk, ChunkResult, Runner, Workers } from './runner.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
-import { fuseSchedule, groupOnWorkers, loadGroup, type FusedGroup, type FusionRole } from './fusion.js';
+import { fuseSchedule, groupOnWorkers, liveGroups, loadGroup, type FusedGroup, type FusionRole } from './fusion.js';
 import type { Archetype, Storage } from './archetype.js';
 import { countRan, countRanHere, idOf, startRan, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
@@ -181,7 +181,7 @@ type Outcome = { failures: Failure[] | null; skipped: Leaf[] | null };
 /** By schedule, its fused schedule (`fusion.ts`) as of the runners version it was read at. */
 const fusedBy = new WeakMap<ExecuteContext, WeakMap<Schedule, Fusion>>();
 /** A schedule's fusion as of the runners version and the refusals it was read with. */
-type Fusion = { readonly version: number; readonly refused: number; readonly schedule: Schedule; readonly groups: readonly FusedGroup[] };
+type Fusion = { readonly version: number; readonly refused: number; readonly schedule: Schedule; readonly groups: readonly FusedGroup[]; readonly references: readonly WeakRef<FusedGroup>[] };
 /** Each fused schedule's runners' roles. */
 const rolesOf = new WeakMap<Schedule, readonly (readonly (FusionRole | null)[])[]>();
 
@@ -198,11 +198,13 @@ const fusionOf = (context: ExecuteContext, schedule: Schedule): Fusion => {
     if (bySchedule === undefined) fusedBy.set(context, bySchedule = new WeakMap());
     const found = bySchedule.get(schedule);
     if (found !== undefined && found.version === state.runnersVersion && found.refused === state.refusedFusions.size) return found;
-    for (const group of found?.groups ?? []) state.fusedGroups.delete(group);
+    for (const reference of found?.references ?? []) state.fusedGroups.delete(reference);
     const fused = fuseSchedule(state, schedule, context.runnerOf);
     if (fused.schedule !== schedule) rolesOf.set(fused.schedule, fused.roles);
-    for (const group of fused.groups) state.fusedGroups.add(group);
-    const fusion = { version: state.runnersVersion, refused: state.refusedFusions.size, schedule: fused.schedule, groups: fused.groups };
+    liveGroups(state);
+    const references = fused.groups.map(group => new WeakRef(group));
+    for (const reference of references) state.fusedGroups.add(reference);
+    const fusion = { version: state.runnersVersion, refused: state.refusedFusions.size, schedule: fused.schedule, groups: fused.groups, references };
     bySchedule.set(schedule, fusion);
     return fusion;
 };

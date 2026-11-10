@@ -11,4 +11,8 @@ export const fusionWorkersCases = (load: () => Promise<typeof Fixture>) => descr
         expect({ hp: fused.hp, shown: fused.shown }).toEqual({ hp: apart.hp, shown: apart.shown });
         expect(fused.kernels).toEqual(apart.kernels.map(kernels => kernels + 1));
     });
+    it("start the pool once rows their fused group covers grow enough for workers, in a world they first ran in empty", async () => {
+        const fixture = await load();
+        expect(await fixture.workersAfterFillingCovered()).toBe(2);
+    });
 });

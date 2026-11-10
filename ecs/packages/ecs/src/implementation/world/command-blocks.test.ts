@@ -116,6 +116,33 @@ describe("commands naming a whole archetype", () => {
         await world.dispose();
     });
 
+    it("move an archetype whole into one that others empty, keeping the rows it brings", async () => {
+        const { world, run } = withCommands();
+        const moved: Entity[] = [];
+        const leaving: Entity[] = [];
+        const arriving: Entity[] = [];
+        await run(commands => {
+            for (let i = 0; i < 20; i++) moved.push(commands.spawn([tagged, amount, extra])({ [amount]: i }));
+            for (let i = 0; i < 20; i++) leaving.push(commands.spawn([tagged, amount])({ [amount]: 100 + i }));
+        });
+        await run(commands => {
+            for (const entity of moved) commands.remove(entity, extra);
+            for (const entity of leaving) commands.remove(entity, tagged);
+        });
+        expect([await count(world, { required: [tagged, amount], not: [extra] }), await count(world, { required: [amount], not: [tagged] })]).toEqual([20, 20]);
+        expect(await readEach(world, [...moved, ...leaving], amount)).toEqual([...moved.map((_, i) => i), ...leaving.map((_, i) => 100 + i)]);
+        await run(commands => {
+            for (let i = 0; i < 20; i++) arriving.push(commands.spawn([tagged, amount, point])({ [amount]: 200 + i, [point]: { x: 0, y: 0 } }));
+        });
+        await run(commands => {
+            for (const entity of arriving) commands.remove(entity, point);
+            for (const entity of moved) commands.despawn(entity);
+        });
+        expect([await count(world, { required: [tagged, amount], not: [point, extra] }), ...await aliveEach(world, moved)]).toEqual([20, ...moved.map(() => false)]);
+        expect(await readEach(world, arriving, amount)).toEqual(arriving.map((_, i) => 200 + i));
+        await world.dispose();
+    });
+
     it("despawn it whole, each entity released and its index reused after", async () => {
         const { world, run } = withCommands();
         const entities: Entity[] = [];

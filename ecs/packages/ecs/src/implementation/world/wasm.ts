@@ -45,12 +45,14 @@ export const scalarOfExpression = (expression: { readonly kind: "resource" | "sh
  * A lookup's directory in shared memory: one record of `1 + reads + watched` i32 words per archetype id, a match flag,
  * then the column address of each component the lookup reads, then the `changed` tick column address of each it
  * watches, 0 for one keeping no ticks. `leaf` places a scalar leaf of read component `read`; read `reads` of a lookup
- * that watches is its `changed`.
+ * that watches is its `changed`. `structured` is whether read component `read` is a tuple or struct of leaves in
+ * linear memory, whose values are always truthy.
  */
 export type WasmLookup = {
     readonly reads: number;
     readonly watched?: number;
     readonly leaf: (read: number, path: readonly (number | string)[]) => Omit<WasmColumn, "component"> | null;
+    readonly structured: (read: number) => boolean;
 };
 
 /** Where a probe's value goes in the key's words, and the stored type it's converted to first. */
@@ -409,7 +411,7 @@ export const generateWasmOrReason = (
             case "logical": return join(typeOf(expression.left), typeOf(expression.right));
             case "conditional": return join(typeOf(expression.consequent), typeOf(expression.alternate));
             case "math": return "number";
-            case "found": case "upFound": case "lookupHas": return "boolean";
+            case "found": case "upFound": case "lookupHas": case "lookupTruthy": return "boolean";
             case "upLeaf": return upColumns[expression.column]?.boolean === true ? "boolean" : "number";
             case "lookupLeaf": {
                 const lookup = lookupOfHandle.get(expression.handle);
@@ -1538,6 +1540,7 @@ export const generateWasmOrReason = (
             case "resourceElement": return emitResourceElement(expression.index, expression.element);
             case "lookupLeaf": return emitLookupLeaf(expression.handle, expression.read, expression.path);
             case "lookupHas": return emitLookupHas(expression.handle, expression.read);
+            case "lookupTruthy": return emitLookupTruthy(expression.handle, expression.read);
             case "listLength": return emitListLength(expression.handle);
             case "listChanged": return emitListChanged(expression.handle);
             case "rowLeaf": return emitRowLeaf(expression.handle, expression.leaf);
@@ -2016,6 +2019,20 @@ export const generateWasmOrReason = (
         labels.push("if");
         code.push(op.localGet, ...unsigned(handleLocal(handle, "record")), op.i32Load, 2, ...unsigned(4 * (1 + read)), op.i32Const, 0, op.i32Ne, op.f64ConvertI32U);
         code.push(op.else, op.f64Const, ...float64(0), op.end);
+        labels.pop();
+    };
+
+    /** 1 (f64) if `handle` found an entity holding read component `read` with a truthy value, else 0: a struct always is. */
+    const emitLookupTruthy = (handle: number, read: number): void => {
+        emitLookupHas(handle, read);
+        const lookup = lookupOfHandle.get(handle);
+        if (lookup === undefined || lookups[lookup].structured(read)) return;
+        code.push(op.f64Const, ...float64(0), op.f64Ne, op.if, f64Type);
+        labels.push("if");
+        const value: Expression = { kind: "lookupLeaf", handle, read, path: [] };
+        emit(value);
+        emitTruthy(typeOf(value));
+        code.push(op.f64ConvertI32U, op.else, op.f64Const, ...float64(0), op.end);
         labels.pop();
     };
 
@@ -2812,7 +2829,7 @@ export const generateWasmOrReason = (
                 for (const parameter of expression.arguments) rowsEmit(parameter);
                 emitVectorMath(expression.name, expression.arguments.length);
                 return;
-            case "found": case "lookupLeaf": case "lookupHas": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": case "resourceElement": throw notVectorizable;
+            case "found": case "lookupLeaf": case "lookupHas": case "lookupTruthy": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": case "resourceElement": throw notVectorizable;
         }
     };
 

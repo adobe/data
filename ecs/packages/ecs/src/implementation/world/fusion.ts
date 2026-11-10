@@ -89,7 +89,7 @@ const rowsOnly = (statements: readonly Statement[]): boolean => statements.every
 });
 const pure = (expression: Expression): boolean => {
     switch (expression.kind) {
-        case "args": case "shared": case "found": case "lookupLeaf": case "lookupHas": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": case "resourceElement": return false;
+        case "args": case "shared": case "found": case "lookupLeaf": case "lookupHas": case "lookupTruthy": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": case "resourceElement": return false;
         case "unary": return pure(expression.operand);
         case "binary": case "logical": return pure(expression.left) && pure(expression.right);
         case "conditional": return pure(expression.test) && pure(expression.consequent) && pure(expression.alternate);
@@ -365,6 +365,17 @@ export const loadGroup = async (state: State, group: FusedGroup): Promise<void> 
     await group.compiling;
 };
 
+/** The world's fused groups whose schedules and members live, forgetting the rest. */
+export const liveGroups = (state: State): FusedGroup[] => {
+    const groups: FusedGroup[] = [];
+    for (const reference of state.fusedGroups) {
+        const group = reference.deref();
+        if (group === undefined || group.members.some(member => member.holdings.removed)) state.fusedGroups.delete(reference);
+        else groups.push(group);
+    }
+    return groups;
+};
+
 /** Whether the pool's workers have the group's fused kernel as it is on this thread. */
 export const groupOnWorkers = (group: FusedGroup): boolean => group.fused !== null && group.workersFor === group.loadedFrom;
 
@@ -426,7 +437,7 @@ export const groupScalars = (group: FusedGroup, values: readonly unknown[]): num
 export const groupHeld = (group: FusedGroup): boolean => group.fused !== null && group.held.every((entry, m) => m === group.members.length - 1 || entry !== null);
 
 /** Whether every member matches an archetype, which the fused kernel then runs over. */
-export const groupCovers = (group: FusedGroup, archetype: Archetype): boolean => group.members.every(member => member.matched().includes(archetype));
+export const groupCovers = (group: FusedGroup, archetype: Archetype): boolean => group.members.every(member => member.isMatched(archetype));
 
 /**
  * The group's pass over an archetype, from its last member's run: the fused kernel where every member held its run,

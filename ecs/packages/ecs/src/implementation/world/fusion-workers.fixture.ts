@@ -36,6 +36,11 @@ const show = System.create({ kernel: true, components: { with: [hp, shown] }, af
     row[shown] = row[hp] * 3;
 });
 const chain = System.create([regenerate, hurt, show]);
+/** Rows of the archetype every member of the chain matches, alone: as many as `covered` says each run. */
+let covered = 0;
+const seedCovered = System.create({}, ({ commands }) => {
+    for (let i = 0; i < covered; i++) commands.spawn([hp, armor, shown])({ [hp]: i % 17, [armor]: i % 5, [shown]: 0 });
+});
 
 /** Each entity's hp and shown after some frames of the chain, with pool workers and fusing on or off, and how many kernels each worker holds. */
 export const chainOnWorkers = async (fuse: boolean): Promise<{ readonly hp: readonly (number | null)[]; readonly shown: readonly (number | null)[]; readonly kernels: readonly number[] }> => {
@@ -46,6 +51,26 @@ export const chainOnWorkers = async (fuse: boolean): Promise<{ readonly hp: read
         const entities = await select(world, { required: [hp] });
         const { workers: held } = await world.tables();
         return { hp: await readEach(world, entities, hp), shown: await readEach(world, entities, shown), kernels: held.map(worker => worker.kernels) };
+    }
+    finally {
+        await world.dispose();
+    }
+};
+
+/**
+ * How many workers the pool has after the chain runs in a world it first ran in empty, then filled with rows its fused
+ * group covers by a system already registered.
+ */
+export const workersAfterFillingCovered = async (): Promise<number> => {
+    const world = createWorld({ [workers]: 2 }, { minimumChunk: 64 });
+    try {
+        covered = 0;
+        await world.run(seedCovered);
+        await world.run(chain);
+        covered = rows;
+        await world.run(seedCovered);
+        for (let frame = 0; frame < 4; frame++) await world.run(chain);
+        return (await world.tables()).workers.length;
     }
     finally {
         await world.dispose();

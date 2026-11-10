@@ -9,6 +9,14 @@ type Constants = ReadonlyMap<number, Literal>;
 const isLiteral = (expression: Expression): expression is Literal => expression.kind === "number" || expression.kind === "boolean";
 const literalOf = (value: number | boolean): Literal => typeof value === "boolean" ? { kind: "boolean", value } : { kind: "number", value };
 
+/** Whether two statements or expressions are alike, every number in them the same as `Object.is` compares it. */
+const same = (a: unknown, b: unknown): boolean => {
+    if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) return Object.is(a, b);
+    if (Array.isArray(a) !== Array.isArray(b)) return false;
+    const entries = Object.entries(a);
+    return entries.length === Object.keys(b).length && entries.every(([key, value]) => same(value, Reflect.get(b, key)));
+};
+
 /** `Math` functions whose result depends only on their arguments, which fold when every argument is a literal. */
 const pure: ReadonlyMap<string, (...values: number[]) => number> = new Map(Object.entries({
     abs: Math.abs, acos: Math.acos, acosh: Math.acosh, asin: Math.asin, asinh: Math.asinh, atan: Math.atan, atan2: Math.atan2,
@@ -185,7 +193,7 @@ const mergeTails = (statements: readonly Statement[]): Statement[] => statements
             const alternate = mergeTails(statement.alternate);
             let shared = 0;
             while (shared < consequent.length && shared < alternate.length
-                && JSON.stringify(consequent[consequent.length - 1 - shared]) === JSON.stringify(alternate[alternate.length - 1 - shared])) shared++;
+                && same(consequent[consequent.length - 1 - shared], alternate[alternate.length - 1 - shared])) shared++;
             const tail = consequent.slice(consequent.length - shared);
             const kept = { ...statement, consequent: consequent.slice(0, consequent.length - shared), alternate: alternate.slice(0, alternate.length - shared) };
             return [...kept.consequent.length === 0 && kept.alternate.length === 0 ? [] : [kept], ...tail];
@@ -252,8 +260,7 @@ const hoistCommon = (statements: readonly Statement[], single: ReadonlySet<numbe
         for (let first = 0; first < consequent.length && !moved; first++) {
             const own = consequent[first];
             if (own === undefined || own.kind !== "set" || !movable(consequent, first, single)) continue;
-            const value = JSON.stringify(own.value);
-            const second = alternate.findIndex((other, index) => other.kind === "set" && JSON.stringify(other.value) === value && movable(alternate, index, single));
+            const second = alternate.findIndex((other, index) => other.kind === "set" && same(other.value, own.value) && movable(alternate, index, single));
             const other = alternate[second];
             if (other === undefined || other.kind !== "set") continue;
             hoisted.push(own);
@@ -401,7 +408,7 @@ export const simplifyProgram = (program: Program): Program => {
         countUses(body, sets, reads);
         const single = new Set([...sets].filter(([local, count]) => count === 1 && !accumulators.has(local)).map(([local]) => local));
         const folded = dropAssignments(foldStatements(mergeTails(hoistCommon(body, single)), new Map(), single), new Set([...sets.keys()].filter(local => !accumulators.has(local) && (reads.get(local) ?? 0) === 0)));
-        const unchanged = JSON.stringify(folded) === JSON.stringify(body);
+        const unchanged = same(folded, body);
         body = folded;
         if (unchanged) break;
     }

@@ -91,6 +91,8 @@ export type Runner = {
     readonly resourceUses: readonly number[];
     /** The archetypes its query matches now. */
     readonly matched: () => readonly Archetype[];
+    /** Whether its query matches an archetype now. */
+    readonly isMatched: (archetype: Archetype) => boolean;
     /** The indexes its lookups go through, which a run refreshes before its tier. */
     readonly indexes: readonly IndexUse[];
     /** Loads its kernel, and compiles its compute pipeline when it's placed on the GPU; rejects with the reason it can't be. */
@@ -969,6 +971,12 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         }
     };
 
+    /** Marks the typed array resources it writes as ahead on the GPU, for the CPU to read back. */
+    const markArrayWrites = (gpu: GpuEngine): void => {
+        const resources = resourceArchetype(state);
+        if (resources !== undefined) for (const key of arrayWrites) gpu.markGpuWrites(resources, resourceCell(state, key).storage);
+    };
+
     /** One dispatch per archetype, each with its record of row count, column addresses and scalars. */
     const runOnGpu = (values: readonly unknown[], args: unknown, tick: number): void => {
         const gpu = state.gpu;
@@ -1009,8 +1017,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 if (storage.ticked) storage.columnChanged = tick;
             }
         }
-        const resources = resourceArchetype(state);
-        if (resources !== undefined) for (const key of arrayWrites) gpu.markGpuWrites(resources, resourceCell(state, key).storage);
+        markArrayWrites(gpu);
     };
 
     /** The component ids of the parent columns an `up` kernel reads, in order. */
@@ -1078,6 +1085,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 if (storage.ticked) storage.columnChanged = tick;
             }
         }
+        markArrayWrites(gpu);
     };
 
     const runRender = (tick: number): void => {
@@ -1327,7 +1335,10 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                         chunks.push(...postGroup(workers, group, archetype, values, tick));
                         chunks.push(nextChunk());
                     }
-                    else runGroup(group, archetype, values, tick, covered => runKernelLocally(kernel, covered, -1, values, args, tick));
+                    else {
+                        if (archetype.count >= state.poolThreshold) state.poolWanted = true;
+                        runGroup(group, archetype, values, tick, covered => runKernelLocally(kernel, covered, -1, values, args, tick));
+                    }
                 }
                 else if (workers !== null && archetype.count >= minimumFor(workers)) {
                     chunks.push(...postChunks(workers, index, archetype, from, values, args, tick));
@@ -1415,6 +1426,10 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             refreshMatches();
             return matches;
         },
+        isMatched: archetype => {
+            refreshMatches();
+            return (matchOf[archetype.id] ?? -1) >= 0;
+        },
         indexes: indexLookups.uses,
         load,
         setup,
@@ -1452,6 +1467,7 @@ export const removedRunner: Runner = {
     resourceWrites: nothing,
     resourceUses: nothing,
     matched: () => nothing,
+    isMatched: () => false,
     indexes: nothing,
     load: async () => {},
     setup: () => null,

@@ -56,6 +56,13 @@ export type Workers = { readonly pool: Pool; readonly minimumChunk: number; next
 
 /** 16 rows of f32 is a 64-byte line, so chunks of different workers never share one. */
 const chunkAlignment = 16;
+/**
+ * Bytes of a typed array below which a kernel writing its elements runs on one thread: cores writing elements of a
+ * small array at once take its cache lines from each other, slower than one core writing it alone (measured: random
+ * byte writes run twice as fast on one core as on ten into 75 KiB, and ten scale past 256 KiB).
+ */
+const contendedBytes = 256 * 1024;
+
 /** Pieces per worker in a claimed split: enough that faster workers can take more of them. */
 const claimsPerWorker = 8;
 
@@ -266,6 +273,11 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const arrayWrites = (declaration.resources?.write ?? []).filter(key => {
         const layout = state.layouts[idOf(state, key)];
         return layout?.kind === "linear" && layout.array !== undefined;
+    });
+    /** Whether it writes a typed array small enough that workers writing it at once contend for its cache lines. */
+    const contended = arrayWrites.some(key => {
+        const layout = state.layouts[idOf(state, key)];
+        return layout?.kind === "linear" && layout.array !== undefined && layout.array.length * layout.array.bytes < contendedBytes;
     });
     const looks = [...new Set([...Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []), ...declaration.up?.read ?? [], ...declaration.tables?.components ?? []])].map(key => idOf(state, key));
     /** Record keys by archetype. */
@@ -1179,7 +1191,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     };
 
     const start = (input: unknown, offered: Workers | null, index: number, role: FusionRole | null = null): readonly Chunk[] => {
-        const workers = offered;
+        const workers = contended ? null : offered;
         ran = false;
         result = undefined;
         // A fused group runs while every member lives; its last member runs the archetypes every member matches.

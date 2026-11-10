@@ -23,7 +23,8 @@ const run = async (): Promise<void> => {
     // Shared memory is what WASM kernels and workers need; a page without cross-origin isolation runs kernels in JS.
     if (lane === "js") Object.defineProperty(globalThis, "crossOriginIsolated", { value: false, configurable: true });
     const threads = availableParallelism() - 1;
-    const { times } = await scenario.measure(() => laneWorld(lane satisfies Lane, threads), count);
+    // Node has no GPU, so a frame's work is done once its run resolves.
+    const { times } = await scenario.measure(() => laneWorld(lane satisfies Lane, threads), count, async () => {});
     const median = times.length % 2 === 1 ? times[(times.length - 1) / 2] ?? 0 : ((times[times.length / 2 - 1] ?? 0) + (times[times.length / 2] ?? 0)) / 2;
     const mean = times.reduce((sum, time) => sum + time, 0) / times.length;
     console.log(`ecs-benchmark-result ${JSON.stringify({

@@ -4,7 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ES2024", "ESNext.Disposable", "DOM"],
-    "types": ["node"],
+    "types": ["node", "@webgpu/types"],
     "skipLibCheck": true,
     "isolatedModules": true,
     "strict": true,

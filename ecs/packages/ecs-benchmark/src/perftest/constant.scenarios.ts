@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System, type World } from "@adobe/ecs";
 import {
-    complexSystems, complexSystemsUpdate, createEntities, createHalfComponentEntities, createMixedUpdateEntities, createUpdateEntities,
-    destroyEntities, destroyEntitiesWhere, probeEntities, probeFullEntities, removeAddComponent, systemsUpdate, unpackOneComponent,
-    unpackThreeComponents, unpackTwoComponents,
+    complexSystems, complexSystemsUpdate, createEntities, createGpuMixedUpdateEntities, createGpuUpdateEntities, createHalfComponentEntities,
+    createMixedUpdateEntities, createUpdateEntities, destroyEntities, destroyEntitiesWhere, gpuComplexSystemsUpdate, gpuSystemsUpdate,
+    probeEntities, probeFullEntities, removeAddComponent, systemsUpdate, unpackOneComponent, unpackThreeComponents, unpackTwoComponents,
 } from "../scenarios/model/index.js";
 import { measureRuns } from "./function.measure-runs.js";
 import { measureWorlds } from "./function.measure-worlds.js";
@@ -50,7 +50,22 @@ export const scenarios: readonly Scenario[] = [
         const setup = benchmark === "BM_ComplexSystemsUpdate" ? createUpdateEntities : createMixedUpdateEntities;
         return { name: `${benchmark}_Through_${name}`, measure: (create, count) => frames(create(), world => world.run(setup, { count }), world => world.run(through)) };
     })),
+    // The frames as GPU kernels, their data's `dingy` an f32, each timed until the GPU has done it: on the `gpu` lane,
+    // and for comparison on the CPU, where GPU kernels run as kernels.
+    { name: "GPU_SystemsUpdate", measure: (create, count, settle) => frames(create(), world => world.run(createGpuUpdateEntities, { count }), world => settled(world.run(gpuSystemsUpdate), settle)) },
+    { name: "GPU_SystemsUpdateMixedEntities", measure: (create, count, settle) => frames(create(), world => world.run(createGpuMixedUpdateEntities, { count }), world => settled(world.run(gpuSystemsUpdate), settle)) },
+    { name: "GPU_ComplexSystemsUpdate", measure: (create, count, settle) => frames(create(), world => world.run(createGpuUpdateEntities, { count }), world => settled(world.run(gpuComplexSystemsUpdate), settle)) },
+    {
+        name: "GPU_ComplexSystemsUpdateMixedEntities",
+        measure: (create, count, settle) => frames(create(), world => world.run(createGpuMixedUpdateEntities, { count }), world => settled(world.run(gpuComplexSystemsUpdate), settle)),
+    },
 ];
+
+/** A frame's run, then the GPU's work it gave, done. */
+const settled = async (run: Promise<unknown>, settle: () => Promise<void>): Promise<void> => {
+    await run;
+    await settle();
+};
 
 /**
  * A run per frame, timed after `setup`, ten frames a sample: every entity's `thingy` steps together, so

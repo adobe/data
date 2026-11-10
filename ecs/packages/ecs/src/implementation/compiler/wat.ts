@@ -67,6 +67,7 @@ const simd: { readonly [subopcode: number]: { readonly name: string; readonly al
     161: { name: "i32x4.neg" }, 171: { name: "i32x4.shl" }, 172: { name: "i32x4.shr_s" }, 173: { name: "i32x4.shr_u" }, 174: { name: "i32x4.add" },
     177: { name: "i32x4.sub" }, 181: { name: "i32x4.mul" }, 182: { name: "i32x4.min_s" }, 183: { name: "i32x4.min_u" }, 184: { name: "i32x4.max_s" },
     185: { name: "i32x4.max_u" }, 248: { name: "i32x4.trunc_sat_f32x4_s" }, 250: { name: "f32x4.convert_i32x4_s" }, 251: { name: "f32x4.convert_i32x4_u" },
+    220: { name: "i64x2.extmul_low_i32x4_s" }, 221: { name: "i64x2.extmul_high_i32x4_s" }, 222: { name: "i64x2.extmul_low_i32x4_u" }, 223: { name: "i64x2.extmul_high_i32x4_u" },
 };
 
 /** Control and variable instructions without immediates, or with those `instruction` reads. */

@@ -157,7 +157,7 @@ const op = {
     f64Abs: 0x99, f64Neg: 0x9a, f64Ceil: 0x9b, f64Floor: 0x9c, f64Trunc: 0x9d, f64Sqrt: 0x9f,
     f64Add: 0xa0, f64Sub: 0xa1, f64Mul: 0xa2, f64Div: 0xa3, f64Min: 0xa4, f64Max: 0xa5,
     i64Add: 0x7c, i64Sub: 0x7d, i64Mul: 0x7e, i64ExtendI32S: 0xac, i64ExtendI32U: 0xad, i32RemS: 0x6f, i32RemU: 0x70,
-    i32WrapI64: 0xa7, i32GeU: 0x4f, i32Ne: 0x47, i64Const: 0x42, i64ShrU: 0x88, i64RemS: 0x81, f64ConvertI64S: 0xb9, f64Copysign: 0xa6, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
+    i32WrapI64: 0xa7, i32GeU: 0x4f, i32Ne: 0x47, i64Const: 0x42, i64ShrS: 0x87, i64ShrU: 0x88, i64RemS: 0x81, f64ConvertI64S: 0xb9, f64Copysign: 0xa6, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
 } as const;
 const f64Type = 0x7c;
 const i32Type = 0x7f;
@@ -263,6 +263,54 @@ const identifierOf = (text: string): string => text.replace(/[^A-Za-z0-9_.]/g, "
  * As `generateWasm`, or why exact equivalence can't be guaranteed. `named` appends a name section naming the function,
  * its imports, parameters and locals, for printing it as text; the world never asks for one.
  */
+/**
+ * The multiplier and shift that divide a signed i32 by `divisor`, at least 2, as a multiply-high and a shift (Hacker's
+ * Delight 10-1): `q = (mulhs(n, multiplier) [+ n while the multiplier is negative]) >> shift`, then `q + (n >>> 31)`.
+ */
+export const signedMagic = (divisor: number): { readonly multiplier: number; readonly shift: number } => {
+    const two31 = 2n ** 31n;
+    const d = BigInt(divisor);
+    const anc = two31 - 1n - two31 % d;
+    let p = 31n;
+    let q1 = two31 / anc;
+    let r1 = two31 - q1 * anc;
+    let q2 = two31 / d;
+    let r2 = two31 - q2 * d;
+    let delta = 0n;
+    do {
+        p++;
+        q1 *= 2n;
+        r1 *= 2n;
+        if (r1 >= anc) {
+            q1++;
+            r1 -= anc;
+        }
+        q2 *= 2n;
+        r2 *= 2n;
+        if (r2 >= d) {
+            q2++;
+            r2 -= d;
+        }
+        delta = d - r2;
+    } while (q1 < delta || (q1 === delta && r1 === 0n));
+    return { multiplier: Number(BigInt.asIntN(32, q2 + 1n)), shift: Number(p - 32n) };
+};
+
+/**
+ * A multiplier below 2^32 and a shift from 32 that divide every u32 by `divisor`, at least 2, as `(n * multiplier) >> shift`
+ * in 64 bits: exact where `2^shift <= multiplier * divisor <= 2^shift + 2^(shift - 32)` (Granlund and Montgomery,
+ * theorem 4.2); null for a divisor none of them divides.
+ */
+export const unsignedMagic = (divisor: number): { readonly multiplier: number; readonly shift: number } | null => {
+    const d = BigInt(divisor);
+    for (let shift = 32n; shift < 64n; shift++) {
+        const multiplier = ((1n << shift) + d - 1n) / d;
+        if (multiplier >= 1n << 32n) return null;
+        if (multiplier * d - (1n << shift) <= 1n << (shift - 32n)) return { multiplier: Number(multiplier), shift: Number(shift) };
+    }
+    return null;
+};
+
 /** A typed array resource as kernels address it: its elements' type and how many it has. */
 export type WasmArray = { readonly name: keyof TypedArrays; readonly length: number };
 
@@ -1010,6 +1058,39 @@ export const generateWasmOrReason = (
         return used;
     };
 
+    /**
+     * A remainder of an i32 or a u32 by an integer literal of magnitude 2 and more, as the i32 path computes it: an
+     * unsigned one where the dividend is a u32 and the divisor positive, with the multiplier dividing by it.
+     */
+    const constantRemainder = (expression: Expression): { readonly divisor: number; readonly unsigned: boolean } | null => {
+        if (expression.kind !== "binary" || expression.operator !== "%" || expression.right.kind !== "number") return null;
+        const { left, right: { value } } = expression;
+        if (!Number.isInteger(value) || Math.abs(value) < 2 || Math.abs(value) >= 2 ** 31) return null;
+        if (integerKind(left) === "u32" && value > 0) return unsignedMagic(value) === null ? null : { divisor: value, unsigned: true };
+        if (!exactInteger(left) || !((integerBound(left) ?? 2 ** 53) < 2 ** 31 || integerKind(left) === "i32")) return null;
+        // A remainder takes its dividend's sign, whichever the divisor's.
+        return { divisor: Math.abs(value), unsigned: false };
+    };
+    /** Replaces the i32 on the stack with its remainder by a constant divisor, from a multiply-high, as `rem_s` or `rem_u` gives it. */
+    const emitRemainder = ({ divisor, unsigned: isUnsigned }: { readonly divisor: number; readonly unsigned: boolean }): void => {
+        const dividend = scratch(i32Type);
+        const quotient = scratch(i32Type);
+        code.push(op.localTee, ...unsigned(dividend));
+        if (isUnsigned) {
+            const magic = unsignedMagic(divisor);
+            if (magic === null) throw new Error("A remainder by a divisor without a multiplier.");
+            code.push(op.i64ExtendI32U, op.i64Const, ...signed64(magic.multiplier), op.i64Mul, op.i64Const, ...signed64(magic.shift), op.i64ShrU, op.i32WrapI64);
+        }
+        else {
+            const { multiplier, shift } = signedMagic(divisor);
+            code.push(op.i64ExtendI32S, op.i64Const, ...signed64(multiplier), op.i64Mul, op.i64Const, 32, op.i64ShrS, op.i32WrapI64);
+            if (multiplier < 0) code.push(op.localGet, ...unsigned(dividend), op.i32Add);
+            if (shift > 0) code.push(op.i32Const, ...signed(shift), op.i32ShrS);
+            code.push(op.localGet, ...unsigned(dividend), op.i32Const, 31, op.i32ShrU, op.i32Add);
+        }
+        code.push(op.localSet, ...unsigned(quotient), op.localGet, ...unsigned(dividend), op.localGet, ...unsigned(quotient), op.i32Const, ...signed(divisor), op.i32Mul, op.i32Sub);
+    };
+
     /** Leaves the JS `ToInt32` of the f64 on the stack as an i32: exact for every finite value; NaN and infinities give 0. */
     const emitToInt32 = (): void => {
         const value = scratch(f64Type);
@@ -1160,6 +1241,12 @@ export const generateWasmOrReason = (
                     emitInteger(left);
                     emitInteger(right);
                     code.push(operator === "+" ? op.i32Add : operator === "-" ? op.i32Sub : op.i32Mul);
+                    return;
+                }
+                const remainder = constantRemainder(expression);
+                if (remainder !== null) {
+                    emitInteger(left);
+                    emitRemainder(remainder);
                     return;
                 }
                 // A u32's remainder by a positive literal is never negative, so an unsigned one is exact.
@@ -2553,6 +2640,7 @@ export const generateWasmOrReason = (
         i32Eq: 55, i32Ne: 56, i32LtS: 57, i32LtU: 58, i32GtS: 59, i32GtU: 60, i32LeS: 61, i32LeU: 62, i32GeS: 63, i32GeU: 64, xor: 81,
         f32ExtractLane: 31, f32ReplaceLane: 32, i32TruncSatF32S: 248, f32ConvertI32S: 250, f32ConvertI32U: 251,
         i32Neg: 161, i32Shl: 171, i32ShrS: 172, i32ShrU: 173, i32Add: 174, i32Sub: 177, i32Mul: 181, i32MinS: 182, i32MinU: 183, i32MaxS: 184, i32MaxU: 185,
+        i64x2ExtmulLowI32x4S: 220, i64x2ExtmulHighI32x4S: 221, i64x2ExtmulLowI32x4U: 222, i64x2ExtmulHighI32x4U: 223,
         f32Eq: 65, f32Ne: 66, f32Lt: 67, f32Gt: 68, f32Le: 69, f32Ge: 70,
         f64Gt: 74, not: 77, and: 78, andNot: 79, or: 80, bitselect: 82, anyTrue: 83,
         store32Lane: 90, store64Lane: 91, load32Zero: 92, load64Zero: 93,
@@ -2912,11 +3000,11 @@ export const generateWasmOrReason = (
         code.push(op.localGet, ...unsigned(mask ?? 0), ...simd(vop.i32ExtractLane), k);
     };
 
-    /** The nodes of an expression, each an operation a row computes. */
+    /** The nodes of an expression, each an operation a row computes, a remainder eight: a division, or the multiply standing for one. */
     const size = (expression: Expression): number => {
         switch (expression.kind) {
             case "unary": return 1 + size(expression.operand);
-            case "binary": case "logical": return 1 + size(expression.left) + size(expression.right);
+            case "binary": case "logical": return (expression.operator === "%" ? 8 : 1) + size(expression.left) + size(expression.right);
             case "conditional": return 1 + size(expression.test) + size(expression.consequent) + size(expression.alternate);
             case "math": return expression.arguments.reduce((total, argument) => total + size(argument), 1);
             default: return 1;
@@ -2955,6 +3043,7 @@ export const generateWasmOrReason = (
             case "binary": {
                 const { operator, left, right } = expression;
                 if (operator in bitwiseVector) return !(operator === "<<" || operator === ">>" || operator === ">>>") || rowIndependent(right);
+                if (constantRemainder(expression) !== null) return true;
                 return (operator === "+" || operator === "-" || operator === "*") && exactInteger(expression) && typeOf(left) !== "boolean" && typeOf(right) !== "boolean";
             }
             case "math":
@@ -3177,6 +3266,12 @@ export const generateWasmOrReason = (
                     code.push(...simd(operator === "+" ? vop.i32Add : operator === "-" ? vop.i32Sub : vop.i32Mul));
                     return;
                 }
+                const remainder = constantRemainder(expression);
+                if (remainder !== null) {
+                    integerVector(left);
+                    remainderVector(remainder);
+                    return;
+                }
                 break;
             }
             case "math": {
@@ -3218,6 +3313,34 @@ export const generateWasmOrReason = (
     };
 
     /** Leaves, for each of the four rows, whether an expression's value is truthy, as a lane mask: -1 where it is. */
+    /**
+     * Replaces the four i32 lanes on the stack with their remainders by a constant divisor, as `emitRemainder` gives one:
+     * the multiply-highs from 64-bit products of the lanes' halves.
+     */
+    const remainderVector = ({ divisor, unsigned: isUnsigned }: { readonly divisor: number; readonly unsigned: boolean }): void => {
+        const dividends = scratch(v128Type);
+        const quotients = scratch(v128Type);
+        work.spent += 7;
+        const magic = isUnsigned ? unsignedMagic(divisor) : signedMagic(divisor);
+        if (magic === null) throw new Error("A remainder by a divisor without a multiplier.");
+        const { multiplier, shift } = magic;
+        // Each 64-bit product's high word, lanes in order.
+        const highWords = [4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31];
+        code.push(op.localSet, ...unsigned(dividends));
+        for (const half of isUnsigned ? [vop.i64x2ExtmulLowI32x4U, vop.i64x2ExtmulHighI32x4U] : [vop.i64x2ExtmulLowI32x4S, vop.i64x2ExtmulHighI32x4S]) {
+            code.push(op.localGet, ...unsigned(dividends), ...integerConstant(multiplier | 0), ...simd(half));
+        }
+        code.push(...simd(vop.shuffle), ...highWords);
+        if (isUnsigned) {
+            if (shift > 32) code.push(op.i32Const, ...signed(shift - 32), ...simd(vop.i32ShrU));
+        }
+        else {
+            if (multiplier < 0) code.push(op.localGet, ...unsigned(dividends), ...simd(vop.i32Add));
+            if (shift > 0) code.push(op.i32Const, ...signed(shift), ...simd(vop.i32ShrS));
+            code.push(op.localGet, ...unsigned(dividends), op.i32Const, 31, ...simd(vop.i32ShrU), ...simd(vop.i32Add));
+        }
+        code.push(op.localSet, ...unsigned(quotients), op.localGet, ...unsigned(dividends), op.localGet, ...unsigned(quotients), ...integerConstant(divisor), ...simd(vop.i32Mul), ...simd(vop.i32Sub));
+    };
     /** The vector of four i32 lanes of `value`. */
     const integerConstant = (value: number): number[] => [...simd(vop.const), ...new Uint8Array(new Int32Array(4).fill(value).buffer)];
     /**

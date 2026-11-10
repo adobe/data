@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { blockShift, type Program } from "./kernel.js";
 import { printWat } from "../compiler/wat.js";
-import { generateWasm, generateWasmOrReason, importsOf, type WasmColumn } from "./wasm.js";
+import { generateWasm, generateWasmOrReason, importsOf, signedMagic, unsignedMagic, type WasmColumn } from "./wasm.js";
 
 type Expression = Program.Expression;
 
@@ -1646,5 +1646,65 @@ describe("generateWasm declared integer ranges", () => {
             expect(hp).toEqual(expected);
             expect(wat).toContain("i64.sub");
         }
+    });
+});
+
+describe("generateWasm remainders by a literal", () => {
+    const column = (index: number): Expression => ({ kind: "column", column: index });
+    const remainder = (divisor: number): Expression => ({ kind: "binary", operator: "%", left: column(0), right: { kind: "number", value: divisor } });
+    const dividends = {
+        i32: [-(2 ** 31), -(2 ** 31) + 1, -1000001, -1000000, -999999, -7, -1, 0, 1, 6, 7, 999999, 1000000, 1000001, 2 ** 31 - 2, 2 ** 31 - 1],
+        u32: [0, 1, 6, 7, 999999, 1000000, 2 ** 31 - 1, 2 ** 31, 2 ** 31 + 1, 2 ** 32 - 7, 2 ** 32 - 1],
+    } as const;
+
+    /** Each dividend's remainder, by a kernel storing column 0's i32 or u32 rows' remainder in column 1, with SIMD or without, and its text. */
+    const run = (view: "i32" | "u32", divisor: number, simd: boolean) => {
+        const values = [...dividends[view], ...Array.from({ length: 64 }, (_, k) => view === "i32" ? Math.imul(k + 1, 2654435761) : Math.imul(k + 1, 2654435761) >>> 0)];
+        const columns: WasmColumn[] = [0, 1].map(component => ({ view, stride: 4, offset: 0, boolean: false, component }));
+        const kernel = generateWasm({ locals: 0, body: [{ kind: "store", column: 1, value: remainder(divisor) }] }, columns, () => "number", simd, 0, [], [], [], [], [], true);
+        if (kernel === null) throw new Error("expected a kernel");
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        const View = view === "i32" ? Int32Array : Uint32Array;
+        new View(memory.buffer, 0, values.length).set(values);
+        const runKernel = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof runKernel !== "function") throw new Error("no run export");
+        runKernel(0, values.length, 0, -1, 0, 4096);
+        const printed = printWat(kernel.bytes);
+        return { values, results: [...new View(memory.buffer, 4096, values.length)], wat: "wat" in printed ? printed.wat : printed.failure };
+    };
+
+    for (const divisor of [2, 3, 5, 6, 7, 10, 17, 641, 1000000, 2 ** 30 + 1, 2 ** 31 - 1, -3, -1000000]) {
+        it(`computes an i32's remainder by ${divisor} from a multiply, in lanes and a row at a time, as JS does`, () => {
+            for (const simd of [true, false]) {
+                const { values, results, wat } = run("i32", divisor, simd);
+                expect(results).toEqual(values.map(value => (value % divisor) | 0));
+                expect(wat).not.toContain("rem_s");
+                if (simd) expect(wat).toContain("i64x2.extmul_low_i32x4_s");
+            }
+        });
+    }
+
+    for (const [divisor, multiplied] of [[2, true], [3, true], [6, true], [10, true], [17, true], [1000000, true], [7, false], [2 ** 31 - 1, false]] as const) {
+        it(`computes a u32's remainder by ${divisor} ${multiplied ? "from a multiply, in lanes" : "by division"} and a row at a time, as JS does`, () => {
+            for (const simd of [true, false]) {
+                const { values, results, wat } = run("u32", divisor, simd);
+                expect(results).toEqual(values.map(value => value % divisor));
+                expect(wat.includes("rem_u")).toBe(!multiplied);
+                if (simd && multiplied) expect(wat).toContain("i64x2.extmul_low_i32x4_u");
+            }
+        });
+    }
+
+    it("divides every u32 by the multipliers it finds, and finds none for a divisor no multiplier below 2^32 divides by", () => {
+        // 7 and 2^31 - 1 need a 33-bit multiplier.
+        expect([unsignedMagic(7), unsignedMagic(2 ** 31 - 1)]).toEqual([null, null]);
+        for (const divisor of [3, 10, 641, 1000000, 2 ** 30 + 1]) {
+            const magic = unsignedMagic(divisor);
+            if (magic === null) throw new Error(`no multiplier for ${divisor}`);
+            for (const value of [0, 1, divisor - 1, divisor, 2 ** 32 - 1, 2 ** 32 - divisor, 3141592653]) {
+                expect(Number((BigInt(value) * BigInt(magic.multiplier)) >> BigInt(magic.shift))).toBe(Math.floor(value / divisor));
+            }
+        }
+        expect(signedMagic(7)).toEqual({ multiplier: -1840700269, shift: 2 });
     });
 });

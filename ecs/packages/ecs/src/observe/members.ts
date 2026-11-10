@@ -12,7 +12,8 @@ export type { Query } from './query.js';
 
 /**
  * A resource's value, then a new one after each run or tick that changed it: one whose sync point stamped it, even with
- * the same value, a reduced resource when its fold differs.
+ * the same value, a reduced resource when its fold differs. A typed array's is the world's view of its elements,
+ * read-only, which reads every later write, and given again once it moves.
  */
 export const resource = <R extends Resource.Key>(world: World, resource: R): Observe<ReadonlyResourceType<R>> =>
     observeResource(world, resource);

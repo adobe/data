@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Views } from '../../interface/registry/layout.js';
-import { copyValue, ensureCapacity, swapRemove, writeF32, writeF32Lanes, writeF64, writeI32, writeU32, type Archetype, type Storage } from './archetype.js';
+import { copyValue, ensureCapacity, stampChanged, swapRemove, writeF32, writeF32Lanes, writeF64, writeI32, writeU32, type Archetype, type Storage } from './archetype.js';
 import { blockShift, chunkShift } from './kernel.js';
 import { addCommand, clearBuffer, despawnCommand, despawnWhereCommand, despawnWhereHolds, endOf, referenceAt, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { readCell, writeCell } from './cells.js';
@@ -1180,6 +1180,19 @@ const preparePending = (state: State, queued: readonly Queued[], isolated: boole
     }
 };
 
+/**
+ * Stamps each typed array resource changed where the resource entity moved, as a resource joining the world moves it:
+ * its value, the view of its elements in place, is another, which its observers are given.
+ */
+const stampMovedArrays = (state: State, tick: number): void => {
+    const { plan } = state;
+    const index = indexOf(state.resourceEntity);
+    const entry = plan.slots[index];
+    if (entry < 0 || entry >= plan.count || plan.entity[entry] !== state.resourceEntity || plan.from[entry] < 0 || plan.from[entry] === plan.to[entry]) return;
+    const row = state.entities.row[index];
+    for (const storage of state.archetypes[plan.to[entry]].storages) if (storage.layout.kind === "linear" && storage.layout.array !== undefined) stampChanged(storage, row, tick);
+};
+
 /** What a sync point whose finalizers threw nothing returns: read-only, so one is shared. */
 const nothingThrown: readonly Thrown[] = [];
 
@@ -1209,6 +1222,7 @@ export const applySync = (state: State): readonly Thrown[] => {
             if (state.claimed) for (let entry = plan.count - 1; entry >= 0; entry--) leaveLogged(state, entry);
             else for (let entry = plan.count - 1; entry >= 0; entry--) leave(state, entry);
         }
+        if (state.resourceEntity >= 0) stampMovedArrays(state, tick);
         if (index !== null) applyIndexChanges(state, index);
         // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its
         // index. Every spawn consumes one reservation and the rest were unreserved, so only a shortfall needs the scan,

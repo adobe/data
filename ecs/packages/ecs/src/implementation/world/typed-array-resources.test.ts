@@ -1,8 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
+import type { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
+import type { World } from "../../interface/world/world.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { Commands } from "../../interface/system/commands.js";
+import { Observe } from "../../observe/index.js";
 import { createWorld } from "./create.js";
 import { runReported } from "./outcomes.test-helper.js";
 import { readResource } from "./reads.test-helper.js";
@@ -13,6 +16,8 @@ const clamped = Symbol("typedArrayResourcesTest/clamped");
 const frame = Symbol("typedArrayResourcesTest/frame");
 const cell = Symbol("typedArrayResourcesTest/cell");
 const level = Symbol("typedArrayResourcesTest/level");
+const joining = Symbol("typedArrayResourcesTest/joining");
+const joiningLater = Symbol("typedArrayResourcesTest/joiningLater");
 
 declare module "@adobe/ecs" {
     interface Resources {
@@ -20,6 +25,8 @@ declare module "@adobe/ecs" {
         [levels]: { type: Int16Array; length: 8 };
         [clamped]: { type: Uint8ClampedArray; length: 5 };
         [frame]: { type: Uint8Array; length: 1048576 };
+        [joining]: { type: number };
+        [joiningLater]: { type: Float32Array; length: 2 };
     }
     interface Components {
         [cell]: { type: number };
@@ -40,9 +47,19 @@ const withCommands = (options: { readonly wasm?: boolean } = {}) => {
     return { world, run };
 };
 
+/** Every value an observer of cells is given, once it has its first. */
+const observeCells = async (world: World): Promise<Resource.ReadonlyTypedArray<Uint8Array>[]> => {
+    const seen: Resource.ReadonlyTypedArray<Uint8Array>[] = [];
+    Observe.resource(world, cells)(view => { seen.push(view); });
+    await readResource(world, cells);
+    return seen;
+};
+
 const mark = System.create({ components: { with: [cell] } }, (row, { resources }) => { resources[cells][row[cell]] = row[cell] + 100; });
 const marked: number[] = [];
 const readChanged = System.create({ resources: { changed: [cells] } }, ({ resources }) => { marked.push(resources[cells][3]); });
+/** Advances cell 2. */
+const advance = System.create({}, ({ resources }) => { resources[cells][2] = resources[cells][2] + 1; });
 /** Advances cell 2 once a run that cells changed since its last. */
 const advanceChanged = System.create({ resources: { changed: [cells] } }, ({ resources }) => { resources[cells][2] = resources[cells][2] + 1; });
 
@@ -61,7 +78,7 @@ const tallyRows = System.create({ kernel: true, components: { with: [cell] } }, 
 const clamp = System.create({ kernel: true, components: { with: [cell, level] } }, (row, { resources }) => { resources[clamped][row[cell]] = row[level]; });
 
 describe("typed array resources", () => {
-    it("start as their length of zeros in each world, and read as a copy outside systems", async () => {
+    it("start as their length of zeros in each world", async () => {
         const first = withCommands();
         const second = withCommands();
         await first.run(commands => { for (let i = 0; i < 4; i++) commands.spawn([cell])({ [cell]: i }); });
@@ -71,10 +88,74 @@ describe("typed array resources", () => {
         expect([...firstCells]).toEqual([100, 101, 102, 103, ...new Array<number>(12).fill(0)]);
         expect([...await readResource(second.world, cells)]).toEqual(new Array<number>(16).fill(0));
         expect(firstCells).toBeInstanceOf(Uint8Array);
-        await first.world.run(mark);
-        expect(firstCells[0]).toBe(100);
         await first.world.dispose();
         await second.world.dispose();
+    });
+
+    it("are observed as the world's view in place, which reads later writes, held past the world's end", async () => {
+        const { world, run } = withCommands();
+        const seen = await observeCells(world);
+        await run(commands => { for (let i = 0; i < 4; i++) commands.spawn([cell])({ [cell]: i }); });
+        const [first] = seen;
+        await world.run(mark);
+        expect(seen.length).toBe(2);
+        expect([...first].slice(0, 5)).toEqual([100, 101, 102, 103, 0]);
+        // Setting it whole copies into the same elements.
+        await world.run(System.create({}, ({ resources }) => { resources[cells] = new Uint8Array(16).fill(9); }));
+        expect(seen.length).toBe(3);
+        expect(first[15]).toBe(9);
+        await world.run(advance);
+        await world.dispose();
+        expect(first[2]).toBe(10);
+    });
+
+    it("give observers the new view once the resource entity moves, as a resource joins the world", async () => {
+        const { world } = withCommands();
+        const seen = await observeCells(world);
+        await world.run(advance);
+        const held = seen[seen.length - 1];
+        expect(held[2]).toBe(1);
+        const count = seen.length;
+        await world.run(System.create({}, ({ resources }) => { resources[joining] = 1; }));
+        expect(seen.length).toBe(count + 1);
+        const moved = seen[count];
+        expect(moved).not.toBe(held);
+        expect(moved[2]).toBe(1);
+        await world.run(advance);
+        expect(moved[2]).toBe(2);
+        expect(await readResource(world, cells)).toBe(moved);
+        // A later observer is given where it lives now too.
+        await world.run(System.create({ readonly: true }, ({ resources }) => resources[joiningLater][0]));
+        expect(await readResource(world, cells)).toBe(seen[seen.length - 1]);
+        expect(seen.length).toBe(count + 3);
+        await world.dispose();
+    });
+
+    it("stay the world's view as the arena grows", async () => {
+        const { world, run } = withCommands();
+        const seen = await observeCells(world);
+        await world.run(advance);
+        const held = seen[seen.length - 1];
+        const before = (await world.tables()).arena;
+        await run(commands => { for (let i = 0; i < 100000; i++) commands.spawn([cell, level])({ [cell]: i % 16, [level]: i }); });
+        expect((await world.tables()).arena).toBeGreaterThan(before + 1000000);
+        await world.run(advance);
+        expect(held[2]).toBe(2);
+        await world.dispose();
+    });
+
+    it("are copies in snapshots and loaded by copying into the view in place", async () => {
+        const { world, run } = withCommands();
+        const seen = await observeCells(world);
+        await world.run(advance);
+        const held = seen[seen.length - 1];
+        const snapshot = await world.run(System.create({ readonly: true, tables: { components: [], resources: [cells] } }, ({ tables }) => tables.resources[cells]));
+        await world.run(advance);
+        expect(snapshot?.[2]).toBe(1);
+        expect(held[2]).toBe(2);
+        await run(commands => { commands.spawnTables([], { resources: { [cells]: new Uint8Array(16).fill(5) } }); });
+        expect(held[2]).toBe(5);
+        await world.dispose();
     });
 
     it("hold one row of their elements: a world with a 1 MiB one holds under 4 MiB of its arena", async () => {

@@ -18,7 +18,8 @@ do on every thread and on the GPU:
 - An index that isn't one of its elements reads `undefined` and writes nothing, and a store converts as the array does.
 - A run that writes an element counts the array changed. Of two rows writing one element, which writes it last isn't
   specified.
-- Systems read it in place; anything else reading the resource gets a copy.
+- Systems and observers read it in place, readonly systems and observers as a `Resource.ReadonlyTypedArray`, which
+  assigns no element; snapshots and joined threads get a copy.
 
 In the guide, the lens above each system says what it compiles to: JS, WASM and WGSL, or as written. Its Compiled tab
 shows the code.

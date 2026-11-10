@@ -3689,7 +3689,8 @@ export const generateWasmOrReason = (
             return null;
         };
 
-        // Groups: consecutive stores to two or more leaves of one component whose values match lane for lane.
+        // Groups: consecutive stores to two or more leaves of one component whose values match lane for lane, each leaf
+        // once; a store to a leaf stored again starts the next.
         const groups = new Map<number, Group>();
         for (let index = 0; index < body.length;) {
             const statement = body[index];
@@ -3698,10 +3699,12 @@ export const generateWasmOrReason = (
                 continue;
             }
             const component = columns[statement.column].component;
+            const leaves = new Set<number>();
             let end = index;
             while (end < body.length) {
                 const next = body[end];
-                if (next.kind !== "store" || columns[next.column].component !== component) break;
+                if (next.kind !== "store" || columns[next.column].component !== component || leaves.has(columns[next.column].offset)) break;
+                leaves.add(columns[next.column].offset);
                 end++;
             }
             const stores = body.slice(index, end).flatMap(store => store.kind === "store" ? [store] : []);

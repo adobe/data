@@ -191,6 +191,19 @@ describe("generateWasm with SIMD", () => {
         });
     }
 
+    it("runs a component's leaves stored twice in a row as two vectors, the second's values kept", () => {
+        // out = a + b, then out = c + d, leaf by leaf; columns are a, b, c, d and out, four leaves each.
+        const leaf = (component: number, k: number): number => 4 * component + k;
+        const stores = (left: number, right: number) => [0, 1, 2, 3].map(k => ({ kind: "store", column: leaf(4, k), value: add(read(leaf(left, k)), read(leaf(right, k))) }) as const);
+        const columns = [0, 1, 2, 3, 4].flatMap(component => [0, 1, 2, 3].map(k => column(component, 16, 4 * k)));
+        const { kernel, floats } = runVector({ locals: 0, body: [...stores(0, 1), ...stores(2, 3)] }, columns, views => {
+            for (let component = 0; component < 4; component++) views[leaf(component, 0)].set(Array.from({ length: 40 }, (_, i) => (component + 1) * i));
+            views[leaf(4, 0)].fill(-1);
+        }, 10);
+        expect(kernel.vectorized).toBe(true);
+        expect([...floats[leaf(4, 0)].subarray(0, 44)]).toEqual([...Array.from({ length: 40 }, (_, i) => 7 * i), -1, -1, -1, -1]);
+    });
+
     for (const [name, stride] of [["vec2", 8], ["tight vec3", 12]] as const) {
         it(`runs whole ${name} elements four rows at a time from any start, then the tail`, () => {
             const leaves = stride / 4;

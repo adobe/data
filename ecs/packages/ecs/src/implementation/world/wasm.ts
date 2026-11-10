@@ -2938,14 +2938,29 @@ export const generateWasmOrReason = (
         shuffle(joinHigh, halves[1], halves[3], into[3]);
     };
 
-    /** Of two vectors of four 8-byte elements, the byte shuffle gathering word `word` of each into a vector. */
-    const packedLeaf = (word: number): number[] => [0, 8, 16, 24].flatMap(start => [0, 1, 2, 3].map(byte => start + 4 * word + byte));
     /**
-     * Of vector `half` of four 8-byte elements and a leaf's vector, the byte shuffle putting the leaf's lanes for those two
-     * rows in word `word` of each element, the vector's other words kept.
+     * Leaves the vector whose lane `k` is word `sources[k][1]` of the v128 local `sources[k][0]`, of at most three locals:
+     * a shuffle of the first two, and of that and the third. Returns how many shuffles it took.
      */
-    const packedRows = (word: number, half: number): number[] => [0, 1, 2, 3].flatMap(slot => [0, 1, 2, 3].map(byte =>
-        slot % 2 === word ? 16 + 4 * (2 * half + (slot >> 1)) + byte : 4 * slot + byte));
+    const selectWords = (sources: readonly (readonly [number, number])[]): number => {
+        const vectors = [...new Set(sources.map(([vector]) => vector))];
+        const bytes = (word: number, high: boolean): number[] => [0, 1, 2, 3].map(byte => (high ? 16 : 0) + 4 * word + byte);
+        const [first = 0, second = first, third] = vectors;
+        if (vectors.length === 1 && sources.every(([, word], k) => word === k)) {
+            code.push(op.localGet, ...unsigned(first));
+            return 0;
+        }
+        code.push(op.localGet, ...unsigned(first), op.localGet, ...unsigned(second), ...simd(vop.shuffle),
+            ...sources.flatMap(([vector, word]) => vector === third ? bytes(0, false) : bytes(word, vector !== first)));
+        if (third === undefined) return 1;
+        code.push(op.localGet, ...unsigned(third), ...simd(vop.shuffle), ...sources.flatMap(([vector, word], k) => vector === third ? bytes(word, true) : bytes(k, false)));
+        return 2;
+    };
+    /** Of a packed span's vectors, where word `word` of row `row`'s element lies: its vector and lane. */
+    const packedWord = (span: Span, rows: readonly number[], row: number, word: number): readonly [number, number] => {
+        const at = row * (span.stride / 4) + word;
+        return [rows[at >> 2] ?? 0, at & 3];
+    };
 
     /** The program's stores, by column. */
     const storedColumns = (statements: readonly Statement[], stored: Set<number>): Set<number> => {
@@ -2974,7 +2989,9 @@ export const generateWasmOrReason = (
         for (const members of byComponent.values()) {
             members.sort((a, b) => columns[a].offset - columns[b].offset);
             const { component, stride } = columns[members[0]];
-            if (stride === 4 || stride === 8) {
+            // A 12-byte element's words take shuffles engines run as table lookups, so a packed span of them is only a lone
+            // leaf read, which it saves gathering.
+            if (stride === 4 || stride === 8 || (stride === 12 && members.length === 1 && !stored.has(members[0]))) {
                 const overlapping = [...stored].some(column => !members.includes(column) && columns[column].component === component && columns[column].stride === stride);
                 spans.push({ base: 0, stride, owner: members[0], lanes: new Map(members.map(column => [column, columns[column].offset / 4])), whole: !overlapping, packed: true });
                 continue;
@@ -3803,6 +3820,7 @@ export const generateWasmOrReason = (
             addresses.set(column, owner.own);
         }
         const spanVectors = spans.map(() => ({ rows: [0, 1, 2, 3].map(() => scratch(v128Type)), leaves: [0, 1, 2, 3].map(() => scratch(v128Type)) }));
+        let packedShuffles = 0;
         const vectorEnd = scratch(i32Type);
         code.push(op.localGet, 1, op.localGet, 0, op.i32Sub, op.i32Const, ...signed(-4), op.i32And, op.localGet, 0, op.i32Add, op.localSet, ...unsigned(vectorEnd));
         invariants = { at: code.length, code: [], vectors: new Map() };
@@ -3819,8 +3837,7 @@ export const generateWasmOrReason = (
             if (span.packed) {
                 for (let k = 0; k < span.stride / 4; k++) code.push(op.localGet, ...unsigned(own), ...simd(vop.load), 2, ...unsigned(16 * k), op.localSet, ...unsigned(rows[k]));
                 for (const [column, word] of span.lanes) {
-                    if (span.stride === 4) code.push(op.localGet, ...unsigned(rows[0]));
-                    else code.push(op.localGet, ...unsigned(rows[0]), op.localGet, ...unsigned(rows[1]), ...simd(vop.shuffle), ...packedLeaf(word));
+                    packedShuffles += selectWords([0, 1, 2, 3].map(row => packedWord(span, rows, row, word)));
                     code.push(op.localSet, ...unsigned(leaves[word]));
                     vectorRegisters.set(column, leaves[word]);
                     spanned.add(column);
@@ -3836,12 +3853,12 @@ export const generateWasmOrReason = (
         });
         mask = null;
         // Each span's four loads and eight shuffles, and back, or a store a lane for each leaf stored; a packed span's
-        // one or two loads and a shuffle a leaf, and back.
-        work.spent = spans.reduce((total, span) => total + (span.packed ? span.stride / 4 + (span.stride === 8 ? span.lanes.size : 0) : 12), 0);
+        // loads, a vector each, and the shuffles picking its leaves, and back.
+        work.spent = packedShuffles + spans.reduce((total, span) => total + (span.packed ? span.stride / 4 : 12), 0);
         for (const current of program.body) interleavedStatement(current);
         for (const span of spans) {
             const written = [...span.lanes.keys()].filter(column => stored.has(column)).length;
-            if (written > 0) work.spent += !span.whole ? 4 * written : span.packed ? span.stride / 4 + (span.stride === 8 ? 2 * written : 0) : 12;
+            if (written > 0) work.spent += !span.whole ? 4 * written : span.packed ? 3 * (span.stride / 4) : 12;
         }
         // Four rows one at a time, as the scalar loop runs them, must cost clearly more.
         if (work.spent > 0.7 * 4 * statementsSize(program.body)) throw notVectorizable;
@@ -3851,11 +3868,20 @@ export const generateWasmOrReason = (
             const written = [...span.lanes].filter(([column]) => stored.has(column));
             if (written.length === 0) return;
             if (span.packed && span.whole) {
-                for (const [, word] of written) {
-                    if (span.stride === 4) code.push(op.localGet, ...unsigned(leaves[word]), op.localSet, ...unsigned(rows[0]));
-                    else for (let k = 0; k < 2; k++) code.push(op.localGet, ...unsigned(rows[k]), op.localGet, ...unsigned(leaves[word]), ...simd(vop.shuffle), ...packedRows(word, k), op.localSet, ...unsigned(rows[k]));
-                }
-                for (let k = 0; k < span.stride / 4; k++) code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(rows[k]), ...simd(vop.store), 2, ...unsigned(16 * k));
+                // Each vector of the rows' elements, its words of leaves stored from their vectors, the rest as loaded.
+                const words = span.stride / 4;
+                const stores = new Set(written.map(([, word]) => word));
+                const vectors = rows.slice(0, words).map((_, k) => {
+                    const vector = scratch(v128Type);
+                    selectWords([0, 1, 2, 3].map(lane => {
+                        const at = 4 * k + lane;
+                        const word = at % words;
+                        return stores.has(word) ? [leaves[word] ?? 0, Math.floor(at / words)] : [rows[k] ?? 0, lane];
+                    }));
+                    code.push(op.localSet, ...unsigned(vector));
+                    return vector;
+                });
+                vectors.forEach((vector, k) => code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(vector), ...simd(vop.store), 2, ...unsigned(16 * k)));
                 return;
             }
             if (span.whole) {

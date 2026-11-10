@@ -27,6 +27,7 @@ const teaches: { readonly [chapter: number]: readonly string[] } = {
     21: ["thread: \"main\"", "cadence", "always", "commands.add", "is: [stage]", "style.translate", "changed: [position]"],
     22: ["changed: [clock]", "is: [pen]", "key: []", "clearRect(", "arc(", "fill()", "getImageData("],
     23: ["interface PluginConfig", "Plugin<\"surface\">", "systems", "connect", "Plugin.start(", "using"],
+    24: ["kernel: true", "after: [regenerate]", "after: [hurt]", "System.create([regenerate, hurt, show, tally])"],
 };
 
 /**

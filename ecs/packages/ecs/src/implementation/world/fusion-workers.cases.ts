@@ -4,8 +4,11 @@ import type * as Fixture from "./fusion-workers.fixture.js";
 
 /** Kernels a schedule would fuse, with pool workers: the cases, over the fixture built for node or from source. */
 export const fusionWorkersCases = (load: () => Promise<typeof Fixture>) => describe("fusable kernels on workers", () => {
-    it("compute what they compute one after another, each tier's kernels running at once on the pool", async () => {
+    it("run fused on the pool, computing what they compute one after another", async () => {
         const fixture = await load();
-        expect(await fixture.chainOnWorkers(true)).toEqual(await fixture.chainOnWorkers(false));
+        const fused = await fixture.chainOnWorkers(true);
+        const apart = await fixture.chainOnWorkers(false);
+        expect({ hp: fused.hp, shown: fused.shown }).toEqual({ hp: apart.hp, shown: apart.shown });
+        expect(fused.kernels).toEqual(apart.kernels.map(kernels => kernels + 1));
     });
 });

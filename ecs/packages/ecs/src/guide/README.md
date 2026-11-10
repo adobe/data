@@ -44,3 +44,7 @@ and run in the browser.
 ## Applications
 
 23. [Plugins](23-plugins.md)
+
+## Advanced optimizations
+
+24. [Kernel fusing](24-fusing.md)

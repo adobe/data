@@ -37,14 +37,15 @@ const show = System.create({ kernel: true, components: { with: [hp, shown] }, af
 });
 const chain = System.create([regenerate, hurt, show]);
 
-/** Each entity's hp and shown after some frames of the chain, with pool workers and fusing on or off. */
-export const chainOnWorkers = async (fuse: boolean): Promise<{ readonly hp: readonly (number | null)[]; readonly shown: readonly (number | null)[] }> => {
+/** Each entity's hp and shown after some frames of the chain, with pool workers and fusing on or off, and how many kernels each worker holds. */
+export const chainOnWorkers = async (fuse: boolean): Promise<{ readonly hp: readonly (number | null)[]; readonly shown: readonly (number | null)[]; readonly kernels: readonly number[] }> => {
     const world = createWorld({ [workers]: 2 }, { fuse, minimumChunk: 64 });
     try {
         await world.run(seed);
         for (let frame = 0; frame < 6; frame++) await world.run(chain);
         const entities = await select(world, { required: [hp] });
-        return { hp: await readEach(world, entities, hp), shown: await readEach(world, entities, shown) };
+        const { workers: held } = await world.tables();
+        return { hp: await readEach(world, entities, hp), shown: await readEach(world, entities, shown), kernels: held.map(worker => worker.kernels) };
     }
     finally {
         await world.dispose();

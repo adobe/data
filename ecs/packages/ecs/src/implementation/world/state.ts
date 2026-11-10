@@ -1,4 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import type { FusedGroup } from './fusion.js';
 import type { Recording } from './run-changes.js';
 import { createHolds, type Holds } from './stop-lists.js';
 import type { Entity } from '../../interface/entity/entity.js';
@@ -215,6 +216,10 @@ export type State = {
     readonly simd: boolean;
     /** Whether kernels a schedule runs one after another over shared components run fused (`fusion.ts`); tests turn it off to compare. */
     fuse: boolean;
+    /** The fused groups of the schedules runs read, which workers load as they load kernels. */
+    readonly fusedGroups: Set<FusedGroup>;
+    /** Groups, by their members' kernels, whose fused kernel wouldn't outrun them: their members run alone. */
+    readonly refusedFusions: Set<string>;
     /**
      * Rows of an archetype a kernel runs here at which it wants the pool, while none is started: infinite with a pool,
      * or without workers to start. A kernel reaching it sets `poolWanted`, and the next run starts the pool.
@@ -369,6 +374,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         wasm,
         simd,
         fuse: true,
+        fusedGroups: new Set(),
+        refusedFusions: new Set(),
         poolThreshold: Infinity,
         poolWanted: false,
         plan: createPlan(),

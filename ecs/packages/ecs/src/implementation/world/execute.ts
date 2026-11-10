@@ -2,7 +2,7 @@
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Chunk, ChunkResult, Runner, Workers } from './runner.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
-import { fuseSchedule, loadGroup, type FusionRole } from './fusion.js';
+import { fuseSchedule, groupOnWorkers, loadGroup, type FusedGroup, type FusionRole } from './fusion.js';
 import type { Archetype, Storage } from './archetype.js';
 import { countRan, countRanHere, idOf, startRan, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
@@ -178,33 +178,41 @@ const tailingOf = (context: ExecuteContext, schedule: Schedule): Tailing | null 
 type Outcome = { failures: Failure[] | null; skipped: Leaf[] | null };
 
 /** By schedule, its fused schedule (`fusion.ts`) as of the runners version it was read at. */
-const fusedBy = new WeakMap<ExecuteContext, WeakMap<Schedule, { readonly version: number; readonly schedule: Schedule }>>();
+const fusedBy = new WeakMap<ExecuteContext, WeakMap<Schedule, Fusion>>();
+/** A schedule's fusion as of the runners version and the refusals it was read with. */
+type Fusion = { readonly version: number; readonly refused: number; readonly schedule: Schedule; readonly groups: readonly FusedGroup[] };
 /** Each fused schedule's runners' roles. */
 const rolesOf = new WeakMap<Schedule, readonly (readonly (FusionRole | null)[])[]>();
 
 /** Compiles the fused kernels of a schedule's groups, once its kernels are loaded, before the runs that use them. */
 export const prepareFusion = async (context: ExecuteContext, schedule: Schedule): Promise<void> => {
     if (!context.state.fuse) return;
-    const roles = rolesOf.get(fusedFor(context, schedule));
-    if (roles === undefined) return;
-    const groups = new Set(roles.flat().flatMap(role => role === null ? [] : [role.group]));
-    await Promise.all([...groups].map(group => loadGroup(context.state, group)));
+    await Promise.all(fusionOf(context, schedule).groups.map(group => loadGroup(context.state, group)));
 };
 
-/**
- * A schedule's fused schedule while kernels run on this thread: a group's members share its last tier, which pool
- * workers would run at once.
- */
-const fusedFor = (context: ExecuteContext, schedule: Schedule): Schedule => {
-    if (context.workers !== null) return schedule;
+/** A schedule's fusion, read again once runners were replaced or a group refused. */
+const fusionOf = (context: ExecuteContext, schedule: Schedule): Fusion => {
+    const { state } = context;
     let bySchedule = fusedBy.get(context);
     if (bySchedule === undefined) fusedBy.set(context, bySchedule = new WeakMap());
     const found = bySchedule.get(schedule);
-    if (found !== undefined && found.version === context.state.runnersVersion) return found.schedule;
-    const fused = fuseSchedule(context.state, schedule, context.runnerOf);
+    if (found !== undefined && found.version === state.runnersVersion && found.refused === state.refusedFusions.size) return found;
+    for (const group of found?.groups ?? []) state.fusedGroups.delete(group);
+    const fused = fuseSchedule(state, schedule, context.runnerOf);
     if (fused.schedule !== schedule) rolesOf.set(fused.schedule, fused.roles);
-    bySchedule.set(schedule, { version: context.state.runnersVersion, schedule: fused.schedule });
-    return fused.schedule;
+    for (const group of fused.groups) state.fusedGroups.add(group);
+    const fusion = { version: state.runnersVersion, refused: state.refusedFusions.size, schedule: fused.schedule, groups: fused.groups };
+    bySchedule.set(schedule, fusion);
+    return fusion;
+};
+
+/**
+ * A schedule's fused schedule: a group's members share its last tier, which pool workers would run at once, so with
+ * workers only once they have every group's fused kernel.
+ */
+const fusedFor = (context: ExecuteContext, schedule: Schedule): Schedule => {
+    const fusion = fusionOf(context, schedule);
+    return context.workers !== null && !fusion.groups.every(groupOnWorkers) ? schedule : fusion.schedule;
 };
 const preparedBy = new WeakMap<ExecuteContext, WeakMap<Schedule, Prepared>>();
 

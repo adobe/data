@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import { stampChanged, type Archetype } from './archetype.js';
-import { groupCovers, groupReady, runGroup, type FusionRole } from './fusion.js';
+import { groupCovers, groupHeld, groupOnWorkers, groupScalars, joinGroup, runGroup, type FusedGroup, type FusionRole } from './fusion.js';
 import { kernelOf } from './attach-kernel.js';
 import { readCell } from './cells.js';
 import { createCommands } from './commands.js';
@@ -1166,12 +1166,35 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         }
     };
 
+    /** Posts a fused group's pass over an archetype to workers, as claimed pieces of its fused kernel. */
+    const postGroup = (workers: Workers, group: FusedGroup, archetype: Archetype, values: readonly unknown[], tick: number): Promise<TaskResult>[] => {
+        const { count } = archetype;
+        const { pool } = workers;
+        const participants = Math.min(pool.size, Math.ceil(count / minimumFor(workers)));
+        const full = participants === pool.size;
+        const first = full ? 0 : workers.next;
+        if (!full) workers.next = (first + participants) % pool.size;
+        const grain = Math.ceil(Math.ceil(count / (participants * claimsPerWorker)) / chunkAlignment) * chunkAlignment;
+        return pool.claimed(first, participants, { kernel: group.index, archetype: archetype.id, start: 0, end: count, tick, lastRun: -1, scalars: groupScalars(group, values), partials: -1, partialBytes: 0 }, grain);
+    };
+
     const start = (input: unknown, offered: Workers | null, index: number, role: FusionRole | null = null): readonly Chunk[] => {
         const workers = offered;
         ran = false;
         result = undefined;
-        // Removed during the run it's in: its body isn't called again.
-        if (holdings.removed) return noChunks;
+        // A fused group runs while every member lives; its last member runs the archetypes every member matches.
+        const group = role !== null && kernel !== null && joinGroup(state, role, workers !== null) ? role.group : null;
+        const lastMember = group !== null && role !== null && role.member === group.members.length - 1;
+        // Removed during the run it's in: its body isn't called again, and as the group's last member, the members
+        // before it run their own.
+        if (holdings.removed) {
+            if (group !== null && lastMember) {
+                refreshMatches();
+                for (const archetype of matches) if (archetype.count > 0 && groupCovers(group, archetype)) for (const entry of group.held) entry?.runOwn(archetype);
+                group.held.fill(null);
+            }
+            return noChunks;
+        }
         // A system whose conditions don't hold is skipped, successfully, and keeps its `lastRun`.
         if (conditioned && !holds()) return noChunks;
         // With points, an index changed since the oldest archetype's may pass that archetype's rows.
@@ -1256,9 +1279,6 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 runPassing(where, since, values, args, tick, workers, index, chunks);
                 return chunks;
             }
-            // A fused group runs on this thread while every member lives; its last member runs the archetypes every member matches.
-            const group = role !== null && kernel !== null && workers === null && groupReady(state, role.group) && !role.group.members.some(member => member.holdings.removed) ? role.group : null;
-            const lastMember = group !== null && role !== null && role.member === group.members.length - 1;
             if (group !== null && role !== null && !lastMember && kernel !== null) {
                 group.held[role.member] = { values, tick, runOwn: archetype => runKernelLocally(kernel, archetype, -1, values, args, tick) };
             }
@@ -1267,7 +1287,12 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 const from = sinceFor(archetype, since);
                 if (kernel === null) runBody(archetype, from);
                 else if (group !== null && groupCovers(group, archetype)) {
-                    if (lastMember) runGroup(group, archetype, values, tick, covered => runKernelLocally(kernel, covered, -1, values, args, tick));
+                    if (!lastMember) continue;
+                    if (workers !== null && archetype.count >= minimumFor(workers) && groupOnWorkers(group) && groupHeld(group)) {
+                        chunks.push(...postGroup(workers, group, archetype, values, tick));
+                        chunks.push(nextChunk());
+                    }
+                    else runGroup(group, archetype, values, tick, covered => runKernelLocally(kernel, covered, -1, values, args, tick));
                 }
                 else if (workers !== null && archetype.count >= minimumFor(workers)) {
                     chunks.push(...postChunks(workers, index, archetype, from, values, args, tick));

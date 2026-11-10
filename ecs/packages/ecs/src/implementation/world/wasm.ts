@@ -1534,9 +1534,10 @@ export const generateWasmOrReason = (
     };
     /**
      * Into i32 locals: whether an element is one of a typed array resource's indexes, an integer from 0 below its
-     * length, as -0 is 0's; and its index there, 0 where it isn't, so its address is always the array's.
+     * length, as -0 is 0's; and its index there, where it isn't 0 to read, or to write the element past the end, which
+     * no view holds, so its address is always the array's.
      */
-    const elementAt = (resource: number, element: Expression): { readonly position: number; readonly within: number } => {
+    const elementAt = (resource: number, element: Expression, writing = false): { readonly position: number; readonly within: number } => {
         const position = scratch(i32Type);
         const within = scratch(i32Type);
         if (signedInteger(element) || unsignedInteger(element)) {
@@ -1556,7 +1557,10 @@ export const generateWasmOrReason = (
             code.push(op.f64ConvertI32U, op.f64Lt, op.i32And, op.localSet, ...unsigned(within));
             code.push(op.localGet, ...unsigned(value), ...truncations.i32TruncSatF64U, op.localSet, ...unsigned(position));
         }
-        code.push(op.localGet, ...unsigned(position), op.i32Const, 0, op.localGet, ...unsigned(within), op.select, op.localSet, ...unsigned(position));
+        code.push(op.localGet, ...unsigned(position));
+        if (writing) arrayParameter(resource, "length");
+        else code.push(op.i32Const, 0);
+        code.push(op.localGet, ...unsigned(within), op.select, op.localSet, ...unsigned(position));
         return { position, within };
     };
     /** Leaves the address of a typed array resource's element at `position`. */
@@ -1581,18 +1585,17 @@ export const generateWasmOrReason = (
     };
     /**
      * Writes a typed array resource's element where it's one of its indexes, and where `predicate` holds when given,
-     * converted as the typed array converts it, without branching: elsewhere it writes element 0 the value there. A
-     * kernel writing a typed array runs alone, on one thread, so nothing writes element 0 between.
+     * converted as the typed array converts it, without branching: elsewhere it writes the element past the end.
      */
     const storeResourceElement = (resource: number, element: Expression, value: Expression, predicate?: () => void): void => {
         const name = arrayOf(resource);
-        const { load, store: storeOperation, align } = elementAccess[name];
-        const { position, within } = elementAt(resource, element);
+        const { store: storeOperation, align } = elementAccess[name];
+        const { position, within } = elementAt(resource, element, true);
         if (predicate !== undefined) {
-            code.push(op.localGet, ...unsigned(within));
+            code.push(op.localGet, ...unsigned(position));
+            arrayParameter(resource, "length");
             predicate();
-            code.push(op.i32And, op.localSet, ...unsigned(within));
-            code.push(op.localGet, ...unsigned(position), op.i32Const, 0, op.localGet, ...unsigned(within), op.select, op.localSet, ...unsigned(position));
+            code.push(op.select, op.localSet, ...unsigned(position));
         }
         arrayElementAddress(resource, position);
         if (name === "Float32Array") {
@@ -1606,8 +1609,7 @@ export const generateWasmOrReason = (
             code.push(op.f64Nearest, op.f64Const, ...float64(0), op.f64Max, op.f64Const, ...float64(255), op.f64Min, ...truncations.i32TruncSatF64U);
         }
         else emitInteger(value);
-        arrayElementAddress(resource, position);
-        code.push(load, align, 0, op.localGet, ...unsigned(within), op.select, storeOperation, align, 0);
+        code.push(storeOperation, align, 0);
     };
 
     /** Labels from innermost: program blocks and loops count toward IR depths; `if`s and the row block don't. */
@@ -3204,28 +3206,25 @@ export const generateWasmOrReason = (
     const storeElements = (resource: number, element: Expression, value: Expression): void => {
         const name = arrayOf(resource);
         if (!(signedInteger(element) || unsignedInteger(element)) || name === "Uint8ClampedArray" || name === "Float32Array" || name === "Float64Array") throw notVectorizable;
-        const { load, store: storeOperation, align } = elementAccess[name];
+        const { store: storeOperation, align } = elementAccess[name];
         const positions = scratch(v128Type);
-        const within = scratch(v128Type);
+        const lengths = scratch(v128Type);
         const values = scratch(v128Type);
-        integerVector(element);
-        code.push(op.localTee, ...unsigned(positions));
+        // Each lane's index, or where it isn't one, or the mask is clear, the element past the end.
         arrayParameter(resource, "length");
-        code.push(...simd(vop.i32Splat), ...simd(vop.i32LtU));
+        code.push(...simd(vop.i32Splat), op.localSet, ...unsigned(lengths));
+        integerVector(element);
+        code.push(op.localTee, ...unsigned(positions), op.localGet, ...unsigned(lengths), op.localGet, ...unsigned(positions), op.localGet, ...unsigned(lengths), ...simd(vop.i32LtU));
         if (mask !== null) code.push(op.localGet, ...unsigned(mask), ...simd(vop.and));
-        code.push(op.localSet, ...unsigned(within));
+        code.push(...simd(vop.bitselect), op.localSet, ...unsigned(positions));
         integerVector(value);
         code.push(op.localSet, ...unsigned(values));
-        work.spent += 4 * 8;
+        work.spent += 4 * 5;
         const position = scratch(i32Type);
-        const holds = scratch(i32Type);
         for (let k = 0; k < 4; k++) {
-            code.push(op.localGet, ...unsigned(within), ...simd(vop.i32ExtractLane), k, op.localSet, ...unsigned(holds));
-            code.push(op.localGet, ...unsigned(positions), ...simd(vop.i32ExtractLane), k, op.i32Const, 0, op.localGet, ...unsigned(holds), op.select, op.localSet, ...unsigned(position));
+            code.push(op.localGet, ...unsigned(positions), ...simd(vop.i32ExtractLane), k, op.localSet, ...unsigned(position));
             arrayElementAddress(resource, position);
-            code.push(op.localGet, ...unsigned(values), ...simd(vop.i32ExtractLane), k);
-            arrayElementAddress(resource, position);
-            code.push(load, align, 0, op.localGet, ...unsigned(holds), op.select, storeOperation, align, 0);
+            code.push(op.localGet, ...unsigned(values), ...simd(vop.i32ExtractLane), k, storeOperation, align, 0);
         }
     };
 

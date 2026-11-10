@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { Schema } from "../schema/schema.js";
 import { threadOfDeclaration } from "./declarations.js";
-import { layoutOf } from "./layout.js";
+import { layoutOf, viewsOf } from "./layout.js";
 import { allowsNull, conditional, hasBoolean, isStruct } from "./schemas.js";
 
 const f32: Schema = { type: "number", precision: 1 };
@@ -102,5 +102,22 @@ describe("layoutOf", () => {
         expect(Object.getPrototypeOf(read)).toBe(Object.prototype);
         layout.write(views, 1, { flag: false, count: 1, at: [0, 0] });
         expect(layout.read(views, 1)).toEqual(JSON.parse('{ "__proto__": null, "flag": false, "count": 1, "at": [0, 0], "inner": { "x": null, "pairs": [[null, null], [null, null]] } }', (_, leaf: unknown) => leaf === null ? NaN : leaf));
+    });
+});
+
+describe("a typed array's layout", () => {
+    it("holds its elements and one past its end, which its views leave out, rows 8-byte aligned", () => {
+        const layout = layoutOf({ type: "typedArray", array: "Uint8Array", length: 8 });
+        if (layout.kind !== "linear" || layout.array === undefined) throw new Error("expected a typed array's layout");
+        expect(layout.stride).toBe(16);
+        expect(layout.leaves).toEqual([]);
+        const views = viewsOf(new SharedArrayBuffer(64), 0, 64);
+        const live = layout.array.live(views, 1);
+        expect([live.length, live.byteOffset]).toEqual([8, 16]);
+        layout.write(views, 1, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
+        expect([...layout.array.live(views, 1)]).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+        expect(views.u8[16 + 8]).toBe(0);
+        const floats = layoutOf({ type: "typedArray", array: "Float64Array", length: 3 });
+        expect(floats.kind === "linear" ? floats.stride : 0).toBe(32);
     });
 });

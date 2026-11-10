@@ -70,11 +70,14 @@ const elementBytes: { readonly [N in keyof TypedArrays]: number } = {
     Int8Array: 1, Uint8Array: 1, Uint8ClampedArray: 1, Int16Array: 2, Uint16Array: 2, Int32Array: 4, Uint32Array: 4, Float32Array: 4, Float64Array: 8,
 };
 
-/** A typed array of `length` elements: rows 8-byte aligned, so every array's elements are aligned. */
+/**
+ * A typed array of `length` elements, and one past its end that no view holds, where kernels' writes to indexes it
+ * doesn't have land: rows 8-byte aligned, so every array's elements are aligned.
+ */
 const typedArrayLayout = (name: keyof TypedArrays, length: number): Layout => {
     if (!Number.isInteger(length) || length < 0) throw new Error(`A typed array's length is a whole number, not ${length}.`);
     const bytes = elementBytes[name];
-    const stride = Math.max(8, Math.ceil(length * bytes / 8) * 8);
+    const stride = Math.ceil((length + 1) * bytes / 8) * 8;
     const constructor: unknown = Reflect.get(globalThis, name);
     if (typeof constructor !== "function") throw new Error(`${name} isn't a typed array this platform has.`);
     const live = (views: Views, row: number): TypedArrays[keyof TypedArrays] =>

@@ -1696,6 +1696,22 @@ describe("generateWasm remainders by a literal", () => {
         });
     }
 
+    it("computes a u32's remainder a number reads from a multiply, as JS does", () => {
+        const values = [...dividends.u32, ...Array.from({ length: 32 }, (_, k) => Math.imul(k + 1, 2654435761) >>> 0)];
+        const columns: WasmColumn[] = [{ view: "u32", stride: 4, offset: 0, boolean: false, component: 0 }, { view: "f64", stride: 8, offset: 0, boolean: false, component: 1 }];
+        const value: Expression = { kind: "binary", operator: "+", left: remainder(17), right: { kind: "number", value: 0.5 } };
+        const kernel = generateWasm({ locals: 0, body: [{ kind: "store", column: 1, value }] }, columns, () => "number", false);
+        if (kernel === null) throw new Error("expected a kernel");
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        new Uint32Array(memory.buffer, 0, values.length).set(values);
+        const runKernel = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof runKernel !== "function") throw new Error("no run export");
+        runKernel(0, values.length, 0, -1, 0, 4096);
+        const printed = printWat(kernel.bytes);
+        expect("wat" in printed ? printed.wat : printed.failure).not.toContain("rem_u");
+        expect([...new Float64Array(memory.buffer, 4096, values.length)]).toEqual(values.map(value => value % 17 + 0.5));
+    });
+
     it("divides every u32 by the multipliers it finds, and finds none for a divisor no multiplier below 2^32 divides by", () => {
         // 7 and 2^31 - 1 need a 33-bit multiplier.
         expect([unsignedMagic(7), unsignedMagic(2 ** 31 - 1)]).toEqual([null, null]);

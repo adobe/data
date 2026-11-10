@@ -1615,7 +1615,10 @@ export const generateWasmOrReason = (
         // A u32 by a positive literal: never negative, so an unsigned i32 remainder is exact.
         if (operator === "%" && integerKind(left) === "u32" && right.kind === "number" && Number.isInteger(right.value) && right.value > 0 && right.value < 2 ** 31) {
             emitInteger(left);
-            code.push(op.i32Const, ...signed(right.value), op.i32RemU, op.f64ConvertI32U);
+            const remainder = constantRemainder(expression);
+            if (remainder?.unsigned === true) emitRemainder(remainder);
+            else code.push(op.i32Const, ...signed(right.value), op.i32RemU);
+            code.push(op.f64ConvertI32U);
             return;
         }
         // Integers by a nonzero literal: i64 remainder is exact, and copysign gives JS's -0 for a negative dividend.

@@ -981,6 +981,12 @@ export const generateWasmOrReason = (
         code.push(...i64TruncSatF64S);
     };
 
+    /** Whether a bitwise operation leaves its left operand's ToInt32 bits as they are: a shift by 0, an or or xor with 0. */
+    const identityOf = (expression: Extract<Expression, { kind: "binary" }>): boolean => {
+        const { operator, right } = expression;
+        return right.kind === "number" && right.value === 0 && (operator === "<<" || operator === ">>" || operator === ">>>" || operator === "|" || operator === "^");
+    };
+
     /** Converts the f64 on the stack, a value of `kind`, to its i32 bits: exact, since it's an integer of that kind. */
     const emitIntegerOfNumber = (kind: IntegerKind): void => {
         code.push(...(kind === "i32" ? i32TruncSatF64S : truncations.i32TruncSatF64U));
@@ -1046,6 +1052,8 @@ export const generateWasmOrReason = (
                 break;
             case "binary": {
                 const { operator, left, right } = expression;
+                // A shift by 0, or an or or xor with 0, leaves an integer's bits as they are: `>>> 0` and `| 0` only say its kind.
+                if (identityOf(expression)) return emitInteger(left);
                 if (operator in bitwise) {
                     emitInteger(left);
                     emitInteger(right);
@@ -3011,6 +3019,7 @@ export const generateWasmOrReason = (
                 break;
             case "binary": {
                 const { operator, left, right } = expression;
+                if (identityOf(expression)) return integerVector(left);
                 const shift = operator === "<<" || operator === ">>" || operator === ">>>";
                 if (operator in bitwiseVector && (!shift || rowIndependent(right))) {
                     integerVector(left);
@@ -3415,7 +3424,39 @@ export const generateWasmOrReason = (
                 }
             }
         }
-        vectorLocals = Array.from({ length: program.locals }, (_, k) => booleanLocals[k] || floats[k] || (integerLocal(k) !== null && !wideLocals[k]) ? scratch(v128Type) : -1);
+        const eligible = Array.from({ length: program.locals }, (_, k) => booleanLocals[k] || floats[k] || (integerLocal(k) !== null && !wideLocals[k]));
+        // A local is a vector where some use of it is: an operand of an operation with a vector form, in a test, which
+        // masks lanes, or stored from a vector. A local only a lane at a time reads has a local per lane.
+        vectorLocals = eligible.map(vector => vector ? 0 : -1);
+        const usedInVectors = new Array<boolean>(program.locals).fill(false);
+        const uses = (expression: Expression, vectorContext: boolean): void => {
+            const vector = vectorContext && (vectorizes(expression) || floatExact(expression) || typeOf(expression) === "boolean");
+            switch (expression.kind) {
+                case "local": if (vectorContext) usedInVectors[expression.local] = true; return;
+                case "unary": return uses(expression.operand, vector);
+                case "binary": case "logical": uses(expression.left, vector); return uses(expression.right, vector);
+                case "conditional": uses(expression.test, vector); uses(expression.consequent, vector); return uses(expression.alternate, vector);
+                case "math": for (const argument of expression.arguments) uses(argument, vector); return;
+                default: return;
+            }
+        };
+        // An assignment's value is used as its local is, to the fixed point.
+        const visit = (statements: readonly Statement[]): void => {
+            for (const statement of statements) {
+                switch (statement.kind) {
+                    case "set": if (usedInVectors[statement.local] === true) uses(statement.value, true); break;
+                    case "store": uses(statement.value, spans.some(span => span.lanes.has(statement.column)) || (gatherable(statement.column) && vectorizes(statement.value))); break;
+                    case "resourceStore": uses(statement.element, true); uses(statement.value, true); break;
+                    case "if": uses(statement.test, true); visit(statement.consequent); visit(statement.alternate); break;
+                    default: break;
+                }
+            }
+        };
+        for (let before = -1; before !== usedInVectors.filter(Boolean).length;) {
+            before = usedInVectors.filter(Boolean).length;
+            visit(program.body);
+        }
+        vectorLocals = eligible.map((vector, k) => vector && usedInVectors[k] ? scratch(v128Type) : -1);
 
         laneLocals = [1, 2, 3].map(() => Array.from({ length: program.locals }, (_, k) =>
             vectorLocals[k] >= 0 ? -1 : scratch(wideLocals[k] ? i64Type : integerLocal(k) === null && !booleanLocals[k] ? f64Type : i32Type)));

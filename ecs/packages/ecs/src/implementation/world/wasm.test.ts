@@ -1188,7 +1188,8 @@ describe("generateWasm interleaved rows", () => {
     });
 
     it("runs a chain of tests as masks, stamping only the rows whose arm stores, as row by row does", () => {
-        // hp, maxhp and status in 12-byte elements, so a span's 16 bytes reach the next row's and store lane by lane.
+        // hp, maxhp and status in 12-byte elements, so a span's 16 bytes reach the next row's, which stores after: the
+        // group's rows store whole but the last, which stores its 12 bytes alone.
         const columns = [leaf("i32", 0, 12, 0), leaf("i32", 0, 12, 4), leaf("u32", 0, 12, 8), ticks(-1), ticks(-1), ticks(-1)];
         const stamp: Program.Statement = { kind: "stamp", column: 3, chunks: 4, blocks: 5 };
         const hp = column(0), maxhp = column(1), status = column(2);
@@ -1212,7 +1213,7 @@ describe("generateWasm interleaved rows", () => {
         const { vector, scalar, wat } = bothWays(program, columns, 3, 4 * 300 + 2);
         expect(wat).toContain("v128.bitselect");
         expect(wat).not.toContain("v128.any_true");
-        expect(wat).toContain("v128.store32_lane");
+        expect([wat.split("v128.store64_lane").length - 1, wat.split("v128.store32_lane").length - 1]).toEqual([1, 1]);
         expect(vector).toEqual(scalar);
     });
 

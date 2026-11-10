@@ -3006,7 +3006,11 @@ export const generateWasmOrReason = (
                 const { component, stride } = columns[inside[0]];
                 const overlapping = [...stored].some(column => !inside.includes(column) && columns[column].component === component
                     && columns[column].offset < base + 16 && columns[column].offset + bytesOf(columns[column].view) > base);
-                spans.push({ base, stride, owner: inside[0], lanes: new Map(inside.map(column => [column, (columns[column].offset - base) / 4])), whole: base + 16 <= stride && !overlapping, packed: false });
+                // Past the element, a row's 16 bytes are the next row's, which it stores after, in order, so they may be
+                // stored as loaded where nothing else stores into the component; the last row stores its own alone.
+                const alone = ![...stored].some(column => !inside.includes(column) && columns[column].component === component);
+                const whole = base + 16 <= stride ? !overlapping : alone && (stride - base) % 4 === 0;
+                spans.push({ base, stride, owner: inside[0], lanes: new Map(inside.map(column => [column, (columns[column].offset - base) / 4])), whole, packed: false });
             }
         }
         return spans;
@@ -3886,7 +3890,14 @@ export const generateWasmOrReason = (
             }
             if (span.whole) {
                 transpose(leaves, rows);
-                rows.forEach((row, k) => code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(row), ...simd(vop.store), 2, ...unsigned(span.base + k * span.stride)));
+                // A row reaching past its element stores whole but the last, which stores its element's bytes alone.
+                const last = span.base + 16 > span.stride ? span.stride - span.base : 16;
+                rows.forEach((row, k) => {
+                    const at = span.base + k * span.stride;
+                    if (k < 3 || last === 16) return void code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(row), ...simd(vop.store), 2, ...unsigned(at));
+                    if (last >= 8) code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(row), ...simd(vop.store64Lane), 2, ...unsigned(at), 0);
+                    if (last % 8 === 4) code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(row), ...simd(vop.store32Lane), 2, ...unsigned(at + last - 4), (last - 4) / 4);
+                });
                 return;
             }
             for (const [column, leaf] of written) {

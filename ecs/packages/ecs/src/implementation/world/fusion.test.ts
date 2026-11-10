@@ -17,6 +17,9 @@ const score = Symbol("fusionTest/score");
 const bonus = Symbol("fusionTest/bonus");
 const level = Symbol("fusionTest/level");
 const glow = Symbol("fusionTest/glow");
+const counter = Symbol("fusionTest/counter");
+const next = Symbol("fusionTest/next");
+const copied = Symbol("fusionTest/copied");
 
 declare module "@adobe/ecs" {
     export interface Components {
@@ -26,6 +29,9 @@ declare module "@adobe/ecs" {
         [score]: { type: number };
         [level]: { type: F32 };
         [glow]: { type: F32 };
+        [counter]: { type: I32 };
+        [next]: { type: number };
+        [copied]: { type: number };
     }
     export interface Resources {
         [bonus]: { type: number; default: 3 };
@@ -52,6 +58,15 @@ const raise = System.create({ kernel: true, components: { with: [level, glow] } 
 /** Writes what the kernel before it writes, reading nothing. */
 const mark = System.create({ kernel: true, components: { with: [level, glow] }, after: [raise] }, row => {
     row[glow] = 1;
+});
+
+/** Wraps at 32 bits, as its kernel's I32 arithmetic does. */
+const advance = System.create({ kernel: true, components: { with: [counter, next] } }, row => {
+    row[next] = row[counter] + 1;
+});
+/** Compiled as written, reading what `advance` writes. */
+const copy = System.create({ components: { with: [next, copied] }, after: [advance] }, row => {
+    row[copied] = row[next];
 });
 
 /** A world without workers, filled with entities of every combination of the components, and a way to run commands. */
@@ -119,6 +134,24 @@ describe("fused kernels", () => {
     const runBesideFresh = async (world: Awaited<ReturnType<typeof filled>>, count: number): Promise<void> => {
         for (let k = 0; k < count; k++) await world.run(System.create([chain, System.create(() => {})]));
     };
+
+    it("keep a kernel's 32-bit arithmetic beside a kernel compiled as written, without SIMD", async () => {
+        const pair = System.create([advance, copy]);
+        const results = await Promise.all([true, false].map(async fuse => {
+            const world = createWorld({ [workers]: 0 }, { fuse, simd: false });
+            const seed = System.create({}, ({ commands }: { readonly commands: Commands }) => {
+                for (let i = 0; i < 64; i++) commands.spawn([counter, next, copied])({ [counter]: 2147483647 - i % 2, [next]: 0, [copied]: 0 });
+            });
+            await runReported(world, seed);
+            for (let frame = 0; frame < 4; frame++) await world.run(pair);
+            const entities = await select(world, { required: [counter] });
+            const values = { next: await readEach(world, entities, next), copied: await readEach(world, entities, copied) };
+            await world.dispose();
+            return values;
+        }));
+        const wrapped = Array.from({ length: 64 }, (_, i) => i % 2 === 0 ? -2147483648 : 2147483647);
+        expect(results).toEqual([{ next: wrapped, copied: wrapped }, { next: wrapped, copied: wrapped }]);
+    });
 
     it("hold the groups of the schedules that live, as systems beside them come and go", async () => {
         const world = await filled(true);

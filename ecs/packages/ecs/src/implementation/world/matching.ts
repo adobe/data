@@ -45,6 +45,10 @@ export const isMatching = (schema: Schema, matching: unknown): boolean => {
     }
 };
 
+/** Whether `matching` is or holds a Set or Map, whose contents a match can't name. */
+export const holdsCollection = (matching: unknown): boolean =>
+    matching instanceof Set || matching instanceof Map || (typeof matching === "object" && matching !== null && !ArrayBuffer.isView(matching) && Object.values(matching).some(holdsCollection));
+
 /** Whether a value matches `matching`, as `isMatching` takes it: a number its bounds, a struct or tuple its members'. */
 export const matchesValue = (value: unknown, matching: unknown): boolean => {
     if (typeof value === "number" && isBounds(matching)) return withinBounds(value, matching);

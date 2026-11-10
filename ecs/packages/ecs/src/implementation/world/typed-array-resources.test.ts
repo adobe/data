@@ -48,6 +48,14 @@ const readChanged = System.create({ resources: { changed: [cells] } }, ({ resour
 const paint = System.create({ kernel: true, components: { with: [cell, level] } }, (row, { resources }) => { resources[levels][row[cell]] = row[level]; });
 /** Copies each cell's level, NaN past the end, into the row. */
 const sample = System.create({ kernel: true, components: { with: [cell, level] } }, (row, { resources }) => { row[level] = resources[levels][row[cell]] + 0.5; });
+/** Numbers each row from the counter at cell 0, which it advances. */
+const count = System.create({ kernel: true, components: { with: [cell, level] } }, (row, { resources }) => {
+    const before = resources[cells][0];
+    resources[cells][0] = before + 1;
+    row[level] = before;
+});
+/** Advances cell 1 once per row, reading it at a literal index. */
+const tallyRows = System.create({ kernel: true, components: { with: [cell] } }, (row, { resources }) => { resources[cells][1] = resources[cells][1] + 1; });
 const clamp = System.create({ kernel: true, components: { with: [cell, level] } }, (row, { resources }) => { resources[clamped][row[cell]] = row[level]; });
 
 describe("typed array resources", () => {
@@ -104,6 +112,20 @@ describe("typed array resources", () => {
             const collect = System.create({ components: { with: [cell, level] } }, row => { levelsRead.push(row[level]); });
             await world.run(collect);
             expect(levelsRead).toEqual([7.5, (written[2] ?? NaN) + 0.5, (written[2] ?? NaN) + 0.5, 12.5, NaN, NaN, NaN]);
+            await world.dispose();
+        });
+    }
+
+    for (const wasm of [true, false]) {
+        it(`are read at a literal index as they are where read, by a const held across a write to them too${wasm ? "" : ", in JS"}`, async () => {
+            const { world, run } = withCommands({ wasm });
+            await run(commands => { for (let i = 0; i < 3; i++) commands.spawn([cell, level])({ [cell]: i, [level]: -1 }); });
+            await world.run(count);
+            await world.run(tallyRows);
+            const levelsRead: number[] = [];
+            await world.run(System.create({ components: { with: [cell, level] } }, row => { levelsRead.push(row[level]); }));
+            expect(levelsRead).toEqual([0, 1, 2]);
+            expect([...await readResource(world, cells)].slice(0, 2)).toEqual([3, 3]);
             await world.dispose();
         });
     }

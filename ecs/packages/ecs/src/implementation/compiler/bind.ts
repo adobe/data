@@ -5,7 +5,7 @@ import { set } from './booleans.js';
 import { componentRead, presence } from './columns.js';
 import { dataValue, mapLeaves, toData } from './data.js';
 import { fail } from './failure.js';
-import { local, type Expression } from './ir.js';
+import { local, number, type Expression } from './ir.js';
 import { propertyKey } from './key.js';
 import type { Out } from './out.js';
 import { requireReadable } from './scalar.js';
@@ -34,9 +34,14 @@ const declared = (node: Identifier, value: Value, binding: Binding, scope: Scope
         case "scalar":
             return { kind: "scalar", expression: copy(value.expression) };
         case "dynamic": {
-            // Resources and args don't change while a kernel runs, so a const can alias them.
-            const constant = value.expression.kind === "resource" || value.expression.kind === "args" || value.expression.kind === "shared";
-            return binding === "const" && constant ? value : { kind: "dynamic", expression: copy(value.expression) };
+            const { expression } = value;
+            const [only] = expression.kind === "resource" ? expression.path : [];
+            if (expression.kind === "resource" && expression.path.length === 1 && typeof only === "number" && unit.readInPlace.has(expression.index)) {
+                return { kind: "dynamic", expression: copy({ kind: "resourceElement", index: expression.index, element: number(only) }) };
+            }
+            // Resources and args don't change while a kernel runs, but for the elements it writes, so a const can alias them.
+            const constant = expression.kind === "resource" || expression.kind === "args" || expression.kind === "shared";
+            return binding === "const" && constant ? value : { kind: "dynamic", expression: copy(expression) };
         }
         case "tuple": case "struct":
             return dataValue(mapLeaves(toData(value, node, scope), copy));

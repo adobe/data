@@ -29,6 +29,8 @@ const chunk = Symbol("despawnWhereTest/chunk");
 const stats = Symbol("despawnWhereTest/stats");
 const pair = Symbol("despawnWhereTest/pair");
 const name = Symbol("despawnWhereTest/name");
+const tags = Symbol("despawnWhereTest/tags");
+const scores = Symbol("despawnWhereTest/scores");
 // Never declared, so never registered.
 const unregistered = Symbol("despawnWhereTest/unregistered");
 
@@ -49,6 +51,8 @@ declare module "@adobe/ecs" {
         [stats]: { type: { readonly hp: number; readonly alive: boolean } };
         [pair]: { type: readonly [number, number] };
         [name]: { type: string };
+        [tags]: { type: ReadonlySet<number> };
+        [scores]: { type: { readonly best: ReadonlyMap<string, number> } };
     }
     export interface Resources {
         [level]: { type: number };
@@ -349,6 +353,16 @@ describe("despawnWhere", () => {
         await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [chunk]: "1" } }))).rejects.toThrow(/which none of its type's values match/);
         // @ts-expect-error bounds only on numbers
         await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [stats]: { alive: { "<": 1 } } } }))).rejects.toThrow(/which none of its type's values match/);
+        expect(await alive(world, entity)).toBe(true);
+        await world.dispose();
+    });
+
+    it("throws for a where giving a Set or Map, whose contents it can't match, queuing nothing", async () => {
+        const { world, run } = withCommands();
+        let entity = Entity.none;
+        await run(commands => { entity = commands.spawn([mark, tags, scores])({ [tags]: new Set([2]), [scores]: { best: new Map([["a", 2]]) } }); });
+        await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [tags]: new Set([1]) } }))).rejects.toThrow(/gives "despawnWhereTest\/tags" a Set or Map/);
+        await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [scores]: { best: new Map([["a", 1]]) } } }))).rejects.toThrow(/gives "despawnWhereTest\/scores" a Set or Map/);
         expect(await alive(world, entity)).toBe(true);
         await world.dispose();
     });

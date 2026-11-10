@@ -6,7 +6,7 @@ import { reserve } from './entities.js';
 import { listShapeOf, presetSpawnerOf, spawnerOf, type ListShape } from './lists.js';
 import { commandIdOf, idOf, queryIdOf, storedShared, type Key, type State } from './state.js';
 import { spawnTables } from './tables.js';
-import { despawnMatchOf, isMatching, type DespawnMatch } from './matching.js';
+import { despawnMatchOf, holdsCollection, isMatching, type DespawnMatch } from './matching.js';
 import { holdsValuesOf } from './where.js';
 import { declarationOf, isWorldWritten, kindOf, labelOf, threadOfDeclaration, whyUnregistered } from '../../interface/registry/index.js';
 import { matchesSchema } from '../../interface/registry/schemas.js';
@@ -110,6 +110,7 @@ const pushDespawnWhere = (state: State, buffer: CommandBuffer, query: Parameters
             if (kindOf(key) !== "component") throw new Error(`commands.despawnWhere: where names "${labelOf(key)}", which isn't a component.`);
             const given: unknown = Reflect.get(where ?? {}, key);
             if (typeof given === "function") throw new Error(`commands.despawnWhere: where gives "${labelOf(key)}" a predicate, and takes only values and bounds.`);
+            if (holdsCollection(given)) throw new Error(`commands.despawnWhere: where gives "${labelOf(key)}" a Set or Map, whose contents it can't match.`);
             const declaration = declarationOf(key);
             if (declaration?.type !== undefined && !isMatching(declaration.type, given)) throw new Error(`commands.despawnWhere: where gives "${labelOf(key)}" ${labelOf(given)}, which none of its type's values match.`);
             const id = queryIdOf(state, key);

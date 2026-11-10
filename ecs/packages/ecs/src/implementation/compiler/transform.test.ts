@@ -808,6 +808,42 @@ describe("program", () => {
     });
 });
 
+describe("elements held across writes", () => {
+    test("a const holds an element read at a literal index of a resource the body writes, in JS and the program", async () => {
+        const kernel = await compile(`const kernel = System.create({ kernel: true, components: { with: [score] } }, (row, { resources }) => {
+            const before = resources[delta][0];
+            resources[delta][0] = before + 1;
+            row[score] = before;
+        });`);
+        const program = kernel.program;
+        if (program === null) throw new Error("no program");
+        expect(JSON.stringify(program)).not.toContain(`"kind":"resource"`);
+        const scoreColumn = kernel.columns.findIndex(column => column.kind === "field");
+        const layout = { strides: kernel.columns.map(() => 1), offsets: kernel.columns.map(() => 0) };
+        const booleans = kernel.columns.map(() => false);
+        const commands = { spawners: [], begin: () => {}, value: () => {}, component: () => {} };
+        /** Runs the rows from a fresh counter, by the JS or the program: the scores and the counter after. */
+        const counted = (interpreted: boolean) => {
+            const columns = kernel.columns.map(column => column.kind === "changed" ? new Uint32Array(3) : new Float64Array(3));
+            const counter = new Float64Array(1);
+            if (interpreted) interpret(program, columns, booleans, layout, 0, 3, [counter], undefined, [], new Float64Array(0));
+            else kernel.create(booleans, layout.strides, layout.offsets)(columns, 0, 3, [counter], [], kernel.keys, undefined, commands, tick, new Float64Array(0), 0);
+            return [[...columns[scoreColumn] ?? []], [...counter]];
+        };
+        expect(counted(false)).toEqual([[0, 1, 2], [3]]);
+        expect(counted(true)).toEqual([[0, 1, 2], [3]]);
+    });
+
+    test("an element read at a literal index of a resource the body only reads is aliased, as before", async () => {
+        const kernel = await compile(`const kernel = System.create({ kernel: true, components: { with: [score] } }, (row, { resources }) => {
+            const first = resources[delta][0];
+            row[score] = first;
+        });`);
+        expect(kernel.create.toString()).not.toMatch(/const first/);
+        expect(JSON.stringify(kernel.program)).toContain(`{"kind":"resource","index":0,"path":[0]}`);
+    });
+});
+
 describe("composites", () => {
     test("one argument to System.create that isn't a body is a composite, never a kernel", async () => {
         const result = await transform(`const a = System.create({}, () => {});

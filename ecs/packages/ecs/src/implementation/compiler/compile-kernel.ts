@@ -82,17 +82,23 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     }
     if (body.async || body.generator) return fail(body, "a kernel body can't be async or a generator");
     if (body.params.length > 3) return fail(body, "a kernel body takes its row, context and input");
-    const lists = createLists(module, link, [declaration, body]);
-    const unit = createUnit(signature(declaration, module.bindings, lists), module, lists, expression, statement, link, target, tried, packages);
-    const scope = rootScope(unit, false);
-    const prelude: Out = [];
-    const rows: Out = [];
-    body.params.forEach((param, index) => bind(param, parameterValues[index] ?? { kind: "row" }, "const", scope, index === 0 ? rows : prelude));
-    if (body.body.type === "BlockStatement") {
-        for (const item of body.body.body) statement(item, scope, rows);
-    } else {
-        statement({ type: "ExpressionStatement", expression: body.body, start: body.body.start, end: body.body.end }, scope, rows);
-    }
+    const compileBody = (readInPlace: ReadonlySet<number>) => {
+        const lists = createLists(module, link, [declaration, body]);
+        const unit = createUnit(signature(declaration, module.bindings, lists), module, lists, expression, statement, link, target, tried, packages, readInPlace);
+        const scope = rootScope(unit, false);
+        const prelude: Out = [];
+        const rows: Out = [];
+        body.params.forEach((param, index) => bind(param, parameterValues[index] ?? { kind: "row" }, "const", scope, index === 0 ? rows : prelude));
+        if (body.body.type === "BlockStatement") {
+            for (const item of body.body.body) statement(item, scope, rows);
+        } else {
+            statement({ type: "ExpressionStatement", expression: body.body, start: body.body.start, end: body.body.end }, scope, rows);
+        }
+        return { unit, prelude, rows };
+    };
+    // Which resources the body writes shows only once it's compiled, so a body that writes any is compiled again.
+    const first = compileBody(new Set());
+    const { unit, prelude, rows } = first.unit.resourceWrites.size === 0 ? first : compileBody(first.unit.resourceWrites);
     const statements = [...resolve(prelude), ...resolve(rows)];
     // A command's value made of literals alone, as `{ x: 0, y: 0 }`, is the same for every row, and values are immutable,
     // so it's made once per call rather than once per row.

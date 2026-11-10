@@ -1223,6 +1223,37 @@ describe("generateWasm interleaved rows", () => {
         expect(vector).toEqual(scalar);
     });
 
+    it("runs an if beside lanes of a row without branching, choosing what its arms store, as row by row does", () => {
+        // p += v over an f32 pair in 8-byte elements, in lanes of a row; then, where an i32 is even, a long mix of it,
+        // past what four rows at a time take, and a choice by comparing p's fields.
+        const columns: WasmColumn[] = [
+            { view: "f32", stride: 8, offset: 0, boolean: false, component: 0 }, { view: "f32", stride: 8, offset: 4, boolean: false, component: 0 },
+            { view: "f32", stride: 8, offset: 0, boolean: false, component: 1 }, { view: "f32", stride: 8, offset: 4, boolean: false, component: 1 },
+            { view: "i32", stride: 4, offset: 0, boolean: false, component: 2 }, { view: "i32", stride: 4, offset: 0, boolean: false, component: 3 },
+        ];
+        const mix = Array.from({ length: 12 }, (_, k) => k).reduce<Expression>((value, k) => binary("^", binary("+", value, number(k + 1)), binary("<<", value, number(k % 5 + 1))), column(4));
+        const program: Program = {
+            locals: 0,
+            body: [
+                { kind: "store", column: 0, value: binary("+", column(0), column(2)) },
+                { kind: "store", column: 1, value: binary("+", column(1), column(3)) },
+                {
+                    kind: "if", test: binary("===", binary("&", column(4), number(1)), number(0)),
+                    consequent: [
+                        { kind: "store", column: 4, value: mix },
+                        { kind: "if", test: binary(">", column(0), column(1)), consequent: [{ kind: "store", column: 5, value: binary("-", column(5), number(3)) }], alternate: [{ kind: "store", column: 5, value: binary("+", column(5), number(7)) }] },
+                    ],
+                    alternate: [],
+                },
+            ],
+        };
+        const { vector, scalar, wat } = bothWays(program, columns, 1, 4 * 40 + 3);
+        expect(wat).toContain("f32x4.add");
+        expect(wat).not.toContain("i32x4");
+        expect(wat).toContain("select");
+        expect(vector).toEqual(scalar);
+    });
+
     it("gathers a component's lone fields into vectors and stores from them, read again after a store, as row by row does", () => {
         // A status among two other fields, a type among four, a character alone, and a u8 level.
         const columns = [leaf("u32", 0, 12, 8), leaf("u32", 1, 20, 16), leaf("u32", 2, 4, 0), { view: "u8", stride: 1, offset: 0, boolean: false, component: 3 } satisfies WasmColumn];

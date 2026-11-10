@@ -4542,7 +4542,7 @@ export const generateWasmOrReason = (
              * of one stride share the local of the first, which owns it.
              */
             const addressLocals: { readonly column: number; readonly own: number; readonly owner: boolean }[] = [];
-            if (scalarRows) {
+            {
                 const byComponent = new Map<number, { readonly column: number; readonly own: number }>();
                 for (const column of columnsUsed(program.body, new Set())) {
                     const { component, stride } = columns[column];
@@ -4585,7 +4585,13 @@ export const generateWasmOrReason = (
             labels.length = 0;
             labels.push("next");
             // f64 lanes fuse only across rows: within a row the rest run as scalars, as the body computes.
-            if (!scalarRows) fused = emitLaneBody();
+            // A row's statements outside the lanes read its elements' addresses too, as branch-free `if`s select into them.
+            if (!scalarRows) {
+                setAddresses();
+                for (const { column, own } of addressLocals) rowAddresses.set(column, own);
+                fused = emitLaneBody();
+                rowAddresses.clear();
+            }
             else {
                 if (mode === "lanes") fused = across;
                 // Each column's element address once a row, rather than at every read and store.

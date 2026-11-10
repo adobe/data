@@ -1,0 +1,35 @@
+{
+  "name": "ecs-benchmark",
+  "version": "0.0.0",
+  "description": "The scenarios of the ecs_benchmark suite on the ECS, against the suite's C++ ECS libraries, on one thread and on many",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc && vite build",
+    "typecheck": "tsc",
+    "test": "vitest --run",
+    "bench": "node scripts/ours.mjs",
+    "bench:full": "node scripts/ours.mjs --full",
+    "bench:record": "node scripts/ours.mjs --record",
+    "bench:cpp": "node scripts/cpp.mjs",
+    "bench:gpu": "node scripts/gpu.mjs",
+    "bench:all": "node scripts/cpp.mjs && node scripts/ours.mjs --full --through && node scripts/compare.mjs",
+    "compare": "node scripts/compare.mjs"
+  },
+  "dependencies": {
+    "@adobe/ecs": "workspace:*"
+  },
+  "devDependencies": {
+    "@adobe/ecs-architecture": "workspace:*",
+    "@types/node": "^25.6.0",
+    "@webgpu/types": "^0.1.61",
+    "playwright": "^1.64.1",
+    "typescript": "^5.8.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  },
+  "ecsArchitecture": {
+    "agents": "../.."
+  }
+}

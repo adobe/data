@@ -184,6 +184,9 @@ export const bump = (archetype: Archetype): void => {
 
 const initialCapacity = 16;
 
+/** The rows an archetype starts with, and keeps once released: the resource entity's archetypes hold its one row. */
+const startingCapacity = (resource: boolean): number => resource ? 1 : initialCapacity;
+
 /** An archetype without shared components holds no values: one empty list for them all. */
 export const noShared: readonly (number | undefined)[] = [];
 const noLayouts: readonly (Layout | undefined)[] = [];
@@ -261,7 +264,8 @@ export const startTicks = (memory: Memory, archetype: Archetype, storage: Storag
  * thread fills, by `remote`, hold their tags.
  */
 export const createArchetype = (memory: Memory, strings: StringStore | null, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, ticked: ReadonlySet<number>, bumped: Archetype[], replaced: { count: number }, remote: readonly (MoveLog | undefined)[], shared: readonly (number | undefined)[] = noShared, sharedLayouts: readonly (Layout | undefined)[] = noLayouts, texts: readonly (string | undefined)[] = noTexts, key = ""): Archetype => {
-    const storages = components.map(component => createStorage(memory, strings, component, sharedLayouts[component] ?? layouts[component], initialCapacity, resource || ticked.has(component)));
+    const capacity = startingCapacity(resource);
+    const storages = components.map(component => createStorage(memory, strings, component, sharedLayouts[component] ?? layouts[component], capacity, resource || ticked.has(component)));
     const storageById: (Storage | undefined)[] = [];
     for (const storage of storages) storageById[storage.component] = storage;
     const archetype: Archetype = {
@@ -282,9 +286,9 @@ export const createArchetype = (memory: Memory, strings: StringStore | null, id:
         adding: [],
         removing: [],
         moves: [],
-        entities: allocateArray(memory, Float64Array, initialCapacity),
+        entities: allocateArray(memory, Float64Array, capacity),
         count: 0,
-        capacity: initialCapacity,
+        capacity,
         resource,
         objects: storages.some(storage => storage.layout.kind === "object" || storage.layout.kind === "string"),
         strings: storages.filter(storage => storage.layout.kind === "string"),
@@ -343,8 +347,8 @@ const grow = (memory: Memory, archetype: Archetype, capacity = archetype.capacit
  * by one of the first capacity, as when it was made. Its storages stay, so the edges that name them do.
  */
 export const release = (memory: Memory, archetype: Archetype): void => {
-    if (archetype.capacity <= initialCapacity) return;
-    const capacity = initialCapacity;
+    const capacity = startingCapacity(archetype.resource);
+    if (archetype.capacity <= capacity) return;
     for (const storage of archetype.storages) {
         const { layout } = storage;
         if (layout.kind === "linear" || layout.kind === "string") {

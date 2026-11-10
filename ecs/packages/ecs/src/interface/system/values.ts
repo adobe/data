@@ -3,11 +3,14 @@ import type { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import type { Index } from '../indexes/index-type.js';
 import type { Resource } from '../resource/resource.js';
+import type { ReadonlyArrays } from '../resource/readonly-typed-array.js';
 import type { Comparison } from '../world/filter.js';
 import type { Listed, Property } from './property.js';
 
 export type ComponentValues = { readonly [K in Component.Key]: Component<K> };
 export type ResourceValues = { readonly [K in Resource.Key]: Resource<K> };
+/** Every resource's value, a typed array read-only. */
+export type ReadonlyResourceValues = { readonly [K in Resource.Key]: ReadonlyArrays<Resource<K>> };
 
 /** `Read` values are read-only, `Write` values writable. */
 export type Values<Read, Write, Keys extends PropertyKey, Types> =

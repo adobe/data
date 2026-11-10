@@ -38,7 +38,7 @@ it("compiles a guide module's kernels, keys and systems, from files in memory", 
     const file = `${root}/src/guide/14-kernels.ts`;
     const result = await compiled(file, files.get(file) ?? "");
     if ("failure" in result) throw new Error(result.failure);
-    expect(result.kernels).toHaveLength(2);
+    expect(result.kernels).toHaveLength(3);
     expect(result.code).toContain(`"@adobe/ecs@0.0.0/src/guide/14-kernels.ts#position"`);
     expect(result.code).toContain(`"@adobe/ecs@0.0.0/src/guide/14-kernels.ts#drift"`);
     expect(result.code).toContain(`from "${root}/dist/implementation/world/attach-kernel.js"`);
@@ -73,7 +73,8 @@ it.runIf(gpu)("describes the systems of the kernel chapters, their WGSL a shader
         expect(move?.wasm).toMatchObject({ kind: "compiled", code: expect.stringContaining("(func $run (type 0) (param $start i32)") });
         for (const system of result.systems ?? []) if ("code" in system.wgsl) shaders.push(system.wgsl.code);
     }
-    expect(shaders).toHaveLength(4);
+    // The kernel chapters' kernels and render systems, a typed array's writes among them.
+    expect(shaders).toHaveLength(5);
     const adapter = await navigator.gpu?.requestAdapter();
     if (adapter === null || adapter === undefined) throw new Error("No WebGPU adapter.");
     const device = await adapter.requestDevice();

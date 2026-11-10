@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from '../schema/schema.js';
-import { isString, numberConstants } from './schemas.js';
+import type { TypedArrays } from '../schema/schema.js';
+import { isString, isTypedArray, numberConstants } from './schemas.js';
 
 /** A path from a value to one scalar leaf: `[]` for a scalar, `[1]` for a tuple element, `["x"]` for a struct field. */
 export type Path = readonly (number | string)[];
@@ -37,6 +38,7 @@ export type Leaf = {
  * - `constant`: a `const` schema; no storage, every value is `value`. A shared component's is one of these per archetype,
  *   `shared`, its value the archetype's, and its component's is its start.
  * - `linear`: interleaved elements of `stride` bytes in one column. `read` copies a value out; `write` replaces it.
+ *   A typed array's has no leaves and its `array`: its elements, from each element's start, which `live` views in place.
  * - `string`: the world's thread's values, as `object`'s, and a 4-byte handle per row, in one column, to each one's
  *   record in shared memory, which other threads read; only the world's thread writes them.
  * - `object`: a JS array of values, on its logical thread only.
@@ -49,9 +51,52 @@ export type Layout =
         readonly stride: number;
         readonly read: (views: Views, row: number) => unknown;
         readonly write: (views: Views, row: number, value: unknown) => void;
+        readonly array?: TypedArrayLayout;
     }
     | { readonly kind: "string"; readonly stride: 4 }
     | { readonly kind: "object" };
+
+/** A typed array's elements in a linear column: of its constructor, `length` of them, `bytes` each. */
+export type TypedArrayLayout = {
+    readonly name: keyof TypedArrays;
+    readonly length: number;
+    readonly bytes: number;
+    /** A view of a row's elements in place, which writes change. */
+    readonly live: (views: Views, row: number) => TypedArrays[keyof TypedArrays];
+};
+
+/** Bytes per element, by typed array. */
+const elementBytes: { readonly [N in keyof TypedArrays]: number } = {
+    Int8Array: 1, Uint8Array: 1, Uint8ClampedArray: 1, Int16Array: 2, Uint16Array: 2, Int32Array: 4, Uint32Array: 4, Float32Array: 4, Float64Array: 8,
+};
+
+/**
+ * A typed array of `length` elements, and one past its end that no view holds, where kernels' writes to indexes it
+ * doesn't have land: rows 8-byte aligned, so every array's elements are aligned.
+ */
+const typedArrayLayout = (name: keyof TypedArrays, length: number): Layout => {
+    if (!Number.isInteger(length) || length < 0) throw new Error(`A typed array's length is a whole number, not ${length}.`);
+    const bytes = elementBytes[name];
+    const stride = Math.ceil((length + 1) * bytes / 8) * 8;
+    const constructor: unknown = Reflect.get(globalThis, name);
+    if (typeof constructor !== "function") throw new Error(`${name} isn't a typed array this platform has.`);
+    const live = (views: Views, row: number): TypedArrays[keyof TypedArrays] =>
+        // The global of the name is that typed array's constructor.
+        Reflect.construct(constructor, [views.u8.buffer, views.u8.byteOffset + row * stride, length]) as TypedArrays[keyof TypedArrays];
+    return {
+        kind: "linear",
+        leaves: [],
+        stride,
+        read: (views, row) => live(views, row).slice(),
+        write: (views, row, value) => {
+            if (typeof value !== "object" || value === null || Reflect.get(value, "length") !== length) throw new Error(`A ${name} resource of ${length} elements is written ${length} elements.`);
+            const target = live(views, row);
+            // A typed array, or an array of numbers, sets every element, converted as the target's type does.
+            target.set(value as ArrayLike<number>);
+        },
+        array: { name, length, bytes, live },
+    };
+};
 
 /** The layout of every string. */
 const stringLayout: Layout = { kind: "string", stride: 4 };
@@ -349,6 +394,10 @@ export const layoutOf = (schema: Schema | undefined): Layout => {
     if (schema === undefined) return objectLayout;
     if ("const" in schema) return { kind: "constant", value: schema.const };
     if (isString(schema)) return stringLayout;
+    if (isTypedArray(schema)) {
+        if (schema.length === undefined) throw new Error("A typed array has a length: declare its `length`.");
+        return typedArrayLayout(schema.array, schema.length);
+    }
     const rules: Rules = gpuLayoutOf(schema) ?? "cpu";
     const shape = shapeOf(schema);
     if (shape === null) {

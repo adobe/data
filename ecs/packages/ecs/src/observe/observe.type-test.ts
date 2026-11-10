@@ -12,6 +12,7 @@ const point = Symbol("observeTypeTest/point");
 const persistent = Symbol("observeTypeTest/persistent");
 const shared = Symbol("observeTypeTest/shared");
 const time = Symbol("observeTypeTest/time");
+const pixels = Symbol("observeTypeTest/pixels");
 declare module '@adobe/ecs' {
     export interface Components {
         [point]: { type: { readonly x: number } };
@@ -20,6 +21,7 @@ declare module '@adobe/ecs' {
     }
     export interface Resources {
         [time]: { type: number };
+        [pixels]: { type: Uint8Array; length: 16 };
     }
 }
 
@@ -32,6 +34,28 @@ const observedTime: Observe<number> = Observe.resource(world, time);
 Observe.resource(world, time)((value: string) => { void value; });
 // @ts-expect-error only resources are observed by key
 Observe.resource(world, point);
+
+// A typed array resource's value is the world's view of it, whose elements observers read but don't assign.
+const observedPixels: Observe<Resource.ReadonlyTypedArray<Uint8Array>> = Observe.resource(world, pixels);
+Observe.resource(world, pixels)(view => {
+    const read: number = view[0] + view.length + view.indexOf(3);
+    const copy: Uint8Array = view.slice();
+    copy[0] = read;
+    for (const element of view.subarray(2, 4)) void element;
+    // @ts-expect-error an observer assigns no element
+    view[0] = 1;
+    // @ts-expect-error nor sets them
+    view.set([1, 2]);
+    // @ts-expect-error nor fills them
+    view.fill(0);
+    // @ts-expect-error nor sorts them
+    view.sort();
+    // @ts-expect-error nor writes through a subarray
+    view.subarray(1).fill(0);
+    // @ts-expect-error an observed view isn't a writable typed array
+    const writable: Uint8Array = view;
+    void writable;
+});
 
 // An entity's listed components, required present and optional possibly, or null.
 const observedBoth: Observe<({ readonly [point]: { readonly x: number } } & { readonly [shared]?: true }) | null> = Observe.entity(world, entity, { required: [point], optional: [shared] });
@@ -82,4 +106,4 @@ Observe.select(world, { required: [time] });
 // The first value of any observer.
 const first: Promise<number> = Observe.toPromise(Observe.count(world, {}));
 
-void [observedTime, observedBoth, selected, selectedAll, counted, paged, first];
+void [observedTime, observedPixels, observedBoth, selected, selectedAll, counted, paged, first];

@@ -2,8 +2,8 @@
 import type { Schema } from "@adobe/ecs";
 
 // Values of components stored as values, strings and other data that isn't a fixed layout, as JSON their schema reads
-// back: a map as its entries, a set as its items, numbers JSON lacks as text, and a union's value as its member's
-// index and its JSON.
+// back: a map as its entries, a set as its items, a typed array as its elements, numbers JSON lacks as text, and a
+// union's value as its member's index and its JSON.
 
 /** A number JSON can't hold, as text: `NaN`, `Infinity`, `-Infinity` or `-0`. */
 const numberToJson = (value: number): number | string =>
@@ -34,10 +34,15 @@ const fits = (schema: Schema, value: unknown): boolean => {
         case "array": return Array.isArray(value);
         case "set": return value instanceof Set;
         case "map": return value instanceof Map;
-        case "object": return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Set) && !(value instanceof Map);
+        case "typedArray": return isNumbers(value) && value instanceof Reflect.get(globalThis, schema.array) && (schema.length === undefined || value.length === schema.length);
+        case "object": return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Set) && !(value instanceof Map) && !ArrayBuffer.isView(value);
         default: return true;
     }
 };
+
+/** Whether a value is a typed array of numbers. */
+const isNumbers = (value: unknown): value is ArrayLike<number> =>
+    ArrayBuffer.isView(value) && !(value instanceof DataView) && !(value instanceof BigInt64Array) && !(value instanceof BigUint64Array);
 
 /** A value of `schema` as JSON. */
 export const toJson = (schema: Schema, value: unknown): unknown => {
@@ -52,6 +57,7 @@ export const toJson = (schema: Schema, value: unknown): unknown => {
         case "array": return Array.isArray(value) ? value.map(item => toJson(schema.items, item)) : value;
         case "set": return value instanceof Set ? Array.from(value, item => toJson(schema.items, item)) : value;
         case "map": return value instanceof Map ? Array.from(value, ([key, item]) => [toJson(schema.keys, key), toJson(schema.values, item)]) : value;
+        case "typedArray": return isNumbers(value) ? Array.from(value, numberToJson) : value;
         case "object": {
             if (typeof value !== "object" || value === null) return value;
             const json: { [name: string]: unknown } = {};
@@ -82,6 +88,10 @@ export const fromJson = (schema: Schema, json: unknown): unknown => {
         case "map": return Array.isArray(json)
             ? new Map(json.map(entry => Array.isArray(entry) ? [fromJson(schema.keys, entry[0]), fromJson(schema.values, entry[1])] : [entry, undefined]))
             : json;
+        case "typedArray": {
+            const constructor: unknown = Reflect.get(globalThis, schema.array);
+            return Array.isArray(json) && typeof constructor === "function" ? Reflect.construct(constructor, [json.map(numberFromJson)]) : json;
+        }
         case "object": {
             if (typeof json !== "object" || json === null || Array.isArray(json)) return json;
             const value: { [name: string]: unknown } = {};

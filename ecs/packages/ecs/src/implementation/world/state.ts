@@ -1,4 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import type { FusedGroup } from './fusion.js';
 import type { Recording } from './run-changes.js';
 import { createHolds, type Holds } from './stop-lists.js';
 import type { Entity } from '../../interface/entity/entity.js';
@@ -20,7 +21,7 @@ import type { FinalizerRunner, Thrown } from './finalizers.js';
 import { createPlan, type Plan } from './plan.js';
 import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
 import { layoutOf, objectLayout, type Layout } from '../../interface/registry/layout.js';
-import { numberConstants } from '../../interface/registry/schemas.js';
+import { isTypedArray, numberConstants } from '../../interface/registry/schemas.js';
 import { createMemory, type Memory } from './memory.js';
 import { createStrings, type StringStore } from './strings.js';
 import { createLayoutDirectory, type LayoutDirectory } from './layout-directory.js';
@@ -213,6 +214,12 @@ export type State = {
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
     readonly wasm: boolean;
     readonly simd: boolean;
+    /** Whether kernels a schedule runs one after another over shared components run fused (`fusion.ts`); tests turn it off to compare. */
+    fuse: boolean;
+    /** The fused groups of the schedules runs read, held as long as their schedules, which workers load as they load kernels. */
+    readonly fusedGroups: Set<WeakRef<FusedGroup>>;
+    /** Groups, by their members' kernels, whose fused kernel wouldn't outrun them: their members run alone. */
+    readonly refusedFusions: Set<string>;
     /**
      * Rows of an archetype a kernel runs here at which it wants the pool, while none is started: infinite with a pool,
      * or without workers to start. A kernel reaching it sets `poolWanted`, and the next run starts the pool.
@@ -366,6 +373,9 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         rows: new Map(),
         wasm,
         simd,
+        fuse: true,
+        fusedGroups: new Set(),
+        refusedFusions: new Set(),
         poolThreshold: Infinity,
         poolWanted: false,
         plan: createPlan(),
@@ -491,8 +501,9 @@ export const idOf = (state: State, key: Key): number => {
 };
 
 /**
- * What a resource or derived component starts at: a new empty `Map` or `Set` when it starts fresh, so each world has
- * its own; its declaration's default, which the build gives; or `null` when its type allows leaving it out.
+ * What a resource or derived component starts at: a new empty `Map` or `Set` when it starts fresh, and a typed
+ * array's length of zeros, so each world has its own; its declaration's default, which the build gives; or `null`
+ * when its type allows leaving it out.
  */
 export const defaultOf = (key: Key): unknown => {
     const declaration = declarationOf(key);
@@ -502,6 +513,10 @@ export const defaultOf = (key: Key): unknown => {
     if ("default" in declaration) return declaration.default;
     const { type } = declaration;
     if (type === undefined) return null;
+    if (isTypedArray(type)) {
+        const constructor: unknown = Reflect.get(globalThis, type.array);
+        return typeof constructor === "function" ? Reflect.construct(constructor, [type.length ?? 0]) : null;
+    }
     // A union of number constants starts at its first, so its value is always one of them.
     return numberConstants(type)?.[0] ?? null;
 };

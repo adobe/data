@@ -3,13 +3,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
-import { readEach, select } from "./reads.test-helper.js";
+import { readEach, readResource, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const parent = Symbol("upBrowserTest/parent");
 const offset = Symbol("upBrowserTest/offset");
 const placed = Symbol("upBrowserTest/placed");
 const marked = Symbol("upBrowserTest/marked");
+const unplaced = Symbol("upBrowserTest/unplaced");
+const depths = Symbol("upBrowserTest/depths");
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -17,6 +19,10 @@ declare module "@adobe/ecs" {
         [offset]: { type: F32 };
         [placed]: { type: F32 };
         [marked]: { type: true };
+        [unplaced]: { type: F32 };
+    }
+    interface Resources {
+        [depths]: { type: Uint8Array; length: 12 };
     }
 }
 
@@ -31,6 +37,26 @@ const place = System.create({
     up: { through: parent },
 }, (row, { up }) => {
     row[placed] = up === null ? row[offset] : up[placed] + row[offset];
+});
+/** Marks each depth that has a row, at its offset, which is its depth for the rows `plant` leaves unmarked. */
+const markDepths = System.create({
+    kernel: "gpu",
+    components: { with: [offset, placed], not: [marked] },
+    up: { through: parent },
+}, (row, { up, resources }) => {
+    resources[depths][row[offset] % 12] = up === null ? 1 : 2;
+});
+/** Writes the depths from rows no entity has. */
+const markNone = System.create({
+    kernel: "gpu",
+    components: { with: [offset, unplaced] },
+    up: { through: parent },
+}, (row, { up, resources }) => {
+    resources[depths][0] = up === null ? row[unplaced] : 3;
+});
+/** Writes the first depth on the CPU. */
+const markFirst = System.create({}, ({ resources }) => {
+    resources[depths][0] = 9;
 });
 /** Trees whose children are in two archetypes, so a depth's rows have parents in several. */
 const plant = System.create({}, ({ commands }) => {
@@ -71,5 +97,27 @@ describe("up on the GPU", () => {
     it.runIf(gpu)("runs depth by depth, a dispatch per group, as on the CPU", async () => {
         const cpu = await placements(null);
         expect(await placements(await device())).toEqual(cpu);
+    });
+    it.runIf(gpu)("reads back the typed array resources it writes", async () => {
+        const marks = async (gpu: GPUDevice | null) => {
+            const ecs = createWorld({ [workers]: 0, [gpuDevice]: gpu });
+            disposals.push(ecs);
+            await ecs.run(plant);
+            await ecs.run(markDepths);
+            return [...await readResource(ecs, depths)];
+        };
+        const cpu = await marks(null);
+        expect(cpu.some(value => value === 2)).toBe(true);
+        expect(await marks(await device())).toEqual(cpu);
+    });
+    it.runIf(gpu)("keeps what the CPU wrote to a typed array resource when it runs over no rows", async () => {
+        const ecs = createWorld({ [workers]: 0, [gpuDevice]: await device() });
+        disposals.push(ecs);
+        await ecs.run(plant);
+        await ecs.run(markDepths);
+        await readResource(ecs, depths);
+        await ecs.run(markFirst);
+        await ecs.run(markNone);
+        expect((await readResource(ecs, depths))[0]).toBe(9);
     });
 });

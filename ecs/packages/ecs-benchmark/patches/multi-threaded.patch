@@ -1,0 +1,213 @@
+diff --git a/src/flecs/flecs/FlecsApplication.h b/src/flecs/flecs/FlecsApplication.h
+index b1bb225..7bad62f 100644
+--- a/src/flecs/flecs/FlecsApplication.h
++++ b/src/flecs/flecs/FlecsApplication.h
+@@ -37,26 +37,38 @@ public:
+   [[nodiscard]] inline const EntityManager& getEntities() const { return m_world; }
+ 
+   void init() {
++#ifdef ECS_BENCHMARK_THREADS
++    constexpr bool multi_threaded = true;
++    m_world.set_threads(ECS_BENCHMARK_THREADS);
++#else
++    constexpr bool multi_threaded = false;
++#endif
+     m_world
+         .system<ecs::benchmarks::base::components::PositionComponent,
+                 const ecs::benchmarks::base::components::VelocityComponent>()
++        .multi_threaded(multi_threaded)
+         .run(systems::MovementSystem::update);
+-    m_world.system<ecs::benchmarks::base::components::DataComponent>().run(systems::DataSystem::update);
++    m_world.system<ecs::benchmarks::base::components::DataComponent>().multi_threaded(multi_threaded).run(
++        systems::DataSystem::update);
+     if (m_addMoreComplexSystem == base::add_more_complex_system_t::UseMoreComplexSystems) {
+       m_world
+           .system<const ecs::benchmarks::base::components::PositionComponent,
+                   ecs::benchmarks::base::components::VelocityComponent,
+                   ecs::benchmarks::base::components::DataComponent>()
++          .multi_threaded(multi_threaded)
+           .each(systems::MoreComplexSystem::update);
+-      m_world.system<ecs::benchmarks::base::components::HealthComponent>().each(systems::HealthSystem::update);
++      m_world.system<ecs::benchmarks::base::components::HealthComponent>().multi_threaded(multi_threaded).each(
++          systems::HealthSystem::update);
+       m_world
+           .system<ecs::benchmarks::base::components::HealthComponent,
+                   const ecs::benchmarks::base::components::DamageComponent>()
++          .multi_threaded(multi_threaded)
+           .each(systems::DamageSystem::update);
+       m_world
+           .system<ecs::benchmarks::base::components::SpriteComponent,
+                   const ecs::benchmarks::base::components::PlayerComponent,
+                   const ecs::benchmarks::base::components::HealthComponent>()
++          .multi_threaded(multi_threaded)
+           .each(systems::SpriteSystem::update);
+       m_world
+           .system<const ecs::benchmarks::base::components::PositionComponent,
+diff --git a/src/mustache/mustache/systems/DamageSystem.cpp b/src/mustache/mustache/systems/DamageSystem.cpp
+index 19aaad0..b3bd276 100644
+--- a/src/mustache/mustache/systems/DamageSystem.cpp
++++ b/src/mustache/mustache/systems/DamageSystem.cpp
+@@ -4,7 +4,11 @@
+ namespace ecs::benchmarks::mustache::systems {
+ 
+ void DamageSystem::update(::mustache::World& world, TimeDelta /*dt*/) {
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [&](Entity /*entity*/, ecs::benchmarks::base::components::HealthComponent& health,
+           const ecs::benchmarks::base::components::DamageComponent& damage) {
+@@ -14,7 +18,11 @@ void DamageSystem::update(::mustache::World& world, TimeDelta /*dt*/) {
+ }
+ void DamageSystem::onUpdate(::mustache::World& world) {
+   // constexpr TimeDelta dt = 1.0F / 60.0F;
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [&](Entity /*entity*/, ecs::benchmarks::base::components::HealthComponent& health,
+           const ecs::benchmarks::base::components::DamageComponent& damage) {
+diff --git a/src/mustache/mustache/systems/DataSystem.cpp b/src/mustache/mustache/systems/DataSystem.cpp
+index 306a20e..f3dcb26 100644
+--- a/src/mustache/mustache/systems/DataSystem.cpp
++++ b/src/mustache/mustache/systems/DataSystem.cpp
+@@ -4,7 +4,11 @@
+ namespace ecs::benchmarks::mustache::systems {
+ 
+ void DataSystem::update(::mustache::World& world, TimeDelta dt) {
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [dt](Entity /*entity*/, ecs::benchmarks::base::components::DataComponent& data) {
+         updateData(data, dt);
+@@ -14,7 +18,11 @@ void DataSystem::update(::mustache::World& world, TimeDelta dt) {
+ 
+ void DataSystem::onUpdate(::mustache::World& world) {
+   constexpr float dt = 1.0F / 60.0F;
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [](Entity /*entity*/, ecs::benchmarks::base::components::DataComponent& data) {
+         updateData(data, dt);
+diff --git a/src/mustache/mustache/systems/HealthSystem.cpp b/src/mustache/mustache/systems/HealthSystem.cpp
+index ac33881..2e10c75 100644
+--- a/src/mustache/mustache/systems/HealthSystem.cpp
++++ b/src/mustache/mustache/systems/HealthSystem.cpp
+@@ -4,7 +4,11 @@
+ namespace ecs::benchmarks::mustache::systems {
+ 
+ void HealthSystem::update(::mustache::World& world, TimeDelta /*dt*/) {
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [&](Entity /*entity*/, ecs::benchmarks::base::components::HealthComponent& health) {
+         updateHealth(health);
+@@ -13,7 +17,11 @@ void HealthSystem::update(::mustache::World& world, TimeDelta /*dt*/) {
+ }
+ void HealthSystem::onUpdate(::mustache::World& world) {
+   // constexpr float dt = 1.0F / 60.0F;
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [&](Entity /*entity*/, ecs::benchmarks::base::components::HealthComponent& health) {
+         updateHealth(health);
+diff --git a/src/mustache/mustache/systems/MoreComplexSystem.cpp b/src/mustache/mustache/systems/MoreComplexSystem.cpp
+index 1ac34f9..9665f80 100644
+--- a/src/mustache/mustache/systems/MoreComplexSystem.cpp
++++ b/src/mustache/mustache/systems/MoreComplexSystem.cpp
+@@ -6,7 +6,11 @@
+ namespace ecs::benchmarks::mustache::systems {
+ 
+ void MoreComplexSystem::update(::mustache::World& world, TimeDelta /*dt*/) {
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [&](Entity /*entity*/, ecs::benchmarks::base::components::PositionComponent& position,
+           ecs::benchmarks::base::components::VelocityComponent& direction,
+@@ -17,7 +21,11 @@ void MoreComplexSystem::update(::mustache::World& world, TimeDelta /*dt*/) {
+ }
+ void MoreComplexSystem::onUpdate(::mustache::World& world) {
+   // constexpr auto dt = 1.0F / 60.0F;
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [&](Entity /*entity*/, ecs::benchmarks::base::components::PositionComponent& position,
+           ecs::benchmarks::base::components::VelocityComponent& direction,
+diff --git a/src/mustache/mustache/systems/MovementSystem.cpp b/src/mustache/mustache/systems/MovementSystem.cpp
+index a2b9af0..0ce98eb 100644
+--- a/src/mustache/mustache/systems/MovementSystem.cpp
++++ b/src/mustache/mustache/systems/MovementSystem.cpp
+@@ -5,7 +5,11 @@
+ namespace ecs::benchmarks::mustache::systems {
+ 
+ void MovementSystem::update(::mustache::World& world, TimeDelta dt) {
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [&](Entity /*entity*/, ecs::benchmarks::base::components::PositionComponent& position,
+           const ecs::benchmarks::base::components::VelocityComponent& direction) {
+@@ -15,7 +19,11 @@ void MovementSystem::update(::mustache::World& world, TimeDelta dt) {
+ }
+ 
+ void MovementSystem::onUpdate(::mustache::World& world) {
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [&](Entity /*entity*/, ecs::benchmarks::base::components::PositionComponent& position,
+           const ecs::benchmarks::base::components::VelocityComponent& direction) {
+diff --git a/src/mustache/mustache/systems/SpriteSystem.cpp b/src/mustache/mustache/systems/SpriteSystem.cpp
+index da4aa1e..1ebd426 100644
+--- a/src/mustache/mustache/systems/SpriteSystem.cpp
++++ b/src/mustache/mustache/systems/SpriteSystem.cpp
+@@ -6,7 +6,11 @@
+ namespace ecs::benchmarks::mustache::systems {
+ 
+ void SpriteSystem::update(::mustache::World& world, TimeDelta /*dt*/) {
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [&](Entity /*entity*/, ecs::benchmarks::base::components::SpriteComponent& spr,
+           const ecs::benchmarks::base::components::PlayerComponent& player,
+@@ -18,7 +22,11 @@ void SpriteSystem::update(::mustache::World& world, TimeDelta /*dt*/) {
+ 
+ void SpriteSystem::onUpdate(::mustache::World& world) {
+   // constexpr float dt = 1.0F / 60.0F;
++#ifdef ECS_BENCHMARK_THREADS
++  constexpr auto run_mode = ::mustache::JobRunMode::kParallel;
++#else
+   constexpr auto run_mode = ::mustache::JobRunMode::kCurrentThread;
++#endif
+   world.entities().forEach(
+       [&](Entity /*entity*/, ecs::benchmarks::base::components::SpriteComponent& spr,
+           const ecs::benchmarks::base::components::PlayerComponent& player,

@@ -11,7 +11,7 @@ import type { Declaration } from './declaration.js';
 import type { Listed, Property } from './property.js';
 import type { RenderContext } from './render.js';
 import type { Tables } from './tables.js';
-import type { ComponentValues, LookupFunction, ResourceValues, Values } from './values.js';
+import type { ComponentValues, LookupFunction, ReadonlyResourceValues, ResourceValues, Values } from './values.js';
 
 /** The components every entity a declaration matches has: those in `with`, `added` and `changed`. */
 export type Members<D> =
@@ -39,8 +39,8 @@ export type Row<D extends Declaration> =
 /** Resources systems write: every one but those reduced, which only their contributors' fold sets, and those only the world writes. */
 type Writes = Exclude<Resource.Key, Reduced | WorldWritten>;
 
-/** Every resource, read-only. */
-export type ReadResources = Values<Resource.Key, never, Resource.Key, ResourceValues>;
+/** Every resource, read-only, a typed array's elements too. */
+export type ReadResources = Values<Resource.Key, never, Resource.Key, ReadonlyResourceValues>;
 
 /** Every resource, writable as `Writes` says. */
 export type WriteResources = Values<Resource.Key, Writes, Resource.Key, ResourceValues>;

@@ -17,7 +17,7 @@ const teaches: { readonly [chapter: number]: readonly string[] } = {
     11: ["reference: \"owner\"", "reference: \"weak\"", "within: typeof selected", "interface Traits<N>", "Component.With<typeof instanced>"],
     12: ["lookup: { enemy: { with", "lookup.enemy(", "changed: [health]", "changed"],
     13: ["Index.create", "key", "lookup: { at: { index: grid } }", "sorted: true", "{ \">=\": 90 }", "order: byScore", "unique: true", "key: []", "length", "at(i)", "changed: true"],
-    14: ["kernel: true", "kernel: false", "F32"],
+    14: ["kernel: true", "kernel: false", "F32", "Uint8Array", "length: 8", "resources[trail]["],
     15: ["reduce: \"+\"", "\"max\"", "reduce[total]("],
     16: ["kernel: \"gpu\"", "System.render", "accessors", "tables", "table.bind(pass)", "table.count", "Gpu.wgsl(draw)"],
     17: ["reference: \"owner\"", "up: { through: parent }", "up", "null"],
@@ -27,6 +27,7 @@ const teaches: { readonly [chapter: number]: readonly string[] } = {
     21: ["thread: \"main\"", "cadence", "always", "commands.add", "is: [stage]", "style.translate", "changed: [position]"],
     22: ["changed: [clock]", "is: [pen]", "key: []", "clearRect(", "arc(", "fill()", "getImageData("],
     23: ["interface PluginConfig", "Plugin<\"surface\">", "systems", "connect", "Plugin.start(", "using"],
+    24: ["kernel: true", "after: [regenerate]", "after: [hurt]", "System.create([regenerate, hurt, show, tally])"],
 };
 
 /**
@@ -55,6 +56,7 @@ const mutations: { readonly [chapter: number]: readonly (readonly [string, strin
     11: [["; reference: \"owner\"", ""], ["; reference: \"weak\"", ""], ["; within: typeof selected", ""]],
     12: [["with: [health], not: [frozen]", "with: [health]"], ["with: [health], changed: [health]", "with: [health]"]],
     13: [["sorted: true, ", ""], ["unique: true, ", ""], [", changed: true", ""], ["key: [cell]", "key: [crowded]"]],
+    14: [["resources[trail][Math.trunc(row[position][0])] = 1;", ""]],
     15: [["reduce[count](1);", ""], ["reduce: \"max\"", "reduce: \"+\""]],
     16: [[", dotSize: size", ""]],
     17: [[", up: { through: parent }", ""]],

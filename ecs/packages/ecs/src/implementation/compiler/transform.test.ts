@@ -128,6 +128,12 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                     return booleans[node.column] === true ? value !== 0 : value;
                 }
                 case "resource": return scalarAt(resources[node.index], node.path);
+                case "resourceElement": {
+                    const array = resources[node.index];
+                    const element = Number(evaluate(node.element));
+                    const value: unknown = Reflect.get(Object(array), element);
+                    return typeof value === "number" ? value : NaN;
+                }
                 case "args": return scalarAt(args, node.path);
                 case "shared": return scalarAt(shared[node.index], node.path);
                 case "local": return locals[node.local] ?? NaN;
@@ -174,6 +180,8 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                 }
                 case "conditional": return evaluate(node.test) ? evaluate(node.consequent) : evaluate(node.alternate);
                 case "found": return handles[node.handle] !== null;
+                case "lookupHas": return (handles[node.handle] ?? null)?.[node.read] !== undefined;
+                case "lookupTruthy": return Boolean((handles[node.handle] ?? null)?.[node.read]);
                 case "lookupLeaf": {
                     // Not found reads NaN, as the WASM generator does.
                     const values = handles[node.handle];
@@ -203,6 +211,13 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
             switch (statement.kind) {
                 case "set": locals[statement.local] = evaluate(statement.value); return normal;
                 case "store": { const column = columns[statement.column]; if (column) column[at(statement.column, row)] = Number(evaluate(statement.value)); return normal; }
+                case "resourceStore": {
+                    const array: unknown = resources[statement.index];
+                    const element = Number(evaluate(statement.element));
+                    const value = Number(evaluate(statement.value));
+                    if (ArrayBuffer.isView(array)) Reflect.set(array, element, value);
+                    return normal;
+                }
                 case "stamp": {
                     const column = columns[statement.column];
                     const chunks = columns[statement.chunks];
@@ -775,11 +790,57 @@ describe("program", () => {
         expect(JSON.stringify(kernel.program)).toContain(`{"kind":"args","path":["scale"]}`);
     });
 
-    test("runtime indexing into a resource has no program", async () => {
+    test("runtime indexing into a resource reads its element, which WASM addresses in a typed array", async () => {
         const kernel = await compile(`const kernel = System.create({ kernel: true, components: { with: [mass, score] } }, (row, { resources: { [delta]: d } }) => {
             row[score] = d[row[mass]];
         });`);
-        expect(run(kernel, 1, { mass: { "[]": [1] } }, { resources: [[5, 6]], program: false }).field("score")).toEqual([6]);
+        expect(run(kernel, 3, { mass: { "[]": [1, 0, 7] } }, { resources: [[5, 6]] }).field("score")).toEqual([6, 5, NaN]);
+    });
+
+    test("an element assigned at a runtime index is written in place, the resource listed as written", async () => {
+        const kernel = await compile(`const kernel = System.create({ kernel: true, components: { with: [mass, score] } }, (row, { resources }) => {
+            resources[delta][row[mass]] = row[score] * 2;
+        });`);
+        const cells = new Float64Array(3);
+        run(kernel, 4, { mass: { "[]": [2, 0, 5, 2] }, score: { "[]": [1, 3, 4, 8] } }, { resources: [cells] });
+        expect([...cells]).toEqual([6, 0, 16]);
+        expect(kernel.writes).toEqual([0]);
+    });
+});
+
+describe("elements held across writes", () => {
+    test("a const holds an element read at a literal index of a resource the body writes, in JS and the program", async () => {
+        const kernel = await compile(`const kernel = System.create({ kernel: true, components: { with: [score] } }, (row, { resources }) => {
+            const before = resources[delta][0];
+            resources[delta][0] = before + 1;
+            row[score] = before;
+        });`);
+        const program = kernel.program;
+        if (program === null) throw new Error("no program");
+        expect(JSON.stringify(program)).not.toContain(`"kind":"resource"`);
+        const scoreColumn = kernel.columns.findIndex(column => column.kind === "field");
+        const layout = { strides: kernel.columns.map(() => 1), offsets: kernel.columns.map(() => 0) };
+        const booleans = kernel.columns.map(() => false);
+        const commands = { spawners: [], begin: () => {}, value: () => {}, component: () => {} };
+        /** Runs the rows from a fresh counter, by the JS or the program: the scores and the counter after. */
+        const counted = (interpreted: boolean) => {
+            const columns = kernel.columns.map(column => column.kind === "changed" ? new Uint32Array(3) : new Float64Array(3));
+            const counter = new Float64Array(1);
+            if (interpreted) interpret(program, columns, booleans, layout, 0, 3, [counter], undefined, [], new Float64Array(0));
+            else kernel.create(booleans, layout.strides, layout.offsets)(columns, 0, 3, [counter], [], kernel.keys, undefined, commands, tick, new Float64Array(0), 0);
+            return [[...columns[scoreColumn] ?? []], [...counter]];
+        };
+        expect(counted(false)).toEqual([[0, 1, 2], [3]]);
+        expect(counted(true)).toEqual([[0, 1, 2], [3]]);
+    });
+
+    test("an element read at a literal index of a resource the body only reads is aliased, as before", async () => {
+        const kernel = await compile(`const kernel = System.create({ kernel: true, components: { with: [score] } }, (row, { resources }) => {
+            const first = resources[delta][0];
+            row[score] = first;
+        });`);
+        expect(kernel.create.toString()).not.toMatch(/const first/);
+        expect(JSON.stringify(kernel.program)).toContain(`{"kind":"resource","index":0,"path":[0]}`);
     });
 });
 

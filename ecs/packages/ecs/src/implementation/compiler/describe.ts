@@ -308,6 +308,10 @@ export const describeSystems = async (sites: TransformedSites, format: (code: st
                     const found = layout.leaves.find(leaf => samePath(leaf.path, path));
                     return found === undefined ? null : { view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean" };
                 },
+                structured: read => {
+                    const layout = layoutNamed(lookup.read[read] ?? "");
+                    return layout !== undefined && typeof layout !== "string" && layout.kind === "linear" && !layout.leaves.some(leaf => leaf.path.length === 0);
+                },
             });
         }
         for (const resource of signature.resources) if (layoutNamed(resource) === undefined) return { registration: elsewhere(resource) };
@@ -323,9 +327,13 @@ export const describeSystems = async (sites: TransformedSites, format: (code: st
         const scalarType = (scalar: WasmScalar): Type | null => {
             if (scalar.source === "args") return inputLayout === null ? null : leafType(inputLayout, scalar.path);
             const layout = layoutNamed((scalar.source === "shared" ? signature.shared : signature.resources)[scalar.index] ?? "");
-            return layout === undefined || typeof layout === "string" ? null : leafType(layout, scalar.path);
+            if (layout === undefined || typeof layout === "string") return null;
+            // A typed array's in-place view gives its address and length; on the GPU, its copy's word address.
+            if (layout.kind === "linear" && layout.array !== undefined) return scalar.path.length === 1 && (scalar.path[0] === "byteOffset" || scalar.path[0] === "length" || scalar.path[0] === "address") ? "number" : null;
+            return leafType(layout, scalar.path);
         };
         const scalarKind = (scalar: WasmScalar): ScalarKind => {
+            if (scalar.source === "resource" && arraysOf(explanation)(scalar.index) !== null) return "u32";
             const layout = scalar.source === "shared" ? layoutNamed(signature.shared[scalar.index] ?? "") : undefined;
             const leaf = layout === undefined || typeof layout === "string" || layout.kind !== "linear" ? undefined : layout.leaves.find(candidate => samePath(candidate.path, scalar.path));
             return leaf === undefined ? "f32" : leaf.scalar === "boolean" ? "bool" : leaf.scalar === "i32" || leaf.scalar === "u32" || leaf.scalar === "f64" ? leaf.scalar : "f32";
@@ -343,12 +351,18 @@ export const describeSystems = async (sites: TransformedSites, format: (code: st
         // An `up` kernel's runner passes only the rows that pass its filters.
         const filters = signature.up !== null ? 0 : listLength(declaration, ["components", "added"], count) + listLength(declaration, ["components", "changed"], count);
         const generated = generateWasmOrReason(explanation.program, placed.columns, placed.scalarType, true, filters, placed.lookups, placed.upColumns,
-            explanation.operators, [], [], explanation.storagePrecision, true);
+            explanation.operators, [], [], explanation.storagePrecision, arraysOf(explanation), true);
         if (typeof generated === "string") return { backend: { kind: "none", reason: generated }, lanes: null };
         const printed = printWat(generated.bytes);
         if ("failure" in printed) return { backend: { kind: "none", reason: `its WASM can't be printed: ${printed.failure}` }, lanes: null };
         const lanes = !generated.vectorized ? "a row at a time" : explanation.storagePrecision ? "four f32 lanes at a time, rounding each step to storage precision" : "two f64 lanes at a time, bit-exact with the body as written";
         return { backend: { kind: "compiled", code: printed.wat }, lanes };
+    };
+
+    /** By resource, the typed array a kernel's resource is, from its layout; null for any other. */
+    const arraysOf = (explanation: KernelExplanation) => (resource: number) => {
+        const layout = layoutNamed(explanation.signature.resources[resource] ?? "");
+        return typeof layout === "object" && layout.kind === "linear" ? layout.array ?? null : null;
     };
 
     /** A GPU kernel's compute shader, or why there's none. */
@@ -358,7 +372,7 @@ export const describeSystems = async (sites: TransformedSites, format: (code: st
         const placed = place(explanation, inputSchema, () => 0);
         if ("registration" in placed) return { reason: placed.registration, registration: true };
         if ("none" in placed) return { reason: placed.none };
-        const generated = generateWgsl(explanation.program, placed.columns, placed.scalarType, placed.upColumns, placed.scalarKind);
+        const generated = generateWgsl(explanation.program, placed.columns, placed.scalarType, placed.upColumns, placed.scalarKind, arraysOf(explanation));
         return typeof generated === "string" ? { reason: generated } : { code: generated.code };
     };
 

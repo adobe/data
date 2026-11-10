@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { declarationOf, labelOf } from '../../interface/registry/index.js';
 import { layoutOf, samePath, type Layout, type Path } from '../../interface/registry/layout.js';
+import { isTypedArray } from '../../interface/registry/schemas.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { KernelDescription } from './kernel.js';
 import type { Key } from './state.js';
@@ -36,9 +37,16 @@ export const kernelMismatch = (leaf: Leaf, description: KernelDescription): stri
     const reduces = new Set<Key>(resources?.reduce);
     const queried = new Set<Key>([...query?.read ?? [], ...query?.write ?? []]);
     const written = new Set<Key>(query?.write);
-    // A condition in `is` is readable too, and the compiler lists it with the reads.
-    const readable = new Set<Key>([...resources?.read ?? [], ...resources?.is ?? []]);
+    // A condition in `is` is readable too, and the compiler lists it with the reads, as it does a typed array it writes.
+    const readable = new Set<Key>([...resources?.read ?? [], ...resources?.is ?? [], ...resources?.write ?? []]);
     for (const key of description.resources) if (!readable.has(key)) return `reads resource "${labelOf(key)}", which isn't in resources.read.`;
+    for (const index of description.writes ?? []) {
+        const key = description.resources[index];
+        if (key === undefined) return "writes a resource it doesn't read; rebuild.";
+        const type = declarationOf(key)?.type;
+        if (type === undefined || !isTypedArray(type)) return `writes inside resource "${labelOf(key)}", which isn't a typed array: write a whole new value from a system that runs as written.`;
+        if (!new Set<Key>(resources?.write).has(key)) return `writes resource "${labelOf(key)}", which isn't in resources.write.`;
+    }
     for (const key of description.shared ?? []) {
         if (!queried.has(key)) return `reads "${labelOf(key)}", which isn't in its components' read.`;
         if (declarationOf(key) !== undefined && declarationOf(key)?.shared !== true) return `reads "${labelOf(key)}" as shared, which it isn't; rebuild.`;

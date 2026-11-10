@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { laneCount } from './intrinsics.js';
 import type { Program } from './kernel.js';
-import { scalarOfExpression, type WasmColumn, type WasmScalar } from './wasm.js';
+import { scalarOfExpression, type WasmArray, type WasmColumn, type WasmScalar } from './wasm.js';
 
 type Expression = Program.Expression;
 type Statement = Program.Statement;
@@ -80,10 +80,11 @@ const isUnsupported = (error: unknown): error is Unsupported =>
 
 /**
  * An emitted value and its WGSL type. Integer column reads and bitwise results stay `i32` or `u32`, so integer chains
- * keep every bit; arithmetic converts to f32. `literal` keeps a number literal's exact value for integer use.
+ * keep every bit; arithmetic converts to f32. `literal` keeps a number literal's exact value for integer use, and
+ * `within` tests an integer array element's index: where it isn't one, the element is 0 as an integer and NaN as a number.
  */
 type Kind = "f32" | "bool" | "i32" | "u32";
-type Value = { readonly code: string; readonly type: Kind; readonly literal?: number };
+type Value = { readonly code: string; readonly type: Kind; readonly literal?: number; readonly within?: string };
 
 const f32 = (code: string): Value => ({ code, type: "f32" });
 const bool = (code: string): Value => ({ code, type: "bool" });
@@ -92,6 +93,7 @@ const u32 = (code: string): Value => ({ code, type: "u32" });
 
 /** JS `Number(value)`. */
 const asNumber = (value: Value): string => {
+    if (value.within !== undefined) return `select(bitcast<f32>(nanBits), ${asNumber({ code: value.code, type: value.type })}, ${value.within})`;
     switch (value.type) {
         case "f32": return value.code;
         case "bool": return `select(0.0, 1.0, ${value.code})`;
@@ -162,14 +164,40 @@ fn power(a: f32, b: f32) -> f32 {
 fn roundHalfUp(x: f32) -> f32 { let down = floor(x); return select(down, down + 1.0, x - down >= 0.5); }
 `;
 
-/**
- * Generates a compute shader for a kernel program, or the reason it can't run on the GPU: lookups, loops, f64 or
- * entity columns, or byte stores.
- */
 /** How a scalar parameter is written into a dispatch's record, and read there: f32 bits, an integer's or a boolean's. */
 export type ScalarKind = "f32" | "i32" | "u32" | "bool" | "f64";
 
-export const generateWgsl = (program: Program, columns: readonly WasmColumn[], scalarTypes: (scalar: WasmScalar) => unknown, upColumns: readonly WasmColumn[] = [], scalarKinds: (scalar: WasmScalar) => ScalarKind = () => "f32"): WgslKernel | string => {
+/**
+ * A typed array element's word as a number: each element of an array of 1- or 2-byte elements is a word of its own on
+ * the GPU, holding the element's low bits, as of 4-byte ones.
+ */
+const elementValue: { readonly [name: string]: (word: string) => string } = {
+    Uint8Array: word => `f32(${word} & 0xFFu)`,
+    Uint8ClampedArray: word => `f32(${word} & 0xFFu)`,
+    Int8Array: word => `f32((bitcast<i32>(${word}) << 24u) >> 24u)`,
+    Uint16Array: word => `f32(${word} & 0xFFFFu)`,
+    Int16Array: word => `f32((bitcast<i32>(${word}) << 16u) >> 16u)`,
+    Uint32Array: word => `f32(${word})`,
+    Int32Array: word => `f32(bitcast<i32>(${word}))`,
+    Float32Array: word => `bitcast<f32>(${word})`,
+};
+
+/** The integer type of a typed array's elements that f32 can't hold exactly. */
+const integerElement: { readonly [name: string]: "i32" | "u32" } = { Uint32Array: "u32", Int32Array: "i32" };
+
+/**
+ * Generates a compute shader for a kernel program, or the reason it can't run on the GPU: lookups, loops, f64 or
+ * entity columns, byte stores, or elements of a typed array of 8-byte elements.
+ */
+export const generateWgsl = (
+    program: Program,
+    columns: readonly WasmColumn[],
+    scalarTypes: (scalar: WasmScalar) => unknown,
+    upColumns: readonly WasmColumn[] = [],
+    scalarKinds: (scalar: WasmScalar) => ScalarKind = () => "f32",
+    /** By resource, the typed array it is, whose elements its record's `address` and `length` scalars locate in the heap. */
+    arrays: (resource: number) => WasmArray | null = () => null,
+): WgslKernel | string => {
     /**
      * Reading `up`, a dispatch's record has, after the columns, the word addresses of its rows and their parents' rows,
      * whether they have a parent, and each parent column's address; the scalars follow.
@@ -221,8 +249,10 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
     const store = (column: number, value: Value): string => {
         const { view, boolean, muted } = columns[column];
         if (muted === true) return "";
-        if (boolean) return fail("it writes a boolean component");
+        // A boolean in a word, as GPU layouts hold one, is 0 or 1; one in a byte is in the CPU's layout.
+        if (boolean && view !== "u32") return fail("it writes a byte value, such as a boolean in the CPU layout; give the component a \"storage\" layout");
         const target = `memory[${word(column)}]`;
+        if (boolean) return `${target} = select(0u, 1u, ${asBool(value)});`;
         switch (view) {
             case "f32": return `${target} = bitcast<u32>(${asNumber(value)});`;
             case "u32": case "i32": return `${target} = ${asUint(value)};`;
@@ -231,6 +261,51 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
     };
 
     const shift = (value: Value): string => `(${asUint(value)} & 31u)`;
+
+    /** A typed array resource's elements: their array's name, and its first element's word address and length, from the record. */
+    const arrayOf = (resource: number): { readonly name: string; readonly address: string; readonly length: string } => {
+        const array = arrays(resource);
+        if (array === null) return fail("it indexes a resource that isn't a typed array");
+        if (elementValue[array.name] === undefined) return fail(`it indexes a ${array.name}, whose 8-byte elements the GPU doesn't hold`);
+        const word = (field: string): string => `parameters[${1 + columns.length + upWords + scalarOf({ source: "resource", index: resource, path: [field] })}]`;
+        return { name: array.name, address: word("address"), length: word("length") };
+    };
+    /** An element's index as a u32, and whether it's one of an array's indexes: an integer from 0 below its length. */
+    const indexOf = (element: Expression, length: string): { readonly index: string; readonly within: string } => {
+        const value = emit(element);
+        const valid = value.within === undefined ? "" : `${value.within} && `;
+        switch (value.type) {
+            case "u32": return { index: value.code, within: `(${valid}${value.code} < ${length})` };
+            case "i32": return { index: `bitcast<u32>(${value.code})`, within: `(${valid}bitcast<u32>(${value.code}) < ${length})` };
+            case "bool": return { index: asUint(value), within: `(${asUint(value)} < ${length})` };
+            case "f32": return { index: `u32(${value.code})`, within: `(${value.code} >= 0.0 && ${value.code} < f32(${length}) && floor(${value.code}) == ${value.code})` };
+        }
+    };
+    /**
+     * Element `element` of a typed array resource, NaN where it isn't one of its indexes, as `undefined` reads in
+     * arithmetic. A 32-bit integer element keeps its integer type, 0 where it isn't one, as `undefined` is to bitwise
+     * operations.
+     */
+    const readArray = (resource: number, element: Expression): Value => {
+        const { name, address, length } = arrayOf(resource);
+        const { index, within } = indexOf(element, length);
+        // The element past the end, which every array keeps, stands in for an index that isn't one.
+        const word = `memory[${address} + min(${index}, ${length})]`;
+        switch (integerElement[name]) {
+            case "u32": return { code: `select(0u, ${word}, ${within})`, type: "u32", within };
+            case "i32": return { code: `select(0i, bitcast<i32>(${word}), ${within})`, type: "i32", within };
+            default: return f32(`select(bitcast<f32>(nanBits), ${elementValue[name]?.(word) ?? ""}, ${within})`);
+        }
+    };
+    /** Writes element `element` of a typed array resource, converted as the array does; nothing where it isn't one of its indexes. */
+    const storeArray = (resource: number, element: Expression, value: Value): string => {
+        const { name, address, length } = arrayOf(resource);
+        const { index, within } = indexOf(element, length);
+        const word = name === "Float32Array" ? `bitcast<u32>(${asNumber(value)})`
+            : name === "Uint8ClampedArray" ? `u32(clamp(round(${asNumber(value)}), 0.0, 255.0))`
+            : asUint(value);
+        return `if (${within}) { memory[${address} + ${index}] = ${word}; }`;
+    };
     const localName = (local: number): string => identifier(program.names?.[local] ?? `l_${local}`);
     const regions = new Map(regionsOf(program.body).map(region => [region.id, region]));
     const regionName = (region: Region): string => identifier(`${region.name}_${region.id}`);
@@ -256,6 +331,14 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                     case "&": case "|": case "^": case "<<": case ">>": return "i32";
                     case ">>>": return "u32";
                     case "<": case ">": case "<=": case ">=": case "==": case "!=": case "===": case "!==": return "bool";
+                    case "%": {
+                        // As `remainder` computes it: of integers of one type, that type.
+                        const left = kindOf(expression.left);
+                        const { right } = expression;
+                        const literal = right.kind === "number" && Number.isInteger(right.value) && right.value !== 0
+                            && (left === "u32" ? right.value > 0 && right.value <= 0xFFFFFFFF : Math.abs(right.value) <= 0x7FFFFFFF);
+                        return (left === "i32" || left === "u32") && (kindOf(right) === left || literal) ? left : "f32";
+                    }
                     default: return "f32";
                 }
             case "logical": case "conditional": {
@@ -267,6 +350,10 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
             case "lane": {
                 const region = regions.get(expression.intrinsic);
                 return region === undefined ? "f32" : elementKind(region.intrinsic.result);
+            }
+            case "resourceElement": {
+                const array = arrays(expression.index);
+                return array === null ? "f32" : integerElement[array.name] ?? "f32";
             }
             case "boolean": return "bool";
             default: return "f32";
@@ -299,6 +386,18 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
         if (!changed) break;
     }
 
+    /**
+     * A remainder of integers of one type, exact as WGSL's integer `%` is, which takes the dividend's sign as JS's does;
+     * null where either isn't one, computed as numbers.
+     */
+    const remainder = (left: Value, right: Value): Value | null => {
+        const integer = left.type === "i32" || left.type === "u32" ? left.type : null;
+        const fits = right.type === integer || (right.literal !== undefined && Number.isInteger(right.literal) && right.literal !== 0
+            && (integer === "u32" ? right.literal > 0 && right.literal <= 0xFFFFFFFF : Math.abs(right.literal) <= 0x7FFFFFFF));
+        if (integer === null || !fits) return null;
+        return integer === "u32" ? u32(`(${asUint(left)} % ${asUint(right)})`) : i32(`(${asInt(left)} % ${asInt(right)})`);
+    };
+
     /** Compares integers of one type exactly, and anything else as numbers. */
     const compare = (operator: string, left: Value, right: Value): Value => {
         const integer = left.type === "i32" || left.type === "u32" ? left.type : right.type === "i32" || right.type === "u32" ? right.type : null;
@@ -306,7 +405,11 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
             || (value.literal !== undefined && Number.isInteger(value.literal) && (integer === "u32" ? value.literal >= 0 && value.literal <= 0xFFFFFFFF : Math.abs(value.literal) <= 0x7FFFFFFF));
         if (integer !== null && fits(left) && fits(right)) {
             const as = (value: Value): string => integer === "u32" ? asUint(value) : asInt(value);
-            return bool(`(${as(left)} ${operator} ${as(right)})`);
+            const exact = `(${as(left)} ${operator} ${as(right)})`;
+            // As NaN compares: unequal to everything.
+            const within = [left.within, right.within].filter(test => test !== undefined).join(" && ");
+            if (within === "") return bool(exact);
+            return bool(operator === "!=" ? `(!(${within}) || ${exact})` : `(${within} && ${exact})`);
         }
         return bool(`(${asNumber(left)} ${operator} ${asNumber(right)})`);
     };
@@ -349,7 +452,7 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                 const b = asNumber(right);
                 switch (expression.operator) {
                     case "+": case "-": case "*": case "/": return f32(`(${a} ${expression.operator} ${b})`);
-                    case "%": return f32(`(${a} % ${b})`);
+                    case "%": return remainder(left, right) ?? f32(`(${a} % ${b})`);
                     case "**": return f32(`power(${a}, ${b})`);
                     case "<": case ">": case "<=": case ">=": return compare(expression.operator, left, right);
                     case "==": case "===": return compare("==", left, right);
@@ -395,6 +498,7 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                 if (items.length === 2 && name === "hypot") return f32(`length(vec2f(${items[0]}, ${items[1]}))`);
                 return fail(`it uses Math.${name}, which GPU kernels don't support`);
             }
+            case "resourceElement": return readArray(expression.index, expression.element);
             case "lane": {
                 const region = regions.get(expression.intrinsic);
                 if (region === undefined) return emit(expression.value);
@@ -439,6 +543,7 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                 return `${indent}${localName(statement.local)} = ${kind === "u32" ? asUint(value) : kind === "i32" ? asInt(value) : asNumber(value)};`;
             }
             case "store": return `${indent}${store(statement.column, emit(statement.value))}`;
+            case "resourceStore": return `${indent}${storeArray(statement.index, statement.element, emit(statement.value))}`;
             // The CPU stamps the whole column once per dispatch instead.
             case "stamp": return "";
             case "if":

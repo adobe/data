@@ -25,6 +25,7 @@ const score = Symbol("wasmTest/score");
 const seconds = Symbol("wasmTest/seconds");
 const floor = Symbol("wasmTest/floor");
 const target = Symbol("wasmTest/target");
+const boost = Symbol("wasmTest/boost");
 
 declare module "@adobe/ecs" {
     export interface Components {
@@ -34,6 +35,7 @@ declare module "@adobe/ecs" {
         [flipped]: { type: boolean };
         [score]: { type: number };
         [target]: { type: Entity };
+        [boost]: { type: I32 };
     }
     export interface Resources {
         [seconds]: { type: number; default: 0.016666666666666666 };
@@ -146,6 +148,61 @@ const chase = System.create({
     row[score] = row[score] + (other[flipped] ? x : y);
 });
 
+/** Targets every other one of which holds a boost. */
+const seedBoosted = System.create({}, ({ commands }, input: { readonly count: number }) => {
+    let previous = Entity.none;
+    for (let i = 0; i < input.count; i++) {
+        previous = i % 2 === 0
+            ? commands.spawn([position, target, score, boost])({ [position]: [i, 0], [target]: previous, [score]: 0, [boost]: i * 10 })
+            : commands.spawn([position, target, score])({ [position]: [i, 0], [target]: previous, [score]: 0 });
+    }
+});
+
+/** A lookup with an optional component: a target's boost where it holds one, 100 where it doesn't. */
+const peek = System.create({
+    kernel: true,
+    components: { with: [target, score] },
+    lookup: { targets: { with: [position], optional: [boost] } },
+}, (row, { lookup: { targets } }) => {
+    const other = targets(row[target]);
+    if (other === null) return;
+    const extra = other[boost];
+    row[score] = other[position][0] + (extra !== undefined ? extra : 100);
+});
+
+/** A target's boost tested for truth, which a boost of 0 fails as the entity lacking one does. */
+const truthy = System.create({
+    kernel: true,
+    components: { with: [target, score] },
+    lookup: { targets: { with: [position], optional: [boost] } },
+}, (row, { lookup: { targets } }) => {
+    const other = targets(row[target]);
+    if (other === null) return;
+    const extra = other[boost];
+    row[score] = (other[boost] ? 1 : 2) + (extra ? 10 : 20);
+});
+
+/** Targets every other one of which holds a velocity, all of whose leaves are 0. */
+const seedMoving = System.create({}, ({ commands }, input: { readonly count: number }) => {
+    let previous = Entity.none;
+    for (let i = 0; i < input.count; i++) {
+        previous = i % 2 === 0
+            ? commands.spawn([position, target, score, velocity])({ [position]: [i, 0], [target]: previous, [score]: 0, [velocity]: [0, 0] })
+            : commands.spawn([position, target, score])({ [position]: [i, 0], [target]: previous, [score]: 0 });
+    }
+});
+
+/** A target's velocity tested for truth, which holding one passes whatever its leaves. */
+const moving = System.create({
+    kernel: true,
+    components: { with: [target, score] },
+    lookup: { targets: { with: [position], optional: [velocity] } },
+}, (row, { lookup: { targets } }) => {
+    const other = targets(row[target]);
+    if (other === null) return;
+    row[score] = other[velocity] ? 1 : 2;
+});
+
 /** A resource passed to a function the build inlines, so the function's parameter holds it. */
 const along = (value: number, by: number) => value + by;
 const glide = System.create({
@@ -240,6 +297,56 @@ describe("WASM kernels", () => {
         };
         expect([integrate, bounce, tally, scale, drift].map(system => wasmOf(system)?.vectorized)).toEqual([false, false, false, false, true]);
         expect(wasmOf(chase)).not.toBeNull();
+    });
+
+    it("look up a component an entity may lack, reading it only where the entity holds it, as the JS kernels do", async () => {
+        const definition = definitionOf(peek);
+        const description = kernelOf(peek);
+        if (definition === undefined || definition.kind === "composite" || description === undefined) throw new Error("not a compiled leaf");
+        expect(bindKernel(createState(), definition, description).wasm).not.toBeNull();
+        const scores: (readonly unknown[])[] = [];
+        for (const wasm of [false, true]) {
+            await using ecs = createWorld({ [workers]: 0 }, { wasm });
+            await ecs.run(seedBoosted, { count: 6 });
+            await ecs.run(peek);
+            scores.push(await readEach(ecs, await select(ecs, { required: [score] }), score));
+        }
+        // Entity i targets entity i - 1, which holds a boost of (i - 1) * 10 when i - 1 is even.
+        expect(scores[0]).toEqual([0, 0, 101, 22, 103, 44]);
+        expect(scores[1]).toEqual(scores[0]);
+    });
+
+    it("test a component an entity may lack for its value's truth, as the JS kernels do", async () => {
+        const definition = definitionOf(truthy);
+        const description = kernelOf(truthy);
+        if (definition === undefined || definition.kind === "composite" || description === undefined) throw new Error("not a compiled leaf");
+        expect(bindKernel(createState(), definition, description).wasm).not.toBeNull();
+        const scores: (readonly unknown[])[] = [];
+        for (const wasm of [false, true]) {
+            await using ecs = createWorld({ [workers]: 0 }, { wasm });
+            await ecs.run(seedBoosted, { count: 6 });
+            await ecs.run(truthy);
+            scores.push(await readEach(ecs, await select(ecs, { required: [score] }), score));
+        }
+        // Entity 1 targets entity 0, whose boost is 0.
+        expect(scores[0]).toEqual([0, 22, 22, 11, 22, 11]);
+        expect(scores[1]).toEqual(scores[0]);
+    });
+
+    it("test a struct component an entity may lack for its presence, as the JS kernels do", async () => {
+        const definition = definitionOf(moving);
+        const description = kernelOf(moving);
+        if (definition === undefined || definition.kind === "composite" || description === undefined) throw new Error("not a compiled leaf");
+        expect(bindKernel(createState(), definition, description).wasm).not.toBeNull();
+        const scores: (readonly unknown[])[] = [];
+        for (const wasm of [false, true]) {
+            await using ecs = createWorld({ [workers]: 0 }, { wasm });
+            await ecs.run(seedMoving, { count: 6 });
+            await ecs.run(moving);
+            scores.push(await readEach(ecs, await select(ecs, { required: [score] }), score));
+        }
+        expect(scores[0]).toEqual([0, 1, 2, 1, 2, 1]);
+        expect(scores[1]).toEqual(scores[0]);
     });
 
     it("read a resource passed to a function as its parameter, as the JS kernels do", async () => {

@@ -4,6 +4,7 @@ How to use the ECS, in chapters. Each chapter is its prose, `NN-name.md`, and a 
 `NN-name.out`. The [interactive guide](../../../ecs-guide) shows each chapter's prose beside its program, which you edit
 and run in the browser.
 
+- [Overview](00-overview.md)
 - [Setup](00-setup.md)
 - [Keys and declarations](00-keys.md)
 
@@ -44,3 +45,7 @@ and run in the browser.
 ## Applications
 
 23. [Plugins](23-plugins.md)
+
+## Advanced optimizations
+
+24. [Kernel fusing](24-fusing.md)

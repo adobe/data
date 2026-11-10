@@ -2,7 +2,7 @@
 import { takeAccessOf } from '../registry/ids.js';
 import { indexDefinitionOf } from '../registry/indexes.js';
 import { declarationOf, labelOf } from '../registry/names.js';
-import { isString, isStruct } from '../registry/schemas.js';
+import { isString, isStruct, isTypedArray } from '../registry/schemas.js';
 import type { CommandLists, ComponentAccess, ComponentLists, Lookup, SystemLookup, SystemLookupLists } from './access.js';
 
 type Key = symbol;
@@ -154,14 +154,21 @@ export const lookupsLists = <L extends SystemLookup | Lookup>(lookups: { readonl
     return lists;
 };
 
+/** Whether a key is a typed array resource's, whose elements a body writes in place. */
+const isTypedArrayKey = (key: Key): boolean => {
+    const type = declarationOf(key)?.type;
+    return type !== undefined && isTypedArray(type);
+};
+
 /**
- * What a body reads, writes and reduces into of resources, conditions in `is` read already. A read of what it reduces
- * into stays, for registration to reject.
+ * What a body reads, writes and reduces into of resources, conditions in `is` read already: a typed array it changes
+ * in place, written. A read of what it reduces into stays, for registration to reject.
  */
 export const resourceUses = (what: string, access: Access, is: readonly Key[] | undefined): { readonly read: Key[]; readonly write: readonly Key[]; readonly reduce: readonly Key[] } => {
     checkChanges(what, access);
     const used = followed(what, access.resources, "its resources", access);
-    return { read: without(used.read, used.write, is), write: used.write, reduce: used.reduce };
+    const write = [...new Set([...used.write, ...(used.mutate ?? []).filter(isTypedArrayKey)])];
+    return { read: without(used.read, write, is), write, reduce: used.reduce };
 };
 
 /**

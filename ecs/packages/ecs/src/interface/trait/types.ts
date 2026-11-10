@@ -6,6 +6,7 @@ import type { IsNode, IsTransferable } from '../platform/platform.js';
 import type { Resource } from '../resource/resource.js';
 import type { Reduction } from '../resource/reduction.js';
 import type { IsComparable, IsString, IsStruct } from '../schema/is-struct.js';
+import type { TypedArrays } from '../schema/schema.js';
 import type { Thread } from '../thread/thread.js';
 
 /** The value type of the component or resource `N`. */
@@ -49,14 +50,20 @@ export interface Traits<N extends Component.Key | Resource.Key> {
         ? [Resource<N>] extends [boolean] ? "&" | "|" | "^" : Structs[N] extends true ? Reduction : never
         : never;
     /**
-     * The logical thread an object lives on, `"world"` without it. Not on a struct or a string, which live in shared
-     * memory. A DOM `Node` lives on `"main"`, and says so.
+     * The logical thread an object lives on, `"world"` without it. Not on a struct, a string or a typed array, which
+     * live in shared memory. A DOM `Node` lives on `"main"`, and says so.
      */
     readonly thread: Structs[N] extends true | "string" ? never
+        : [ValueOf<N>] extends [TypedArrays[keyof TypedArrays]] ? never
         : N extends Component.Key ? Components[N] extends { readonly shared: true } ? never : IsNode<ValueOf<N>> extends true ? "main" : Thread
         : IsNode<ValueOf<N>> extends true ? "main" : Thread;
     /** The value may be moved, never copied, to its thread: only a Transferable value. */
     readonly transfer: IsTransferable<ValueOf<N>> extends true ? true : never;
+    /**
+     * On a resource that's a typed array, its elements: each world holds its own, that many zeros at the start, in
+     * shared memory, which systems read and write in place.
+     */
+    readonly length: N extends Resource.Key ? [Resource<N>] extends [TypedArrays[keyof TypedArrays]] ? number : never : never;
     /**
      * On a component of comparable data (numbers, booleans, strings, arrays and plain objects of those): each archetype
      * holds one value of it for every entity it holds, so entities of equal values share an archetype. Rows read it as

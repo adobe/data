@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { parseAst } from 'vite';
-import type { Schema } from '../../interface/schema/schema.js';
+import type { Schema, TypedArrays } from '../../interface/schema/schema.js';
 import type { Failure } from './failure.js';
 
 /** A TypeScript module's syntax, types included. */
@@ -524,12 +524,19 @@ export const createConverter = (host: TypeHost, root: string) => {
     };
 
     /** The schema of the type `path` names in `module`. */
+    const typedArrayNames: ReadonlySet<string> = new Set<keyof TypedArrays>(["Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array", "Uint16Array", "Int32Array", "Uint32Array", "Float32Array", "Float64Array"]);
+    const isTypedArrayName = (name: string): name is keyof TypedArrays => typedArrayNames.has(name);
+
     const named = async (path: readonly string[], module: Module, active: ReadonlySet<Declared>, at: Node, use: Use): Promise<Schema> => {
         const found = await typeNamed(path, module);
         if (found === null) return fail(module, at, `${use === "input" ? "input" : "declared"} type ${path.join(".")} isn't a type alias, interface or class its module declares or exports, which this pass can read`);
         if (found === "enum") return fail(module, at, `${path.join(".")} is an enum, which isn't ${words(use).a}: use a union of literals, or the values of an \`as const\` object`);
-        // Declared nowhere, it's a global, which TypeScript checked exists: a class, such as the platform's.
-        if (found === "global") return notData(use, path.length === 1 && domNode.test(path[0] ?? ""));
+        // Declared nowhere, it's a global, which TypeScript checked exists: a class, such as the platform's, or a typed array.
+        if (found === "global") {
+            const [only] = path;
+            if (path.length === 1 && only !== undefined && isTypedArrayName(only)) return { type: "typedArray", array: only };
+            return notData(use, path.length === 1 && domNode.test(only ?? ""));
+        }
         if (intrinsic(found) === "entity") return { type: "integer", format: "entity" };
         return await declared(found, active, at, module, use);
     };
@@ -548,7 +555,10 @@ export const createConverter = (host: TypeHost, root: string) => {
                 return { type: "map", keys: await convert(first, module, active, use), values: await convert(second, module, active, use) };
             }
         }
-        if (parameters.length === 0) return await named(path, module, active, type, use);
+        // A typed array's parameter is the buffer it views, which a world's memory gives.
+        if (parameters.length === 0 || (path.length === 1 && only !== undefined && isTypedArrayName(only) && parameters.length === 1 && !module.types.has(only) && !module.imports.has(only))) {
+            return await named(path, module, active, type, use);
+        }
         const found = await typeNamed(path, module);
         const [argument] = parameters;
         if (found !== null && intrinsic(found) === "schema" && parameters.length === 1 && argument !== undefined) {

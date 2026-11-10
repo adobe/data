@@ -153,3 +153,16 @@ const badFieldDefault: Schema = { type: 'object', properties: { x: { type: 'numb
 // @ts-expect-error Schema.Type takes a schema, so a default fails there too
 type BadType = Schema.Type<{ type: 'integer'; minimum: 1; default: 5 }>;
 void [badDefault, badFieldDefault];
+
+// A typed array, a form JSON lacks, is the typed array its constructor names.
+check<Equal<Schema.ToType<{ type: 'typedArray'; array: 'Uint8Array'; length: 8 }>, Uint8Array>>();
+check<Equal<Schema.Type<{ type: 'typedArray'; array: 'Float32Array' }>, Float32Array>>();
+const okTypedArray: Schema.ForType<Uint8Array> = { type: 'typedArray', array: 'Uint8Array', length: 8 };
+const okClampedArray: Schema.ForType<Uint8ClampedArray> = { type: 'typedArray', array: 'Uint8ClampedArray' };
+// @ts-expect-error the constructor must be the type's
+const badTypedArray: Schema.ForType<Uint8Array> = { type: 'typedArray', array: 'Float32Array' };
+// @ts-expect-error a Uint8ClampedArray isn't a Uint8Array
+const badClampedArray: Schema.ForType<Uint8Array> = { type: 'typedArray', array: 'Uint8ClampedArray' };
+// @ts-expect-error a typed array isn't an object of its indices
+const badTypedArrayForm: Schema.ForType<Uint8Array> = { type: 'object', properties: {} };
+void [okTypedArray, okClampedArray, badTypedArray, badClampedArray, badTypedArrayForm];

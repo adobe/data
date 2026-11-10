@@ -6,8 +6,8 @@ import { reserve } from './entities.js';
 import { listShapeOf, presetSpawnerOf, spawnerOf, type ListShape } from './lists.js';
 import { commandIdOf, idOf, queryIdOf, storedShared, type Key, type State } from './state.js';
 import { spawnTables } from './tables.js';
+import { despawnMatchOf, holdsCollection, isMatching, type DespawnMatch } from './matching.js';
 import { holdsValuesOf } from './where.js';
-import { checkWhereValues } from '../../interface/system/check.js';
 import { declarationOf, isWorldWritten, kindOf, labelOf, threadOfDeclaration, whyUnregistered } from '../../interface/registry/index.js';
 import { matchesSchema } from '../../interface/registry/schemas.js';
 
@@ -89,8 +89,8 @@ const empty = {};
 const noKeys: readonly unknown[] = [];
 
 /**
- * Queues a `despawnWhere`, its ids resolved and its `where` checked first, so a key that isn't a component, or a `where`
- * that isn't of shared values, queues nothing.
+ * Queues a `despawnWhere`, its ids resolved and its `where` checked first, so a key that isn't a component, or a match
+ * a component's values can't make, queues nothing.
  */
 const pushDespawnWhere = (state: State, buffer: CommandBuffer, query: Parameters<Commands["despawnWhere"]>[0]): void => {
     const including: readonly unknown[] = query.with;
@@ -99,17 +99,38 @@ const pushDespawnWhere = (state: State, buffer: CommandBuffer, query: Parameters
     if (including.length === 0) throw new Error("commands.despawnWhere's `with` names at least one component.");
     for (let k = 0; k < including.length; k++) queryIdOf(state, including[k]);
     for (let k = 0; k < excluding.length; k++) queryIdOf(state, excluding[k]);
-    let holds: ((archetype: Archetype) => boolean) | null = null;
-    if (where !== undefined && Object.getOwnPropertySymbols(where).length > 0) {
-        checkWhereValues("commands.despawnWhere", "where", "a despawn", where, false);
-        const found = holdsValuesOf(state, where, false);
-        if (typeof found === "symbol") throw new Error(`commands.despawnWhere: where names "${labelOf(found)}", which isn't a shared component.`);
-        holds = found;
+    let match: DespawnMatch | null = null;
+    const keys = where === undefined ? [] : Object.getOwnPropertySymbols(where);
+    if (keys.length > 0) {
+        const matched = new Map<number, unknown>();
+        const shared = new Set<number>();
+        /** Shared components given values of theirs, which archetypes are kept to by the numbers they're interned as. */
+        const exact: { [key: symbol]: unknown } = {};
+        const exactIds = new Set<number>();
+        for (const key of keys) {
+            if (kindOf(key) !== "component") throw new Error(`commands.despawnWhere: where names "${labelOf(key)}", which isn't a component.`);
+            const given: unknown = Reflect.get(where ?? {}, key);
+            if (typeof given === "function") throw new Error(`commands.despawnWhere: where gives "${labelOf(key)}" a predicate, and takes only values and bounds.`);
+            if (holdsCollection(given)) throw new Error(`commands.despawnWhere: where gives "${labelOf(key)}" a Set or Map, whose contents it can't match.`);
+            const declaration = declarationOf(key);
+            if (declaration?.type !== undefined && !isMatching(declaration.type, given)) throw new Error(`commands.despawnWhere: where gives "${labelOf(key)}" ${labelOf(given)}, which none of its type's values match.`);
+            const id = queryIdOf(state, key);
+            matched.set(id, given);
+            if (declaration?.shared === true) {
+                shared.add(id);
+                if (declaration.type === undefined || matchesSchema(declaration.type, given)) {
+                    exact[key] = given;
+                    exactIds.add(id);
+                }
+            }
+        }
+        const holds = exactIds.size === 0 ? null : holdsValuesOf(state, exact, false);
+        match = typeof holds === "function" ? despawnMatchOf(matched, shared, exactIds, holds) : despawnMatchOf(matched, shared, new Set(), null);
     }
     pushCommand(buffer, despawnWhereCommand, including.length);
     for (let k = 0; k < including.length; k++) pushComponent(buffer, queryIdOf(state, including[k]), undefined);
     for (let k = 0; k < excluding.length; k++) pushComponent(buffer, queryIdOf(state, excluding[k]), undefined);
-    if (holds !== null) pushComponent(buffer, despawnWhereHolds, holds);
+    if (match !== null) pushComponent(buffer, despawnWhereHolds, match);
 };
 
 /**

@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { blockShift, chunkShift, type Program } from './kernel.js';
 import type { Reduction } from '../../interface/resource/reduction.js';
-import type { View } from '../../interface/registry/layout.js';
+import { bytesOf, type View } from '../../interface/registry/layout.js';
+import type { TypedArrays } from '../../interface/schema/schema.js';
 import { withoutIntrinsics } from './intrinsics.js';
 
 type Expression = Program.Expression;
@@ -23,6 +24,8 @@ export type WasmColumn = {
     readonly component: number;
     /** A tick column nothing observes: its stamps are dropped. */
     readonly muted?: boolean;
+    /** The least and greatest integer an integer column's values are declared to hold; a value outside them is unspecified. */
+    readonly range?: readonly [number, number];
 };
 
 /**
@@ -42,12 +45,14 @@ export const scalarOfExpression = (expression: { readonly kind: "resource" | "sh
  * A lookup's directory in shared memory: one record of `1 + reads + watched` i32 words per archetype id, a match flag,
  * then the column address of each component the lookup reads, then the `changed` tick column address of each it
  * watches, 0 for one keeping no ticks. `leaf` places a scalar leaf of read component `read`; read `reads` of a lookup
- * that watches is its `changed`.
+ * that watches is its `changed`. `structured` is whether read component `read` is a tuple or struct of leaves in
+ * linear memory, whose values are always truthy.
  */
 export type WasmLookup = {
     readonly reads: number;
     readonly watched?: number;
     readonly leaf: (read: number, path: readonly (number | string)[]) => Omit<WasmColumn, "component"> | null;
+    readonly structured: (read: number) => boolean;
 };
 
 /** Where a probe's value goes in the key's words, and the stored type it's converted to first. */
@@ -145,19 +150,24 @@ export const importsOf = (names: readonly string[]): { readonly [name: string]: 
 const op = {
     block: 0x02, loop: 0x03, if: 0x04, else: 0x05, end: 0x0b, br: 0x0c, brIf: 0x0d, call: 0x10, drop: 0x1a, select: 0x1b,
     localGet: 0x20, localSet: 0x21, localTee: 0x22,
-    i32Load: 0x28, f32Load: 0x2a, f64Load: 0x2b, i32Load8u: 0x2d, i32Store: 0x36, f32Store: 0x38, f64Store: 0x39, i32Store8: 0x3a,
+    i32Load: 0x28, f32Load: 0x2a, f64Load: 0x2b, i32Load8s: 0x2c, i32Load8u: 0x2d, i32Load16s: 0x2e, i32Load16u: 0x2f, i32Store: 0x36, f32Store: 0x38, f64Store: 0x39, i32Store8: 0x3a, i32Store16: 0x3b, f64Nearest: 0x9e,
     i32Const: 0x41, f64Const: 0x44, i32ReinterpretF32: 0xbc, i64ReinterpretF64: 0xbd, i32LtU: 0x49, i32GtU: 0x4b, i32LeU: 0x4d, i32GtS: 0x4a, f64Load2: 0x2b,
     i32Eqz: 0x45, i32GeS: 0x4e,
+    i64Eq: 0x51, i64Ne: 0x52, i64LtS: 0x53, i64GtS: 0x55, i64LeS: 0x57, i64GeS: 0x59,
     f64Eq: 0x61, f64Ne: 0x62, f64Lt: 0x63, f64Gt: 0x64, f64Le: 0x65, f64Ge: 0x66,
     i32Eq: 0x46, i32LtS: 0x48, i32LeS: 0x4c, i32Clz: 0x67, i32Ctz: 0x68, i32Popcnt: 0x69, i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32And: 0x71, i32Or: 0x72, i32Xor: 0x73, i32Shl: 0x74, i32ShrS: 0x75, i32ShrU: 0x76,
     f64Abs: 0x99, f64Neg: 0x9a, f64Ceil: 0x9b, f64Floor: 0x9c, f64Trunc: 0x9d, f64Sqrt: 0x9f,
     f64Add: 0xa0, f64Sub: 0xa1, f64Mul: 0xa2, f64Div: 0xa3, f64Min: 0xa4, f64Max: 0xa5,
-    i32WrapI64: 0xa7, i32GeU: 0x4f, i32Ne: 0x47, i64Const: 0x42, i64ShrU: 0x88, i64RemS: 0x81, f64ConvertI64S: 0xb9, f64Copysign: 0xa6, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
+    i64Add: 0x7c, i64Sub: 0x7d, i64Mul: 0x7e, i64ExtendI32S: 0xac, i64ExtendI32U: 0xad, i32RemS: 0x6f, i32RemU: 0x70,
+    i32WrapI64: 0xa7, i32GeU: 0x4f, i32Ne: 0x47, i64Const: 0x42, i64ShrS: 0x87, i64ShrU: 0x88, i64RemS: 0x81, f64ConvertI64S: 0xb9, f64Copysign: 0xa6, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
 } as const;
 const f64Type = 0x7c;
 const i32Type = 0x7f;
+const i64Type = 0x7e;
+const f32Type = 0x7d;
 /** Saturating truncations, 0xfc-prefixed opcodes. */
 const i64TruncSatF64S = [0xfc, 0x06];
+const i32TruncSatF64S = [0xfc, 0x02];
 const truncations = { i32TruncSatF64U: [0xfc, 0x03], i64TruncSatF64U: [0xfc, 0x07] } as const;
 
 const unsigned = (value: number): number[] => {
@@ -177,6 +187,18 @@ const signed = (value: number): number[] => {
         const byte = value & 0x7f;
         value >>= 7;
         if ((value === 0 && (byte & 0x40) === 0) || (value === -1 && (byte & 0x40) !== 0)) return [...bytes, byte];
+        bytes.push(byte | 0x80);
+    }
+};
+
+/** An integer's signed LEB128 bytes as an i64 immediate: exact to 2^53 in magnitude, past the 32 bits `signed` keeps. */
+const signed64 = (value: number): number[] => {
+    const bytes: number[] = [];
+    let rest = BigInt(value);
+    for (;;) {
+        const byte = Number(rest & 0x7fn);
+        rest >>= 7n;
+        if ((rest === 0n && (byte & 0x40) === 0) || (rest === -1n && (byte & 0x40) !== 0)) return [...bytes, byte];
         bytes.push(byte | 0x80);
     }
 };
@@ -203,7 +225,19 @@ const unsupported = (reason: string): Error => {
 /** Thrown when a program can't run four rows at a time; the scalar loop handles every row instead. */
 const notVectorizable = Symbol("notVectorizable");
 
+/** How a kernel's rows run: `scalar` one at a time, or with SIMD, as `generateWasmOrReason`'s loops describe. */
+type Mode = "rows" | "interleaved" | "lanes" | "scalar";
+
 const join = (a: Type, b: Type): Type => a === b ? a : "mixed";
+
+const integerComparisons = { "<": op.i32LtS, ">": op.i32GtS, "<=": op.i32LeS, ">=": op.i32GeS, "==": op.i32Eq, "!=": op.i32Ne, "===": op.i32Eq, "!==": op.i32Ne } as const;
+const unsignedComparisons = { "<": op.i32LtU, ">": op.i32GtU, "<=": op.i32LeU, ">=": op.i32GeU, "==": op.i32Eq, "!=": op.i32Ne, "===": op.i32Eq, "!==": op.i32Ne } as const;
+const integer64Comparisons = { "<": op.i64LtS, ">": op.i64GtS, "<=": op.i64LeS, ">=": op.i64GeS, "==": op.i64Eq, "!=": op.i64Ne, "===": op.i64Eq, "!==": op.i64Ne } as const;
+
+const bitwise = { "&": op.i32And, "|": op.i32Or, "^": op.i32Xor, "<<": op.i32Shl, ">>": op.i32ShrS, ">>>": op.i32ShrU } as const;
+
+/** A value that is always a 32-bit integer, signed or unsigned, which WASM keeps as the i32 of its bits. */
+type IntegerKind = "i32" | "u32";
 
 /** The operators whose folds rotate through lanes: each one's identity, -0 for sums so a sum of -0 stays -0, and its instruction. */
 const rotated = {
@@ -231,6 +265,57 @@ const identifierOf = (text: string): string => text.replace(/[^A-Za-z0-9_.]/g, "
  * As `generateWasm`, or why exact equivalence can't be guaranteed. `named` appends a name section naming the function,
  * its imports, parameters and locals, for printing it as text; the world never asks for one.
  */
+/**
+ * The multiplier and shift that divide a signed i32 by `divisor`, at least 2, as a multiply-high and a shift (Hacker's
+ * Delight 10-1): `q = (mulhs(n, multiplier) [+ n while the multiplier is negative]) >> shift`, then `q + (n >>> 31)`.
+ */
+export const signedMagic = (divisor: number): { readonly multiplier: number; readonly shift: number } => {
+    const two31 = 2n ** 31n;
+    const d = BigInt(divisor);
+    const anc = two31 - 1n - two31 % d;
+    let p = 31n;
+    let q1 = two31 / anc;
+    let r1 = two31 - q1 * anc;
+    let q2 = two31 / d;
+    let r2 = two31 - q2 * d;
+    let delta = 0n;
+    do {
+        p++;
+        q1 *= 2n;
+        r1 *= 2n;
+        if (r1 >= anc) {
+            q1++;
+            r1 -= anc;
+        }
+        q2 *= 2n;
+        r2 *= 2n;
+        if (r2 >= d) {
+            q2++;
+            r2 -= d;
+        }
+        delta = d - r2;
+    } while (q1 < delta || (q1 === delta && r1 === 0n));
+    return { multiplier: Number(BigInt.asIntN(32, q2 + 1n)), shift: Number(p - 32n) };
+};
+
+/**
+ * A multiplier below 2^32 and a shift from 32 that divide every u32 by `divisor`, at least 2, as `(n * multiplier) >> shift`
+ * in 64 bits: exact where `2^shift <= multiplier * divisor <= 2^shift + 2^(shift - 32)` (Granlund and Montgomery,
+ * theorem 4.2); null for a divisor none of them divides.
+ */
+export const unsignedMagic = (divisor: number): { readonly multiplier: number; readonly shift: number } | null => {
+    const d = BigInt(divisor);
+    for (let shift = 32n; shift < 64n; shift++) {
+        const multiplier = ((1n << shift) + d - 1n) / d;
+        if (multiplier >= 1n << 32n) return null;
+        if (multiplier * d - (1n << shift) <= 1n << (shift - 32n)) return { multiplier: Number(multiplier), shift: Number(shift) };
+    }
+    return null;
+};
+
+/** A typed array resource as kernels address it: its elements' type and how many it has. */
+export type WasmArray = { readonly name: keyof TypedArrays; readonly length: number };
+
 export const generateWasmOrReason = (
     source: Program,
     columns: readonly WasmColumn[],
@@ -250,7 +335,9 @@ export const generateWasmOrReason = (
      * Whether SIMD lanes may compute at storage precision, as only an explicit kernel's may: f32 rounds each step.
      * Without it lanes are f64, two values a vector, promoted from f32 and demoted only on store, as the body computes.
      */
-    storagePrecision = true,
+    storagePrecision = false,
+    /** By resource, the typed array it is, which `resourceElement` and `resourceStore` address in place; null for any other. */
+    arrays: (resource: number) => WasmArray | null = () => null,
     named = false,
 ): WasmKernel | string => {
     const program = withoutIntrinsics(source);
@@ -317,13 +404,14 @@ export const generateWasmOrReason = (
             case "boolean": return "boolean";
             case "column": return columns[expression.column].boolean ? "boolean" : "number";
             case "resource": case "args": case "shared": return scalarTypes(scalarOfExpression(expression)) ?? "mixed";
+            case "resourceElement": return "number";
             case "local": return localTypes[expression.local] ?? "number";
             case "unary": return expression.operator === "!" ? "boolean" : "number";
             case "binary": return ["<", ">", "<=", ">=", "==", "!=", "===", "!=="].includes(expression.operator) ? "boolean" : "number";
             case "logical": return join(typeOf(expression.left), typeOf(expression.right));
             case "conditional": return join(typeOf(expression.consequent), typeOf(expression.alternate));
             case "math": return "number";
-            case "found": case "upFound": return "boolean";
+            case "found": case "upFound": case "lookupHas": case "lookupTruthy": return "boolean";
             case "upLeaf": return upColumns[expression.column]?.boolean === true ? "boolean" : "number";
             case "lookupLeaf": {
                 const lookup = lookupOfHandle.get(expression.handle);
@@ -361,38 +449,463 @@ export const generateWasmOrReason = (
     };
     for (let pass = 0; pass < program.locals + 2 && inferLocals(program.body); pass++);
 
-    /** Whether a value is an integer below 2^32 in magnitude: integer column reads, small integer literals, and locals of only those. */
     const accumulators = program.reductions ?? [];
-    // Accumulators start at their partials, which needn't be integers.
-    const integralLocals = new Array<boolean>(program.locals).fill(true).map((integral, index) => integral && !accumulators.includes(index));
-    const integral = (expression: Expression): boolean => {
+    /**
+     * Locals every assignment gives a 32-bit integer of one signedness, by the fixed point over assignments, which
+     * are kept in i32 locals: `undefined` until an assignment is seen.
+     */
+    const integerLocals: (IntegerKind | null | undefined)[] = new Array(program.locals);
+    for (const accumulator of accumulators) integerLocals[accumulator] = null;
+    const integerColumn = (column: WasmColumn | undefined): IntegerKind | null =>
+        column === undefined || column.boolean ? null : column.view === "i32" ? "i32" : column.view === "u32" || column.view === "u8" ? "u32" : null;
+    /**
+     * Whether a value is always a 32-bit integer, and of which signedness: bitwise results, `Math.imul` and `Math.clz32`,
+     * integer column reads, integer literals within 32 bits, and locals of only those. `undefined` for a local not yet
+     * seen assigned, while locals are inferred.
+     */
+    const integerKind = (expression: Expression): IntegerKind | null | undefined => {
+        const wrapped = wrappedKind(expression);
+        if (wrapped !== null) return wrapped;
+        switch (expression.kind) {
+            case "number": {
+                const { value } = expression;
+                if (!Number.isInteger(value) || Object.is(value, -0)) return null;
+                return value >= -(2 ** 31) && value < 2 ** 31 ? "i32" : value >= 0 && value < 2 ** 32 ? "u32" : null;
+            }
+            case "column": return integerColumn(columns[expression.column]);
+            case "upLeaf": return integerColumn(upColumns[expression.column]);
+            case "local": return integerLocals[expression.local];
+            case "unary": return expression.operator === "~" ? "i32" : expression.operator === "+" ? integerKind(expression.operand) : null;
+            case "binary": return expression.operator === ">>>" ? "u32" : expression.operator in bitwise ? "i32" : null;
+            case "math": return expression.name === "imul" ? "i32" : expression.name === "clz32" ? "u32" : null;
+            case "conditional": {
+                const consequent = integerKind(expression.consequent);
+                const alternate = integerKind(expression.alternate);
+                return consequent === undefined ? alternate : alternate === undefined || alternate === consequent ? consequent : null;
+            }
+            default: return null;
+        }
+    };
+    /**
+     * At storage precision, the declared 32-bit integer kind of a value, which its arithmetic wraps at as the integers
+     * it's stored as do: a field declared i32 or u32 (a u8 promotes, as a C integer does, and doesn't wrap), a local every
+     * assignment gives one kind, and their sums, differences, products, remainders by a literal, negations (of i32s),
+     * choices, least and greatest; a literal takes the other operand's kind. Values JS operators make 32-bit, as `>>> 0`
+     * does, compute as written. Null for any other value, or a body computing as written; `undefined` while a local's
+     * kind isn't yet known.
+     */
+    const declaredKind = (expression: Expression): IntegerKind | null | undefined => {
+        if (!storagePrecision) return null;
+        const literal = (operand: Expression): boolean => operand.kind === "number" && Number.isInteger(operand.value) && !Object.is(operand.value, -0) && Math.abs(operand.value) < 2 ** 31;
+        /** One kind of two operands, either of which may be a literal; null when neither has a kind, or they differ. */
+        const both = (left: Expression, right: Expression): IntegerKind | null | undefined => {
+            const leftKind = literal(left) ? null : declaredKind(left);
+            const rightKind = literal(right) ? null : declaredKind(right);
+            if (leftKind === undefined || rightKind === undefined) return undefined;
+            if ((leftKind === null && !literal(left)) || (rightKind === null && !literal(right))) return null;
+            return leftKind === null ? rightKind : rightKind === null || rightKind === leftKind ? leftKind : null;
+        };
         switch (expression.kind) {
             case "column": {
                 const { view, boolean } = columns[expression.column];
-                return !boolean && (view === "i32" || view === "u32" || view === "u8");
+                return boolean ? null : view === "i32" ? "i32" : view === "u32" ? "u32" : null;
             }
-            case "upLeaf": {
-                const column = upColumns[expression.column];
-                return column !== undefined && !column.boolean && (column.view === "i32" || column.view === "u32" || column.view === "u8");
+            case "local": return declaredLocals[expression.local];
+            case "unary": {
+                if (expression.operator !== "-") return null;
+                const kind = declaredKind(expression.operand);
+                return kind === undefined ? undefined : kind === "i32" ? "i32" : null;
             }
-            case "number": return Number.isInteger(expression.value) && Math.abs(expression.value) <= 0x7FFFFFFF;
-            case "local": return integralLocals[expression.local];
-            default: return false;
+            case "binary": {
+                const { operator, left, right } = expression;
+                if (operator === "%") return right.kind === "number" && literal(right) && right.value !== 0 ? declaredKind(left) : null;
+                return operator === "+" || operator === "-" || operator === "*" ? both(left, right) : null;
+            }
+            case "conditional": return both(expression.consequent, expression.alternate);
+            case "math": {
+                const [first, second] = expression.arguments;
+                return (expression.name === "min" || expression.name === "max") && expression.arguments.length === 2 && first !== undefined && second !== undefined ? both(first, second) : null;
+            }
+            default: return null;
         }
     };
-    const inferIntegral = (statements: readonly Statement[]): boolean => {
+    /** At storage precision, the kind arithmetic on declared 32-bit integers wraps at: as `declaredKind`, for the operations that may overflow. */
+    const wrappedKind = (expression: Expression): IntegerKind | null | undefined =>
+        (expression.kind === "binary" && ["+", "-", "*", "%"].includes(expression.operator)) || (expression.kind === "unary" && expression.operator === "-") ? declaredKind(expression) : null;
+    /** By local, the declared kind every assignment gives it, at the fixed point; `undefined` until an assignment is seen. */
+    const declaredLocals: (IntegerKind | null | undefined)[] = new Array(program.locals);
+    for (const accumulator of accumulators) declaredLocals[accumulator] = null;
+    const inferDeclaredLocals = (statements: readonly Statement[]): boolean => {
         let changed = false;
         for (const statement of statements) {
-            if (statement.kind === "set" && integralLocals[statement.local] && !integral(statement.value)) {
-                integralLocals[statement.local] = false;
-                changed = true;
+            if (statement.kind === "set") {
+                const current = declaredLocals[statement.local];
+                if (current === null) continue;
+                const kind = declaredKind(statement.value);
+                if (kind === undefined) continue;
+                const next = current === undefined || current === kind ? kind : null;
+                if (next !== current) {
+                    declaredLocals[statement.local] = next;
+                    changed = true;
+                }
             }
-            else if (statement.kind === "if") changed = inferIntegral(statement.consequent) || inferIntegral(statement.alternate) || changed;
-            else if (statement.kind === "block" || statement.kind === "loop") changed = inferIntegral(statement.body) || changed;
+            else if (statement.kind === "if") changed = inferDeclaredLocals(statement.consequent) || inferDeclaredLocals(statement.alternate) || changed;
+            else if (statement.kind === "block" || statement.kind === "loop") changed = inferDeclaredLocals(statement.body) || changed;
         }
         return changed;
     };
-    while (inferIntegral(program.body));
+    while (inferDeclaredLocals(program.body));
+    // Accumulators start at their partials, which needn't be integers.
+    const integralLocals = new Array<boolean>(program.locals).fill(true).map((integral, index) => integral && !accumulators.includes(index));
+    /**
+     * In the arm of an `if` whose test bounds them, each local whole when finite with its bound, an integer there until
+     * it's assigned again: NaN and the infinities fail every bound.
+     */
+    const guarded = new Map<number, number>();
+    /** By local, a bound on its magnitude while it's integral: the largest of what's assigned it, at the fixed point. */
+    const localBounds = new Array<number>(program.locals).fill(0);
+    /**
+     * A bound on the magnitude of a value that is always an integer, or null when it may not be one: integer kinds,
+     * booleans, integer literals and integral locals, below 2^32, and sums, differences, products and remainders of
+     * those, so `(count + 1) % 1000` is known an integer.
+     */
+    const integerBound = (expression: Expression): number | null => {
+        const wrapped = wrappedKind(expression);
+        if (wrapped !== null && wrapped !== undefined) return wrapped === "i32" ? 2 ** 31 : 2 ** 32 - 1;
+        switch (expression.kind) {
+            case "number": return Number.isInteger(expression.value) ? Math.abs(expression.value) : null;
+            case "boolean": return 1;
+            case "column": {
+                const { range } = columns[expression.column];
+                if (range !== undefined && integerKind(expression) !== null) return Math.max(Math.abs(range[0]), Math.abs(range[1]));
+                break;
+            }
+            case "local": return integralLocals[expression.local] ? localBounds[expression.local] : guarded.get(expression.local) ?? null;
+            case "unary": return expression.operator === "-" || expression.operator === "+" ? integerBound(expression.operand) : expression.operator === "!" ? 1 : 2 ** 32;
+            case "binary": {
+                if (expression.operator in bitwise) return 2 ** 32;
+                if (typeOf(expression) === "boolean") return 1;
+                const left = integerBound(expression.left);
+                const right = integerBound(expression.right);
+                if (left === null || right === null) return null;
+                switch (expression.operator) {
+                    case "+": case "-": return left + right;
+                    case "*": return left * right;
+                    // A remainder by zero is NaN.
+                    case "%": return expression.right.kind === "number" && expression.right.value !== 0 ? Math.min(left, right) : null;
+                    default: return null;
+                }
+            }
+            case "conditional": {
+                const consequent = integerBound(expression.consequent);
+                const alternate = integerBound(expression.alternate);
+                return consequent === null || alternate === null ? null : Math.max(consequent, alternate);
+            }
+            case "math": {
+                if (!["min", "max", "abs", "floor", "ceil", "trunc"].includes(expression.name) || expression.arguments.length === 0) break;
+                const bounds = expression.arguments.map(integerBound);
+                return bounds.every(bound => bound !== null) ? Math.max(...bounds.map(bound => bound ?? 0)) : null;
+            }
+            default: break;
+        }
+        const kind = integerKind(expression);
+        return kind === "i32" ? 2 ** 31 : kind === "u32" ? 2 ** 32 - 1 : typeOf(expression) === "boolean" ? 1 : null;
+    };
+    /**
+     * Whether computing a value costs no more than a few instructions and calls nothing: reads of columns, locals and
+     * parameters, and operators and native `Math` on them. Values are pure, so one that's cheap may be computed where
+     * it wouldn't be, as a branch-free `select` does.
+     */
+    const cheap = (expression: Expression, budget = { left: 24 }): boolean => {
+        if (--budget.left < 0) return false;
+        switch (expression.kind) {
+            case "number": case "boolean": case "local": case "column": case "resource": case "args": case "shared": case "found": case "upFound": return true;
+            case "unary": return cheap(expression.operand, budget);
+            case "binary":
+                if (expression.operator === "**" || (expression.operator === "%" && !(expression.right.kind === "number" && expression.right.value !== 0 && exactInteger(expression.left) && integral(expression.right)))) return false;
+                return cheap(expression.left, budget) && cheap(expression.right, budget);
+            case "logical": return cheap(expression.left, budget) && cheap(expression.right, budget);
+            case "conditional": return cheap(expression.test, budget) && cheap(expression.consequent, budget) && cheap(expression.alternate, budget);
+            case "math": return native.has(expression.name) && expression.arguments.every(argument => cheap(argument, budget));
+            default: return false;
+        }
+    };
+    /** Whether a value is an integer below 2^32 in magnitude. */
+    const integral = (expression: Expression): boolean => {
+        const bound = integerBound(expression);
+        return bound !== null && bound <= 2 ** 32;
+    };
+    /** Whether a value is an integer f64 arithmetic computes exactly, below 2^53 in magnitude. */
+    const exactInteger = (expression: Expression): boolean => {
+        const bound = integerBound(expression);
+        return bound !== null && bound < 2 ** 53;
+    };
+    const inferIntegerLocals = (statements: readonly Statement[]): boolean => {
+        let changed = false;
+        for (const statement of statements) {
+            if (statement.kind === "set") {
+                const current = integerLocals[statement.local];
+                if (current === null) continue;
+                const kind = integerKind(statement.value);
+                // A copy of a local not yet seen assigned waits for it.
+                if (kind === undefined) continue;
+                const next = current === undefined || current === kind ? kind : null;
+                if (next !== current) {
+                    integerLocals[statement.local] = next;
+                    changed = true;
+                }
+            }
+            else if (statement.kind === "if") changed = inferIntegerLocals(statement.consequent) || inferIntegerLocals(statement.alternate) || changed;
+            else if (statement.kind === "block" || statement.kind === "loop") changed = inferIntegerLocals(statement.body) || changed;
+        }
+        return changed;
+    };
+    while (inferIntegerLocals(program.body));
+    const integerLocal = (index: number): IntegerKind | null => integerLocals[index] ?? null;
+
+    // Bounds grow from 0 to the fixed point of what's assigned each local; a local whose bound still grows after
+    // `widening` passes, as a counter in a loop does, or that's assigned what may not be an exact integer, isn't integral.
+    const assignedValues = new Map<number, Expression[]>();
+    const collectAssigned = (statements: readonly Statement[]): void => {
+        for (const statement of statements) {
+            if (statement.kind === "set" && integralLocals[statement.local]) assignedValues.set(statement.local, [...assignedValues.get(statement.local) ?? [], statement.value]);
+            else if (statement.kind === "if") { collectAssigned(statement.consequent); collectAssigned(statement.alternate); }
+            else if (statement.kind === "block" || statement.kind === "loop") collectAssigned(statement.body);
+        }
+    };
+    collectAssigned(program.body);
+    const widening = assignedValues.size + 2;
+    for (let pass = 0, changed = true; changed; pass++) {
+        changed = false;
+        for (const [index, values] of assignedValues) {
+            if (!integralLocals[index]) continue;
+            let bound: number | null = 0;
+            for (const value of values) {
+                const own = integerBound(value);
+                bound = own === null || own >= 2 ** 53 ? null : Math.max(bound, own);
+                if (bound === null) break;
+            }
+            if (bound === null || (bound > localBounds[index] && pass >= widening)) integralLocals[index] = false;
+            else if (bound > localBounds[index]) localBounds[index] = bound;
+            else continue;
+            changed = true;
+        }
+    }
+    /** Locals holding an integer whenever they hold a finite number, at the fixed point: assigned integers, or `Math` roundings. */
+    const wholeWhenFinite = new Array<boolean>(program.locals).fill(true).map((whole, index) => whole && !accumulators.includes(index));
+    const roundsToWhole = (expression: Expression): boolean =>
+        integerBound(expression) !== null
+        || (expression.kind === "math" && ["trunc", "floor", "ceil", "round"].includes(expression.name) && expression.arguments.length > 0)
+        || (expression.kind === "local" && wholeWhenFinite[expression.local]);
+    for (let changed = true; changed;) {
+        changed = false;
+        for (const [index, values] of assignedValues) {
+            if (wholeWhenFinite[index] && !values.every(roundsToWhole)) {
+                wholeWhenFinite[index] = false;
+                changed = true;
+            }
+        }
+    }
+    for (let index = 0; index < program.locals; index++) if (!assignedValues.has(index)) wholeWhenFinite[index] = false;
+    /** The bounds an `if`'s test proves true of locals whole when finite, which it bounds on both sides: each an integer there. */
+    const factsOf = (test: Expression): Map<number, number> => {
+        const lower = new Map<number, number>();
+        const upper = new Map<number, number>();
+        const visit = (node: Expression): void => {
+            if (node.kind === "logical" && node.operator === "&&") {
+                visit(node.left);
+                visit(node.right);
+                return;
+            }
+            if (node.kind !== "binary") return;
+            const { operator, left, right } = node;
+            const [own, other, flipped] = left.kind === "local" ? [left, right, false] : [right, left, true];
+            if (own.kind !== "local" || other.kind !== "number" || !Number.isFinite(other.value) || !wholeWhenFinite[own.local]) return;
+            const below = flipped ? operator === ">" || operator === ">=" : operator === "<" || operator === "<=";
+            const above = flipped ? operator === "<" || operator === "<=" : operator === ">" || operator === ">=";
+            if (below) upper.set(own.local, Math.min(upper.get(own.local) ?? Infinity, other.value));
+            if (above) lower.set(own.local, Math.max(lower.get(own.local) ?? -Infinity, other.value));
+        };
+        visit(test);
+        const facts = new Map<number, number>();
+        for (const [local, high] of upper) {
+            const low = lower.get(local);
+            if (low !== undefined) facts.set(local, Math.max(Math.abs(low), Math.abs(high)));
+        }
+        return facts;
+    };
+    /** The least and greatest integers a test proves of locals whole when finite, which it bounds on both sides. */
+    const rangesOf = (test: Expression): Map<number, readonly [number, number]> => {
+        const lower = new Map<number, number>();
+        const upper = new Map<number, number>();
+        const visit = (node: Expression): void => {
+            if (node.kind === "logical" && node.operator === "&&") {
+                visit(node.left);
+                visit(node.right);
+                return;
+            }
+            if (node.kind !== "binary") return;
+            const { left, right } = node;
+            const [own, other, flipped] = left.kind === "local" ? [left, right, false] : [right, left, true];
+            if (own.kind !== "local" || other.kind !== "number" || !Number.isFinite(other.value) || !wholeWhenFinite[own.local]) return;
+            const flips: { readonly [operator: string]: string } = { "<": ">", "<=": ">=", ">": "<", ">=": "<=" };
+            const operator = flipped ? flips[node.operator] : node.operator;
+            const { value } = other;
+            const high = operator === "<" ? Math.ceil(value) - 1 : operator === "<=" ? Math.floor(value) : null;
+            const low = operator === ">" ? Math.floor(value) + 1 : operator === ">=" ? Math.ceil(value) : null;
+            if (high !== null) upper.set(own.local, Math.min(upper.get(own.local) ?? Infinity, high));
+            if (low !== null) lower.set(own.local, Math.max(lower.get(own.local) ?? -Infinity, low));
+        };
+        visit(test);
+        const ranges = new Map<number, readonly [number, number]>();
+        for (const [local, high] of upper) {
+            const low = lower.get(local);
+            if (low !== undefined) ranges.set(local, [low, high]);
+        }
+        return ranges;
+    };
+    /** In the arm of an `if` whose test bounds them, the least and greatest integer of each local whole when finite. */
+    const guardedRanges = new Map<number, readonly [number, number]>();
+    /** Runs `arm` knowing what `test` proves of the locals it bounds. */
+    const withFacts = (test: Expression, arm: () => void): void => {
+        const outer = new Map(guarded);
+        const outerRanges = new Map(guardedRanges);
+        for (const [local, bound] of factsOf(test)) if (!integralLocals[local] && bound < 2 ** 53) guarded.set(local, Math.min(bound, guarded.get(local) ?? Infinity));
+        for (const [local, [low, high]] of rangesOf(test)) {
+            const [outerLow, outerHigh] = guardedRanges.get(local) ?? [-Infinity, Infinity];
+            guardedRanges.set(local, [Math.max(low, outerLow), Math.min(high, outerHigh)]);
+        }
+        arm();
+        guarded.clear();
+        for (const [local, bound] of outer) guarded.set(local, bound);
+        guardedRanges.clear();
+        for (const [local, range] of outerRanges) guardedRanges.set(local, range);
+    };
+    /**
+     * The least and greatest an integer value can be, or null where that isn't known: integer literals, columns' declared
+     * ranges, locals an enclosing test bounds, and sums, differences, products and negations of those.
+     */
+    const rangeOf = (expression: Expression): readonly [number, number] | null => {
+        switch (expression.kind) {
+            case "number": return Number.isInteger(expression.value) ? [expression.value, expression.value] : null;
+            case "column": {
+                const { range } = columns[expression.column];
+                return range !== undefined && integerKind(expression) !== null ? range : null;
+            }
+            case "local": return guardedRanges.get(expression.local) ?? null;
+            case "unary": {
+                const operand = expression.operator === "-" || expression.operator === "+" ? rangeOf(expression.operand) : null;
+                return operand === null ? null : expression.operator === "-" ? [-operand[1], -operand[0]] : operand;
+            }
+            case "binary": {
+                const left = rangeOf(expression.left);
+                const right = rangeOf(expression.right);
+                if (left === null || right === null) return null;
+                const [a, b] = left;
+                const [c, d] = right;
+                switch (expression.operator) {
+                    case "+": return [a + c, b + d];
+                    case "-": return [a - d, b - c];
+                    case "*": {
+                        const products = [a * c, a * d, b * c, b * d];
+                        return [Math.min(...products), Math.max(...products)];
+                    }
+                    default: return null;
+                }
+            }
+            default: return null;
+        }
+    };
+    /** Locals never assigned -0, at the fixed point: true until something that may be -0 is assigned. */
+    const signedZeroFree = new Array<boolean>(program.locals).fill(true);
+    /** Locals never assigned a negative value or -0, at the fixed point. */
+    const nonNegativeLocals = new Array<boolean>(program.locals).fill(true);
+    /**
+     * Whether a value is never negative nor -0, NaN being neither: unsigned kinds, booleans, literals from +0; sums,
+     * products and remainders of those, a remainder taking its dividend's sign; the greatest of values one of which is,
+     * the least of values all of which are, an absolute value, and either arm of a conditional that is.
+     */
+    const nonNegative = (expression: Expression): boolean => {
+        switch (expression.kind) {
+            case "number": return expression.value >= 0 && !Object.is(expression.value, -0);
+            case "boolean": return true;
+            case "column": if ((columns[expression.column].range?.[0] ?? -1) >= 0 && integerKind(expression) !== null) return true; break;
+            case "local": return nonNegativeLocals[expression.local];
+            case "binary":
+                if (expression.operator === "+" || expression.operator === "*") return nonNegative(expression.left) && nonNegative(expression.right);
+                if (expression.operator === "%") return nonNegative(expression.left);
+                break;
+            case "math":
+                if (expression.name === "max") return expression.arguments.some(nonNegative);
+                if (expression.name === "min") return expression.arguments.length > 0 && expression.arguments.every(nonNegative);
+                if (expression.name === "abs") return true;
+                break;
+            case "conditional": return nonNegative(expression.consequent) && nonNegative(expression.alternate);
+            default: break;
+        }
+        return integerKind(expression) === "u32" || typeOf(expression) === "boolean";
+    };
+    for (let changed = true; changed;) {
+        changed = false;
+        for (const [index, values] of assignedValues) {
+            if (nonNegativeLocals[index] && !values.every(nonNegative)) {
+                nonNegativeLocals[index] = false;
+                changed = true;
+            }
+        }
+    }
+    /**
+     * Whether a value is never -0: integer kinds and booleans; a literal but -0; a sum with a term that isn't, and a
+     * difference whose minuend isn't, as only -0 + -0 and -0 - 0 give -0; the least or greatest of values that aren't;
+     * either arm of a conditional that isn't; and any value never negative. Other negations, products and remainders may be.
+     */
+    const neverNegativeZero = (expression: Expression): boolean => {
+        if (nonNegative(expression)) return true;
+        switch (expression.kind) {
+            case "number": return !Object.is(expression.value, -0);
+            case "boolean": return true;
+            case "local": return signedZeroFree[expression.local];
+            case "binary":
+                if (expression.operator === "+") return neverNegativeZero(expression.left) || neverNegativeZero(expression.right);
+                if (expression.operator === "-") return neverNegativeZero(expression.left);
+                break;
+            case "math":
+                if (expression.name === "min" || expression.name === "max") return expression.arguments.every(neverNegativeZero);
+                break;
+            case "conditional": return neverNegativeZero(expression.consequent) && neverNegativeZero(expression.alternate);
+            default: break;
+        }
+        return integerKind(expression) !== null || typeOf(expression) === "boolean";
+    };
+    for (let changed = true; changed;) {
+        changed = false;
+        for (const [index, values] of assignedValues) {
+            if (signedZeroFree[index] && !values.every(neverNegativeZero)) {
+                signedZeroFree[index] = false;
+                changed = true;
+            }
+        }
+    }
+    for (const accumulator of accumulators) signedZeroFree[accumulator] = false;
+    /**
+     * Locals kept in i64: numbers every assignment gives an exact integer that's never -0 and that no 32-bit kind
+     * holds, so arithmetic and comparisons on them stay in integers, converted to f64 only where read as a number.
+     */
+    // An integral local never -0 and within i32 is an i32: its value is its ToInt32.
+    for (let k = 0; k < program.locals; k++) {
+        if (integralLocals[k] && signedZeroFree[k] && integerLocal(k) === null && localTypes[k] === "number" && assignedValues.has(k) && localBounds[k] < 2 ** 31) integerLocals[k] = "i32";
+    }
+    const wideLocals = Array.from({ length: program.locals }, (_, k) =>
+        integralLocals[k] && signedZeroFree[k] && integerLocal(k) === null && localTypes[k] === "number" && assignedValues.has(k));
+    /** Locals only ever assigned booleans, kept as i32 0 or 1. */
+    const booleanLocals = Array.from({ length: program.locals }, (_, k) => localTypes[k] === "boolean" && !accumulators.includes(k));
+    /** Leaves the value to assign a local in its local's type. */
+    const emitAssigned = (index: number, value: Expression): void => {
+        if (wideLocals[index]) emitInteger64(value);
+        else if (booleanLocals[index]) emitCondition(value);
+        else if (integerLocal(index) === null) emit(value);
+        else emitInteger(value);
+    };
 
     // Parameters: start, end, tick, lastRun, column addresses, filter row, chunk and block tick addresses, scalars, and with reductions the partials address.
     const columnParameter = (column: number): number => 4 + column;
@@ -431,7 +944,33 @@ export const generateWasmOrReason = (
      */
     const hoisted = new Map<Expression, number>();
     let localBase = 0;
-    const local = (index: number): number => localBase + index;
+    /** While the interleaved loop runs a group's statements one row at a time: that row's lane, its rows past the group's first. */
+    let lane: number | null = null;
+    /** In the interleaved loop, by lane past the first, the local holding each program local in that lane's row; -1 for one held as a vector. */
+    let laneLocals: readonly (readonly number[])[] = [];
+    /** In the interleaved loop, by program local, the v128 local holding its value in the group's four rows, or -1. */
+    let vectorLocals: readonly number[] = [];
+    /** In the interleaved loop, the program locals held as f32 lanes: numbers every assignment gives an f32 exactly. */
+    let floatLocals: readonly boolean[] = [];
+    /**
+     * While the interleaved loop is generated: the vectors the same in every group, by what they hold, each computed once
+     * into its local by `code` inserted at `at`, before the groups.
+     */
+    let invariants: { readonly at: number; readonly code: number[]; readonly vectors: Map<string, number> } | null = null;
+    /** Leaves a vector the same in every row, which `emitVector` computes: in the interleaved loop, once, before its groups. */
+    const invariantVector = (key: string, emitVector: () => void): void => {
+        if (invariants === null) return emitVector();
+        let local = invariants.vectors.get(key);
+        if (local === undefined) {
+            const start = code.length;
+            emitVector();
+            local = scratch(v128Type);
+            invariants.code.push(...code.splice(start), op.localSet, ...unsigned(local));
+            invariants.vectors.set(key, local);
+        }
+        code.push(op.localGet, ...unsigned(local));
+    };
+    const local = (index: number): number => lane === null || lane === 0 ? localBase + index : laneLocals[lane - 1][index];
     const scratch = (type: number): number => {
         extraLocals.push(type);
         return localBase + program.locals + extraLocals.length - 1;
@@ -439,8 +978,123 @@ export const generateWasmOrReason = (
     let rowLocal = 0;
     /** For `up`: the current row's parent row. */
     let parentLocal = 0;
+    /** By column, an i32 local holding its element's address in the current row, while a row's statements run as scalars. */
+    const rowAddresses = new Map<number, number>();
+    /**
+     * By column, the local holding its value in the current row while a branch-free `if` runs: loaded once before it,
+     * read and selected into by its arms, and stored once after it.
+     */
+    const registers = new Map<number, number>();
+    /** A column's register type: f32, f64, or i32 for integers and booleans. */
+    const registerType = (view: View): number => view === "f32" ? f32Type : view === "f64" ? f64Type : i32Type;
+    /**
+     * By column, the v128 local holding its four rows' values while an interleaved group runs: the 32-bit integer
+     * leaves a component holds within 16 bytes, loaded once a row and transposed.
+     */
+    const vectorRegisters = new Map<number, number>();
+    /** The columns of the interleaved group's spans, whose registers are stored back at the group's end. */
+    const spanned = new Set<number>();
+    /** Leaves a local's value in its own type: in a lane of the interleaved loop, its value in that lane's row. */
+    const getLocal = (index: number): void => {
+        const vector = lane === null ? -1 : vectorLocals[index] ?? -1;
+        if (vector < 0) {
+            code.push(op.localGet, ...unsigned(local(index)));
+            return;
+        }
+        if (floatLocals[index] === true) {
+            code.push(op.localGet, ...unsigned(vector), ...simd(vop.f32ExtractLane), lane ?? 0, op.f64PromoteF32);
+            return;
+        }
+        // A boolean's vector holds lane masks, of which a lane's 1 or 0 is the low bit.
+        code.push(op.localGet, ...unsigned(vector), ...simd(vop.i32ExtractLane), lane ?? 0);
+        if (booleanLocals[index]) code.push(op.i32Const, 1, op.i32And);
+    };
+    /** A column's offset from its element's address: in a lane of the interleaved loop, from the group's first row's. */
+    const columnOffset = (column: number): number => columns[column].offset + (lane ?? 0) * columns[column].stride;
+    /** Leaves a column's value at the row from the register holding it, in its register type, if one does. */
+    const fromRegister = (column: number): boolean => {
+        const register = registers.get(column);
+        if (register !== undefined) {
+            code.push(op.localGet, ...unsigned(register));
+            return true;
+        }
+        const vector = lane === null ? undefined : vectorRegisters.get(column);
+        if (vector === undefined) return false;
+        code.push(op.localGet, ...unsigned(vector), ...simd(columns[column].view === "f32" ? vop.f32ExtractLane : vop.i32ExtractLane), lane ?? 0);
+        return true;
+    };
     const address = (column: number): void => {
+        const own = rowAddresses.get(column);
+        if (own !== undefined) {
+            code.push(op.localGet, ...unsigned(own));
+            return;
+        }
         code.push(op.localGet, ...unsigned(columnParameter(column)), op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(columns[column].stride), op.i32Mul, op.i32Add);
+    };
+    /** The columns statements read or store to, at the row. */
+    const columnsUsed = (statements: readonly Statement[], used: Set<number>): Set<number> => {
+        const read = (expression: Expression): void => {
+            switch (expression.kind) {
+                case "column": used.add(expression.column); return;
+                case "unary": read(expression.operand); return;
+                case "binary": case "logical": read(expression.left); read(expression.right); return;
+                case "conditional": read(expression.test); read(expression.consequent); read(expression.alternate); return;
+                case "math": expression.arguments.forEach(read); return;
+                case "lane": read(expression.value); return;
+                case "resourceElement": read(expression.element); return;
+                default: return;
+            }
+        };
+        for (const statement of statements) {
+            switch (statement.kind) {
+                case "set": read(statement.value); break;
+                case "store": used.add(statement.column); read(statement.value); break;
+                case "resourceStore": read(statement.element); read(statement.value); break;
+                case "stamp": used.add(statement.column); break;
+                case "if": read(statement.test); columnsUsed(statement.consequent, used); columnsUsed(statement.alternate, used); break;
+                case "block": case "loop": columnsUsed(statement.body, used); break;
+                case "branchIf": read(statement.test); break;
+                case "find": read(statement.entity); break;
+                case "probe": statement.values.forEach(read); break;
+                case "listRow": read(statement.index); break;
+                case "intrinsic": statement.operands.forEach(lanes => lanes.forEach(read)); columnsUsed(statement.body, used); break;
+                default: break;
+            }
+        }
+        return used;
+    };
+
+    /**
+     * A remainder of an i32 or a u32 by an integer literal of magnitude 2 and more, as the i32 path computes it: an
+     * unsigned one where the dividend is a u32 and the divisor positive, with the multiplier dividing by it.
+     */
+    const constantRemainder = (expression: Expression): { readonly divisor: number; readonly unsigned: boolean } | null => {
+        if (expression.kind !== "binary" || expression.operator !== "%" || expression.right.kind !== "number") return null;
+        const { left, right: { value } } = expression;
+        if (!Number.isInteger(value) || Math.abs(value) < 2 || Math.abs(value) >= 2 ** 31) return null;
+        if (integerKind(left) === "u32" && value > 0) return unsignedMagic(value) === null ? null : { divisor: value, unsigned: true };
+        if (!exactInteger(left) || !((integerBound(left) ?? 2 ** 53) < 2 ** 31 || integerKind(left) === "i32")) return null;
+        // A remainder takes its dividend's sign, whichever the divisor's.
+        return { divisor: Math.abs(value), unsigned: false };
+    };
+    /** Replaces the i32 on the stack with its remainder by a constant divisor, from a multiply-high, as `rem_s` or `rem_u` gives it. */
+    const emitRemainder = ({ divisor, unsigned: isUnsigned }: { readonly divisor: number; readonly unsigned: boolean }): void => {
+        const dividend = scratch(i32Type);
+        const quotient = scratch(i32Type);
+        code.push(op.localTee, ...unsigned(dividend));
+        if (isUnsigned) {
+            const magic = unsignedMagic(divisor);
+            if (magic === null) throw new Error("A remainder by a divisor without a multiplier.");
+            code.push(op.i64ExtendI32U, op.i64Const, ...signed64(magic.multiplier), op.i64Mul, op.i64Const, ...signed64(magic.shift), op.i64ShrU, op.i32WrapI64);
+        }
+        else {
+            const { multiplier, shift } = signedMagic(divisor);
+            code.push(op.i64ExtendI32S, op.i64Const, ...signed64(multiplier), op.i64Mul, op.i64Const, 32, op.i64ShrS, op.i32WrapI64);
+            if (multiplier < 0) code.push(op.localGet, ...unsigned(dividend), op.i32Add);
+            if (shift > 0) code.push(op.i32Const, ...signed(shift), op.i32ShrS);
+            code.push(op.localGet, ...unsigned(dividend), op.i32Const, 31, op.i32ShrU, op.i32Add);
+        }
+        code.push(op.localSet, ...unsigned(quotient), op.localGet, ...unsigned(dividend), op.localGet, ...unsigned(quotient), op.i32Const, ...signed(divisor), op.i32Mul, op.i32Sub);
     };
 
     /** Leaves the JS `ToInt32` of the f64 on the stack as an i32: exact for every finite value; NaN and infinities give 0. */
@@ -449,6 +1103,241 @@ export const generateWasmOrReason = (
         code.push(op.localTee, ...unsigned(value));
         code.push(op.localGet, ...unsigned(value), op.f64Const, ...float64(2 ** -32), op.f64Mul, op.f64Trunc, op.f64Const, ...float64(2 ** 32), op.f64Mul, op.f64Sub);
         code.push(...i64TruncSatF64S, op.i32WrapI64);
+    };
+
+    /** Leaves an exact integer's value as an i64, its integer operations computed in i64. */
+    const emitInteger64 = (expression: Expression): void => {
+        const kind = integerKind(expression) ?? null;
+        if (!hoisted.has(expression)) {
+            if (expression.kind === "local" && wideLocals[expression.local]) {
+                getLocal(expression.local);
+                return;
+            }
+            if (kind !== null) {
+                emitInteger(expression);
+                code.push(kind === "i32" ? op.i64ExtendI32S : op.i64ExtendI32U);
+                return;
+            }
+            if (expression.kind === "number" && Number.isInteger(expression.value)) {
+                code.push(op.i64Const, ...signed64(expression.value));
+                return;
+            }
+            const integer = (operand: Expression): boolean => exactInteger(operand) && typeOf(operand) !== "boolean";
+            if (expression.kind === "binary" && (expression.operator === "+" || expression.operator === "-" || expression.operator === "*") && integer(expression.left) && integer(expression.right)) {
+                emitInteger64(expression.left);
+                emitInteger64(expression.right);
+                code.push(expression.operator === "+" ? op.i64Add : expression.operator === "-" ? op.i64Sub : op.i64Mul);
+                return;
+            }
+            if (expression.kind === "unary" && expression.operator === "-" && integer(expression.operand)) {
+                code.push(op.i64Const, 0);
+                emitInteger64(expression.operand);
+                code.push(op.i64Sub);
+                return;
+            }
+            // Of integers, the least or greatest is the same whichever of -0 and 0 it is.
+            if (expression.kind === "math" && (expression.name === "min" || expression.name === "max") && expression.arguments.length > 0 && expression.arguments.every(integer)) {
+                const [first, ...rest] = expression.arguments;
+                const result = scratch(i64Type);
+                const next = scratch(i64Type);
+                emitInteger64(first);
+                code.push(op.localSet, ...unsigned(result));
+                for (const argument of rest) {
+                    emitInteger64(argument);
+                    code.push(op.localSet, ...unsigned(next));
+                    code.push(op.localGet, ...unsigned(result), op.localGet, ...unsigned(next), op.localGet, ...unsigned(result), op.localGet, ...unsigned(next));
+                    code.push(expression.name === "min" ? op.i64LtS : op.i64GtS, op.select, op.localSet, ...unsigned(result));
+                }
+                code.push(op.localGet, ...unsigned(result));
+                return;
+            }
+            if (expression.kind === "conditional" && integer(expression.consequent) && integer(expression.alternate) && selects(expression)) {
+                emitInteger64(expression.consequent);
+                emitInteger64(expression.alternate);
+                emitCondition(expression.test);
+                code.push(op.select);
+                return;
+            }
+        }
+        emit(expression);
+        code.push(...i64TruncSatF64S);
+    };
+
+    /** Whether a bitwise operation leaves its left operand's ToInt32 bits as they are: a shift by 0, an or or xor with 0. */
+    const identityOf = (expression: Extract<Expression, { kind: "binary" }>): boolean => {
+        const { operator, right } = expression;
+        return right.kind === "number" && right.value === 0 && (operator === "<<" || operator === ">>" || operator === ">>>" || operator === "|" || operator === "^");
+    };
+
+    /** Converts the f64 on the stack, a value of `kind`, to its i32 bits: exact, since it's an integer of that kind. */
+    const emitIntegerOfNumber = (kind: IntegerKind): void => {
+        code.push(...(kind === "i32" ? i32TruncSatF64S : truncations.i32TruncSatF64U));
+    };
+
+    /** Converts the i32 on the stack, a value of `kind`, to the f64 it is. */
+    const emitNumberOfInteger = (kind: IntegerKind): void => {
+        code.push(kind === "i32" ? op.f64ConvertI32S : op.f64ConvertI32U);
+    };
+
+    /**
+     * Leaves the JS `ToInt32` of an expression's value as an i32, computing integer operations in i32 throughout and
+     * converting from f64 only what isn't an integer kind.
+     */
+    const emitInteger = (expression: Expression): void => {
+        const kind = integerKind(expression) ?? null;
+        const hoistedLocal = hoisted.get(expression);
+        if (hoistedLocal !== undefined) {
+            code.push(op.localGet, ...unsigned(hoistedLocal));
+            if (kind === null) emitToInt32();
+            else emitIntegerOfNumber(kind);
+            return;
+        }
+        switch (expression.kind) {
+            case "number":
+                code.push(op.i32Const, ...signed(expression.value | 0));
+                return;
+            case "local": {
+                const own = integerLocal(expression.local);
+                getLocal(expression.local);
+                const bound = guarded.get(expression.local);
+                if (wideLocals[expression.local]) code.push(op.i32WrapI64);
+                // An integer a test proves within i32 truncates exactly.
+                else if (own === null && !booleanLocals[expression.local] && bound !== undefined && bound < 2 ** 31) code.push(...i32TruncSatF64S);
+                else if (own === null && !booleanLocals[expression.local]) emitToInt32();
+                return;
+            }
+            case "column": {
+                const column = columns[expression.column];
+                if (integerColumn(column) === null) break;
+                if (fromRegister(expression.column)) return;
+                address(expression.column);
+                code.push(column.view === "u8" ? op.i32Load8u : op.i32Load, ...(column.view === "u8" ? [0] : [2]), ...unsigned(columnOffset(expression.column)));
+                return;
+            }
+            case "unary":
+                if (expression.operator === "~") {
+                    emitInteger(expression.operand);
+                    code.push(op.i32Const, ...signed(-1), op.i32Xor);
+                    return;
+                }
+                if (expression.operator === "+" && kind !== null) {
+                    emitInteger(expression.operand);
+                    return;
+                }
+                // An exact integer's negation's ToInt32 is its ToInt32's, negated modulo 2^32, as a wrapped one's is.
+                if (expression.operator === "-" && (kind !== null || exactInteger(expression)) && typeOf(expression.operand) !== "boolean") {
+                    code.push(op.i32Const, 0);
+                    emitInteger(expression.operand);
+                    code.push(op.i32Sub);
+                    return;
+                }
+                break;
+            case "binary": {
+                const { operator, left, right } = expression;
+                // A shift by 0, or an or or xor with 0, leaves an integer's bits as they are: `>>> 0` and `| 0` only say its kind.
+                if (identityOf(expression)) return emitInteger(left);
+                if (operator in bitwise) {
+                    emitInteger(left);
+                    emitInteger(right);
+                    code.push(bitwise[operator as keyof typeof bitwise]);
+                    return;
+                }
+                // An exact sum, difference or product's ToInt32 is its operands' ToInt32s' i32 result, modulo 2^32 as both are.
+                if ((operator === "+" || operator === "-" || operator === "*") && exactInteger(expression) && typeOf(left) !== "boolean" && typeOf(right) !== "boolean") {
+                    emitInteger(left);
+                    emitInteger(right);
+                    code.push(operator === "+" ? op.i32Add : operator === "-" ? op.i32Sub : op.i32Mul);
+                    return;
+                }
+                const remainder = constantRemainder(expression);
+                if (remainder !== null) {
+                    emitInteger(left);
+                    emitRemainder(remainder);
+                    return;
+                }
+                // A u32's remainder by a positive literal is never negative, so an unsigned one is exact.
+                if (operator === "%" && integerKind(left) === "u32" && right.kind === "number" && Number.isInteger(right.value) && right.value > 0 && right.value < 2 ** 31) {
+                    emitInteger(left);
+                    code.push(op.i32Const, ...signed(right.value), op.i32RemU);
+                    return;
+                }
+                // A remainder takes the whole dividend: in i32 where it fits, else in i64, exact either way.
+                if (operator === "%" && right.kind === "number" && right.value !== 0 && integral(right) && exactInteger(left)) {
+                    const bound = integerBound(left) ?? 2 ** 53;
+                    if ((bound < 2 ** 31 || integerKind(left) === "i32") && Math.abs(right.value) < 2 ** 31) {
+                        emitInteger(left);
+                        code.push(op.i32Const, ...signed(right.value), op.i32RemS);
+                        return;
+                    }
+                    emitInteger64(left);
+                    code.push(op.i64Const, ...signed(right.value), op.i64RemS, op.i32WrapI64);
+                    return;
+                }
+                break;
+            }
+            case "math":
+                if (expression.name === "imul") {
+                    emitInteger(expression.arguments[0] ?? { kind: "number", value: 0 });
+                    emitInteger(expression.arguments[1] ?? { kind: "number", value: 0 });
+                    code.push(op.i32Mul);
+                    return;
+                }
+                if (expression.name === "clz32") {
+                    emitInteger(expression.arguments[0] ?? { kind: "number", value: 0 });
+                    code.push(op.i32Clz);
+                    return;
+                }
+                // The least or greatest of integers one 32-bit kind holds is one of them, its own ToInt32.
+                if ((expression.name === "min" || expression.name === "max") && expression.arguments.length > 0) {
+                    const signed = expression.arguments.every(signedInteger);
+                    if (!signed && !expression.arguments.every(unsignedInteger)) break;
+                    const [first, ...rest] = expression.arguments;
+                    const result = scratch(i32Type);
+                    const next = scratch(i32Type);
+                    emitInteger(first ?? { kind: "number", value: 0 });
+                    code.push(op.localSet, ...unsigned(result));
+                    for (const argument of rest) {
+                        emitInteger(argument);
+                        code.push(op.localSet, ...unsigned(next));
+                        code.push(op.localGet, ...unsigned(result), op.localGet, ...unsigned(next), op.localGet, ...unsigned(result), op.localGet, ...unsigned(next));
+                        code.push(expression.name === "min" ? (signed ? op.i32LtS : op.i32LtU) : (signed ? op.i32GtS : op.i32GtU), op.select, op.localSet, ...unsigned(result));
+                    }
+                    code.push(op.localGet, ...unsigned(result));
+                    return;
+                }
+                break;
+            case "conditional":
+                if (kind === null && !(exactInteger(expression.consequent) && exactInteger(expression.alternate))) break;
+                if (selects(expression)) {
+                    emitInteger(expression.consequent);
+                    emitInteger(expression.alternate);
+                    emitCondition(expression.test);
+                    code.push(op.select);
+                    return;
+                }
+                emitCondition(expression.test);
+                code.push(op.if, i32Type);
+                emitInteger(expression.consequent);
+                code.push(op.else);
+                emitInteger(expression.alternate);
+                code.push(op.end);
+                return;
+            default: break;
+        }
+        // A boolean's ToInt32 is 1 or 0, as its condition is.
+        if (typeOf(expression) === "boolean") {
+            emitCondition(expression);
+            return;
+        }
+        // An exact integer's ToInt32 is the low word of its i64.
+        if (kind === null && exactInteger(expression)) {
+            emitInteger64(expression);
+            code.push(op.i32WrapI64);
+            return;
+        }
+        emit(expression);
+        if (kind !== null) emitIntegerOfNumber(kind);
+        else emitToInt32();
     };
 
     /** Leaves 1 (i32) if the f64 on the stack is truthy: not 0, -0 or NaN. */
@@ -465,6 +1354,88 @@ export const generateWasmOrReason = (
         code.push(op.call, ...unsigned(importOf(functionName)));
     };
 
+    /**
+     * Leaves 1 (i32) if an expression's value is truthy: comparisons as the i32 they compute, `!` as its negation, and
+     * `&&` and `||` of cheap operands without a branch, since both are pure.
+     */
+    const emitCondition = (expression: Expression): void => {
+        if (expression.kind === "local" && booleanLocals[expression.local]) {
+            getLocal(expression.local);
+            return;
+        }
+        if (expression.kind === "column" && columns[expression.column].boolean && columns[expression.column].view === "u8") {
+            const register = registers.get(expression.column);
+            if (register !== undefined) {
+                code.push(op.localGet, ...unsigned(register), op.i32Const, 0, op.i32Ne);
+                return;
+            }
+            address(expression.column);
+            code.push(op.i32Load8u, 0, ...unsigned(columnOffset(expression.column)), op.i32Const, 0, op.i32Ne);
+            return;
+        }
+        if (!hoisted.has(expression)) {
+            if (expression.kind === "binary" && expression.operator in comparisons) {
+                const leftType = typeOf(expression.left);
+                const rightType = typeOf(expression.right);
+                const strict = expression.operator === "===" || expression.operator === "!==";
+                // Exact integers compare as integers: as i32s when both are signed or both unsigned 32-bit, else as i64s.
+                if (leftType === "number" && rightType === "number" && exactInteger(expression.left) && exactInteger(expression.right)) {
+                    // `comparisons` and the integer tables have the same operators.
+                    const operator = expression.operator as keyof typeof integerComparisons;
+                    if (signedInteger(expression.left) && signedInteger(expression.right)) {
+                        emitInteger(expression.left);
+                        emitInteger(expression.right);
+                        code.push(integerComparisons[operator]);
+                    }
+                    else if (unsignedInteger(expression.left) && unsignedInteger(expression.right)) {
+                        emitInteger(expression.left);
+                        emitInteger(expression.right);
+                        code.push(unsignedComparisons[operator]);
+                    }
+                    else {
+                        emitInteger64(expression.left);
+                        emitInteger64(expression.right);
+                        code.push(integer64Comparisons[operator]);
+                    }
+                    return;
+                }
+                if (!strict || (leftType === rightType && leftType !== "mixed")) {
+                    emit(expression.left);
+                    emit(expression.right);
+                    code.push(comparisons[expression.operator as keyof typeof comparisons]);
+                    return;
+                }
+            }
+            if (expression.kind === "unary" && expression.operator === "!") {
+                emitCondition(expression.operand);
+                code.push(op.i32Eqz);
+                return;
+            }
+            if (expression.kind === "logical" && cheap(expression.right)) {
+                emitCondition(expression.left);
+                emitCondition(expression.right);
+                code.push(expression.operator === "&&" ? op.i32And : op.i32Or);
+                return;
+            }
+        }
+        emit(expression);
+        emitTruthy(typeOf(expression));
+    };
+
+    /** Whether a value is an integer an i32 holds, `-0` its 0. */
+    const signedInteger = (expression: Expression): boolean => {
+        const bound = integerBound(expression);
+        const kind = integerKind(expression);
+        return bound !== null && (bound < 2 ** 31 || kind === "i32") && kind !== "u32";
+    };
+
+    /** Whether a value is an integer a u32 holds: of that kind, or a literal from 0 below 2^32. */
+    const unsignedInteger = (expression: Expression): boolean =>
+        integerKind(expression) === "u32" || (expression.kind === "number" && Number.isInteger(expression.value) && expression.value >= 0 && expression.value < 2 ** 32);
+
+    /** Whether a conditional's arms are cheap enough to compute both and `select`, rather than branch. */
+    const selects = (expression: Extract<Expression, { kind: "conditional" }>): boolean => cheap(expression.consequent) && cheap(expression.alternate);
+
     const emit = (expression: Expression): void => {
         const hoistedLocal = hoisted.get(expression);
         if (hoistedLocal !== undefined) {
@@ -474,14 +1445,27 @@ export const generateWasmOrReason = (
         switch (expression.kind) {
             case "number": code.push(op.f64Const, ...float64(expression.value)); return;
             case "boolean": code.push(op.f64Const, ...float64(expression.value ? 1 : 0)); return;
-            case "local": code.push(op.localGet, ...unsigned(local(expression.local))); return;
+            case "local": {
+                getLocal(expression.local);
+                const own = integerLocal(expression.local);
+                if (wideLocals[expression.local]) code.push(op.f64ConvertI64S);
+                else if (booleanLocals[expression.local]) code.push(op.f64ConvertI32U);
+                else if (own !== null) emitNumberOfInteger(own);
+                return;
+            }
             case "resource": case "args": case "shared": {
                 code.push(op.localGet, ...unsigned(scalarParameter(scalarOf(scalarOfExpression(expression)))));
                 return;
             }
             case "upFound": code.push(op.localGet, ...unsigned(upParameter(2)), op.f64ConvertI32U); return;
             case "upLeaf": case "column": {
-                const { view, offset, boolean } = expression.kind === "upLeaf" ? upColumns[expression.column] : columns[expression.column];
+                const { view, boolean } = expression.kind === "upLeaf" ? upColumns[expression.column] : columns[expression.column];
+                const offset = expression.kind === "upLeaf" ? upColumns[expression.column].offset : columnOffset(expression.column);
+                if (expression.kind === "column" && fromRegister(expression.column)) {
+                    if (boolean) code.push(op.i32Const, 0, op.i32Ne, op.f64ConvertI32U);
+                    else code.push(...view === "f32" ? [op.f64PromoteF32] : view === "i32" ? [op.f64ConvertI32S] : view === "f64" ? [] : [op.f64ConvertI32U]);
+                    return;
+                }
                 if (expression.kind === "upLeaf") {
                     code.push(op.localGet, ...unsigned(upParameter(3 + expression.column)), op.localGet, ...unsigned(parentLocal), op.i32Const, ...signed(upColumns[expression.column].stride), op.i32Mul, op.i32Add);
                 }
@@ -500,15 +1484,22 @@ export const generateWasmOrReason = (
                 }
             }
             case "unary":
+                if (expression.operator === "~") {
+                    emitInteger(expression);
+                    code.push(op.f64ConvertI32S);
+                    return;
+                }
+                // A negation at storage precision wraps, as its integer does.
+                if (expression.operator === "-" && (wrappedKind(expression) ?? null) !== null) {
+                    emitInteger(expression);
+                    code.push(op.f64ConvertI32S);
+                    return;
+                }
                 emit(expression.operand);
                 if (expression.operator === "-") code.push(op.f64Neg);
                 else if (expression.operator === "!") {
                     emitTruthy(typeOf(expression.operand));
                     code.push(op.i32Eqz, op.f64ConvertI32U);
-                }
-                else if (expression.operator === "~") {
-                    emitToInt32();
-                    code.push(op.i32Const, ...signed(-1), op.i32Xor, op.f64ConvertI32S);
                 }
                 return;
             case "binary": return emitBinary(expression);
@@ -528,8 +1519,14 @@ export const generateWasmOrReason = (
                 return;
             }
             case "conditional":
-                emit(expression.test);
-                emitTruthy(typeOf(expression.test));
+                if (selects(expression)) {
+                    emit(expression.consequent);
+                    emit(expression.alternate);
+                    emitCondition(expression.test);
+                    code.push(op.select);
+                    return;
+                }
+                emitCondition(expression.test);
                 code.push(op.if, f64Type);
                 emit(expression.consequent);
                 code.push(op.else);
@@ -540,7 +1537,10 @@ export const generateWasmOrReason = (
             case "found":
                 code.push(op.localGet, ...unsigned(handleLocal(expression.handle, "found")), op.f64ConvertI32U);
                 return;
+            case "resourceElement": return emitResourceElement(expression.index, expression.element);
             case "lookupLeaf": return emitLookupLeaf(expression.handle, expression.read, expression.path);
+            case "lookupHas": return emitLookupHas(expression.handle, expression.read);
+            case "lookupTruthy": return emitLookupTruthy(expression.handle, expression.read);
             case "listLength": return emitListLength(expression.handle);
             case "listChanged": return emitListChanged(expression.handle);
             case "rowLeaf": return emitRowLeaf(expression.handle, expression.leaf);
@@ -572,16 +1572,12 @@ export const generateWasmOrReason = (
                 return;
             }
             case "imul":
-                emit(parameters[0] ?? { kind: "number", value: 0 });
-                emitToInt32();
-                emit(parameters[1] ?? { kind: "number", value: 0 });
-                emitToInt32();
-                code.push(op.i32Mul, op.f64ConvertI32S);
+                emitInteger({ kind: "math", name: "imul", arguments: parameters });
+                code.push(op.f64ConvertI32S);
                 return;
             case "clz32":
-                emit(parameters[0] ?? { kind: "number", value: 0 });
-                emitToInt32();
-                code.push(op.i32Clz, op.f64ConvertI32U);
+                emitInteger({ kind: "math", name: "clz32", arguments: parameters });
+                code.push(op.f64ConvertI32U);
                 return;
             case "fround":
                 emit(parameters[0] ?? { kind: "number", value: NaN });
@@ -598,10 +1594,16 @@ export const generateWasmOrReason = (
 
     const comparisons = { "<": op.f64Lt, ">": op.f64Gt, "<=": op.f64Le, ">=": op.f64Ge, "==": op.f64Eq, "!=": op.f64Ne, "===": op.f64Eq, "!==": op.f64Ne } as const;
     const arithmetic = { "+": op.f64Add, "-": op.f64Sub, "*": op.f64Mul, "/": op.f64Div } as const;
-    const bitwise = { "&": op.i32And, "|": op.i32Or, "^": op.i32Xor, "<<": op.i32Shl, ">>": op.i32ShrS, ">>>": op.i32ShrU } as const;
 
     const emitBinary = (expression: Extract<Expression, { kind: "binary" }>): void => {
         const { operator, left, right } = expression;
+        // At storage precision, 32-bit integers' arithmetic wraps as they do.
+        const wrapped = wrappedKind(expression) ?? null;
+        if (wrapped !== null) {
+            emitInteger(expression);
+            code.push(wrapped === "i32" ? op.f64ConvertI32S : op.f64ConvertI32U);
+            return;
+        }
         if (operator === "===" || operator === "!==") {
             const leftType = typeOf(left);
             const rightType = typeOf(right);
@@ -612,8 +1614,22 @@ export const generateWasmOrReason = (
                 return;
             }
         }
+        if (operator in comparisons && typeOf(left) === "number" && typeOf(right) === "number" && exactInteger(left) && exactInteger(right)) {
+            emitCondition(expression);
+            code.push(op.f64ConvertI32U);
+            return;
+        }
+        // A u32 by a positive literal: never negative, so an unsigned i32 remainder is exact.
+        if (operator === "%" && integerKind(left) === "u32" && right.kind === "number" && Number.isInteger(right.value) && right.value > 0 && right.value < 2 ** 31) {
+            emitInteger(left);
+            const remainder = constantRemainder(expression);
+            if (remainder?.unsigned === true) emitRemainder(remainder);
+            else code.push(op.i32Const, ...signed(right.value), op.i32RemU);
+            code.push(op.f64ConvertI32U);
+            return;
+        }
         // Integers by a nonzero literal: i64 remainder is exact, and copysign gives JS's -0 for a negative dividend.
-        if (operator === "%" && integral(left) && right.kind === "number" && right.value !== 0 && integral(right)) {
+        if (operator === "%" && exactInteger(left) && right.kind === "number" && right.value !== 0 && integral(right)) {
             const dividend = scratch(f64Type);
             emit(left);
             code.push(op.localTee, ...unsigned(dividend), ...i64TruncSatF64S, op.i64Const, ...signed(right.value), op.i64RemS, op.f64ConvertI64S, op.localGet, ...unsigned(dividend), op.f64Copysign);
@@ -638,21 +1654,172 @@ export const generateWasmOrReason = (
             emitCall(operator === "%" ? "remainder" : "power");
             return;
         }
-        emit(left);
         if (operator in bitwise) {
-            emitToInt32();
-            emit(right);
-            emitToInt32();
-            code.push(bitwise[operator as keyof typeof bitwise]);
+            emitInteger(expression);
             code.push(operator === ">>>" ? op.f64ConvertI32U : op.f64ConvertI32S);
             return;
         }
+        emit(left);
         emit(right);
         if (operator in arithmetic) {
             code.push(arithmetic[operator as keyof typeof arithmetic]);
             return;
         }
         code.push(comparisons[operator as keyof typeof comparisons], op.f64ConvertI32U);
+    };
+
+    // ---- Typed array resources, read and written in place at their elements. ----
+
+    /** Each typed array's loads and stores by its elements' type, with their alignment's log2. */
+    const elementAccess: { readonly [N in keyof TypedArrays]: { readonly load: number; readonly store: number; readonly align: number } } = {
+        Int8Array: { load: op.i32Load8s, store: op.i32Store8, align: 0 },
+        Uint8Array: { load: op.i32Load8u, store: op.i32Store8, align: 0 },
+        Uint8ClampedArray: { load: op.i32Load8u, store: op.i32Store8, align: 0 },
+        Int16Array: { load: op.i32Load16s, store: op.i32Store16, align: 1 },
+        Uint16Array: { load: op.i32Load16u, store: op.i32Store16, align: 1 },
+        Int32Array: { load: op.i32Load, store: op.i32Store, align: 2 },
+        Uint32Array: { load: op.i32Load, store: op.i32Store, align: 2 },
+        Float32Array: { load: op.f32Load, store: op.f32Store, align: 2 },
+        Float64Array: { load: op.f64Load, store: op.f64Store, align: 3 },
+    };
+    const arrayOf = (resource: number): keyof TypedArrays => {
+        const array = arrays(resource);
+        if (array === null) throw unsupported("it indexes a resource that isn't a typed array at runtime");
+        return array.name;
+    };
+    /** Whether an element is always one of a typed array resource's indexes, by its range. */
+    const alwaysWithin = (resource: number, element: Expression): boolean => {
+        const range = rangeOf(element);
+        return range !== null && range[0] >= 0 && range[1] < (arrays(resource)?.length ?? 0);
+    };
+    /** By typed array resource and field, the i32 local its scalar is converted into once a call, before the rows. */
+    const arrayLocals = new Map<string, number>();
+    /** Leaves, as an i32, a typed array resource's `byteOffset` in memory or its `length`, from the scalar of its in-place view. */
+    const arrayParameter = (resource: number, field: "byteOffset" | "length"): void => {
+        const converted = arrayLocals.get(`${resource} ${field}`);
+        if (converted !== undefined) return void code.push(op.localGet, ...unsigned(converted));
+        code.push(op.localGet, ...unsigned(scalarParameter(scalarOf({ source: "resource", index: resource, path: [field] }))), ...truncations.i32TruncSatF64U);
+    };
+    /** Converts each typed array resource's address and length the program indexes, once, into its local. */
+    const convertArrayParameters = (): void => {
+        arrayLocals.clear();
+        const resources = new Set<number>();
+        const visit = (expression: Expression): void => {
+            if (expression.kind === "resourceElement") resources.add(expression.index);
+            switch (expression.kind) {
+                case "unary": return visit(expression.operand);
+                case "binary": case "logical": visit(expression.left); visit(expression.right); return;
+                case "conditional": visit(expression.test); visit(expression.consequent); visit(expression.alternate); return;
+                case "math": return expression.arguments.forEach(visit);
+                case "resourceElement": return visit(expression.element);
+                default: return;
+            }
+        };
+        const walk = (statements: readonly Statement[]): void => {
+            for (const statement of statements) {
+                switch (statement.kind) {
+                    case "set": case "store": visit(statement.value); break;
+                    case "resourceStore": resources.add(statement.index); visit(statement.element); visit(statement.value); break;
+                    case "if": visit(statement.test); walk(statement.consequent); walk(statement.alternate); break;
+                    case "block": case "loop": walk(statement.body); break;
+                    case "branchIf": visit(statement.test); break;
+                    default: break;
+                }
+            }
+        };
+        walk(program.body);
+        for (const resource of resources) {
+            for (const field of ["byteOffset", "length"] as const) {
+                const converted = scratch(i32Type);
+                arrayParameter(resource, field);
+                code.push(op.localSet, ...unsigned(converted));
+                arrayLocals.set(`${resource} ${field}`, converted);
+            }
+        }
+    };
+    /**
+     * Into i32 locals: whether an element is one of a typed array resource's indexes, an integer from 0 below its
+     * length, as -0 is 0's; and its index there, where it isn't 0 to read, or to write the element past the end, which
+     * no view holds, so its address is always the array's.
+     */
+    const elementAt = (resource: number, element: Expression, writing = false): { readonly position: number; readonly within: number } => {
+        const position = scratch(i32Type);
+        const within = scratch(i32Type);
+        if ((signedInteger(element) || unsignedInteger(element)) && alwaysWithin(resource, element)) {
+            emitInteger(element);
+            code.push(op.localSet, ...unsigned(position), op.i32Const, 1, op.localSet, ...unsigned(within));
+            return { position, within };
+        }
+        if (signedInteger(element) || unsignedInteger(element)) {
+            // A negative i32 is past every length, compared unsigned.
+            emitInteger(element);
+            code.push(op.localTee, ...unsigned(position));
+            arrayParameter(resource, "length");
+            code.push(op.i32LtU, op.localSet, ...unsigned(within));
+        }
+        else {
+            const value = scratch(f64Type);
+            emit(element);
+            code.push(op.localTee, ...unsigned(value), op.f64Trunc, op.localGet, ...unsigned(value), op.f64Eq);
+            code.push(op.localGet, ...unsigned(value), op.f64Const, ...float64(0), op.f64Ge, op.i32And);
+            code.push(op.localGet, ...unsigned(value));
+            arrayParameter(resource, "length");
+            code.push(op.f64ConvertI32U, op.f64Lt, op.i32And, op.localSet, ...unsigned(within));
+            code.push(op.localGet, ...unsigned(value), ...truncations.i32TruncSatF64U, op.localSet, ...unsigned(position));
+        }
+        code.push(op.localGet, ...unsigned(position));
+        if (writing) arrayParameter(resource, "length");
+        else code.push(op.i32Const, 0);
+        code.push(op.localGet, ...unsigned(within), op.select, op.localSet, ...unsigned(position));
+        return { position, within };
+    };
+    /** Leaves the address of a typed array resource's element at `position`. */
+    const arrayElementAddress = (resource: number, position: number): void => {
+        const { align } = elementAccess[arrayOf(resource)];
+        arrayParameter(resource, "byteOffset");
+        code.push(op.localGet, ...unsigned(position));
+        if (align > 0) code.push(op.i32Const, align, op.i32Shl);
+        code.push(op.i32Add);
+    };
+    /** Leaves a typed array resource's element as an f64, NaN where it isn't one of its indexes, as `undefined` reads in arithmetic. */
+    const emitResourceElement = (resource: number, element: Expression): void => {
+        const name = arrayOf(resource);
+        const { load, align } = elementAccess[name];
+        const { position, within } = elementAt(resource, element);
+        arrayElementAddress(resource, position);
+        code.push(load, align, 0);
+        if (name === "Float32Array") code.push(op.f64PromoteF32);
+        else if (name === "Int8Array" || name === "Int16Array" || name === "Int32Array") code.push(op.f64ConvertI32S);
+        else if (name !== "Float64Array") code.push(op.f64ConvertI32U);
+        code.push(op.f64Const, ...float64(NaN), op.localGet, ...unsigned(within), op.select);
+    };
+    /**
+     * Writes a typed array resource's element where it's one of its indexes, and where `predicate` holds when given,
+     * converted as the typed array converts it, without branching: elsewhere it writes the element past the end.
+     */
+    const storeResourceElement = (resource: number, element: Expression, value: Expression, predicate?: () => void): void => {
+        const name = arrayOf(resource);
+        const { store: storeOperation, align } = elementAccess[name];
+        const { position, within } = elementAt(resource, element, true);
+        if (predicate !== undefined) {
+            code.push(op.localGet, ...unsigned(position));
+            arrayParameter(resource, "length");
+            predicate();
+            code.push(op.select, op.localSet, ...unsigned(position));
+        }
+        arrayElementAddress(resource, position);
+        if (name === "Float32Array") {
+            emit(value);
+            code.push(op.f32DemoteF64);
+        }
+        else if (name === "Float64Array") emit(value);
+        else if (name === "Uint8ClampedArray") {
+            // Clamped to 0 and 255, rounded half to even; NaN is 0, as the saturating truncation makes it.
+            emit(value);
+            code.push(op.f64Nearest, op.f64Const, ...float64(0), op.f64Max, op.f64Const, ...float64(255), op.f64Min, ...truncations.i32TruncSatF64U);
+        }
+        else emitInteger(value);
+        code.push(storeOperation, align, 0);
     };
 
     /** Labels from innermost: program blocks and loops count toward IR depths; `if`s and the row block don't. */
@@ -666,15 +1833,21 @@ export const generateWasmOrReason = (
     };
 
     const store = (column: number, value: Expression | "tick"): void => {
-        const { view, offset } = columns[column];
+        const { view } = columns[column];
+        const offset = columnOffset(column);
         address(column);
-        if (value === "tick") code.push(op.localGet, 2);
+        const integer = view === "i32" || view === "u32" || view === "u8";
+        if (value === "tick") {
+            code.push(op.localGet, 2);
+            if (integer) emitToInt32();
+        }
+        else if (integer) emitInteger(value);
         else emit(value);
         const memory = (align: number): number[] => [align, ...unsigned(offset)];
         switch (view) {
             case "f32": code.push(op.f32DemoteF64, op.f32Store, ...memory(2)); return;
-            case "i32": case "u32": emitToInt32(); code.push(op.i32Store, ...memory(2)); return;
-            case "u8": emitToInt32(); code.push(op.i32Store8, ...memory(0)); return;
+            case "i32": case "u32": code.push(op.i32Store, ...memory(2)); return;
+            case "u8": code.push(op.i32Store8, ...memory(0)); return;
             default: code.push(op.f64Store, ...memory(3)); return;
         }
     };
@@ -747,7 +1920,7 @@ export const generateWasmOrReason = (
         const row = handleLocal(handle, "row");
         const record = handleLocal(handle, "record");
         const value = scratch(f64Type);
-        const wide = scratch(0x7e);
+        const wide = scratch(i64Type);
         const generation = scratch(f64Type);
         const index = scratch(i32Type);
         const archetype = scratch(i32Type);
@@ -840,6 +2013,29 @@ export const generateWasmOrReason = (
         labels.pop();
     };
 
+    /** Whether the entity found holds optional read `read`: its record's address of it isn't 0. 0 if nothing was found. */
+    const emitLookupHas = (handle: number, read: number): void => {
+        code.push(op.localGet, ...unsigned(handleLocal(handle, "found")), op.if, f64Type);
+        labels.push("if");
+        code.push(op.localGet, ...unsigned(handleLocal(handle, "record")), op.i32Load, 2, ...unsigned(4 * (1 + read)), op.i32Const, 0, op.i32Ne, op.f64ConvertI32U);
+        code.push(op.else, op.f64Const, ...float64(0), op.end);
+        labels.pop();
+    };
+
+    /** 1 (f64) if `handle` found an entity holding read component `read` with a truthy value, else 0: a struct always is. */
+    const emitLookupTruthy = (handle: number, read: number): void => {
+        emitLookupHas(handle, read);
+        const lookup = lookupOfHandle.get(handle);
+        if (lookup === undefined || lookups[lookup].structured(read)) return;
+        code.push(op.f64Const, ...float64(0), op.f64Ne, op.if, f64Type);
+        labels.push("if");
+        const value: Expression = { kind: "lookupLeaf", handle, read, path: [] };
+        emit(value);
+        emitTruthy(typeOf(value));
+        code.push(op.f64ConvertI32U, op.else, op.f64Const, ...float64(0), op.end);
+        labels.pop();
+    };
+
     // ---- Lookups through indexes: probes of a hash table or searches of a sorted index's blocks, and their lists' rows. ----
 
     const get = (index: number): number[] => [op.localGet, ...unsigned(index)];
@@ -924,7 +2120,7 @@ export const generateWasmOrReason = (
                 return;
             }
             default: {
-                const wide = scratch(0x7e);
+                const wide = scratch(i64Type);
                 const high = scratch(i32Type);
                 const low = scratch(i32Type);
                 const next = keyLocal(lookup, value.word + 1);
@@ -1318,10 +2514,90 @@ export const generateWasmOrReason = (
         code.push(op.i32Const, ...signed(shift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add, op.localGet, 2, op.f64Store, 3, 0);
     };
 
+    /** A column's load and store, of its element at the address on the stack, in its register type. */
+    const loadOf = ({ view, offset: own }: WasmColumn, offset = own): number[] =>
+        view === "f32" ? [op.f32Load, 2, ...unsigned(offset)] : view === "f64" ? [op.f64Load, 3, ...unsigned(offset)] : view === "u8" ? [op.i32Load8u, 0, ...unsigned(offset)] : [op.i32Load, 2, ...unsigned(offset)];
+    const storeOf = ({ view, offset: own }: WasmColumn, offset = own): number[] =>
+        view === "f32" ? [op.f32Store, 2, ...unsigned(offset)] : view === "f64" ? [op.f64Store, 3, ...unsigned(offset)] : view === "u8" ? [op.i32Store8, 0, ...unsigned(offset)] : [op.i32Store, 2, ...unsigned(offset)];
+
+    /**
+     * Whether an `if` runs branch-free: each arm only stores to row columns, stamps them and assigns locals, with cheap
+     * values and a few of them. Its stores then write the new value or the one there, by the predicate, which spends a
+     * few instructions on every row to save mispredicting on rows whose data decides the branch. An `if` holding
+     * another branches, as a chain of tests a row mostly takes the same way predicts well and runs only its own arm.
+     */
+    const predicable = (current: Extract<Statement, { kind: "if" }>): boolean => {
+        const budget = { left: 8 };
+        const fits = (statements: readonly Statement[]): boolean => statements.every(inner => {
+            if (--budget.left < 0) return false;
+            switch (inner.kind) {
+                case "stamp": return true;
+                case "store": return columns[inner.column].component >= 0 && rowAddresses.has(inner.column) && cheap(inner.value);
+                case "set": return !accumulators.includes(inner.local) && cheap(inner.value);
+                case "resourceStore": return cheap(inner.element) && cheap(inner.value);
+                default: return false;
+            }
+        });
+        return cheap(current.test) && fits(current.consequent) && fits(current.alternate);
+    };
+
+    /** Runs statements where the i32 `predicate` holds, or where it doesn't with `negated`, without branching. */
+    const predicated = (statements: readonly Statement[], predicate: number, negated: boolean): void => {
+        const emitPredicate = (): void => {
+            code.push(op.localGet, ...unsigned(predicate));
+            if (negated) code.push(op.i32Eqz);
+        };
+        for (const inner of statements) {
+            if (inner.kind === "set") {
+                emitAssigned(inner.local, inner.value);
+                code.push(op.localGet, ...unsigned(local(inner.local)));
+                emitPredicate();
+                code.push(op.select, op.localSet, ...unsigned(local(inner.local)));
+                guarded.delete(inner.local);
+            }
+            else if (inner.kind === "store") {
+                const { view } = columns[inner.column];
+                const register = registers.get(inner.column) ?? -1;
+                if (view === "f32" || view === "f64") emit(inner.value);
+                else emitInteger(inner.value);
+                if (view === "f32") code.push(op.f32DemoteF64);
+                code.push(op.localGet, ...unsigned(register));
+                emitPredicate();
+                code.push(op.select, op.localSet, ...unsigned(register));
+            }
+            else if (inner.kind === "resourceStore") storeResourceElement(inner.index, inner.element, inner.value, emitPredicate);
+            else if (inner.kind === "stamp") {
+                // The tick, or the one there where the predicate doesn't hold, at the row, which is this call's alone.
+                const stampAt = (emitAddress: () => void): void => {
+                    emitAddress();
+                    code.push(op.localGet, 2);
+                    emitAddress();
+                    code.push(op.f64Load, 3, 0);
+                    emitPredicate();
+                    code.push(op.select, op.f64Store, 3, 0);
+                };
+                if (columns[inner.column].muted !== true) stampAt(() => address(inner.column));
+                // A block or chunk is other workers' rows' too, so where the predicate holds it's written the tick, and
+                // never written back what was read.
+                for (const [dense, shift] of [[inner.blocks, blockShift], [inner.chunks, chunkShift]] as const) {
+                    if (columns[dense].muted === true || everyRow.has(dense)) continue;
+                    emitPredicate();
+                    code.push(op.if, 0x40, op.localGet, ...unsigned(columnParameter(dense)), op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(shift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add);
+                    code.push(op.localGet, 2, op.f64Store, 3, 0, op.end);
+                }
+            }
+        }
+    };
+
     const statement = (current: Statement): void => {
         switch (current.kind) {
-            case "set": emit(current.value); code.push(op.localSet, ...unsigned(local(current.local))); return;
+            case "set":
+                emitAssigned(current.local, current.value);
+                code.push(op.localSet, ...unsigned(local(current.local)));
+                guarded.delete(current.local);
+                return;
             case "store": return store(current.column, current.value);
+            case "resourceStore": return storeResourceElement(current.index, current.element, current.value);
             // A chunk column stays when its row column is muted, for a component held on the GPU.
             case "stamp":
                 if (columns[current.column].muted !== true) store(current.column, "tick");
@@ -1329,11 +2605,30 @@ export const generateWasmOrReason = (
                 stampDense(current.chunks, chunkShift, 0);
                 return;
             case "if":
-                emit(current.test);
-                emitTruthy(typeOf(current.test));
+                if (predicable(current)) {
+                    const stored = [...new Set([...current.consequent, ...current.alternate].flatMap(inner => inner.kind === "store" ? [inner.column] : []))];
+                    for (const column of stored) {
+                        const register = scratch(registerType(columns[column].view));
+                        address(column);
+                        code.push(...loadOf(columns[column]), op.localSet, ...unsigned(register));
+                        registers.set(column, register);
+                    }
+                    const predicate = scratch(i32Type);
+                    emitCondition(current.test);
+                    code.push(op.localSet, ...unsigned(predicate));
+                    withFacts(current.test, () => predicated(current.consequent, predicate, false));
+                    predicated(current.alternate, predicate, true);
+                    for (const column of stored) {
+                        address(column);
+                        code.push(op.localGet, ...unsigned(registers.get(column) ?? 0), ...storeOf(columns[column]));
+                        registers.delete(column);
+                    }
+                    return;
+                }
+                emitCondition(current.test);
                 code.push(op.if, 0x40);
                 labels.push("if");
-                for (const inner of current.consequent) statement(inner);
+                withFacts(current.test, () => { for (const inner of current.consequent) statement(inner); });
                 if (current.alternate.length > 0) {
                     code.push(op.else);
                     for (const inner of current.alternate) statement(inner);
@@ -1350,8 +2645,7 @@ export const generateWasmOrReason = (
                 return;
             case "branch": code.push(op.br, ...unsigned(wasmDepth(current.depth))); return;
             case "branchIf":
-                emit(current.test);
-                emitTruthy(typeOf(current.test));
+                emitCondition(current.test);
                 code.push(op.brIf, ...unsigned(wasmDepth(current.depth)));
                 return;
             case "next": code.push(op.br, ...unsigned(labels.length - 1 - labels.lastIndexOf("next"))); return;
@@ -1366,7 +2660,11 @@ export const generateWasmOrReason = (
     const v128Type = 0x7b;
     const simd = (operation: number): number[] => [0xfd, ...unsigned(operation)];
     const vop = {
-        load: 0, store: 11, const: 12, f32Splat: 19, f64Splat: 20,
+        load: 0, store: 11, const: 12, shuffle: 13, i32Splat: 17, f32Splat: 19, f64Splat: 20, i32ExtractLane: 27, i32ReplaceLane: 28,
+        i32Eq: 55, i32Ne: 56, i32LtS: 57, i32LtU: 58, i32GtS: 59, i32GtU: 60, i32LeS: 61, i32LeU: 62, i32GeS: 63, i32GeU: 64, xor: 81,
+        f32ExtractLane: 31, f32ReplaceLane: 32, i32TruncSatF32S: 248, f32ConvertI32S: 250, f32ConvertI32U: 251,
+        i32Neg: 161, i32Shl: 171, i32ShrS: 172, i32ShrU: 173, i32Add: 174, i32Sub: 177, i32Mul: 181, i32MinS: 182, i32MinU: 183, i32MaxS: 184, i32MaxU: 185,
+        i64x2ExtmulLowI32x4S: 220, i64x2ExtmulHighI32x4S: 221, i64x2ExtmulLowI32x4U: 222, i64x2ExtmulHighI32x4U: 223,
         f32Eq: 65, f32Ne: 66, f32Lt: 67, f32Gt: 68, f32Le: 69, f32Ge: 70,
         f64Gt: 74, not: 77, and: 78, andNot: 79, or: 80, bitselect: 82, anyTrue: 83,
         store32Lane: 90, store64Lane: 91, load32Zero: 92, load64Zero: 93,
@@ -1408,6 +2706,10 @@ export const generateWasmOrReason = (
     const isArithmetic = (operator: string): operator is keyof typeof arithmeticVector => operator in arithmeticVector;
     /** A value that's the same for every lane, splatted: demoted to f32 for f32 lanes, as a lane computes. */
     const emitSplat = (expression: Expression): void => {
+        if (expression.kind === "number") {
+            code.push(...vectorConstant(new Array<number>(4).fill(expression.value)));
+            return;
+        }
         emit(expression);
         if (wide) code.push(...simd(vop.f64Splat));
         else code.push(op.f32DemoteF64, ...simd(vop.f32Splat));
@@ -1527,7 +2829,7 @@ export const generateWasmOrReason = (
                 for (const parameter of expression.arguments) rowsEmit(parameter);
                 emitVectorMath(expression.name, expression.arguments.length);
                 return;
-            case "found": case "lookupLeaf": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": throw notVectorizable;
+            case "found": case "lookupLeaf": case "lookupHas": case "lookupTruthy": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": case "resourceElement": throw notVectorizable;
         }
     };
 
@@ -1627,6 +2929,1019 @@ export const generateWasmOrReason = (
         for (const current of program.body) rowsStatement(current);
         code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(groupRows), op.i32Add, op.localSet, ...unsigned(rowLocal), op.br, 0);
         code.push(op.end, op.end);
+    };
+
+    // ---- Interleaved: four rows at a time, for programs over components of any layout. The 32-bit integer leaves a ----
+    // component holds within 16 bytes are a span: each row's are one load, transposed into a vector per leaf, and back.
+    // Integer and boolean values compute in i32 lanes; the rest, one lane at a time, as the scalar path does.
+
+    /**
+     * A component's 32-bit leaves within 16 bytes from `base`, by column and its lane. A packed span's elements are 4 or 8
+     * bytes, so its four rows are one or two whole vectors, loaded and stored as they lie; its lanes are words of the element.
+     */
+    type Span = { readonly base: number; readonly stride: number; readonly owner: number; readonly lanes: ReadonlyMap<number, number>; readonly whole: boolean; readonly packed: boolean };
+
+    /** Byte shuffles of two vectors' 32-bit lanes: low or high halves interleaved, and low or high 64 bits joined. */
+    const interleaveLow = [0, 1, 2, 3, 16, 17, 18, 19, 4, 5, 6, 7, 20, 21, 22, 23];
+    const interleaveHigh = [8, 9, 10, 11, 24, 25, 26, 27, 12, 13, 14, 15, 28, 29, 30, 31];
+    const joinLow = [0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23];
+    const joinHigh = [8, 9, 10, 11, 12, 13, 14, 15, 24, 25, 26, 27, 28, 29, 30, 31];
+    /** Into `into`, the 4x4 transpose of the 32-bit lanes of `from`: lane `j` of vector `i` becomes lane `i` of vector `j`. */
+    const transpose = (from: readonly number[], into: readonly number[]): void => {
+        const shuffle = (pattern: readonly number[], a: number, b: number, target: number): void => {
+            code.push(op.localGet, ...unsigned(a), op.localGet, ...unsigned(b), ...simd(vop.shuffle), ...pattern, op.localSet, ...unsigned(target));
+        };
+        const halves = [scratch(v128Type), scratch(v128Type), scratch(v128Type), scratch(v128Type)];
+        shuffle(interleaveLow, from[0], from[1], halves[0]);
+        shuffle(interleaveHigh, from[0], from[1], halves[1]);
+        shuffle(interleaveLow, from[2], from[3], halves[2]);
+        shuffle(interleaveHigh, from[2], from[3], halves[3]);
+        shuffle(joinLow, halves[0], halves[2], into[0]);
+        shuffle(joinHigh, halves[0], halves[2], into[1]);
+        shuffle(joinLow, halves[1], halves[3], into[2]);
+        shuffle(joinHigh, halves[1], halves[3], into[3]);
+    };
+
+    /**
+     * Leaves the vector whose lane `k` is word `sources[k][1]` of the v128 local `sources[k][0]`, of at most three locals:
+     * a shuffle of the first two, and of that and the third. Returns how many shuffles it took.
+     */
+    const selectWords = (sources: readonly (readonly [number, number])[]): number => {
+        const vectors = [...new Set(sources.map(([vector]) => vector))];
+        const bytes = (word: number, high: boolean): number[] => [0, 1, 2, 3].map(byte => (high ? 16 : 0) + 4 * word + byte);
+        const [first = 0, second = first, third] = vectors;
+        if (vectors.length === 1 && sources.every(([, word], k) => word === k)) {
+            code.push(op.localGet, ...unsigned(first));
+            return 0;
+        }
+        code.push(op.localGet, ...unsigned(first), op.localGet, ...unsigned(second), ...simd(vop.shuffle),
+            ...sources.flatMap(([vector, word]) => vector === third ? bytes(0, false) : bytes(word, vector !== first)));
+        if (third === undefined) return 1;
+        code.push(op.localGet, ...unsigned(third), ...simd(vop.shuffle), ...sources.flatMap(([vector, word], k) => vector === third ? bytes(word, true) : bytes(k, false)));
+        return 2;
+    };
+    /** Of a packed span's vectors, where word `word` of row `row`'s element lies: its vector and lane. */
+    const packedWord = (span: Span, rows: readonly number[], row: number, word: number): readonly [number, number] => {
+        const at = row * (span.stride / 4) + word;
+        return [rows[at >> 2] ?? 0, at & 3];
+    };
+
+    /** The program's stores, by column. */
+    const storedColumns = (statements: readonly Statement[], stored: Set<number>): Set<number> => {
+        for (const statement of statements) {
+            if (statement.kind === "store") stored.add(statement.column);
+            else if (statement.kind === "if") { storedColumns(statement.consequent, stored); storedColumns(statement.alternate, stored); }
+        }
+        return stored;
+    };
+
+    /**
+     * The spans of the columns statements use: from each component's lowest 32-bit integer or f32 leaf, those starting within
+     * 16 bytes of it, then from the next; a span of one leaf costs more than it saves, but in a packed span. A span
+     * stores its rows whole when its 16 bytes, or a packed span's elements, are inside the element and no column outside
+     * it stores into them.
+     */
+    const planSpans = (used: ReadonlySet<number>, stored: ReadonlySet<number>): readonly Span[] => {
+        const byComponent = new Map<string, number[]>();
+        for (const column of used) {
+            const { component, stride, view, boolean } = columns[column];
+            if (component < 0 || boolean || (view !== "i32" && view !== "u32" && view !== "f32")) continue;
+            const key = `${component}:${stride}`;
+            byComponent.set(key, [...byComponent.get(key) ?? [], column]);
+        }
+        const spans: Span[] = [];
+        for (const members of byComponent.values()) {
+            members.sort((a, b) => columns[a].offset - columns[b].offset);
+            const { component, stride } = columns[members[0]];
+            // A 12-byte element's words take shuffles engines run as table lookups, so a packed span of them is only a lone
+            // leaf read, which it saves gathering.
+            if (stride === 4 || stride === 8 || (stride === 12 && members.length === 1 && !stored.has(members[0]))) {
+                const overlapping = [...stored].some(column => !members.includes(column) && columns[column].component === component && columns[column].stride === stride);
+                spans.push({ base: 0, stride, owner: members[0], lanes: new Map(members.map(column => [column, columns[column].offset / 4])), whole: !overlapping, packed: true });
+                continue;
+            }
+            for (let first = 0; first < members.length;) {
+                const base = columns[members[first]].offset;
+                let next = first;
+                while (next < members.length && columns[members[next]].offset < base + 16) next++;
+                const inside = members.slice(first, next);
+                first = next;
+                if (inside.length < 2) continue;
+                const { component, stride } = columns[inside[0]];
+                const overlapping = [...stored].some(column => !inside.includes(column) && columns[column].component === component
+                    && columns[column].offset < base + 16 && columns[column].offset + bytesOf(columns[column].view) > base);
+                // Past the element, a row's 16 bytes are the next row's, which it stores after, in order, so they may be
+                // stored as loaded where nothing else stores into the component; the last row stores its own alone.
+                const alone = ![...stored].some(column => !inside.includes(column) && columns[column].component === component);
+                const whole = base + 16 <= stride ? !overlapping : alone && (stride - base) % 4 === 0;
+                spans.push({ base, stride, owner: inside[0], lanes: new Map(inside.map(column => [column, (columns[column].offset - base) / 4])), whole, packed: false });
+            }
+        }
+        return spans;
+    };
+
+    /** Lane `k`'s mask of the enclosing `if`s, as an i32 that's nonzero where it's set. */
+    const maskLane = (k: number): void => {
+        code.push(op.localGet, ...unsigned(mask ?? 0), ...simd(vop.i32ExtractLane), k);
+    };
+
+    /** The nodes of an expression, each an operation a row computes, a remainder eight: a division, or the multiply standing for one. */
+    const size = (expression: Expression): number => {
+        switch (expression.kind) {
+            case "unary": return 1 + size(expression.operand);
+            case "binary": case "logical": return (expression.operator === "%" ? 8 : 1) + size(expression.left) + size(expression.right);
+            case "conditional": return 1 + size(expression.test) + size(expression.consequent) + size(expression.alternate);
+            case "math": return expression.arguments.reduce((total, argument) => total + size(argument), 1);
+            default: return 1;
+        }
+    };
+    /**
+     * The operations of statements, each store and assignment one, and an element store ten more: its bounds check, and
+     * the load and select that make it branch-free.
+     */
+    const statementsSize = (statements: readonly Statement[]): number => statements.reduce((total, statement) => {
+        switch (statement.kind) {
+            case "set": case "store": return total + 1 + size(statement.value);
+            case "resourceStore": return total + 11 + size(statement.element) + size(statement.value);
+            case "if": return total + size(statement.test) + statementsSize(statement.consequent) + statementsSize(statement.alternate);
+            default: return total + 1;
+        }
+    }, 0);
+    /**
+     * The operations a group of the interleaved loop spends, counted as it's generated: a vector operation each, an
+     * expression computed a lane at a time its nodes four times, and each span's loads, shuffles and stores.
+     */
+    const work = { spent: 0 };
+
+    /**
+     * Whether `integerVector` computes an expression's value across the lanes itself, rather than a lane at a time: then a
+     * store of it goes from the vector, and otherwise a lane at a time, each lane's straight from its scalar.
+     */
+    const vectorizes = (expression: Expression): boolean => {
+        if (hoisted.has(expression) || rowIndependent(expression) || typeOf(expression) === "boolean") return true;
+        switch (expression.kind) {
+            case "local": return (vectorLocals[expression.local] ?? -1) >= 0 && (floatLocals[expression.local] !== true || (guarded.get(expression.local) ?? Infinity) < 2 ** 31);
+            case "column": return columns[expression.column].view !== "f32" && (vectorRegisters.has(expression.column) || gatherable(expression.column));
+            case "unary":
+                return expression.operator === "~" || (expression.operator === "+" && integerKind(expression) !== null)
+                    || (expression.operator === "-" && exactInteger(expression) && typeOf(expression.operand) !== "boolean");
+            case "binary": {
+                const { operator, left, right } = expression;
+                if (operator in bitwiseVector) return !(operator === "<<" || operator === ">>" || operator === ">>>") || rowIndependent(right);
+                if (constantRemainder(expression) !== null) return true;
+                return (operator === "+" || operator === "-" || operator === "*") && exactInteger(expression) && typeOf(left) !== "boolean" && typeOf(right) !== "boolean";
+            }
+            case "math":
+                return expression.name === "imul" || ((expression.name === "min" || expression.name === "max") && expression.arguments.length > 0
+                    && (expression.arguments.every(signedInteger) || expression.arguments.every(unsignedInteger)));
+            case "conditional": return integerKind(expression) !== null || (exactInteger(expression.consequent) && exactInteger(expression.alternate));
+            default: return false;
+        }
+    };
+    /** Whether a column outside every span is gathered into a register when vectors read it: an integer one, not a boolean. */
+    const gatherable = (column: number): boolean => {
+        const { view, boolean, component } = columns[column];
+        return component >= 0 && !boolean && (view === "i32" || view === "u32" || view === "u8");
+    };
+    /**
+     * Loads a column's four rows into a register, a lane at a time, which reads and stores of it in the group use after:
+     * the interleaved loop runs straight through a group, so where it's loaded comes before every later use.
+     */
+    const gather = (column: number): number => {
+        const register = scratch(v128Type);
+        work.spent += 8;
+        byLane(() => emitInteger({ kind: "column", column }));
+        code.push(op.localSet, ...unsigned(register));
+        vectorRegisters.set(column, register);
+        return register;
+    };
+
+    /** Leaves the vector of an i32 computed one lane at a time, each lane's by `each` in that lane's row. */
+    const byLane = (each: () => void): void => {
+        code.push(...simd(vop.const), ...new Array<number>(16).fill(0));
+        for (let k = 0; k < 4; k++) {
+            lane = k;
+            each();
+            lane = null;
+            code.push(...simd(vop.i32ReplaceLane), k);
+        }
+    };
+
+    /** The i32x4 comparisons by operator, signed and unsigned. */
+    const signedVector: { readonly [operator: string]: number } = { "<": vop.i32LtS, ">": vop.i32GtS, "<=": vop.i32LeS, ">=": vop.i32GeS, "==": vop.i32Eq, "!=": vop.i32Ne, "===": vop.i32Eq, "!==": vop.i32Ne };
+    const unsignedVector: { readonly [operator: string]: number } = { "<": vop.i32LtU, ">": vop.i32GtU, "<=": vop.i32LeU, ">=": vop.i32GeU, "==": vop.i32Eq, "!=": vop.i32Ne, "===": vop.i32Eq, "!==": vop.i32Ne };
+    const bitwiseVector: { readonly [operator: string]: number } = { "&": vop.and, "|": vop.or, "^": vop.xor, "<<": vop.i32Shl, ">>": vop.i32ShrS, ">>>": vop.i32ShrU };
+
+    /** The f32x4 comparisons by operator: numbers compare as JS's do, NaN unequal to all. */
+    const floatComparisons: { readonly [operator: string]: number } = { "<": vop.f32Lt, ">": vop.f32Gt, "<=": vop.f32Le, ">=": vop.f32Ge, "==": vop.f32Eq, "!=": vop.f32Ne, "===": vop.f32Eq, "!==": vop.f32Ne };
+    /**
+     * Whether a number computes in f32 lanes: an f32's exactly, as f32 fields, literals an f32 holds, locals held as f32
+     * lanes, and their roundings, absolute values, negations and choices are; and at storage precision, rounding each step
+     * to f32, their sums, differences, products, quotients, square roots, least and greatest.
+     */
+    const floatExact = (expression: Expression): boolean => {
+        if (storagePrecision && expression.kind === "binary" && (expression.operator === "+" || expression.operator === "-" || expression.operator === "*" || expression.operator === "/")) {
+            return floatExact(expression.left) && floatExact(expression.right);
+        }
+        if (storagePrecision && expression.kind === "math" && (expression.name === "sqrt" || ((expression.name === "min" || expression.name === "max") && expression.arguments.length > 0))) {
+            return expression.arguments.every(floatExact);
+        }
+        switch (expression.kind) {
+            case "number": return Object.is(Math.fround(expression.value), expression.value) || Number.isNaN(expression.value);
+            case "column": return columns[expression.column].view === "f32" && !columns[expression.column].boolean;
+            case "local": return floatLocals[expression.local] === true;
+            case "unary": return expression.operator === "-" && floatExact(expression.operand);
+            case "math": {
+                const [only] = expression.arguments;
+                return ["trunc", "floor", "ceil", "abs", "fround"].includes(expression.name) && expression.arguments.length === 1 && only !== undefined && floatExact(only);
+            }
+            case "conditional": return floatExact(expression.consequent) && floatExact(expression.alternate);
+            default: return false;
+        }
+    };
+    /** Leaves the f32 lanes of a number computed one lane at a time, each lane's f64 by `each` in that lane's row, demoted. */
+    const floatLanes = (each: () => void): void => {
+        code.push(...simd(vop.const), ...new Array<number>(16).fill(0));
+        for (let k = 0; k < 4; k++) {
+            lane = k;
+            each();
+            lane = null;
+            code.push(op.f32DemoteF64, ...simd(vop.f32ReplaceLane), k);
+        }
+    };
+    /** Leaves, for each of the four rows, an f32-exact number as f32 lanes. */
+    const floatVector = (expression: Expression): void => {
+        work.spent++;
+        if (expression.kind === "number") {
+            code.push(...simd(vop.const), ...[0, 1, 2, 3].flatMap(() => float32(expression.value)));
+            return;
+        }
+        if (hoisted.has(expression) || rowIndependent(expression)) {
+            invariantVector(`f32 ${JSON.stringify(expression)}`, () => {
+                emit(expression);
+                code.push(op.f32DemoteF64, ...simd(vop.f32Splat));
+            });
+            return;
+        }
+        switch (expression.kind) {
+            case "local": {
+                const vector = vectorLocals[expression.local] ?? -1;
+                if (vector < 0 || floatLocals[expression.local] !== true) break;
+                code.push(op.localGet, ...unsigned(vector));
+                return;
+            }
+            case "column": {
+                const vector = spanned.has(expression.column) ? vectorRegisters.get(expression.column) : undefined;
+                if (vector === undefined) break;
+                code.push(op.localGet, ...unsigned(vector));
+                return;
+            }
+            case "unary":
+                floatVector(expression.operand);
+                code.push(...simd(vop.f32Neg));
+                return;
+            case "binary": {
+                const operation = { "+": vop.f32Add, "-": vop.f32Sub, "*": vop.f32Mul, "/": vop.f32Div }[expression.operator as string];
+                if (operation === undefined || !floatExact(expression)) break;
+                floatVector(expression.left);
+                floatVector(expression.right);
+                code.push(...simd(operation));
+                return;
+            }
+            case "math": {
+                if ((expression.name === "min" || expression.name === "max" || expression.name === "sqrt") && floatExact(expression)) {
+                    const [first, ...rest] = expression.arguments;
+                    if (first === undefined) break;
+                    floatVector(first);
+                    if (expression.name === "sqrt") code.push(...simd(vop.f32Sqrt));
+                    for (const argument of rest) {
+                        floatVector(argument);
+                        code.push(...simd(expression.name === "min" ? vop.f32Min : vop.f32Max));
+                    }
+                    return;
+                }
+                const [only] = expression.arguments;
+                const operation = expression.name === "trunc" ? vop.f32Trunc : expression.name === "floor" ? vop.f32Floor : expression.name === "ceil" ? vop.f32Ceil : expression.name === "abs" ? vop.f32Abs : null;
+                if (only === undefined) break;
+                floatVector(only);
+                if (operation !== null) code.push(...simd(operation));
+                return;
+            }
+            case "conditional":
+                floatVector(expression.consequent);
+                floatVector(expression.alternate);
+                maskVector(expression.test);
+                code.push(...simd(vop.bitselect));
+                return;
+            default: break;
+        }
+        work.spent += 4 * size(expression);
+        floatLanes(() => emit(expression));
+    };
+
+    /** Leaves, for each of the four rows, the JS `ToInt32` of an expression's value, as `emitInteger` does for one. */
+
+    const integerVector = (expression: Expression): void => {
+        work.spent++;
+        if (expression.kind === "number") {
+            // `| 0` is JS's ToInt32, as `emitInteger` computes it.
+            const bytes = new Uint8Array(new Int32Array(4).fill(expression.value | 0).buffer);
+            code.push(...simd(vop.const), ...bytes);
+            return;
+        }
+        if (hoisted.has(expression) || rowIndependent(expression)) {
+            invariantVector(`i32 ${JSON.stringify(expression)}`, () => {
+                emitInteger(expression);
+                code.push(...simd(vop.i32Splat));
+            });
+            return;
+        }
+        const kind = integerKind(expression) ?? null;
+        switch (expression.kind) {
+            case "local": {
+                const vector = vectorLocals[expression.local] ?? -1;
+                if (vector < 0) break;
+                if (floatLocals[expression.local] === true) {
+                    // An f32 a test proves an integer within i32 truncates exactly.
+                    if ((guarded.get(expression.local) ?? Infinity) >= 2 ** 31) break;
+                    code.push(op.localGet, ...unsigned(vector), ...simd(vop.i32TruncSatF32S));
+                    return;
+                }
+                code.push(op.localGet, ...unsigned(vector));
+                // A boolean's mask of -1 is its 1.
+                if (booleanLocals[expression.local]) code.push(...simd(vop.i32Neg));
+                return;
+            }
+            case "column": {
+                if (columns[expression.column].view === "f32") break;
+                const vector = vectorRegisters.get(expression.column) ?? (gatherable(expression.column) ? gather(expression.column) : undefined);
+                if (vector === undefined) break;
+                code.push(op.localGet, ...unsigned(vector));
+                return;
+            }
+            case "unary":
+                if (expression.operator === "~") {
+                    integerVector(expression.operand);
+                    code.push(...simd(vop.not));
+                    return;
+                }
+                if (expression.operator === "+" && kind !== null) return integerVector(expression.operand);
+                // An exact integer's negation's ToInt32 is its ToInt32's, negated modulo 2^32.
+                if (expression.operator === "-" && exactInteger(expression) && typeOf(expression.operand) !== "boolean") {
+                    integerVector(expression.operand);
+                    code.push(...simd(vop.i32Neg));
+                    return;
+                }
+                break;
+            case "binary": {
+                const { operator, left, right } = expression;
+                if (identityOf(expression)) return integerVector(left);
+                const shift = operator === "<<" || operator === ">>" || operator === ">>>";
+                if (operator in bitwiseVector && (!shift || rowIndependent(right))) {
+                    integerVector(left);
+                    // A shift takes one count for every lane, modulo 32 as JS's is.
+                    if (shift) emitInteger(right);
+                    else integerVector(right);
+                    code.push(...simd(bitwiseVector[operator]));
+                    return;
+                }
+                if ((operator === "+" || operator === "-" || operator === "*") && exactInteger(expression) && typeOf(left) !== "boolean" && typeOf(right) !== "boolean") {
+                    integerVector(left);
+                    integerVector(right);
+                    code.push(...simd(operator === "+" ? vop.i32Add : operator === "-" ? vop.i32Sub : vop.i32Mul));
+                    return;
+                }
+                const remainder = constantRemainder(expression);
+                if (remainder !== null) {
+                    integerVector(left);
+                    remainderVector(remainder);
+                    return;
+                }
+                break;
+            }
+            case "math": {
+                const { name, arguments: parameters } = expression;
+                if (name === "imul") {
+                    integerVector(parameters[0] ?? { kind: "number", value: 0 });
+                    integerVector(parameters[1] ?? { kind: "number", value: 0 });
+                    code.push(...simd(vop.i32Mul));
+                    return;
+                }
+                // The least or greatest of integers one 32-bit kind holds is one of them, its own ToInt32.
+                const signed = parameters.every(signedInteger);
+                if ((name === "min" || name === "max") && parameters.length > 0 && (signed || parameters.every(unsignedInteger))) {
+                    integerVector(parameters[0]);
+                    for (const parameter of parameters.slice(1)) {
+                        integerVector(parameter);
+                        code.push(...simd(name === "min" ? (signed ? vop.i32MinS : vop.i32MinU) : (signed ? vop.i32MaxS : vop.i32MaxU)));
+                    }
+                    return;
+                }
+                break;
+            }
+            case "conditional":
+                if (kind === null && !(exactInteger(expression.consequent) && exactInteger(expression.alternate))) break;
+                integerVector(expression.consequent);
+                integerVector(expression.alternate);
+                maskVector(expression.test);
+                code.push(...simd(vop.bitselect));
+                return;
+            default: break;
+        }
+        if (typeOf(expression) === "boolean") {
+            maskVector(expression);
+            code.push(...simd(vop.i32Neg));
+            return;
+        }
+        work.spent += 4 * size(expression);
+        byLane(() => emitInteger(expression));
+    };
+
+    /** Leaves, for each of the four rows, whether an expression's value is truthy, as a lane mask: -1 where it is. */
+    /**
+     * Replaces the four i32 lanes on the stack with their remainders by a constant divisor, as `emitRemainder` gives one:
+     * the multiply-highs from 64-bit products of the lanes' halves.
+     */
+    const remainderVector = ({ divisor, unsigned: isUnsigned }: { readonly divisor: number; readonly unsigned: boolean }): void => {
+        const dividends = scratch(v128Type);
+        const quotients = scratch(v128Type);
+        work.spent += 7;
+        const magic = isUnsigned ? unsignedMagic(divisor) : signedMagic(divisor);
+        if (magic === null) throw new Error("A remainder by a divisor without a multiplier.");
+        const { multiplier, shift } = magic;
+        // Each 64-bit product's high word, lanes in order.
+        const highWords = [4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31];
+        code.push(op.localSet, ...unsigned(dividends));
+        for (const half of isUnsigned ? [vop.i64x2ExtmulLowI32x4U, vop.i64x2ExtmulHighI32x4U] : [vop.i64x2ExtmulLowI32x4S, vop.i64x2ExtmulHighI32x4S]) {
+            code.push(op.localGet, ...unsigned(dividends), ...integerConstant(multiplier | 0), ...simd(half));
+        }
+        code.push(...simd(vop.shuffle), ...highWords);
+        if (isUnsigned) {
+            if (shift > 32) code.push(op.i32Const, ...signed(shift - 32), ...simd(vop.i32ShrU));
+        }
+        else {
+            if (multiplier < 0) code.push(op.localGet, ...unsigned(dividends), ...simd(vop.i32Add));
+            if (shift > 0) code.push(op.i32Const, ...signed(shift), ...simd(vop.i32ShrS));
+            code.push(op.localGet, ...unsigned(dividends), op.i32Const, 31, ...simd(vop.i32ShrU), ...simd(vop.i32Add));
+        }
+        code.push(op.localSet, ...unsigned(quotients), op.localGet, ...unsigned(dividends), op.localGet, ...unsigned(quotients), ...integerConstant(divisor), ...simd(vop.i32Mul), ...simd(vop.i32Sub));
+    };
+    /** The vector of four i32 lanes of `value`. */
+    const integerConstant = (value: number): number[] => [...simd(vop.const), ...new Uint8Array(new Int32Array(4).fill(value).buffer)];
+    /**
+     * A conjunction's mask, where it bounds f32 vector locals whole when finite on both sides by integers: each such
+     * local's bounds one unsigned compare of its i32 lanes, which saturate past the i32 range, and NaN, which truncates
+     * to 0, failing them; the conjunction's other terms as they are. Returns false, emitting nothing, where none is.
+     */
+    const wholeRangesMask = (expression: Expression): boolean => {
+        const terms: Expression[] = [];
+        const flatten = (node: Expression): void => {
+            if (node.kind === "logical" && node.operator === "&&") {
+                flatten(node.left);
+                flatten(node.right);
+            }
+            else terms.push(node);
+        };
+        flatten(expression);
+        const bounds = new Map<number, { low: number; high: number; readonly terms: Expression[] }>();
+        const flips: { readonly [operator: string]: string } = { "<": ">", "<=": ">=", ">": "<", ">=": "<=" };
+        for (const term of terms) {
+            if (term.kind !== "binary" || !(term.operator in flips)) continue;
+            const [own, other, flipped] = term.left.kind === "local" ? [term.left, term.right, false] : [term.right, term.left, true];
+            if (own.kind !== "local" || other.kind !== "number" || !Number.isFinite(other.value)) continue;
+            if (floatLocals[own.local] !== true || (vectorLocals[own.local] ?? -1) < 0 || !wholeWhenFinite[own.local]) continue;
+            const operator = flipped ? flips[term.operator] : term.operator;
+            const { value } = other;
+            const entry = bounds.get(own.local) ?? { low: -Infinity, high: Infinity, terms: [] };
+            if (operator === "<") entry.high = Math.min(entry.high, Math.ceil(value) - 1);
+            if (operator === "<=") entry.high = Math.min(entry.high, Math.floor(value));
+            if (operator === ">") entry.low = Math.max(entry.low, Math.floor(value) + 1);
+            if (operator === ">=") entry.low = Math.max(entry.low, Math.ceil(value));
+            entry.terms.push(term);
+            bounds.set(own.local, entry);
+        }
+        const ranged = [...bounds].filter(([, { low, high }]) => low > -(2 ** 31) && high < 2 ** 31 - 1 && low <= high);
+        if (ranged.length === 0) return false;
+        const covered = new Set(ranged.flatMap(([, { terms: own }]) => own));
+        let first = true;
+        const and = (): void => {
+            if (!first) code.push(...simd(vop.and));
+            first = false;
+        };
+        for (const [local, { low, high }] of ranged) {
+            const vector = unsigned(vectorLocals[local] ?? 0);
+            work.spent += 4;
+            code.push(op.localGet, ...vector, ...simd(vop.i32TruncSatF32S));
+            if (low !== 0) code.push(...integerConstant(low), ...simd(vop.i32Sub));
+            code.push(...integerConstant(high - low + 1), ...simd(vop.i32LtU));
+            if (low <= 0 && high >= 0) code.push(op.localGet, ...vector, op.localGet, ...vector, ...simd(vop.f32Eq), ...simd(vop.and));
+            and();
+        }
+        for (const term of terms) {
+            if (covered.has(term)) continue;
+            maskVector(term);
+            and();
+        }
+        return true;
+    };
+
+    const maskVector = (expression: Expression): void => {
+        work.spent++;
+        if (hoisted.has(expression) || rowIndependent(expression)) {
+            invariantVector(`mask ${JSON.stringify(expression)}`, () => {
+                emitCondition(expression);
+                code.push(...simd(vop.i32Splat), ...simd(vop.i32Neg));
+            });
+            return;
+        }
+        switch (expression.kind) {
+            case "local": {
+                const vector = vectorLocals[expression.local] ?? -1;
+                if (vector < 0 || !booleanLocals[expression.local]) break;
+                code.push(op.localGet, ...unsigned(vector));
+                return;
+            }
+            case "binary": {
+                const { operator, left, right } = expression;
+                if (!(operator in signedVector)) break;
+                const leftType = typeOf(left);
+                const rightType = typeOf(right);
+                const strict = operator === "===" || operator === "!==";
+                // A boolean never strictly equals a number.
+                if (strict && leftType !== rightType && leftType !== "mixed" && rightType !== "mixed") {
+                    code.push(...simd(vop.const), ...new Array<number>(16).fill(operator === "===" ? 0 : 0xff));
+                    return;
+                }
+                if (leftType === "number" && rightType === "number" && exactInteger(left) && exactInteger(right)) {
+                    const signed = signedInteger(left) && signedInteger(right);
+                    if (!signed && !(unsignedInteger(left) && unsignedInteger(right))) break;
+                    integerVector(left);
+                    integerVector(right);
+                    code.push(...simd((signed ? signedVector : unsignedVector)[operator]));
+                    return;
+                }
+                if (leftType === "number" && rightType === "number" && floatExact(left) && floatExact(right)) {
+                    floatVector(left);
+                    floatVector(right);
+                    code.push(...simd(floatComparisons[operator]));
+                    return;
+                }
+                if (leftType === "boolean" && rightType === "boolean" && (operator === "==" || operator === "!=" || strict)) {
+                    maskVector(left);
+                    maskVector(right);
+                    code.push(...simd(operator === "==" || operator === "===" ? vop.i32Eq : vop.i32Ne));
+                    return;
+                }
+                break;
+            }
+            case "unary":
+                if (expression.operator !== "!") break;
+                maskVector(expression.operand);
+                code.push(...simd(vop.not));
+                return;
+            // Both sides are pure, so both are computed; the value's truthiness is theirs combined.
+            case "logical": {
+                if (expression.operator === "&&" && wholeRangesMask(expression)) return;
+                // A conjunction with an inequality is the other side without the equality, as an and-not.
+                const unequal = (side: Expression): side is Extract<Expression, { kind: "binary" }> => side.kind === "binary" && (side.operator === "!=" || side.operator === "!==");
+                const [kept, negated] = unequal(expression.right) ? [expression.left, expression.right] : unequal(expression.left) ? [expression.right, expression.left] : [null, null];
+                if (expression.operator === "&&" && kept !== null && negated !== null) {
+                    maskVector(kept);
+                    maskVector({ ...negated, operator: negated.operator === "!=" ? "==" : "===" });
+                    code.push(...simd(vop.andNot));
+                    return;
+                }
+                maskVector(expression.left);
+                maskVector(expression.right);
+                code.push(...simd(expression.operator === "&&" ? vop.and : vop.or));
+                return;
+            }
+            case "conditional":
+                maskVector(expression.consequent);
+                maskVector(expression.alternate);
+                maskVector(expression.test);
+                code.push(...simd(vop.bitselect));
+                return;
+            default: break;
+        }
+        // A 32-bit integer is truthy where it isn't 0.
+        if (typeOf(expression) === "number" && integerKind(expression) !== null && integerKind(expression) !== undefined) {
+            integerVector(expression);
+            code.push(...simd(vop.const), ...new Array<number>(16).fill(0), ...simd(vop.i32Ne));
+            return;
+        }
+        work.spent += 4 * size(expression);
+        byLane(() => emitCondition(expression));
+        code.push(...simd(vop.i32Neg));
+    };
+
+    /** Under the enclosing `if`s' mask, keeps where it's clear the old vector, pushed after the new one. */
+    const blendAfterOld = (): void => {
+        if (mask !== null) code.push(op.localGet, ...unsigned(mask), ...simd(vop.bitselect));
+    };
+
+    /**
+     * Stores a value to a column for each of the group's rows, one lane at a time, as `store` does; where the mask is
+     * clear, the value there, without branching.
+     */
+    const storeEachLane = (column: number, value: Expression): void => {
+        const { view } = columns[column];
+        work.spent += 4 * (size(value) + (mask === null ? 1 : 3));
+        for (let k = 0; k < 4; k++) {
+            lane = k;
+            if (mask === null) store(column, value);
+            else {
+                address(column);
+                if (view === "f32" || view === "f64") emit(value);
+                else emitInteger(value);
+                if (view === "f32") code.push(op.f32DemoteF64);
+                address(column);
+                code.push(...loadOf(columns[column], columnOffset(column)));
+                maskLane(k);
+                code.push(op.select, ...storeOf(columns[column], columnOffset(column)));
+            }
+            lane = null;
+        }
+    };
+
+    /**
+     * Stores an integer column outside every span from the value's vector, lane by lane, where the mask is set; its
+     * register, gathered for the mask if need be, holds the new vector for what reads it after.
+     */
+    const storeGathered = (column: number, value: Expression): void => {
+        const { view } = columns[column];
+        integerVector(value);
+        if (mask !== null) {
+            const old = vectorRegisters.get(column) ?? gather(column);
+            code.push(op.localGet, ...unsigned(old));
+            blendAfterOld();
+        }
+        const register = vectorRegisters.get(column) ?? scratch(v128Type);
+        code.push(op.localSet, ...unsigned(register));
+        vectorRegisters.set(column, register);
+        work.spent += 4;
+        for (let k = 0; k < 4; k++) {
+            lane = k;
+            address(column);
+            code.push(op.localGet, ...unsigned(register));
+            if (view === "u8") code.push(...simd(vop.i32ExtractLane), k, op.i32Store8, 0, ...unsigned(columnOffset(column)));
+            else code.push(...simd(vop.store32Lane), 2, ...unsigned(columnOffset(column)), k);
+            lane = null;
+        }
+    };
+
+    /**
+     * Writes a typed array resource's element for each of the group's rows, lane by lane, where the mask is set and the
+     * element is one of its indexes, as `storeResourceElement` does for one; integer elements and values only.
+     */
+    const storeElements = (resource: number, element: Expression, value: Expression): void => {
+        const name = arrayOf(resource);
+        if (!(signedInteger(element) || unsignedInteger(element)) || name === "Uint8ClampedArray" || name === "Float32Array" || name === "Float64Array") throw notVectorizable;
+        const { store: storeOperation, align } = elementAccess[name];
+        const positions = scratch(v128Type);
+        const lengths = scratch(v128Type);
+        const values = scratch(v128Type);
+        // Each lane's index, or where it isn't one, or the mask is clear, the element past the end.
+        const within = alwaysWithin(resource, element);
+        if (!within || mask !== null) {
+            invariantVector(`length ${resource}`, () => {
+                arrayParameter(resource, "length");
+                code.push(...simd(vop.i32Splat));
+            });
+            code.push(op.localSet, ...unsigned(lengths));
+        }
+        integerVector(element);
+        if (!within) {
+            code.push(op.localTee, ...unsigned(positions), op.localGet, ...unsigned(lengths), op.localGet, ...unsigned(positions), op.localGet, ...unsigned(lengths), ...simd(vop.i32LtU));
+            if (mask !== null) code.push(op.localGet, ...unsigned(mask), ...simd(vop.and));
+            code.push(...simd(vop.bitselect));
+        }
+        else if (mask !== null) code.push(op.localGet, ...unsigned(lengths), op.localGet, ...unsigned(mask), ...simd(vop.bitselect));
+        // Each lane's address, from the array's.
+        if (align > 0) code.push(op.i32Const, align, ...simd(vop.i32Shl));
+        invariantVector(`byteOffset ${resource}`, () => {
+            arrayParameter(resource, "byteOffset");
+            code.push(...simd(vop.i32Splat));
+        });
+        code.push(...simd(vop.i32Add), op.localSet, ...unsigned(positions));
+        integerVector(value);
+        code.push(op.localSet, ...unsigned(values));
+        work.spent += 4 * 2 + (within ? 2 : 5);
+        for (let k = 0; k < 4; k++) {
+            code.push(op.localGet, ...unsigned(positions), ...simd(vop.i32ExtractLane), k);
+            code.push(op.localGet, ...unsigned(values), ...simd(vop.i32ExtractLane), k, storeOperation, align, 0);
+        }
+    };
+
+    /** Stamps the group's four rows' ticks where the mask is set, two rows a store, and their blocks and chunks. */
+
+    const stampGroup = (current: Extract<Statement, { kind: "stamp" }>): void => {
+        if (columns[current.column].muted !== true) {
+            for (let half = 0; half < 2; half++) {
+                const tickAddress = (): void => { code.push(op.localGet, ...unsigned(columnParameter(current.column)), op.localGet, ...unsigned(rowLocal), op.i32Const, 3, op.i32Shl, op.i32Add); };
+                tickAddress();
+                code.push(op.localGet, 2, ...simd(vop.f64Splat));
+                if (mask !== null) {
+                    tickAddress();
+                    code.push(...simd(vop.load), 3, ...unsigned(16 * half), op.localGet, ...unsigned(mask), ...simd(half === 0 ? vop.i64ExtendLowS : vop.i64ExtendHighS), ...simd(vop.bitselect));
+                }
+                code.push(...simd(vop.store), 3, ...unsigned(16 * half));
+            }
+        }
+        // The group may straddle two blocks or chunks. Under a mask each row whose lane is set stamps its own: a block or
+        // chunk is other workers' rows' too, so it's only ever written the tick, never written back what was read.
+        if (mask === null) {
+            stampDense(current.blocks, blockShift, 0);
+            stampDense(current.blocks, blockShift, 3);
+            stampDense(current.chunks, chunkShift, 0);
+            stampDense(current.chunks, chunkShift, 3);
+            return;
+        }
+        for (const [dense, shift] of [[current.blocks, blockShift], [current.chunks, chunkShift]] as const) {
+            if (columns[dense].muted === true || everyRow.has(dense)) continue;
+            for (let k = 0; k < 4; k++) {
+                maskLane(k);
+                code.push(op.if, 0x40);
+                code.push(op.localGet, ...unsigned(columnParameter(dense)), op.localGet, ...unsigned(rowLocal), op.i32Const, k, op.i32Add, op.i32Const, ...signed(shift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add);
+                code.push(op.localGet, 2, op.f64Store, 3, 0, op.end);
+            }
+        }
+    };
+
+    const interleavedStatement = (current: Statement): void => {
+        switch (current.kind) {
+            case "set": {
+                const vector = vectorLocals[current.local] ?? -1;
+                if (vector >= 0) {
+                    if (booleanLocals[current.local]) maskVector(current.value);
+                    else if (floatLocals[current.local] === true) floatVector(current.value);
+                    else integerVector(current.value);
+                    if (mask !== null) code.push(op.localGet, ...unsigned(vector));
+                    blendAfterOld();
+                    code.push(op.localSet, ...unsigned(vector));
+                    return;
+                }
+                work.spent += 4 * (size(current.value) + 1);
+                for (let k = 0; k < 4; k++) {
+                    lane = k;
+                    emitAssigned(current.local, current.value);
+                    if (mask !== null) {
+                        code.push(op.localGet, ...unsigned(local(current.local)));
+                        maskLane(k);
+                        code.push(op.select);
+                    }
+                    code.push(op.localSet, ...unsigned(local(current.local)));
+                    lane = null;
+                }
+                return;
+            }
+            case "store": {
+                const vector = spanned.has(current.column) ? vectorRegisters.get(current.column) : undefined;
+                if (vector === undefined && gatherable(current.column) && vectorizes(current.value)) return storeGathered(current.column, current.value);
+                if (vector === undefined) return storeEachLane(current.column, current.value);
+                if (columns[current.column].view !== "f32") integerVector(current.value);
+                // An f32 field stores its value rounded to f32, which f32 lanes hold.
+                else if (floatExact(current.value)) floatVector(current.value);
+                // A 32-bit integer rounds to f32 as its f64 does, to nearest.
+                else if (integerKind(current.value) === "i32" || integerKind(current.value) === "u32") {
+                    integerVector(current.value);
+                    code.push(...simd(integerKind(current.value) === "i32" ? vop.f32ConvertI32S : vop.f32ConvertI32U));
+                }
+                else {
+                    work.spent += 4 * size(current.value);
+                    floatLanes(() => emit(current.value));
+                }
+                if (mask !== null) code.push(op.localGet, ...unsigned(vector));
+                blendAfterOld();
+                code.push(op.localSet, ...unsigned(vector));
+                return;
+            }
+            case "stamp": return stampGroup(current);
+            case "if": {
+                const test = scratch(v128Type);
+                maskVector(current.test);
+                code.push(op.localSet, ...unsigned(test));
+                const outer = mask;
+                const branch = (statements: readonly Statement[], negate: boolean): void => {
+                    if (statements.length === 0) return;
+                    const inner = scratch(v128Type);
+                    if (outer === null) {
+                        code.push(op.localGet, ...unsigned(test));
+                        if (negate) code.push(...simd(vop.not));
+                    }
+                    else code.push(op.localGet, ...unsigned(outer), op.localGet, ...unsigned(test), ...simd(negate ? vop.andNot : vop.and));
+                    // Arms are few operations, so each runs for every group: branching to skip one no row takes mispredicts on mixed rows.
+                    code.push(op.localSet, ...unsigned(inner));
+                    mask = inner;
+                    for (const statement of statements) interleavedStatement(statement);
+                    mask = outer;
+                };
+                withFacts(current.test, () => branch(current.consequent, false));
+                branch(current.alternate, true);
+                return;
+            }
+            case "resourceStore": return storeElements(current.index, current.element, current.value);
+            default: throw notVectorizable;
+        }
+    };
+
+    /** Whether the interleaved loop runs an expression: one of row columns, locals and parameters, and operators and `Math` on them. */
+    const interleavable = (expression: Expression): boolean => {
+        switch (expression.kind) {
+            case "number": case "boolean": case "column": case "resource": case "args": case "shared": case "local": return true;
+            case "unary": return interleavable(expression.operand);
+            case "binary": case "logical": return interleavable(expression.left) && interleavable(expression.right);
+            case "conditional": return interleavable(expression.test) && interleavable(expression.consequent) && interleavable(expression.alternate);
+            case "math": return expression.arguments.every(interleavable);
+            default: return false;
+        }
+    };
+    const interleavableStatements = (statements: readonly Statement[]): boolean => statements.every(statement => {
+        switch (statement.kind) {
+            case "set": case "store": return interleavable(statement.value);
+            case "resourceStore": return interleavable(statement.element) && interleavable(statement.value);
+            case "stamp": return true;
+            case "if": return interleavable(statement.test) && interleavableStatements(statement.consequent) && interleavableStatements(statement.alternate);
+            default: return false;
+        }
+    });
+
+    /**
+     * The operations of the `if` arms a group's masks run, every arm some row of it takes: past a few, rows a row at a
+     * time run only their own and skip the rest, as a rarely taken arm is.
+     */
+    const armsBudget = 40;
+    const armsSize = (statements: readonly Statement[]): number => statements.reduce((total, statement) =>
+        statement.kind === "if" ? total + statementsSize(statement.consequent) + statementsSize(statement.alternate) : total, 0);
+
+    /**
+     * Rows from `start` in groups of four, up to the last whole group, interleaved; leaves the row local at the first row
+     * not done. Integer and boolean locals are vectors of the four rows' values; the rest have a local per lane.
+     */
+    const interleavedLoop = (): void => {
+        try {
+            interleavedGroups();
+        }
+        finally {
+            // A program the loop gives up on, by throwing `notVectorizable`, leaves the next mode nothing of its state.
+            rowAddresses.clear();
+            vectorRegisters.clear();
+            spanned.clear();
+            invariants = null;
+            vectorLocals = [];
+            floatLocals = [];
+            laneLocals = [];
+            lane = null;
+        }
+    };
+    const interleavedGroups = (): void => {
+        if (!interleavableStatements(program.body) || armsSize(program.body) > armsBudget) throw notVectorizable;
+        const used = columnsUsed(program.body, new Set());
+        const stored = storedColumns(program.body, new Set());
+        const spans = planSpans(used, stored);
+        groupRows = 4;
+        const floats = Array.from({ length: program.locals }, (_, k) => localTypes[k] === "number" && integerLocal(k) === null && !wideLocals[k] && !booleanLocals[k] && assignedValues.has(k));
+        floatLocals = floats;
+        for (let changed = true; changed;) {
+            changed = false;
+            for (const [index, values] of assignedValues) {
+                if (floats[index] && !values.every(floatExact)) {
+                    floats[index] = false;
+                    changed = true;
+                }
+            }
+        }
+        const eligible = Array.from({ length: program.locals }, (_, k) => booleanLocals[k] || floats[k] || (integerLocal(k) !== null && !wideLocals[k]));
+        // A local is a vector where some use of it is: an operand of an operation with a vector form, in a test, which
+        // masks lanes, or stored from a vector. A local only a lane at a time reads has a local per lane.
+        vectorLocals = eligible.map(vector => vector ? 0 : -1);
+        const usedInVectors = new Array<boolean>(program.locals).fill(false);
+        const uses = (expression: Expression, vectorContext: boolean): void => {
+            const vector = vectorContext && (vectorizes(expression) || floatExact(expression) || typeOf(expression) === "boolean");
+            switch (expression.kind) {
+                case "local": if (vectorContext) usedInVectors[expression.local] = true; return;
+                case "unary": return uses(expression.operand, vector);
+                case "binary": case "logical": uses(expression.left, vector); return uses(expression.right, vector);
+                case "conditional": uses(expression.test, vector); uses(expression.consequent, vector); return uses(expression.alternate, vector);
+                case "math": for (const argument of expression.arguments) uses(argument, vector); return;
+                default: return;
+            }
+        };
+        // An assignment's value is used as its local is, to the fixed point.
+        const visit = (statements: readonly Statement[]): void => {
+            for (const statement of statements) {
+                switch (statement.kind) {
+                    case "set": if (usedInVectors[statement.local] === true) uses(statement.value, true); break;
+                    case "store": uses(statement.value, spans.some(span => span.lanes.has(statement.column)) || (gatherable(statement.column) && vectorizes(statement.value))); break;
+                    case "resourceStore": uses(statement.element, true); uses(statement.value, true); break;
+                    case "if": uses(statement.test, true); visit(statement.consequent); visit(statement.alternate); break;
+                    default: break;
+                }
+            }
+        };
+        for (let before = -1; before !== usedInVectors.filter(Boolean).length;) {
+            before = usedInVectors.filter(Boolean).length;
+            visit(program.body);
+        }
+        vectorLocals = eligible.map((vector, k) => vector && usedInVectors[k] ? scratch(v128Type) : -1);
+
+        laneLocals = [1, 2, 3].map(() => Array.from({ length: program.locals }, (_, k) =>
+            vectorLocals[k] >= 0 ? -1 : scratch(wideLocals[k] ? i64Type : integerLocal(k) === null && !booleanLocals[k] ? f64Type : i32Type)));
+        // A component's columns of one stride view its bytes from one address, the group's first row's element.
+        const owners = new Map<string, { readonly column: number; readonly own: number }>();
+        const addresses = new Map<number, number>();
+        for (const column of used) {
+            const { component, stride } = columns[column];
+            const key = component < 0 ? `column ${column}` : `${component}:${stride}`;
+            let owner = owners.get(key);
+            if (owner === undefined) owners.set(key, owner = { column, own: scratch(i32Type) });
+            addresses.set(column, owner.own);
+        }
+        const spanVectors = spans.map(() => ({ rows: [0, 1, 2, 3].map(() => scratch(v128Type)), leaves: [0, 1, 2, 3].map(() => scratch(v128Type)) }));
+        let packedShuffles = 0;
+        const vectorEnd = scratch(i32Type);
+        code.push(op.localGet, 1, op.localGet, 0, op.i32Sub, op.i32Const, ...signed(-4), op.i32And, op.localGet, 0, op.i32Add, op.localSet, ...unsigned(vectorEnd));
+        invariants = { at: code.length, code: [], vectors: new Map() };
+        code.push(op.block, 0x40, op.loop, 0x40);
+        code.push(op.localGet, ...unsigned(rowLocal), op.localGet, ...unsigned(vectorEnd), op.i32GeS, op.brIf, 1);
+        for (const { column, own } of owners.values()) {
+            address(column);
+            code.push(op.localSet, ...unsigned(own));
+        }
+        for (const [column, own] of addresses) rowAddresses.set(column, own);
+        spans.forEach((span, s) => {
+            const { rows, leaves } = spanVectors[s];
+            const own = addresses.get(span.owner) ?? 0;
+            if (span.packed) {
+                for (let k = 0; k < span.stride / 4; k++) code.push(op.localGet, ...unsigned(own), ...simd(vop.load), 2, ...unsigned(16 * k), op.localSet, ...unsigned(rows[k]));
+                for (const [column, word] of span.lanes) {
+                    packedShuffles += selectWords([0, 1, 2, 3].map(row => packedWord(span, rows, row, word)));
+                    code.push(op.localSet, ...unsigned(leaves[word]));
+                    vectorRegisters.set(column, leaves[word]);
+                    spanned.add(column);
+                }
+                return;
+            }
+            rows.forEach((row, k) => code.push(op.localGet, ...unsigned(own), ...simd(vop.load), 2, ...unsigned(span.base + k * span.stride), op.localSet, ...unsigned(row)));
+            transpose(rows, leaves);
+            for (const [column, leaf] of span.lanes) {
+                vectorRegisters.set(column, leaves[leaf]);
+                spanned.add(column);
+            }
+        });
+        mask = null;
+        // Each span's four loads and eight shuffles, and back, or a store a lane for each leaf stored; a packed span's
+        // loads, a vector each, and the shuffles picking its leaves, and back.
+        work.spent = packedShuffles + spans.reduce((total, span) => total + (span.packed ? span.stride / 4 : 12), 0);
+        for (const current of program.body) interleavedStatement(current);
+        for (const span of spans) {
+            const written = [...span.lanes.keys()].filter(column => stored.has(column)).length;
+            if (written > 0) work.spent += !span.whole ? 4 * written : span.packed ? 3 * (span.stride / 4) : 12;
+        }
+        // Four rows one at a time, as the scalar loop runs them, must cost clearly more.
+        if (work.spent > 0.7 * 4 * statementsSize(program.body)) throw notVectorizable;
+        spans.forEach((span, s) => {
+            const { rows, leaves } = spanVectors[s];
+            const own = addresses.get(span.owner) ?? 0;
+            const written = [...span.lanes].filter(([column]) => stored.has(column));
+            if (written.length === 0) return;
+            if (span.packed && span.whole) {
+                // Each vector of the rows' elements, its words of leaves stored from their vectors, the rest as loaded.
+                const words = span.stride / 4;
+                const stores = new Set(written.map(([, word]) => word));
+                const vectors = rows.slice(0, words).map((_, k) => {
+                    const vector = scratch(v128Type);
+                    selectWords([0, 1, 2, 3].map(lane => {
+                        const at = 4 * k + lane;
+                        const word = at % words;
+                        return stores.has(word) ? [leaves[word] ?? 0, Math.floor(at / words)] : [rows[k] ?? 0, lane];
+                    }));
+                    code.push(op.localSet, ...unsigned(vector));
+                    return vector;
+                });
+                vectors.forEach((vector, k) => code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(vector), ...simd(vop.store), 2, ...unsigned(16 * k)));
+                return;
+            }
+            if (span.whole) {
+                transpose(leaves, rows);
+                // A row reaching past its element stores whole but the last, which stores its element's bytes alone.
+                const last = span.base + 16 > span.stride ? span.stride - span.base : 16;
+                rows.forEach((row, k) => {
+                    const at = span.base + k * span.stride;
+                    if (k < 3 || last === 16) return void code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(row), ...simd(vop.store), 2, ...unsigned(at));
+                    if (last >= 8) code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(row), ...simd(vop.store64Lane), 2, ...unsigned(at), 0);
+                    if (last % 8 === 4) code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(row), ...simd(vop.store32Lane), 2, ...unsigned(at + last - 4), (last - 4) / 4);
+                });
+                return;
+            }
+            for (const [column, leaf] of written) {
+                for (let k = 0; k < 4; k++) code.push(op.localGet, ...unsigned(own), op.localGet, ...unsigned(leaves[leaf]), ...simd(vop.store32Lane), 2, ...unsigned(columns[column].offset + k * span.stride), k);
+            }
+        });
+        code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, 4, op.i32Add, op.localSet, ...unsigned(rowLocal), op.br, 0);
+        code.push(op.end, op.end);
+        code.splice(invariants.at, 0, ...invariants.code);
+        invariants = null;
     };
 
     // ---- Within a row (SLP): statements over a component's leaves that match lane for lane become one f32x4 operation. ----
@@ -1810,7 +4125,8 @@ export const generateWasmOrReason = (
             return null;
         };
 
-        // Groups: consecutive stores to two or more leaves of one component whose values match lane for lane.
+        // Groups: consecutive stores to two or more leaves of one component whose values match lane for lane, each leaf
+        // once; a store to a leaf stored again starts the next.
         const groups = new Map<number, Group>();
         for (let index = 0; index < body.length;) {
             const statement = body[index];
@@ -1819,10 +4135,12 @@ export const generateWasmOrReason = (
                 continue;
             }
             const component = columns[statement.column].component;
+            const leaves = new Set<number>();
             let end = index;
             while (end < body.length) {
                 const next = body[end];
-                if (next.kind !== "store" || columns[next.column].component !== component) break;
+                if (next.kind !== "store" || columns[next.column].component !== component || leaves.has(columns[next.column].offset)) break;
+                leaves.add(columns[next.column].offset);
                 end++;
             }
             const stores = body.slice(index, end).flatMap(store => store.kind === "store" ? [store] : []);
@@ -1940,12 +4258,17 @@ export const generateWasmOrReason = (
                     visit(expression.alternate);
                     return;
                 case "math": return expression.arguments.forEach(visit);
+                case "resourceElement": return visit(expression.element);
                 default: return;
             }
         };
         for (const current of statements) {
             switch (current.kind) {
                 case "set": case "store": visit(current.value); break;
+                case "resourceStore":
+                    visit(current.element);
+                    visit(current.value);
+                    break;
                 case "if":
                     visit(current.test);
                     hoist(current.consequent);
@@ -2182,9 +4505,14 @@ export const generateWasmOrReason = (
             code.push(op.br, 2, op.end, op.end);
         };
         // Scalars are discovered while generating, so code is generated first with locals placed after a provisional scalar count.
-        /** `rows`: four rows at a time where every column is dense; `lanes`: fuse statements within each row. */
+        /**
+         * `rows`: four rows at a time where every column is dense; `interleaved`: four rows at a time of any layout;
+         * `lanes`: fuse statements within each row.
+         */
         let fused = false;
-        const generate = (scalarCount: number, mode: "rows" | "lanes" | "scalar"): void => {
+        /** Whether lanes mode runs only as whole elements across rows, giving up otherwise. */
+        let acrossOnly = false;
+        const generate = (scalarCount: number, mode: Mode): void => {
             code.length = 0;
             extraLocals.length = 0;
             rowsLocals.length = 0;
@@ -2195,6 +4523,7 @@ export const generateWasmOrReason = (
             code.push(op.localGet, 0, op.localSet, ...unsigned(rowLocal));
             hoisted.clear();
             hoist(program.body);
+            convertArrayParameters();
             accumulators.forEach((accumulator, k) => {
                 code.push(op.localGet, ...unsigned(partialsParameter), op.f64Load, 3, ...unsigned(8 * k), op.localSet, ...unsigned(local(accumulator)));
             });
@@ -2217,11 +4546,13 @@ export const generateWasmOrReason = (
             stampRangeChunks();
             if (filters > 0) startChunksAndBlocks();
             if (mode === "rows") rowsLoop();
+            if (mode === "interleaved") interleavedLoop();
             let across = false;
             if (mode === "lanes") {
                 const plan = planLanes();
                 across = acrossElements(plan);
                 if (across) elementsLoop(plan);
+                else if (acrossOnly) throw notVectorizable;
             }
             // for (; row < end; row++) { block next { body } }, where with `up` the row and its parent's are rows[n] and parents[n].
             const slot = rowLocal;
@@ -2229,6 +4560,37 @@ export const generateWasmOrReason = (
                 rowLocal = scratch(i32Type);
                 parentLocal = scratch(i32Type);
             }
+            const scalarRows = !(mode === "lanes" && !wide);
+            // Rows one after another, each column's element address steps by its stride from row to row; rows a
+            // filter skips or a list names are addressed at each.
+            const stepped = scalarRows && filters === 0 && !upMode;
+            /**
+             * Each column's element address local; a component's columns view its bytes from one address, so its fields
+             * of one stride share the local of the first, which owns it.
+             */
+            const addressLocals: { readonly column: number; readonly own: number; readonly owner: boolean }[] = [];
+            {
+                const byComponent = new Map<number, { readonly column: number; readonly own: number }>();
+                for (const column of columnsUsed(program.body, new Set())) {
+                    const { component, stride } = columns[column];
+                    const shared = component < 0 ? undefined : byComponent.get(component);
+                    if (shared !== undefined && columns[shared.column].stride === stride) {
+                        addressLocals.push({ column, own: shared.own, owner: false });
+                        continue;
+                    }
+                    const own = scratch(i32Type);
+                    addressLocals.push({ column, own, owner: true });
+                    if (component >= 0 && shared === undefined) byComponent.set(component, { column, own });
+                }
+            }
+            const setAddresses = (): void => {
+                for (const { column, own, owner } of addressLocals) {
+                    if (!owner) continue;
+                    address(column);
+                    code.push(op.localSet, ...unsigned(own));
+                }
+            };
+            if (stepped) setAddresses();
             code.push(op.block, 0x40, op.loop, 0x40);
             code.push(op.localGet, ...unsigned(slot), op.localGet, 1, op.i32GeS, op.brIf, 1);
             // With change filters, an outer loop finds each run of passing blocks and an inner one runs its rows.
@@ -2250,10 +4612,20 @@ export const generateWasmOrReason = (
             labels.length = 0;
             labels.push("next");
             // f64 lanes fuse only across rows: within a row the rest run as scalars, as the body computes.
-            if (mode === "lanes" && !wide) fused = emitLaneBody();
+            // A row's statements outside the lanes read its elements' addresses too, as branch-free `if`s select into them.
+            if (!scalarRows) {
+                setAddresses();
+                for (const { column, own } of addressLocals) rowAddresses.set(column, own);
+                fused = emitLaneBody();
+                rowAddresses.clear();
+            }
             else {
                 if (mode === "lanes") fused = across;
+                // Each column's element address once a row, rather than at every read and store.
+                if (!stepped) setAddresses();
+                for (const { column, own } of addressLocals) rowAddresses.set(column, own);
                 for (const current of program.body) statement(current);
+                rowAddresses.clear();
             }
             labels.pop();
             code.push(op.end);
@@ -2266,6 +4638,11 @@ export const generateWasmOrReason = (
                 code.push(op.localGet, ...unsigned(second), op.localSet, ...unsigned(first), op.localGet, ...unsigned(third), op.localSet, ...unsigned(second));
                 code.push(op.localSet, ...unsigned(third));
             });
+            if (stepped) {
+                for (const { column, own, owner } of addressLocals) {
+                    if (owner) code.push(op.localGet, ...unsigned(own), op.i32Const, ...signed(columns[column].stride), op.i32Add, op.localSet, ...unsigned(own));
+                }
+            }
             code.push(op.localGet, ...unsigned(slot), op.i32Const, 1, op.i32Add, op.localSet, ...unsigned(slot), op.br, 0);
             code.push(op.end, op.end);
             if (filters > 0) code.push(op.br, 0, op.end, op.end);
@@ -2289,14 +4666,19 @@ export const generateWasmOrReason = (
         // Listed rows aren't consecutive, so `up` programs run one row at a time.
         // Within a row, f64 lanes would split a component's leaves across vectors, so filtered kernels at the body's
         // precision run one row at a time.
-        let mode: "rows" | "lanes" | "scalar" = !simdEnabled || accumulators.length > 0 || upMode || (wide && filters > 0) ? "scalar" : filters > 0 ? "lanes" : "rows";
-        try {
-            generate(0, mode);
-        }
-        catch (error) {
-            if (error !== notVectorizable) throw error;
-            mode = "lanes";
-            generate(0, mode);
+        let mode: Mode = !simdEnabled || accumulators.length > 0 || upMode || (wide && filters > 0) ? "scalar" : filters > 0 ? "lanes" : "rows";
+        // A SIMD mode throws `notVectorizable` for a program it can't run, and the next is tried.
+        // Whole elements across rows, where the plan covers the body, outrun interleaved rows, which outrun fusing within rows.
+        const candidates: readonly (readonly [Mode, boolean])[] = mode === "rows" ? [["rows", false], ["lanes", true], ["interleaved", false], ["lanes", false]] : [[mode, false]];
+        for (let k = 0; k < candidates.length; k++) {
+            [mode, acrossOnly] = candidates[k] ?? ["scalar", false];
+            try {
+                generate(0, mode);
+                break;
+            }
+            catch (error) {
+                if (error !== notVectorizable || k === candidates.length - 1) throw error;
+            }
         }
         if (mode === "lanes" && !fused) {
             mode = "scalar";
@@ -2334,7 +4716,7 @@ export const generateWasmOrReason = (
             return section(0, [...name("name"), ...section(1, vector(functions)), ...section(2, vector(locals))]);
         };
         const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(3 * filters).fill(i32Type), ...new Array<number>(lookupParameters).fill(f64Type), ...new Array<number>(indexParameters).fill(f64Type), ...new Array<number>(upParameters).fill(i32Type), ...scalars.map(() => f64Type), ...accumulators.length > 0 ? [i32Type] : []];
-        const localTypesList = [...new Array<number>(program.locals).fill(f64Type)];
+        const localTypesList = Array.from({ length: program.locals }, (_, k) => wideLocals[k] ? i64Type : integerLocal(k) === null && !booleanLocals[k] ? f64Type : i32Type);
         // Locals in order: program locals, then extras in creation order; the row index was the first extra.
         const declared = [...localTypesList.map(type => [1, type]), ...extraLocals.map(type => [1, type])];
         const body = [...vector(declared.map(([count, type]) => [...unsigned(count), type])), ...code];

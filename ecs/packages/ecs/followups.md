@@ -106,6 +106,13 @@ correctness, then optimization. Remove an item once it's decided or done.
   each row's owner among them (about 25 ms at 1M), and the sync point links each holder to its target (about 20 ms),
   random writes into the holder lists. Linking a block whose targets are themselves in it could skip the lists' random
   reads; measure before trying.
+- **Structural changes at sync points:** commands naming an archetype's every row, the same `remove`, `add` or
+  `despawn` each, apply as blocks (`synchronize.ts`, `blockAt`), and `despawnWhere` empties whole archetypes: 1M,
+  `BM_RemoveAddComponent` 41 ns per entity on one thread and 34 on the pool (EnTT 17, Flecs 119),
+  `BM_DestroyEntities` 26 and 21 (EnTT 21). What's left is issuing each command and checking each against its row.
+  Next: range commands, where a kernel's one command is an unconditional `remove`, `add` of literals or `despawn` of
+  `row.entity`: the build issues one command per call for its rows, the worker's included, which plans as a block
+  without a check per row. Also, entries' passes trimmed further for conditional commands, which blocks don't take.
 - **f64 SIMD for `Vec3` bodies:** automatic kernels' f64x2 lanes run only across dense single-f32 columns, so a body
   over `Vec3` components, as chapter 14's `move`, runs in WASM a row at a time. Measure lanes within a row's leaves.
 - Index step 5 items.

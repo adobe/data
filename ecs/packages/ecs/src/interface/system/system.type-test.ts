@@ -28,6 +28,7 @@ declare module '@adobe/ecs' {
 const flagged = Symbol("systemTest/flagged");
 const bounds = Symbol("systemTest/bounds");
 export const total = Symbol("systemTest/total");
+const samples = Symbol("systemTest/samples");
 declare module '@adobe/ecs' {
     export interface Resources {
         [time]: { type: number };
@@ -35,6 +36,7 @@ declare module '@adobe/ecs' {
         [flagged]: { type: boolean; reduce: "|" };
         [bounds]: { type: readonly [number, number, number]; reduce: "min" };
         [total]: { type: number; reduce: "+" };
+        [samples]: { type: Float32Array; length: 4 };
     }
 }
 
@@ -404,6 +406,40 @@ System.create({ readonly: true }, context => {
     void context.reduce;
     // @ts-expect-error a readonly system has no commands
     void context.commands;
+});
+// A writing system assigns a typed array resource's elements; a readonly system reads them, and its methods that leave them as they are.
+System.create({}, ({ resources }) => {
+    resources[samples][0] = 1;
+    resources[samples].set([1, 2]);
+    resources[samples].fill(0);
+    const writable: Float32Array = resources[samples];
+    void writable;
+});
+System.create({ readonly: true }, ({ resources }) => {
+    const view: Resource.ReadonlyTypedArray<Float32Array> = resources[samples];
+    const sum: number = view[0] + view.length + view.reduce((total, element) => total + element, 0);
+    const elements: number[] = [...view];
+    const copy: Float32Array = view.slice();
+    copy[0] = 1;
+    const elementsOf: ArrayLike<number> = view;
+    void [sum, elements, elementsOf, view.subarray(1)[0]];
+    // @ts-expect-error a readonly system assigns no typed array element
+    view[0] = 1;
+    // @ts-expect-error nor through a subarray, which views the same elements
+    view.subarray(1)[0] = 1;
+    // @ts-expect-error a readonly typed array has no set
+    view.set([1]);
+    // @ts-expect-error nor fill
+    view.fill(0);
+    // @ts-expect-error nor copyWithin
+    view.copyWithin(0, 1);
+    // @ts-expect-error nor reverse
+    view.reverse();
+    // @ts-expect-error nor sort
+    view.sort();
+    // @ts-expect-error nor is it a typed array that may be written
+    const writable: Float32Array = view;
+    void writable;
 });
 // @ts-expect-error a readonly system takes no input
 System.create({ readonly: true }, (_context, input: { readonly count: number }) => { void input; });

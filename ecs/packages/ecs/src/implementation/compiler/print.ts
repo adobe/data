@@ -43,6 +43,7 @@ export const printExpression = (unit: Unit, expression: Expression, observed: bo
             return `(ub${column} ? ${read} !== 0 : ${read})`;
         }
         case "resource": return `r${expression.index}${printPath(expression.path)}`;
+        case "resourceElement": return `r${expression.index}[${print(expression.element)}]`;
         case "args": return `args${printPath(expression.path)}`;
         case "shared": return `h${expression.index}${printPath(expression.path)}`;
         case "local": return localName(unit, expression.local);
@@ -86,6 +87,7 @@ const printStatement = (unit: Unit, statement: Statement, labels: Labels): strin
             const present = printExpression(unit, presenceOf(unit, key), false);
             return present === "true" ? store : present === "false" ? `absent(${key});` : `if (${present}) ${store} else absent(${key});`;
         }
+        case "resourceStore": return `r${statement.index}[${value(statement.element)}] = ${value(statement.value)};`;
         case "stamp": {
             const row = `c${statement.column}[x${statement.column}] = tick;`;
             return unit.stampedPerCall.has(statement.chunks) ? row : `${row}\nc${statement.blocks}[i >> ${blockShift}] = tick;\nc${statement.chunks}[i >> ${chunkShift}] = tick;`;

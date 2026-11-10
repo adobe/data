@@ -15,7 +15,8 @@ import { createGpu } from './gpu.js';
 import { readCell, writeCell } from './cells.js';
 import { finalizeAll, refreshFinalizerIndexes, type Thrown } from './finalizers.js';
 import { startWatches } from './indexes.js';
-import { clean as cleanReport, execute, type ExecuteContext } from './execute.js';
+import { clean as cleanReport, execute, prepareFusion, type ExecuteContext } from './execute.js';
+import { groupOnWorkers, groupSetup, liveGroups, loadGroup, type FusedGroup } from './fusion.js';
 import { errorOfRun, failureOf, type Failure, type RunReport } from './failures.js';
 import { createOutOfBand } from './out-of-band.js';
 import { startRan } from './state.js';
@@ -109,7 +110,7 @@ const createQueue = (): Queue => {
 };
 
 /**
- * For tests and benchmarks: the chunk size kernels split at, whether kernels may use WASM and SIMD, the loop's
+ * For tests and benchmarks: the chunk size kernels split at, whether kernels may use WASM and SIMD and run fused, the loop's
  * platform, such as `backToBack()` for ticks as fast as tasks run, and where pool workers come from, such as
  * `lentWorkers(...)` for workers another thread lent, or null for none; the platform's by default.
  */
@@ -117,6 +118,7 @@ export type WorldOptions = {
     readonly minimumChunk?: number;
     readonly wasm?: boolean;
     readonly simd?: boolean;
+    readonly fuse?: boolean;
     readonly loop?: Partial<LoopPlatform>;
     readonly pool?: WorkerPlatform | null;
 };
@@ -137,6 +139,8 @@ export type Tables = {
     readonly phasedBuilds: number;
     readonly pooledBuilds: number;
     readonly journalReaders: number;
+    /** Fused groups of schedules it keeps (`fusion.ts`). */
+    readonly fusedGroups: number;
     /** Entities filtered `up`s were told changed, held until their next run. */
     readonly touched: number;
     /** Bytes the arena holds. */
@@ -262,6 +266,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     }
     const device = resources[gpuDevice] ?? null;
     const state = createState(shared, options.wasm ?? true, options.simd ?? true, device !== null, initial);
+    state.fuse = options.fuse ?? true;
     const outOfBand = createOutOfBand();
     if (device !== null) state.gpu = createGpu(device, outOfBand);
     const registrar = createRegistrar(state);
@@ -354,32 +359,52 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             pool = null;
             context.workers = null;
             context.publish = () => {};
-            for (const runner of registrar.kernels()) runner.kernel?.unloadedOnWorkers();
+            unloadOnWorkers();
             if (failed !== null) void failed.terminate();
             outOfBand.report(failureOf("workers", poolWorkers, error));
         }
         followPoolThreshold();
     };
 
+    /** What the pool's workers had loaded, once it ends. */
+    const unloadOnWorkers = (): void => {
+        for (const runner of registrar.kernels()) runner.kernel?.unloadedOnWorkers();
+        for (const group of liveGroups(state)) group.workersFor = null;
+    };
+
+    /** Fused groups whose members all live, compiled as their members are loaded, that workers lack as they are. */
+    const groupsBehind = async (): Promise<FusedGroup[]> => {
+        const groups = liveGroups(state);
+        await Promise.all(groups.map(group => loadGroup(state, group)));
+        return groups.filter(group => group.fused !== null && !groupOnWorkers(group));
+    };
+
     /**
      * Gives workers every kernel whose main-thread load is newer than theirs, including ones a failed registration
-     * reloaded, starting the pool once a kernel ran here over rows enough for workers.
+     * reloaded, and fused groups' kernels, starting the pool once a kernel ran here over rows enough for workers.
      */
     const loadOnWorkers = async (): Promise<void> => {
-        if (workerCount === 0 || !workersBehind || (pool === null && !state.poolWanted && !kernelsWarrant())) return;
-        const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);
-        if (behind.length === 0) {
+        if (workerCount === 0 || (pool === null && !state.poolWanted && !kernelsWarrant())) return;
+        const behind = workersBehind ? registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true) : [];
+        const groups = await groupsBehind();
+        if (behind.length === 0 && groups.length === 0) {
             workersBehind = false;
             return;
         }
         const workers = pool ?? startPool();
         if (workers === null) return;
         context.publish();
-        const setups = behind.flatMap(runner => runner.setup(registrar.kernelIndexOf(runner)) ?? []);
+        const groupSetups = groups.map(group => ({ group, setup: groupSetup(group, runner => runner.setup(registrar.kernelIndexOf(runner))) }));
+        const setups = [...behind.flatMap(runner => runner.setup(registrar.kernelIndexOf(runner)) ?? []), ...groupSetups.flatMap(({ setup }) => setup ?? [])];
         const results = await Promise.all(Array.from({ length: workers.size }, (_, worker) => workers.request(worker, { kind: "kernels", kernels: setups })));
         const failed = results.find(result => result.error !== undefined);
         if (failed?.error !== undefined) throw failed.error;
         for (const runner of behind) runner.kernel?.loadedOnWorkers();
+        // A group no task can carry runs its members alone.
+        for (const { group, setup } of groupSetups) {
+            if (setup === null) state.refusedFusions.add(group.key);
+            else group.workersFor = group.loadedFrom;
+        }
         workersBehind = false;
     };
 
@@ -495,7 +520,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         pool = null;
         context.workers = null;
         context.publish = () => {};
-        for (const runner of registrar.kernels()) runner.kernel?.unloadedOnWorkers();
+        unloadOnWorkers();
         workersBehind = true;
         followPoolThreshold();
         // The old pool releases its control state once its workers have left their windows; runs don't wait for it.
@@ -912,6 +937,10 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     const registeredThenPerform = async (registering: Registration, definition: Definition, value: unknown, schedule: Schedule | undefined): Promise<unknown> => {
         startRecord();
         await complete(registering);
+        if (schedule !== undefined) {
+            await prepareFusion(context, schedule);
+            await loadOnWorkers();
+        }
         return perform(definition, value, schedule);
     };
     /** Runs waiting in order, the first `waitingCount`; the slots past them are reused, never truncated. */
@@ -1089,6 +1118,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 phasedBuilds: state.phasedBuilds,
                 pooledBuilds: state.pooledBuilds,
                 journalReaders: state.journal.readers,
+                fusedGroups: liveGroups(state).length,
                 touched: touchedHeld(state),
                 arena: state.memory.held(),
                 archetypes: state.archetypes.length,

@@ -1,0 +1,53 @@
+diff --git a/src/entityx/CMakeLists.txt b/src/entityx/CMakeLists.txt
+index 3e4283f..06aa4da 100755
+--- a/src/entityx/CMakeLists.txt
++++ b/src/entityx/CMakeLists.txt
+@@ -8,7 +8,7 @@ cpmaddpackage(
+   alecthomas/entityx
+   # TODO: set current version, use master (release 1.1.2 is outdated)
+   GIT_TAG
+-  master
++  bd16293074e670cc87aea73a659f13e9357590d0
+   OPTIONS
+   "ENTITYX_DT_TYPE float"
+   "ENTITYX_MAX_COMPONENTS 64"
+diff --git a/src/ginseng/CMakeLists.txt b/src/ginseng/CMakeLists.txt
+index 5c9b050..d5585dc 100755
+--- a/src/ginseng/CMakeLists.txt
++++ b/src/ginseng/CMakeLists.txt
+@@ -8,7 +8,7 @@ cpmaddpackage(
+   apples/ginseng
+   # TODO: set current version, use master (release 1.1 is outdated)
+   GIT_TAG
+-  master)
++  8839ef98d0e31c64aec8f3445445367d690b742c)
+ 
+ set(INCLUDE_DIR "include") # must be relative paths
+ # NOTE: rename project in "${CMAKE_PROJECT_NAME}-example-myecs"
+diff --git a/src/mustache/CMakeLists.txt b/src/mustache/CMakeLists.txt
+index 5da03f4..cb8c79d 100755
+--- a/src/mustache/CMakeLists.txt
++++ b/src/mustache/CMakeLists.txt
+@@ -8,7 +8,7 @@ cpmaddpackage(
+   kirillochnev/mustache
+   # TODO: set current version, use master (no release version)
+   GIT_TAG
+-  master
++  767aa960dad7b06e006437e874a0956ac682cccc
+   OPTIONS
+   "MUSTACHE_CXX_STD cxx_std_20"
+   "MUSTACHE_USE_SANITIZER OFF"
+diff --git a/src/pico_ecs/CMakeLists.txt b/src/pico_ecs/CMakeLists.txt
+index 77f042e..d7c6bc4 100755
+--- a/src/pico_ecs/CMakeLists.txt
++++ b/src/pico_ecs/CMakeLists.txt
+@@ -3,8 +3,7 @@ CPMAddPackage(
+         NAME pico_headers
+         VERSION 2.3
+         GITHUB_REPOSITORY empyreanx/pico_headers
+-        # TODO: set current version, use master (no release version)
+-        GIT_TAG main
++        GIT_TAG 433f25fdb841399f2f2c50c267449c180bc0829a
+         DOWNLOAD_ONLY True
+ )
+ if(pico_headers_ADDED)

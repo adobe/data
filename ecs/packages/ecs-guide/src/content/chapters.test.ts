@@ -8,17 +8,18 @@ import { asConsumer, chapters, numbered } from "./guide.js";
 /** Every package's chapters' prose, as the guide reads it. */
 const prose: readonly string[] = packages.flatMap(item => item.prose.map(file => file.source));
 
-it("gives a chapter for Setup and each chapter the index lists, each with its files and what they print, and one for any chapter the repository's README links", () => {
+it("gives a chapter for the overview, Setup and each chapter the index lists, each with its files and what they print, and one for any chapter the repository's README links", () => {
     const packages = [...new Set(chapters.map(chapter => chapter.package))];
-    expect(chapters.map(chapter => chapter.number)).toEqual([0, 0, ...Array.from({ length: chapters.length - 2 }, (_, index) => index + 1)]);
+    expect(chapters.map(chapter => chapter.number)).toEqual([0, 0, 0, ...Array.from({ length: chapters.length - 3 }, (_, index) => index + 1)]);
     // The first package's chapters are in the parts its index gives; each later package's, in one titled by its name.
     for (const later of packages.slice(1)) expect(chapters.filter(chapter => chapter.package === later).every(chapter => chapter.part === later)).toBe(true);
     expect(packages.length).toBeGreaterThan(1);
     const linked = [...readme.matchAll(/\]\(ecs\/samples\/#ecs-guide\/([^)]+)\)/g)].map(([, slug]) => slug);
     for (const slug of linked) expect(chapters.map(chapter => chapter.slug)).toContain(slug);
-    expect(chapters[0]).toMatchObject({ slug: "setup", title: "Setup", part: "", files: [], expected: "" });
-    expect(chapters[1]).toMatchObject({ slug: "keys-and-declarations", title: "Keys and declarations", part: "", expected: "score 15\n" });
-    expect(chapters[1]?.files.map(file => file.name)).toEqual(["00-keys.ts"]);
+    expect(chapters[0]).toMatchObject({ slug: "overview", title: "Overview", part: "", files: [], expected: "" });
+    expect(chapters[1]).toMatchObject({ slug: "setup", title: "Setup", part: "", files: [], expected: "" });
+    expect(chapters[2]).toMatchObject({ slug: "keys-and-declarations", title: "Keys and declarations", part: "", expected: "score 15\n" });
+    expect(chapters[2]?.files.map(file => file.name)).toEqual(["00-keys.ts"]);
     expect(numbered(1)).toMatchObject({ slug: "1-resources", title: "Resources", part: "Basics" });
     expect(numbered(19)).toMatchObject({ slug: "19-threads", title: "Threads", part: "Advanced" });
     expect(numbered(20)).toMatchObject({ slug: "20-shared-components-and-where", title: "Shared components and where", part: "Advanced" });
@@ -27,7 +28,7 @@ it("gives a chapter for Setup and each chapter the index lists, each with its fi
     expect(numbered(11)?.files.map(file => file.name)).toEqual(["11-traits.ts", "11-traits.type-test.ts"]);
     expect(numbered(15)?.expected).toBe("3 weigh 10, at most 5\n");
     for (const chapter of chapters) expect(chapter.prose).not.toBe("");
-    for (const chapter of chapters.filter(chapter => chapter.slug !== "setup")) {
+    for (const chapter of chapters.filter(chapter => chapter.slug !== "setup" && chapter.slug !== "overview")) {
         expect(chapter.files.length).toBeGreaterThan(0);
         expect(chapter.expected).not.toBe("");
         // A chapter's files are numbered as it is in its own package.

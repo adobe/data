@@ -10,7 +10,15 @@ import type { ModuleScope } from './module-scope.js';
  * A lookup by entity, or through an index (`index`), whose calls take a key and give a list of rows. A lookup by
  * entity that `watches` declares `changed`: its result has `changed` after what it reads.
  */
-export type Lookup = { readonly name: string; readonly read: readonly string[]; readonly index: boolean; readonly watches: boolean; readonly optional: boolean };
+export type Lookup = {
+    readonly name: string;
+    readonly read: readonly string[];
+    readonly index: boolean;
+    readonly watches: boolean;
+    readonly optional: boolean;
+    /** The components its `optional` lists, which an entity it finds may lack. */
+    readonly optionalComponents: readonly string[];
+};
 
 /** The reference rows run down, and what the context's `up` reads of the entity it names. */
 export type Up = { readonly through: string; readonly read: readonly string[] };
@@ -162,7 +170,8 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope, li
                         const names = identifiers(item.value, `lookup.${lookup}.${field}`, lists);
                         return field === "read" ? names : [];
                     });
-                    lookups.push({ name: lookup, read, index, watches: !index && listed.some(([field]) => field === "changed"), optional: listed.some(([field]) => field === "optional") });
+                    const optionalComponents = listed.flatMap(([field, item]) => field === "optional" ? identifiers(item.value, `lookup.${lookup}.optional`, lists) : []);
+                    lookups.push({ name: lookup, read, index, watches: !index && listed.some(([field]) => field === "changed"), optional: optionalComponents.length > 0, optionalComponents });
                 }
                 break;
             case "up": {

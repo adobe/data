@@ -40,3 +40,105 @@ describe("generateWgsl", () => {
         expect(code).not.toMatch(/jsMin|remainder|isNan/);
     });
 });
+
+describe("generateWgsl typed array resources", () => {
+    const element: Program.Expression = { kind: "column", column: 0 };
+    const readThenWrite: Program = {
+        locals: 0,
+        body: [
+            { kind: "store", column: 0, value: { kind: "resourceElement", index: 0, element } },
+            { kind: "resourceStore", index: 0, element, value: { kind: "number", value: 3 } },
+        ],
+    };
+    const generate = (name: string | null) => generateWgsl(readThenWrite, columns, () => "number", [], () => "u32", () => name === null ? null : { name: name as "Uint8Array", length: 8 });
+
+    test("address an array's elements a word each from its record's address and length, NaN or nothing past its ends", () => {
+        const kernel = generate("Uint8Array");
+        if (typeof kernel === "string") throw new Error(kernel);
+        // After the row count and the column's address: the array's address, then its length.
+        expect(kernel.scalars).toEqual([{ source: "resource", index: 0, path: ["address"] }, { source: "resource", index: 0, path: ["length"] }]);
+        expect(kernel.code).toContain("select(bitcast<f32>(nanBits), f32(memory[parameters[2] + min(u32(");
+        expect(kernel.code).toContain(", parameters[3])] & 0xFFu)");
+        expect(kernel.code).toMatch(/if \(.*< f32\(parameters\[3\]\).*\) \{ memory\[parameters\[2\] \+ u32\(.*\)\] = 3u; \}/);
+    });
+
+    test("refuse a resource that isn't a typed array, and an array of 8-byte elements", () => {
+        expect(generate(null)).toBe("it indexes a resource that isn't a typed array");
+        expect(generate("Float64Array")).toBe("it indexes a Float64Array, whose 8-byte elements the GPU doesn't hold");
+    });
+});
+
+describe("generateWgsl 32-bit integer typed array resources", () => {
+    const first: Program.Expression = { kind: "number", value: 0 };
+    const second: Program.Expression = { kind: "number", value: 1 };
+    const read: Program.Expression = { kind: "resourceElement", index: 0, element: first };
+    const generate = (program: Program, name: "Uint32Array" | "Int32Array"): string => {
+        const kernel = generateWgsl(program, columns, () => "number", [], () => "u32", () => ({ name, length: 8 }));
+        if (typeof kernel === "string") throw new Error(kernel);
+        return kernel.code;
+    };
+
+    test("copy an element to another, directly or through a local, with every bit", () => {
+        const direct: Program = { locals: 0, body: [{ kind: "resourceStore", index: 0, element: second, value: read }] };
+        const throughLocal: Program = {
+            locals: 1,
+            body: [
+                { kind: "set", local: 0, value: read },
+                { kind: "resourceStore", index: 0, element: second, value: { kind: "local", local: 0 } },
+            ],
+        };
+        for (const name of ["Uint32Array", "Int32Array"] as const) {
+            const code = generate(direct, name);
+            expect(code).toMatch(/memory\[parameters\[2\] \+ u32\(1\.0f\)\] = (bitcast<u32>\()?select\(0[ui], /);
+            expect(code).not.toMatch(/f32\(memory|= toUint32\(/);
+            const local = generate(throughLocal, name);
+            expect(local).toContain(`var l_0: ${name === "Uint32Array" ? "u32" : "i32"}`);
+            expect(local).not.toMatch(/f32\(memory|= toUint32\(/);
+        }
+    });
+
+    test("keep an element exact in integer operations, and NaN as a number where its index isn't one", () => {
+        const masked: Program = {
+            locals: 0,
+            body: [{ kind: "resourceStore", index: 0, element: second, value: { kind: "binary", operator: "^", left: read, right: { kind: "number", value: 1 } } }],
+        };
+        expect(generate(masked, "Uint32Array")).toContain("(bitcast<i32>(select(0u, memory[parameters[2] + min(u32(0.0f), parameters[3])], ");
+        const compared: Program = {
+            locals: 0,
+            body: [{ kind: "store", column: 0, value: { kind: "binary", operator: "+", left: read, right: { kind: "binary", operator: "<", left: read, right: { kind: "number", value: 5 } } } }],
+        };
+        const code = generate(compared, "Uint32Array");
+        expect(code).toContain("bitcast<u32>((select(bitcast<f32>(nanBits), f32(select(0u, ");
+        expect(code).toMatch(/select\(0\.0, 1\.0, \(\(0\.0f >= 0\.0 .*\) && \(select\(0u, .*\) < 5u\)\)\)/);
+    });
+});
+
+describe("generateWgsl remainders", () => {
+    const remainderOf = (view: "u32" | "i32" | "f32", divisor: number): string => {
+        const program: Program = { locals: 0, body: [{ kind: "store", column: 1, value: { kind: "binary", operator: "%", left: { kind: "column", column: 0 }, right: { kind: "number", value: divisor } } }] };
+        const kernel = generateWgsl(program, [{ view, stride: 4, offset: 0, boolean: false, component: 0 }, { view: "f32", stride: 4, offset: 0, boolean: false, component: 1 }], () => "number");
+        if (typeof kernel === "string") throw new Error(kernel);
+        return kernel.code;
+    };
+
+    test("keep integers' remainders in their integer type, exact past an f32's 24 bits, and numbers' in f32", () => {
+        expect(remainderOf("u32", 17)).toContain("(memory[parameters[1] + row * 1u + 0u] % 17u)");
+        expect(remainderOf("i32", -6)).toContain("(bitcast<i32>(memory[parameters[1] + row * 1u + 0u]) % bitcast<i32>(4294967290u))");
+        expect(remainderOf("f32", 17)).toContain("(bitcast<f32>(memory[parameters[1] + row * 1u + 0u]) % 17.0f)");
+    });
+});
+
+describe("generateWgsl booleans", () => {
+    const store = (view: "u32" | "u8") => generateWgsl(
+        { locals: 0, body: [{ kind: "store", column: 1, value: { kind: "unary", operator: "!", operand: { kind: "column", column: 0 } } }] },
+        [{ view: "f32", stride: 4, offset: 0, boolean: false, component: 0 }, { view, stride: 4, offset: 0, boolean: true, component: 1 }],
+        () => "number",
+    );
+
+    test("write a boolean in a word as 0 or 1, and refuse one in a byte", () => {
+        const kernel = store("u32");
+        if (typeof kernel === "string") throw new Error(kernel);
+        expect(kernel.code).toContain("memory[parameters[2] + row * 1u + 0u] = select(0u, 1u, (!(bitcast<f32>(memory[parameters[1] + row * 1u + 0u]) != 0.0)));");
+        expect(store("u8")).toBe("it writes a byte value, such as a boolean in the CPU layout; give the component a \"storage\" layout");
+    });
+});

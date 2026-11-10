@@ -21,6 +21,10 @@ const element = (node: Node, scope: Scope, object: Expression, key: Key, optiona
     if (key.kind === "static" && !optional && (object.kind === "resource" || object.kind === "args" || object.kind === "shared")) {
         return { ...object, path: [...object.path, key.name] };
     }
+    // A resource indexed at runtime is an array, a typed array's read in place.
+    if (key.kind === "value" && !optional && object.kind === "resource" && object.path.length === 0) {
+        return { kind: "resourceElement", index: object.index, element: scalar(key.value, node, scope) };
+    }
     const index: Expression = key.kind === "static"
         ? typeof key.name === "number" ? number(key.name) : { kind: "string", value: key.name }
         : key.kind === "value" ? scalar(key.value, node, scope)

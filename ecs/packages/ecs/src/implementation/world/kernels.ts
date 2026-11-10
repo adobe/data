@@ -7,10 +7,12 @@ import type { LookupSetup, Source , KernelSetup } from './protocol.js';
 import { createArrayLookup } from './rows.js';
 import type { Since } from './index-lookups.js';
 import { commandIdOf, idOf, type Key, type State } from './state.js';
-import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
+import { generateWasm, instantiateWasm, type Type, type WasmArray, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
+import type { TypedArrays } from '../../interface/schema/schema.js';
 import { createDirectory, lookupParameters, type Directory } from './directories.js';
 import { generateWgsl, type ScalarKind, type WgslKernel } from './wgsl.js';
 import { declarationOf } from '../../interface/registry/index.js';
+import { integerRangeAt } from '../../interface/registry/schemas.js';
 import { labelOf } from '../../interface/registry/index.js';
 import { absentColumn, emptyViews } from './arrays.js';
 import type { WorldIndex } from './indexes.js';
@@ -80,6 +82,11 @@ export type BoundKernel = {
     readonly gpu: () => WgslKernel | string;
     /** An archetype's values of the shared components it reads, which each call over it takes: read-only, kept per archetype. */
     readonly sharedOf: (archetype: Archetype) => readonly unknown[];
+    /**
+     * What generating its WASM read at its last load, which fusing it with kernels that run after it generates from:
+     * its columns, each's source, its scalars' types and its typed arrays, and that load's key.
+     */
+    readonly fusion: () => KernelFusion;
     /** How a GPU dispatch's record holds a scalar parameter: a shared value's leaf keeps its type. */
     readonly scalarKind: (scalar: WasmScalar) => ScalarKind;
 };
@@ -131,7 +138,9 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         booleans.push(found.scalar === "boolean");
         strides.push(found.unitStride);
         offsets.push(found.unitOffset);
-        wasmColumns.push({ view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean", component: id });
+        const type = declarationOf(column.component)?.type;
+        const range = type === undefined || found.scalar === "boolean" ? null : integerRangeAt(type, column.path);
+        wasmColumns.push({ view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean", component: id, ...range === null ? {} : { range } });
         return { kind: "field", id, leaf: index };
     });
     const declaredLookups = description.lookups.map(lookupName => lookup?.[lookupName] ?? fail(`unknown lookup "${lookupName}".`));
@@ -190,6 +199,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         return layout?.kind === "linear" ? layout.leaves.find(candidate => samePath(candidate.path, scalar.path)) ?? null : null;
     };
     const scalarKind = (scalar: WasmScalar): ScalarKind => {
+        if (scalar.source === "resource" && arrays(scalar.index) !== null) return "u32";
         if (scalar.source !== "shared") return "f32";
         const found = sharedLeaf(scalar);
         return found === null ? "f32" : found.scalar === "boolean" ? "bool" : found.scalar === "i32" || found.scalar === "u32" || found.scalar === "f64" ? found.scalar : "f32";
@@ -280,13 +290,21 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         return columns;
     };
     const argsLayout = leaf.input === undefined ? null : layoutOf(leaf.input);
+    /** By resource, the typed array it is, or null. */
+    const arrays = (resource: number): WasmArray | null => {
+        const key = description.resources[resource];
+        const layout = key === undefined ? undefined : state.layouts[idOf(state, key)];
+        return layout?.kind === "linear" ? layout.array ?? null : null;
+    };
     const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
         : scalar.source === "shared" ? (sharedLeaf(scalar) === null ? null : sharedLeaf(scalar)?.scalar === "boolean" ? "boolean" : "number")
+        // A typed array's in-place view gives its address and length; on the GPU, its copy's word address.
+        : arrays(scalar.index) !== null ? (scalar.path.length === 1 && (scalar.path[0] === "byteOffset" || scalar.path[0] === "length" || scalar.path[0] === "address") ? "number" : null)
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;
     const useWasm = state.wasm && state.memory.shared && description.program !== null;
     // A lookup through an index's directory also holds each archetype's entities, which its rows' `entity` reads.
-    const directories = useWasm ? setup.lookups.map((lookupSetup, k) => createDirectory(state, lookupSetup.read, lookupSetup.has, lookupSetup.not, indexes[k] !== null, lookupSetup.changed ?? [])) : [];
+    const directories = useWasm ? setup.lookups.map((lookupSetup, k) => createDirectory(state, lookupSetup.read, lookupSetup.has, lookupSetup.not, indexes[k] !== null, lookupSetup.changed ?? [], lookupSetup.optional)) : [];
     const wasmLookups: WasmLookup[] = setup.lookups.map((lookupSetup, k) => ({
         reads: lookupSetup.read.length + (indexes[k] === null ? 0 : 1),
         watched: lookupSetup.changed?.length ?? 0,
@@ -296,6 +314,11 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             if (layout?.kind !== "linear") return null;
             const found = layout.leaves.find(leaf => samePath(leaf.path, path));
             return found === undefined ? null : { view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean" };
+        },
+        structured: read => {
+            const component = lookupSetup.read[read];
+            const layout = component === undefined ? undefined : state.layouts[component];
+            return layout?.kind === "linear" && !layout.leaves.some(leaf => leaf.path.length === 0);
         },
     }));
     /**
@@ -314,7 +337,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     const generate = (muted: readonly boolean[]): WasmKernel | null => useWasm && description.program !== null
         ? generateWasm(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, state.simd, filterCount, wasmLookups, upWasmColumns,
             description.reductions.map(reduction => reduction.operator), indexes.map(bound => bound?.wasm ?? null), (description.probes ?? []).map(probe => probe.lookup),
-            description.storagePrecision === true)
+            description.storagePrecision === true, arrays)
         : null;
     let muted = mutedNow();
     let index = state.kernelIndexes.get(description.url);
@@ -387,11 +410,22 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         gpu: () => description.program === null
             ? "it issues commands or uses values that aren't numbers"
             : description.lookups.length > 0 ? "it uses lookups"
-            : generateWgsl(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, upWasmColumns, scalarKind),
+            : generateWgsl(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, upWasmColumns, scalarKind, arrays),
         sharedOf,
         scalarKind,
+        fusion: () => ({ columns: wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), sources, scalarType, arrays, loaded: loadedFor }),
     };
     return bound;
+};
+
+/** What a kernel's WASM is generated from, for fusing it with others (`fusion.ts`). */
+export type KernelFusion = {
+    readonly columns: readonly WasmColumn[];
+    readonly sources: readonly Source[];
+    readonly scalarType: (scalar: WasmScalar) => Type | null;
+    readonly arrays: (resource: number) => WasmArray | null;
+    /** Which of its tick columns its last load muted, or null before it loaded. */
+    readonly loaded: string | null;
 };
 
 /** The one element a muted tick column's stores land on. */

@@ -20,6 +20,7 @@ const expression = (node: Expression): Expression => {
         case "binary": case "logical": return { ...node, left: expression(node.left), right: expression(node.right) };
         case "conditional": return { ...node, test: expression(node.test), consequent: expression(node.consequent), alternate: expression(node.alternate) };
         case "math": return { ...node, arguments: node.arguments.map(expression) };
+        case "resourceElement": return { ...node, element: expression(node.element) };
         default: return node;
     }
 };
@@ -28,6 +29,7 @@ const statements = (body: readonly Statement[]): Statement[] => body.flatMap((no
     switch (node.kind) {
         case "intrinsic": return statements(node.body);
         case "set": case "store": return [{ ...node, value: expression(node.value) }];
+        case "resourceStore": return [{ ...node, element: expression(node.element), value: expression(node.value) }];
         case "if": return [{ ...node, test: expression(node.test), consequent: statements(node.consequent), alternate: statements(node.alternate) }];
         case "block": case "loop": return [{ ...node, body: statements(node.body) }];
         case "branchIf": return [{ ...node, test: expression(node.test) }];

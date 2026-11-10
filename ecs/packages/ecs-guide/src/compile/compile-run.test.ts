@@ -46,7 +46,7 @@ it("compiles every chapter's files without a diagnostic, their kernels inlined, 
             if (module.text.includes("identify$(")) expect(module.text).toContain(`"${chapter.package}@`);
         }
     }
-    expect(kernels).toBe(27);
+    expect(kernels).toBe(32);
 });
 
 it("reports what the build rejects as a diagnostic located in the file, and gives no run", async () => {
@@ -83,6 +83,8 @@ it("describes each system of every chapter, at its call in the file as given, wi
         ["move", "compiled", "compiled", "eligible"],
         ["drift", "compiled", "compiled", "eligible"],
         ["slow", "none", "none", "eligible"],
+        ["mark", "compiled", "compiled", "eligible"],
+        ["cells", "none", "none", "none"],
         ["read", "none", "none", "none"],
         ["spawn", "none", "none", "none"],
     ]);
@@ -97,7 +99,7 @@ it("compiles a kernel whose body loops, its kernel holding no loop protection", 
     expect(diagnostics).toEqual([]);
     const module = files?.[3]?.text ?? "";
     const inlined = [...module.matchAll(/"data:text\/javascript;base64,([^"]+)"/g)].map(([, kernel = ""]) => atob(kernel));
-    expect(inlined.length).toBe(2);
+    expect(inlined.length).toBe(3);
     for (const kernel of inlined) expect(kernel).not.toContain("__guide");
     expect(module).toContain("__guideLoop()");
 });

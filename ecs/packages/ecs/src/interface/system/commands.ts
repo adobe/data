@@ -3,7 +3,7 @@ import type { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import type { Essential, Shared } from '../component/value.js';
 import type { Table } from '../world/table/table.js';
-import type { SharedOnly } from './shared-only.js';
+import type { WhereMatching } from './matching.js';
 import type { ValuesOf } from './values-of.js';
 
 /** The value an `add` of one component takes: none for a tag. */
@@ -67,14 +67,16 @@ export type Commands = {
     /**
      * Despawns, as a `despawn` of each would, every entity alive before its sync point that has each component of
      * `with` and none of `not` once the commands issued before it apply, as a row system over the same query despawning
-     * each of its rows would; never one the sync point spawns, whenever spawned. Derived components may be named. `where` keeps it to the archetypes holding these values of shared components,
-     * each one required as `with` requires it, as a system's `where` of values does. Never the resource entity. Only on
-     * the world's thread: a joined thread's throws.
+     * each of its rows would; never one the sync point spawns, whenever spawned. Derived components may be named.
+     * `where` keeps it to the entities whose values match, each component it names required as `with` requires it: a
+     * value, bounds on a number, or matches of a struct's or tuple's members, tested as those commands leave them. A
+     * shared component's is tested once per archetype. Never the resource entity. Only on the world's thread: a joined
+     * thread's throws.
      */
-    despawnWhere<const W extends object = {}>(query: {
+    despawnWhere(query: {
         readonly with: readonly [Component.Key, ...Component.Key[]];
         readonly not?: readonly Component.Key[];
-        readonly where?: W & SharedOnly<NoInfer<W>> & { readonly [K in Shared]?: Component<K> };
+        readonly where?: WhereMatching;
     }): void;
     /** Adds or replaces one component's value, marking it changed. */
     add<K extends Essential>(entity: Entity, component: K, ...value: ValueArgument<K>): void;

@@ -8,7 +8,7 @@ import type { PackageCopies } from './package-copies.js';
 import { createLists } from './lists.js';
 import type { Module } from './module-scope.js';
 import { resolve, type Out } from './out.js';
-import type { Statement } from './ir.js';
+import type { Expression, Statement } from './ir.js';
 import { localName, printStatements } from './print.js';
 import { toProgram } from './program.js';
 import { serialize } from './serialize.js';
@@ -20,6 +20,20 @@ import type { Reduction } from '../../interface/resource/reduction.js';
 import { rowLabel, statement } from './statement.js';
 import { createUnit } from './unit.js';
 import type { Value } from './value.js';
+
+/** Whether an expression makes an array or a record, which a row would otherwise make anew. */
+const made = (expression: Expression): boolean => expression.kind === "observe" ? made(expression.value) : expression.kind === "array" || expression.kind === "record";
+
+/** Whether an expression is made of literals alone: numbers, booleans, strings, nullish values, and arrays and records of them. */
+const literal = (expression: Expression): boolean => {
+    switch (expression.kind) {
+        case "number": case "boolean": case "string": case "nullish": return true;
+        case "observe": return literal(expression.value);
+        case "array": return expression.items.every(literal);
+        case "record": return expression.fields.every(([, item]) => literal(item));
+        default: return false;
+    }
+};
 
 /** A kernel body takes its row, its context and its input, the run's arguments. */
 const parameterValues: readonly Value[] = [{ kind: "row" }, { kind: "context" }, { kind: "dynamic", expression: { kind: "args", path: [] } }];
@@ -68,29 +82,48 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     }
     if (body.async || body.generator) return fail(body, "a kernel body can't be async or a generator");
     if (body.params.length > 3) return fail(body, "a kernel body takes its row, context and input");
-    const lists = createLists(module, link, [declaration, body]);
-    const unit = createUnit(signature(declaration, module.bindings, lists), module, lists, expression, statement, link, target, tried, packages);
-    const scope = rootScope(unit, false);
-    const prelude: Out = [];
-    const rows: Out = [];
-    body.params.forEach((param, index) => bind(param, parameterValues[index] ?? { kind: "row" }, "const", scope, index === 0 ? rows : prelude));
-    if (body.body.type === "BlockStatement") {
-        for (const item of body.body.body) statement(item, scope, rows);
-    } else {
-        statement({ type: "ExpressionStatement", expression: body.body, start: body.body.start, end: body.body.end }, scope, rows);
-    }
+    const compileBody = (readInPlace: ReadonlySet<number>) => {
+        const lists = createLists(module, link, [declaration, body]);
+        const unit = createUnit(signature(declaration, module.bindings, lists), module, lists, expression, statement, link, target, tried, packages, readInPlace);
+        const scope = rootScope(unit, false);
+        const prelude: Out = [];
+        const rows: Out = [];
+        body.params.forEach((param, index) => bind(param, parameterValues[index] ?? { kind: "row" }, "const", scope, index === 0 ? rows : prelude));
+        if (body.body.type === "BlockStatement") {
+            for (const item of body.body.body) statement(item, scope, rows);
+        } else {
+            statement({ type: "ExpressionStatement", expression: body.body, start: body.body.start, end: body.body.end }, scope, rows);
+        }
+        return { unit, prelude, rows };
+    };
+    // Which resources the body writes shows only once it's compiled, so a body that writes any is compiled again.
+    const first = compileBody(new Set());
+    const { unit, prelude, rows } = first.unit.resourceWrites.size === 0 ? first : compileBody(first.unit.resourceWrites);
     const statements = [...resolve(prelude), ...resolve(rows)];
-    for (const [chunks, perCall] of unconditionalChunks(resolve(rows))) unit.stampedPerCall.set(chunks, perCall);
-    const kernel = printStatements(unit, resolve(rows));
+    // A command's value made of literals alone, as `{ x: 0, y: 0 }`, is the same for every row, and values are immutable,
+    // so it's made once per call rather than once per row.
+    const assigned = new Map<number, number>();
+    const countSets = (body: readonly Statement[]): void => {
+        for (const item of body) {
+            if (item.kind === "set") assigned.set(item.local, (assigned.get(item.local) ?? 0) + 1);
+            else if (item.kind === "if") { countSets(resolve(item.consequent)); countSets(resolve(item.alternate)); }
+            else if (item.kind === "block" || item.kind === "loop" || item.kind === "intrinsic") countSets(resolve(item.body));
+        }
+    };
+    countSets(resolve(rows));
+    const hoisted = resolve(rows).filter(item => item.kind === "set" && item.declare === "const" && assigned.get(item.local) === 1 && made(item.value) && literal(item.value));
+    const perRow = resolve(rows).filter(item => !hoisted.includes(item));
+    for (const [chunks, perCall] of unconditionalChunks(perRow)) unit.stampedPerCall.set(chunks, perCall);
+    const kernel = printStatements(unit, perRow);
     // Which optional components a call's archetype has is the same for every row, so a kernel with them runs loops
     // specialized for all present and all absent, and the general one only for archetypes with some of them.
     const specialized = unit.presences.size === 0 ? null : ([true, false] as const).map(present => {
         unit.presentAs = present;
-        const body = printStatements(unit, resolve(rows));
+        const body = printStatements(unit, perRow);
         unit.presentAs = null;
         return body;
     });
-    const preludeCode = printStatements(unit, resolve(prelude));
+    const preludeCode = printStatements(unit, [...resolve(prelude), ...hoisted]);
     const accumulators = unit.accumulators.map(entry => entry.local);
     const { signature: { resources, lookups, up, ordered, filtered, reduced }, columns, booleans, keys } = unit;
     /** Whether it runs a list of rows, which needn't be consecutive: `up`'s depth order, or an index's. */
@@ -98,8 +131,12 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     // WASM doesn't read components an archetype may lack yet, so such a kernel runs as JS.
     // WASM reads a lookup's rows only where every component it reads is there.
     const optionalListed = unit.optionalColumns.size + unit.presences.size > 0 && listed;
-    const optionalLookups = unit.signature.lookups.some(lookup => lookup.optional);
-    const program = optionalListed || optionalLookups ? null : toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators, unit.up, listed);
+    /** By lookup, the indexes in its read of the components an entity it finds may lack. */
+    const optionalReads = (lookup: number): ReadonlySet<number> => {
+        const declared = unit.signature.lookups[lookup];
+        return new Set(declared === undefined ? [] : declared.read.flatMap((name, read) => declared.optionalComponents.includes(name) ? [read] : []));
+    };
+    const program = optionalListed ? null : toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators, unit.up, listed, optionalReads);
     if (target === "gpu") {
         if (lookups.length > 0) fail(declaration, "a GPU kernel can't use lookups yet");
         if (filtered) fail(declaration, "a GPU kernel can't use change filters yet");
@@ -135,9 +172,8 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     ].join("\n");
     const explain = (): KernelExplanation => ({
         statements,
-        program: program === null ? null : target === "gpu" ? program : toProgram(statements, local => localName(unit, local), accumulators, unit.up, listed),
-        unprogrammed: optionalListed ? "WASM doesn't read optional components of rows run as a list, in `up`'s or an index's order, yet"
-            : optionalLookups ? "WASM doesn't read a lookup's optional components yet" : null,
+        program: program === null ? null : target === "gpu" ? program : toProgram(statements, local => localName(unit, local), accumulators, unit.up, listed, optionalReads),
+        unprogrammed: optionalListed ? "WASM doesn't read optional components of rows run as a list, in `up`'s or an index's order, yet" : null,
         columns: [...unit.columnIndex.keys()],
         upColumns: [...unit.upColumnIndex.keys()],
         signature: unit.signature,
@@ -151,6 +187,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             `columns: [${columns.join(", ")}],`,
             `shapes: [${[...unit.shapes].join(", ")}],`,
             `resources: [${resources.join(", ")}],`,
+            ...unit.resourceWrites.size === 0 ? [] : [`writes: ${JSON.stringify([...unit.resourceWrites].sort((a, b) => a - b))},`],
             ...unit.signature.shared.length === 0 ? [] : [`shared: [${unit.signature.shared.join(", ")}],`],
             `lookups: [${lookups.map(lookup => JSON.stringify(lookup.name)).join(", ")}],`,
             ...unit.probes.length === 0 ? [] : [`probes: [${unit.probes.join(", ")}],`, `rowLeaves: [${unit.rowLeaves.join(", ")}],`],

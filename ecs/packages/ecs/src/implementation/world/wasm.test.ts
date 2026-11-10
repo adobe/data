@@ -1220,6 +1220,8 @@ describe("generateWasm interleaved rows", () => {
         expect(wat).toContain("v128.bitselect");
         expect(wat).not.toContain("v128.any_true");
         expect([wat.split("v128.store64_lane").length - 1, wat.split("v128.store32_lane").length - 1]).toEqual([1, 1]);
+        // Each test's inequality is its equality, and-not.
+        expect([wat.includes("v128.andnot"), wat.includes("i32x4.ne")]).toEqual([true, false]);
         expect(vector).toEqual(scalar);
     });
 

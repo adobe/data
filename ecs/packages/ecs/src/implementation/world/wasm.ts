@@ -3483,12 +3483,22 @@ export const generateWasmOrReason = (
                 code.push(...simd(vop.not));
                 return;
             // Both sides are pure, so both are computed; the value's truthiness is theirs combined.
-            case "logical":
+            case "logical": {
                 if (expression.operator === "&&" && wholeRangesMask(expression)) return;
+                // A conjunction with an inequality is the other side without the equality, as an and-not.
+                const unequal = (side: Expression): side is Extract<Expression, { kind: "binary" }> => side.kind === "binary" && (side.operator === "!=" || side.operator === "!==");
+                const [kept, negated] = unequal(expression.right) ? [expression.left, expression.right] : unequal(expression.left) ? [expression.right, expression.left] : [null, null];
+                if (expression.operator === "&&" && kept !== null && negated !== null) {
+                    maskVector(kept);
+                    maskVector({ ...negated, operator: negated.operator === "!=" ? "==" : "===" });
+                    code.push(...simd(vop.andNot));
+                    return;
+                }
                 maskVector(expression.left);
                 maskVector(expression.right);
                 code.push(...simd(expression.operator === "&&" ? vop.and : vop.or));
                 return;
+            }
             case "conditional":
                 maskVector(expression.consequent);
                 maskVector(expression.alternate);

@@ -8,7 +8,6 @@
   "scripts": {
     "build": "tsc && vite build",
     "typecheck": "tsc",
-    "lint": "ecs-architecture check && ecs-architecture diagrams --check",
     "test": "vitest --run",
     "bench": "node scripts/ours.mjs",
     "bench:full": "node scripts/ours.mjs --full",

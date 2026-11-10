@@ -82,6 +82,11 @@ export type BoundKernel = {
     readonly gpu: () => WgslKernel | string;
     /** An archetype's values of the shared components it reads, which each call over it takes: read-only, kept per archetype. */
     readonly sharedOf: (archetype: Archetype) => readonly unknown[];
+    /**
+     * What generating its WASM read at its last load, which fusing it with kernels that run after it generates from:
+     * its columns, each's source, its scalars' types and its typed arrays, and that load's key.
+     */
+    readonly fusion: () => KernelFusion;
     /** How a GPU dispatch's record holds a scalar parameter: a shared value's leaf keeps its type. */
     readonly scalarKind: (scalar: WasmScalar) => ScalarKind;
 };
@@ -402,8 +407,19 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             : generateWgsl(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, upWasmColumns, scalarKind),
         sharedOf,
         scalarKind,
+        fusion: () => ({ columns: wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), sources, scalarType, arrays, loaded: loadedFor }),
     };
     return bound;
+};
+
+/** What a kernel's WASM is generated from, for fusing it with others (`fusion.ts`). */
+export type KernelFusion = {
+    readonly columns: readonly WasmColumn[];
+    readonly sources: readonly Source[];
+    readonly scalarType: (scalar: WasmScalar) => Type | null;
+    readonly arrays: (resource: number) => keyof TypedArrays | null;
+    /** Which of its tick columns its last load muted, or null before it loaded. */
+    readonly loaded: string | null;
 };
 
 /** The one element a muted tick column's stores land on. */

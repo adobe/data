@@ -15,7 +15,7 @@ import { createGpu } from './gpu.js';
 import { readCell, writeCell } from './cells.js';
 import { finalizeAll, refreshFinalizerIndexes, type Thrown } from './finalizers.js';
 import { startWatches } from './indexes.js';
-import { clean as cleanReport, execute, type ExecuteContext } from './execute.js';
+import { clean as cleanReport, execute, prepareFusion, type ExecuteContext } from './execute.js';
 import { errorOfRun, failureOf, type Failure, type RunReport } from './failures.js';
 import { createOutOfBand } from './out-of-band.js';
 import { startRan } from './state.js';
@@ -109,7 +109,7 @@ const createQueue = (): Queue => {
 };
 
 /**
- * For tests and benchmarks: the chunk size kernels split at, whether kernels may use WASM and SIMD, the loop's
+ * For tests and benchmarks: the chunk size kernels split at, whether kernels may use WASM and SIMD and run fused, the loop's
  * platform, such as `backToBack()` for ticks as fast as tasks run, and where pool workers come from, such as
  * `lentWorkers(...)` for workers another thread lent, or null for none; the platform's by default.
  */
@@ -117,6 +117,7 @@ export type WorldOptions = {
     readonly minimumChunk?: number;
     readonly wasm?: boolean;
     readonly simd?: boolean;
+    readonly fuse?: boolean;
     readonly loop?: Partial<LoopPlatform>;
     readonly pool?: WorkerPlatform | null;
 };
@@ -262,6 +263,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     }
     const device = resources[gpuDevice] ?? null;
     const state = createState(shared, options.wasm ?? true, options.simd ?? true, device !== null, initial);
+    state.fuse = options.fuse ?? true;
     const outOfBand = createOutOfBand();
     if (device !== null) state.gpu = createGpu(device, outOfBand);
     const registrar = createRegistrar(state);
@@ -912,6 +914,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     const registeredThenPerform = async (registering: Registration, definition: Definition, value: unknown, schedule: Schedule | undefined): Promise<unknown> => {
         startRecord();
         await complete(registering);
+        if (schedule !== undefined) await prepareFusion(context, schedule);
         return perform(definition, value, schedule);
     };
     /** Runs waiting in order, the first `waitingCount`; the slots past them are reused, never truncated. */

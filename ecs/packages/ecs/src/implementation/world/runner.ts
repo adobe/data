@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import { stampChanged, type Archetype } from './archetype.js';
+import { groupCovers, groupReady, runGroup, type FusionRole } from './fusion.js';
 import { kernelOf } from './attach-kernel.js';
 import { readCell } from './cells.js';
 import { createCommands } from './commands.js';
@@ -87,7 +88,8 @@ export type Runner = {
     readonly load: () => Promise<void>;
     /** What workers need to load this system's kernel, given its index. */
     readonly setup: (index: number) => KernelSetup | null;
-    readonly start: (args: unknown, workers: Workers | null, index: number) => readonly Chunk[];
+    /** With a role in a fused group (`fusion.ts`), an earlier member leaves the group's archetypes to the last, which runs them. */
+    readonly start: (args: unknown, workers: Workers | null, index: number, role?: FusionRole | null) => readonly Chunk[];
     /** The resources it reduces into, in the order `finish` gives their folds. */
     readonly targets: readonly ReductionTarget[];
     /**
@@ -1166,7 +1168,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         }
     };
 
-    const start = (input: unknown, offered: Workers | null, index: number): readonly Chunk[] => {
+    const start = (input: unknown, offered: Workers | null, index: number, role: FusionRole | null = null): readonly Chunk[] => {
         const workers = inOrder ? null : offered;
         ran = false;
         result = undefined;
@@ -1256,10 +1258,19 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 runPassing(where, since, values, args, tick, workers, index, chunks);
                 return chunks;
             }
+            // A fused group runs on this thread while every member lives; its last member runs the archetypes every member matches.
+            const group = role !== null && kernel !== null && workers === null && groupReady(state, role.group) && !role.group.members.some(member => member.holdings.removed) ? role.group : null;
+            const lastMember = group !== null && role !== null && role.member === group.members.length - 1;
+            if (group !== null && role !== null && !lastMember && kernel !== null) {
+                group.held[role.member] = { values, tick, runOwn: archetype => runKernelLocally(kernel, archetype, -1, values, args, tick) };
+            }
             for (const archetype of matches) {
                 if (archetype.count === 0) continue;
                 const from = sinceFor(archetype, since);
                 if (kernel === null) runBody(archetype, from);
+                else if (group !== null && groupCovers(group, archetype)) {
+                    if (lastMember) runGroup(group, archetype, values, tick, covered => runKernelLocally(kernel, covered, -1, values, args, tick));
+                }
                 else if (workers !== null && archetype.count >= minimumFor(workers)) {
                     chunks.push(...postChunks(workers, index, archetype, from, values, args, tick));
                     chunks.push(nextChunk());
@@ -1269,6 +1280,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                     runKernelLocally(kernel, archetype, from, values, args, tick);
                 }
             }
+            if (group !== null && lastMember) group.held.fill(null);
             return chunks;
         }
         catch (error) {

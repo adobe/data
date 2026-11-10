@@ -2,6 +2,7 @@
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Chunk, ChunkResult, Runner, Workers } from './runner.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
+import { fuseSchedule, loadGroup, type FusionRole } from './fusion.js';
 import type { Archetype, Storage } from './archetype.js';
 import { countRan, countRanHere, idOf, startRan, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
@@ -117,6 +118,8 @@ type Prepared = {
     /** The world's `runnersVersion` its runners were read at. */
     version: number;
     readonly started: (readonly Chunk[])[][];
+    /** By tier, each runner's role in a fused group, or null for none. */
+    readonly roles: readonly (readonly (FusionRole | null)[])[] | null;
     /** For tasks on joined threads: the systems of the one being posted and their tiers in it, and by channel, the tier's task. */
     readonly systems: RemoteSystem[];
     readonly tiers: number[];
@@ -173,6 +176,36 @@ const tailingOf = (context: ExecuteContext, schedule: Schedule): Tailing | null 
 };
 
 type Outcome = { failures: Failure[] | null; skipped: Leaf[] | null };
+
+/** By schedule, its fused schedule (`fusion.ts`) as of the runners version it was read at. */
+const fusedBy = new WeakMap<ExecuteContext, WeakMap<Schedule, { readonly version: number; readonly schedule: Schedule }>>();
+/** Each fused schedule's runners' roles. */
+const rolesOf = new WeakMap<Schedule, readonly (readonly (FusionRole | null)[])[]>();
+
+/** Compiles the fused kernels of a schedule's groups, once its kernels are loaded, before the runs that use them. */
+export const prepareFusion = async (context: ExecuteContext, schedule: Schedule): Promise<void> => {
+    if (!context.state.fuse) return;
+    const roles = rolesOf.get(fusedFor(context, schedule));
+    if (roles === undefined) return;
+    const groups = new Set(roles.flat().flatMap(role => role === null ? [] : [role.group]));
+    await Promise.all([...groups].map(group => loadGroup(context.state, group)));
+};
+
+/**
+ * A schedule's fused schedule while kernels run on this thread: a group's members share its last tier, which pool
+ * workers would run at once.
+ */
+const fusedFor = (context: ExecuteContext, schedule: Schedule): Schedule => {
+    if (context.workers !== null) return schedule;
+    let bySchedule = fusedBy.get(context);
+    if (bySchedule === undefined) fusedBy.set(context, bySchedule = new WeakMap());
+    const found = bySchedule.get(schedule);
+    if (found !== undefined && found.version === context.state.runnersVersion) return found.schedule;
+    const fused = fuseSchedule(context.state, schedule, context.runnerOf);
+    if (fused.schedule !== schedule) rolesOf.set(fused.schedule, fused.roles);
+    bySchedule.set(schedule, { version: context.state.runnersVersion, schedule: fused.schedule });
+    return fused.schedule;
+};
 const preparedBy = new WeakMap<ExecuteContext, WeakMap<Schedule, Prepared>>();
 
 const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
@@ -183,7 +216,7 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
         prepared = {
             runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), remotes: schedule.tiers.map(() => 0), uses: schedule.tiers.map(() => []),
             passes: schedule.tiers.map((_, t) => t), passSystems: schedule.tiers.map(() => 0), passGpu: schedule.tiers.map(() => false), version: -1,
-            started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)),
+            started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)), roles: rolesOf.get(schedule) ?? null,
             systems: [], tiers: [], tasks: new Map(), warnings: [], warningCount: 0, warned: null, outcome: { failures: null, skipped: null },
             placement: -1, tailing: null, settling: 0, chunk: 0, error: undefined, tierFailed: false, dropped: 0,
         };
@@ -410,12 +443,13 @@ type Settled = ChunkResult | readonly ChunkResult[] | boolean | typeof nothing;
 const startTier = (context: ExecuteContext, prepared: Prepared, t: number, args: unknown): void => {
     const { workers, kernelIndexOf } = context;
     const runners = prepared.runners[t];
+    const roles = prepared.roles?.[t];
     const started = prepared.started[t];
     prepared.settling = 0;
     prepared.chunk = 0;
     prepared.error = undefined;
     prepared.tierFailed = false;
-    for (let i = 0; i < runners.length; i++) if (runners[i].kernel !== null) started[i] = runners[i].start(args, workers, kernelIndexOf(runners[i]));
+    for (let i = 0; i < runners.length; i++) if (runners[i].kernel !== null) started[i] = runners[i].start(args, workers, kernelIndexOf(runners[i]), roles?.[i] ?? null);
     for (let i = 0; i < runners.length; i++) if (runners[i].kernel === null && runners[i].remote === null) started[i] = runners[i].start(args, null, -1);
 };
 
@@ -485,8 +519,9 @@ const endTier = (state: State, gpu: GpuEngine | null, prepared: Prepared, schedu
  * tails or observer posts awaiting nothing, so a run that waits for nothing allocates no async frame: at the first
  * tier on a joined thread, index build across the pool or chunk on workers, `executeFrom` goes on from there.
  */
-const executeTiers = (context: ExecuteContext, whole: Schedule, args: unknown): RunReport | Promise<RunReport> => {
+const executeTiers = (context: ExecuteContext, given: Schedule, args: unknown): RunReport | Promise<RunReport> => {
     const { state, workers } = context;
+    const whole = state.fuse ? fusedFor(context, given) : given;
     context.tails = null;
     startRan(state.ran);
     let schedule = whole;

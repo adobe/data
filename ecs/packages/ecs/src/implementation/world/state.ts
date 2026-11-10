@@ -213,6 +213,8 @@ export type State = {
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
     readonly wasm: boolean;
     readonly simd: boolean;
+    /** Whether kernels a schedule runs one after another over shared components run fused (`fusion.ts`); tests turn it off to compare. */
+    fuse: boolean;
     /**
      * Rows of an archetype a kernel runs here at which it wants the pool, while none is started: infinite with a pool,
      * or without workers to start. A kernel reaching it sets `poolWanted`, and the next run starts the pool.
@@ -366,6 +368,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         rows: new Map(),
         wasm,
         simd,
+        fuse: true,
         poolThreshold: Infinity,
         poolWanted: false,
         plan: createPlan(),

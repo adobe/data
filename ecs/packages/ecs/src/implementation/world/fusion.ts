@@ -1,0 +1,330 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import type { Leaf } from '../../interface/system/leaf.js';
+import type { Schedule } from '../../interface/registry/schedule.js';
+import type { Archetype } from './archetype.js';
+import type { KernelFusion } from './kernels.js';
+import type { Program } from './kernel.js';
+import type { Runner } from './runner.js';
+import type { Source } from './protocol.js';
+import type { State } from './state.js';
+import { withoutIntrinsics } from './intrinsics.js';
+import { generateWasm, instantiateWasm, scalarValue, type WasmColumn, type WasmKernel, type WasmRun, type WasmScalar } from './wasm.js';
+
+type Expression = Program.Expression;
+type Statement = Program.Statement;
+
+/**
+ * Kernels a schedule runs one after another, over the same rows, fused into one pass: per row, each member's body in
+ * turn, as a row's own values are all any of them reads of it. A group runs where its last member runs; its earlier
+ * members' tiers between hold nothing that conflicts with them, and no sync point.
+ */
+export type FusedGroup = {
+    readonly members: readonly Runner[];
+    /** Each member's run as it started: its resources' values and tick, until the last member runs the group. */
+    readonly held: (Held | null)[];
+    /** The fused kernel once it's compiled, null while it isn't, and why it won't be when it can't. */
+    fused: Fused | null;
+    compiling: Promise<void> | null;
+    refused: boolean;
+    /** The members' kernels' loads the fused kernel was generated from. */
+    loadedFrom: string;
+};
+
+/** A member's run, held for the group: its resources' values, its tick, and its own pass over an archetype. */
+export type Held = { readonly values: readonly unknown[]; readonly tick: number; readonly runOwn: (archetype: Archetype) => void };
+
+/** A runner's place in its group: which member it is; the last runs the group. */
+export type FusionRole = { readonly group: FusedGroup; readonly member: number };
+
+type Fused = {
+    readonly wasm: WasmKernel;
+    readonly run: WasmRun;
+    /** By fused column, its member and that member's column. */
+    readonly columns: readonly (readonly [number, number])[];
+    /** By fused resource, a member reading it and that member's resource. */
+    readonly resources: readonly (readonly [number, number])[];
+};
+
+/** A schedule with its groups' members moved to each group's last tier, and each runner's role there. */
+export type FusedSchedule = { readonly schedule: Schedule; readonly roles: readonly (readonly (FusionRole | null)[])[] };
+
+/**
+ * Whether a system's kernel can run fused: a WASM program over its own rows alone, every row, taking no input. Lookups,
+ * `up`, order, targets, change filters, conditions, `where`, reductions, shared and optional components, input and a body
+ * that ends a row early run alone.
+ */
+const fusible = (runner: Runner, leaf: Leaf): boolean => {
+    const { kernel } = runner;
+    if (kernel === null || kernel.description.program === null || runner.placement !== "cpu" || runner.remote !== null || runner.targets.length > 0) return false;
+    if (leaf.input !== undefined || (kernel.description.writes?.length ?? 0) > 0) return false;
+    const { components, resources, lookup, up, order, target } = leaf.declaration;
+    if (lookup !== undefined && Object.keys(lookup).length > 0) return false;
+    if (up !== undefined || order !== undefined || target !== undefined || components?.where !== undefined) return false;
+    if ((components?.added?.length ?? 0) + (components?.changed?.length ?? 0) + (components?.optional?.length ?? 0) > 0) return false;
+    if ((resources?.changed?.length ?? 0) + (resources?.is?.length ?? 0) + (resources?.not?.length ?? 0) > 0) return false;
+    if ((kernel.description.shared?.length ?? 0) > 0 || kernel.description.columns.some(column => column.kind === "present")) return false;
+    return rowsOnly(kernel.description.program.body);
+};
+
+/** Whether statements only compute their row: no early end, lookups, lists or input. */
+const rowsOnly = (statements: readonly Statement[]): boolean => statements.every(statement => {
+    switch (statement.kind) {
+        case "next": case "find": case "probe": case "listRow": return false;
+        case "set": case "store": return pure(statement.value);
+        case "resourceStore": return false;
+        case "if": return pure(statement.test) && rowsOnly(statement.consequent) && rowsOnly(statement.alternate);
+        case "block": case "loop": case "intrinsic": return rowsOnly(statement.body);
+        case "branchIf": return pure(statement.test);
+        default: return true;
+    }
+});
+const pure = (expression: Expression): boolean => {
+    switch (expression.kind) {
+        case "args": case "shared": case "found": case "lookupLeaf": case "lookupHas": case "upFound": case "upLeaf": case "listLength": case "listChanged": case "rowLeaf": case "rowEntity": case "resourceElement": return false;
+        case "unary": return pure(expression.operand);
+        case "binary": case "logical": return pure(expression.left) && pure(expression.right);
+        case "conditional": return pure(expression.test) && pure(expression.consequent) && pure(expression.alternate);
+        case "math": return expression.arguments.every(pure);
+        case "lane": return pure(expression.value);
+        default: return true;
+    }
+};
+
+/** The component and resource ids a runner reads or writes, and those it writes. */
+const usesOf = (state: State, runner: Runner, leaf: Leaf): { readonly all: ReadonlySet<number>; readonly writes: ReadonlySet<number> } => {
+    const resources = leaf.declaration.resources;
+    const resourceIds = (keys: readonly symbol[] | undefined): number[] => (keys ?? []).map(key => state.ids.get(key) ?? -1);
+    const writes = new Set([...runner.writes, ...runner.resourceWrites, ...resourceIds(resources?.write)]);
+    return { all: new Set([...runner.touches, ...runner.looks, ...resourceIds(resources?.read), ...writes]), writes };
+};
+
+const conflict = (a: ReturnType<typeof usesOf>, b: ReturnType<typeof usesOf>): boolean =>
+    [...a.writes].some(id => b.all.has(id)) || [...b.writes].some(id => a.all.has(id));
+
+/**
+ * Groups a schedule's fusible kernels: each joins the group of an earlier fusible kernel it shares a component with,
+ * where no sync point comes between them and nothing in the tiers between conflicts with the group's earlier members,
+ * which then run in its tier. A kernel sharing nothing runs alone, streaming fewer components at once.
+ */
+export const fuseSchedule = (state: State, schedule: Schedule, runnerOf: (leaf: Leaf) => Runner): FusedSchedule => {
+    type Placed = { readonly leaf: Leaf; readonly runner: Runner; readonly tier: number; readonly uses: ReturnType<typeof usesOf>; group: Placed[] | null };
+    const placed: Placed[][] = schedule.tiers.map((tier, t) => tier.map(leaf => {
+        const runner = runnerOf(leaf);
+        return { leaf, runner, tier: t, uses: usesOf(state, runner, leaf), group: null };
+    }));
+    const groups: Placed[][] = [];
+    for (let t = 1; t < placed.length; t++) {
+        for (const later of placed[t]) {
+            if (!fusible(later.runner, later.leaf)) continue;
+            const shares = (group: Placed[]): boolean => group.some(member => [...member.runner.touches].some(id => later.runner.touches.includes(id)));
+            const candidate = groups.find(group => {
+                const last = group[group.length - 1];
+                if (last === undefined || last.tier >= t || !shares(group)) return false;
+                for (let s = group[0]?.tier ?? t; s < t; s++) if (schedule.syncs[s] !== null) return false;
+                // What runs in the tiers it moves over, and beside it, mustn't conflict with what moves.
+                for (let s = (group[0]?.tier ?? t) + 1; s <= t; s++) {
+                    for (const other of placed[s]) {
+                        if (other === later || group.includes(other)) continue;
+                        if (group.some(member => member.tier < s && conflict(member.uses, other.uses))) return false;
+                    }
+                }
+                return true;
+            });
+            if (candidate !== undefined) {
+                candidate.push(later);
+                later.group = candidate;
+                continue;
+            }
+            const earlier = placed.slice(0, t).flat().find(other => other.group === null && fusible(other.runner, other.leaf)
+                && [...other.runner.touches].some(id => later.runner.touches.includes(id))
+                && placed.slice(other.tier + 1, t + 1).every(tier => tier.every(next => next === later || !conflict(other.uses, next.uses)))
+                && schedule.syncs.slice(other.tier, t).every(sync => sync === null));
+            if (earlier === undefined) continue;
+            const group = [earlier, later];
+            earlier.group = later.group = group;
+            groups.push(group);
+        }
+    }
+    if (groups.length === 0) return { schedule, roles: schedule.tiers.map(tier => tier.map(() => null)) };
+    const fusedGroups = new Map(groups.map(group => [group, {
+        members: group.map(member => member.runner), held: group.map(() => null), fused: null, compiling: null, refused: false, loadedFrom: "",
+    } satisfies FusedGroup]));
+    const tiers: Leaf[][] = schedule.tiers.map(() => []);
+    const roles: (FusionRole | null)[][] = schedule.tiers.map(() => []);
+    for (const tier of placed) {
+        for (const entry of tier) {
+            const group = entry.group;
+            if (group === null) {
+                tiers[entry.tier]?.push(entry.leaf);
+                roles[entry.tier]?.push(null);
+                continue;
+            }
+            // A group's members join its last tier there, in order.
+            if (entry !== group[group.length - 1]) continue;
+            const fused = fusedGroups.get(group);
+            group.forEach((member, k) => {
+                tiers[entry.tier]?.push(member.leaf);
+                roles[entry.tier]?.push(fused === undefined ? null : { group: fused, member: k });
+            });
+        }
+    }
+    // Tiers a group left empty go, with their sync points, which no group crossed.
+    const kept = tiers.flatMap((tier, t) => tier.length === 0 ? [] : [t]);
+    return {
+        schedule: { tiers: kept.map(t => tiers[t] ?? []), reductions: schedule.reductions, observer: schedule.observer, syncs: kept.map(t => schedule.syncs[t] ?? null) },
+        roles: kept.map(t => roles[t] ?? []),
+    };
+};
+
+/** A member's column's identity: its source, the same in every member over its component. */
+const sourceKey = (source: Source | undefined): string => source === undefined ? "?" : source.kind === "entity" ? "entity" : `${source.kind} ${source.id} ${source.leaf}`;
+
+/**
+ * The members' programs as one: each member's statements in turn, its locals after the earlier members', its columns
+ * and resources the fused kernel's, read and written by every member that names them. Of stamps of one tick column at
+ * the top of two bodies, the later stands for both.
+ */
+const fuseMembers = (parts: readonly KernelFusion[], programs: readonly Program[], resourceKeys: readonly (readonly symbol[])[]) => {
+    const columns: WasmColumn[] = [];
+    const columnSources: (readonly [number, number])[] = [];
+    const columnIndex = new Map<string, number>();
+    const resources: (readonly [number, number])[] = [];
+    const resourceIndex = new Map<symbol, number>();
+    const body: Statement[] = [];
+    let locals = 0;
+    parts.forEach((part, m) => {
+        const program = withoutIntrinsics(programs[m] ?? { locals: 0, body: [] });
+        const columnMap = part.columns.map((column, k) => {
+            const key = sourceKey(part.sources[k]);
+            let index = columnIndex.get(key);
+            if (index === undefined) {
+                index = columns.length;
+                columnIndex.set(key, index);
+                columns.push(column);
+                columnSources.push([m, k]);
+            }
+            return index;
+        });
+        const resourceMap = (resourceKeys[m] ?? []).map((key, k) => {
+            let index = resourceIndex.get(key);
+            if (index === undefined) {
+                index = resources.length;
+                resourceIndex.set(key, index);
+                resources.push([m, k]);
+            }
+            return index;
+        });
+        const offset = locals;
+        const expression = (node: Expression): Expression => {
+            switch (node.kind) {
+                case "column": return { ...node, column: columnMap[node.column] ?? node.column };
+                case "resource": return { ...node, index: resourceMap[node.index] ?? node.index };
+                case "local": return { ...node, local: node.local + offset };
+                case "unary": return { ...node, operand: expression(node.operand) };
+                case "binary": case "logical": return { ...node, left: expression(node.left), right: expression(node.right) };
+                case "conditional": return { ...node, test: expression(node.test), consequent: expression(node.consequent), alternate: expression(node.alternate) };
+                case "math": return { ...node, arguments: node.arguments.map(expression) };
+                default: return node;
+            }
+        };
+        const statement = (node: Statement): Statement => {
+            switch (node.kind) {
+                case "set": return { ...node, local: node.local + offset, value: expression(node.value) };
+                case "store": return { ...node, column: columnMap[node.column] ?? node.column, value: expression(node.value) };
+                case "stamp": return { ...node, column: columnMap[node.column] ?? node.column, chunks: columnMap[node.chunks] ?? node.chunks, blocks: columnMap[node.blocks] ?? node.blocks };
+                case "if": return { ...node, test: expression(node.test), consequent: node.consequent.map(statement), alternate: node.alternate.map(statement) };
+                case "block": case "loop": return { ...node, body: node.body.map(statement) };
+                case "branchIf": return { ...node, test: expression(node.test) };
+                default: return node;
+            }
+        };
+        body.push(...program.body.map(statement));
+        locals += program.locals;
+    });
+    const stamped = new Set<number>();
+    const deduplicated: Statement[] = [];
+    for (let k = body.length - 1; k >= 0; k--) {
+        const statement = body[k];
+        if (statement === undefined) continue;
+        if (statement.kind === "stamp") {
+            if (stamped.has(statement.column)) continue;
+            stamped.add(statement.column);
+        }
+        deduplicated.push(statement);
+    }
+    deduplicated.reverse();
+    const scalarType = (scalar: WasmScalar) => {
+        if (scalar.source !== "resource") return null;
+        const [m, k] = resources[scalar.index] ?? [-1, -1];
+        return parts[m]?.scalarType({ ...scalar, index: k }) ?? null;
+    };
+    const arrays = (resource: number) => {
+        const [m, k] = resources[resource] ?? [-1, -1];
+        return parts[m]?.arrays(k) ?? null;
+    };
+    return { program: { locals, body: deduplicated }, columns, columnSources, resources, scalarType, arrays };
+};
+
+/**
+ * Compiles a group's fused kernel from its members' kernels as loaded: kept only where it runs several rows at a time
+ * when any member does alone, since a member's vectors outrun one row at a time even over shared components.
+ */
+const compileGroup = async (state: State, group: FusedGroup): Promise<void> => {
+    const kernels = group.members.map(member => member.kernel);
+    const parts = kernels.map(kernel => kernel?.fusion());
+    if (parts.some(part => part === undefined || part.loaded === null) || kernels.some(kernel => kernel?.wasm === null || kernel?.description.program === null)) return;
+    const fusion = parts.flatMap(part => part === undefined ? [] : [part]);
+    const merged = fuseMembers(fusion, kernels.flatMap(kernel => kernel?.description.program ?? []), kernels.map(kernel => (kernel?.description.resources ?? []).flatMap(key => typeof key === "symbol" ? [key] : [])));
+    const wasm = generateWasm(merged.program, merged.columns, merged.scalarType, state.simd, 0, [], [], [], [], [], kernels.every(kernel => kernel?.description.storagePrecision === true), merged.arrays);
+    group.loadedFrom = fusion.map(part => part.loaded).join("|");
+    if (wasm === null || (!wasm.vectorized && kernels.some(kernel => kernel?.wasm?.vectorized === true))) {
+        group.refused = true;
+        return;
+    }
+    const module = await WebAssembly.compile(wasm.bytes);
+    const run = await instantiateWasm(module, state.memory.memory, wasm.imports);
+    group.fused = { wasm, run, columns: merged.columnSources, resources: merged.resources };
+};
+
+/** Whether a group's fused kernel runs this run, compiling it once its members' kernels are loaded. */
+export const groupReady = (state: State, group: FusedGroup): boolean => {
+    const loaded = group.members.map(member => member.kernel?.fusion().loaded ?? null).join("|");
+    if (group.fused !== null && group.loadedFrom === loaded) return true;
+    if (group.loadedFrom !== loaded) {
+        group.fused = null;
+        group.refused = false;
+    }
+    if (!group.refused && group.compiling === null) {
+        group.compiling = compileGroup(state, group).catch(() => { group.refused = true; }).finally(() => { group.compiling = null; });
+    }
+    return false;
+};
+
+/** Compiles a group's fused kernel, if it isn't, as its members' kernels are loaded, before the runs that use it. */
+export const loadGroup = async (state: State, group: FusedGroup): Promise<void> => {
+    if (groupReady(state, group)) return;
+    await group.compiling;
+};
+
+/** Whether every member matches an archetype, which the fused kernel then runs over. */
+export const groupCovers = (group: FusedGroup, archetype: Archetype): boolean => group.members.every(member => member.matched().includes(archetype));
+
+/**
+ * The group's pass over an archetype, from its last member's run: the fused kernel where every member held its run,
+ * else each member that did, its own, and the last's own after.
+ */
+export const runGroup = (group: FusedGroup, archetype: Archetype, values: readonly unknown[], tick: number, runOwn: (archetype: Archetype) => void): void => {
+    const { fused, held, members } = group;
+    const last = members.length - 1;
+    if (fused === null || held.some((entry, m) => m < last && entry === null)) {
+        for (let m = 0; m < last; m++) held[m]?.runOwn(archetype);
+        runOwn(archetype);
+        return;
+    }
+    const call: number[] = [0, archetype.count, tick, -1];
+    for (const [m, k] of fused.columns) call.push(members[m]?.kernel?.columnsOf(archetype)[k]?.byteOffset ?? 0);
+    const memberValues = (m: number): readonly unknown[] => m === last ? values : held[m]?.values ?? [];
+    const resourceValues = fused.resources.map(([m, k]) => memberValues(m)[k]);
+    for (const scalar of fused.wasm.scalars) call.push(scalarValue(scalar, resourceValues, undefined));
+    Reflect.apply(fused.run, undefined, call);
+};

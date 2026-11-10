@@ -82,3 +82,18 @@ describe("generateWgsl remainders", () => {
         expect(remainderOf("f32", 17)).toContain("(bitcast<f32>(memory[parameters[1] + row * 1u + 0u]) % 17.0f)");
     });
 });
+
+describe("generateWgsl booleans", () => {
+    const store = (view: "u32" | "u8") => generateWgsl(
+        { locals: 0, body: [{ kind: "store", column: 1, value: { kind: "unary", operator: "!", operand: { kind: "column", column: 0 } } }] },
+        [{ view: "f32", stride: 4, offset: 0, boolean: false, component: 0 }, { view, stride: 4, offset: 0, boolean: true, component: 1 }],
+        () => "number",
+    );
+
+    test("write a boolean in a word as 0 or 1, and refuse one in a byte", () => {
+        const kernel = store("u32");
+        if (typeof kernel === "string") throw new Error(kernel);
+        expect(kernel.code).toContain("memory[parameters[2] + row * 1u + 0u] = select(0u, 1u, (!(bitcast<f32>(memory[parameters[1] + row * 1u + 0u]) != 0.0)));");
+        expect(store("u8")).toBe("it writes a byte value, such as a boolean in the CPU layout; give the component a \"storage\" layout");
+    });
+});

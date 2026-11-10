@@ -244,8 +244,10 @@ export const generateWgsl = (
     const store = (column: number, value: Value): string => {
         const { view, boolean, muted } = columns[column];
         if (muted === true) return "";
-        if (boolean) return fail("it writes a boolean component");
+        // A boolean in a word, as GPU layouts hold one, is 0 or 1; one in a byte is in the CPU's layout.
+        if (boolean && view !== "u32") return fail("it writes a byte value, such as a boolean in the CPU layout; give the component a \"storage\" layout");
         const target = `memory[${word(column)}]`;
+        if (boolean) return `${target} = select(0u, 1u, ${asBool(value)});`;
         switch (view) {
             case "f32": return `${target} = bitcast<u32>(${asNumber(value)});`;
             case "u32": case "i32": return `${target} = ${asUint(value)};`;

@@ -13,11 +13,11 @@ import { createBuffer, createKernelCommands, emptyBuffer, stage, type CommandBuf
 import { createBatch, positionalSpawner, type SpawnBatch } from './staging.js';
 import { createBlock, endBlock, indexOf, locate, reserveFrom } from './entities.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
-import { resourceCell } from './resources.js';
+import { resourceArchetype, resourceCell } from './resources.js';
 import { createContext, parentBinder, rowBinder } from './rows.js';
 import { requiredOf } from './required.js';
 import { scalarValue, scalarValues, type WasmKernel, type WasmScalar } from './wasm.js';
-import { idOf, type State } from './state.js';
+import { idOf, type Key, type State } from './state.js';
 import { isThenable, returnedPromise } from './failures.js';
 import { accessorsOf } from '../../interface/gpu/accessors.js';
 import { recordWords } from './gpu.js';
@@ -87,6 +87,8 @@ export type Runner = {
     readonly looks: readonly number[];
     /** Resource ids it writes or reduces into, which a tail reading them waits for (`tails.ts`). */
     readonly resourceWrites: readonly number[];
+    /** Resource ids it reads, writes or holds conditions on, whose GPU writes come back before it runs on the CPU. */
+    readonly resourceUses: readonly number[];
     /** The archetypes its query matches now. */
     readonly matched: () => readonly Archetype[];
     /** The indexes its lookups go through, which a run refreshes before its tier. */
@@ -191,6 +193,11 @@ export const releaseHoldings = (state: State, holdings: Holdings): void => {
 };
 
 /** The resources a declaration writes or reduces into, by id. */
+export const resourceUsesOf = (state: State, declaration: Leaf["declaration"]): readonly number[] => {
+    const { resources } = declaration;
+    return [...new Set([...resources?.read ?? [], ...resources?.write ?? [], ...resources?.reduce ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? []].map(key => idOf(state, key)))];
+};
+
 export const resourceWritesOf = (state: State, declaration: Leaf["declaration"]): readonly number[] =>
     [...new Set([...declaration.resources?.write ?? [], ...declaration.resources?.reduce ?? []].map(key => idOf(state, key)))];
 
@@ -934,11 +941,25 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const floats = new Float32Array(words.buffer);
     const integers = new Int32Array(words.buffer);
 
+    /** The word address of a typed array resource's first element in the GPU copy, uploaded first. */
+    const arrayAddress = (key: Key | undefined): number => {
+        const gpu = state.gpu;
+        const archetype = resourceArchetype(state);
+        if (gpu === null || key === undefined || archetype === undefined) return 0;
+        const { storage, row } = resourceCell(state, key);
+        return gpu.rowAddress(archetype, storage, row, state.tick);
+    };
+
     /** Writes a dispatch's scalars from `first`: a shared value's leaf keeps its type, as its column would; the rest are f32. */
     const writeScalars = (bound: BoundKernel, scalars: readonly WasmScalar[], first: number, values: readonly unknown[], args: unknown, archetype: Archetype): void => {
         const shared = bound.sharedOf(archetype);
         for (let s = 0; s < scalars.length; s++) {
             const scalar = scalars[s];
+            // A typed array's word address in the GPU copy of the resources' row.
+            if (scalar.source === "resource" && scalar.path[0] === "address") {
+                words[first + s] = arrayAddress(bound.description.resources[scalar.index]);
+                continue;
+            }
             const value = scalarValue(scalar, values, args, shared);
             switch (bound.scalarKind(scalar)) {
                 case "i32": integers[first + s] = value; break;
@@ -988,6 +1009,8 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 if (storage.ticked) storage.columnChanged = tick;
             }
         }
+        const resources = resourceArchetype(state);
+        if (resources !== undefined) for (const key of arrayWrites) gpu.markGpuWrites(resources, resourceCell(state, key).storage);
     };
 
     /** The component ids of the parent columns an `up` kernel reads, in order. */
@@ -1387,6 +1410,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         writes,
         looks,
         resourceWrites: resourceWritesOf(state, declaration),
+        resourceUses: resourceUsesOf(state, declaration),
         matched: () => {
             refreshMatches();
             return matches;
@@ -1426,6 +1450,7 @@ export const removedRunner: Runner = {
     writes: nothing,
     looks: nothing,
     resourceWrites: nothing,
+    resourceUses: nothing,
     matched: () => nothing,
     indexes: nothing,
     load: async () => {},

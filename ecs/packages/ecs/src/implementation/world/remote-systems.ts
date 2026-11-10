@@ -11,7 +11,7 @@ import type { LocalIds, Segment } from './command-ring.js';
 import type { ToJoined } from './joining.js';
 import { lineWords, type WorkerError } from './protocol.js';
 import { reductionTargets, type ReductionTarget } from './reductions.js';
-import { holdingNothing, resourceWritesOf, type Runner } from './runner.js';
+import { holdingNothing, resourceUsesOf, resourceWritesOf, type Runner } from './runner.js';
 import { acquireLookups, type IndexLookups, type WorldIndex } from './indexes.js';
 import { writeIndexParameters } from './kernel-indexes.js';
 import { recordWordsOf } from './thread-indexes.js';
@@ -595,6 +595,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         writes,
         looks,
         resourceWrites: resourceWritesOf(state, declaration),
+        resourceUses: resourceUsesOf(state, declaration),
         matched,
         indexes: lookups.holding.uses,
         load: async () => {},

@@ -22,6 +22,7 @@ import { failureOf } from './failures.js';
 import { checkCommands } from './remote.js';
 import { firstKeyOf } from '../../interface/registry/index.js';
 import { mergeUses, refreshUses, type IndexUse } from './indexes.js';
+import { resourceArchetype } from './resources.js';
 
 /** Shared by every report without failures or skipped systems: they're read-only, so none needs its own. */
 const none: readonly never[] = [];
@@ -885,9 +886,11 @@ export const readAhead = async (state: State, gpu: GpuEngine, runners: readonly 
             if (storage !== undefined && gpu.isAhead(storage)) storages.add(storage);
         }
     };
+    const resources = resourceArchetype(state);
     for (const runner of runners) {
         if (runner.placement !== "cpu") continue;
         for (const archetype of runner.matched()) add(archetype, runner.touches);
+        if (resources !== undefined) add(resources, runner.resourceUses);
         if (runner.looks.length > 0) for (const archetype of state.archetypes) add(archetype, runner.looks);
         // What its indexes hold entities by, so they're kept by the values the GPU wrote.
         for (const { index } of runner.indexes) for (const archetype of state.archetypes) {

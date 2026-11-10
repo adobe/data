@@ -199,6 +199,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         return layout?.kind === "linear" ? layout.leaves.find(candidate => samePath(candidate.path, scalar.path)) ?? null : null;
     };
     const scalarKind = (scalar: WasmScalar): ScalarKind => {
+        if (scalar.source === "resource" && arrays(scalar.index) !== null) return "u32";
         if (scalar.source !== "shared") return "f32";
         const found = sharedLeaf(scalar);
         return found === null ? "f32" : found.scalar === "boolean" ? "bool" : found.scalar === "i32" || found.scalar === "u32" || found.scalar === "f64" ? found.scalar : "f32";
@@ -298,8 +299,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
         : scalar.source === "shared" ? (sharedLeaf(scalar) === null ? null : sharedLeaf(scalar)?.scalar === "boolean" ? "boolean" : "number")
-        // A typed array's in-place view gives its address and length.
-        : arrays(scalar.index) !== null ? (scalar.path.length === 1 && (scalar.path[0] === "byteOffset" || scalar.path[0] === "length") ? "number" : null)
+        // A typed array's in-place view gives its address and length; on the GPU, its copy's word address.
+        : arrays(scalar.index) !== null ? (scalar.path.length === 1 && (scalar.path[0] === "byteOffset" || scalar.path[0] === "length" || scalar.path[0] === "address") ? "number" : null)
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;
     const useWasm = state.wasm && state.memory.shared && description.program !== null;
     // A lookup through an index's directory also holds each archetype's entities, which its rows' `entity` reads.
@@ -404,7 +405,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         gpu: () => description.program === null
             ? "it issues commands or uses values that aren't numbers"
             : description.lookups.length > 0 ? "it uses lookups"
-            : generateWgsl(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, upWasmColumns, scalarKind),
+            : generateWgsl(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, upWasmColumns, scalarKind, arrays),
         sharedOf,
         scalarKind,
         fusion: () => ({ columns: wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), sources, scalarType, arrays, loaded: loadedFor }),

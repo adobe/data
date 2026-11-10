@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Storage } from './archetype.js';
+import type { Archetype, Storage } from './archetype.js';
 import { indexOf, reserve } from './entities.js';
 import { idOf, type Key, type State } from './state.js';
 import { synchronizeAlone } from './synchronize.js';
@@ -62,6 +62,9 @@ export const findResource = (state: State, key: Key): ResourceCell | undefined =
 };
 
 /** Where a resource lives now. Valid until the next sync point. */
+/** The archetype of the entity holding the resources, whose rows' storages GPU copies are kept by. */
+export const resourceArchetype = (state: State): Archetype | undefined => state.archetypes[state.entities.archetype[indexOf(state.resourceEntity)]];
+
 export const resourceCell = (state: State, key: Key): ResourceCell => {
     const index = indexOf(state.resourceEntity);
     const archetype = state.archetypes[state.entities.archetype[index]];

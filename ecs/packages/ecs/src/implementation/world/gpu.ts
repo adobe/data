@@ -4,6 +4,7 @@ import type { OutOfBand } from './out-of-band.js';
 import { layout } from '../../interface/gpu/layout.js';
 import { recordBytes } from '../../interface/gpu/record.js';
 import type { Archetype, Storage } from './archetype.js';
+import type { TypedArrayLayout } from '../../interface/registry/layout.js';
 import { chunkShift } from './kernel.js';
 
 export { recordBytes };
@@ -21,7 +22,11 @@ const initialHeapBytes = 1 << 20;
 type Resident = {
     readonly storage: Storage;
     readonly archetype: Archetype;
+    /** Bytes of a row on the CPU, and in the GPU copy, which holds each element of a widened array as a word. */
     readonly stride: number;
+    readonly gpuStride: number;
+    /** A typed array of 1- or 2-byte elements, which WGSL can't store alone: its copy holds one in each word. */
+    readonly widened: TypedArrayLayout | null;
     offset: number;
     bytes: number;
     capacity: number;
@@ -53,6 +58,8 @@ export type GpuEngine = {
     readonly discard: () => void;
     /** The word address of a storage's GPU copy, uploading rows the CPU changed first, for a run at `tick`. */
     readonly upload: (archetype: Archetype, storage: Storage, tick: number) => number;
+    /** The word address of row `row` of a storage's GPU copy, as `upload` gives its first. */
+    readonly rowAddress: (archetype: Archetype, storage: Storage, row: number, tick: number) => number;
     /**
      * The word address of a block for `key` holding the first `count` elements of `array`, written when `changed` or
      * when the block moves, such as the row lists an `up` system's dispatches read.
@@ -163,12 +170,16 @@ export const createGpu = (device: GPUDevice, outOfBand: OutOfBand): GpuEngine =>
     const residentOf = (archetype: Archetype, storage: Storage): Resident => {
         let resident = residents.get(storage);
         if (resident === undefined) {
-            const stride = storage.layout.kind === "linear" ? storage.layout.stride : 0;
-            resident = { storage, archetype, stride, offset: 0, bytes: 0, capacity: 0, dirtyLow: 0, dirtyHigh: 0, aheadLow: 0, aheadHigh: 0, uploaded: 0 };
+            const { layout } = storage;
+            const stride = layout.kind === "linear" ? layout.stride : 0;
+            const widened = layout.kind === "linear" && layout.array !== undefined && layout.array.bytes < 4 ? layout.array : null;
+            // A word per element, the one past the end included.
+            const gpuStride = widened === null ? stride : (widened.length + 1) * 4;
+            resident = { storage, archetype, stride, gpuStride, widened, offset: 0, bytes: 0, capacity: 0, dirtyLow: 0, dirtyHigh: 0, aheadLow: 0, aheadHigh: 0, uploaded: 0 };
             residents.set(storage, resident);
         }
         if (resident.capacity < archetype.capacity) {
-            const bytes = Math.max(minimumBlockBytes, archetype.capacity * resident.stride);
+            const bytes = Math.max(minimumBlockBytes, archetype.capacity * resident.gpuStride);
             const offset = allocate(bytes);
             if (resident.bytes === 0) {
                 resident.dirtyLow = 0;
@@ -177,7 +188,7 @@ export const createGpu = (device: GPUDevice, outOfBand: OutOfBand): GpuEngine =>
             else {
                 // The old rows move on the GPU, where they may be newer than the CPU's; a buffer can't copy into itself.
                 submit();
-                const used = resident.capacity * resident.stride;
+                const used = resident.capacity * resident.gpuStride;
                 const scratch = device.createBuffer({ size: used, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
                 const copy = device.createCommandEncoder();
                 copy.copyBufferToBuffer(heap, resident.offset, scratch, 0, used);
@@ -203,12 +214,20 @@ export const createGpu = (device: GPUDevice, outOfBand: OutOfBand): GpuEngine =>
         }
     };
 
-    /** Writes rows `low` to `high` of a storage into its GPU copy. */
+    /** Writes rows `low` to `high` of a storage into its GPU copy, a widened array's elements a word each. */
     const write = (resident: Resident, low: number, high: number): void => {
         // A queue write lands before work recorded but not yet submitted, which may read these rows.
         submit();
-        const start = low * resident.stride;
-        device.queue.writeBuffer(heap, resident.offset + start, resident.storage.views.u8, start, (high - low) * resident.stride);
+        const { widened, storage } = resident;
+        if (widened === null) {
+            const start = low * resident.stride;
+            device.queue.writeBuffer(heap, resident.offset + start, storage.views.u8, start, (high - low) * resident.stride);
+            return;
+        }
+        const words = resident.gpuStride / 4;
+        const wide = new Int32Array((high - low) * words);
+        for (let row = low; row < high; row++) wide.set(widened.live(storage.views, row), (row - low) * words);
+        device.queue.writeBuffer(heap, resident.offset + low * resident.gpuStride, wide);
     };
 
     const upload = (archetype: Archetype, storage: Storage, tick: number): number => {
@@ -242,6 +261,11 @@ export const createGpu = (device: GPUDevice, outOfBand: OutOfBand): GpuEngine =>
         resident.dirtyLow = resident.dirtyHigh = 0;
         resident.uploaded = tick;
         return resident.offset / 4;
+    };
+
+    const rowAddress = (archetype: Archetype, storage: Storage, row: number, tick: number): number => {
+        const address = upload(archetype, storage, tick);
+        return address + row * ((residents.get(storage)?.gpuStride ?? 0) / 4);
     };
 
     const indexBlocks = new Map<string, { offset: number; bytes: number }>();
@@ -320,8 +344,8 @@ export const createGpu = (device: GPUDevice, outOfBand: OutOfBand): GpuEngine =>
         submit();
         const copy = device.createCommandEncoder();
         const staged = pending.map(resident => {
-            const start = resident.aheadLow * resident.stride;
-            const bytes = (resident.aheadHigh - resident.aheadLow) * resident.stride;
+            const start = resident.aheadLow * resident.gpuStride;
+            const bytes = (resident.aheadHigh - resident.aheadLow) * resident.gpuStride;
             const staging = device.createBuffer({ size: Math.max(4, bytes), usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
             if (bytes > 0) copy.copyBufferToBuffer(heap, resident.offset + start, staging, 0, bytes);
             return { resident, staging, start, bytes };
@@ -329,7 +353,17 @@ export const createGpu = (device: GPUDevice, outOfBand: OutOfBand): GpuEngine =>
         device.queue.submit([copy.finish()]);
         await Promise.all(staged.map(({ staging }) => staging.mapAsync(GPUMapMode.READ)));
         for (const { resident, staging, start, bytes } of staged) {
-            if (bytes > 0) resident.storage.views.u8.set(new Uint8Array(staging.getMappedRange(0, bytes)), start);
+            const { widened, storage } = resident;
+            if (bytes > 0 && widened === null) storage.views.u8.set(new Uint8Array(staging.getMappedRange(0, bytes)), start);
+            else if (bytes > 0 && widened !== null) {
+                // Each word's element, converted as the array converts what's assigned it.
+                const wide = new Int32Array(staging.getMappedRange(0, bytes));
+                const words = resident.gpuStride / 4;
+                for (let row = resident.aheadLow; row < resident.aheadHigh; row++) {
+                    const first = (row - resident.aheadLow) * words;
+                    widened.live(storage.views, row).set(wide.subarray(first, first + widened.length));
+                }
+            }
             staging.destroy();
             resident.aheadLow = resident.aheadHigh = 0;
             ahead.delete(resident);
@@ -369,6 +403,7 @@ export const createGpu = (device: GPUDevice, outOfBand: OutOfBand): GpuEngine =>
         submit,
         discard: () => { encoder = null; },
         upload,
+        rowAddress,
         uploadIndexes,
         record,
         release,

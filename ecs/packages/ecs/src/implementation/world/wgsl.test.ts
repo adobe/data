@@ -40,3 +40,30 @@ describe("generateWgsl", () => {
         expect(code).not.toMatch(/jsMin|remainder|isNan/);
     });
 });
+
+describe("generateWgsl typed array resources", () => {
+    const element: Program.Expression = { kind: "column", column: 0 };
+    const readThenWrite: Program = {
+        locals: 0,
+        body: [
+            { kind: "store", column: 0, value: { kind: "resourceElement", index: 0, element } },
+            { kind: "resourceStore", index: 0, element, value: { kind: "number", value: 3 } },
+        ],
+    };
+    const generate = (name: string | null) => generateWgsl(readThenWrite, columns, () => "number", [], () => "u32", () => name === null ? null : { name: name as "Uint8Array", length: 8 });
+
+    test("address an array's elements a word each from its record's address and length, NaN or nothing past its ends", () => {
+        const kernel = generate("Uint8Array");
+        if (typeof kernel === "string") throw new Error(kernel);
+        // After the row count and the column's address: the array's address, then its length.
+        expect(kernel.scalars).toEqual([{ source: "resource", index: 0, path: ["address"] }, { source: "resource", index: 0, path: ["length"] }]);
+        expect(kernel.code).toContain("select(bitcast<f32>(nanBits), f32(memory[parameters[2] + min(u32(");
+        expect(kernel.code).toContain(", parameters[3])] & 0xFFu)");
+        expect(kernel.code).toMatch(/if \(.*< f32\(parameters\[3\]\).*\) \{ memory\[parameters\[2\] \+ u32\(.*\)\] = 3u; \}/);
+    });
+
+    test("refuse a resource that isn't a typed array, and an array of 8-byte elements", () => {
+        expect(generate(null)).toBe("it indexes a resource that isn't a typed array");
+        expect(generate("Float64Array")).toBe("it indexes a Float64Array, whose 8-byte elements the GPU doesn't hold");
+    });
+});

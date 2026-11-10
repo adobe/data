@@ -314,6 +314,14 @@ export const generateWgsl = (
                     case "&": case "|": case "^": case "<<": case ">>": return "i32";
                     case ">>>": return "u32";
                     case "<": case ">": case "<=": case ">=": case "==": case "!=": case "===": case "!==": return "bool";
+                    case "%": {
+                        // As `remainder` computes it: of integers of one type, that type.
+                        const left = kindOf(expression.left);
+                        const { right } = expression;
+                        const literal = right.kind === "number" && Number.isInteger(right.value) && right.value !== 0
+                            && (left === "u32" ? right.value > 0 && right.value <= 0xFFFFFFFF : Math.abs(right.value) <= 0x7FFFFFFF);
+                        return (left === "i32" || left === "u32") && (kindOf(right) === left || literal) ? left : "f32";
+                    }
                     default: return "f32";
                 }
             case "logical": case "conditional": {
@@ -356,6 +364,18 @@ export const generateWgsl = (
         });
         if (!changed) break;
     }
+
+    /**
+     * A remainder of integers of one type, exact as WGSL's integer `%` is, which takes the dividend's sign as JS's does;
+     * null where either isn't one, computed as numbers.
+     */
+    const remainder = (left: Value, right: Value): Value | null => {
+        const integer = left.type === "i32" || left.type === "u32" ? left.type : null;
+        const fits = right.type === integer || (right.literal !== undefined && Number.isInteger(right.literal) && right.literal !== 0
+            && (integer === "u32" ? right.literal > 0 && right.literal <= 0xFFFFFFFF : Math.abs(right.literal) <= 0x7FFFFFFF));
+        if (integer === null || !fits) return null;
+        return integer === "u32" ? u32(`(${asUint(left)} % ${asUint(right)})`) : i32(`(${asInt(left)} % ${asInt(right)})`);
+    };
 
     /** Compares integers of one type exactly, and anything else as numbers. */
     const compare = (operator: string, left: Value, right: Value): Value => {
@@ -407,7 +427,7 @@ export const generateWgsl = (
                 const b = asNumber(right);
                 switch (expression.operator) {
                     case "+": case "-": case "*": case "/": return f32(`(${a} ${expression.operator} ${b})`);
-                    case "%": return f32(`(${a} % ${b})`);
+                    case "%": return remainder(left, right) ?? f32(`(${a} % ${b})`);
                     case "**": return f32(`power(${a}, ${b})`);
                     case "<": case ">": case "<=": case ">=": return compare(expression.operator, left, right);
                     case "==": case "===": return compare("==", left, right);

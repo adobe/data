@@ -67,3 +67,18 @@ describe("generateWgsl typed array resources", () => {
         expect(generate("Float64Array")).toBe("it indexes a Float64Array, whose 8-byte elements the GPU doesn't hold");
     });
 });
+
+describe("generateWgsl remainders", () => {
+    const remainderOf = (view: "u32" | "i32" | "f32", divisor: number): string => {
+        const program: Program = { locals: 0, body: [{ kind: "store", column: 1, value: { kind: "binary", operator: "%", left: { kind: "column", column: 0 }, right: { kind: "number", value: divisor } } }] };
+        const kernel = generateWgsl(program, [{ view, stride: 4, offset: 0, boolean: false, component: 0 }, { view: "f32", stride: 4, offset: 0, boolean: false, component: 1 }], () => "number");
+        if (typeof kernel === "string") throw new Error(kernel);
+        return kernel.code;
+    };
+
+    test("keep integers' remainders in their integer type, exact past an f32's 24 bits, and numbers' in f32", () => {
+        expect(remainderOf("u32", 17)).toContain("(memory[parameters[1] + row * 1u + 0u] % 17u)");
+        expect(remainderOf("i32", -6)).toContain("(bitcast<i32>(memory[parameters[1] + row * 1u + 0u]) % bitcast<i32>(4294967290u))");
+        expect(remainderOf("f32", 17)).toContain("(bitcast<f32>(memory[parameters[1] + row * 1u + 0u]) % 17.0f)");
+    });
+});

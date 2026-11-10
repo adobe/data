@@ -3209,7 +3209,7 @@ export const generateWasmOrReason = (
     };
 
     /**
-     * Writes a typed array resource's element for each of the group's rows, in row order, where the mask is set and the
+     * Writes a typed array resource's element for each of the group's rows, lane by lane, where the mask is set and the
      * element is one of its indexes, as `storeResourceElement` does for one; integer elements and values only.
      */
     const storeElements = (resource: number, element: Expression, value: Expression): void => {
@@ -3403,16 +3403,6 @@ export const generateWasmOrReason = (
         const stored = storedColumns(program.body, new Set());
         const spans = planSpans(used, stored);
         groupRows = 4;
-        // Rows' writes to an element must land in row order: one store to each typed array, which nothing reads.
-        const stores = new Map<number, number>();
-        const countStores = (statements: readonly Statement[]): void => {
-            for (const statement of statements) {
-                if (statement.kind === "resourceStore") stores.set(statement.index, (stores.get(statement.index) ?? 0) + 1);
-                else if (statement.kind === "if") { countStores(statement.consequent); countStores(statement.alternate); }
-            }
-        };
-        countStores(program.body);
-        if ([...stores.values()].some(count => count > 1)) throw notVectorizable;
         const floats = Array.from({ length: program.locals }, (_, k) => localTypes[k] === "number" && integerLocal(k) === null && !wideLocals[k] && !booleanLocals[k] && assignedValues.has(k));
         floatLocals = floats;
         for (let changed = true; changed;) {

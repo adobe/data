@@ -258,7 +258,7 @@ export type KernelDescription = {
     readonly program: Program | null;
     /**
      * The resources, by index into `resources`, whose elements it writes in place: typed arrays, which the call gives
-     * in place, and which its rows write in order on one thread.
+     * in place. Which of two rows writing one element writes it last is unspecified.
      */
     readonly writes?: readonly number[];
     /** The leaves of resources the kernel reduces into, one partial each, with their operators. */

@@ -267,8 +267,6 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         const layout = state.layouts[idOf(state, key)];
         return layout?.kind === "linear" && layout.array !== undefined;
     });
-    /** A kernel writing typed arrays in place runs its rows in order on one thread, so the last write to an element is the same every run. */
-    const inOrder = kernel !== null && (kernel.description.writes?.length ?? 0) > 0;
     const looks = [...new Set([...Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []), ...declaration.up?.read ?? [], ...declaration.tables?.components ?? []])].map(key => idOf(state, key));
     /** Record keys by archetype. */
     const keys = new Map<Archetype, string>();
@@ -1169,7 +1167,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     };
 
     const start = (input: unknown, offered: Workers | null, index: number, role: FusionRole | null = null): readonly Chunk[] => {
-        const workers = inOrder ? null : offered;
+        const workers = offered;
         ran = false;
         result = undefined;
         // Removed during the run it's in: its body isn't called again.

@@ -42,7 +42,7 @@ const mark = System.create({ components: { with: [cell] } }, (row, { resources }
 const marked: number[] = [];
 const readChanged = System.create({ resources: { changed: [cells] } }, ({ resources }) => { marked.push(resources[cells][3]); });
 
-/** Writes each row's level at its cell, the last row writing an element winning, beyond the ends doing nothing. */
+/** Writes each row's level at its cell, beyond the ends doing nothing; of two rows writing one cell, either. */
 const paint = System.create({ kernel: true, components: { with: [cell, level] } }, (row, { resources }) => { resources[levels][row[cell]] = row[level]; });
 /** Copies each cell's level, NaN past the end, into the row. */
 const sample = System.create({ kernel: true, components: { with: [cell, level] } }, (row, { resources }) => { row[level] = resources[levels][row[cell]] + 0.5; });
@@ -79,20 +79,22 @@ describe("typed array resources", () => {
     });
 
     for (const wasm of [true, false]) {
-        it(`are written in place by a kernel's rows in order, past their ends doing nothing, and read NaN there${wasm ? "" : ", in JS"}`, async () => {
+        it(`are written in place by a kernel's rows, past their ends doing nothing, and read NaN there${wasm ? "" : ", in JS"}`, async () => {
             const { world, run } = withCommands({ wasm });
             await run(commands => {
                 const spawn = commands.spawn([cell, level]);
-                // Cell 2 is written twice, the later row winning; 9 and -1 are past the ends; 1.5 is no index.
+                // Cell 2 is written twice, by either row last; 9 and -1 are past the ends; 1.5 is no index.
                 for (const [at, value] of [[0, 7], [2, -3], [2, 40000], [7, 12], [9, 5], [-1, 6], [1.5, 8]]) spawn({ [cell]: at, [level]: value });
             });
             await world.run(paint);
-            expect([...await readResource(world, levels)]).toEqual([7, 0, new Int16Array([40000])[0], 0, 0, 0, 0, 12]);
+            const written = [...await readResource(world, levels)];
+            expect([-3, new Int16Array([40000])[0]]).toContain(written[2]);
+            expect(written.filter((_, cell) => cell !== 2)).toEqual([7, 0, 0, 0, 0, 0, 12]);
             await world.run(sample);
             const levelsRead: number[] = [];
             const collect = System.create({ components: { with: [cell, level] } }, row => { levelsRead.push(row[level]); });
             await world.run(collect);
-            expect(levelsRead).toEqual([7.5, new Int16Array([40000])[0] + 0.5, new Int16Array([40000])[0] + 0.5, 12.5, NaN, NaN, NaN]);
+            expect(levelsRead).toEqual([7.5, (written[2] ?? NaN) + 0.5, (written[2] ?? NaN) + 0.5, 12.5, NaN, NaN, NaN]);
             await world.dispose();
         });
     }

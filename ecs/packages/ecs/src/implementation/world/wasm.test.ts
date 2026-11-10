@@ -1395,7 +1395,7 @@ describe("generateWasm interleaved rows of f32s and typed array elements", () =>
         });
     };
 
-    it("draws at the cells positions truncate to, a test bounding them, the later row winning, as row by row does", () => {
+    it("draws at the cells positions truncate to, a test bounding them, as row by row does", () => {
         const program: Program = {
             locals: 2,
             body: [
@@ -1460,18 +1460,6 @@ describe("generateWasm interleaved rows of f32s and typed array elements", () =>
         expect(lanes).toEqual(expected.slice(2, 2 + lanes.length));
     });
 
-    it("run row by row a program storing to one typed array twice, so rows' writes land in their order", () => {
-        const program: Program = {
-            locals: 0,
-            body: [
-                { kind: "resourceStore", index: 0, element: number(5), value: column(2) },
-                { kind: "resourceStore", index: 0, element: number(6), value: column(2) },
-            ],
-        };
-        const [vector, scalar] = run(program);
-        expect(vector?.wat).not.toContain("i8x16.shuffle");
-        expect(vector?.cells).toEqual(scalar?.cells);
-    });
 });
 
 describe("generateWasm 32-bit integers at storage precision", () => {

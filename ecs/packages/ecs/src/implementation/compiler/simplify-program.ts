@@ -259,6 +259,69 @@ const dropUnchangedStores = (statements: readonly Statement[], held: Map<number,
  * Assignments to locals nothing reads any more are dropped, and stores of a value a column already holds, and what
  * both arms of an `if` end with runs once after it. Accumulators keep every assignment.
  */
+/** What a value reads, its locals and columns, or null where it reads anything else, which may change as statements run. */
+const readsOf = (expression: Expression, locals: Set<number>, columns: Set<number>): boolean => {
+    switch (expression.kind) {
+        case "number": case "boolean": case "resource": case "args": case "shared": return true;
+        case "local": locals.add(expression.local); return true;
+        case "column": columns.add(expression.column); return true;
+        case "unary": return readsOf(expression.operand, locals, columns);
+        case "binary": case "logical": return readsOf(expression.left, locals, columns) && readsOf(expression.right, locals, columns);
+        case "conditional": return readsOf(expression.test, locals, columns) && readsOf(expression.consequent, locals, columns) && readsOf(expression.alternate, locals, columns);
+        case "math": return pure.has(expression.name) && expression.arguments.every(argument => readsOf(argument, locals, columns));
+        default: return false;
+    }
+};
+
+/** How many times statements read a local, in every expression they hold. */
+const readsOfLocal = (statements: readonly Statement[], local: number): number => {
+    const reads = new Map<number, number>();
+    countUses(statements, new Map(), reads);
+    return reads.get(local) ?? 0;
+};
+
+/** Whether statements may change a value reading `locals` and `columns`: they set one of the locals, or store anything else. */
+const changes = (statements: readonly Statement[], locals: ReadonlySet<number>, columns: ReadonlySet<number>): boolean => statements.some(statement => {
+    switch (statement.kind) {
+        case "set": return locals.has(statement.local);
+        case "store": return columns.has(statement.column);
+        case "stamp": case "branchIf": case "next": return false;
+        case "if": return changes(statement.consequent, locals, columns) || changes(statement.alternate, locals, columns);
+        case "block": case "loop": return changes(statement.body, locals, columns);
+        default: return true;
+    }
+});
+
+/**
+ * Statements with each assignment of a local assigned once, whose value reads only row columns and locals, moved into the
+ * arm of a later `if` that holds every read of it, where nothing between changes what it reads: rows taking the other
+ * arm don't compute it, nor read its columns.
+ */
+const sinkAssignments = (statements: readonly Statement[], single: ReadonlySet<number>): Statement[] => {
+    const result = [...statements];
+    for (let index = result.length - 1; index >= 0; index--) {
+        const statement = result[index];
+        if (statement === undefined || statement.kind !== "set" || !single.has(statement.local)) continue;
+        const locals = new Set<number>();
+        const columns = new Set<number>();
+        if (!readsOf(statement.value, locals, columns)) continue;
+        const { local } = statement;
+        const later = result.slice(index + 1);
+        const reading = later.findIndex(next => readsOfLocal([next], local) > 0);
+        const target = later[reading];
+        if (target === undefined || target.kind !== "if" || readsOfLocal(later.slice(reading + 1), local) > 0) continue;
+        if (changes(later.slice(0, reading), locals, columns)) continue;
+        const total = readsOfLocal([target], local);
+        const arm = readsOfLocal(target.consequent, local) === total ? "consequent" : readsOfLocal(target.alternate, local) === total ? "alternate" : null;
+        if (arm === null) continue;
+        result.splice(index + 1 + reading, 1, { ...target, [arm]: [statement, ...target[arm]] });
+        result.splice(index, 1);
+    }
+    return result.map(statement => statement.kind === "if"
+        ? { ...statement, consequent: sinkAssignments(statement.consequent, single), alternate: sinkAssignments(statement.alternate, single) }
+        : statement);
+};
+
 export const simplifyProgram = (program: Program): Program => {
     const accumulators = new Set(program.reductions ?? []);
     let body = program.body;
@@ -277,5 +340,7 @@ export const simplifyProgram = (program: Program): Program => {
     const sets = new Map<number, number>();
     const reads = new Map<number, number>();
     countUses(stored, sets, reads);
-    return { ...program, body: dropAssignments(stored, new Set([...sets.keys()].filter(local => !accumulators.has(local) && (reads.get(local) ?? 0) === 0))) };
+    const kept = dropAssignments(stored, new Set([...sets.keys()].filter(local => !accumulators.has(local) && (reads.get(local) ?? 0) === 0)));
+    const single = new Set([...sets].filter(([local, count]) => count === 1 && !accumulators.has(local)).map(([local]) => local));
+    return { ...program, body: sinkAssignments(kept, single) };
 };

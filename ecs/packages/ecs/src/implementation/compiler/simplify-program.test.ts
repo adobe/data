@@ -153,3 +153,26 @@ describe("simplifyProgram", () => {
         ]);
     });
 });
+
+describe("simplifyProgram sinking", () => {
+    const store = (target: number, value: Expression): Program.Statement => ({ kind: "store", column: target, value });
+    const set = (target: number, value: Expression): Program.Statement => ({ kind: "set", local: target, value });
+    const branch = (test: Expression, consequent: Program.Statement[], alternate: Program.Statement[] = []): Program.Statement => ({ kind: "if", test, consequent, alternate });
+    const test = binary(">", column(0), number(0));
+    /** Reads columns 1 and 2 into locals 0 and 1, which only the arm of an `if` on column 0 reads. */
+    const reads = [set(0, column(1)), set(1, binary("+", local(0), column(2)))];
+
+    it("moves reads only an arm uses into it, in order, and on into a nested arm", () => {
+        expect(simplifyProgram({ locals: 2, body: [...reads, branch(test, [store(3, local(1))])] }).body).toEqual([branch(test, [...reads, store(3, local(1))])]);
+        expect(simplifyProgram({ locals: 2, body: [...reads, branch(test, [], [branch(column(4), [store(3, local(1))])])] }).body)
+            .toEqual([branch(test, [], [branch(column(4), [...reads, store(3, local(1))])])]);
+    });
+
+    it("keeps a read both arms, the test or what follows uses, or one something before the arm changes", () => {
+        const kept = (body: Program.Statement[]): void => expect(simplifyProgram({ locals: 2, body }).body.slice(0, 2)).toEqual(reads);
+        kept([...reads, branch(test, [store(3, local(1))], [store(4, local(1))])]);
+        kept([...reads, branch(binary(">", local(1), number(0)), [store(3, local(1))])]);
+        kept([...reads, branch(test, [store(3, local(1))]), store(4, local(1))]);
+        kept([...reads, store(2, number(5)), branch(test, [store(3, local(1))])]);
+    });
+});

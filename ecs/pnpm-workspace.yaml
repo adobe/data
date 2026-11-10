@@ -10,5 +10,6 @@ packages:
   - 'packages/ecs-sample-browser'
   - 'packages/ecs-guide'
   - 'packages/ecs-guide-checks'
+  - 'packages/ecs-benchmark'
 allowBuilds:
   esbuild: false

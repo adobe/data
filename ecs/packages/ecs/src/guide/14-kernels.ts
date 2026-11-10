@@ -4,6 +4,7 @@ import { type F32, System, Vec3, World } from "../index.js";
 const position = Symbol();
 const velocity = Symbol();
 const delta = Symbol();
+const trail = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
@@ -12,6 +13,7 @@ declare module "@adobe/ecs" {
     }
     interface Resources {
         [delta]: { type: F32; default: 0.5 };
+        [trail]: { type: Uint8Array; length: 8 };
     }
 }
 
@@ -27,6 +29,13 @@ const drift = System.create({ kernel: true, components: { with: [velocity, posit
 const slow = System.create({ kernel: false, components: { with: [velocity] } }, row => {
     row[velocity] = Vec3.scale(row[velocity], 0.5);
 });
+
+// Writes the typed array in place, at the cell each row's x reaches.
+const mark = System.create({ kernel: true, components: { with: [position] } }, (row, { resources }) => {
+    resources[trail][Math.trunc(row[position][0])] = 1;
+});
+
+const cells = System.create({ readonly: true }, ({ resources }) => resources[trail].join(""));
 
 const moved: string[] = [];
 const read = System.create({ readonly: true, components: { with: [position, velocity] } }, row => {
@@ -45,4 +54,6 @@ export const main = async (): Promise<void> => {
     await world.run(slow);
     await world.run(read);
     console.log(moved.sort().join("; "));
+    await world.run(mark);
+    console.log("trail", await world.run(cells));
 };

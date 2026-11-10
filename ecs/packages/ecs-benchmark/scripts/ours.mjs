@@ -3,10 +3,12 @@
 // entities in a process of its own, writes results/ours/<lane>.json in Google Benchmark's shape, and compares each
 // result with the last one this machine recorded.
 //
-//   node scripts/ours.mjs [--lane js|wasm|threads] [--filter <regular expression>] [--sizes <a,b,…>] [--quick]
+//   node scripts/ours.mjs [--lane js|wasm|threads] [--filter <regular expression>] [--sizes <a,b,…>] [--full] [--through]
 //                         [--skip-build] [--record]
 //
-// --quick measures 16K, 256K and 1M entities only. --record appends the results to results/history/<machine>.jsonl,
+// By default it measures 16K, 256K and 1M entities; --full measures from 1 entity to 2M, as --record does. --through
+// adds the frames through each of the 7-system benchmarks' systems, which tell what each costs. The GPU lane's frames
+// run in a browser, by scripts/gpu.mjs. --record appends the results to results/history/<machine>.jsonl,
 // which later runs compare with. Results are kept per machine, since times only compare on the same hardware.
 //
 // Lanes: js, kernels in JS on one thread, as a page without cross-origin isolation runs them; wasm, kernels in WASM on
@@ -37,7 +39,8 @@ const options = (() => {
     return {
         lanes: value("--lane") === undefined ? ["js", "wasm", "threads"] : [value("--lane")],
         filter: value("--filter") === undefined ? null : new RegExp(value("--filter")),
-        sizes: value("--sizes")?.split(",").map(Number) ?? (args.includes("--quick") ? quickSizes : defaultSizes),
+        sizes: value("--sizes")?.split(",").map(Number) ?? (args.includes("--full") || args.includes("--record") ? defaultSizes : quickSizes),
+        through: args.includes("--through"),
         skipBuild: args.includes("--skip-build"),
         record: args.includes("--record"),
     };
@@ -87,7 +90,8 @@ const measure = (lane, name, count) => new Promise((done, failed) => {
 
 const runAll = async () => {
     if (!options.skipBuild) execFileSync("pnpm", ["exec", "vite", "build", "--logLevel", "warn"], { cwd: root, stdio: "inherit" });
-    const names = execFileSync("node", [main, "--names"], { cwd: root, encoding: "utf8" }).split("\n").filter(name => name !== "" && (options.filter === null || options.filter.test(name)));
+    const names = execFileSync("node", [main, "--names"], { cwd: root, encoding: "utf8" }).split("\n").filter(name => name !== "" && !name.startsWith("GPU_")
+        && (options.through || !name.includes("_Through_")) && (options.filter === null || options.filter.test(name)));
     const version = JSON.parse(readFileSync(join(root, "node_modules", "@adobe", "ecs", "package.json"), "utf8")).version;
     mkdirSync(results, { recursive: true });
 

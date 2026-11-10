@@ -73,7 +73,7 @@ const expandedOf = (page: Page): Promise<readonly { readonly name: string; reado
         code: item.querySelector(".cm-content")?.textContent ?? "",
     })));
 
-const chipLabels = ["JS · WASM · WGSL", "JS · WASM · WGSL", "as written · WGSL", "as written", "as written"];
+const chipLabels = ["JS · WASM · WGSL", "JS · WASM · WGSL", "as written · WGSL", "JS · WASM · WGSL", "as written", "as written", "as written"];
 
 it("marks each of chapter 14's systems above its call with what it compiles to, its tooltip saying why a backend gives none", async () => {
     const { page, errors } = await open(browser, `${inject("guide")}#${slugOf("14-")}`, "dark");
@@ -81,7 +81,8 @@ it("marks each of chapter 14's systems above its call with what it compiles to, 
         await statusOf(page);
         const lenses = await lensesReading(page, chipLabels);
         expect(lenses.map(lens => lens.line.trim().slice(0, 30))).toEqual([
-            "const move = System.create({ c", "const drift = System.create({ ", "const slow = System.create({ k", "const read = System.create({ r", "const spawn = System.create(({",
+            "const move = System.create({ c", "const drift = System.create({ ", "const slow = System.create({ k", "const mark = System.create({ k", "const cells = System.create({ ",
+            "const read = System.create({ r", "const spawn = System.create(({",
         ]);
         expect(lenses[0]?.label).toBe("move: JS compiled, WASM compiled, WGSL if declared kernel: \"gpu\". Show what it compiles to.");
         await (await chipOf(page, "spawn")).hover();

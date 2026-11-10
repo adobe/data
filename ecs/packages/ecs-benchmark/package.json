@@ -11,11 +11,11 @@
     "lint": "ecs-architecture check && ecs-architecture diagrams --check",
     "test": "vitest --run",
     "bench": "node scripts/ours.mjs",
-    "bench:quick": "node scripts/ours.mjs --quick",
+    "bench:full": "node scripts/ours.mjs --full",
     "bench:record": "node scripts/ours.mjs --record",
     "bench:cpp": "node scripts/cpp.mjs",
     "bench:gpu": "node scripts/gpu.mjs",
-    "bench:all": "node scripts/cpp.mjs && node scripts/ours.mjs && node scripts/compare.mjs",
+    "bench:all": "node scripts/cpp.mjs && node scripts/ours.mjs --full --through && node scripts/compare.mjs",
     "compare": "node scripts/compare.mjs"
   },
   "dependencies": {

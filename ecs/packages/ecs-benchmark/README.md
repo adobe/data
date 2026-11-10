@@ -9,20 +9,23 @@ plain OOP baseline, on one thread and on many. This machine's results are in [`r
 | Script | What it does |
 |---|---|
 | `pnpm test` | Checks, on every lane, that the ported systems compute what the suite's C++ does, frame by frame, against a plain JS reference of it; and that create, destroy, remove-and-add and the gets do what they're asked. Fast, and needs no C++ toolchain. |
-| `pnpm bench` | `scripts/ours.mjs`: bundles the benchmarks for node and runs each benchmark at each count of entities in a process of its own, on three lanes, into `results/ours/<lane>.json`, and compares each result with the last this machine recorded, listing what's more than 10% slower as regressions. |
-| `pnpm bench:quick` | `bench` at 16K, 256K and 1M entities only. |
-| `pnpm bench:record` | `bench`, appending its results to `results/history/<machine>.jsonl`, which later runs compare with. |
+| `pnpm bench` | `scripts/ours.mjs`: bundles the benchmarks for node and runs each benchmark at 16K, 256K and 1M entities, each in a process of its own, on three lanes, into `results/ours/<lane>.json`, and compares each result with the last this machine recorded, listing what's more than 10% slower as regressions. |
+| `pnpm bench:full` | `bench` at every count of entities from 1 to 2M. |
+| `pnpm bench:record` | `bench:full`, appending its results to `results/history/<machine>.jsonl`, which later runs compare with. |
 | `pnpm bench:cpp` | `scripts/cpp.mjs`: fetches the suite at its pinned commit into `cpp/` (gitignored), applies `patches/`, builds it Release with CMake and Ninja, and runs its Google Benchmark binaries, single-threaded and with the patch's threads, into `results/cpp/<lane>/<binary>.json`. Needs CMake, Ninja, a C++20 compiler and git. `--suite <checkout>` copies an existing checkout of the pinned commit instead of cloning. |
 | `pnpm compare` | `scripts/compare.mjs`: merges the results into `results/comparison.md`. |
+| `pnpm bench:gpu` | `scripts/gpu.mjs`: the GPU lane, below, in headless Chromium on this machine's GPU. `--compare <entities>` runs 20 frames of it on the GPU and on the CPU and lists which words of each component's rows differ. |
 | `pnpm bench:all` | All three, in order. Takes about an hour and a quarter here; run it on an idle machine, under `caffeinate -i` on macOS. |
 
 `bench` and `bench:cpp` take `--sizes 1024,1048576` and `--lane`; `bench` takes `--filter <regular expression>` over
-benchmark names, `--quick` and `--record`. CI runs only `test`.
+benchmark names, `--full`, `--through` (below) and `--record`. CI runs only `test`. The full sweep takes about an
+hour, so it's for refreshing the committed results, not for every change: measure what a change touches with
+`--filter` and `--sizes`.
 
 Times compare only on the same hardware, so the history is kept per machine. Record after a change to the ECS that
 should move these numbers, and run `pnpm bench:quick` before one to see what it moved.
 
-Besides the suite's benchmarks, `BM_ComplexSystemsUpdate_Through_<System>` and
+Besides the suite's benchmarks, with `--through`, `BM_ComplexSystemsUpdate_Through_<System>` and
 `BM_ComplexSystemsUpdateMixedEntities_Through_<System>` time a frame of the 7-system benchmark's systems up to and
 including that one, ours and, with `patches/systems-prefix.patch`, Flecs's and mustache's. One less the one before is
 what that system costs as a frame runs it, with the data in the state the systems before it leave, which timing a
@@ -65,9 +68,61 @@ The lanes:
 | `js` | compiled to JS: a page without cross-origin isolation, made in node by `crossOriginIsolated` being `false` | the world's |
 | `wasm` | compiled to WASM | the world's |
 | `threads` | compiled to WASM | the world's and a pool worker for every other hardware thread |
+| `gpu` | compiled to WGSL, as `kernel: "gpu"` | the GPU's, in headless Chromium |
 
-Every row system is a kernel (`kernel: true`) but `RenderSystem`, which writes a module's frame buffer and runs as
-written on the world's thread in every lane, as the C++ libraries keep it on one thread under the patch.
+Every row system is a kernel (`kernel: true`). `RenderSystem` writes the frame buffer, a `Uint8Array` resource, in
+place; on the `threads` lane it runs on one thread, as a kernel writing a typed array under 256 KiB does, since cores
+writing one at once take its cache lines from each other, and as the C++ libraries keep it on one thread under the
+patch.
+
+The `gpu` lane runs its own frames, `GPU_SystemsUpdate`, `GPU_ComplexSystemsUpdate` and their `MixedEntities`
+variants: the same systems as GPU kernels, over data whose `dingy` is an f32, since GPU kernels compute in f32 where
+the suite's is a double. It's a lane of its own, not the suite's benchmarks, and compares only with the CPU's frames
+loosely. `scripts/gpu.mjs` serves the page with Vite and the ECS's compiler plugin, cross-origin isolated, and drives
+headless Chromium with `--enable-unsafe-webgpu`, which gets the machine's GPU: on macOS, Metal. A sample is ten
+frames given to the GPU one after another and one wait for the GPU to have done them, as an app's frames are given;
+components stay on the GPU between frames. Its `wasm` runs of the same frames run GPU kernels as kernels on the CPU,
+computing as their bodies are written.
+
+## Where it stands
+
+At 1M entities on an Apple M1 Max, in ns per entity, the fastest of the suite's libraries against ours (all of
+[`results/comparison.md`](results/comparison.md) has every size and library):
+
+| Benchmark | Fastest C++, 1 thread | Ours, WASM, 1 thread | Flecs, 10 threads | Ours, 10 threads |
+|---|---|---|---|---|
+| 7 systems | 5.75 (mustache) | 6.5 | 1.98 | 2.47 |
+| 7 systems, mixed | 4.64 (mustache) | 4.95 | 1.53 | 1.77 |
+| 2 systems | 2.03 (Flecs) | 2.12 | 0.631 | 0.719 |
+| 2 systems, mixed | 2.0 (mustache) | 2.1 | 0.656 | 0.703 |
+| Create entities | 20.3 (Ginseng) | 26.5 | | 26.6 |
+| Destroy entities | 9.62 (pico_ecs) | 25.8 | | 20.7 |
+| Get one, two, three components | 0.95, 1.59, 1.11 (pico_ecs) | 2.65, 3.28, 4.18 | | 0.497, 0.625, 0.759 |
+| Remove and add a component | 5.6 (pico_ecs) | 41 | | 33.8 |
+
+Where the frames are behind, measured system by system with the `--through` frames and against the same loops
+compiled natively with clang and hand-written in WASM:
+
+- **Scalar code runs about 20% behind native.** `MoreComplexSystem`'s kernel is as fast as the same loop written by
+  hand in WASM, light frames and heavy alike, and clang's native loop is about 20% faster than both.
+- **`HealthSystem` is branch prediction on this data.** clang doesn't vectorize it: its native loop branches, which a
+  predictor learns on the suite's entities, whose rows repeat in short periods (0.64 ns a row on rows alike, 1.07 on
+  random ones). Ours runs four rows at a time as masks, 0.93 either way; skipping arms no row of a group takes loses
+  here, since groups of four agree less often than neighboring rows repeat.
+- **`DataSystem`'s double and boolean fields are a load and a store a row,** natively as in ours; they cost 0.3 ns of
+  its 1.8.
+- **On threads, `RenderSystem` runs on one thread,** as the C++ libraries keep it: cores writing the 75 KiB frame
+  buffer at once take its cache lines from each other, so random byte writes into it run twice as fast on one core as
+  on ten. It then reads what the systems before it wrote on other cores, which costs its thread about 0.1 ns a row
+  over the one-thread lane. Flecs's split of its frame puts its render at about nothing, which frames differing by
+  noise give; mustache's costs 1.3.
+
+The create, destroy, get and remove-and-add benchmarks haven't been looked into this way. `pico_ecs` and Ginseng keep
+components in sparse arrays, where an archetype store like ours, or Flecs's, moves a row between archetypes for each
+structural change; Flecs takes 119 ns to remove and add a component.
+
+The `gpu` lane at 1M entities, f32 `dingy`: 0.52 ns for 2 systems and 0.99 for 7, 0.55 and 0.93 mixed; at 16K, the
+GPU's dispatches cost 5 to 10 ns an entity, so small worlds run faster on the CPU.
 
 ## What compares, and what doesn't
 

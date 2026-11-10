@@ -60,6 +60,15 @@ const mark = System.create({ kernel: true, components: { with: [level, glow] }, 
     row[glow] = 1;
 });
 
+/** Counts its rows' hp changes, reading no hp. */
+const countChanges = System.create({ components: { with: [score], changed: [hp] }, after: [regenerate] }, row => {
+    row[score] += 1;
+});
+/** Reads what `regenerate` writes, after `countChanges`. */
+const reveal = System.create({ kernel: true, components: { with: [hp, shown] }, after: [countChanges] }, row => {
+    row[shown] = row[hp] + 1;
+});
+
 /** Wraps at 32 bits, as its kernel's I32 arithmetic does. */
 const advance = System.create({ kernel: true, components: { with: [counter, next] } }, row => {
     row[next] = row[counter] + 1;
@@ -151,6 +160,19 @@ describe("fused kernels", () => {
         }));
         const wrapped = Array.from({ length: 64 }, (_, i) => i % 2 === 0 ? -2147483648 : 2147483647);
         expect(results).toEqual([{ next: wrapped, copied: wrapped }, { next: wrapped, copied: wrapped }]);
+    });
+
+    it("keep a kernel writing a component before a system between filtered on its changes", async () => {
+        const ordered = System.create([regenerate, countChanges, reveal]);
+        const results = await Promise.all([true, false].map(async fuse => {
+            const world = await filled(fuse);
+            await world.run(ordered);
+            await world.run(countChanges);
+            const values = await stateOf(world);
+            await world.dispose();
+            return values;
+        }));
+        expect(results[0]).toEqual(results[1]);
     });
 
     it("hold the groups of the schedules that live, as systems beside them come and go", async () => {

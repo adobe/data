@@ -51,13 +51,15 @@ Each benchmark is timed as an app pays for it:
 - **Gets** (`BM_UnpackOneComponent`, `Two`, `Three`) are one run of a system over probes, one per entity of the
   suite's vector of entities and in its order, each getting the components of its entity through a lookup and adding
   every value it read to a reduction, as the suite's `DoNotOptimize` keeps each read.
-- **Times** are the median of 30 samples after a warm-up of at least a second and 50 runs, enough for V8 to have
-  optimized the bodies, tiered WASM up from its baseline compiler and started the pool's workers. The world is then
-  emptied, set up again and run 200 times untimed, which brings the pool's cores back up to speed, before the samples,
-  so every measurement times the same states of the entities' data, which moves on with each run and decides how much
+- **Times** of frames, gets and remove-and-add are the median of 30 samples on one world, after a warm-up of at least
+  a second and 50 runs, enough for V8 to have optimized the bodies, tiered WASM up from its baseline compiler and
+  started the pool's workers. The world is then emptied, set up again and run 200 times untimed, which brings the
+  pool's cores back up to speed, before the samples, so every measurement times the same states of the entities' data, which moves on with each run and decides how much
   work a run does. A frame's sample is the mean of ten frames: every entity's `thingy` steps together, so
   `MoreComplexSystem` draws new directions for all of them on one frame in ten, which a median of single frames would
   skip. The C++ times are the median of Google Benchmark's three repetitions, each its mean over its own iterations.
+- **Times of create and destroy** are the median of their runs on 10 to 30 new worlds, a run on each: as many as
+  take a second together, at least 10, after three worlds whose runs warm up and aren't timed.
 - **Destroy warms up** with a create and destroy of as many entities first, so the pool has started and loaded the
   kernel, as in an app that destroyed before.
 

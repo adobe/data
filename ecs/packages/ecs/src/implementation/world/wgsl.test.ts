@@ -68,6 +68,51 @@ describe("generateWgsl typed array resources", () => {
     });
 });
 
+describe("generateWgsl 32-bit integer typed array resources", () => {
+    const first: Program.Expression = { kind: "number", value: 0 };
+    const second: Program.Expression = { kind: "number", value: 1 };
+    const read: Program.Expression = { kind: "resourceElement", index: 0, element: first };
+    const generate = (program: Program, name: "Uint32Array" | "Int32Array"): string => {
+        const kernel = generateWgsl(program, columns, () => "number", [], () => "u32", () => ({ name, length: 8 }));
+        if (typeof kernel === "string") throw new Error(kernel);
+        return kernel.code;
+    };
+
+    test("copy an element to another, directly or through a local, with every bit", () => {
+        const direct: Program = { locals: 0, body: [{ kind: "resourceStore", index: 0, element: second, value: read }] };
+        const throughLocal: Program = {
+            locals: 1,
+            body: [
+                { kind: "set", local: 0, value: read },
+                { kind: "resourceStore", index: 0, element: second, value: { kind: "local", local: 0 } },
+            ],
+        };
+        for (const name of ["Uint32Array", "Int32Array"] as const) {
+            const code = generate(direct, name);
+            expect(code).toMatch(/memory\[parameters\[2\] \+ u32\(1\.0f\)\] = (bitcast<u32>\()?select\(0[ui], /);
+            expect(code).not.toMatch(/f32\(memory|= toUint32\(/);
+            const local = generate(throughLocal, name);
+            expect(local).toContain(`var l_0: ${name === "Uint32Array" ? "u32" : "i32"}`);
+            expect(local).not.toMatch(/f32\(memory|= toUint32\(/);
+        }
+    });
+
+    test("keep an element exact in integer operations, and NaN as a number where its index isn't one", () => {
+        const masked: Program = {
+            locals: 0,
+            body: [{ kind: "resourceStore", index: 0, element: second, value: { kind: "binary", operator: "^", left: read, right: { kind: "number", value: 1 } } }],
+        };
+        expect(generate(masked, "Uint32Array")).toContain("(bitcast<i32>(select(0u, memory[parameters[2] + min(u32(0.0f), parameters[3])], ");
+        const compared: Program = {
+            locals: 0,
+            body: [{ kind: "store", column: 0, value: { kind: "binary", operator: "+", left: read, right: { kind: "binary", operator: "<", left: read, right: { kind: "number", value: 5 } } } }],
+        };
+        const code = generate(compared, "Uint32Array");
+        expect(code).toContain("bitcast<u32>((select(bitcast<f32>(nanBits), f32(select(0u, ");
+        expect(code).toMatch(/select\(0\.0, 1\.0, \(\(0\.0f >= 0\.0 .*\) && \(select\(0u, .*\) < 5u\)\)\)/);
+    });
+});
+
 describe("generateWgsl remainders", () => {
     const remainderOf = (view: "u32" | "i32" | "f32", divisor: number): string => {
         const program: Program = { locals: 0, body: [{ kind: "store", column: 1, value: { kind: "binary", operator: "%", left: { kind: "column", column: 0 }, right: { kind: "number", value: divisor } } }] };

@@ -80,10 +80,11 @@ const isUnsupported = (error: unknown): error is Unsupported =>
 
 /**
  * An emitted value and its WGSL type. Integer column reads and bitwise results stay `i32` or `u32`, so integer chains
- * keep every bit; arithmetic converts to f32. `literal` keeps a number literal's exact value for integer use.
+ * keep every bit; arithmetic converts to f32. `literal` keeps a number literal's exact value for integer use, and
+ * `within` tests an integer array element's index: where it isn't one, the element is 0 as an integer and NaN as a number.
  */
 type Kind = "f32" | "bool" | "i32" | "u32";
-type Value = { readonly code: string; readonly type: Kind; readonly literal?: number };
+type Value = { readonly code: string; readonly type: Kind; readonly literal?: number; readonly within?: string };
 
 const f32 = (code: string): Value => ({ code, type: "f32" });
 const bool = (code: string): Value => ({ code, type: "bool" });
@@ -92,6 +93,7 @@ const u32 = (code: string): Value => ({ code, type: "u32" });
 
 /** JS `Number(value)`. */
 const asNumber = (value: Value): string => {
+    if (value.within !== undefined) return `select(bitcast<f32>(nanBits), ${asNumber({ code: value.code, type: value.type })}, ${value.within})`;
     switch (value.type) {
         case "f32": return value.code;
         case "bool": return `select(0.0, 1.0, ${value.code})`;
@@ -179,6 +181,9 @@ const elementValue: { readonly [name: string]: (word: string) => string } = {
     Int32Array: word => `f32(bitcast<i32>(${word}))`,
     Float32Array: word => `bitcast<f32>(${word})`,
 };
+
+/** The integer type of a typed array's elements that f32 can't hold exactly. */
+const integerElement: { readonly [name: string]: "i32" | "u32" } = { Uint32Array: "u32", Int32Array: "i32" };
 
 /**
  * Generates a compute shader for a kernel program, or the reason it can't run on the GPU: lookups, loops, f64 or
@@ -268,19 +273,29 @@ export const generateWgsl = (
     /** An element's index as a u32, and whether it's one of an array's indexes: an integer from 0 below its length. */
     const indexOf = (element: Expression, length: string): { readonly index: string; readonly within: string } => {
         const value = emit(element);
+        const valid = value.within === undefined ? "" : `${value.within} && `;
         switch (value.type) {
-            case "u32": return { index: value.code, within: `(${value.code} < ${length})` };
-            case "i32": return { index: `bitcast<u32>(${value.code})`, within: `(bitcast<u32>(${value.code}) < ${length})` };
+            case "u32": return { index: value.code, within: `(${valid}${value.code} < ${length})` };
+            case "i32": return { index: `bitcast<u32>(${value.code})`, within: `(${valid}bitcast<u32>(${value.code}) < ${length})` };
             case "bool": return { index: asUint(value), within: `(${asUint(value)} < ${length})` };
             case "f32": return { index: `u32(${value.code})`, within: `(${value.code} >= 0.0 && ${value.code} < f32(${length}) && floor(${value.code}) == ${value.code})` };
         }
     };
-    /** Element `element` of a typed array resource, NaN where it isn't one of its indexes, as `undefined` reads in arithmetic. */
+    /**
+     * Element `element` of a typed array resource, NaN where it isn't one of its indexes, as `undefined` reads in
+     * arithmetic. A 32-bit integer element keeps its integer type, 0 where it isn't one, as `undefined` is to bitwise
+     * operations.
+     */
     const readArray = (resource: number, element: Expression): Value => {
         const { name, address, length } = arrayOf(resource);
         const { index, within } = indexOf(element, length);
         // The element past the end, which every array keeps, stands in for an index that isn't one.
-        return f32(`select(bitcast<f32>(nanBits), ${elementValue[name]?.(`memory[${address} + min(${index}, ${length})]`) ?? ""}, ${within})`);
+        const word = `memory[${address} + min(${index}, ${length})]`;
+        switch (integerElement[name]) {
+            case "u32": return { code: `select(0u, ${word}, ${within})`, type: "u32", within };
+            case "i32": return { code: `select(0i, bitcast<i32>(${word}), ${within})`, type: "i32", within };
+            default: return f32(`select(bitcast<f32>(nanBits), ${elementValue[name]?.(word) ?? ""}, ${within})`);
+        }
     };
     /** Writes element `element` of a typed array resource, converted as the array does; nothing where it isn't one of its indexes. */
     const storeArray = (resource: number, element: Expression, value: Value): string => {
@@ -336,6 +351,10 @@ export const generateWgsl = (
                 const region = regions.get(expression.intrinsic);
                 return region === undefined ? "f32" : elementKind(region.intrinsic.result);
             }
+            case "resourceElement": {
+                const array = arrays(expression.index);
+                return array === null ? "f32" : integerElement[array.name] ?? "f32";
+            }
             case "boolean": return "bool";
             default: return "f32";
         }
@@ -386,7 +405,11 @@ export const generateWgsl = (
             || (value.literal !== undefined && Number.isInteger(value.literal) && (integer === "u32" ? value.literal >= 0 && value.literal <= 0xFFFFFFFF : Math.abs(value.literal) <= 0x7FFFFFFF));
         if (integer !== null && fits(left) && fits(right)) {
             const as = (value: Value): string => integer === "u32" ? asUint(value) : asInt(value);
-            return bool(`(${as(left)} ${operator} ${as(right)})`);
+            const exact = `(${as(left)} ${operator} ${as(right)})`;
+            // As NaN compares: unequal to everything.
+            const within = [left.within, right.within].filter(test => test !== undefined).join(" && ");
+            if (within === "") return bool(exact);
+            return bool(operator === "!=" ? `(!(${within}) || ${exact})` : `(${within} && ${exact})`);
         }
         return bool(`(${asNumber(left)} ${operator} ${asNumber(right)})`);
     };

@@ -106,6 +106,7 @@ const pushDespawnWhere = (state: State, buffer: CommandBuffer, query: Parameters
         const shared = new Set<number>();
         /** Shared components given values of theirs, which archetypes are kept to by the numbers they're interned as. */
         const exact: { [key: symbol]: unknown } = {};
+        const exactIds = new Set<number>();
         for (const key of keys) {
             if (kindOf(key) !== "component") throw new Error(`commands.despawnWhere: where names "${labelOf(key)}", which isn't a component.`);
             const given: unknown = Reflect.get(where ?? {}, key);
@@ -117,12 +118,14 @@ const pushDespawnWhere = (state: State, buffer: CommandBuffer, query: Parameters
             matched.set(id, given);
             if (declaration?.shared === true) {
                 shared.add(id);
-                if (declaration.type === undefined || matchesSchema(declaration.type, given)) exact[key] = given;
+                if (declaration.type === undefined || matchesSchema(declaration.type, given)) {
+                    exact[key] = given;
+                    exactIds.add(id);
+                }
             }
         }
-        const exactKeys = Object.getOwnPropertySymbols(exact);
-        const holds = exactKeys.length === 0 || exactKeys.length !== shared.size ? null : holdsValuesOf(state, exact, false);
-        match = despawnMatchOf(matched, shared, typeof holds === "function" ? holds : null);
+        const holds = exactIds.size === 0 ? null : holdsValuesOf(state, exact, false);
+        match = typeof holds === "function" ? despawnMatchOf(matched, shared, exactIds, holds) : despawnMatchOf(matched, shared, new Set(), null);
     }
     pushCommand(buffer, despawnWhereCommand, including.length);
     for (let k = 0; k < including.length; k++) pushComponent(buffer, queryIdOf(state, including[k]), undefined);

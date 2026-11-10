@@ -31,6 +31,8 @@ const pair = Symbol("despawnWhereTest/pair");
 const name = Symbol("despawnWhereTest/name");
 const tags = Symbol("despawnWhereTest/tags");
 const scores = Symbol("despawnWhereTest/scores");
+const region = Symbol("despawnWhereTest/region");
+const path = Symbol("despawnWhereTest/path");
 // Never declared, so never registered.
 const unregistered = Symbol("despawnWhereTest/unregistered");
 
@@ -53,6 +55,8 @@ declare module "@adobe/ecs" {
         [name]: { type: string };
         [tags]: { type: ReadonlySet<number> };
         [scores]: { type: { readonly best: ReadonlyMap<string, number> } };
+        [region]: { type: { readonly x: number } | { readonly x: number; readonly y: number }; shared: true };
+        [path]: { type: readonly number[] };
     }
     export interface Resources {
         [level]: { type: number };
@@ -320,6 +324,45 @@ describe("despawnWhere", () => {
         expect(await aliveEach(world, spawned)).toEqual([false, true, true, false, true, false]);
         await run(commands => commands.despawnWhere({ with: [mark], where: { [stats]: { hp: 0, alive: true }, [pair]: [2, 8] } }));
         expect(await aliveEach(world, spawned)).toEqual([false, true, false, false, true, false]);
+        await world.dispose();
+    });
+
+    it("matches a shared value given whole by its value, whatever the other shared components' matches", async () => {
+        const { world, run } = withCommands();
+        const spawned: Entity[] = [];
+        await run(commands => {
+            spawned.push(commands.spawn([mark, region, chunk], { [region]: { x: 1, y: 2 }, [chunk]: 1 })());
+            spawned.push(commands.spawn([mark, region, chunk], { [region]: { x: 1 }, [chunk]: 1 })());
+        });
+        await run(commands => commands.despawnWhere({ with: [mark], where: { [region]: { x: 1 }, [chunk]: { ">": 0 } } }));
+        expect(await aliveEach(world, spawned)).toEqual([true, false]);
+        await world.dispose();
+    });
+
+    it("matches an array given whole only by an array of its length, and one given by indexes by those it names", async () => {
+        const { world, run } = withCommands();
+        const spawned: Entity[] = [];
+        await run(commands => {
+            for (const items of [[], [1], [1, 2], [2, 2]]) spawned.push(commands.spawn([mark, path])({ [path]: items }));
+        });
+        await run(commands => commands.despawnWhere({ with: [mark], where: { [path]: [1] } }));
+        expect(await aliveEach(world, spawned)).toEqual([true, false, true, true]);
+        await run(commands => commands.despawnWhere({ with: [mark], where: { [path]: [] } }));
+        expect(await aliveEach(world, spawned)).toEqual([false, false, true, true]);
+        await run(commands => commands.despawnWhere({ with: [mark], where: { [path]: { 1: 2 } } }));
+        expect(await aliveEach(world, spawned)).toEqual([false, false, false, false]);
+        await world.dispose();
+    });
+
+    it("tests an array given whole by length among the values the commands before it give", async () => {
+        const { world, run } = withCommands();
+        let entity = Entity.none;
+        await run(commands => { entity = commands.spawn([mark, path])({ [path]: [3] }); });
+        await run(commands => {
+            commands.add(entity, path, [1, 2]);
+            commands.despawnWhere({ with: [mark], where: { [path]: [1] } });
+        });
+        expect(await alive(world, entity)).toBe(true);
         await world.dispose();
     });
 

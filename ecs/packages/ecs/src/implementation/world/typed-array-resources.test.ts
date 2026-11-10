@@ -43,6 +43,8 @@ const withCommands = (options: { readonly wasm?: boolean } = {}) => {
 const mark = System.create({ components: { with: [cell] } }, (row, { resources }) => { resources[cells][row[cell]] = row[cell] + 100; });
 const marked: number[] = [];
 const readChanged = System.create({ resources: { changed: [cells] } }, ({ resources }) => { marked.push(resources[cells][3]); });
+/** Advances cell 2 once a run that cells changed since its last. */
+const advanceChanged = System.create({ resources: { changed: [cells] } }, ({ resources }) => { resources[cells][2] = resources[cells][2] + 1; });
 
 /** Writes each row's level at its cell, beyond the ends doing nothing; of two rows writing one cell, either. */
 const paint = System.create({ kernel: true, components: { with: [cell, level] } }, (row, { resources }) => { resources[levels][row[cell]] = row[level]; });
@@ -92,6 +94,20 @@ describe("typed array resources", () => {
         await world.run(readChanged);
         await world.run(readChanged);
         expect(marked).toEqual([0, 103]);
+        await world.dispose();
+    });
+
+    it("pass the change filter of a system writing them by changes before its run, not its own", async () => {
+        const { world, run } = withCommands();
+        await run(commands => { for (let i = 0; i < 4; i++) commands.spawn([cell])({ [cell]: i }); });
+        await world.run(advanceChanged);
+        await world.run(advanceChanged);
+        await world.run(advanceChanged);
+        expect((await readResource(world, cells))[2]).toBe(1);
+        await world.run(mark);
+        await world.run(advanceChanged);
+        await world.run(advanceChanged);
+        expect((await readResource(world, cells))[2]).toBe(103);
         await world.dispose();
     });
 

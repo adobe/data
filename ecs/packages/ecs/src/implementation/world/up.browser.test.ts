@@ -10,6 +10,7 @@ const parent = Symbol("upBrowserTest/parent");
 const offset = Symbol("upBrowserTest/offset");
 const placed = Symbol("upBrowserTest/placed");
 const marked = Symbol("upBrowserTest/marked");
+const unplaced = Symbol("upBrowserTest/unplaced");
 const depths = Symbol("upBrowserTest/depths");
 
 declare module "@adobe/ecs" {
@@ -18,6 +19,7 @@ declare module "@adobe/ecs" {
         [offset]: { type: F32 };
         [placed]: { type: F32 };
         [marked]: { type: true };
+        [unplaced]: { type: F32 };
     }
     interface Resources {
         [depths]: { type: Uint8Array; length: 12 };
@@ -43,6 +45,18 @@ const markDepths = System.create({
     up: { through: parent },
 }, (row, { up, resources }) => {
     resources[depths][row[offset] % 12] = up === null ? 1 : 2;
+});
+/** Writes the depths from rows no entity has. */
+const markNone = System.create({
+    kernel: "gpu",
+    components: { with: [offset, unplaced] },
+    up: { through: parent },
+}, (row, { up, resources }) => {
+    resources[depths][0] = up === null ? row[unplaced] : 3;
+});
+/** Writes the first depth on the CPU. */
+const markFirst = System.create({}, ({ resources }) => {
+    resources[depths][0] = 9;
 });
 /** Trees whose children are in two archetypes, so a depth's rows have parents in several. */
 const plant = System.create({}, ({ commands }) => {
@@ -95,5 +109,15 @@ describe("up on the GPU", () => {
         const cpu = await marks(null);
         expect(cpu.some(value => value === 2)).toBe(true);
         expect(await marks(await device())).toEqual(cpu);
+    });
+    it.runIf(gpu)("keeps what the CPU wrote to a typed array resource when it runs over no rows", async () => {
+        const ecs = createWorld({ [workers]: 0, [gpuDevice]: await device() });
+        disposals.push(ecs);
+        await ecs.run(plant);
+        await ecs.run(markDepths);
+        await readResource(ecs, depths);
+        await ecs.run(markFirst);
+        await ecs.run(markNone);
+        expect((await readResource(ecs, depths))[0]).toBe(9);
     });
 });

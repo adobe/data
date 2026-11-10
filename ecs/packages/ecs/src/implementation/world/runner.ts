@@ -346,15 +346,20 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     const noValues: readonly unknown[] = [];
     /** Whether a resource a `changed` filter names changed since the system last ran. */
     const resourceChangedIds = resourceChanged.map(key => idOf(state, key));
+    /** By typed array resource it writes, its changed tick before the run stamped it. */
+    const stampedBefore = arrayWrites.map(() => 0);
+    /** By resource a `changed` filter names, the index of the typed array resource it writes there, or -1. */
+    const ownStamps = resourceChangedIds.map(id => arrayWrites.findIndex(key => idOf(state, key) === id));
     const resourcesChangedSince = (since: number): boolean => {
         const index = indexOf(state.resourceEntity);
         const archetype = state.archetypes[state.entities.archetype[index]];
         const row = state.entities.row[index];
         for (let k = 0; k < resourceChangedIds.length; k++) {
             const storage = archetype?.storageById[resourceChangedIds[k]];
+            const own = ownStamps[k];
             // Throws, as for a resource not in this world.
             if (storage === undefined) resourceCell(state, resourceChanged[k]);
-            else if (storage.changed[row] > since) return true;
+            else if ((own < 0 ? storage.changed[row] : stampedBefore[own]) > since) return true;
         }
         return false;
     };
@@ -1065,17 +1070,16 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
             writeScalars(kernel, scalars, base + 3 + upIds.length, values, args, archetype);
             dispatches.push({ offset: gpu.record(`${leafNumber}:up:${group}`, words), count });
         }
-        if (dispatches.length > 0) {
-            const pass = gpu.encoder().beginComputePass();
-            pass.setPipeline(pipeline.compute);
-            for (const { offset, count } of dispatches) {
-                pass.setBindGroup(0, gpu.computeGroup(), [offset]);
-                const groups = Math.ceil(count / workgroupSize);
-                const x = Math.min(groups, maximumWorkgroups);
-                pass.dispatchWorkgroups(x, Math.ceil(groups / x));
-            }
-            pass.end();
+        if (dispatches.length === 0) return;
+        const pass = gpu.encoder().beginComputePass();
+        pass.setPipeline(pipeline.compute);
+        for (const { offset, count } of dispatches) {
+            pass.setBindGroup(0, gpu.computeGroup(), [offset]);
+            const groups = Math.ceil(count / workgroupSize);
+            const x = Math.min(groups, maximumWorkgroups);
+            pass.dispatchWorkgroups(x, Math.ceil(groups / x));
         }
+        pass.end();
         for (const archetype of matches) {
             if (archetype.count === 0) continue;
             for (const id of writes) {
@@ -1246,8 +1250,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         if (indexesOnly && !indexesChanged) return noChunks;
         const tick = ++state.tick;
         for (let k = 0; k < writes.length; k++) state.written[writes[k]] = tick;
-        for (const key of arrayWrites) {
-            const { storage, row } = resourceCell(state, key);
+        for (let k = 0; k < arrayWrites.length; k++) {
+            const { storage, row } = resourceCell(state, arrayWrites[k]);
+            stampedBefore[k] = storage.changed[row];
             stampChanged(storage, row, tick);
         }
         lookupSince.value = lastRun;

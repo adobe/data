@@ -49,10 +49,14 @@ export const isMatching = (schema: Schema, matching: unknown): boolean => {
 export const holdsCollection = (matching: unknown): boolean =>
     matching instanceof Set || matching instanceof Map || (typeof matching === "object" && matching !== null && !ArrayBuffer.isView(matching) && Object.values(matching).some(holdsCollection));
 
-/** Whether a value matches `matching`, as `isMatching` takes it: a number its bounds, a struct or tuple its members'. */
+/**
+ * Whether a value matches `matching`, as `isMatching` takes it: a number its bounds, a struct or tuple its members', an
+ * array given whole an array of its length.
+ */
 export const matchesValue = (value: unknown, matching: unknown): boolean => {
     if (typeof value === "number" && isBounds(matching)) return withinBounds(value, matching);
     if (typeof matching === "object" && matching !== null && typeof value === "object" && value !== null) {
+        if (Array.isArray(matching) && Reflect.get(value, "length") !== matching.length) return false;
         for (const key of Object.keys(matching)) if (!matchesValue(Reflect.get(value, key), Reflect.get(matching, key))) return false;
         return true;
     }
@@ -121,10 +125,11 @@ export type DespawnMatch = {
 
 /**
  * A `despawnWhere`'s test from what each component it names matches, by component id: shared components' by their
- * archetype's value, through `sharedHolds` where they give values it interned, the rest by each row's.
+ * archetype's value, those of `exact` through `sharedHolds`, which tests the values they give as interned, the rest by
+ * each row's.
  */
-export const despawnMatchOf = (matched: ReadonlyMap<number, unknown>, shared: ReadonlySet<number>, sharedHolds: ((archetype: Archetype) => boolean) | null): DespawnMatch => {
-    const sharedMatched = [...matched].filter(([id]) => shared.has(id) && sharedHolds === null);
+export const despawnMatchOf = (matched: ReadonlyMap<number, unknown>, shared: ReadonlySet<number>, exact: ReadonlySet<number>, sharedHolds: ((archetype: Archetype) => boolean) | null): DespawnMatch => {
+    const sharedMatched = [...matched].filter(([id]) => shared.has(id) && !exact.has(id));
     const rowMatched = [...matched].filter(([id]) => !shared.has(id));
     const archetype = (candidate: Archetype): boolean => {
         if (sharedHolds !== null && !sharedHolds(candidate)) return false;

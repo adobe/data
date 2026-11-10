@@ -13,6 +13,7 @@ import { readEach, readResource, select } from "./reads.test-helper.js";
 const cells = Symbol("typedArrayGpuTest/cells");
 const levels = Symbol("typedArrayGpuTest/levels");
 const clamped = Symbol("typedArrayGpuTest/clamped");
+const words = Symbol("typedArrayGpuTest/words");
 const cell = Symbol("typedArrayGpuTest/cell");
 const level = Symbol("typedArrayGpuTest/level");
 
@@ -21,6 +22,7 @@ declare module "@adobe/ecs" {
         [cells]: { type: Uint8Array; length: 16 };
         [levels]: { type: Int16Array; length: 8 };
         [clamped]: { type: Uint8ClampedArray; length: 5 };
+        [words]: { type: Uint32Array; length: 4 };
     }
     interface Components {
         [cell]: { type: F32 };
@@ -54,6 +56,26 @@ const sample = System.create({ kernel: "gpu", components: { with: [cell, level] 
 /** Each of sixteen rows writes its own byte, next to the others' in the words they share. */
 const mark = System.create({ kernel: "gpu", components: { with: [cell] } }, (row, { resources }) => { resources[cells][row[cell]] = row[cell] + 100; });
 const clamp = System.create({ kernel: "gpu", components: { with: [cell, level] } }, (row, { resources }) => { resources[clamped][row[cell]] = row[level]; });
+
+/** Sets the row's word to every bit. */
+const fill = System.create({ kernel: "gpu", components: { with: [cell] } }, (row, { resources }) => { resources[words][row[cell]] = 0xFFFFFFFF; });
+/** Copies the row's word to the next, through a local, and its low bit flipped to the one after. */
+const copy = System.create({ kernel: "gpu", components: { with: [cell] } }, (row, { resources }) => {
+    const value = resources[words][row[cell]];
+    resources[words][row[cell] + 1] = value;
+    resources[words][row[cell] + 2] = resources[words][row[cell]] ^ 1;
+});
+
+/** The words the kernels leave, run where `onGpu` says, and how many GPU records the world holds. */
+const copied = async (onGpu: boolean) => {
+    const { world, run } = await withCommands(onGpu);
+    await run(commands => commands.spawn([cell])({ [cell]: 0 }));
+    await world.run(fill);
+    await world.run(copy);
+    const result = { words: [...await readResource(world, words)], records: (await world.tables()).gpu };
+    await world.dispose();
+    return result;
+};
 
 /** What the kernels leave in the arrays and rows, run where `onGpu` says, and how many GPU records the world holds. */
 const outcome = async (onGpu: boolean) => {
@@ -92,5 +114,13 @@ describe("typed array resources on the GPU", () => {
         expect({ ...onGpu, records: 0 }).toEqual({ ...onCpu, records: 0 });
         expect(onGpu.bytes).toEqual(Array.from({ length: 16 }, (_, i) => i + 100));
         expect(onGpu.painted).toEqual([7, 0, -3, new Int16Array([40000])[0], 0, 0, 0, 12]);
+    });
+
+    it.runIf(gpu)("keep every bit of a Uint32Array's elements that a kernel copies or combines as integers", async () => {
+        const onGpu = await copied(true);
+        const onCpu = await copied(false);
+        expect(onGpu.records).toBeGreaterThan(0);
+        expect(onCpu.words).toEqual([0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFE, 0]);
+        expect(onGpu.words).toEqual(onCpu.words);
     });
 });

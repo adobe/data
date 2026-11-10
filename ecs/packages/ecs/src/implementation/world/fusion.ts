@@ -99,12 +99,13 @@ const pure = (expression: Expression): boolean => {
     }
 };
 
-/** The component and resource ids a runner reads or writes, and those it writes. */
+/** The component and resource ids a runner reads, filters on the changes of, or writes, and those it writes. */
 const usesOf = (state: State, runner: Runner, leaf: Leaf): { readonly all: ReadonlySet<number>; readonly writes: ReadonlySet<number> } => {
-    const resources = leaf.declaration.resources;
-    const resourceIds = (keys: readonly symbol[] | undefined): number[] => (keys ?? []).map(key => state.ids.get(key) ?? -1);
-    const writes = new Set([...runner.writes, ...runner.resourceWrites, ...resourceIds(resources?.write)]);
-    return { all: new Set([...runner.touches, ...runner.looks, ...resourceIds(resources?.read), ...writes]), writes };
+    const { components, resources } = leaf.declaration;
+    const idsOf = (keys: readonly symbol[] | undefined): number[] => (keys ?? []).map(key => state.ids.get(key) ?? -1);
+    const writes = new Set([...runner.writes, ...runner.resourceWrites, ...idsOf(resources?.write)]);
+    const changed = [...idsOf(components?.changed), ...idsOf(resources?.changed)];
+    return { all: new Set([...runner.touches, ...runner.looks, ...idsOf(resources?.read), ...changed, ...writes]), writes };
 };
 
 /** The components a kernel's body reads, as its columns' sources name them. */

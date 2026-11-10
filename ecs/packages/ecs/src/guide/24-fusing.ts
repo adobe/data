@@ -44,7 +44,10 @@ const rows: string[] = [];
 const read = System.create({ readonly: true, components: { with: [health], optional: [shown] } }, row => {
     rows.push(`health ${row[health]}${row[shown] === undefined ? "" : `, shown ${row[shown]}`}`);
 });
-const total = System.create({ readonly: true, components: { with: [score] } }, row => row[score]);
+let total = 0;
+const tallied = System.create({ readonly: true, components: { with: [score] } }, row => {
+    total += row[score];
+});
 
 export const main = async (): Promise<void> => {
     await using world = World.create();
@@ -52,5 +55,6 @@ export const main = async (): Promise<void> => {
     for (let i = 0; i < 3; i++) await world.run(frame);
     await world.run(read);
     console.log(rows.sort().join("; "));
-    console.log("score", await world.run(total));
+    await world.run(tallied);
+    console.log("score", total);
 };

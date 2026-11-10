@@ -107,25 +107,62 @@ const usesOf = (state: State, runner: Runner, leaf: Leaf): { readonly all: Reado
     return { all: new Set([...runner.touches, ...runner.looks, ...resourceIds(resources?.read), ...writes]), writes };
 };
 
+/** The components a kernel's body reads, as its columns' sources name them. */
+const readsOf = (runner: Runner): ReadonlySet<number> => {
+    const reads = new Set<number>();
+    const kernel = runner.kernel;
+    if (kernel === null || kernel.description.program === null) return reads;
+    const { sources } = kernel.fusion();
+    const expression = (node: Expression): void => {
+        switch (node.kind) {
+            case "column": {
+                const source = sources[node.column];
+                if (source !== undefined && source.kind === "field") reads.add(source.id);
+                return;
+            }
+            case "unary": return expression(node.operand);
+            case "binary": case "logical": expression(node.left); return expression(node.right);
+            case "conditional": expression(node.test); expression(node.consequent); return expression(node.alternate);
+            case "math": return node.arguments.forEach(expression);
+            case "lane": return expression(node.value);
+            default: return;
+        }
+    };
+    const statement = (node: Statement): void => {
+        switch (node.kind) {
+            case "set": case "store": return expression(node.value);
+            case "if": expression(node.test); node.consequent.forEach(statement); return node.alternate.forEach(statement);
+            case "block": case "loop": case "intrinsic": return node.body.forEach(statement);
+            case "branchIf": return expression(node.test);
+            default: return;
+        }
+    };
+    kernel.description.program.body.forEach(statement);
+    return reads;
+};
+
 const conflict = (a: ReturnType<typeof usesOf>, b: ReturnType<typeof usesOf>): boolean =>
     [...a.writes].some(id => b.all.has(id)) || [...b.writes].some(id => a.all.has(id));
 
 /**
- * Groups a schedule's fusible kernels: each joins the group of an earlier fusible kernel it shares a component with,
+ * Groups a schedule's fusible kernels: each joins the group of an earlier fusible kernel touching a component it reads,
  * where no sync point comes between them and nothing in the tiers between conflicts with the group's earlier members,
- * which then run in its tier. A kernel sharing nothing runs alone, streaming fewer components at once.
+ * which then run in its tier. Its reads then come from what the group already loaded. A kernel reading nothing the
+ * others touch runs alone: one sharing only components it writes gains little or loses, and one sharing nothing loses,
+ * streaming more components at once.
  */
 export const fuseSchedule = (state: State, schedule: Schedule, runnerOf: (leaf: Leaf) => Runner): FusedSchedule & { readonly groups: readonly FusedGroup[] } => {
-    type Placed = { readonly leaf: Leaf; readonly runner: Runner; readonly tier: number; readonly uses: ReturnType<typeof usesOf>; group: Placed[] | null };
+    type Placed = { readonly leaf: Leaf; readonly runner: Runner; readonly tier: number; readonly uses: ReturnType<typeof usesOf>; readonly reads: ReadonlySet<number>; group: Placed[] | null };
     const placed: Placed[][] = schedule.tiers.map((tier, t) => tier.map(leaf => {
         const runner = runnerOf(leaf);
-        return { leaf, runner, tier: t, uses: usesOf(state, runner, leaf), group: null };
+        return { leaf, runner, tier: t, uses: usesOf(state, runner, leaf), reads: readsOf(runner), group: null };
     }));
     const groups: Placed[][] = [];
     for (let t = 1; t < placed.length; t++) {
         for (const later of placed[t]) {
             if (!fusible(later.runner, later.leaf)) continue;
-            const shares = (group: Placed[]): boolean => group.some(member => [...member.runner.touches].some(id => later.runner.touches.includes(id)));
+            const readsFrom = (earlier: Placed): boolean => earlier.runner.touches.some(id => later.reads.has(id));
+            const shares = (group: Placed[]): boolean => group.some(readsFrom);
             const candidate = groups.find(group => {
                 const last = group[group.length - 1];
                 if (last === undefined || last.tier >= t || !shares(group)) return false;
@@ -145,7 +182,7 @@ export const fuseSchedule = (state: State, schedule: Schedule, runnerOf: (leaf: 
                 continue;
             }
             const earlier = placed.slice(0, t).flat().find(other => other.group === null && fusible(other.runner, other.leaf)
-                && [...other.runner.touches].some(id => later.runner.touches.includes(id))
+                && readsFrom(other)
                 && placed.slice(other.tier + 1, t + 1).every(tier => tier.every(next => next === later || !conflict(other.uses, next.uses)))
                 && schedule.syncs.slice(other.tier, t).every(sync => sync === null));
             if (earlier === undefined) continue;

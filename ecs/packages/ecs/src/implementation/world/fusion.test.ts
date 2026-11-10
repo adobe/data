@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it } from "vitest";
+import type { F32 } from "../../interface/math/f32/index.js";
 import type { I32 } from "../../interface/math/i32/index.js";
 import type { Commands } from "../../interface/system/commands.js";
 import { System } from "../../interface/system/system.js";
@@ -13,6 +14,8 @@ const armor = Symbol("fusionTest/armor");
 const shown = Symbol("fusionTest/shown");
 const score = Symbol("fusionTest/score");
 const bonus = Symbol("fusionTest/bonus");
+const level = Symbol("fusionTest/level");
+const glow = Symbol("fusionTest/glow");
 
 declare module "@adobe/ecs" {
     export interface Components {
@@ -20,6 +23,8 @@ declare module "@adobe/ecs" {
         [armor]: { type: I32 };
         [shown]: { type: I32 };
         [score]: { type: number };
+        [level]: { type: F32 };
+        [glow]: { type: F32 };
     }
     export interface Resources {
         [bonus]: { type: number; default: 3 };
@@ -40,6 +45,13 @@ const tally = System.create({ kernel: true, components: { with: [score] } }, row
     row[score] += 0.5;
 });
 const chain = System.create([regenerate, hurt, show, tally]);
+const raise = System.create({ kernel: true, components: { with: [level, glow] } }, row => {
+    row[glow] = row[level] * 2;
+});
+/** Writes what the kernel before it writes, reading nothing. */
+const mark = System.create({ kernel: true, components: { with: [level, glow] }, after: [raise] }, row => {
+    row[glow] = 1;
+});
 
 /** A world without workers, filled with entities of every combination of the components, and a way to run commands. */
 const filled = async (fuse: boolean) => {
@@ -49,6 +61,7 @@ const filled = async (fuse: boolean) => {
             commands.spawn([hp, armor, shown, score])({ [hp]: i % 17, [armor]: i % 5, [shown]: 0, [score]: i });
             if (i % 3 === 0) commands.spawn([hp, shown])({ [hp]: i % 13, [shown]: 1 });
             if (i % 4 === 0) commands.spawn([hp, armor])({ [hp]: i % 11, [armor]: 2 });
+            commands.spawn([level, glow])({ [level]: i, [glow]: 0 });
         }
     });
     const [failure] = (await runReported(world, seed)).failures;
@@ -78,19 +91,26 @@ describe("fused kernels", () => {
         await apart.dispose();
     });
 
-    it("compile one kernel more for a schedule whose kernels share components, and none with fusing off", async () => {
-        const counted = async (fuse: boolean): Promise<number> => {
-            let compiles = 0;
-            WebAssembly.compile = (bytes: BufferSource) => {
-                compiles++;
-                return compile(bytes);
-            };
-            const world = await filled(fuse);
-            await world.run(chain);
-            WebAssembly.compile = compile;
-            await world.dispose();
-            return compiles;
+    /** How many modules a world compiles running `system` once. */
+    const counted = async (fuse: boolean, system: System): Promise<number> => {
+        let compiles = 0;
+        WebAssembly.compile = (bytes: BufferSource) => {
+            compiles++;
+            return compile(bytes);
         };
-        expect(await counted(true)).toBe(await counted(false) + 1);
+        const world = await filled(fuse);
+        await world.run(system);
+        WebAssembly.compile = compile;
+        await world.dispose();
+        return compiles;
+    };
+
+    it("compile one kernel more for a schedule whose kernels read components the ones before touch, and none with fusing off", async () => {
+        expect(await counted(true, chain)).toBe(await counted(false, chain) + 1);
+    });
+
+    it("leave a kernel reading nothing the one before it touches to run alone", async () => {
+        const pair = System.create([raise, mark]);
+        expect(await counted(true, pair)).toBe(await counted(false, pair));
     });
 });

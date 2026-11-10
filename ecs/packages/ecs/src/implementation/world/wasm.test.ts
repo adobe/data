@@ -924,13 +924,15 @@ describe("generateWasm integers through locals", () => {
         expect(results.map(result => [...result])).toEqual([(x: number) => 1 / -x, (x: number) => 1 / (x * -3), (x: number) => 1 / (x % 5)].map(f => values.map(f)));
     });
 
-    it("hold in i64 a local only ever given an integer from +0 up, as an unsigned remainder is", () => {
+    it("hold in i32 a local only ever given an integer from +0 within i32, as an unsigned remainder is, and in i64 one past it", () => {
         const range: Program = {
-            locals: 1,
+            locals: 2,
             body: [
                 { kind: "set", local: 0, value: binary("%", column(0), number(17)) },
                 { kind: "store", column: 1, value: binary("-", local(0), number(10)) },
-                { kind: "store", column: 2, value: binary("/", number(1), local(0)) },
+                // A u32 and 1 reach 2^32.
+                { kind: "set", local: 1, value: binary("+", column(0), number(1)) },
+                { kind: "store", column: 2, value: binary("/", local(1), local(0)) },
             ],
         };
         const rangeColumns: WasmColumn[] = [{ view: "u32", stride: 4, offset: 0, boolean: false, component: 0 }, { view: "i32", stride: 4, offset: 0, boolean: false, component: 1 }, dense("f64", 2)];
@@ -944,10 +946,14 @@ describe("generateWasm integers through locals", () => {
         const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
         if (typeof run !== "function") throw new Error("no run export");
         run(0, values.length, 0, -1, 0, 1024, 2048);
-        expect([[...differences], [...inverses]]).toEqual([values.map(x => (x % 17) - 10), values.map(x => 1 / (x % 17))]);
+        expect([[...differences], [...inverses]]).toEqual([values.map(x => (x % 17) - 10), values.map(x => (x + 1) / (x % 17))]);
         const wat = printWat(kernel.bytes);
         if ("failure" in wat) throw new Error(wat.failure);
-        expect(wat.wat).toMatch(/\(local i64\)/);
+        const named = generateWasmOrReason(range, rangeColumns, () => "number", true, 0, [], [], [], [], [], false, () => null, true);
+        if (typeof named === "string") throw new Error(named);
+        const text = printWat(named.bytes);
+        if ("failure" in text) throw new Error(text.failure);
+        expect([/\(local \$t_0 i32\)/.test(text.wat), /\(local \$t_1 i64\)/.test(text.wat)]).toEqual([true, true]);
     });
 
     it("keep integer operations and comparisons off f64, converting only what's stored as f64", () => {

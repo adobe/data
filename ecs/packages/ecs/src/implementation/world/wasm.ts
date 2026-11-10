@@ -889,6 +889,10 @@ export const generateWasmOrReason = (
      * Locals kept in i64: numbers every assignment gives an exact integer that's never -0 and that no 32-bit kind
      * holds, so arithmetic and comparisons on them stay in integers, converted to f64 only where read as a number.
      */
+    // An integral local never -0 and within i32 is an i32: its value is its ToInt32.
+    for (let k = 0; k < program.locals; k++) {
+        if (integralLocals[k] && signedZeroFree[k] && integerLocal(k) === null && localTypes[k] === "number" && assignedValues.has(k) && localBounds[k] < 2 ** 31) integerLocals[k] = "i32";
+    }
     const wideLocals = Array.from({ length: program.locals }, (_, k) =>
         integralLocals[k] && signedZeroFree[k] && integerLocal(k) === null && localTypes[k] === "number" && assignedValues.has(k));
     /** Locals only ever assigned booleans, kept as i32 0 or 1. */

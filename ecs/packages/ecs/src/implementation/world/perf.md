@@ -238,6 +238,14 @@ as one pass; a sync point between them with nothing to apply about 11 ns, from 2
 for its activation, rewinds and publishing. The other node benchmarks are within noise of `244f952` over three
 rounds, and `read run` (+3.7%) and `loop tick add remove again` (+3.9%), which make a schedule each run, over ten.
 
+A `despawnWhere` that selects nothing (adobe/data#252), node, three rounds each against `19d61843`: new `end frame
+despawnWhere none`, a frame reading 100 of 10K rows ending with a system that issues `despawnWhere({ with:
+[frameTransient] })` each frame, no entity having it, 1.04–1.07 → 0.71 µs a frame; `end frame despawn rows none`, the
+same frame ending with a row system despawning each event row, which issues nothing, 0.64–0.66 µs before and after. A
+sync point whose queue holds only `despawnWhere`s, none of which matches an archetype with rows, drops them and stays
+idle, checked once everything else it would apply is idle (`dropUnselecting` in `synchronize.ts`). The 0.06 µs left
+is the command itself: resolving its keys and queuing it, and the scan of the world's archetypes.
+
 ## Where the gains came from
 
 Step figures marked (vitest) are from the node vitest lane: read them as relative.

@@ -6,7 +6,7 @@ import { fuseSchedule, groupOnWorkers, liveGroups, loadGroup, type FusedGroup, t
 import type { Archetype, Storage } from './archetype.js';
 import { countRan, countRanHere, idOf, startRan, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
-import { applySync, prepareSync, syncPending } from './synchronize.js';
+import { applySync, dropUnselecting, prepareSync, syncPending } from './synchronize.js';
 import { resourcesWritten } from './resource-changes.js';
 import { rowsWritten } from './rows-written.js';
 import { activate, activationPending } from './activate.js';
@@ -619,12 +619,13 @@ const runPass = (context: ExecuteContext, prepared: Prepared, schedule: Schedule
 
 /**
  * Whether a sync point within a run, with no joined thread, would apply nothing and leave nothing to do after:
- * nothing queued, drained, unreserved or pending (`syncPending`), no derivation or sync system to activate, and no layout for
+ * nothing queued but `despawnWhere`s selecting nothing, which it drops, nothing drained, unreserved or pending (`syncPending`), no derivation or sync system to activate, and no layout for
  * workers to see.
  */
-const idleSync = (state: State): boolean => state.queued.length === 0 && state.drained === 0 && state.unused.length === 0
+const idleSync = (state: State): boolean => state.drained === 0 && state.unused.length === 0
     && state.channels.length === 0 && state.logs.length === 0 && state.bumped.length === 0 && state.counted.length === 0 && state.carried === null && !state.structure.rederive && state.unplaced.length === 0
-    && (state.resourcesSeen.size === 0 || !resourcesWritten(state)) && (state.rowsWatched.length === 0 || !rowsWritten(state)) && !activationPending(state) && !reserved(state.entities);
+    && (state.resourcesSeen.size === 0 || !resourcesWritten(state)) && (state.rowsWatched.length === 0 || !rowsWritten(state)) && !activationPending(state) && !reserved(state.entities)
+    && (state.queued.length === 0 || dropUnselecting(state));
 
 /**
  * A sync point with nothing to wait for: no GPU, tails or observer posts, which `executeTiers` checked before each

@@ -7,7 +7,7 @@ import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { workers } from "../../interface/resources/workers.js";
 import { Observe } from "../../observe/index.js";
-import { createWorld } from "./create.js";
+import { createWorld, tickOf } from "./create.js";
 import { runReported } from "./outcomes.test-helper.js";
 import { count, read, readResource } from "./reads.test-helper.js";
 
@@ -407,6 +407,51 @@ describe("despawnWhere", () => {
         await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [tags]: new Set([1]) } }))).rejects.toThrow(/gives "despawnWhereTest\/tags" a Set or Map/);
         await expect(run(commands => commands.despawnWhere({ with: [mark], where: { [scores]: { best: new Map([["a", 1]]) } } }))).rejects.toThrow(/gives "despawnWhereTest\/scores" a Set or Map/);
         expect(await alive(world, entity)).toBe(true);
+        await world.dispose();
+    });
+
+    it("matching nothing leaves its sync points idle, between tiers and at the end of the run", async () => {
+        const world = createWorld({ [workers]: 0 });
+        let issuing = false;
+        let reads = 0;
+        const clear = System.create({}, ({ commands }) => { if (issuing) commands.despawnWhere({ with: [mark], not: [kept] }); });
+        const after = System.create({ after: [clear], components: { with: [mark] } }, () => { reads++; });
+        const both = System.create([clear, after]);
+        let keeper = Entity.none;
+        await world.run(System.create({}, ({ commands }) => { keeper = commands.spawn([mark, kept])(); }));
+        // Its first run adds its systems, which takes sync points of its own.
+        await world.run(both);
+        // Each system run takes a tick, as each sync point that applies something does.
+        const ticksOf = async (): Promise<number> => {
+            const before = tickOf(world);
+            await world.run(both);
+            return tickOf(world) - before;
+        };
+        const idle = await ticksOf();
+        issuing = true;
+        expect(await ticksOf()).toBe(idle);
+        expect(reads).toBe(3);
+        expect(await alive(world, keeper)).toBe(true);
+        await world.dispose();
+    });
+
+    it("still despawns what commands before it in the sync point move into its query, from its own system or another in its tier", async () => {
+        const { world, run } = withCommands();
+        let first = Entity.none, second = Entity.none, born = Entity.none;
+        await run(commands => {
+            first = commands.spawn([value])({ [value]: 1 });
+            second = commands.spawn([value])({ [value]: 2 });
+        });
+        await run(commands => {
+            commands.add(first, mark);
+            born = commands.spawn([mark])();
+            commands.despawnWhere({ with: [mark] });
+        });
+        expect(await aliveEach(world, [first, second, born])).toEqual([false, true, true]);
+        const adds = System.create({}, ({ commands }) => { commands.add(second, mark); });
+        const clears = System.create({ after: [adds] }, ({ commands }) => { commands.despawnWhere({ with: [mark], not: [kept] }); });
+        await world.run(System.create([adds, clears]));
+        expect(await aliveEach(world, [second, born])).toEqual([false, false]);
         await world.dispose();
     });
 });

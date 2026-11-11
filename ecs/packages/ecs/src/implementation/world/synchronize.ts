@@ -1092,6 +1092,42 @@ const anyCommands = (queued: readonly Queued[]): boolean => {
     return false;
 };
 
+/** Whether some archetype with rows, other than the resource entity's, has what `despawnWhere` command `command` selects. */
+const selectsAny = (state: State, buffer: CommandBuffer, command: number): boolean => {
+    const { ids, values } = buffer;
+    const start = buffer.starts[command];
+    const middle = start + buffer.entities[command];
+    const last = endOf(buffer, command);
+    const given = ids[last - 1] === despawnWhereHolds ? values[last - 1] : null;
+    const match = isDespawnMatch(given) ? given : null;
+    const end = match === null ? last : last - 1;
+    const { archetypes } = state;
+    for (let id = 0; id < archetypes.length; id++) {
+        const archetype = archetypes[id];
+        if (!archetype.resource && archetype.count !== 0 && matches(archetype, ids, start, middle, end, match)) return true;
+    }
+    return false;
+};
+
+/**
+ * Drops the queued commands when they're all `despawnWhere`s that select nothing, so the sync point taking them can be
+ * idle. Sound only for the whole queue at once: with no other command queued, nothing moves an entity into what one
+ * selects before it applies, and what the sync point spawns, it never selects. Returns whether the queue is empty.
+ */
+export const dropUnselecting = (state: State): boolean => {
+    const { queued } = state;
+    for (let k = 0; k < queued.length; k++) {
+        const { buffer } = queued[k];
+        if (buffer.stagedCount !== 0) return false;
+        for (let command = 0; command < buffer.count; command++) {
+            if (buffer.kinds[command] !== despawnWhereCommand || selectsAny(state, buffer, command)) return false;
+        }
+    }
+    for (let k = 0; k < queued.length; k++) clearBuffer(queued[k].buffer);
+    queued.length = 0;
+    return true;
+};
+
 /** The queue a sync point takes while nothing is queued, shared, since none is written to. */
 const noneQueued: readonly Queued[] = [];
 
@@ -1113,6 +1149,7 @@ export const syncPending = (state: State, queued: readonly Queued[] = state.queu
  */
 export const prepareSync = (state: State, isolated = false): boolean => {
     if (!isolated) activate(state);
+    if (state.queued.length !== 0) dropUnselecting(state);
     // Taken first, so a sync point that throws can't replay its commands into the next one.
     const queued = state.queued.length === 0 ? noneQueued : state.queued.splice(0);
     // Sync systems' spawns are reserved during the last sync point, so their batches are pending without a reservation.

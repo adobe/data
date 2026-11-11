@@ -37,6 +37,7 @@ import { invariantBenchmarks } from "./invariants.js";
 import { journalBenchmarks } from "./journal.js";
 import { tableBenchmarks } from "./tables.js";
 import { chainedBenchmarks } from "./chained.js";
+import { transientBenchmarks } from "./transients.js";
 
 /** A world whose kernels run on this thread, which the benchmarks without a placement measure; `workers` ones use the pool. */
 const inline = (): World => createWorld({ [workers]: 0 });
@@ -764,4 +765,5 @@ export const benchmarks: readonly Benchmark[] = [
     ...journalBenchmarks,
     ...tableBenchmarks,
     ...chainedBenchmarks,
+    ...transientBenchmarks,
 ];

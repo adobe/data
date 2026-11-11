@@ -207,6 +207,14 @@ const sharingHeld = (state: ReturnType<typeof createState>): Tables["sharing"] =
 };
 
 const tickers = new WeakMap<World, (tick: number) => void>();
+const tickReaders = new WeakMap<World, () => number>();
+
+/** For tests: a world's tick, which each sync point that applies something moves on and a skipped one leaves. */
+export const tickOf = (world: World): number => {
+    const read = tickReaders.get(world);
+    if (read === undefined) throw new Error("Only a world createWorld made tells its tick.");
+    return read();
+};
 
 /** For tests: moves a world's tick on to `tick` before it ran anything, as a long-running world's would be. */
 export const startTicksAt = (world: World, tick: number): void => {
@@ -1191,6 +1199,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (state.tick !== 0) throw new Error("A world starts its ticks elsewhere only before it ran anything.");
         state.tick = tick;
     });
+    tickReaders.set(world, () => state.tick);
     return world;
 };
 

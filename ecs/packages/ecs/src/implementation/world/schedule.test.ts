@@ -4,6 +4,8 @@ import type { Composite } from "../../interface/system/composite.js";
 import type { Resolved } from "../../interface/system/declaration.js";
 import type { Definition } from "../../interface/registry/index.js";
 import type { Leaf } from "../../interface/system/leaf.js";
+import type { Created } from "../../interface/indexes/created.js";
+import type { Stored } from "../../interface/indexes/declaration.js";
 import { scheduleOf } from "../../interface/registry/schedule.js";
 
 const value = Symbol("scheduleTest/value");
@@ -27,6 +29,7 @@ declare module "@adobe/ecs" {
 
 /** Systems built as values, not registered, so each test's are its own. */
 const leaf = (declaration: Resolved & { readonly name: string }): Leaf => ({ kind: "system", name: declaration.name, declaration, input: undefined, body: () => {}, commands: () => undefined });
+const index = (name: string, declaration: Stored): Created => ({ kind: "index", name, declaration });
 const composite = (declaration: Composite["declaration"] & { readonly name: string }): Composite => ({ kind: "composite", name: declaration.name, declaration });
 
 const names = (system: Definition): string[][] => scheduleOf(system).tiers.map(tier => tier.map(leaf => leaf.name));
@@ -140,6 +143,43 @@ describe("scheduleOf", () => {
         // An optional component is read where an entity has it, so it excludes nothing it doesn't require.
         const optional = leaf({ name: "optional", components: { read: [value, mark], optional: [mark] } });
         expect(() => scheduleOf(composite({ name: "root", systems: [apart, optional] }))).toThrow('"apart" and "optional"');
+    });
+
+    it("doesn't order a lookup through an index with a writer whose rows the index can't hold", () => {
+        // The hover mark of #254: rows without voxel move it, and voxels are looked up by cell through a unique index of voxels.
+        const voxelAt = index("voxelAt", { key: [value], unique: true, components: { has: [voxel] } });
+        const showHover = leaf({ name: "showHover", components: { write: [value], has: [mark], not: [voxel] } });
+        const select = leaf({ name: "select", lookup: { voxels: { index: voxelAt } } });
+        expect(names(composite({ name: "root", systems: [showHover, select] }))).toEqual([["showHover", "select"]]);
+        const reading = leaf({ name: "reading", lookup: { voxels: { index: voxelAt, read: [value] } } });
+        expect(names(composite({ name: "root", systems: [showHover, reading] }))).toEqual([["showHover", "reading"]]);
+        // The index's not excludes the writer's rows as well, unique or not.
+        const unmarked = index("unmarked", { key: [value], components: { not: [mark] } });
+        const byMark = leaf({ name: "byMark", lookup: { unmarked: { index: unmarked } } });
+        expect(names(composite({ name: "root", systems: [showHover, byMark] }))).toEqual([["showHover", "byMark"]]);
+    });
+
+    it("orders a lookup through an index with a writer whose rows the index may hold, or that reaches the key otherwise", () => {
+        const voxelAt = index("voxelAt", { key: [value], unique: true, components: { has: [voxel] } });
+        const select = leaf({ name: "select", lookup: { voxels: { index: voxelAt } } });
+        const anywhere = leaf({ name: "anywhere", components: { write: [value], has: [mark] } });
+        expect(() => scheduleOf(composite({ name: "root", systems: [anywhere, select] }))).toThrow('"anywhere" and "select"');
+        // An optional component isn't required: excluding voxel still holds, but an optional voxel excludes nothing.
+        const optional = leaf({ name: "optional", components: { write: [value], has: [mark], optional: [mark], not: [voxel] } });
+        expect(names(composite({ name: "root", systems: [optional, select] }))).toEqual([["optional", "select"]]);
+        const required = leaf({ name: "required", components: { write: [value, voxel], optional: [voxel], not: [mark] } });
+        expect(() => scheduleOf(composite({ name: "root", systems: [required, select] }))).toThrow('"required" and "select"');
+        const showHover = leaf({ name: "showHover", components: { write: [value], has: [mark], not: [voxel] } });
+        // Its rows may be marks, though its lookup can't be.
+        const rows = leaf({ name: "rows", components: { read: [value] }, lookup: { voxels: { index: voxelAt } } });
+        expect(() => scheduleOf(composite({ name: "root", systems: [showHover, rows] }))).toThrow('"showHover" and "rows"');
+        const byEntity = leaf({ name: "byEntity", lookup: { voxels: { read: [value], has: [voxel] } } });
+        expect(() => scheduleOf(composite({ name: "root", systems: [showHover, byEntity] }))).toThrow('"showHover" and "byEntity"');
+        const ordered = leaf({ name: "ordered", components: { has: [voxel] }, order: voxelAt });
+        expect(() => scheduleOf(composite({ name: "root", systems: [showHover, ordered] }))).toThrow('"showHover" and "ordered"');
+        const all = index("all", { key: [value] });
+        const unfiltered = leaf({ name: "unfiltered", lookup: { all: { index: all } } });
+        expect(() => scheduleOf(composite({ name: "root", systems: [showHover, unfiltered] }))).toThrow('"showHover" and "unfiltered"');
     });
 
     it("orders a system before or after every other that uses a resource it lists, but those already ordered and those listing it too", () => {

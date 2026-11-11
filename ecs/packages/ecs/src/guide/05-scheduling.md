@@ -7,7 +7,8 @@ A *composite* is a list of systems, `System.create([heal, hit])`, run as one sys
 their constraints give, not the order they're listed, so [`frame`](05-scheduling.ts#L25) hits before it heals.
 Members with no order between them may run in parallel; two that write what the other reads or writes must be
 ordered, or the composite is rejected, unless their rows never match one entity, one's `not` naming a component the
-other requires, and they use what they share only through their rows. `System.create({ systems, after, ... })`
+other requires, and they use what they share only through their rows, or through an index whose `components` the
+other's rows are excluded from the same way. `System.create({ systems, after, ... })`
 declares a composite with constraints of its own.
 
 A *phase* is a system that does nothing, such as [`update` and `render`](05-scheduling.ts#L32-L33). A system

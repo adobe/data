@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { TypedBuffer } from "../typed-buffer/typed-buffer.js";
-import { DeepReadonly, EquivalentTypes, False, True } from "../types/types.js";
+import { DeepReadonly, EquivalentTypes, False, GlobalInstance, True } from "../types/types.js";
 import type { Observe } from "../observe/index.js";
 import { Parameter, Schema } from "./schema.js";
 
@@ -29,7 +29,7 @@ type FromSchemaInternal<T, Depth extends number = 5> = T extends { const: infer 
   : T extends { type: 'null' }
   ? null
   : T extends { type: 'blob' }
-  ? Blob
+  ? GlobalInstance<"Blob", unknown>
   : T extends { type: 'typed-buffer', items: infer Items }
   ? TypedBuffer<FromSchemaInternal<Items>>
   : T extends { type: 'typed-buffer' }

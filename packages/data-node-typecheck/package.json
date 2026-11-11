@@ -1,0 +1,19 @@
+{
+  "name": "data-node-typecheck",
+  "version": "0.10.33",
+  "description": "Type checks that @adobe/data schema types stay sound in programs without the DOM lib (backend builds)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "pnpm typecheck",
+    "typecheck": "tsc -p tsconfig.bare.json && tsc -p tsconfig.node.json && tsc -p tsconfig.dom.json",
+    "test": "pnpm typecheck"
+  },
+  "dependencies": {
+    "@adobe/data": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^5.8.3"
+  }
+}

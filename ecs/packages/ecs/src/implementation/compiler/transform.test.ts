@@ -778,6 +778,98 @@ describe("context", () => {
     });
 });
 
+describe("commands issued through helpers", () => {
+    /** Keys of their own module, of which the kernel's module imports only `size` and `color`. */
+    const keys = `export const tag = Symbol();
+export const size = Symbol();
+export const color = Symbol();
+declare module '@adobe/ecs' {
+    interface Components {
+        [tag]: { type: boolean; default: false };
+        [size]: { type: number; default: 1 };
+        [color]: { type: number; default: 0 };
+    }
+}
+`;
+    /** The issue's kernel, which calls `dress` of a module of its own. */
+    const kernelSource = `import { color, size } from "./keys.js";
+import { dress } from "./dress.js";
+const kernel = System.create({ kernel: true, components: { with: [size, color] } }, (row, { commands }) => {
+    dress(commands, row.entity, row[color]);
+});`;
+    /**
+     * Compiles the kernel with `dress` as its helper's module: its code, its description and kernel module, given the
+     * keys as their names, and the local name its module imports `tag` under.
+     */
+    const compileThrough = async (dress: string) => {
+        const files = {
+            "/keys.ts": keys, "/dress.ts": dress,
+            "/look.ts": `import { color, size, tag } from './keys.js';\nexport const Look = [size, color, tag] as const;\n`,
+            "/lists.ts": `export { Look } from './look.js';\n`,
+        };
+        const result = await transform(kernelSource, files);
+        if (result === null || "failure" in result) throw new Error(result === null ? "no kernel" : result.failure.message);
+        const local = /import \{ tag as (\S+) \} from "\.\/keys\.ts";/.exec(result.code)?.[1] ?? "";
+        return { local, code: result.code, kernel: await compile(kernelSource, files, { size: "size", color: "color", [local]: "tag" }) };
+    };
+    const added = [[2, 100], [2, 100, 0, 2], [2, 100, 1, 4], [2, 100, 2, true]];
+
+    test.each([
+        ["a list and values written in place, returning a value", `import type { System } from '@adobe/ecs';
+import { color, size, tag } from './keys.js';
+export const dress = (commands: System.Commands, entity: Parameters<System.Commands['despawn']>[0], c: number): number => {
+    commands.add(entity, [size, color, tag], { [size]: 2, [color]: c, [tag]: true });
+    return 0;
+};`],
+        ["a list and values written in place, with no return", `import type { System } from '@adobe/ecs';
+import { color, size, tag } from './keys.js';
+export const dress = (commands: System.Commands, entity: number, c: number): void => {
+    commands.add(entity, [size, color, tag], { [size]: 2, [color]: c, [tag]: true });
+};`],
+        ["a constant list of the helper's module", `import { color, size, tag } from './keys.js';
+const look = [size, color, tag] as const;
+export const dress = (commands, entity: number, c: number) => { commands.add(entity, look, { [size]: 2, [color]: c, [tag]: true }); };`],
+        ["values a helper returns", `import { color, size, tag } from './keys.js';
+const values = (c: number) => ({ [size]: 2, [color]: c, [tag]: true }) as const;
+export const dress = (commands, entity: number, c: number) => { commands.add(entity, [size, color, tag], values(c)); };`],
+        ["values a local holds", `import { color, size, tag } from './keys.js';
+export const dress = (commands, entity: number, c: number) => {
+    const values = { [size]: 2, [color]: c, [tag]: true };
+    commands.add(entity, [size, color, tag], values);
+};`],
+        ["a list imported through a namespace and a re-export", `import { color, size, tag } from './keys.js';
+import * as Lists from './lists.js';
+export const dress = (commands, entity: number, c: number) => { commands.add(entity, Lists.Look, { [size]: 2, [color]: c, [tag]: true }); };`],
+    ])("resolve keys in the helper's module, importing those the kernel's module doesn't: %s", async (_, dress) => {
+        const { local, code, kernel } = await compileThrough(dress);
+        expect(local).toMatch(/^tag\$k\w+$/);
+        expect(code.match(/import \{ tag as /g)?.length).toBe(1);
+        expect(kernel.keys).toEqual(["size", "color", "tag"]);
+        // Inlined: the kernel calls its commands, never the helper.
+        expect(String(kernel.create)).not.toMatch(/\bdress\b|\bvalues\(/);
+        expect(run(kernel, 1, { size: { "[]": [1] }, color: { "[]": [4] } }, { program: false }).calls).toEqual(added);
+        // Each value goes straight to the command: no struct keyed by components is made for a row.
+        expect(String(kernel.create)).not.toMatch(/\{ ?\[/);
+    });
+
+    test("fail the build, saying why, for a key the helper's module doesn't export and the kernel's module doesn't import", async () => {
+        const result = await transform(kernelSource, { "/keys.ts": keys, "/dress.ts": `import { color, size } from './keys.js';
+const secret = Symbol();
+export const dress = (commands, entity: number, c: number) => { commands.add(entity, [size, color, secret], { [size]: 2, [color]: c }); };` });
+        expect(result !== null && "failure" in result ? result.failure.message : "compiled").toBe("secret isn't exported from /dress.ts, so the kernel's module can't name it; export it, or import it into the kernel's module");
+    });
+
+    test.each([
+        ["a plain field among component keys", "const values = { [mass]: 1, x: 2 }; commands.add(row.entity, [mass], values);", "a struct keyed by components keys every field by a component, like [position]"],
+        ["a component keyed twice", "const values = { [mass]: 1, [mass]: 2 }; commands.add(row.entity, [mass], values);", "mass is keyed twice"],
+        ["values that aren't keyed by components", "const values = { x: 1 }; commands.add(row.entity, [mass], values);", "command values are a struct keyed by components, like { [position]: value }"],
+        ["a keyed value for a component the list doesn't name", "const values = { [score]: 1 }; commands.add(row.entity, [mass], values);", "score isn't one of the command's components"],
+        ["a keyed struct used as a number", "row[mass] = { [mass]: 1 };", "expected a number or boolean, not a struct keyed by components"],
+    ])("fail the build for %s", async (_, body, message) => {
+        expect(await failure(`const kernel = System.create({ kernel: true, components: { with: [mass], write: [mass] } }, (row, { commands }) => { ${body} });`)).toBe(message);
+    });
+});
+
 describe("program", () => {
     test("input and resource paths are scalars in the program", async () => {
         const kernel = await compile(`const kernel = System.create({ kernel: true, components: { with: [score] } }, (row, { resources: { [delta]: d } }, input) => {

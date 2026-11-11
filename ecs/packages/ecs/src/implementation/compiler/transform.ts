@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { FunctionDeclaration, MaybeNamedFunctionDeclaration, Node, ObjectExpression, Program, SimpleCallExpression } from 'estree';
 import { compileKernel, type CompiledKernel } from './compile-kernel.js';
+import type { KeyImport } from './lists.js';
 import { children, declaredIn, isFunction } from './estree.js';
 import { fail, failureOf, type Failure } from './failure.js';
 import { isPending, type Link, type Linker } from './link.js';
@@ -13,7 +14,7 @@ import { usedBy, type Used } from './body-access.js';
 import { checkPredicate, predicatesOf } from './predicates.js';
 import { accessText, followsAll, inOrder, resolvedDeclaration, unrequired } from './inferred.js';
 import { neverReachesCommands } from './terminal.js';
-import { basename } from './posix.js';
+import { basename, dirname, relative } from './posix.js';
 import { lookupSites } from './lookups.js';
 import { terminalBodiesName } from '../world/terminal.js';
 import { accessName as accessName$ } from '../../interface/registry/ids.js';
@@ -144,6 +145,12 @@ const empty: ObjectExpression = { type: "ObjectExpression", properties: [], star
 const declaresTrue = (declaration: ObjectExpression, name: string): boolean => declaration.properties.some(property =>
     property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === name
     && property.value.type === "Literal" && property.value.value === true);
+
+/** How the module at `importer` imports the file `file`: by its path relative to the importer's. */
+const specifierOf = (importer: string, file: string): string => {
+    const path = relative(dirname(importer), file);
+    return path.startsWith("../") ? path : `./${path}`;
+};
 
 const uniqueName = (code: string, base: string): string => {
     let name = base;
@@ -394,6 +401,8 @@ export const transformKernels = async (
     /** For describing: each kernel compiled and each tried body's failure, by its call. */
     const compiledKernels = new Map<Node, { readonly kernel: CompiledKernel; readonly required: boolean }>();
     const tried = new Map<Node, Failure>();
+    /** The keys kernels name that the module doesn't bind, which it imports, by local name. */
+    const keyImports = new Map<string, KeyImport>();
     try {
         await checkPredicates(program, module, locals, link, whereReads);
         for (const { node, declaration, body, request, used } of kernelSites(program, locals, automatic, module)) {
@@ -409,6 +418,7 @@ export const transformKernels = async (
                 }
                 throw error;
             }
+            for (const item of kernel.imports) keyImports.set(item.local, item);
             const source = `export const create = ${kernel.create};\n`;
             compiled.set(node, { description: kernel.description(kernelUrl(kernels.length, `${kernel.description("")}\n${source}`)), required: request.required, used });
             if (describe !== undefined) compiledKernels.set(node, { kernel, required: request.required });
@@ -443,6 +453,7 @@ export const transformKernels = async (
         ...kernels.length > 0 ? [`import { attachKernel as ${attach} } from ${JSON.stringify(copy.attachKernel)};`] : [],
         ...spawning ? [`import { prepareSpawn as ${prepare} } from ${JSON.stringify(copy.preparedSpawn)};`] : [],
         ...adding ? [`import { prepareAdd as ${prepareAddName} } from ${JSON.stringify(copy.preparedSpawn)};`] : [],
+        ...[...keyImports.values()].map(item => `import { ${item.imported} as ${item.local} } from ${JSON.stringify(specifierOf(file, item.file))};`),
         ...looking ? [`import { prepareLookup as ${prepareLookupName} } from ${JSON.stringify(copy.preparedLookup)};`] : [],
     ];
     const marking = terminals ? [`function ${terminal}(body) { const set = Symbol.for(${JSON.stringify(terminalBodiesName)}); (globalThis[set] || (globalThis[set] = new WeakSet())).add(body); return body; }`] : [];

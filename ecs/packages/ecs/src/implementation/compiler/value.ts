@@ -15,6 +15,11 @@ export type Value =
     | { readonly kind: "dynamic"; readonly expression: Expression }
     | { readonly kind: "tuple"; readonly items: readonly Value[] }
     | { readonly kind: "struct"; readonly fields: readonly (readonly [string, Value])[] }
+    /**
+     * A struct keyed by components, `{ [position]: value }`, which only a command takes: each component as the kernel's
+     * module names it, and its value, evaluated where the struct is written.
+     */
+    | { readonly kind: "keyed"; readonly fields: readonly (readonly [string, Expression])[] }
     /** With `up`, a component of the row's parent, read through `up`. */
     | { readonly kind: "component"; readonly component: string; readonly path: Path; readonly up?: true }
     | { readonly kind: "snapshot"; readonly snapshot: Snapshot; readonly path: Path }
@@ -52,7 +57,7 @@ export type Value =
 export const scalarValue = (expression: Expression): Value => ({ kind: "scalar", expression });
 
 const describe: { readonly [K in Value["kind"]]: string } = {
-    scalar: "a number", dynamic: "a value", tuple: "a tuple", struct: "a struct", component: "a component value",
+    scalar: "a number", dynamic: "a value", tuple: "a tuple", struct: "a struct", keyed: "a struct keyed by components", component: "a component value",
     snapshot: "a component value", found: "a lookup result", lookup: "a lookup", indexed: "a lookup's list", listAt: "a list's at", indexRow: "a lookup's row", rowRead: "a value of a lookup's row", reducer: "a reduction", function: "a helper",
     method: "a method", row: "row", context: "the context", resources: "the resources", lookups: "the lookups", reducers: "the reductions", commands: "commands", math: "Math", namespace: "a namespace",
 };

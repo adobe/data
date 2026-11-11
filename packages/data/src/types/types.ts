@@ -103,7 +103,15 @@ export type IsUnknown<T> = unknown extends T
   : false;
 
 
-export type DeepReadonly<T> = T extends Function | Branded | Element | Blob | Promise<any> | AsyncGenerator<any, any, any>
+/**
+ * The instance type of the global class `N` (`"Blob"`, `"Element"`), or `Fallback`
+ * when the program does not declare it, as in a backend build without the DOM lib.
+ * Naming the global directly would make the type an error, which TypeScript treats as `any`.
+ */
+export type GlobalInstance<N extends string, Fallback = never> =
+  typeof globalThis extends { readonly [K in N]: { prototype: infer P } } ? P : Fallback;
+
+export type DeepReadonly<T> = T extends Function | Branded | GlobalInstance<"Element"> | GlobalInstance<"Blob"> | Promise<any> | AsyncGenerator<any, any, any>
   ? T
   : T extends number | string | boolean | symbol | bigint
   ? T

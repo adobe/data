@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import * as JsonMapSet from "./functions/serialization/stringify.js";
+import type { GlobalInstance } from "./types/types.js";
 
 /**
  * Data is readonly JSON, extended with `ReadonlySet`, `ReadonlyMap`, and `Blob`.
@@ -24,7 +25,7 @@ export type Data =
   | ReadonlySet<Data>
   | ReadonlyMap<Data, Data>
   | { readonly [K in string]?: Data }
-  | Blob;
+  | GlobalInstance<"Blob">;
 
 export namespace Data {
   /** `JSON.stringify`, extended to round-trip `Map` and `Set`. */

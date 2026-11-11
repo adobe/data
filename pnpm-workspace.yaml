@@ -14,6 +14,7 @@ packages:
   - 'ecs/packages/ecs-guide-checks'
   - 'ecs/packages/ecs-benchmark'
   - 'packages/data-testing'
+  - 'packages/data-node-typecheck'
   - 'packages/data-persistence'
   - 'packages/data-sync'
   - 'packages/data-rpc'

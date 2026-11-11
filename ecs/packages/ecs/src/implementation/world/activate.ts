@@ -4,6 +4,7 @@ import type { Derivation } from '../../interface/component/derivation.js';
 import type { DerivationFacts } from '../../interface/registry/strata.js';
 import { createSyncSystemRunner, runRemovedForEvery, followResources, placeSyncSystem, refreshSyncSystemIndexes, watchedResourcesOf, type SyncSystemRunner, type Thrown } from './sync-systems.js';
 import { watchResource } from './resource-changes.js';
+import { followRows, unfollowRows } from './rows-written.js';
 import { syncSystemKeysOf, type TaskChannel } from './remote-systems.js';
 import { programDerivations, programVersion } from '../../interface/registry/program.js';
 import { triggersOf } from './program.js';
@@ -153,6 +154,7 @@ const activateNow = (state: State): void => {
         const existing = new Map(state.syncSystems.map(runner => [runner.syncSystem, runner]));
         orderRunners(state, syncSystem => runners.get(syncSystem) ?? existing.get(syncSystem));
     }
+    followRows(state, runners.values());
 };
 
 /**
@@ -193,5 +195,6 @@ export const releaseRemovedSystems = (state: State): Thrown[] => {
         runner.indexes.release();
     }
     state.syncSystems.splice(0, state.syncSystems.length, ...state.syncSystems.filter(runner => !released.includes(runner)));
+    if (released.some(runner => runner.syncSystem.kind === "changes")) unfollowRows(state);
     return errors;
 };

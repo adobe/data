@@ -69,6 +69,7 @@ System.removed({
 System.changes({ watch: [source, parent] }, (changes, { commands }) => {
     check<Equal<typeof changes, ChangeSet<typeof source | typeof parent>>>();
     void commands;
+    check<Equal<typeof changes.written, readonly (typeof source | typeof parent)[]>>();
     for (const group of changes.groups) {
         check<Equal<typeof group.from, readonly (typeof source | typeof parent)[] | null>>();
         for (const entity of group.entities) {
@@ -86,6 +87,8 @@ System.changes({ watch: [slot] }, () => {});
 // A trait of your own watches every component and resource declaring it.
 System.changes({ watch: [inDocument, source] }, changes => {
     check<Equal<typeof changes, ChangeSet<typeof kept | typeof source, typeof saved>>>();
+    // Those written through rows, by key or by trait.
+    check<Equal<typeof changes.written, readonly (typeof kept | typeof source)[]>>();
 });
 // Every component, and the resources chosen, by key or trait.
 System.changes({ watch: { components: true, resources: [time, inDocument] } }, changes => {

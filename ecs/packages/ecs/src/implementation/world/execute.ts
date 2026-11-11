@@ -8,6 +8,7 @@ import { countRan, countRanHere, idOf, startRan, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
 import { applySync, prepareSync, syncPending } from './synchronize.js';
 import { resourcesWritten } from './resource-changes.js';
+import { rowsWritten } from './rows-written.js';
 import { activate, activationPending } from './activate.js';
 import { markRun } from './move-log.js';
 import { postTails, settleAll, settleKeys, settleRunners, tailsOf, type TailOutcome } from './tails.js';
@@ -623,7 +624,7 @@ const runPass = (context: ExecuteContext, prepared: Prepared, schedule: Schedule
  */
 const idleSync = (state: State): boolean => state.queued.length === 0 && state.drained === 0 && state.unused.length === 0
     && state.channels.length === 0 && state.logs.length === 0 && state.bumped.length === 0 && state.counted.length === 0 && state.carried === null && !state.structure.rederive && state.unplaced.length === 0
-    && (state.resourcesSeen.size === 0 || !resourcesWritten(state)) && !activationPending(state) && !reserved(state.entities);
+    && (state.resourcesSeen.size === 0 || !resourcesWritten(state)) && (state.rowsWatched.length === 0 || !rowsWritten(state)) && !activationPending(state) && !reserved(state.entities);
 
 /**
  * A sync point with nothing to wait for: no GPU, tails or observer posts, which `executeTiers` checked before each

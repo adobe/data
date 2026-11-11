@@ -34,7 +34,7 @@ export type World = {
      * each resource its systems write or reduce into whose value changed, compared as `System.changes` compares them;
      * `previous` and `next` give values before and after the run. Commands the changes and removed systems of an earlier
      * sync point queued apply first, at a sync point of their own. Values written to rows aren't structural changes, so they're in
-     * none. The run pays for this only when asked. Only on the world's thread: a joined thread's rejects.
+     * none, and its `written` is empty: a run's own changes don't follow rows written. The run pays for this only when asked. Only on the world's thread: a joined thread's rejects.
      */
     run<I, R>(system: System<I, R>, ...input: [...Input<NoInfer<I>>, options: { readonly changes: true }]): Promise<ChangeSet<Essential, Resource.Key>>;
     /**

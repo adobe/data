@@ -34,8 +34,8 @@ export type Declaration = Shared & {
 export type OwnTrait = Exclude<keyof Traits<never>, BuiltIn>;
 
 /**
- * A changes system, which sees each sync point's structural changes to the components it watches, and the resources it
- * watches written since its last sync point. By default it watches every component that isn't derived
+ * A changes system, which sees each sync point's structural changes to the components it watches, the resources it
+ * watches written since its last sync point, and the components it watches written through rows since then. By default it watches every component that isn't derived
  * or an object a joined thread fills, and no resource. `watch` lists components, resources and traits of your own, or,
  * as an object, every component (`components: true`) or those listed, beside the resources listed. A trait watches each
  * component and resource declaring it, as each registers, but those the default leaves out and resources on another

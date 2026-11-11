@@ -153,8 +153,9 @@ const watchOf = (what: string, watch: ChangesDeclaration["watch"]): ResolvedChan
 
 /**
  * Declares a changes system and returns it; nothing runs. Added to a world, from its next sync point on it runs in
- * each sync point, before it applies, with its structural changes to the components it watches and the resources it
- * watches written since its last one. It runs on the world's thread. `run` doesn't take it. Throws as `removed`
+ * each sync point, before it applies, with its structural changes to the components it watches, the resources it
+ * watches written since its last one, and the components it watches written through rows since then. A row write of a
+ * watched component makes a sync point due, so a run writing only that still reports it. It runs on the world's thread. `run` doesn't take it. Throws as `removed`
  * does, for a watched component that isn't registered or is derived, a watched key that's neither a component nor a
  * resource, and for one watching or reading another thread's values.
  */

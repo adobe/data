@@ -45,6 +45,12 @@ const check = (condition: boolean, message: string): void => {
     if (!condition) throw new Error(message);
 };
 
+/** A changes system watching the particles' position, which a kernel writes through rows every run. */
+let movesWritten = 0;
+const watchMoves = System.changes({ watch: [particlePosition] }, changes => { movesWritten += changes.written.length; });
+/** A changes system watching what `idle` would write, which nothing writes. */
+const watchIndex = System.changes({ watch: [index] }, changes => { movesWritten += changes.written.length; });
+
 /** The fastest run of `observe` right after `writer` changes rows. */
 const observed = async (world: World, writer: typeof poke | typeof pokeCluster): Promise<number> => {
     let frame = 0;
@@ -126,6 +132,21 @@ export const benchmarks: readonly Benchmark[] = [
         best: runBest,
         run: async () => {
             const world = await seeded(() => inline(), 10_000);
+            const best = await fastest(() => world.run(idle));
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "run idle watched",
+        operation: "`run idle` with a changes system watching a component its world's rows hold and nothing writes: what following row writes costs a frame that writes none.",
+        per: "runs",
+        n: 1,
+        typical: [1, 1],
+        best: runBest,
+        run: async () => {
+            const world = await seeded(() => inline(), 10_000);
+            world.add(watchIndex);
             const best = await fastest(() => world.run(idle));
             await world.dispose();
             return best;
@@ -312,6 +333,24 @@ export const benchmarks: readonly Benchmark[] = [
             await world.run(spawn, { count: 1_000_000 });
             check((await entitiesWith(world, [particlePosition, visible, enabled])).length === 250_000, "move: wrong count");
             const { minimum } = await particlesFastest(() => world.run(move));
+            await world.dispose();
+            return minimum;
+        },
+    },
+    {
+        name: "move watched",
+        operation: "`move` with a changes system watching position, told each run that rows wrote it: what a coarse signal of row writes costs a per-row update.",
+        per: "matched rows",
+        n: 250_000,
+        typical: [1_000, 1_000_000],
+        best: { bytes: 36, basis: "Each row reads 12 bytes of velocity and reads and writes 12 bytes of position." },
+        run: async () => {
+            const world = inline();
+            world.add(watchMoves);
+            await world.run(spawn, { count: 1_000_000 });
+            movesWritten = 0;
+            const { minimum } = await particlesFastest(() => world.run(move));
+            check(movesWritten > 0, "move watched: no writes seen");
             await world.dispose();
             return minimum;
         },

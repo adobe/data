@@ -2,10 +2,12 @@
 import { System, World } from "../index.js";
 
 const handle = Symbol();
+const size = Symbol();
 
 declare module "@adobe/ecs" {
     interface Components {
         [handle]: { type: number };
+        [size]: { type: number };
     }
 }
 
@@ -19,7 +21,7 @@ const release = System.removed({ components: { with: [handle] } }, row => {
 const spawn = System.create(({ commands }) => {
     for (const id of [7, 8, 9]) {
         open.add(id);
-        commands.spawn([handle])({ [handle]: id });
+        commands.spawn([handle, size])({ [handle]: id, [size]: 1 });
     }
 });
 const destroy = System.create({ components: { with: [handle] } }, (row, { commands }) => {
@@ -27,12 +29,18 @@ const destroy = System.create({ components: { with: [handle] } }, (row, { comman
     else if (row[handle] === 8) commands.remove(row.entity, handle);
 });
 
-const saved: string[] = [];
+const grow = System.create({ components: { with: [size] } }, row => {
+    row[size] += 1;
+});
 
-const save = System.changes({ watch: [handle] }, changes => {
+const saved: string[] = [];
+let written = "";
+
+const save = System.changes({ watch: [handle, size] }, changes => {
     for (const group of changes.groups) {
         for (const entity of group.entities) saved.push(`${changes.previous(entity, handle)} → ${changes.next(entity, handle)}`);
     }
+    written = changes.written.map(key => key === size ? "size" : "handle").join(", ");
 });
 
 const handles = System.create([release, save]);
@@ -46,6 +54,8 @@ export const main = async (): Promise<void> => {
     await world.run(destroy);
     console.log("changed:", saved.sort().join(", "));
     console.log("open", [...open]);
+    await world.run(grow);
+    console.log("written:", written);
     await world.dispose();
     console.log("open", [...open]);
 };

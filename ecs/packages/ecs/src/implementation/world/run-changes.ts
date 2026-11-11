@@ -27,6 +27,7 @@ export type Recording = {
 const watched = (state: State, id: number): boolean => !state.derived[id] && !state.resources.has(id) && state.remote[id] === undefined;
 
 const noValues: ReadonlyMap<number, unknown> = new Map();
+const noWritten: readonly never[] = [];
 
 /** The values of components `ids` of an archetype's row. */
 const valuesAt = (archetype: Archetype, ids: readonly number[], row: number): ReadonlyMap<number, unknown> => {
@@ -138,6 +139,8 @@ export const changesOf = (state: State, recording: Recording): ChangeSet<Essenti
     };
     return {
         groups: [...groups.values()],
+        // Values written to rows aren't followed for a run's own changes.
+        written: noWritten,
         // Values read from storage match each key's registered schema, so they have its type.
         resources: resources as ChangeSet<Essential, Resource.Key>["resources"],
         previous: <K extends Essential>(entity: Entity, key: K) => valueOf(recording.before.get(entity)?.values, key) as ReadonlyType<K> | null,

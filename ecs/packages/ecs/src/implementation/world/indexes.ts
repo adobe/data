@@ -1150,12 +1150,18 @@ export const acquireLookups = (state: State, lookup: { readonly [name: string]: 
 };
 
 /**
- * Before a run: starts ticks and kernels' stamps for what sync systems' indexes follow since the last one. Returns
+ * Before a run: starts ticks and kernels' stamps for what sync systems' indexes follow since the last one, and for
+ * what changes systems follow of rows written, whose kernels stamp only chunks (`rows-written.ts`). Returns
  * whether it did, so kernels that dropped those stamps load again.
  */
 export const startWatches = (state: State): boolean => {
     const pending = state.watchesPending;
-    if (pending.length === 0) return false;
+    const rows = state.rowsPending;
+    if (pending.length === 0 && rows.length === 0) return false;
+    // Changes systems are told of writes after the ticks they follow start, not of the start.
+    for (const id of rows) if (!state.ticked.has(id)) state.rowsStarted[id] = state.tick;
+    startTicking(state, rows);
+    rows.length = 0;
     startTicking(state, pending);
     for (const id of pending) observe(state, id);
     pending.length = 0;

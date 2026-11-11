@@ -69,10 +69,16 @@ export type Group<C extends Component.Key> = {
 /**
  * A sync point's structural changes to the watched components, and the values adds replace, before they apply; and each
  * watched resource written since the system's last sync point, to a value that isn't equal to its last one,
- * leaf by leaf for data and by identity for objects, with its value before and after.
+ * leaf by leaf for data and by identity for objects, with its value before and after; and the watched components
+ * written through rows since the system's last sync point.
  */
 export type ChangeSet<C extends Component.Key, R extends Resource.Key = never> = {
     readonly groups: readonly Group<C>[];
+    /**
+     * The watched components some system wrote through a row (`row[component] = value`), as written or as a kernel,
+     * since the last sync point changes systems ran at, in no order: which components only, not which entities or values.
+     */
+    readonly written: readonly C[];
     readonly resources: readonly { readonly [K in R]: { readonly key: K; readonly previous: ResourceType<K>; readonly next: ResourceType<K> } }[R][];
     /** The value before the sync point, or null if the entity didn't have it. */
     previous<K extends C>(entity: Entity, component: K): ReadonlyType<K> | null;

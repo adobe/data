@@ -24,6 +24,7 @@ import type { MoveLog } from './move-log.js';
 import { archetypeOf, movesOf, sharedNumberOf, withComponent, withoutComponent, withShared, type State } from './state.js';
 import { releaseValue } from './transfers.js';
 import { resourcesWritten } from './resource-changes.js';
+import { rowsWritten } from './rows-written.js';
 import { recordPlan } from './run-changes.js';
 
 /** Buffers queued for the next sync point, in merge order. Commands in guarded buffers can't touch the resource entity. */
@@ -1100,7 +1101,9 @@ export const syncPending = (state: State, queued: readonly Queued[] = state.queu
     // Failures for its run, as a gone thread's stops it never ran are.
     || state.unplaced.length > 0
     // A watched resource written, which its changes systems see at a sync point.
-    || (state.resourcesSeen.size > 0 && resourcesWritten(state));
+    || (state.resourcesSeen.size > 0 && resourcesWritten(state))
+    // A watched component written through a row.
+    || (state.rowsWatched.length > 0 && rowsWritten(state));
 
 /**
  * The first half of a sync point: commits batch spawns, plans every command, cascades references and closes the plan

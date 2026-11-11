@@ -22,6 +22,7 @@ import { resourceOffsetsOf, writeStops, type StopsOf } from './stop-lists.js';
 import { acquireLookups, refreshUses, type IndexLookups } from './indexes.js';
 import { indexWatchesOf } from './lookup-keys.js';
 import { takeResourceChanges, watchResource, type ResourceChange } from './resource-changes.js';
+import { takeRowsWritten } from './rows-written.js';
 import type { Resource } from '../../interface/resource/resource.js';
 
 /** A registered sync system, resolved for a world: what it matches or watches, its context, and the buffer its commands go to. */
@@ -290,13 +291,14 @@ type Grouped = { from: Essential[] | null; to: Essential[] | null; added: Essent
 /** No components, shared by every group that replaces none. */
 const none: readonly number[] = [];
 const noResources: readonly never[] = [];
+const noRows: readonly never[] = [];
 const noResourceChanges: readonly ResourceChange[] = [];
 
 /**
  * The sync point's structural changes to a changes system's components, grouped by how they changed, and of
- * `written`, the resources it watches.
+ * `written`, the resources it watches, and of `rows`, the components written through rows that it watches.
  */
-const changesOf = (state: State, runner: SyncSystemRunner, queued: readonly Queued[], written: readonly ResourceChange[]): ChangeSet<Essential, Resource.Key> => {
+const changesOf = (state: State, runner: SyncSystemRunner, queued: readonly Queued[], written: readonly ResourceChange[], rows: readonly number[]): ChangeSet<Essential, Resource.Key> => {
     const { plan, archetypes, entities } = state;
     const { watches } = runner;
     const names = (archetype: Archetype | null): Essential[] | null =>
@@ -414,8 +416,10 @@ const changesOf = (state: State, runner: SyncSystemRunner, queued: readonly Queu
     };
     const resources = written.length === 0 || runner.resourceWatches.length === 0 ? noResources
         : written.filter(change => runner.resourceWatches.includes(change.id)).map(({ id, previous, next }) => ({ key: newestKeyOf(state.keys[id]), previous, next }));
+    const writtenRows = rows.length === 0 ? noRows : rows.filter(watches).map(id => essential(state, id));
     return {
         groups: [...groups.values()],
+        written: writtenRows,
         // Stored values match each resource's registered schema, so they have its type.
         resources: resources as ChangeSet<Essential, Resource.Key>["resources"],
         // Stored and commanded values match each component's registered schema, so they have its type.
@@ -440,6 +444,7 @@ export const runSyncSystems = (state: State, queued: readonly Queued[], born: Ma
     state.born = born;
     // Taken before any sync system runs, so what sync systems write is seen at the next sync point.
     const written = state.resourcesSeen.size === 0 ? noResourceChanges : takeResourceChanges(state);
+    const rows = state.rowsWatched.length === 0 ? none : takeRowsWritten(state, tick);
     try {
         for (const runner of state.syncSystems) {
             const { syncSystem, remote } = runner;
@@ -452,7 +457,7 @@ export const runSyncSystems = (state: State, queued: readonly Queued[], born: Ma
             else {
                 // The context is built to the sync system's declaration, so its body accepts it.
                 const changes: { body(changes: ChangeSet<Essential, Resource.Key>, context: object): void } = syncSystem;
-                guarded(state, errors, syncSystem, () => changes.body(changesOf(state, runner, queued, written), runner.context.value));
+                guarded(state, errors, syncSystem, () => changes.body(changesOf(state, runner, queued, written, rows), runner.context.value));
             }
             if (runner.target.buffer.count > 0) {
                 state.queued.push({ buffer: runner.target.buffer, guarded: true });

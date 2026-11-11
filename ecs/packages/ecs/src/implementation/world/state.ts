@@ -142,6 +142,20 @@ export type State = {
      * later write's report gives as its previous value. Empty while none watches one.
      */
     readonly resourcesSeen: Map<number, { value: unknown; tick: number }>;
+    /**
+     * Rows written for changes systems (`rows-written.ts`): by component id, true for each an active changes system
+     * watches, whose ticks and kernels' stamps are kept; those ids, empty while none watches one; and the tick of the
+     * last sync point changes systems ran at, writes after which they're told of.
+     */
+    readonly rowsFollowed: boolean[];
+    readonly rowsWatched: number[];
+    rowsSeen: number;
+    /** By component id: the tick its ticks started at for changes systems, whose stamps are then no writes. */
+    readonly rowsStarted: number[];
+    /** Components changes systems follow the rows written of since the last run, whose ticks start before the next. */
+    readonly rowsPending: number[];
+    /** How many component ids changes systems' watches were tested against. */
+    rowsTested: number;
     /** What the run in progress records of its changes, when it was asked for them; null otherwise. */
     recording: Recording | null;
     /** The records strings' columns name, in shared memory; null without it, where strings are held as objects. */
@@ -351,6 +365,12 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         reshapes: 0,
         syncs: 0,
         resourcesSeen: new Map(),
+        rowsFollowed: [],
+        rowsWatched: [],
+        rowsSeen: 0,
+        rowsStarted: [],
+        rowsPending: [],
+        rowsTested: 0,
         recording: null,
         strings: memory.shared ? createStrings(memory) : null,
         derived: [],

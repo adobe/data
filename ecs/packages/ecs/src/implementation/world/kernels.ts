@@ -324,9 +324,11 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     /**
      * Changed, chunk and block columns of components no registered system filters on are muted: nothing reads those
      * ticks, so the WASM drops their stamps and the JS kernel stamps one dummy element. Chunk columns of components
-     * held on the GPU stay, since uploads read them; block columns, which only filters read, go with the row ticks.
+     * held on the GPU stay, since uploads read them, as do those of components changes systems follow the rows written
+     * of (`rows-written.ts`); block columns, which only filters read, go with the row ticks.
      */
-    const stamped = (source: Extract<Source, { readonly id: number }>): boolean => state.observed.has(source.id) || (source.kind === "chunks" && state.resident.has(source.id));
+    const stamped = (source: Extract<Source, { readonly id: number }>): boolean => state.observed.has(source.id)
+        || (source.kind === "chunks" && (state.resident.has(source.id) || state.rowsFollowed[source.id] === true));
     const mutedNow = (): boolean[] => sources.map(source => (source.kind === "changed" || source.kind === "chunks" || source.kind === "blocks") && !stamped(source));
     const upWasmColumns: WasmColumn[] = upSources.map(source => {
         const layout = state.layouts[source.id];

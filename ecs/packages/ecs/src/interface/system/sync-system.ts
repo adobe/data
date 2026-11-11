@@ -12,7 +12,10 @@ export type RemovedSystem = {
     body: (...parameters: never[]) => void;
 };
 
-/** A changes system: runs, inside a sync point, with all its structural changes to the components it watches. */
+/**
+ * A changes system: runs, inside a sync point, with all its structural changes to the components it watches, and those
+ * written through rows.
+ */
 export type ChangesSystem = {
     readonly kind: "changes";
     readonly name: string;

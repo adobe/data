@@ -344,20 +344,17 @@ const errorGenerator = createLazy({
   }
 });
 
-// ❌ Test 11: Nested organizational object member is not a supported wrapper kind.
-// createLazy only wraps observe values and functions, so a member of type "object"
-// is rejected at compile time (rather than throwing at runtime).
+// ✅ Test 11: A nested organizational object member is wrapped recursively.
 interface ServiceWithNestedGroup extends Service {
   group: { readonly ready: Observe<boolean> };
 }
 type _CheckNestedGroupIsValid = Assert<IsValid<ServiceWithNestedGroup>>;
-const errorNestedObject = createLazy({
+const nestedObject = createLazy({
   load: () => Promise.resolve({} as ServiceWithNestedGroup),
   schema: {
     type: "object",
     properties: {
-      // @ts-expect-error - nested-object members are not a supported createLazy wrapper kind
-      group: { type: "object", properties: { ready: { type: "observe", value: {} } }, required: ["ready"], additionalProperties: false },
+      group: { type: "object", properties: { ready: { type: "observe", value: { type: "boolean" } } }, required: ["ready"], additionalProperties: false },
     },
     required: ["group"],
     additionalProperties: false
@@ -1280,4 +1277,180 @@ describe('createLazy preload option', () => {
       });
     });
   });
+});
+
+// ============================================================================
+// NESTED GROUPS AND PARTIAL SCHEMAS
+// ============================================================================
+
+// A service with nested organizational groups at two depths.
+interface NestedService extends Service {
+  root: Observe<number>;
+  actions: {
+    bump: () => void;
+    add: (a: number, b: number) => Promise<number>;
+    deep: {
+      label: (prefix: string) => Observe<string>;
+      count: (to: number) => AsyncGenerator<number>;
+    };
+  };
+}
+
+const nestedSchema = {
+  type: "object",
+  properties: {
+    root: { type: "observe", value: { type: "number" } },
+    actions: {
+      type: "object",
+      properties: {
+        bump: { type: "function" },
+        add: { type: "function", signature: { parameters: [{ name: "a", schema: { type: "number" } }, { name: "b", schema: { type: "number" } }], returns: { type: "promise", value: { type: "number" } } } },
+        deep: {
+          type: "object",
+          properties: {
+            label: { type: "function", signature: { parameters: [{ name: "prefix", schema: { type: "string" } }], returns: { type: "observe", value: { type: "string" } } } },
+            count: { type: "function", signature: { parameters: [{ name: "to", schema: { type: "number" } }], returns: { type: "generator", value: { type: "number" } } } },
+          },
+          required: ["label", "count"],
+          additionalProperties: false,
+        },
+      },
+      required: ["bump", "add", "deep"],
+      additionalProperties: false,
+    },
+  },
+  required: ["root", "actions"],
+  additionalProperties: false,
+} as const;
+
+const createNested = (log: string[]) => {
+  const [root, setRoot] = Observe.createState(0);
+  let value = 0;
+  const service: NestedService = {
+    serviceName: 'nested',
+    root,
+    actions: {
+      bump: () => { log.push('bump'); setRoot(++value); },
+      add: async (a, b) => { log.push('add'); return a + b; },
+      deep: {
+        label: (prefix) => Observe.withMap(root, n => `${prefix}${n}`),
+        count: async function* (to) { log.push('count'); for (let i = 1; i <= to; i++) yield i; },
+      },
+    },
+  };
+  return service;
+};
+
+describe('createLazy nested groups', () => {
+  test('wraps nested groups at any depth without loading until first use', async () => {
+    const log: string[] = [];
+    let loads = 0;
+    const factory = createLazy({
+      load: async (): Promise<NestedService> => { loads++; return createNested(log); },
+      schema: nestedSchema,
+    });
+    const service = factory();
+    const loadsBefore = loads;
+
+    const labels: string[] = [];
+    const unobserve = service.actions.deep.label('n=')(label => labels.push(label));
+    service.actions.bump();
+    const sum = await service.actions.add(2, 3);
+    const counted: number[] = [];
+    for await (const n of service.actions.deep.count(3)) counted.push(n);
+    unobserve();
+
+    assert({
+      given: 'a lazy service whose schema has nested groups',
+      should: 'not load before use, then forward every nested member kind to the loaded service once',
+      actual: { loadsBefore, loads, sum, counted, labels, log },
+      expected: { loadsBefore: 0, loads: 1, sum: 5, counted: [1, 2, 3], labels: ['n=0', 'n=1'], log: ['bump', 'add', 'count'] },
+    });
+  });
+
+  test('keeps call order across members at different depths', async () => {
+    const order: string[] = [];
+    const factory = createLazy({
+      load: async (): Promise<NestedService> => {
+        const service = createNested([]);
+        return { ...service, root: notify => { order.push('subscribe root'); return service.root(notify); }, actions: { ...service.actions, bump: () => order.push('bump') } };
+      },
+      schema: nestedSchema,
+    });
+    const service = factory();
+    const unobserve = service.root(() => {});
+    service.actions.bump();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    unobserve();
+
+    assert({
+      given: 'a top-level subscription then a nested call made before load',
+      should: 'run them in the order they were made',
+      actual: order,
+      expected: ['subscribe root', 'bump'],
+    });
+  });
+});
+
+describe('createLazy partial', () => {
+  const partialSchema = {
+    type: "object",
+    description: "Only the bump action of the nested service.",
+    properties: {
+      actions: { type: "object", properties: { bump: { type: "function" } }, required: ["bump"], additionalProperties: false },
+    },
+    required: ["actions"],
+    additionalProperties: false,
+  } as const;
+
+  test('exposes only the described subset of a larger service', async () => {
+    const log: string[] = [];
+    const factory = createLazy({ load: async (): Promise<NestedService> => createNested(log), schema: partialSchema, partial: true });
+    const service = factory();
+    service.actions.bump();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    assert({
+      given: 'a partial schema describing one nested member of a larger service',
+      should: 'carry only the described members and forward them',
+      actual: { keys: Object.keys(service).sort(), actionKeys: Object.keys(service.actions), log },
+      expected: { keys: ['actions', 'schema', 'serviceName'], actionKeys: ['bump'], log: ['bump'] },
+    });
+  });
+});
+
+// ============================================================================
+// TYPE TESTS: nested groups and the partial gate
+// ============================================================================
+
+const _nestedComplete = () => createLazy({ load: async (): Promise<NestedService> => createNested([]), schema: nestedSchema });
+type _NestedInstanceIsService = Assert<ReturnType<ReturnType<typeof _nestedComplete>> extends NestedService ? true : false>;
+
+const _partialInstance = () => createLazy({
+  load: async (): Promise<NestedService> => createNested([]),
+  schema: { type: "object", properties: { actions: { type: "object", properties: { bump: { type: "function" } }, required: ["bump"], additionalProperties: false } }, required: ["actions"], additionalProperties: false },
+  partial: true,
+})();
+// A partial instance is typed as the schema, not the whole service: `root` is not reachable.
+type _PartialHasBump = Assert<ReturnType<typeof _partialInstance>['actions']['bump'] extends () => void ? true : false>;
+type _PartialHidesRoot = Assert<'root' extends keyof ReturnType<typeof _partialInstance> ? false : true>;
+
+// Without `partial`, a subset schema is rejected.
+// @ts-expect-error -- a schema describing a subset of the service needs `partial: true`
+createLazy({ load: async (): Promise<NestedService> => createNested([]), schema: { type: "object", properties: { root: { type: "observe", value: { type: "number" } } }, required: ["root"], additionalProperties: false } });
+
+// With `partial`, a described member whose type disagrees with the service is rejected.
+createLazy({
+  load: async (): Promise<NestedService> => createNested([]),
+  // @ts-expect-error -- `root` is an Observe<number> on the service, not Observe<string>
+  schema: { type: "object", properties: { root: { type: "observe", value: { type: "string" } } }, required: ["root"], additionalProperties: false },
+  partial: true,
+});
+
+// With `partial`, a member the service does not have is rejected.
+createLazy({
+  load: async (): Promise<NestedService> => createNested([]),
+  // @ts-expect-error -- the service has no `missing` member
+  schema: { type: "object", properties: { missing: { type: "function" } }, required: ["missing"], additionalProperties: false },
+  partial: true,
 });

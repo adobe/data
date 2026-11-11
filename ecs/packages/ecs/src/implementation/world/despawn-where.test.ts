@@ -19,7 +19,7 @@ const host = Symbol("despawnWhereTest/host");
 const derivedFrom = Symbol("despawnWhereTest/derivedFrom");
 const slot = Symbol("despawnWhereTest/slot");
 const parent = Symbol("despawnWhereTest/parent");
-const finalized = Symbol("despawnWhereTest/finalized");
+const tracked = Symbol("despawnWhereTest/tracked");
 const watched = Symbol("despawnWhereTest/watched");
 const trigger = Symbol("despawnWhereTest/trigger");
 const level = Symbol("despawnWhereTest/level");
@@ -45,7 +45,7 @@ declare module "@adobe/ecs" {
         [derivedFrom]: { type: true };
         [slot]: { type: number; derived: true };
         [parent]: { type: Entity; reference: "owner" };
-        [finalized]: { type: number };
+        [tracked]: { type: number };
         [watched]: { type: number };
         [trigger]: { type: true };
         [chunk]: { type: number; shared: true };
@@ -66,7 +66,7 @@ declare module "@adobe/ecs" {
 Component.derive(slot, { from: [host, derivedFrom] });
 
 const seen: number[] = [];
-const release = System.removed({ components: { with: [finalized] } }, row => { seen.push(row[finalized]); });
+const release = System.removed({ components: { with: [tracked] } }, row => { seen.push(row[tracked]); });
 
 const record = System.changes({ watch: [watched, mark] }, (changes, { resources }) => {
     const lines = changes.groups.map(group => `${group.entities.map(entity => changes.previous(entity, watched)).join(",")}: +${group.added.length} -${group.removed.length}`);
@@ -184,19 +184,19 @@ describe("despawnWhere", () => {
         await world.dispose();
     });
 
-    it("runs finalizers for each entity it despawns, reading its values", async () => {
+    it("runs sync systems for each entity it despawns, reading its values", async () => {
         const { world, run } = withCommands();
         seen.length = 0;
         await run(commands => {
-            for (let i = 0; i < 4; i++) commands.spawn(i % 2 === 0 ? [finalized, mark] : [finalized])({ [finalized]: i });
+            for (let i = 0; i < 4; i++) commands.spawn(i % 2 === 0 ? [tracked, mark] : [tracked])({ [tracked]: i });
         });
-        await run(commands => commands.despawnWhere({ with: [mark, finalized] }));
+        await run(commands => commands.despawnWhere({ with: [mark, tracked] }));
         expect(seen.sort()).toEqual([0, 2]);
         await world.dispose();
         seen.length = 0;
     });
 
-    it("gives a changes finalizer the same changes as a despawn of each", async () => {
+    it("gives a changes system the same changes as a despawn of each", async () => {
         const journals: (readonly string[])[] = [];
         for (const despawn of [
             (commands: Commands, entities: readonly Entity[]) => { for (const entity of entities) commands.despawn(entity); },

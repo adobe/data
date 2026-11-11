@@ -37,7 +37,7 @@ const load = async (path: string): Promise<number> => {
     return nextHandle++;
 };
 
-// 1. A rule derives a slot for every visible entity with a mesh source.
+// 1. A derivation derives a slot for every visible entity with a mesh source.
 Component.derive(meshSlot, { from: [meshSource], not: [hidden] });
 
 // 2. Each new slot gets a fresh token, and its load is requested; the application starts requested loads.

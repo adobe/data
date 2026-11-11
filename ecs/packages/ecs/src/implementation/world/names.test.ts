@@ -24,11 +24,11 @@ declare module "@adobe/ecs" {
 }
 
 
-// Two libraries, written apart, each declare a rule, a finalizer and a system labeled "linked".
-const library = (finalizer: (row: { readonly [value]: number }) => void, derived: typeof first | typeof second) => {
+// Two libraries, written apart, each declare a derivation, a sync system and a system labeled "linked".
+const library = (syncSystem: (row: { readonly [value]: number }) => void, derived: typeof first | typeof second) => {
     Component.derive(derived, { from: [value] });
     // Its body is written in place, so the build reads it, and calls what it's given with the row.
-    return System.removed({ components: { with: [value] } }, row => finalizer(row));
+    return System.removed({ components: { with: [value] } }, row => syncSystem(row));
 };
 const released: string[] = [];
 let failing = false;
@@ -42,7 +42,7 @@ const spawn = System.create({}, ({ commands }) => { commands.spawn([value])({ [v
 const despawn = System.create({ components: { with: [value] } }, (row, { commands }) => { commands.despawn(row.entity); });
 const failOnce = System.create(() => { throw new Error("unnamed"); });
 
-describe("systems, rules and finalizers of one label", () => {
+describe("systems, derivations and sync systems of one label", () => {
     it("are distinct in schedules, both run, and are told apart in reports by their ids", async () => {
         const linked = (after: readonly System[], body: (row: { [value]: number }) => void): System => System.create({ components: { with: [value], whole: true }, after }, row => body(row));
         const a = linked([], row => { ran.push("a"); row[value] += 1; });
@@ -65,7 +65,7 @@ describe("systems, rules and finalizers of one label", () => {
         const report = await runReported(world, despawn);
         failing = false;
         expect(released).toEqual(["first 1", "second 1"]);
-        expect(report.failures.map(({ kind, name }) => ({ kind, name }))).toEqual([{ kind: "finalizer", name: "library" }]);
+        expect(report.failures.map(({ kind, name }) => ({ kind, name }))).toEqual([{ kind: "sync system", name: "library" }]);
     });
     it("are labeled by the bindings of their ids, which reports give beside them", async () => {
         const [one, two] = ["one.ts#library", "two.ts#library"].map(id => System.create(identify({ components: { with: [other] } }, id), row => { row[other] = 1; throw new Error(id); }));

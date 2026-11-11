@@ -38,10 +38,10 @@ const touch = System.create({}, ({ resources }) => { resources[unwatched] += 1; 
 const spawn = System.create({}, ({ commands }) => { commands.spawn([label])({ [label]: "a" }); });
 const read = System.create({ readonly: true }, ({ resources }) => resources[log]);
 
-it("reports each watched resource written since its finalizers last ran, with its first and last value, once", async () => {
+it("reports each watched resource written since its sync systems last ran, with its first and last value, once", async () => {
     await using world = createWorld();
     world.add(record);
-    // A run writing nothing else still has a sync point, so its finalizers see the write.
+    // A run writing nothing else still has a sync point, so its sync systems see the write.
     await world.run(resize, { to: 4 });
     expect(await world.run(read)).toEqual(["size 1 → 5"]);
     await world.run(spawn);

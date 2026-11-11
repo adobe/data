@@ -5,7 +5,7 @@ import type { Commands } from './commands.js';
 import type { Listed, Property } from './property.js';
 import type { LookupFunction } from './values.js';
 import type { WriteResources } from './body.js';
-import type { ChangesDeclaration, Declaration, OwnTrait } from './finalizer-declaration.js';
+import type { ChangesDeclaration, Declaration, OwnTrait } from './sync-system-declaration.js';
 import type { Essential, ReadonlyType } from '../component/value.js';
 import type { Resource } from '../resource/resource.js';
 import type { Resources } from '../resource/types.js';

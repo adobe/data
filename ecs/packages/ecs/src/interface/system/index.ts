@@ -3,4 +3,4 @@ export type { Commands } from './commands.js';
 export * from './create.js';
 export { describe } from './describe.js';
 export { render, type RenderContext, type RenderTable } from './render.js';
-export { changes, removed } from './finalizers.js';
+export { changes, removed } from './sync-systems.js';

@@ -472,15 +472,15 @@ export const slow = System.create({ kernel: true, components: { with: [speed] } 
 test("serve accepts a module of keys evaluated again, which makes the same keys, systems, derivations and removed systems by their ids", async () => {
     await serve(async server => {
         const first = await server.ssrLoadModule(evaluated);
-        const { programRules } = await server.ssrLoadModule(JSON.parse(source("../../interface/registry/program.ts")));
-        const rules = programRules().length;
+        const { programDerivations } = await server.ssrLoadModule(JSON.parse(source("../../interface/registry/program.ts")));
+        const derivations = programDerivations().length;
         const again = await server.ssrLoadModule(`${evaluated}?evaluated=again`);
         const { sameItem } = await server.ssrLoadModule(JSON.parse(source("../../interface/registry/items.ts")));
         expect(again.score).not.toBe(first.score);
         expect([first.label, again.label]).toEqual(["score", "score"]);
         expect(again.system).not.toBe(first.system);
         expect([sameItem(again.system, first.system), sameItem(again.kernel, first.kernel), sameItem(again.kernel, again.system)]).toEqual([true, true, false]);
-        expect(programRules()).toHaveLength(rules);
+        expect(programDerivations()).toHaveLength(derivations);
         expect(again.release).toBe(first.release);
         // Each is labeled by its binding.
         expect([again.system.name, first.kernel.name]).toEqual(["system", "kernel"]);

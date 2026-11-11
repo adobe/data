@@ -42,7 +42,7 @@ type NoPromise = { readonly "error: a body returns no promise; start the work, a
 export type Input<I> = [I] extends [never] ? never : [I] extends [undefined] ? [] : [input: I];
 
 /** Whether any of a composite's members is a changes or removed system, or a composite holding one. */
-export type HoldsFinalizing<T> = T extends readonly [infer S, ...infer R] ? [S] extends [System<never>] ? true : HoldsFinalizing<R> : false;
+export type HoldsSyncSystem<T> = T extends readonly [infer S, ...infer R] ? [S] extends [System<never>] ? true : HoldsSyncSystem<R> : false;
 
 /** A member's input fields, or `unknown` without input. */
 type Fields<S> = S extends System<infer I> ? [Exclude<I, undefined>] extends [never] ? unknown : Exclude<I, undefined> : unknown;

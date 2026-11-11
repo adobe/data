@@ -1017,8 +1017,8 @@ describe("terminal bodies", () => {
         expect(alone !== null && "code" in alone ? alone.code : "").toContain("System.create(access$(terminal$(() =>");
         const kernel = await transform(`const kernel = System.create({ kernel: true, components: { with: [score] } }, (row) => { row[score] = 1; });`);
         expect(kernel !== null && "code" in kernel ? kernel.code : "").not.toContain("terminal$");
-        const finalizer = await transformKernels(`import { System } from "ecs";\nconst f = System.removed({ components: { with: [] } }, () => {});`, "/x.js", parse, async () => ownCopy, () => "");
-        expect(finalizer !== null && "code" in finalizer ? finalizer.code : "").not.toContain("terminal$(");
+        const syncSystem = await transformKernels(`import { System } from "ecs";\nconst f = System.removed({ components: { with: [] } }, () => {});`, "/x.js", parse, async () => ownCopy, () => "");
+        expect(syncSystem !== null && "code" in syncSystem ? syncSystem.code : "").not.toContain("terminal$(");
     });
 });
 
@@ -1555,7 +1555,7 @@ describe("inferred access", () => {
 
     test("removed systems", async () => {
         const result = await transformKernels(`import { System } from "ecs";\nconst handle = "handle";\nconst count = "count";\nconst f = System.removed({ components: { with: [handle, count] } }, (row, { resources }) => { console.log(row[handle], resources[count]); });`,
-            "/finalizer.js", parse, async specifier => specifier === "ecs" ? ownCopy : null, index => JSON.stringify(`kernel:${index}`));
+            "/sync-system.js", parse, async specifier => specifier === "ecs" ? ownCopy : null, index => JSON.stringify(`kernel:${index}`));
         expect(result !== null && "code" in result ? result.code : "").toContain("{ components: { read: [handle], write: [] }, resources: { read: [count], write: [], reduce: [] }");
     });
 

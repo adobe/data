@@ -48,7 +48,7 @@ type Rest<C extends readonly Essential[], P> = [keyof P & C[number]] extends [ne
 
 /**
  * Structural changes and writes to other entities, applied in issue order at the next sync point. They take only the
- * components commands may add: every one but those rules derive.
+ * components commands may add: every one but those derivations derive.
  */
 export type Commands = {
     /**

@@ -4,9 +4,9 @@ import { System, World } from "../../index.js";
 import { Observe } from "../../observe/index.js";
 import { createWorld } from "../index.js";
 
-const name = Symbol("changesFinalizers/name");
-const score = Symbol("changesFinalizers/score");
-const journal = Symbol("changesFinalizers/journal");
+const name = Symbol("changesSystems/name");
+const score = Symbol("changesSystems/score");
+const journal = Symbol("changesSystems/journal");
 
 declare module "@adobe/ecs" {
     interface Components {

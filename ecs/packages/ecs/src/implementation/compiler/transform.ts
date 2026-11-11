@@ -57,10 +57,10 @@ const systemLocals = async (program: Program, resolveSystemImport: ResolveSystem
     return { locals, copy };
 };
 
-/** What made a body: `System.create`, `System.render`, `System.removed` (a finalizer internally) or `System.changes`. */
-export type Created = "system" | "render" | "finalizer" | "changes";
+/** What made a body: `System.create`, `System.render`, `System.removed` (a sync system internally) or `System.changes`. */
+export type Created = "system" | "render" | "removed" | "changes";
 
-const createdByMethod: { readonly [method: string]: Created } = { create: "system", render: "render", removed: "finalizer", changes: "changes" };
+const createdByMethod: { readonly [method: string]: Created } = { create: "system", render: "render", removed: "removed", changes: "changes" };
 
 /** `System.create`, `System.render`, `System.removed` or `System.changes`, whose bodies the build reads; null for any other call. */
 export const createdBy = (node: SimpleCallExpression, locals: ReadonlyMap<string, "System">): Created | null => {
@@ -312,7 +312,7 @@ export const transformKernels = async (
             const used = kernel?.used ?? inOrder(usedBy(declared, body, module.bindings, positions), declared);
             requireRequired(used, declared, body);
             const where = at(body);
-            // A readonly system's row, a finalizer's, and a lookup's rows it can't follow are taken as read whole, which is
+            // A readonly system's row, a sync system's, and a lookup's rows it can't follow are taken as read whole, which is
             // what their declarations already say; a system's row taken as written whole would change its schedule unseen.
             if (created === "system" && used.rowLost !== undefined && !declaresTrue(declared, "readonly")) {
                 fail(used.rowLost.at, `the build can't follow how this body uses its row, since ${used.rowLost.why}, so it would take every component in with, added and changed as written: index the row by key directly, or destructure it by key; or declare \`components: { whole: true }\` for a body that uses its row whole`);

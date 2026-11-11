@@ -395,7 +395,7 @@ export const augmentationInsertions = async (module: Module, host: AugmentationH
             if (kind !== "component") fail(module, shared.node, `${name} is a resource: only a component is shared`);
             if (schema === undefined || !isComparable(schema)) fail(module, shared.node, `${name} is shared, so its value is comparable data: numbers, booleans, strings, and arrays and objects of those`);
             if (placed !== undefined) fail(module, placed.node, `${name} is shared: a shared value lives in shared memory, so it has no thread`);
-            if (derived !== undefined) fail(module, derived.node, `${name} is shared, so it isn't derived: its rule would add it with its default`);
+            if (derived !== undefined) fail(module, derived.node, `${name} is shared, so it isn't derived: its derivation would add it with its default`);
             if (reference !== undefined) fail(module, reference.node, `${name} is shared, so it isn't a reference: its target despawning acts on each holder`);
         }
     };

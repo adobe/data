@@ -1,17 +1,17 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Archetype } from './archetype.js';
 import type { Holders } from './holders.js';
-import { strataOf, type RuleFacts, type Strata } from '../../interface/registry/strata.js';
+import { strataOf, type DerivationFacts, type Strata } from '../../interface/registry/strata.js';
 import { closedComponents } from './closure.js';
 import { noteEdge } from './reclaim.js';
 
 /**
- * A world's structural derivation: its rules and `within` declarations as strata, the closure each archetype maps to,
- * and its references, with the holders of each target. Empty until rules, `within` or references are used, and every
+ * A world's structural derivation: its derivations and `within` declarations as strata, the closure each archetype maps to,
+ * and its references, with the holders of each target. Empty until derivations, `within` or references are used, and every
  * sync-point step it adds is gated on that.
  */
 export type Structure = {
-    rules: readonly RuleFacts[];
+    derivations: readonly DerivationFacts[];
     strata: Strata;
     /** By component id: the host of a component declared within one, or -1. */
     readonly hosts: number[];
@@ -27,7 +27,7 @@ export type Structure = {
     closures: number[];
     /** By `from + 1` and `to` archetype ids: the derived components an entity gains moving between them. */
     readonly gains: Map<number, readonly number[]>;
-    /** Whether the next sync point re-derives every entity, after rules were registered. */
+    /** Whether the next sync point re-derives every entity, after derivations were registered. */
     rederive: boolean;
 };
 
@@ -35,16 +35,16 @@ export const owner = 1;
 export const weak = 2;
 
 export const createStructure = (): Structure => ({
-    rules: [], strata: [], hosts: [], dependents: [], references: [], referenceIds: [], holders: [], closures: [], gains: new Map(), rederive: false,
+    derivations: [], strata: [], hosts: [], dependents: [], references: [], referenceIds: [], holders: [], closures: [], gains: new Map(), rederive: false,
 });
 
-/** Whether the closure can differ from the archetype: some rule or `within` declaration exists. */
+/** Whether the closure can differ from the archetype: some derivation or `within` declaration exists. */
 export const derives = (structure: Structure): boolean => structure.strata.length > 0;
 
 /** Recomputes the strata, throwing for a cycle; on success the cached closures are dropped. */
-export const restratify = (structure: Structure, rules: readonly RuleFacts[], hosts: readonly number[], nameOf: (id: number) => string): void => {
-    const strata = strataOf(rules, hosts, nameOf);
-    structure.rules = rules;
+export const restratify = (structure: Structure, derivations: readonly DerivationFacts[], hosts: readonly number[], nameOf: (id: number) => string): void => {
+    const strata = strataOf(derivations, hosts, nameOf);
+    structure.derivations = derivations;
     structure.strata = strata;
     structure.closures = [];
     structure.gains.clear();

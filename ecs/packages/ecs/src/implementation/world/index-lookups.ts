@@ -7,7 +7,7 @@ import { sharedRows, type Row, type RowArchetype, type RowHost } from './rows.js
 import { idOf, type Key, type State } from './state.js';
 import { watchedBy } from '../../interface/registry/index.js';
 
-/** A system's `lastRun` while it runs, which its lists' `changed` compares with: -1 in finalizers, which have none. */
+/** A system's `lastRun` while it runs, which its lists' `changed` compares with: -1 in sync systems, which have none. */
 export type Since = { value: number };
 
 /**
@@ -612,7 +612,7 @@ export const lookupFunction = (lookup: IndexLookup): (...key: unknown[]) => unkn
     return call;
 };
 
-/** A lookup through one of the world's indexes, for a main-thread body or finalizer. */
+/** A lookup through one of the world's indexes, for a main-thread body or sync system. */
 export const createIndexLookup = (state: State, index: IndexView, declared: { readonly read?: readonly Key[]; readonly changed?: readonly Key[] | true }, since: Since): (...key: unknown[]) => unknown => {
     const reads = declared.read ?? [];
     return lookupFunction({

@@ -86,8 +86,8 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
         cycle.push(first);
     }
     if (declaration.derived !== undefined && kind !== "component") fail("only a component is derived.");
-    if (declaration.derived === true && declaration.within !== undefined) fail("a derived component's rule covers within.");
-    if (declaration.derived === true && declaration.reference !== undefined) fail("a rule can't set a derived component's target, so it's no reference.");
+    if (declaration.derived === true && declaration.within !== undefined) fail("a derived component's derivation covers within.");
+    if (declaration.derived === true && declaration.reference !== undefined) fail("a derivation can't set a derived component's target, so it's no reference.");
     if (declaration.derived === true && type !== undefined && fresh === undefined && !("default" in declaration || "const" in type || allowsNull(type))) {
         fail("a derived component has a default, which it starts at.");
     }
@@ -111,7 +111,7 @@ const check = (kind: "component" | "resource", key: symbol, declaration: AnyDecl
         if (kind !== "component") fail("only a component is shared.");
         if (type === undefined || !isComparable(type)) fail("a shared component's value is comparable data: numbers, booleans, strings, and arrays and objects of those.");
         if (thread !== undefined) fail("a shared value lives in shared memory, so it has no thread.");
-        if (declaration.derived !== undefined) fail("a derived component isn't shared: its rule adds it with its default.");
+        if (declaration.derived !== undefined) fail("a derived component isn't shared: its derivation adds it with its default.");
         if (declaration.reference !== undefined) fail("a reference isn't shared: its target despawning acts on each holder.");
     }
     const { length } = declaration;

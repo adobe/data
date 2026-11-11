@@ -5,25 +5,25 @@ import { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
-import type { FromRemoteFinalizersWorker, ToRemoteFinalizersWorker } from "./remote-finalizers-worker.fixture.js";
-import { despawn, finalizers, regauge, rehead, released, retitle, scenario, serial, sorted, spawn, spawnHeaded, spawnTitled, type Released, type Surveyed } from "./remote-finalizers.test-helper.js";
+import type { FromRemoteRemovedSystemsWorker, ToRemoteRemovedSystemsWorker } from "./remote-removed-systems-worker.fixture.js";
+import { despawn, removedSystems, regauge, rehead, released, retitle, scenario, serial, sorted, spawn, spawnHeaded, spawnTitled, type Released, type Surveyed } from "./remote-removed-systems.test-helper.js";
 import { runReported } from "./outcomes.test-helper.js";
 
 /**
- * Scenarios of finalizers on a joined worker, run built in node and from source in chromium: the same stops as an
- * inline world's, and a worker that never yields holding the indexes of entities it hasn't finalized until it's ended.
+ * Scenarios of removed systems on a joined worker, run built in node and from source in chromium: the same stops as an
+ * inline world's, and a worker that never yields holding the indexes of entities whose stops it hasn't run until it's ended.
  */
 
-type Worker = { readonly ask: (message: ToRemoteFinalizersWorker, transfer?: readonly unknown[]) => Promise<FromRemoteFinalizersWorker>; readonly terminate: () => Promise<void> };
+type Worker = { readonly ask: (message: ToRemoteRemovedSystemsWorker, transfer?: readonly unknown[]) => Promise<FromRemoteRemovedSystemsWorker>; readonly terminate: () => Promise<void> };
 
-const workerFile = "./remote-finalizers-worker.fixture.js";
+const workerFile = "./remote-removed-systems-worker.fixture.js";
 
 const start = (): Worker => {
     if (typeof globalThis.Worker === "function") {
-        const worker = new globalThis.Worker(new URL("./remote-finalizers-worker.fixture.js", import.meta.url), { type: "module" });
+        const worker = new globalThis.Worker(new URL("./remote-removed-systems-worker.fixture.js", import.meta.url), { type: "module" });
         return {
             ask: (message, transfer = []) => new Promise(resolve => {
-                worker.onmessage = (event: MessageEvent<FromRemoteFinalizersWorker>) => { if (!("protocol" in event.data)) resolve(event.data); };
+                worker.onmessage = (event: MessageEvent<FromRemoteRemovedSystemsWorker>) => { if (!("protocol" in event.data)) resolve(event.data); };
                 worker.postMessage(message, { transfer: transfer.filter(port => port instanceof MessagePort) });
             }),
             terminate: async () => worker.terminate(),
@@ -33,7 +33,7 @@ const start = (): Worker => {
     const worker = new threads.Worker(new URL(workerFile, import.meta.url));
     return {
         ask: (message, transfer = []) => new Promise(resolve => {
-            const reply = (data: FromRemoteFinalizersWorker): void => {
+            const reply = (data: FromRemoteRemovedSystemsWorker): void => {
                 if ("protocol" in data) return;
                 worker.off("message", reply);
                 resolve(data);
@@ -56,7 +56,7 @@ const until = <T>(observe: Observe<T>, accept: (value: T) => boolean): Promise<T
     });
 });
 
-/** A world shared with a worker that joins it claiming "remoteFinalizersTest", once it joined. */
+/** A world shared with a worker that joins it claiming "remoteRemovedSystemsTest", once it joined. */
 const joined = async (world: CreatedWorld): Promise<{ readonly worker: Worker }> => {
     const { port1, port2 } = new MessageChannel();
     const shared = world.share(port1);
@@ -76,22 +76,22 @@ const hold = async (worker: Worker): Promise<() => void> => {
     };
 };
 
-/** What the worker's finalizer saw. */
+/** What the worker's removed system saw. */
 const releasedThere = async (worker: Worker): Promise<readonly Released[]> => {
     const reply = await worker.ask({ kind: "released" });
     return reply.kind === "released" ? reply.released : [];
 };
 
-/** The scenario's stops, inline and with the joined worker running the finalizer, in order by serial. */
+/** The scenario's stops, inline and with the joined worker running the removed system, in order by serial. */
 export const sameStops = async () => {
     released.length = 0;
     const inline = createWorld({ [workers]: 0 });
-    inline.add(finalizers);
+    inline.add(removedSystems);
     const counts = await scenario(inline, () => released.length);
     const expected = sorted(released);
     await inline.dispose();
     const world = createWorld({ [workers]: 0 });
-    world.add(finalizers);
+    world.add(removedSystems);
     const { worker } = await joined(world);
     const seen = await scenario(world, async () => (await releasedThere(worker)).length, counts);
     const actual = sorted(await releasedThere(worker));
@@ -102,11 +102,11 @@ export const sameStops = async () => {
 
 /**
  * A worker that never yields, so it acknowledges no stop: the indexes of the entities despawned stay held while it
- * lives, and once it's ended they're reused, the stops it never finalized reported.
+ * lives, and once it's ended they're reused, the stops it never ran reported.
  */
 export const diesHolding = async () => {
     const world = createWorld({ [workers]: 0 });
-    world.add(finalizers);
+    world.add(removedSystems);
     const { worker } = await joined(world);
     await world.run(spawn, { from: 0, count: 4 });
     const stopped: Entity[] = [];
@@ -130,12 +130,12 @@ export const diesHolding = async () => {
 
 /**
  * Titled rows despawned while the worker is held, then the world's thread rewriting the titles of others six
- * times, so the records the despawned rows' titles were in are freed and reused before the worker finalizes them:
- * the titles its finalizer read.
+ * times, so the records the despawned rows' titles were in are freed and reused before the worker runs their stops:
+ * the titles its removed system read.
  */
 export const titledStops = async () => {
     const world = createWorld({ [workers]: 0 });
-    world.add(finalizers);
+    world.add(removedSystems);
     const { worker } = await joined(world);
     await world.run(spawnTitled, { from: 0, count: 50 });
     const release = await hold(worker);
@@ -159,12 +159,12 @@ export const titledStops = async () => {
 
 /**
  * Headed rows despawned with the heading "h0" while the worker is held, then the world's thread writing the heading
- * and subheading six times, so the records of "h0" and "sh0" are freed and reused before the worker finalizes them,
- * and the rest despawned once it goes on: what its finalizers of one and two string resources read.
+ * and subheading six times, so the records of "h0" and "sh0" are freed and reused before the worker runs their stops,
+ * and the rest despawned once it goes on: what its removed systems of one and two string resources read.
  */
 export const headedStops = async () => {
     const world = createWorld({ [workers]: 0 });
-    world.add(finalizers);
+    world.add(removedSystems);
     const { worker } = await joined(world);
     await world.run(rehead, { heading: "h0" });
     await world.run(spawnHeaded, { from: 0, count: 20 });
@@ -191,11 +191,11 @@ export const headedStops = async () => {
 
 /**
  * Headed rows despawned at level 0 while the worker is held, then the world's thread writing the level and origin six
- * times, with resources of mixed widths, and the rest despawned once it goes on: what its finalizers read.
+ * times, with resources of mixed widths, and the rest despawned once it goes on: what its removed systems read.
  */
 export const gaugedStops = async () => {
     const world = createWorld({ [workers]: 0 });
-    world.add(finalizers);
+    world.add(removedSystems);
     const { worker } = await joined(world);
     await world.run(regauge, { level: 0 });
     await world.run(spawnHeaded, { from: 0, count: 20 });

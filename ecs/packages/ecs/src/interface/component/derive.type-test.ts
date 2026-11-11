@@ -4,7 +4,7 @@ import { Component } from './component.js';
 import { Entity } from '../entity/entity.js';
 import { System } from '../system/system.js';
 import type { Writable } from './value.js';
-import type { ChangeSet } from '../system/finalizer-body.js';
+import type { ChangeSet } from '../system/sync-system-body.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };

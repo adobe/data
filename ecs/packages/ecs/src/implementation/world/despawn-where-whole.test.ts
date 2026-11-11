@@ -26,7 +26,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-/** A world with no finalizer, reference or index, whose `despawnWhere`s empty whole archetypes, and a way to run commands. */
+/** A world with no sync system, reference or index, whose `despawnWhere`s empty whole archetypes, and a way to run commands. */
 const withCommands = () => {
     const world = createWorld({ [workers]: 0 });
     let body: (commands: Commands) => void = () => {};

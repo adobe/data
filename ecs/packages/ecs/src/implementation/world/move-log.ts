@@ -9,7 +9,7 @@ import type { Memory } from './memory.js';
 /**
  * The log's header, a block of its own that never moves: the ring's version, bumped when it's replaced, its offset
  * and capacity in entries, a power of two; the position the writer may have written up to; the position published
- * through, and the sync published through, modulo 2^32; then the thread's first stop list and the sync it finalized
+ * through, and the sync published through, modulo 2^32; then the thread's first stop list and the sync it ran its stops
  * through; a tail's bound; then the runs finished. Positions count entries from the start, modulo 2^32.
  */
 export const logVersionWord = 0;
@@ -20,8 +20,8 @@ export const logPublishedWord = 4;
 export const logSyncWord = 5;
 /** The offset of the thread's first stop list (`stop-lists.ts`), 0 before one is written. */
 export const logStopsWord = 6;
-/** The sync the thread finalized through, which it stores once its finalizers ran for every stop through it. */
-export const logFinalizedWord = 7;
+/** The sync the thread ran its stops through, which it stores once its removed systems ran for every stop through it. */
+export const logRanThroughWord = 7;
 /**
  * While a tail is in flight on the thread, 1, and the sync it names, which the thread's replay stops at so the tail's
  * rows stay those of that sync; the world stores them as it posts the tail and clears the flag once it's done.

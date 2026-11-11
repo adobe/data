@@ -72,8 +72,8 @@ describe("registering a component", () => {
         expect(() => register(Symbol("typesComponentTest/badReference"), { type: { type: "number" }, reference: "weak" })).toThrow("a reference's type is Entity.schema");
         expect(() => register(Symbol("typesComponentTest/badSlot"), { type: { type: "number" }, derived: true })).toThrow("a derived component has a default");
         expect(() => register(Symbol("typesComponentTest/reduced"), { type: { type: "number" }, reduce: "+" })).toThrow("only a resource is reduced");
-        expect(() => register(Symbol("typesComponentTest/derivedWithin"), { type: { type: "number" }, default: 0, derived: true, within: count })).toThrow("a derived component's rule covers within");
-        expect(() => register(Symbol("typesComponentTest/derivedReference"), { type: { ...Entity.schema }, default: Entity.none, derived: true, reference: "owner" })).toThrow("a rule can't set a derived component's target");
+        expect(() => register(Symbol("typesComponentTest/derivedWithin"), { type: { type: "number" }, default: 0, derived: true, within: count })).toThrow("a derived component's derivation covers within");
+        expect(() => register(Symbol("typesComponentTest/derivedReference"), { type: { ...Entity.schema }, default: Entity.none, derived: true, reference: "owner" })).toThrow("a derivation can't set a derived component's target");
         const badReference = Symbol("typesComponentTest/badReference");
         expect(() => register(badReference, { type: { type: "number" }, reference: "weak" })).toThrow("a reference's type is Entity.schema");
         expect(declarationOf(badReference)).toBe(undefined);

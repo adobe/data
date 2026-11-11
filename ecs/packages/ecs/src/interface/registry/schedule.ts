@@ -390,7 +390,7 @@ const structuralOf = (leaf: Leaf): ReadonlySet<Key> | "any" | null => {
 
 /**
  * The components a leaf's rows, lookups, indexes and order name, which commands could change its view of; `any` when
- * one of them matches every entity, `cascaded` when it names a component a rule derives or `within` removes.
+ * one of them matches every entity, `cascaded` when it names a component a derivation derives or `within` removes.
  */
 const touchesOf = (leaf: Leaf): { readonly keys: ReadonlySet<Key>; readonly any: boolean; readonly cascaded: boolean } => {
     const { components, lookup, up, order } = leaf.declaration;

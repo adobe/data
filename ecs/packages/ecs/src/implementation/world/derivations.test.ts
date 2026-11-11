@@ -8,24 +8,24 @@ import { count, read } from "./reads.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
 import { registerComponent } from "../../interface/registry/declarations.js";
-import { programRules } from "../../interface/registry/index.js";
+import { programDerivations } from "../../interface/registry/index.js";
 
-const source = Symbol("rulesTest/source");
-const hidden = Symbol("rulesTest/hidden");
-const sprite = Symbol("rulesTest/sprite");
-const slot = Symbol("rulesTest/slot");
-const visible = Symbol("rulesTest/visible");
-const ready = Symbol("rulesTest/ready");
-const glow = Symbol("rulesTest/glow");
-const owned = Symbol("rulesTest/owned");
-const follows = Symbol("rulesTest/follows");
-const mark = Symbol("rulesTest/mark");
+const source = Symbol("derivationsTest/source");
+const hidden = Symbol("derivationsTest/hidden");
+const sprite = Symbol("derivationsTest/sprite");
+const slot = Symbol("derivationsTest/slot");
+const visible = Symbol("derivationsTest/visible");
+const ready = Symbol("derivationsTest/ready");
+const glow = Symbol("derivationsTest/glow");
+const owned = Symbol("derivationsTest/owned");
+const follows = Symbol("derivationsTest/follows");
+const mark = Symbol("derivationsTest/mark");
 // Within each other, so never declared: the second to register closes a cycle.
-const left = Symbol("rulesTest/left");
-const right = Symbol("rulesTest/right");
-const late = Symbol("rulesTest/late");
-const tagged = Symbol("rulesTest/tagged");
-const tag = Symbol("rulesTest/tag");
+const left = Symbol("derivationsTest/left");
+const right = Symbol("derivationsTest/right");
+const late = Symbol("derivationsTest/late");
+const tagged = Symbol("derivationsTest/tagged");
+const tag = Symbol("derivationsTest/tag");
 
 declare module "@adobe/ecs" {
     export interface Components {
@@ -67,13 +67,13 @@ const components = async (world: ReturnType<typeof createWorld>, entity: Entity)
     return all.filter((_, i) => values[i] !== null);
 };
 
-describe("rules", () => {
+describe("derivations", () => {
     it("accept a derivation declared again the same under its id, as a module evaluated again declares it, and reject a different one", () => {
-        const rules = programRules().length;
-        Component.derive(slot, identify({ from: [source], not: [hidden] }, "rulesTest/again.ts#derive(slot)"));
-        Component.derive(slot, identify({ from: [source], not: [hidden] }, "rulesTest/again.ts#derive(slot)"));
-        expect(() => Component.derive(slot, identify({ from: [source] }, "rulesTest/again.ts#derive(slot)"))).toThrow("reload the page");
-        expect(programRules()).toHaveLength(rules + 1);
+        const derivations = programDerivations().length;
+        Component.derive(slot, identify({ from: [source], not: [hidden] }, "derivationsTest/again.ts#derive(slot)"));
+        Component.derive(slot, identify({ from: [source], not: [hidden] }, "derivationsTest/again.ts#derive(slot)"));
+        expect(() => Component.derive(slot, identify({ from: [source] }, "derivationsTest/again.ts#derive(slot)"))).toThrow("reload the page");
+        expect(programDerivations()).toHaveLength(derivations + 1);
     });
     it("derive components where they match, from their start, and remove them where they stop", async () => {
         const world = createWorld({ [workers]: 0 });
@@ -136,14 +136,14 @@ describe("rules", () => {
     });
 
     it("are rejected when they can't hold", async () => {
-        // @ts-expect-error a rule derives only derived components
-        expect(() => Component.derive(mark, { from: [source] })).toThrow(`derives "rulesTest/mark", which isn't declared derived`);
+        // @ts-expect-error a derivation derives only derived components
+        expect(() => Component.derive(mark, { from: [source] })).toThrow(`derives "derivationsTest/mark", which isn't declared derived`);
         expect(() => Component.derive(slot, { from: [source], not: [visible] })).toThrow("cycle through a negation, which could oscillate");
         // @ts-expect-error a reference changes only through commands
         expect(() => System.create({ components: { with: [owned] } }, row => { row[owned] = Entity.none; })).toThrow("a reference, which changes only through commands");
         // The component closing a cycle of within declarations is rejected when it's registered.
         registerComponent(left, { type: { const: true }, within: right });
-        expect(() => registerComponent(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "rulesTest/right": components are within each other in a cycle: rulesTest/left, rulesTest/right.`);
+        expect(() => registerComponent(right, { type: { const: true }, within: left })).toThrow(`Cannot register component "derivationsTest/right": components are within each other in a cycle: derivationsTest/left, derivationsTest/right.`);
     });
 });
 
@@ -163,7 +163,7 @@ describe("within", () => {
         await step(commands => commands.add(a, hidden, true));
         expect(await components(world, a)).toEqual([source, hidden]);
         // Removing a host and adding it back still ends its dependent, as each removal does; a derived host that a
-        // rule keeps never leaves, so its dependent stays.
+        // derivation keeps never leaves, so its dependent stays.
         await step(commands => { commands.add(b, glow, true); });
         await step(commands => { commands.remove(b, ready); commands.add(b, ready, 5); commands.remove(b, source); commands.add(b, source, 5); });
         expect(await components(world, b)).toEqual([source, slot, visible, ready]);
@@ -263,7 +263,7 @@ describe("references", () => {
         await world.dispose();
     });
 
-    it("move a holder whose weak reference is dropped to an archetype no entity had, closed by the rules", async () => {
+    it("move a holder whose weak reference is dropped to an archetype no entity had, closed by the derivations", async () => {
         const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let target = Entity.none, holder = Entity.none;

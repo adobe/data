@@ -33,7 +33,7 @@ export type SharingHost = {
     readonly report: (failure: Failure) => void;
     /**
      * Why a joined thread that imported the systems of ids `imported` can't claim `threads`: a system it can't run
-     * there, or a finalizer on one; null when none.
+     * there, or a sync system on one; null when none.
      */
     readonly crossing: (threads: readonly string[], imported: ReadonlySet<string>) => string | null;
     /** Places systems again, once claims were made or released. */
@@ -319,7 +319,7 @@ export const createSharing = (host: SharingHost) => {
     };
 
     /**
-     * Its claims checked against those already made, and against systems and finalizers on them; its control words
+     * Its claims checked against those already made, and against systems and sync systems on them; its control words
      * placed, and its status `"joined"`; or refused. With claims, its objects become its own between runs, then it's
      * told.
      */
@@ -443,7 +443,7 @@ export const createSharing = (host: SharingHost) => {
             thread.proxies.clear();
         }
         if (log !== null) host.between(() => {
-            // Indexes its finalizers held return, and stops it never acknowledged are reported.
+            // Indexes its sync systems held return, and stops it never acknowledged are reported.
             if (tasks !== null) state.unplaced.push(...endStops(tasks.stops, state.holds, state.entities.released, thread.claims.join(`" and "`)));
             releaseThreads(state, log);
             if (tasks !== null) {
@@ -465,12 +465,12 @@ export const createSharing = (host: SharingHost) => {
             case "join": return join(thread, message.threads, message.waits, message.lock, message.imported);
             case "completed": return thread.tasks?.completed(message);
             case "unplaced": return thread.tasks?.unplaced(message.indexes);
-            case "finalized": {
+            case "removed failed": {
                 const { tasks } = thread;
                 if (tasks === null) return;
                 for (const [index, error] of message.errors) {
-                    const finalizer = tasks.finalizerAt(index);
-                    if (finalizer !== undefined) host.report(failureOf("finalizer", finalizer, Object.assign(new Error(error.message), { name: error.name, stack: error.stack })));
+                    const syncSystem = tasks.syncSystemAt(index);
+                    if (syncSystem !== undefined) host.report(failureOf("sync system", syncSystem, Object.assign(new Error(error.message), { name: error.name, stack: error.stack })));
                 }
                 return;
             }

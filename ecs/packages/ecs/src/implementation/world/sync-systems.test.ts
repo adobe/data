@@ -9,24 +9,24 @@ import { count, read, readEach, readResource, select } from "./reads.test-helper
 import { workers } from "../../interface/resources/workers.js";
 import { outcomeOf } from "./outcomes.test-helper.js";
 
-const handle = Symbol("finalizersTest/handle");
-const hidden = Symbol("finalizersTest/hidden");
-const source = Symbol("finalizersTest/source");
-const slot = Symbol("finalizersTest/slot");
-const parent = Symbol("finalizersTest/parent");
-const label = Symbol("finalizersTest/label");
-const released = Symbol("finalizersTest/released");
-const late = Symbol("finalizersTest/late");
-const level = Symbol("finalizersTest/level");
-const written = Symbol("finalizersTest/written");
+const handle = Symbol("syncSystemsTest/handle");
+const hidden = Symbol("syncSystemsTest/hidden");
+const source = Symbol("syncSystemsTest/source");
+const slot = Symbol("syncSystemsTest/slot");
+const parent = Symbol("syncSystemsTest/parent");
+const label = Symbol("syncSystemsTest/label");
+const released = Symbol("syncSystemsTest/released");
+const late = Symbol("syncSystemsTest/late");
+const level = Symbol("syncSystemsTest/level");
+const written = Symbol("syncSystemsTest/written");
 // Each test's changes and removed systems match components of their own.
-const counted = Symbol("finalizersTest/counted");
-const pendingHandle = Symbol("finalizersTest/pendingHandle");
-const respawned = Symbol("finalizersTest/respawned");
-const ordered = Symbol("finalizersTest/ordered");
-const writing = Symbol("finalizersTest/writing");
-const disposing = Symbol("finalizersTest/disposing");
-const reloaded = Symbol("finalizersTest/reloaded");
+const counted = Symbol("syncSystemsTest/counted");
+const pendingHandle = Symbol("syncSystemsTest/pendingHandle");
+const respawned = Symbol("syncSystemsTest/respawned");
+const ordered = Symbol("syncSystemsTest/ordered");
+const writing = Symbol("syncSystemsTest/writing");
+const disposing = Symbol("syncSystemsTest/disposing");
+const reloaded = Symbol("syncSystemsTest/reloaded");
 
 declare module "@adobe/ecs" {
     export interface Components {
@@ -90,7 +90,7 @@ describe("removed systems", () => {
         await world.dispose();
     });
 
-    it("run for rules' and references' removals too, and at disposal for every live match", async () => {
+    it("run for derivations' and references' removals too, and at disposal for every live match", async () => {
         const seen: number[] = [];
         const release = System.removed({ components: { with: [slot, source] } }, row => { seen.push(row[source]); });
         const world = createWorld({ [workers]: 0 });
@@ -177,7 +177,7 @@ describe("removed systems", () => {
         const order: string[] = [];
         const second = System.removed({ components: { with: [ordered] } }, () => { order.push("second"); });
         const first = System.removed({ components: { with: [ordered] }, before: [second] }, () => { order.push("first"); });
-        const throwing = System.removed({ components: { with: [ordered] } }, () => { throw new Error("finalizer failed"); });
+        const throwing = System.removed({ components: { with: [ordered] } }, () => { throw new Error("sync system failed"); });
         const world = createWorld({ [workers]: 0 });
         world.add(System.create([second, first, throwing]));
         recorderOf(world);
@@ -185,9 +185,9 @@ describe("removed systems", () => {
         let a = Entity.none;
         await run(commands => { a = commands.spawn([ordered])({ [ordered]: 1 }); });
         const { outcome, error } = await outcomeOf(world, run(commands => commands.despawn(a)));
-        expect(outcome.failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "finalizer", name: "throwing", message: "finalizer failed" }]);
+        expect(outcome.failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "sync system", name: "throwing", message: "sync system failed" }]);
         // The run rejects, naming it, once its sync point applied.
-        expect(error instanceof Error && error.message).toMatch(/^System "throwing" .*failed: finalizer failed$/);
+        expect(error instanceof Error && error.message).toMatch(/^System "throwing" .*failed: sync system failed$/);
         expect(order).toEqual(["first", "second"]);
         expect(await read(world, a, handle)).toBeNull();
         const writer = (name: "writerA" | "writerB") =>
@@ -201,16 +201,16 @@ describe("removed systems", () => {
 describe("a removed system declared again the same, as a module evaluated again declares it", () => {
     it("keeps its place in each world, and runs its new body once", async () => {
         const seen: string[] = [];
-        const first = System.removed(identify({ components: { with: [reloaded] } }, "finalizersTest/finalizers.ts#reloaded"), () => { seen.push("first"); });
+        const first = System.removed(identify({ components: { with: [reloaded] } }, "syncSystemsTest/sync-systems.ts#reloaded"), () => { seen.push("first"); });
         const world = createWorld({ [workers]: 0 });
         world.add(first);
         let entity = Entity.none;
         await step(world)(commands => { entity = commands.spawn([reloaded])({ [reloaded]: 1 }); });
-        const again = System.removed(identify({ components: { with: [reloaded] } }, "finalizersTest/finalizers.ts#reloaded"), () => { seen.push("again"); });
+        const again = System.removed(identify({ components: { with: [reloaded] } }, "syncSystemsTest/sync-systems.ts#reloaded"), () => { seen.push("again"); });
         expect(again).toBe(first);
         await step(world)(commands => { commands.despawn(entity); });
         expect(seen).toEqual(["again"]);
-        expect(() => System.removed(identify({ components: { with: [handle] } }, "finalizersTest/finalizers.ts#reloaded"), () => {})).toThrow("reload the page");
+        expect(() => System.removed(identify({ components: { with: [handle] } }, "syncSystemsTest/sync-systems.ts#reloaded"), () => {})).toThrow("reload the page");
         await world.dispose();
     });
 });

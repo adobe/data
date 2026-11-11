@@ -33,7 +33,7 @@ const ordered = (schema: Schema): boolean => {
 const collection = (schema: Schema): boolean => "type" in schema && (schema.type === "set" || schema.type === "map");
 
 /**
- * Declares an index over components' values and returns it; nothing is built until a world's system or finalizer uses
+ * Declares an index over components' values and returns it; nothing is built until a world's system or sync system uses
  * it. It holds the entities with every key part and every component in `with`, and none in `not`, keyed by the values
  * of `key`, compared part by part: numbers and tuples by value, an entity with its generation, so a stale one finds
  * nothing. With an empty key it holds those entities, every entity but the resource entity when `with` and `not` are

@@ -7,7 +7,7 @@ import { holdShared, releaseShared, sweepShared } from './shared.js';
 import type { State } from './state.js';
 
 // Reclaiming archetypes of shared values (design.md, "Reclaiming"): one found empty at a sync point is reclaimed once
-// it stayed empty for `emptyFor` sync points and every joined thread finalized past it. Reclaimed, it leaves the
+// it stayed empty for `emptyFor` sync points and every joined thread ran its stops past it. Reclaimed, it leaves the
 // world's lookup by key and systems' match lists, lets go of its arrays and of each value only it held, and the edges
 // cached to and from it are cleared. It waits in its component set's pool, under its id, until an archetype of those
 // components and other values is wanted: then it's reused for them, its id and storages kept, so what's cached by id of
@@ -59,7 +59,7 @@ export const noteEmptied = (state: State): void => {
 
 /**
  * Whether every joined thread acknowledged its stop lists through the sync point of `tick`, an archetype's last with
- * rows: a stop list names its stops' archetypes, whose values the thread reads by id as it finalizes them.
+ * rows: a stop list names its stops' archetypes, whose values the thread reads by id as it runs their stops.
  */
 const stopsSettledThrough = (state: State, tick: number): boolean => {
     for (const channel of state.channels) {

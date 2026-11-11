@@ -5,44 +5,44 @@ import type { World } from "../../interface/world/world.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import type { Vec3 } from "../../interface/math/index.js";
 
-// Keys, systems and a finalizer both threads of the remote finalizers tests import: a finalizer on thread
-// "remoteFinalizersTest", which a joined thread fills, reading structs, a constant, that thread's objects and its
+// Keys, systems and a removed system both threads of the remote removed systems tests import: a removed system on thread
+// "remoteRemovedSystemsTest", which a joined thread fills, reading structs, a constant, that thread's objects and its
 // object resource, and what it saw, on the thread it ran on.
 
-export const serial = Symbol("remoteFinalizersTest/serial");
-export const place = Symbol("remoteFinalizersTest/place");
-export const marked = Symbol("remoteFinalizersTest/marked");
-export const flagged = Symbol("remoteFinalizersTest/flagged");
-export const widget = Symbol("remoteFinalizersTest/widget");
-export const label = Symbol("remoteFinalizersTest/label");
-export const tone = Symbol("remoteFinalizersTest/tone");
-export const title = Symbol("remoteFinalizersTest/title");
-export const headed = Symbol("remoteFinalizersTest/headed");
-export const heading = Symbol("remoteFinalizersTest/heading");
-export const subheading = Symbol("remoteFinalizersTest/subheading");
-export const level = Symbol("remoteFinalizersTest/level");
-export const origin = Symbol("remoteFinalizersTest/origin");
-export const caption = Symbol("remoteFinalizersTest/caption");
-export const lit = Symbol("remoteFinalizersTest/lit");
-export const tint = Symbol("remoteFinalizersTest/tint");
-export const sample = Symbol("remoteFinalizersTest/sample");
-export const material = Symbol("remoteFinalizersTest/material");
+export const serial = Symbol("remoteRemovedSystemsTest/serial");
+export const place = Symbol("remoteRemovedSystemsTest/place");
+export const marked = Symbol("remoteRemovedSystemsTest/marked");
+export const flagged = Symbol("remoteRemovedSystemsTest/flagged");
+export const widget = Symbol("remoteRemovedSystemsTest/widget");
+export const label = Symbol("remoteRemovedSystemsTest/label");
+export const tone = Symbol("remoteRemovedSystemsTest/tone");
+export const title = Symbol("remoteRemovedSystemsTest/title");
+export const headed = Symbol("remoteRemovedSystemsTest/headed");
+export const heading = Symbol("remoteRemovedSystemsTest/heading");
+export const subheading = Symbol("remoteRemovedSystemsTest/subheading");
+export const level = Symbol("remoteRemovedSystemsTest/level");
+export const origin = Symbol("remoteRemovedSystemsTest/origin");
+export const caption = Symbol("remoteRemovedSystemsTest/caption");
+export const lit = Symbol("remoteRemovedSystemsTest/lit");
+export const tint = Symbol("remoteRemovedSystemsTest/tint");
+export const sample = Symbol("remoteRemovedSystemsTest/sample");
+export const material = Symbol("remoteRemovedSystemsTest/material");
 declare module "@adobe/ecs" {
     export interface Threads {
-        remoteFinalizersTest: true;
+        remoteRemovedSystemsTest: true;
     }
     export interface Components {
         [serial]: { type: Schema.Type<{ type: "integer" }> };
         [place]: { type: readonly [number, number] };
         [marked]: { type: true };
         [flagged]: { type: true };
-        [widget]: { type: Widget | null; thread: "remoteFinalizersTest" };
-        [label]: { type: { readonly text: string } | null; thread: "remoteFinalizersTest"; default: { text: "none" } };
+        [widget]: { type: Widget | null; thread: "remoteRemovedSystemsTest" };
+        [label]: { type: { readonly text: string } | null; thread: "remoteRemovedSystemsTest"; default: { text: "none" } };
         [title]: { type: string };
         [headed]: { type: true };
     }
     export interface Resources {
-        [tone]: { type: { readonly text: string }; thread: "remoteFinalizersTest"; default: { text: "quiet" } };
+        [tone]: { type: { readonly text: string }; thread: "remoteRemovedSystemsTest"; default: { text: "quiet" } };
         [heading]: { type: string; default: "h" };
         [subheading]: { type: string; default: "s" };
         [level]: { type: number; default: -1 };
@@ -57,73 +57,73 @@ declare module "@adobe/ecs" {
 /** A value that isn't data, which only its thread holds. */
 type Widget = { readonly tag: string; readonly draw: () => string };
 const text = { type: "object", properties: { text: { type: "string" } } } as const;
-/** A string, in shared memory, which the world's thread writes and the finalizer on the thread reads. */
-/** A string resource, which the world's thread writes and the finalizer on the thread reads. */
-/** Linear resources, a number and a struct, which the world's thread writes and the finalizer on the thread reads. */
+/** A string, in shared memory, which the world's thread writes and the removed system on the thread reads. */
+/** A string resource, which the world's thread writes and the removed system on the thread reads. */
+/** Linear resources, a number and a struct, which the world's thread writes and the removed system on the thread reads. */
 /** Resources of mixed widths: a string, a boolean (1 byte), an f32 vec3 (12), a padded CPU struct (24) and a storage struct (32). */
 type Sample = { readonly on: boolean; readonly count: number; readonly weight: number; readonly ratio: number };
 type Material = { readonly alpha: number; readonly color: readonly [number, number, number]; readonly glossy: boolean };
 const f32 = { type: "number", precision: 1 } as const;
 const vec3 = { type: "array", items: f32, minItems: 3, maxItems: 3 } as const;
 
-/** A stop as the finalizer saw it, on the thread it ran on. */
+/** A stop as the removed system saw it, on the thread it ran on. */
 export type Released = { readonly serial: number; readonly place: readonly number[]; readonly marked: boolean; readonly widget: string | null; readonly label: string | null; readonly tone: string };
 
-/** Every stop finalized on this thread, in order, with the entity each was. */
+/** Every stop run on this thread, in order, with the entity each was. */
 export const released: Released[] = [];
-export const finalized: Entity[] = [];
+export const ranStops: Entity[] = [];
 /** Serials whose stops throw. */
 export const throwing = new Set<number>();
 
-/** On the finalizers' thread: what each stop held there, its structs before the sync point applied. */
+/** On the removed systems' thread: what each stop held there, its structs before the sync point applied. */
 export const release = System.removed({ components: { with: [serial, place, marked, widget, label] } }, (row, { resources }) => {
-    finalized.push(row.entity);
+    ranStops.push(row.entity);
     released.push({ serial: row[serial], place: [...row[place]], marked: row[marked], widget: row[widget]?.tag ?? null, label: row[label]?.text ?? null, tone: resources[tone].text });
-    if (throwing.has(row[serial])) throw new Error(`remoteFinalizersTest: ${row[serial]} throws`);
+    if (throwing.has(row[serial])) throw new Error(`remoteRemovedSystemsTest: ${row[serial]} throws`);
 });
 
-/** Every titled stop finalized on this thread, in order, with the title it read. */
+/** Every titled stop run on this thread, in order, with the title it read. */
 export const entitled: { readonly serial: number; readonly title: string }[] = [];
 
-/** On the finalizers' thread: what each titled stop's title was before its sync point applied. */
+/** On the removed systems' thread: what each titled stop's title was before its sync point applied. */
 export const entitle = System.removed({ components: { with: [serial, title, widget] } }, row => {
     // Reading its widget places it on the widget's thread.
     void row[widget];
     entitled.push({ serial: row[serial], title: row[title] });
 });
 
-/** Every headed stop finalized on this thread, in order, with the heading it read. */
+/** Every headed stop run on this thread, in order, with the heading it read. */
 export const headlined: { readonly serial: number; readonly heading: string }[] = [];
 
-/** On the finalizers' thread: the heading as it was before each headed stop's sync point applied. */
+/** On the removed systems' thread: the heading as it was before each headed stop's sync point applied. */
 export const headline = System.removed({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
     void row[widget];
     headlined.push({ serial: row[serial], heading: resources[heading] });
 });
 
-/** Every headed stop finalized on this thread, in order, with the heading and subheading it read. */
+/** Every headed stop run on this thread, in order, with the heading and subheading it read. */
 export const headlinedBoth: { readonly serial: number; readonly heading: string; readonly subheading: string }[] = [];
 
-/** On the finalizers' thread: two string resources as they were before each headed stop's sync point applied. */
+/** On the removed systems' thread: two string resources as they were before each headed stop's sync point applied. */
 export const headlines = System.removed({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
     void row[widget];
     headlinedBoth.push({ serial: row[serial], heading: resources[heading], subheading: resources[subheading] });
 });
 
-/** Every headed stop finalized on this thread, in order, with the linear resources it read. */
+/** Every headed stop run on this thread, in order, with the linear resources it read. */
 export const gauged: { readonly serial: number; readonly level: number; readonly origin: readonly number[] }[] = [];
 
-/** On the finalizers' thread: a number and a struct resource as they were before each headed stop's sync point applied. */
+/** On the removed systems' thread: a number and a struct resource as they were before each headed stop's sync point applied. */
 export const gauge = System.removed({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
     void row[widget];
     gauged.push({ serial: row[serial], level: resources[level], origin: [...resources[origin]] });
 });
 
-/** Every headed stop finalized on this thread, in order, with the resources of mixed widths it read. */
+/** Every headed stop run on this thread, in order, with the resources of mixed widths it read. */
 export type Surveyed = { readonly serial: number; readonly caption: string; readonly lit: boolean; readonly tint: readonly number[]; readonly sample: Sample; readonly material: Material };
 export const surveyed: Surveyed[] = [];
 
-/** On the finalizers' thread: resources of mixed widths as they were before each headed stop's sync point applied. */
+/** On the removed systems' thread: resources of mixed widths as they were before each headed stop's sync point applied. */
 export const survey = System.removed({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
     void row[widget];
     const { alpha, color, glossy } = resources[material];
@@ -134,7 +134,7 @@ export const survey = System.removed({ components: { with: [serial, widget, head
 });
 
 /** Every removed system of these tests, which their worlds add. */
-export const finalizers = System.create([release, entitle, headline, headlines, gauge, survey]);
+export const removedSystems = System.create([release, entitle, headline, headlines, gauge, survey]);
 
 /** What `regauge` writes to the resources of mixed widths at a level. */
 export const surveyOf = (at: number): Omit<Surveyed, "serial"> => ({
@@ -223,9 +223,9 @@ export const eventually = async (done: () => boolean | Promise<boolean>, millise
 export const sorted = (stops: readonly Released[]): readonly Released[] => stops.map((stop, k) => [stop, k] as const).sort((a, b) => a[0].serial - b[0].serial || a[1] - b[1]).map(([stop]) => stop);
 
 /**
- * The runs both worlds take: spawns, widgets and labels given on the finalizers' thread, despawns and a removal in
+ * The runs both worlds take: spawns, widgets and labels given on the removed systems' thread, despawns and a removal in
  * sync points that move other rows into the stopped ones, a crowd moved past what a joined thread's log holds before
- * its despawns, and its object resource changed. `stops` is how many stops the finalizer has seen, wherever it runs;
+ * its despawns, and its object resource changed. `stops` is how many stops the removed system has seen, wherever it runs;
  * each step waits until it saw `expected` of them, with what an inline world saw first.
  */
 export const scenario = async (world: World, stops: () => number | Promise<number>, expected: readonly number[] = []): Promise<readonly number[]> => {

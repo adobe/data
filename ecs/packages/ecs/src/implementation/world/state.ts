@@ -4,7 +4,7 @@ import type { Recording } from './run-changes.js';
 import { createHolds, type Holds } from './stop-lists.js';
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Leaf } from '../../interface/system/leaf.js';
-import type { Finalizer } from '../../interface/system/finalizer.js';
+import type { SyncSystem } from '../../interface/system/sync-system.js';
 import { declarationOf, firstKeyOf, kindOf, labelOf, whyUnregistered } from '../../interface/registry/index.js';
 import type { Arrivals } from './arrivals.js';
 import { createArchetype, noShared, startTicks, type Archetype, type Storage } from './archetype.js';
@@ -18,7 +18,7 @@ import type { GpuEngine } from './gpu.js';
 import type { Queued } from './synchronize.js';
 import type { IndexChanges } from './cascade.js';
 import { createEntities, type Entities, type Reserved } from './entities.js';
-import type { FinalizerRunner, Thrown } from './finalizers.js';
+import type { SyncSystemRunner, Thrown } from './sync-systems.js';
 import { createPlan, type Plan } from './plan.js';
 import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
 import { layoutOf, objectLayout, type Layout } from '../../interface/registry/layout.js';
@@ -138,7 +138,7 @@ export type State = {
     /** Sync points applied, which reclaiming counts. */
     syncs: number;
     /**
-     * By id, each resource a changes finalizer watches: its value and change tick when its finalizers last ran, which a
+     * By id, each resource a changes system watches: its value and change tick when its sync systems last ran, which a
      * later write's report gives as its previous value. Empty while none watches one.
      */
     readonly resourcesSeen: Map<number, { value: unknown; tick: number }>;
@@ -165,8 +165,8 @@ export type State = {
     drained: number;
     resourceEntity: number;
     /**
-     * Components some registered system filters on with `changed`, or a finalizer's index follows; only their kernel
-     * stamps are kept. By component id, how many do: each system while registered, each finalizer index's watch for the
+     * Components some registered system filters on with `changed`, or a sync system's index follows; only their kernel
+     * stamps are kept. By component id, how many do: each system while registered, each sync system index's watch for the
      * world's life (`observe`).
      */
     readonly observed: Set<number>;
@@ -174,7 +174,7 @@ export type State = {
     /** Workers' kernel indexes, by kernel module url, so they're bounded by code. */
     readonly kernelIndexes: Map<string, number>;
     /**
-     * Components some registered system filters on with `added` or `changed`, a finalizer's index follows, or a GPU
+     * Components some registered system filters on with `added` or `changed`, a sync system's index follows, or a GPU
      * system holds copies of; only they keep ticks.
      */
     readonly ticked: Set<number>;
@@ -239,7 +239,7 @@ export type State = {
         /** By batch target archetype id, the first row its batches added. */
         readonly born: Map<number, number>;
         readonly index: IndexChanges | null;
-        /** Whether rules or `within` declarations can change archetypes. */
+        /** Whether derivations or `within` declarations can change archetypes. */
         readonly deriving: boolean;
         /** Applies only its queued buffers, for registration's own changes. */
         readonly isolated: boolean;
@@ -248,25 +248,25 @@ export type State = {
     } | null;
     /** Reservation positions blocks left unused since the last sync point, as start and end pairs. */
     readonly unused: number[];
-    /** Reservations made during the last sync point's finalizers, which the next one accounts for. */
+    /** Reservations made during the last sync point's sync systems, which the next one accounts for. */
     carried: Reserved | null;
-    /** While finalizers run: by batch target archetype id, the first row its batches added this sync point, which lookups don't see. */
+    /** While sync systems run: by batch target archetype id, the first row its batches added this sync point, which lookups don't see. */
     born: Map<number, number> | null;
     readonly structure: Structure;
-    /** The finalizers this world has activated, in their order. */
-    readonly finalizers: FinalizerRunner[];
+    /** The sync systems this world has activated, in their order. */
+    readonly syncSystems: SyncSystemRunner[];
     /**
-     * The changes and removed systems added to the world, finalizers internally, in run order, and how many times that
+     * The changes and removed systems added to the world, sync systems internally, in run order, and how many times that
      * list changed.
      */
-    added: readonly Finalizer[];
+    added: readonly SyncSystem[];
     addedVersion: number;
     /**
-     * The program's rules and the added finalizers active here, which apply from the first sync point after the world
+     * The program's derivations and the added sync systems active here, which apply from the first sync point after the world
      * meets their components.
      */
     readonly activated: Set<object>;
-    /** The program's version when the world last activated, and whether it has met a component, or had a finalizer added, since. */
+    /** The program's version when the world last activated, and whether it has met a component, or had a sync system added, since. */
     activation: { version: number; met: boolean };
     /** Resource values given at creation, in place of their defaults. */
     readonly initial: Map<Key, unknown>;
@@ -282,8 +282,8 @@ export type State = {
     claimed: boolean;
     /** The system without components whose body's value the run in progress resolves to; null for none, as in a tick. */
     wanted: Leaf | null;
-    /** While a finalizer's failure is reported out of band, the finalizers each sync point ran, which then recover. */
-    finalized: Set<object> | null;
+    /** While a sync system's failure is reported out of band, the sync systems each sync point ran, which then recover. */
+    syncSystemsRan: Set<object> | null;
     /** What the run in progress ran: systems, whether any ran on `main`, GPU work, joined threads' logs. */
     readonly ran: Ran;
     /** Whether a joined thread reads the layout directory's counts: one holds claims, or has observer systems placed. */
@@ -300,19 +300,19 @@ export type State = {
     /** Moves on whenever a registered system's runner is replaced, so runs read runners again only then. */
     runnersVersion: number;
     /**
-     * Failures of finalizers the next sync point gives its run: those on claimed threads that can't run there, which don't
-     * activate, with every one found; and stops a thread that's gone never finalized.
+     * Failures of sync systems the next sync point gives its run: those on claimed threads that can't run there, which don't
+     * activate, with every one found; and stops a thread that's gone never ran.
      */
     readonly unplaced: Thrown[];
     readonly unplacedSeen: Set<object>;
     /**
-     * Indexes of entities despawned with stops of joined threads' finalizers, held apart from `released` until those
+     * Indexes of entities despawned with stops of joined threads' removed systems, held apart from `released` until those
      * threads acknowledge them.
      */
     readonly holds: Holds;
     /** Tails posted whose reads a later writer must still copy, or wait for (`tails.ts`). */
     readonly tails: Tail[];
-    /** The indexes some registered system or finalizer uses, by declaration (`indexes.ts`). */
+    /** The indexes some registered system or sync system uses, by declaration (`indexes.ts`). */
     readonly indexes: Map<IndexDefinition, WorldIndex>;
     /** By component id: the tick of the last system run that wrote it, which indexes read to skip ticks no write moved. */
     readonly written: number[];
@@ -323,7 +323,7 @@ export type State = {
     /** Indexes built in phases so far, and of them across the pool, for tests of how builds run. */
     phasedBuilds: number;
     pooledBuilds: number;
-    /** Components finalizers' indexes follow since the last run, whose ticks and kernels' stamps start before the next. */
+    /** Components sync systems' indexes follow since the last run, whose ticks and kernels' stamps start before the next. */
     readonly watchesPending: number[];
 };
 
@@ -393,7 +393,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         carried: null,
         born: null,
         structure: createStructure(),
-        finalizers: [],
+        syncSystems: [],
         added: [],
         addedVersion: 0,
         activated: new Set(),
@@ -406,7 +406,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         logs: [],
         claimed: false,
         wanted: null,
-        finalized: null,
+        syncSystemsRan: null,
         ran: { systems: 0, main: false, gpu: false, joined: new Set() },
         counting: false,
         observer: createObserverState(),
@@ -480,7 +480,7 @@ export const idOf = (state: State, key: Key): number => {
     if (host >= 0) {
         const hosts = [...structure.hosts];
         hosts[id] = host;
-        restratify(structure, structure.rules, hosts, other => labelOf(other === id ? key : state.keys[other]));
+        restratify(structure, structure.derivations, hosts, other => labelOf(other === id ? key : state.keys[other]));
     }
     state.ids.set(key, id);
     state.keys.push(key);

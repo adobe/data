@@ -23,8 +23,7 @@ Referenced from `design.md`.
 
 ## Model
 
-- **The world lives on the thread that creates it.** That thread, `world`, runs the loop, every sync point (plan,
-  finalize, apply), the kernel pool and the GPU device. Any thread can create a world; it stays
+- **The world lives on the thread that creates it.** That thread, `world`, runs the loop, every sync point (plan, run sync systems, apply), the kernel pool and the GPU device. Any thread can create a world; it stays
   there for the world's life.
 - **The loop is core.** A world ticks the systems `add` gave it, on the beats of its `cadence`, with its state as
   resources: `cadence`, `always`, `wake` and `clock`. One world runs one loop.
@@ -409,7 +408,7 @@ its tick, which is the sync number. A row a move or an append fills starts each 
 its start; a set gives it the value its tag names, its ticks the world's, stamped `changed`, and `added` where the
 component starts in its row, re-adds within one sync point included, as the entry's added flag says. Every path that
 moves or fills a row appends: `commitBatches` and `commitStaged`, `writeValues` for entries that stay, `arrive`,
-`leave` and its `swapRemove`, `rederive`, and isolated sync points; `finalizeAll` at dispose moves none. The world
+`leave` and its `swapRemove`, `rederive`, and isolated sync points; `runRemovedForAll` at dispose moves none. The world
 publishes "through position P, sync N" in the log's header after each sync point's entries, before the structure epoch
 turns even.
 
@@ -418,7 +417,7 @@ post, it processes each pending sync in order: its removed systems first, agains
 rows, then its log. It copies the entries out, then checks the writer hasn't lapped it: the writer stores a limit 64
 entries ahead of where it writes before writing past it, and the copy holds if the limit is within the ring's size of
 where it started. A staged slot that no entry of a sync it was for names was dropped, and is cleared without a
-finalizer. An entry naming an archetype holding a component whose key the world hasn't named yet holds replay before
+sync system. An entry naming an archetype holding a component whose key the world hasn't named yet holds replay before
 its sync until the message arrives. The ring holds max(4096, the rows of the archetypes holding the thread's objects)
 entries, rounded up to a power of two and replaced at a sync point's start when the rows outgrow it; past that it
 drops them, and a thread behind, or whose ring was replaced, rebuilds, at a task's head or under the structure epoch:
@@ -487,14 +486,14 @@ consecutive tiers all on that thread are one task, which stops after a tier with
   `unplace` with the sequence of the last task it posted, and once the thread finished that task it drops what it holds
   for the system, its runner and its tail block's view, and answers `unplaced`: so no task names the index after the
   thread forgot it. The world frees the system's tail block once that tail's last task settled, and places another
-  system at the index only once the answer arrived, as stop lists hold an entity's index until each thread finalized it.
+  system at the index only once the answer arrived, as stop lists hold an entity's index until each thread ran its stops.
   A task's completion, rather than the next sync point, is what makes the drop safe: a thread left with no system gets
   no more tasks, and replays nothing until one comes.
 
 ### Removed systems on other threads
 
 A removed system added to the world whose thread a joined thread claims is placed there, as systems are, each posted to
-the thread with its index there, its id and the world's numbers for its keys (`finalizers.ts`, `activate.ts`); adding it
+the thread with its index there, its id and the world's numbers for its keys (`sync-systems.ts`, `activate.ts`); adding it
 on the world's thread is enough, and the joined thread knows it by its id, among what it imported. One added after the
 claim is placed when it activates, and one the thread can't name, without an id or naming a key without one, doesn't activate
 and is reported once in a sync point's failures. Once the thread is gone, they run on the world's thread again.
@@ -505,13 +504,13 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   layout, and of each string's record, by its handle; then, once per group, the resources it reads that aren't its
   thread's objects, as they were before apply: a copy of each string resource's record, by its handle, then each linear
   resource's value in its layout, from the resource entity's row; a constant needs none. A removed system reading no such
-  resource adds no bytes. The records' copies are let go once the thread acknowledged the block: it may finalize sync
+  resource adds no bytes. The records' copies are let go once the thread acknowledged the block: it may run the stops of sync
   points after the row's or resource's own record was let go and freed. The world copies a column at a time, finding each column's storage once per run of an archetype. Blocks are
   linked in sync order, the first from the log header's stops word, each block's next offset stored once that block is
   whole, so a thread reads only whole blocks of published syncs. A block is freed once the thread acknowledged a later
   one, since the thread reads the next offset from the newest block it ran. The world wakes the thread after each sync
-  point that published stops for it, so a thread with no task or post of a readonly system still finalizes.
-- **Running them** (`thread-finalizers.ts`): the thread runs a sync's stop list as it replays that sync, at its sync
+  point that published stops for it, so a thread with no task or post of a readonly system still runs its stops.
+- **Running them** (`thread-removed-systems.ts`): the thread runs a sync's stop list as it replays that sync, at its sync
   entry, before the sync's entries apply, or at replay's end for a sync with no entries for it; its removed systems read the
   linear structs from the block, constants as they are, and its objects by each stop's tag: the start or `null` as
   tagged, any other at the stop's row in its mirror. After its log lapped, it runs them before it rebuilds, reading a
@@ -520,7 +519,7 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   be behind the entity table, its old rows before a rebuild, and the start where no row holds it, as before its first
   rebuild. That's what the rebuild keeps: only its systems write those values, and the world gives them only their start,
   when they're added or claimed. Its string and linear resources are read from the group's copies, so every resource
-  it reads is as of before its stops' sync point applied. Then it stores "finalized through sync N" in the log header. A stop list naming a removed system
+  it reads is as of before its stops' sync point applied. Then it stores "ran through sync N" in the log header. A stop list naming a removed system
   whose setup hasn't arrived holds replay before its sync, as a component without a key does; one this thread never
   imported fails each of its groups. What its removed systems throw is posted, and the world reports it out of band.
 - **The guarantee:** each such removed system runs exactly once per stop, on its thread, before that thread's next task or
@@ -529,10 +528,10 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
 - **Held indexes:** the index of an entity despawned with such stops is held, counted by index for each thread that
   hasn't acknowledged it, apart from `released`, so the leak scan never sees it and the free list never has it; the
   sync point after a thread acknowledges releases it once no thread holds it. A thread that's gone has its held indexes
-  returned, and each removed system with stops it never acknowledged is a `"thread"` failure of the next sync point's run. A thread finalizes what was published before it leaves.
+  returned, and each removed system with stops it never acknowledged is a `"thread"` failure of the next sync point's run. A thread runs the stops published before it leaves.
 - **Dispose and remove:** once the world is disposed, a joined thread runs the stop lists published, then its removed
   systems for every row they match, as the world's thread runs its own. Once one is removed from the world, which posts
-  `release finalizer` between runs, the thread runs the stop lists published, then that one for every row it matches,
+  `release sync system` between runs, the thread runs the stop lists published, then that one for every row it matches,
   and drops it.
 - **Restriction:** a removed system on a thread other than `world` issues no commands, writes no resources and looks
   nothing up, wherever it runs, so the world's thread never waits for one. Kept open, to revisit when a use case needs
@@ -905,13 +904,13 @@ joined thread reads again rather than wait while its unread word is set, which l
 
 ### Built: phase 5c, remote removed systems
 
-Removed systems on claimed threads run there (`stop-lists.ts`, `thread-finalizers.ts`): placed as systems are, with their
+Removed systems on claimed threads run there (`stop-lists.ts`, `thread-removed-systems.ts`): placed as systems are, with their
 setups posted, one created after a claim placed when it activates; stop lists written before apply, a column at a
 time, one block per sync point linked in sync order, and the thread woken; removed systems run as the thread replays each
 sync, before its entries apply, or before it rebuilds once its log lapped, against its objects by tag and entity;
-replay held before a sync whose removed system's setup hasn't arrived; "finalized through" acknowledged in the log header;
-indexes of despawned entities held, counted by index, until every thread finalizing them acknowledged; held indexes
-returned and unacknowledged stops reported once the thread is gone; what was published finalized before a thread
+replay held before a sync whose removed system's setup hasn't arrived; "ran through" acknowledged in the log header;
+indexes of despawned entities held, counted by index, until every thread running their stops acknowledged; held indexes
+returned and unacknowledged stops reported once the thread is gone; the stops published run before a thread
 leaves, and every match once the world is disposed. Claims check by id that the joined thread imported the removed systems
 placed on it.
 
@@ -922,13 +921,13 @@ placed on it.
   report; a removed system ordered with one on another thread is rejected when added; a claim is refused for a removed system
   there the joined thread can't run, without an id, naming a key without one, or not imported; one created after the
   claim that the thread can't name doesn't activate, reported once; stops of a thread that's gone are `"thread"`
-  failures; once the world is disposed, a joined thread finalizes every row its removed systems match.
+  failures; once the world is disposed, a joined thread runs its removed systems for every row they match.
 - Tests: types and creation rejecting what can't run on another thread; on one thread through a `MessageChannel`, an
   inline world's stops, with structs as before the sync point applies, the thread's objects at their starts, `null`,
   written or staged, and its object resource, after its log lapped too; a removed system placed by its object resource alone;
-  an index reused only once its stop was finalized (red without holds); failures there in a later report; removed systems
-  created after the claim, one without an id reported once; every match finalized there once the world is disposed;
-  stops published finalized when the thread leaves, then removed systems on the world's thread. In node and chromium, the
+  an index reused only once its stop ran (red without holds); failures there in a later report; removed systems
+  created after the claim, one without an id reported once; every match run there once the world is disposed;
+  stops published run when the thread leaves, then removed systems on the world's thread. In node and chromium, the
   same stops against a joined worker; a worker that never yields holding indexes, which are reused and its stops
   reported once it's ended.
 - Must not regress: every benchmark, inline.

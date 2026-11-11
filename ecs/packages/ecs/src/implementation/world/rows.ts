@@ -378,7 +378,7 @@ const createMatcher = (state: State, lookup: SystemLookupLists) => {
             for (let i = 0; i < has.length; i++) if (storageById[has[i]] === undefined) return -1;
             for (let i = 0; i < not.length; i++) if (storageById[not[i]] !== undefined) return -1;
             const row = state.entities.row[index];
-            // While finalizers run, rows spawned in the same sync point aren't alive yet.
+            // While sync systems run, rows spawned in the same sync point aren't alive yet.
             if (state.born !== null && row >= (state.born.get(archetype.id) ?? Infinity)) return -1;
             matcher.archetype = archetype;
             return row;
@@ -504,7 +504,7 @@ type Extras = {
     readonly since?: Since;
 };
 
-/** The `lastRun` of a context without one, as a finalizer's: every list counts as changed. */
+/** The `lastRun` of a context without one, as a sync system's: every list counts as changed. */
 const never: Since = { value: -1 };
 
 /** An object with its own prototype, so it gets its own root map, as rows do. */

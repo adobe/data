@@ -38,7 +38,7 @@ it("follows a change of the workers resource at the next run, though the program
         await world.run(cool);
         await world.run(setWorkers);
         expect(starts).toBe(0);
-        // A finalizer created between runs changes the program, so the next run drains the joined thread first.
+        // A sync system created between runs changes the program, so the next run drains the joined thread first.
         System.removed({ components: { with: [other] } }, () => {});
         await world.run(cool);
         expect(starts).toBe(1);

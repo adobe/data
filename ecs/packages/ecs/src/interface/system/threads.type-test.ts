@@ -59,7 +59,7 @@ const render = System.create({ components: { with: [node] } }, () => {});
 const play = System.create({ components: { with: [audio] } }, () => {});
 export const frame = System.create({ systems: [render, play] });
 
-// Finalizers too run on one thread, which registration finds from what their bodies use. One on another thread than
+// Sync systems too run on one thread, which registration finds from what their bodies use. One on another thread than
 // the world's, which a joined thread may fill, runs there after the sync point: it issues no commands, writes no
 // resources and looks up nothing.
 System.removed({ components: { with: [node] } }, () => {});
@@ -73,9 +73,9 @@ System.removed({ components: { with: [label, position] }, lookup: { labels: { wi
     resources[time] = lookup.labels(row.entity)?.[label].length ?? 0;
     commands.despawn(row.entity);
 });
-// A changes finalizer runs on the world's thread: watching another thread's objects doesn't compile.
+// A changes system runs on the world's thread: watching another thread's objects doesn't compile.
 System.changes({ watch: [label, position] }, (_, { commands }) => { void commands; });
-// @ts-expect-error a changes finalizer watches no other thread's objects
+// @ts-expect-error a changes system watches no other thread's objects
 System.changes({ watch: [node] }, () => {});
 
 // The error names each object component and resource with its thread; data places nothing.

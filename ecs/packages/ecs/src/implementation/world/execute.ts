@@ -618,7 +618,7 @@ const runPass = (context: ExecuteContext, prepared: Prepared, schedule: Schedule
 
 /**
  * Whether a sync point within a run, with no joined thread, would apply nothing and leave nothing to do after:
- * nothing queued, drained, unreserved or pending (`syncPending`), no rule or finalizer to activate, and no layout for
+ * nothing queued, drained, unreserved or pending (`syncPending`), no derivation or sync system to activate, and no layout for
  * workers to see.
  */
 const idleSync = (state: State): boolean => state.queued.length === 0 && state.drained === 0 && state.unused.length === 0
@@ -636,7 +636,7 @@ const syncNow = (context: ExecuteContext, prepared: Prepared, last: boolean): vo
     try {
         if (prepareSync(state)) {
             prepared.dropped += state.plan.dropped;
-            for (const { finalizer, error, kind } of applySync(state)) (prepared.outcome.failures ??= []).push(failureOf(kind ?? "finalizer", finalizer, error));
+            for (const { syncSystem, error, kind } of applySync(state)) (prepared.outcome.failures ??= []).push(failureOf(kind ?? "sync system", syncSystem, error));
         }
     }
     finally {
@@ -786,7 +786,7 @@ const readersDone = (state: State): Promise<void> | null => {
 
 /**
  * Prepares and applies a sync point, reading back first what the GPU wrote where it moves and writes existing rows,
- * which finalizers read too; applied even when the readback fails, which only a lost device makes it do, so the CPU
+ * which sync systems read too; applied even when the readback fails, which only a lost device makes it do, so the CPU
  * state stays whole.
  */
 const applyOnDevice = (state: State, prepared: Prepared): Promise<void> | null => {
@@ -808,7 +808,7 @@ const applyOnDevice = (state: State, prepared: Prepared): Promise<void> | null =
 
 const apply = (state: State, prepared: Prepared): void => {
     prepared.dropped += state.plan.dropped;
-    for (const { finalizer, error, kind } of applySync(state)) (prepared.outcome.failures ??= []).push(failureOf(kind ?? "finalizer", finalizer, error));
+    for (const { syncSystem, error, kind } of applySync(state)) (prepared.outcome.failures ??= []).push(failureOf(kind ?? "sync system", syncSystem, error));
 };
 
 /** Once a sync point applied or failed: the rows it moved, even partway, the strings it let go, and its buffers. */
@@ -832,7 +832,7 @@ const afterSync = (context: ExecuteContext, last: boolean): void => {
 /** A run's report once its sync point applied, its index conflicts included: a shared one when nothing went wrong. */
 const reportOf = (state: State, prepared: Prepared): RunReport => {
     const { outcome, dropped } = prepared;
-    // Conflicts unique indexes found while refreshing for finalizers.
+    // Conflicts unique indexes found while refreshing for sync systems.
     if (state.indexFailures.length !== 0) (outcome.failures ??= []).push(...state.indexFailures.splice(0));
     const { failures, skipped } = outcome;
     // Released for collection: the next run starts them again.
@@ -855,19 +855,19 @@ const warnedReport = (prepared: Prepared): RunReport => {
 
 /**
  * What the planned sync point disturbs: the archetypes whose existing rows it moves or writes, those of every planned
- * entity that existed before it, and the resource entity's when finalizers run; and every storage it reads, theirs
- * and those finalizers look up. Spawns only add rows at the end of their archetypes.
+ * entity that existed before it, and the resource entity's when sync systems run; and every storage it reads, theirs
+ * and those sync systems look up. Spawns only add rows at the end of their archetypes.
  */
 const disturbedBy = (state: State): { readonly archetypes: Set<Archetype>; readonly storages: readonly Storage[] } => {
     const { plan, archetypes } = state;
     const disturbed = new Set<Archetype>();
     for (let entry = 0; entry < plan.count; entry++) if (plan.from[entry] >= 0) disturbed.add(archetypes[plan.from[entry]]);
     const looked = new Set<number>();
-    if (state.finalizers.length > 0) {
+    if (state.syncSystems.length > 0) {
         const index = state.resourceEntity < 0 ? -1 : locate(state.entities, state.resourceEntity);
         if (index >= 0) disturbed.add(archetypes[state.entities.archetype[index]]);
-        for (const { finalizer } of state.finalizers) {
-            for (const name in finalizer.declaration.lookup) for (const key of finalizer.declaration.lookup[name].read ?? []) looked.add(idOf(state, key));
+        for (const { syncSystem } of state.syncSystems) {
+            for (const name in syncSystem.declaration.lookup) for (const key of syncSystem.declaration.lookup[name].read ?? []) looked.add(idOf(state, key));
         }
     }
     const storages = [...disturbed].flatMap(archetype => archetype.storages);

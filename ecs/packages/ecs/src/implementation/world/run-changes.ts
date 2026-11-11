@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Essential, ReadonlyType } from '../../interface/component/value.js';
-import type { ChangeSet } from '../../interface/system/finalizer-body.js';
+import type { ChangeSet } from '../../interface/system/sync-system-body.js';
 import type { Resource } from '../../interface/resource/resource.js';
 import { isLeaf, newestKeyOf, scheduleOf, type Definition, type Leaf } from '../../interface/registry/index.js';
 import type { Archetype } from './archetype.js';
@@ -23,7 +23,7 @@ export type Recording = {
     readonly resources: ReadonlyMap<Key, unknown>;
 };
 
-/** Every component but derived ones and the objects a joined thread fills, as a changes finalizer watches by default. */
+/** Every component but derived ones and the objects a joined thread fills, as a changes system watches by default. */
 const watched = (state: State, id: number): boolean => !state.derived[id] && !state.resources.has(id) && state.remote[id] === undefined;
 
 const noValues: ReadonlyMap<number, unknown> = new Map();

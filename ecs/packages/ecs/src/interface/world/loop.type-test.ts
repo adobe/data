@@ -59,7 +59,7 @@ System.create({}, ({ resources }) => {
     resources[wake] = 0;
 });
 System.removed({ components: {} }, (_row, { resources }) => {
-    // @ts-expect-error a finalizer doesn't write clock either
+    // @ts-expect-error a sync system doesn't write clock either
     resources[clock] = resources[clock];
 });
 // @ts-expect-error a cadence is a frame or a fixed step

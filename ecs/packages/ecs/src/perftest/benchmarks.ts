@@ -15,7 +15,7 @@ import { wake } from "./wake.js";
 import { remoteBenchmarks } from "./remote.js";
 import { logBenchmarks } from "./log.js";
 import { handoffBenchmarks } from "./handoff.js";
-import { finalizedBenchmarks } from "./finalized.js";
+import { removedBenchmarks } from "./removed.js";
 import { tailBenchmarks } from "./tails.js";
 import { readBenchmarks } from "./reads.js";
 import { observedBenchmarks } from "./observed.js";
@@ -708,7 +708,7 @@ export const benchmarks: readonly Benchmark[] = [
     ...remoteBenchmarks,
     ...logBenchmarks,
     ...handoffBenchmarks,
-    ...finalizedBenchmarks,
+    ...removedBenchmarks,
     ...tailBenchmarks,
     ...readBenchmarks,
     ...observedBenchmarks,

@@ -3,7 +3,7 @@ import type { Entity } from '../../interface/entity/entity.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { SystemLookupLists } from '../../interface/system/access.js';
-import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, finalizerOf, itemOfId, kindOf, labelOf, threadOfDeclaration, watchedBy, whyUnregistered } from '../../interface/registry/index.js';
+import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, syncSystemOf, itemOfId, kindOf, labelOf, threadOfDeclaration, watchedBy, whyUnregistered } from '../../interface/registry/index.js';
 import { layoutOf, objectLayout, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import type { StringStore } from './strings.js';
 import { stampChanged, writeOf } from './archetype.js';
@@ -28,7 +28,7 @@ import { changedRowOf, emptyRow, rowBinderOf, type RowHost } from './rows.js';
 import { requiredOf } from './required.js';
 import type { Since } from './index-lookups.js';
 import { createBatch, noValues, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
-import { createThreadFinalizers } from './thread-finalizers.js';
+import { createThreadRemovedSystems } from './thread-removed-systems.js';
 import { createThreadWhere } from './where.js';
 import { createThreadIndex, type ThreadIndex } from './thread-indexes.js';
 import type { EntityViews, ThreadArchetype, ThreadDirectory, ThreadStorage } from './thread-directory.js';
@@ -55,7 +55,7 @@ import {
 export const tailSnapshots = { late: 0, switched: 0 };
 
 /**
- * A system or finalizer the world places on this thread: its index here, its id, and the world's numbers for the keys
+ * A system or sync system the world places on this thread: its index here, its id, and the world's numbers for the keys
  * it names; for a system, the byte offset of its removed word.
  */
 /** A system the world places on this thread: its index here, id, keys' numbers, removed word, and by lookup name its index records. */
@@ -338,7 +338,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         strings: directory.strings,
     };
 
-    /** Takes the world's numbers for the keys of systems or finalizers it places here. */
+    /** Takes the world's numbers for the keys of systems or sync systems it places here. */
     const name = directory.name;
 
     /** By index: the byte offset of the word the world sets once it removed the system there, which no task runs from then on. */
@@ -386,7 +386,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         dropUnplaced();
     };
 
-    const finalizers = createThreadFinalizers({
+    const syncSystems = createThreadRemovedSystems({
         mirror,
         refresh: directory.refresh,
         rows: rowHost,
@@ -394,29 +394,29 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         layoutOf: runnerHost.layoutOf,
         archetypeAt, countOf, tableCount, resourceRow,
         strings: directory.strings,
-        failed: errors => host.post({ protocol: protocolName, kind: "finalized", errors }),
+        failed: errors => host.post({ protocol: protocolName, kind: "removed failed", errors }),
     });
-    mirror.finalize = finalizers.through;
+    mirror.runStops = syncSystems.through;
 
-    /** Records the finalizers the world places here; one this thread never imported fails each group of its stops. */
-    const setupFinalizers = (setups: readonly SystemSetup[]): void => {
+    /** Records the sync systems the world places here; one this thread never imported fails each group of its stops. */
+    const setupRemovedSystems = (setups: readonly SystemSetup[]): void => {
         name(setups);
-        finalizers.setup(setups.map(({ index, id }) => {
+        syncSystems.setup(setups.map(({ index, id }) => {
             const item = itemOfId(id);
-            const leaf = item === undefined ? undefined : finalizerOf(item);
-            return { index, leaf: leaf?.kind === "finalizer" ? leaf : null };
+            const leaf = item === undefined ? undefined : syncSystemOf(item);
+            return { index, leaf: leaf?.kind === "removed" ? leaf : null };
         }));
     };
 
-    /** Finalizers the world removed, by index, which run for every row they match once the mirror is current. */
+    /** Sync systems the world removed, by index, which run for every row they match once the mirror is current. */
     const releasing: number[] = [];
     const release = (): void => {
         if (releasing.length === 0 || !current()) return;
-        for (const index of releasing.splice(0)) finalizers.release(index);
+        for (const index of releasing.splice(0)) syncSystems.release(index);
     };
 
     /**
-     * Brings the mirror up to the last published sync, which runs the finalizers of its stops: `"moved"` when its
+     * Brings the mirror up to the last published sync, which runs the sync systems of its stops: `"moved"` when its
      * rebuild found a sync point applying before or during it, so it can rebuild once that's applied, and `"held"`
      * while it waits for something else.
      */
@@ -637,27 +637,27 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
 
     return {
         setup,
-        setupFinalizers,
+        setupRemovedSystems,
         /**
-         * Runs the finalizers of stops published since this thread last replayed, if any, as it replays them; and
+         * Runs the sync systems of stops published since this thread last replayed, if any, as it replays them; and
          * releases staged `transfer` values whose commands dropped.
          */
-        finalize: (): void => {
-            if (finalizers.pending() || mirror.stagedTransfers > 0) current();
+        runStops: (): void => {
+            if (syncSystems.pending() || mirror.stagedTransfers > 0) current();
             release();
         },
-        /** A finalizer the world removed: it runs for every row it matches once the stops published before ran, then is dropped. */
-        releaseFinalizer: (index: number): void => {
+        /** A sync system the world removed: it runs for every row it matches once the stops published before ran, then is dropped. */
+        releaseRemovedSystem: (index: number): void => {
             releasing.push(index);
             release();
         },
-        /** Once the world is disposed: finalizers run for the stops published, then for every row they match. */
+        /** Once the world is disposed: sync systems run for the stops published, then for every row they match. */
         disposed: (): void => {
             try {
-                if (current()) finalizers.all();
+                if (current()) syncSystems.all();
             }
             catch (error) {
-                host.post({ protocol: protocolName, kind: "finalized", errors: [[-1, errorOf(error)]] });
+                host.post({ protocol: protocolName, kind: "removed failed", errors: [[-1, errorOf(error)]] });
             }
         },
         /** A task's input, posted by message. */

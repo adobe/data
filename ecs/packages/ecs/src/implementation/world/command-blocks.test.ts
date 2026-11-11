@@ -26,7 +26,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-/** A world with no finalizer, reference or index, whose sync points keep commands naming a whole archetype as blocks. */
+/** A world with no sync system, reference or index, whose sync points keep commands naming a whole archetype as blocks. */
 const withCommands = () => {
     const world = createWorld({ [workers]: 0 });
     let body: (commands: Commands) => void = () => {};

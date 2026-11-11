@@ -244,7 +244,7 @@ export const createThreadDirectory = (memory: WebAssembly.Memory, mirror: Mirror
 
     const tableCount = (): number => Atomics.load(viewed.words, tableLengthWord);
 
-    /** Takes the world's numbers for the keys of systems or finalizers it places here. */
+    /** Takes the world's numbers for the keys of systems or sync systems it places here. */
     const name = (setups: readonly Named[]): void => {
         for (const { keys: named } of setups) {
             for (const [number, id] of named) {

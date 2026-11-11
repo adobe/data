@@ -17,7 +17,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-// Components, resources and traits are named by keys; systems, rules and finalizers by names.
+// Components, resources and traits are named by keys; systems, derivations and sync systems by names.
 export const component: Component.Key = position;
 export const resource: Resource.Key = scale;
 export const trait: TraitKey = mark;

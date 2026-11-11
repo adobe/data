@@ -67,11 +67,11 @@ check<Equal<Resource<typeof time>, number>>();
 export const issue = (commands: Commands, entity: Entity): void => {
     commands.add(entity, [score, parent], { [score]: 1, [parent]: entity });
     commands.remove(entity, score);
-    // @ts-expect-error derived components are added only by rules
+    // @ts-expect-error derived components are added only by derivations
     commands.spawn([slot])({ [slot]: 1 });
-    // @ts-expect-error derived components are added only by rules
+    // @ts-expect-error derived components are added only by derivations
     commands.add(entity, slot, 1);
-    // @ts-expect-error derived components are removed only by rules
+    // @ts-expect-error derived components are removed only by derivations
     commands.remove(entity, slot);
 };
 

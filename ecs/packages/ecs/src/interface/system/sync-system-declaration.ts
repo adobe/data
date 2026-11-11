@@ -8,7 +8,7 @@ import type { Traits } from '../trait/types.js';
 import type { BuiltIn } from '../trait/key.js';
 
 /** A changes or removed system, as `System.changes` and `System.removed` type them: one `run` never takes. */
-export type Finalizing = System<never>;
+export type SyncSystemValue = System<never>;
 
 /**
  * What every changes and removed system declares. What its body reads of its row and lookups, and reads and writes of
@@ -18,8 +18,8 @@ export type Finalizing = System<never>;
 type Shared = {
     /** Read-only access to other entities, as they are before the sync point applies. */
     readonly lookup?: { readonly [name: string]: Lookup };
-    readonly before?: readonly Finalizing[];
-    readonly after?: readonly Finalizing[];
+    readonly before?: readonly SyncSystemValue[];
+    readonly after?: readonly SyncSystemValue[];
 };
 
 /**

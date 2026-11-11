@@ -1,16 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Finalizer } from '../../interface/system/finalizer.js';
+import type { SyncSystem } from '../../interface/system/sync-system.js';
 import { firstItemOf, firstKeyOf, labelOf, threadOf } from '../../interface/registry/index.js';
 
-/** The thread a finalizer runs on: a changes system, and a removed system using no objects, on the world's. */
-const runsOn = (finalizer: Finalizer): string => finalizer.kind === "finalizer" ? threadOf(finalizer.declaration, "Removed system", finalizer.name) ?? "world" : "world";
+/** The thread a sync system runs on: a changes system, and a removed system using no objects, on the world's. */
+const runsOn = (syncSystem: SyncSystem): string => syncSystem.kind === "removed" ? threadOf(syncSystem.declaration, "Removed system", syncSystem.name) ?? "world" : "world";
 
 /**
  * A world's changes and removed systems, `runners` in the order they were added, in run order: `before` and `after`
  * first, then the order added. Throws for a cycle, for two ordered with each other that run on different threads,
  * and for two that both write a resource, or where one reads what the other writes, with no ordering between them.
  */
-export const orderFinalizers = (runners: readonly Finalizer[]): Finalizer[] => {
+export const orderSyncSystems = (runners: readonly SyncSystem[]): SyncSystem[] => {
     const indexOf = new Map<object, number>(runners.map((runner, index) => [firstItemOf(runner), index]));
     const successors = runners.map(() => new Set<number>());
     const threads = runners.map(runsOn);
@@ -21,14 +21,14 @@ export const orderFinalizers = (runners: readonly Finalizer[]): Finalizer[] => {
     };
     runners.forEach((runner, index) => {
         const { before, after } = runner.declaration;
-        for (const finalizer of before ?? []) {
-            const other = indexOf.get(firstItemOf(finalizer));
+        for (const syncSystem of before ?? []) {
+            const other = indexOf.get(firstItemOf(syncSystem));
             if (other === undefined) continue;
             sameThread(index, other);
             successors[index].add(other);
         }
-        for (const finalizer of after ?? []) {
-            const other = indexOf.get(firstItemOf(finalizer));
+        for (const syncSystem of after ?? []) {
+            const other = indexOf.get(firstItemOf(syncSystem));
             if (other === undefined) continue;
             sameThread(index, other);
             successors[other].add(index);

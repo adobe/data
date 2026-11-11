@@ -4,10 +4,10 @@ import { System, workers } from "../../index.js";
 import { createWorld, join } from "./create.js";
 import { runReported } from "./outcomes.test-helper.js";
 
-const held = Symbol("unidentifiedFinalizers/held");
+const held = Symbol("unidentifiedRemovedSystems/held");
 declare module "@adobe/ecs" {
-    interface Threads { unidentifiedFinalizers: true }
-    interface Components { [held]: { type: { readonly text: string } | null; thread: "unidentifiedFinalizers" } }
+    interface Threads { unidentifiedRemovedSystems: true }
+    interface Components { [held]: { type: { readonly text: string } | null; thread: "unidentifiedRemovedSystems" } }
 }
 
 const nothing = System.create(() => {});
@@ -28,7 +28,7 @@ const shared = async (added: readonly System<never>[] = []) => {
     for (const system of added) world.add(system);
     const channel = new MessageChannel();
     const sharing = outcomeOf(world.share(channel.port1));
-    const joining = join(channel.port2, { threads: ["unidentifiedFinalizers"] });
+    const joining = join(channel.port2, { threads: ["unidentifiedRemovedSystems"] });
     const joined = await outcomeOf(joining);
     const remote = joined === "joined" ? await joining : null;
     return { world, remote, shared: await sharing, joined };
@@ -43,7 +43,7 @@ describe("a removed system without an id on a thread a joined thread fills", () 
         await remote.run(spawn);
         world.add(unidentified());
         const first = await runReported(world, nothing);
-        expect(first.failures.map(failure => [failure.kind, failure.message.includes("has no id")])).toEqual([["finalizer", true]]);
+        expect(first.failures.map(failure => [failure.kind, failure.message.includes("has no id")])).toEqual([["sync system", true]]);
         expect((await runReported(world, nothing)).failures).toEqual([]);
         await remote.run(nothing);
         await world.dispose();

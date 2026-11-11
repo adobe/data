@@ -18,7 +18,7 @@ export const create: Create = createWorld;
 
 /**
  * Joins, from another thread, a world that `share` let join through the other end of `port`, claiming the logical
- * `threads` this thread fills: their objects live here, and the systems and finalizers reading them run here. Resolves,
+ * `threads` this thread fills: their objects live here, and the systems and sync systems reading them run here. Resolves,
  * once the world accepted the claim, to the same world: its `run` runs systems there, and its `add` and `remove` take
  * readonly systems, which run here after the world's sync points. Add them before awaiting anything else, so the
  * world's `share` resolves with them in place. Its `dispose` disconnects this thread. Rejects with an `Error` saying

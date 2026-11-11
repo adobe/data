@@ -50,8 +50,8 @@ export const writeBanners = System.create({ components: { with: [team, health, b
 });
 const banners: string[] = [];
 // A removed system reading the joined thread's objects runs there, reading each stop's shared value as of before it applied.
-const finalized: string[] = [];
-export const finalizeBanners = System.removed({ components: { with: [team, health, banner] } }, row => { finalized.push(`${row[team]} ${row[health]} ${row[banner]?.text ?? "none"}`); });
+const removedRows: string[] = [];
+export const removeBanners = System.removed({ components: { with: [team, health, banner] } }, row => { removedRows.push(`${row[team]} ${row[health]} ${row[banner]?.text ?? "none"}`); });
 export const despawnBanners = System.create({ components: { with: [banner] } }, (row, { commands }) => { commands.despawn(row.entity); });
 // On the joined thread: two lists spawned with one constants object, each spawner its own list's.
 const base = { [health]: 7 } as const;
@@ -82,7 +82,7 @@ describe("a shared component", () => {
         expect(() => registerComponent(Symbol("sharedTest/placed"), { type: { type: "array", items: { type: "string" } }, shared: true, thread: "main" }))
             .toThrow("a shared value lives in shared memory, so it has no thread");
         expect(() => registerComponent(Symbol("sharedTest/derived"), { type: { type: "number" }, default: 0, derived: true, shared: true }))
-            .toThrow("a derived component isn't shared: its rule adds it with its default");
+            .toThrow("a derived component isn't shared: its derivation adds it with its default");
         expect(() => registerComponent(Symbol("sharedTest/reference"), { type: Entity.schema, reference: "owner", shared: true }))
             .toThrow("a reference isn't shared");
         expect(() => registerComponent(Symbol("sharedTest/flag"), { type: { type: "number" }, shared: false })).toThrow("shared is true");
@@ -182,7 +182,7 @@ describe("a shared component", () => {
         expect(await rowsOf(world)).toEqual([]);
     });
 
-    it("reads as its archetype's value in rows, lookups and finalizers, and fails a body assigning it", async () => {
+    it("reads as its archetype's value in rows, lookups and sync systems, and fails a body assigning it", async () => {
         await using world = inline();
         let red = Entity.none;
         await world.run(System.create(({ commands }) => {
@@ -262,7 +262,7 @@ describe("a shared component", () => {
     it("is read on a joined thread, by the systems placed there and the observer systems added there", async () => {
         const channel = new MessageChannel();
         await using world = createWorld({ [workers]: 0 });
-        world.add(finalizeBanners);
+        world.add(removeBanners);
         const [joined] = await Promise.all([
             join(channel.port2, { threads: ["sharedTest"] }).then(thread => {
                 thread.add(listen);
@@ -281,9 +281,9 @@ describe("a shared component", () => {
         while (heard.length < 2 && performance.now() < end) await new Promise(resolve => setTimeout(resolve, 1));
         expect(heard.sort().slice(0, 2)).toEqual(["blue 2", "red 1"]);
         await world.run(despawnBanners);
-        const finalizing = performance.now() + 2000;
-        while (finalized.length < 2 && performance.now() < finalizing) await new Promise(resolve => setTimeout(resolve, 1));
-        expect(finalized.sort()).toEqual(["blue 2 blue 2", "red 1 red 1"]);
+        const deadline = performance.now() + 2000;
+        while (removedRows.length < 2 && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 1));
+        expect(removedRows.sort()).toEqual(["blue 2 blue 2", "red 1 red 1"]);
     });
 
     it("runs a body a kernel would read it in as written, reading its archetype's value", async () => {

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Finalizer } from '../../interface/system/finalizer.js';
-import type { Rule } from '../../interface/component/rule.js';
-import { definitionOf, finalizerOf, finalizersOf, requireDefinition, type Definition } from '../../interface/registry/index.js';
+import type { SyncSystem } from '../../interface/system/sync-system.js';
+import type { Derivation } from '../../interface/component/derivation.js';
+import { definitionOf, syncSystemOf, syncSystemsOf, requireDefinition, type Definition } from '../../interface/registry/index.js';
 import type { World } from '../../interface/world/world.js';
 import type { Input } from '../../interface/system/input.js';
 import type { System } from '../../interface/system/system.js';
@@ -13,7 +13,7 @@ import { gpuDevice } from '../../interface/resources/gpu-device.js';
 import { workers } from '../../interface/resources/workers.js';
 import { createGpu } from './gpu.js';
 import { readCell, writeCell } from './cells.js';
-import { finalizeAll, refreshFinalizerIndexes, type Thrown } from './finalizers.js';
+import { runRemovedForAll, refreshSyncSystemIndexes, type Thrown } from './sync-systems.js';
 import { startWatches } from './indexes.js';
 import { clean as cleanReport, execute, prepareFusion, type ExecuteContext } from './execute.js';
 import { groupOnWorkers, groupSetup, liveGroups, loadGroup, type FusedGroup } from './fusion.js';
@@ -34,8 +34,8 @@ import { refreshDirectories } from './directories.js';
 import { createRegistrar, type Registration } from './register.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
-import { activate, addedResourcesChanged, ensureAddedResources, finalizerCrossing, placeFinalizers, releaseFinalizers, reorderRunners, type Ensured } from './activate.js';
-import { orderFinalizers } from './finalizer-order.js';
+import { activate, addedResourcesChanged, ensureAddedResources, syncSystemCrossing, placeSyncSystems, releaseRemovedSystems, reorderRunners, type Ensured } from './activate.js';
+import { orderSyncSystems } from './sync-system-order.js';
 import { isObserver, isWorldWritten, kindOf, scheduleOf, type Composite } from '../../interface/registry/index.js';
 import { always } from '../../interface/resources/always.js';
 import { cadence, type Cadence } from '../../interface/resources/cadence.js';
@@ -46,7 +46,7 @@ import { createLoop, platformFrame, platformTimer, type Clock, type LoopPlatform
 import { presetLevelsOf } from './lists.js';
 import { createState, defaultOf, idOf, reside, startTicking, type Key } from './state.js';
 import { asksForChanges, changesOf, resourcesWrittenBy, startRecording, takesInput } from './run-changes.js';
-import type { ChangeSet } from '../../interface/system/finalizer-body.js';
+import type { ChangeSet } from '../../interface/system/sync-system-body.js';
 import type { Essential } from '../../interface/component/value.js';
 import type { Resource } from '../../interface/resource/resource.js';
 import { indexOf } from './entities.js';
@@ -135,7 +135,7 @@ export type Tables = {
     readonly observed: number;
     readonly afterSync: number;
     readonly directories: number;
-    /** Indexes it keeps, for some registered system or finalizer, and how many builds of them ran in phases, and across the pool. */
+    /** Indexes it keeps, for some registered system or sync system, and how many builds of them ran in phases, and across the pool. */
     readonly indexes: number;
     readonly phasedBuilds: number;
     readonly pooledBuilds: number;
@@ -818,7 +818,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     /**
      * Ends a tick once its tails are done: what failed is reported out of band, once per system while it keeps
-     * failing; what was reported and ran its body in the tick without failing recovered, as did finalizers that ran
+     * failing; what was reported and ran its body in the tick without failing recovered, as did sync systems that ran
      * and indexes that found no conflict.
      */
     const endTick = (report: RunReport, schedule: Schedule | undefined, ran: Outcome | null): void => {
@@ -829,12 +829,12 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             if (schedule !== undefined) for (const tier of schedule.tiers) for (const leaf of tier) {
                 if (outOfBand.has(leaf) && !failedIn(failures, leaf) && !report.skipped.includes(leaf) && registrar.runnerOf(leaf).didRun()) outOfBand.recovered(leaf);
             }
-            if (state.finalized !== null) for (const finalizer of state.finalized) if (!failedIn(failures, finalizer)) outOfBand.recovered(finalizer);
+            if (state.syncSystemsRan !== null) for (const syncSystem of state.syncSystemsRan) if (!failedIn(failures, syncSystem)) outOfBand.recovered(syncSystem);
             outOfBand.indexesRecovered(failures);
         }
-        // Finalizers' runs are followed only while one is reported.
-        if (state.finalized !== null) state.finalized.clear();
-        if (outOfBand.size() !== 0 || state.finalized !== null) state.finalized = outOfBand.reports("finalizer") ? state.finalized ?? new Set() : null;
+        // Sync systems' runs are followed only while one is reported.
+        if (state.syncSystemsRan !== null) state.syncSystemsRan.clear();
+        if (outOfBand.size() !== 0 || state.syncSystemsRan !== null) state.syncSystemsRan = outOfBand.reports("sync system") ? state.syncSystemsRan ?? new Set() : null;
         if (recorder !== null && ran !== null) {
             const outcome: Outcome = { ...ran, failures: report.failures, skipped: report.skipped, dropped: report.dropped, warnings: report.warnings };
             for (const listener of recorder.ticks) listener(outcome);
@@ -909,7 +909,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             definition = requireDefinition(system);
             // A system registers in the world the first time it runs here.
             if (registrar.registered(definition) === undefined) {
-                const held = finalizersOf(definition);
+                const held = syncSystemsOf(definition);
                 if (held.length > 0) throw new Error(`System "${definition.name}" holds "${held[0].name}", a changes or removed system, which runs in sync points while it's added; add the composite to the world rather than run it.`);
                 registration = registrar.register(definition);
             }
@@ -972,10 +972,10 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         state,
         run: runWith,
         report: failure => outOfBand.report(failure),
-        crossing: (threads, imported) => registrar.crossing(threads, imported) ?? finalizerCrossing(state, threads, imported),
+        crossing: (threads, imported) => registrar.crossing(threads, imported) ?? syncSystemCrossing(state, threads, imported),
         placed: () => {
             registrar.place();
-            placeFinalizers(state);
+            placeSyncSystems(state);
         },
         between: task => void enqueue(async () => {
             if (disposed) return;
@@ -998,7 +998,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     });
 
     /**
-     * Runs a system or composite, recording its own changes, which it resolves to: what earlier finalizers queued
+     * Runs a system or composite, recording its own changes, which it resolves to: what earlier sync systems queued
      * applies first, at a sync point of its own, and the recording covers the run's sync points alone.
      */
     const runChanging = (definition: Definition, value: unknown): Promise<unknown> => {
@@ -1046,25 +1046,25 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     }
 
     /**
-     * The values added that hold changes or removed systems, each with those it holds; the world's finalizers are those
-     * of all of them. And every finalizer added, in the order it was first added, which orders those `before` and
+     * The values added that hold changes or removed systems, each with those it holds; the world's sync systems are those
+     * of all of them. And every sync system added, in the order it was first added, which orders those `before` and
      * `after` leave unordered.
      */
-    const holding: { readonly value: object; readonly finalizers: readonly Finalizer[] }[] = [];
-    let addOrder: readonly Finalizer[] = [];
+    const holding: { readonly value: object; readonly syncSystems: readonly SyncSystem[] }[] = [];
+    let addOrder: readonly SyncSystem[] = [];
 
     /**
-     * The world's finalizers in run order once `holding` changes as `change` does, without changing it, and the add
+     * The world's sync systems in run order once `holding` changes as `change` does, without changing it, and the add
      * order they come from. Throws for an order that cycles, crosses threads or leaves a resource conflict.
      */
-    const finalizersOnce = (change: (values: typeof holding) => typeof holding): { readonly order: readonly Finalizer[]; readonly ordered: readonly Finalizer[] } => {
-        const kept = new Set(change(holding).flatMap(entry => entry.finalizers));
-        const order = [...addOrder.filter(finalizer => kept.has(finalizer)), ...[...kept].filter(finalizer => !addOrder.includes(finalizer))];
-        return { order, ordered: orderFinalizers(order) };
+    const syncSystemsOnce = (change: (values: typeof holding) => typeof holding): { readonly order: readonly SyncSystem[]; readonly ordered: readonly SyncSystem[] } => {
+        const kept = new Set(change(holding).flatMap(entry => entry.syncSystems));
+        const order = [...addOrder.filter(syncSystem => kept.has(syncSystem)), ...[...kept].filter(syncSystem => !addOrder.includes(syncSystem))];
+        return { order, ordered: orderSyncSystems(order) };
     };
 
-    /** Makes the world's finalizers `ordered`, from the next sync point on. */
-    const setFinalizers = (order: readonly Finalizer[], ordered: readonly Finalizer[]): void => {
+    /** Makes the world's sync systems `ordered`, from the next sync point on. */
+    const setSyncSystems = (order: readonly SyncSystem[], ordered: readonly SyncSystem[]): void => {
         addOrder = order;
         state.added = ordered;
         state.addedVersion++;
@@ -1072,12 +1072,12 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         reorderRunners(state);
     };
 
-    /** Between runs: the finalizers no longer added stop, a removed system running for every entity it still matches. */
+    /** Between runs: the sync systems no longer added stop, a removed system running for every entity it still matches. */
     const releaseRemoved = async (): Promise<void> => {
-        if (!state.finalizers.some(runner => !state.added.includes(runner.finalizer))) return;
+        if (!state.syncSystems.some(runner => !state.added.includes(runner.syncSystem))) return;
         await drainTails();
         if (state.gpu?.anyAhead() === true) await state.gpu.readback();
-        for (const { finalizer, error } of releaseFinalizers(state)) outOfBand.report(failureOf("finalizer", finalizer, error));
+        for (const { syncSystem, error } of releaseRemovedSystems(state)) outOfBand.report(failureOf("sync system", syncSystem, error));
     };
 
     const world: CreatedWorld = {
@@ -1090,30 +1090,30 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         },
         add: system => {
             checkLive();
-            const finalizer = finalizerOf(system);
-            const definition = finalizer === undefined ? requireDefinition(system) : null;
-            const held = finalizer === undefined ? finalizersOf(system) : [finalizer];
+            const syncSystem = syncSystemOf(system);
+            const definition = syncSystem === undefined ? requireDefinition(system) : null;
+            const held = syncSystem === undefined ? syncSystemsOf(system) : [syncSystem];
             const holds = held.length > 0 && !holding.some(entry => entry.value === system);
-            const next = holds ? finalizersOnce(values => [...values, { value: system, finalizers: held }]) : null;
+            const next = holds ? syncSystemsOnce(values => [...values, { value: system, syncSystems: held }]) : null;
             if (definition !== null) {
                 loop.add(definition);
                 if (isObserver(definition)) registerObserver(definition);
                 else for (const leaf of scheduleOf(definition).observer) registerObserver(leaf);
             }
             if (next === null) return;
-            holding.push({ value: system, finalizers: held });
-            setFinalizers(next.order, next.ordered);
+            holding.push({ value: system, syncSystems: held });
+            setSyncSystems(next.order, next.ordered);
         },
         remove: system => {
-            const finalizer = finalizerOf(system);
-            const definition = finalizer === undefined ? requireDefinition(system) : null;
+            const syncSystem = syncSystemOf(system);
+            const definition = syncSystem === undefined ? requireDefinition(system) : null;
             if (disposed) return;
             const at = holding.findIndex(entry => entry.value === system);
-            const next = at < 0 ? null : finalizersOnce(values => values.filter((_, k) => k !== at));
+            const next = at < 0 ? null : syncSystemsOnce(values => values.filter((_, k) => k !== at));
             const change = definition === null ? null : loop.remove(definition);
             if (next !== null) {
                 holding.splice(at, 1);
-                setFinalizers(next.order, next.ordered);
+                setSyncSystems(next.order, next.ordered);
                 void enqueue(releaseRemoved);
             }
             if (change === null || definition === null) return;
@@ -1142,16 +1142,16 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 outOfBand.close();
                 // Joined threads' runs reject from here on.
                 sharing.close();
-                // Per-query finalizers release what every live entity they match holds, reading the GPU's writes first.
+                // Per-query sync systems release what every live entity they match holds, reading the GPU's writes first.
                 let errors: Thrown[] = [];
                 try {
                     // A removed system added since the last run still releases what the world's entities hold.
                     ensureAddedResources(state, ensured);
                     activate(state);
-                    if (state.finalizers.length > 0) {
+                    if (state.syncSystems.length > 0) {
                         if (state.gpu?.anyAhead() === true) await state.gpu.readback();
-                        refreshFinalizerIndexes(state);
-                        errors = finalizeAll(state);
+                        refreshSyncSystemIndexes(state);
+                        errors = runRemovedForAll(state);
                     }
                 }
                 finally {

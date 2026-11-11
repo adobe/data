@@ -2,7 +2,7 @@
 import { declarationOf, kindOf, labelOf, whyUnregistered } from '../registry/names.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
 import { nameOf } from '../registry/items.js';
-import { claimFinalizer, finalizerOf } from '../registry/program.js';
+import { claimSyncSystem, syncSystemOf } from '../registry/program.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
 import { checkLookup } from '../registry/indexes.js';
@@ -12,9 +12,9 @@ import type { ThreadOfResource } from '../resource/value.js';
 import type { Resource } from '../resource/resource.js';
 import type { Component } from '../component/component.js';
 import type { Elsewhere, OneThread, ThreadedBy, ThreadsOf } from './threads.js';
-import type { ChangeSet, Context, Row, Watched, WatchedResources, WatchListed } from './finalizer-body.js';
-import type { ChangesDeclaration, Declaration, Finalizing } from './finalizer-declaration.js';
-import type { Changes, Leaf, Resolved, ResolvedChanges } from './finalizer.js';
+import type { ChangeSet, Context, Row, Watched, WatchedResources, WatchListed } from './sync-system-body.js';
+import type { ChangesDeclaration, Declaration, SyncSystemValue } from './sync-system-declaration.js';
+import type { ChangesSystem, RemovedSystem, Resolved, ResolvedChanges } from './sync-system.js';
 import { accessOf, compact, lookupsLists, resourceUses, type Access } from './resolve.js';
 import type { System } from './system.js';
 
@@ -71,9 +71,9 @@ const checkResources = (what: string, resources: { readonly read?: readonly Key[
 };
 
 /** Throws for `before` or `after` naming what isn't a changes or removed system: only those run in sync points. */
-const checkOrdered = (what: string, declaration: { readonly before?: readonly Finalizing[]; readonly after?: readonly Finalizing[] }): void => {
+const checkOrdered = (what: string, declaration: { readonly before?: readonly SyncSystemValue[]; readonly after?: readonly SyncSystemValue[] }): void => {
     for (const other of [...declaration.before ?? [], ...declaration.after ?? []]) {
-        if (finalizerOf(other) === undefined) throw new Error(`${what} is ordered with "${String(other.name)}", which isn't a changes or removed system; those are ordered only with each other.`);
+        if (syncSystemOf(other) === undefined) throw new Error(`${what} is ordered with "${String(other.name)}", which isn't a changes or removed system; those are ordered only with each other.`);
     }
 };
 
@@ -98,7 +98,7 @@ export const removed = <const D extends Declaration>(
         ...resolveShared(what, declared, access),
         components: componentReads(what, declared.components, access),
     };
-    const finalizer: Leaf = { kind: "finalizer", name, declaration, body };
+    const syncSystem: RemovedSystem = { kind: "removed", name, declaration, body };
     checkResources(what, declaration.resources);
     const thread = threadOf(declaration, "Removed system", name);
     if (thread !== null && thread !== "world") {
@@ -115,7 +115,7 @@ export const removed = <const D extends Declaration>(
         requireRegistered("Removed system", name, "component", "has" in lookup ? lookup.has : undefined);
         requireRegistered("Removed system", name, "component", "not" in lookup ? lookup.not : undefined);
     }
-    return claimFinalizer(finalizer, id);
+    return claimSyncSystem(syncSystem, id);
 };
 
 const isList = (watch: NonNullable<ChangesDeclaration["watch"]>): watch is Extract<ChangesDeclaration["watch"], readonly unknown[]> => Array.isArray(watch);
@@ -166,7 +166,7 @@ export const changes = <const D extends ChangesDeclaration>(
     const name = nameOf(declared, id, "system");
     const what = `Changes system "${name}"`;
     const declaration: ResolvedChanges = { ...resolveShared(what, declared, accessOf(what, declared)), watch: watchOf(what, declared.watch) };
-    const finalizer: Changes = { kind: "changes", name, declaration, body };
+    const syncSystem: ChangesSystem = { kind: "changes", name, declaration, body };
     checkResources(what, declaration.resources);
     requireRegistered("Changes system", name, "resource", declaration.resources?.read);
     requireRegistered("Changes system", name, "resource", declaration.resources?.write);
@@ -180,5 +180,5 @@ export const changes = <const D extends ChangesDeclaration>(
     const thread = threadOf({ components: { read: watch.components === true ? [] : watch.components }, resources: { ...declaration.resources, read }, lookup: declaration.lookup }, "Changes system", name);
     if (thread !== null && thread !== "world") throw new Error(`${what} watches or reads values on thread "${thread}"; a changes system runs on the world's thread, in the sync point.`);
     checkOrdered(what, declaration);
-    return claimFinalizer(finalizer, id);
+    return claimSyncSystem(syncSystem, id);
 };

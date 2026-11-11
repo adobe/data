@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { layoutOf } from '../registry/layout.js';
 import { declarationOf, kindOf, labelOf, whyUnregistered } from '../registry/names.js';
-import { definitionOf, finalizerOf } from '../registry/program.js';
+import { definitionOf, syncSystemOf } from '../registry/program.js';
 import { reducedBy, scheduleOf } from '../registry/schedule.js';
 import { conditional, matchesSchema } from '../registry/schemas.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
@@ -283,7 +283,7 @@ const leavesOf = (system: Definition, leaves: Set<Leaf>): Set<Leaf> => {
     for (const member of system.declaration.systems) {
         const definition = definitionOf(member);
         if (definition !== undefined) leavesOf(definition, leaves);
-        else if (finalizerOf(member) === undefined) throw new Error(`System "${system.name}": member "${member.name}" isn't a system a System constructor returned.`);
+        else if (syncSystemOf(member) === undefined) throw new Error(`System "${system.name}": member "${member.name}" isn't a system a System constructor returned.`);
     }
     return leaves;
 };
@@ -292,7 +292,7 @@ const leavesOf = (system: Definition, leaves: Set<Leaf>): Set<Leaf> => {
 const checkOrdered = (system: Definition): void => {
     const { before, after, during } = system.declaration;
     for (const other of [...before ?? [], ...after ?? [], ...during ?? []]) {
-        if (typeof other === "object" && finalizerOf(other) !== undefined) {
+        if (typeof other === "object" && syncSystemOf(other) !== undefined) {
             throw new Error(`System "${system.name}" is ordered with "${other.name}", a changes or removed system; those run in sync points and are ordered only with each other.`);
         }
     }

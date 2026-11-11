@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
-import type { ChangeSet } from '../system/finalizer-body.js';
+import type { ChangeSet } from '../system/sync-system-body.js';
 import type { Essential } from '../component/value.js';
 import type { Resource } from '../resource/resource.js';
 

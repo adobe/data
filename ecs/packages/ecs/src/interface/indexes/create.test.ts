@@ -88,7 +88,7 @@ describe("Index.create", () => {
     });
 });
 
-describe("systems and finalizers looking up through an index", () => {
+describe("systems and sync systems looking up through an index", () => {
     const grid = Index.create({ key: [cell], components: { with: [amount] } });
     /** A system of a declaration as the world takes it, what its body reads and writes listed, bypassing the types' checks. */
     const untypedSystem = (declaration: object): unknown => Reflect.apply(createResolved, undefined, [declaration, () => {}]);

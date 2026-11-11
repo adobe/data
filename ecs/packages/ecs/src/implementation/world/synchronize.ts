@@ -16,7 +16,7 @@ import { beginLog, logAppend, logMove, logSet, logSwap, publishLog, startTag, ta
 import { record } from './journal.js';
 import { indexOf, kill, locate, materialize, recycle, release, reserved, unreserve, type Reserved } from './entities.js';
 import { activate } from './activate.js';
-import { refreshFinalizerIndexes, runFinalizers, type Thrown } from './finalizers.js';
+import { refreshSyncSystemIndexes, runSyncSystems, type Thrown } from './sync-systems.js';
 import { settleStops } from './stop-lists.js';
 import { closureOf, derives, gainsOf } from './structure.js';
 import type { Plan } from './plan.js';
@@ -194,7 +194,7 @@ const plannedMatches = (state: State, queued: readonly Queued[], entry: number, 
  * despawn, its entity or its row, is kept, so releasing each entity and emptying the archetype says all there is.
  */
 const clearsWhole = (state: State): boolean =>
-    state.finalizers.length === 0 && state.recording === null && state.structure.referenceIds.length === 0 && state.journal.readers === 0
+    state.syncSystems.length === 0 && state.recording === null && state.structure.referenceIds.length === 0 && state.journal.readers === 0
     && !state.claimed && !state.arrivals && state.touched === null && !state.counting && !state.transferring && state.holds.size === 0 && state.logs.length === 0;
 
 /** Whether an archetype can be emptied whole: none of its rows planned or spawned here, and nothing per row to let go. */
@@ -795,7 +795,7 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
     let lastJoined = -2;
     let ranges = true;
     let leaving = 0;
-    /** Indexes a joined thread's finalizers hold, which a despawn kills without releasing; null for none. */
+    /** Indexes a joined thread's sync systems hold, which a despawn kills without releasing; null for none. */
     const holds = state.holds.size > 0 ? state.holds.counts : null;
     for (let entry = 0; entry < plan.count; entry++) {
         const index = indexOf(plan.entity[entry]);
@@ -808,7 +808,7 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
             if (fromRow >= 0) leaving++;
             if (fromId >= 0) state.touched?.add(archetypes[fromId]);
             if (fromId >= 0 && state.counting) countChanged(state.counted, archetypes[fromId]);
-            // Held while a joined thread's finalizers haven't acknowledged its stop.
+            // Held while a joined thread's sync systems haven't acknowledged its stop.
             if (holds !== null && index < holds.length && holds[index] > 0) kill(entities, index);
             else release(entities, index);
             continue;
@@ -1030,7 +1030,7 @@ const merged = (carried: Reserved | null, reservations: Reserved): Reserved => {
     return { reused, firstNew: Math.min(carried.firstNew, reservations.firstNew) };
 };
 
-/** Every live entity whose archetype's closure differs gets an entry, after rules were registered. */
+/** Every live entity whose archetype's closure differs gets an entry, after derivations were registered. */
 const rederive = (state: State): void => {
     const { structure, archetypes } = state;
     structure.rederive = false;
@@ -1074,7 +1074,7 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     for (let k = 0; k < state.logs.length; k++) publishLog(state.logs[k]);
     endStructure(state.directory);
     state.syncing = null;
-    // Threads whose finalizers have new stops run them now, whether or not a task or observer post would replay them,
+    // Threads whose sync systems have new stops run them now, whether or not a task or observer post would replay them,
     // as do threads with staged values to release.
     for (let k = 0; k < state.channels.length; k++) {
         const channel = state.channels[k];
@@ -1094,25 +1094,25 @@ const anyCommands = (queued: readonly Queued[]): boolean => {
 /** The queue a sync point takes while nothing is queued, shared, since none is written to. */
 const noneQueued: readonly Queued[] = [];
 
-/** Whether a sync point would apply anything: commands queued, entities reserved or carried, rules to derive again, or failures to give. */
+/** Whether a sync point would apply anything: commands queued, entities reserved or carried, derivations to derive again, or failures to give. */
 export const syncPending = (state: State, queued: readonly Queued[] = state.queued): boolean =>
     anyCommands(queued) || reserved(state.entities) || state.carried !== null || state.structure.rederive
-    // Failures for its run, as a gone thread's stops it never finalized are.
+    // Failures for its run, as a gone thread's stops it never ran are.
     || state.unplaced.length > 0
-    // A watched resource written, which its changes finalizers see at a sync point.
+    // A watched resource written, which its changes systems see at a sync point.
     || (state.resourcesSeen.size > 0 && resourcesWritten(state));
 
 /**
  * The first half of a sync point: commits batch spawns, plans every command, cascades references and closes the plan
- * under rules. Nothing that exists moves yet, so the GPU can read back what the plan disturbs before `applySync`.
+ * under derivations. Nothing that exists moves yet, so the GPU can read back what the plan disturbs before `applySync`.
  * Returns false when there's nothing to apply. An `isolated` one applies only the queued buffers, without batches,
- * re-deriving or finalizers, for registration's own changes between runs.
+ * re-deriving or sync systems, for registration's own changes between runs.
  */
 export const prepareSync = (state: State, isolated = false): boolean => {
     if (!isolated) activate(state);
     // Taken first, so a sync point that throws can't replay its commands into the next one.
     const queued = state.queued.length === 0 ? noneQueued : state.queued.splice(0);
-    // Finalizers' spawns are reserved during the last sync point, so their batches are pending without a reservation.
+    // Sync systems' spawns are reserved during the last sync point, so their batches are pending without a reservation.
     if (!syncPending(state, queued)) return false;
     preparePending(state, queued, isolated);
     return true;
@@ -1124,15 +1124,15 @@ export const prepareSync = (state: State, isolated = false): boolean => {
  */
 const preparePending = (state: State, queued: readonly Queued[], isolated: boolean): void => {
     const { structure, plan } = state;
-    // Finalizers see indexes as of before the sync point applies, with nothing it spawns or moves.
-    if (!isolated) refreshFinalizerIndexes(state);
+    // Sync systems see indexes as of before the sync point applies, with nothing it spawns or moves.
+    if (!isolated) refreshSyncSystemIndexes(state);
     plan.count = 0;
     plan.spawned = 0;
     plan.dropped = 0;
     let reservations: Reserved | null = null;
     beginStructure(state.directory);
     try {
-        // Indexes joined threads finalized are released, reusable after this sync point.
+        // Indexes whose stops joined threads ran are released, reusable after this sync point.
         if (state.claimed) for (let k = 0; k < state.channels.length; k++) settleStops(state.channels[k].stops, state.holds, state.entities.released);
         const made = materialize(state.memory, state.entities);
         // Positions blocks left unused name reservations of this sync point's own.
@@ -1193,11 +1193,11 @@ const stampMovedArrays = (state: State, tick: number): void => {
     for (const storage of state.archetypes[plan.to[entry]].storages) if (storage.layout.kind === "linear" && storage.layout.array !== undefined) stampChanged(storage, row, tick);
 };
 
-/** What a sync point whose finalizers threw nothing returns: read-only, so one is shared. */
+/** What a sync point whose sync systems threw nothing returns: read-only, so one is shared. */
 const nothingThrown: readonly Thrown[] = [];
 
 /**
- * The second half: runs finalizers against the plan, then applies it. A finalizer that throws doesn't stop the sync
+ * The second half: runs sync systems against the plan, then applies it. A sync system that throws doesn't stop the sync
  * point; what each threw is returned once it has applied.
  */
 export const applySync = (state: State): readonly Thrown[] => {
@@ -1210,10 +1210,10 @@ export const applySync = (state: State): readonly Thrown[] => {
     try {
         if (state.unplaced.length > 0 && !isolated) errors = state.unplaced.splice(0);
         if (state.recording !== null && !isolated) recordPlan(state, state.recording, queued, born);
-        if (state.finalizers.length > 0 && !isolated) {
-            const thrown = runFinalizers(state, queued, born, tick);
+        if (state.syncSystems.length > 0 && !isolated) {
+            const thrown = runSyncSystems(state, queued, born, tick);
             errors = errors.length === 0 ? thrown : [...errors, ...thrown];
-            // Finalizers reserve entities for their spawns; the next sync point accounts for them.
+            // Sync systems reserve entities for their spawns; the next sync point accounts for them.
             if (reserved(state.entities)) state.carried = materialize(state.memory, state.entities);
         }
         sort(state, queued, tick);
@@ -1226,7 +1226,7 @@ export const applySync = (state: State): readonly Thrown[] => {
         if (index !== null) applyIndexChanges(state, index);
         // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its
         // index. Every spawn consumes one reservation and the rest were unreserved, so only a shortfall needs the scan,
-        // which skips what's released already. Finalizers' reservations came after, so they're left for the next sync
+        // which skips what's released already. Sync systems' reservations came after, so they're left for the next sync
         // point.
         if (plan.spawned + unreserved < reservations.reused.length + tableLength - reservations.firstNew) {
             const released = new Set(state.entities.released);
@@ -1257,7 +1257,7 @@ export const synchronize = (state: State): void => {
 
 /**
  * Applies `buffer` alone as a sync point, leaving what's pending for the next run's: registration's changes between
- * runs, which no finalizer sees.
+ * runs, which no sync system sees.
  */
 export const synchronizeAlone = (state: State, buffer: CommandBuffer): void => {
     const pending = state.queued.splice(0);
@@ -1269,7 +1269,7 @@ export const synchronizeAlone = (state: State, buffer: CommandBuffer): void => {
     }
     finally {
         state.queued.push(...pending);
-        // An isolated sync point runs no finalizers, so it reserves nothing for the next one.
+        // An isolated sync point runs no sync systems, so it reserves nothing for the next one.
         state.carried = carried;
     }
 };

@@ -5,7 +5,7 @@ import { Component } from "../component/component.js";
 import { registerComponent, registerResource } from "./declarations.js";
 import { addTrait } from "./traits.js";
 import { giveAccess, identify } from "./ids.test-helper.js";
-import { declarationOf, kindOf, labelOf, finalizerOf, programRules, requireDefinition, sameItem, scheduleOf } from "./index.js";
+import { declarationOf, kindOf, labelOf, syncSystemOf, programDerivations, requireDefinition, sameItem, scheduleOf } from "./index.js";
 
 // Each pair is one module's key and the key that module makes when evaluated again: one id, two symbols.
 const score = Symbol("score");
@@ -49,7 +49,7 @@ addTrait(tagged);
 const untyped = <F extends (...parameters: never[]) => unknown>(create: F) => (...parameters: unknown[]): ReturnType<F> => Reflect.apply(create, undefined, parameters);
 const system = untyped(System.create);
 const derive = untyped(Component.derive);
-const finalizer = untyped(System.removed);
+const syncSystem = untyped(System.removed);
 type Row = { [key: symbol]: number };
 
 describe("keys with ids", () => {
@@ -91,16 +91,16 @@ describe("declarations evaluated again", () => {
     });
     it("accept a derivation whose keys match by id, which is already recorded", () => {
         derive(shown, identify({ from: [score] }, "idsTest/keys.ts#derive(shown)"));
-        const rules = programRules().length;
+        const derivations = programDerivations().length;
         derive(shownAgain, identify({ from: [scoreAgain] }, "idsTest/keys.ts#derive(shown)"));
-        expect(programRules()).toHaveLength(rules);
+        expect(programDerivations()).toHaveLength(derivations);
     });
     it("accept a removed system whose keys match by id, which keeps the new body", () => {
-        const first = finalizer(giveAccess(identify({ components: { with: [score] } }, "idsTest/systems.ts#finalizer")), () => {});
+        const first = syncSystem(giveAccess(identify({ components: { with: [score] } }, "idsTest/systems.ts#sync system")), () => {});
         const body = (): void => {};
-        expect(finalizer(giveAccess(identify({ components: { with: [scoreAgain] } }, "idsTest/systems.ts#finalizer")), body)).toBe(first);
-        const found = finalizerOf(first);
-        expect(found?.kind === "finalizer" ? found.body : null).toBe(body);
+        expect(syncSystem(giveAccess(identify({ components: { with: [scoreAgain] } }, "idsTest/systems.ts#sync system")), body)).toBe(first);
+        const found = syncSystemOf(first);
+        expect(found?.kind === "removed" ? found.body : null).toBe(body);
     });
     it("schedule symbols of one id as one key", () => {
         const write = system(giveAccess({ components: { with: [score] } }, { write: [score] }), (row: Row) => { row[score] = 1; });

@@ -13,22 +13,22 @@ import type { Vec3 } from "../interface/math/index.js";
 // other entities, reads a string resource too, and a third two linear resources, which each sync point's stop list holds
 // copies of.
 
-const spot = Symbol("finalized/spot");
-const handle = Symbol("finalized/handle");
-const noted = Symbol("finalized/noted");
-const note = Symbol("finalized/note");
-const measured = Symbol("finalized/measured");
-const scale = Symbol("finalized/scale");
-const offset = Symbol("finalized/offset");
+const spot = Symbol("removed/spot");
+const handle = Symbol("removed/handle");
+const noted = Symbol("removed/noted");
+const note = Symbol("removed/note");
+const measured = Symbol("removed/measured");
+const scale = Symbol("removed/scale");
+const offset = Symbol("removed/offset");
 declare module "@adobe/ecs" {
     export interface Threads {
-        finalizedBenchmark: true;
+        removedBenchmark: true;
     }
     export interface Components {
         [spot]: { type: Vec3 };
-        [handle]: { type: { readonly release: () => void } | null; thread: "finalizedBenchmark" };
-        [noted]: { type: { readonly release: () => void } | null; thread: "finalizedBenchmark" };
-        [measured]: { type: { readonly release: () => void } | null; thread: "finalizedBenchmark" };
+        [handle]: { type: { readonly release: () => void } | null; thread: "removedBenchmark" };
+        [noted]: { type: { readonly release: () => void } | null; thread: "removedBenchmark" };
+        [measured]: { type: { readonly release: () => void } | null; thread: "removedBenchmark" };
     }
     export interface Resources {
         [note]: { type: string; default: "released" };
@@ -86,7 +86,7 @@ const joinedFile = "./joined.js";
 
 /** Starts `joined.ts` on a worker, joined to `world` and claiming the benchmark's thread, once it joined. */
 const startClaiming = async (world: CreatedWorld): Promise<{ readonly terminate: () => Promise<void> }> => {
-    const message = (port: unknown) => ({ kind: "port", port, threads: ["finalizedBenchmark"] });
+    const message = (port: unknown) => ({ kind: "port", port, threads: ["removedBenchmark"] });
     let terminate: () => Promise<void>;
     let shared: Promise<void>;
     if (typeof globalThis.Worker === "function") {
@@ -116,7 +116,7 @@ const startClaiming = async (world: CreatedWorld): Promise<{ readonly terminate:
 
 /**
  * The fastest of `rounds` sync points despawning `despawnedObjects` entities holding the joined thread's objects,
- * timed on the world's thread, each after a spawn and a pause in which the thread finalizes the last.
+ * timed on the world's thread, each after a spawn and a pause in which the thread runs the last's stops.
  */
 const despawnObjects = async (spawning: typeof spawn = spawn, despawning: typeof despawn = despawn, rounds = 30): Promise<number> => {
     const world = createWorld({ [workers]: 0 });
@@ -131,7 +131,7 @@ const despawnObjects = async (spawning: typeof spawn = spawn, despawning: typeof
             const time = performance.now() - start;
             if (report.failures.length > 0) throw new Error(`despawn objects: ${report.failures[0].message}`);
             if (round > 1) best = Math.min(best, time);
-            // The thread finalizes them and acknowledges, so the next sync point returns their indexes.
+            // The thread runs their stops and acknowledges, so the next sync point returns their indexes.
             await new Promise(resolve => setTimeout(resolve, 5));
         }
     }
@@ -143,7 +143,7 @@ const despawnObjects = async (spawning: typeof spawn = spawn, despawning: typeof
     return best;
 };
 
-export const finalizedBenchmarks: readonly Benchmark[] = [
+export const removedBenchmarks: readonly Benchmark[] = [
     {
         name: "despawn objects 10K",
         operation: "A sync point despawning 10K entities whose objects a joined worker fills, with a removed system there reading the object and a vec3: releasing DOM nodes or GPU handles, which the world's thread doesn't wait for.",

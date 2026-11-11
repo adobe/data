@@ -10,7 +10,7 @@ import { checkComposite, checkLeaf, inputSchemaOf } from './check.js';
 import type { Composite } from './composite.js';
 import type { CompositeDeclaration } from './composite-declaration.js';
 import type { Declaration, Resolved } from './declaration.js';
-import type { CheckMembers, CompositeInputOf, HoldsFinalizing, InputOf, ResultOf, ReturnsNoPromise } from './input.js';
+import type { CheckMembers, CompositeInputOf, HoldsSyncSystem, InputOf, ResultOf, ReturnsNoPromise } from './input.js';
 import type { Leaf } from './leaf.js';
 import type { Listed, Property } from './property.js';
 import type { System } from './system.js';
@@ -150,7 +150,7 @@ type MembersOf<C> = C extends CompositeDeclaration ? C["systems"] : C;
 type Checked<C> = C extends Alone ? ReturnsNoPromise<C> : C extends CompositeDeclaration ? { readonly systems: CheckMembers<C["systems"]> } & Ordered<C> : CheckMembers<C>;
 
 /** A composite's system: one `run` doesn't take once it holds a changes or removed system. */
-type CompositeOf<C> = HoldsFinalizing<MembersOf<C>> extends true ? System<never> : System<CompositeInputOf<MembersOf<C>>>;
+type CompositeOf<C> = HoldsSyncSystem<MembersOf<C>> extends true ? System<never> : System<CompositeInputOf<MembersOf<C>>>;
 
 /**
  * Declares a system and returns it; nothing runs. The arguments tell the forms apart:

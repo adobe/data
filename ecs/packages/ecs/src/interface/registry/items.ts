@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { takeLabelOfDeclaration } from './ids.js';
-/** A registered system, rule or finalizer: what each constructor records, told apart by `kind`. */
+/** A registered system, derivation or sync system: what each constructor records, told apart by `kind`. */
 type Registered = { readonly kind: string; readonly name: string; readonly declaration: object };
 
 /**
@@ -15,7 +15,7 @@ type Entry = {
     readonly first: Registered;
 };
 
-/** Every system, rule and finalizer, by value: values of one id share an entry. */
+/** Every system, derivation and sync system, by value: values of one id share an entry. */
 const entries = new WeakMap<object, Entry>();
 
 /** Entries by the ids the plugin gave their declarations. */
@@ -32,7 +32,7 @@ export const sameItem = (a: object, b: object): boolean => {
 export const firstItemOf = (item: object): object => entries.get(item)?.first ?? item;
 
 /** How messages name the kinds of item whose words differ from their kinds. */
-const kindLabels: { readonly [kind: string]: string } = { finalizer: "removed system", changes: "changes system", rule: "derivation" };
+const kindLabels: { readonly [kind: string]: string } = { removed: "removed system", changes: "changes system", derivation: "derivation" };
 
 /**
  * The item already registered under `id` that `item` is: one of its kind with the same declaration, as a module
@@ -72,7 +72,7 @@ const anonymous = new Map<string, number>();
  * it's in, or an internal factory gave it; else its binding, from its id (`spawn` for `src/setup.ts#spawn`); else its
  * kind numbered by creation (`system #3`).
  */
-export const nameOf = (value: object, id: string | undefined, kind: "system" | "rule" | "index"): string => {
+export const nameOf = (value: object, id: string | undefined, kind: "system" | "derivation" | "index"): string => {
     const label = takeLabelOfDeclaration(value);
     if (label !== undefined) return label;
     if (id !== undefined) return id.slice(id.lastIndexOf("#") + 1);
@@ -84,13 +84,13 @@ export const nameOf = (value: object, id: string | undefined, kind: "system" | "
 /** The id the plugin gave an item, or null without one, as failures give it beside its label. */
 export const idOrNull = (item: object): string | null => entries.get(item)?.id ?? null;
 
-/** The id the plugin gave a system, rule or finalizer, by which other threads name it, if it gave one. */
+/** The id the plugin gave a system, derivation or sync system, by which other threads name it, if it gave one. */
 export const idOfItem = (item: object): string | undefined => entries.get(item)?.id;
 
 /** The item first registered under an id, or undefined where no module declaring it was imported. */
 export const itemOfId = (id: string): { readonly kind: string; readonly name: string } | undefined => identified.get(id)?.first;
 
-/** The ids of every system, rule and finalizer of `kind` registered with one, as a joined thread tells the world what it imported. */
+/** The ids of every system, derivation and sync system of `kind` registered with one, as a joined thread tells the world what it imported. */
 export const identifiedItems = (kind: string): readonly string[] => {
     const found: string[] = [];
     for (const [id, entry] of identified) if (entry.kind === kind) found.push(id);

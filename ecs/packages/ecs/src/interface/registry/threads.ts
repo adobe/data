@@ -13,7 +13,7 @@ type Lists = {
 };
 
 /**
- * What places a system or finalizer: the names it reads, writes or filters on by change, but not `has` and `not`, and
+ * What places a system or sync system: the names it reads, writes or filters on by change, but not `has` and `not`, and
  * the key parts of the indexes it looks up through or orders its rows by.
  */
 export type Placed = {
@@ -34,7 +34,7 @@ export const requireRegistered = (what: "System" | "Removed system" | "Changes s
 };
 
 /**
- * The thread a system or finalizer runs on: the one its object components and resources live on, or null when it uses
+ * The thread a system or sync system runs on: the one its object components and resources live on, or null when it uses
  * none. Throws when they live on different threads, or a name it's placed by isn't registered as its kind.
  */
 export const threadOf = (declaration: Placed, what: "System" | "Removed system" | "Changes system", name: string): string | null => {

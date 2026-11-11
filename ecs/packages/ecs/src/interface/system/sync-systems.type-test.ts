@@ -7,19 +7,19 @@ import type { Create } from '../world/create.js';
 import type { World } from '../world/world.js';
 import type { Plugin } from '../plugin/plugin.js';
 import type { Essential } from '../component/value.js';
-import type { ChangeSet } from './finalizer-body.js';
+import type { ChangeSet } from './sync-system-body.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
 
-const source = Symbol("finalizersTypeTest/source");
-const hidden = Symbol("finalizersTypeTest/hidden");
-const slot = Symbol("finalizersTypeTest/slot");
-const parent = Symbol("finalizersTypeTest/parent");
-const time = Symbol("finalizersTypeTest/time");
-const inDocument = Symbol("finalizersTypeTest/inDocument");
-const kept = Symbol("finalizersTypeTest/kept");
-const saved = Symbol("finalizersTypeTest/saved");
+const source = Symbol("syncSystemsTypeTest/source");
+const hidden = Symbol("syncSystemsTypeTest/hidden");
+const slot = Symbol("syncSystemsTypeTest/slot");
+const parent = Symbol("syncSystemsTypeTest/parent");
+const time = Symbol("syncSystemsTypeTest/time");
+const inDocument = Symbol("syncSystemsTypeTest/inDocument");
+const kept = Symbol("syncSystemsTypeTest/kept");
+const saved = Symbol("syncSystemsTypeTest/saved");
 
 declare module '@adobe/ecs' {
     export interface Components {

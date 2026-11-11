@@ -225,10 +225,10 @@ describe("an index lookup's changed: true", () => {
 
     it("is only for a system's index lookups", () => {
         const untypedSystem = (declaration: object): unknown => Reflect.apply(System.create, undefined, [giveAccess(declaration), () => {}]);
-        const untypedFinalizer = (declaration: object): unknown => Reflect.apply(System.removed, undefined, [giveAccess(declaration), () => {}]);
+        const untypedRemoved = (declaration: object): unknown => Reflect.apply(System.removed, undefined, [giveAccess(declaration), () => {}]);
         expect(() => untypedSystem({ lookup: { weights: { with: [weight], changed: true } } }))
             .toThrow(`lookup "weights"'s changed is true, which only an index lookup takes; name the components it watches.`);
-        expect(() => untypedFinalizer({ components: { with: [group] }, lookup: { byGroup: { index: byGroup, changed: true } } }))
+        expect(() => untypedRemoved({ components: { with: [group] }, lookup: { byGroup: { index: byGroup, changed: true } } }))
             .toThrow(`lookup "byGroup"'s changed is true, which only a system's index lookup takes.`);
     });
 });

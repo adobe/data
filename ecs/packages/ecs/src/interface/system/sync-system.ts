@@ -1,26 +1,26 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { ResourceLists, SystemLookupLists } from './access.js';
 
-// Changes and removed systems are called finalizers internally: they run inside sync points, before they apply.
-// Bodies' parameters are checked where they're created, so a finalizer holds any body.
+// Changes and removed systems are sync systems: they run inside sync points, before they apply.
+// Bodies' parameters are checked where they're created, so a sync system holds any body.
 
 /** A removed system: runs, inside a sync point, for each entity that stops matching its components. */
-export type Leaf = {
-    readonly kind: "finalizer";
+export type RemovedSystem = {
+    readonly kind: "removed";
     readonly name: string;
     readonly declaration: Resolved;
     body: (...parameters: never[]) => void;
 };
 
 /** A changes system: runs, inside a sync point, with all its structural changes to the components it watches. */
-export type Changes = {
+export type ChangesSystem = {
     readonly kind: "changes";
     readonly name: string;
     readonly declaration: ResolvedChanges;
     body: (...parameters: never[]) => void;
 };
 
-export type Finalizer = Leaf | Changes;
+export type SyncSystem = RemovedSystem | ChangesSystem;
 
 type Key = symbol;
 

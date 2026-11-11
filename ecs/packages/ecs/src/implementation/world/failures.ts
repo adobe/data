@@ -1,13 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { idOrNull } from '../../interface/registry/index.js';
 
-/** What failed in a run or tick: a system, finalizer, GPU work, thread or unique index. */
+/** What failed in a run or tick: a system, sync system, GPU work, thread or unique index. */
 export type Failure = {
     /**
-     * A system or finalizer that threw, GPU work, a system whose thread is gone, which didn't run, a unique index
+     * A system or sync system that threw, GPU work, a system whose thread is gone, which didn't run, a unique index
      * found holding two entities for one key, or the kernel pool's workers, failing to load kernels.
      */
-    readonly kind: "system" | "finalizer" | "gpu" | "thread" | "index" | "workers";
+    readonly kind: "system" | "sync system" | "gpu" | "thread" | "index" | "workers";
     /** The label of what failed: for GPU work, of the system whose run submitted it. */
     readonly name: string;
     /** The id the plugin gave it; null without one. */
@@ -48,7 +48,7 @@ export const failureOf = (kind: Failure["kind"], of: { readonly name: string; re
     return { kind, name, id, message: error instanceof Error ? error.message : String(error), error, subject };
 };
 
-const kinds = { system: "System", finalizer: "System", gpu: "GPU work of system", thread: "System" } as const;
+const kinds = { system: "System", "sync system": "System", gpu: "GPU work of system", thread: "System" } as const;
 
 /** One failure as an Error: what failed, by its label and id, and its message, with what was thrown as its cause. */
 export const errorOfFailure = (failure: Failure): Error => {

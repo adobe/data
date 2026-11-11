@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import { entityWatchesOf, lookupComponentsOf } from './lookup-keys.js';
-import type { Leaf as FinalizerLeaf } from '../../interface/system/finalizer.js';
+import type { RemovedSystem } from '../../interface/system/sync-system.js';
 import type { Warning } from './failures.js';
 import { declarationOf, idOfItem, idOfKey, idOrNull, indexOfLookup, labelOf, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import { unsharedKeyOf } from './index-keys.js';
@@ -113,17 +113,17 @@ export type TaskChannel = {
     readonly unplaced: (indexes: readonly number[]) => void;
     /** For tests of what a world holds: how many indexes there hold a system, or are held until the thread drops it. */
     readonly placed: () => number;
-    /** Places a finalizer on the thread, posting its setup; returns its index there. Throws for one the thread can't name. */
-    readonly placeFinalizer: (state: State, finalizer: FinalizerLeaf) => number;
-    /** The finalizer placed at an index there, for its failures there. */
-    readonly finalizerAt: (index: number) => FinalizerLeaf | undefined;
-    /** Releases the finalizer at an index there, which the world removed: it runs there for every row it matches, then is dropped. */
-    readonly releaseFinalizer: (index: number) => void;
-    /** Its finalizers' stop lists. */
+    /** Places a sync system on the thread, posting its setup; returns its index there. Throws for one the thread can't name. */
+    readonly placeSyncSystem: (state: State, syncSystem: RemovedSystem) => number;
+    /** The sync system placed at an index there, for its failures there. */
+    readonly syncSystemAt: (index: number) => RemovedSystem | undefined;
+    /** Releases the sync system at an index there, which the world removed: it runs there for every row it matches, then is dropped. */
+    readonly releaseRemovedSystem: (index: number) => void;
+    /** Its sync systems' stop lists. */
     readonly stops: StopWriter;
     /** Whether a command giving one of its staged `transfer` values dropped this sync point, so it's woken to release it. */
     dropped: boolean;
-    /** Wakes the thread, so it runs its finalizers for the stops just published. */
+    /** Wakes the thread, so it runs its sync systems for the stops just published. */
     readonly wake: () => void;
     /** At a sync point, once segments are drained and no task runs: empties the ring, growing it to what tasks needed. */
     readonly rewind: () => void;
@@ -355,7 +355,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
     };
 
     /** An item's setup there: its id, and the world's numbers for the keys it names, by their ids. Throws without them. */
-    const setupOf = (state: State, item: Leaf | FinalizerLeaf, what: string, named: readonly symbol[]): { readonly id: string; readonly keys: readonly (readonly [number, string])[] } => {
+    const setupOf = (state: State, item: Leaf | RemovedSystem, what: string, named: readonly symbol[]): { readonly id: string; readonly keys: readonly (readonly [number, string])[] } => {
         const id = idOfItem(item);
         if (id === undefined) throw new Error(`${what} "${item.name}" runs on thread "${label}", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level systems one.`);
         const keys: (readonly [number, string])[] = [];
@@ -415,11 +415,11 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         freeRetired();
     };
 
-    const finalizers: FinalizerLeaf[] = [];
-    const placeFinalizer = (state: State, finalizer: FinalizerLeaf): number => {
-        const { id, keys } = setupOf(state, finalizer, "Removed system", finalizerKeysOf(finalizer));
-        const index = finalizers.push(finalizer) - 1;
-        post({ protocol: "@adobe/ecs/join@1", kind: "finalizers", finalizers: [{ index, id, keys }] });
+    const syncSystems: RemovedSystem[] = [];
+    const placeSyncSystem = (state: State, syncSystem: RemovedSystem): number => {
+        const { id, keys } = setupOf(state, syncSystem, "Removed system", syncSystemKeysOf(syncSystem));
+        const index = syncSystems.push(syncSystem) - 1;
+        post({ protocol: "@adobe/ecs/join@1", kind: "sync systems", syncSystems: [{ index, id, keys }] });
         return index;
     };
     const stops = createStopWriter(arena, log, state.strings);
@@ -445,9 +445,9 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         unplace,
         unplaced,
         placed: () => placed - freeIndexes.length,
-        placeFinalizer,
-        finalizerAt: index => finalizers[index],
-        releaseFinalizer: index => post({ protocol: "@adobe/ecs/join@1", kind: "release finalizer", index }),
+        placeSyncSystem,
+        syncSystemAt: index => syncSystems[index],
+        releaseRemovedSystem: index => post({ protocol: "@adobe/ecs/join@1", kind: "release sync system", index }),
         stops,
         dropped: false,
         wake,
@@ -492,9 +492,9 @@ export const keysOf = (leaf: Leaf): readonly symbol[] => {
     return [...keys].filter((key): key is symbol => typeof key === "symbol");
 };
 
-/** Every key a finalizer names, so the thread finds the world's numbers for them: it looks up nothing. */
-export const finalizerKeysOf = (finalizer: FinalizerLeaf): readonly symbol[] => {
-    const { components, resources } = finalizer.declaration;
+/** Every key a sync system names, so the thread finds the world's numbers for them: it looks up nothing. */
+export const syncSystemKeysOf = (syncSystem: RemovedSystem): readonly symbol[] => {
+    const { components, resources } = syncSystem.declaration;
     const keys = new Set<Key>([...components.read ?? [], ...components.has ?? [], ...components.not ?? [], ...resources?.read ?? []]);
     return [...keys].filter((key): key is symbol => typeof key === "symbol");
 };

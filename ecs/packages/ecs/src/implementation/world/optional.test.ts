@@ -78,10 +78,10 @@ const readSpeeds = System.create({ readonly: true, components: { with: [other, o
 /** What removed systems read of rows that stopped, on the world's thread and on the markers'. */
 const stopped: string[] = [];
 const stoppedThere: string[] = [];
-export const finalizeHere = System.removed({ components: { with: [position, order], optional: [velocity] } }, row => {
+export const removedHere = System.removed({ components: { with: [position, order], optional: [velocity] } }, row => {
     stopped.push(`${row[position]}:${row[velocity] ?? "none"}`);
 });
-export const finalizeThere = System.removed({ components: { with: [position, marker], optional: [velocity] } }, row => {
+export const removedThere = System.removed({ components: { with: [position, marker], optional: [velocity] } }, row => {
     stoppedThere.push(`${row[position]}:${row[velocity] ?? "none"}:${row[marker] === null ? "null" : "marked"}`);
 });
 const despawnAll = System.create({ components: { with: [position] } }, (row, { commands }) => { commands.despawn(row.entity); });
@@ -286,7 +286,7 @@ describe("optional components", () => {
 
     it("are read by removed systems where an entity had them, never deciding a stop", async () => {
         await using world = inline();
-        world.add(finalizeHere);
+        world.add(removedHere);
         await world.run(spawn);
         stopped.length = 0;
         await world.run(despawnAll);
@@ -295,7 +295,7 @@ describe("optional components", () => {
 
     it("are read by removed systems on a joined thread where an entity had them", async () => {
         const { world, remote } = await joined();
-        world.add(finalizeThere);
+        world.add(removedThere);
         await world.run(spawnMarked);
         stoppedThere.length = 0;
         await world.run(despawnAll);

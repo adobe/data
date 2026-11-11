@@ -20,14 +20,14 @@ const handle = Symbol("remoteTest/handle");
 declare module "@adobe/ecs" {
     export interface Threads {
         remoteTest: true;
-        remoteTestFinalized: true;
+        remoteTestRemoved: true;
     }
     export interface Components {
         [point]: { type: number };
         [caption]: { type: Caption; thread: "remoteTest" };
         [widget]: { type: Widget | null; thread: "remoteTest" };
         [kept]: { type: string };
-        [guarded]: { type: Widget | null; thread: "remoteTestFinalized" };
+        [guarded]: { type: Widget | null; thread: "remoteTestRemoved" };
         [handle]: { type: Widget | number | null; thread: "remoteTest" };
     }
 }
@@ -154,7 +154,7 @@ describe("objects a joined thread fills", () => {
         expect((await runReported(world, readCaptions)).failures).toEqual([]);
         await world.dispose();
     });
-    it("refuse a claim of a thread whose finalizers or systems the joined thread can't run, and take one whose systems it imported", async () => {
+    it("refuse a claim of a thread whose sync systems or systems the joined thread can't run, and take one whose systems it imported", async () => {
         const world = createWorld({ [workers]: 0 });
         await world.run(readCaptions);
         const taken = await joined();
@@ -171,12 +171,12 @@ describe("objects a joined thread fills", () => {
         await expect(join(channel.port2, { threads: ["remoteTest"] })).rejects.toThrow(refusedSystem);
         await shared;
         await statusOf(world, "gone");
-        const refusedFinalizer = /Removed system "system #\d+" runs on thread "remoteTestFinalized" and has no id, so a joined thread can't run it/;
+        const refusedRemoved = /Removed system "system #\d+" runs on thread "remoteTestRemoved" and has no id, so a joined thread can't run it/;
         const other = createWorld({ [workers]: 0 });
         other.add(guard);
         const otherChannel = new MessageChannel();
-        const otherShared = expect(other.share(otherChannel.port1)).rejects.toThrow(refusedFinalizer);
-        await expect(join(otherChannel.port2, { threads: ["remoteTestFinalized"] })).rejects.toThrow(refusedFinalizer);
+        const otherShared = expect(other.share(otherChannel.port1)).rejects.toThrow(refusedRemoved);
+        await expect(join(otherChannel.port2, { threads: ["remoteTestRemoved"] })).rejects.toThrow(refusedRemoved);
         await otherShared;
         await other.dispose();
         await world.dispose();

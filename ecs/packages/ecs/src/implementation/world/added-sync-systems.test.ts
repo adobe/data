@@ -6,9 +6,9 @@ import { createWorld } from "./create.js";
 import { read } from "./reads.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
 
-const held = Symbol("addedFinalizersTest/held");
-const other = Symbol("addedFinalizersTest/other");
-const total = Symbol("addedFinalizersTest/total");
+const held = Symbol("addedSyncSystemsTest/held");
+const other = Symbol("addedSyncSystemsTest/other");
+const total = Symbol("addedSyncSystemsTest/total");
 
 declare module "@adobe/ecs" {
     export interface Components {
@@ -152,7 +152,7 @@ describe("changes and removed systems", () => {
         const writeA = System.removed({ components: { with: [held] } }, (_, { resources }) => { resources[total] = 1; });
         const writeB = System.changes({ watch: [held] }, (_, { resources }) => { resources[total] = 2; });
         world.add(writeA);
-        expect(() => world.add(writeB)).toThrow(`Systems "writeA" and "writeB" both access "addedFinalizersTest/total", one writing it; order them with before or after.`);
+        expect(() => world.add(writeB)).toThrow(`Systems "writeA" and "writeB" both access "addedSyncSystemsTest/total", one writing it; order them with before or after.`);
         expect(() => world.add(System.create([System.create({}, () => {}), writeB]))).toThrow("both access");
         const late: System<never>[] = [];
         const early = System.removed({ components: { with: [held] }, before: late }, () => {});

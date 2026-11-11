@@ -1,11 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Leaf } from '../../interface/system/finalizer.js';
+import type { RemovedSystem } from '../../interface/system/sync-system.js';
 import { labelOf } from '../../interface/registry/index.js';
 import { objectLayout, viewsOf, type Layout } from '../../interface/registry/layout.js';
 import { writeOf } from './archetype.js';
 import { emptyViews } from './arrays.js';
 import { readCell } from './cells.js';
-import { logFinalizedWord, logStopsWord, nullTag, ownTag, slotTags, startTag } from './move-log.js';
+import { logRanThroughWord, logStopsWord, nullTag, ownTag, slotTags, startTag } from './move-log.js';
 import { resourceValueOf, stagedValue, type Mirror, type Previously } from './mirror.js';
 import type { WorkerError } from './protocol.js';
 import { rowBinderOf, type Row, type RowArchetype, type RowHost, type RowStorage } from './rows.js';
@@ -16,17 +16,17 @@ import {
 import type { Key } from './state.js';
 import type { StringStore } from './strings.js';
 
-// A joined thread's finalizers (threads.md, "Finalizers on other threads"): as it replays each sync, before that sync's
+// A joined thread's removed systems (threads.md, "Removed systems on other threads"): as it replays each sync, before that sync's
 // entries apply, it runs them for the sync's stop list, reading the linear structs the world copied there and its own
-// objects at the rows the stops name, then stores the sync it finalized through.
+// objects at the rows the stops name, then stores the sync it ran its stops through.
 
-/** A storage of a joined thread's view, as its finalizers' rows read it. */
-type FinalizedStorage = RowStorage & { readonly component: number };
+/** A storage of a joined thread's view, as its removed systems' rows read it. */
+type StopStorage = RowStorage & { readonly component: number };
 /** An archetype of a joined thread's view, as its systems see it. */
-type FinalizedArchetype = RowArchetype & { readonly components: readonly number[]; readonly resource: boolean; readonly storageById: readonly (FinalizedStorage | undefined)[] };
+type StopArchetype = RowArchetype & { readonly components: readonly number[]; readonly resource: boolean; readonly storageById: readonly (StopStorage | undefined)[] };
 
-/** What a joined thread gives its finalizers. */
-export type ThreadFinalizersHost<A extends FinalizedArchetype> = {
+/** What a joined thread gives its removed systems. */
+export type ThreadRemovedSystemsHost<A extends StopArchetype> = {
     readonly mirror: Mirror;
     /** Views of the memory, again once it grew. */
     readonly refresh: () => ArrayBufferLike;
@@ -39,7 +39,7 @@ export type ThreadFinalizersHost<A extends FinalizedArchetype> = {
     readonly resourceRow: () => { readonly archetype: A; readonly row: number } | null;
     /** The records strings' columns name: a stop list's copies, for its strings. */
     readonly strings: StringStore;
-    /** Posts what finalizers threw, by their index here, which the world reports out of band. */
+    /** Posts what removed systems threw, by their index here, which the world reports out of band. */
     readonly failed: (errors: readonly (readonly [number, WorkerError])[]) => void;
 };
 
@@ -49,9 +49,9 @@ const errorOf = (error: unknown): WorkerError =>
 const noTicks = new Float64Array(0);
 const noTags = new Uint32Array(0);
 
-/** One finalizer here: what it matches and reads, its row binder, and its context. */
-type ThreadFinalizer = {
-    readonly leaf: Leaf;
+/** One removed system here: what it matches and reads, its row binder, and its context. */
+type ThreadRemovedSystem = {
+    readonly leaf: RemovedSystem;
     readonly required: readonly number[];
     readonly excluded: readonly number[];
     /** Its reads by component: objects, with their starts, linear structs, with their layouts, and constants. */
@@ -74,21 +74,21 @@ type ThreadFinalizer = {
 };
 
 /** A storage a stop list's column holds, for a row over its stops. */
-const columnStorage = (component: number, layout: Layout, views: RowStorage["views"], values: unknown[], strings: StringStore | null): FinalizedStorage => ({
+const columnStorage = (component: number, layout: Layout, views: RowStorage["views"], values: unknown[], strings: StringStore | null): StopStorage => ({
     component, layout, views, strings: layout.kind === "string" ? strings : null, values, ...writeOf(layout), ticked: false, added: noTicks, changed: noTicks, chunkAdded: noTicks, chunkChanged: noTicks, blockAdded: noTicks, blockChanged: noTicks, tags: noTags,
 });
 
 /**
- * The finalizers the world places on this thread, with what they run against: stop lists as the thread replays them,
+ * The removed systems the world places on this thread, with what they run against: stop lists as the thread replays them,
  * and every row they match once the world is disposed.
  */
-export const createThreadFinalizers = <A extends FinalizedArchetype>(host: ThreadFinalizersHost<A>) => {
+export const createThreadRemovedSystems = <A extends StopArchetype>(host: ThreadRemovedSystemsHost<A>) => {
     const { mirror } = host;
-    const finalizers: (ThreadFinalizer | null | undefined)[] = [];
+    const syncSystems: (ThreadRemovedSystem | null | undefined)[] = [];
     /** The newest block run, which the next block's offset is read from; 0 before the first. */
     let anchor = 0;
-    /** The sync finalized through, as stored. */
-    let finalized = 0;
+    /** The sync whose stops ran through, as stored. */
+    let ranThrough = 0;
     let buffer: ArrayBufferLike = new ArrayBuffer(0);
     let u32: Uint32Array<ArrayBufferLike> = new Uint32Array(0);
     let f64: Float64Array<ArrayBufferLike> = new Float64Array(0);
@@ -102,7 +102,7 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         f64 = new Float64Array(latest, 0, latest.byteLength >> 3);
     };
 
-    const create = (leaf: Leaf): ThreadFinalizer => {
+    const create = (leaf: RemovedSystem): ThreadRemovedSystem => {
         const { components, resources } = leaf.declaration;
         const reads = components.read ?? [];
         const objects: number[] = [];
@@ -132,7 +132,7 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         const value: object = Object.create({});
         const keys = [...new Set<Key>(resources?.read ?? [])];
         const numbers = keys.map(host.numberOf);
-        const resolved: { storage: FinalizedStorage | undefined; row: number }[] = keys.map(() => ({ storage: undefined, row: 0 }));
+        const resolved: { storage: StopStorage | undefined; row: number }[] = keys.map(() => ({ storage: undefined, row: 0 }));
         // Its thread's object resources are read from the mirror, which may be behind the entity table as it replays.
         const own = keys.map(key => host.layoutOf(key)?.kind === "object");
         const resourceStarts = numbers.map(number => mirror.starts.get(number) ?? null);
@@ -146,7 +146,7 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         const linearLayouts: Layout[] = [];
         const linearStrides: number[] = [];
         const constantKeys: number[] = [];
-        const constantStorages: FinalizedStorage[] = [];
+        const constantStorages: StopStorage[] = [];
         keys.forEach((key, k) => {
             const layout = host.layoutOf(key);
             if (layout === undefined || layout.kind === "object") return;
@@ -180,7 +180,7 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
             });
             Object.defineProperty(value, "resources", { value: values, enumerable: true });
         }
-        // Method parameters are bivariant, so the runtime can see any finalizer's body with erased parameter types.
+        // Method parameters are bivariant, so the runtime can see any removed system's body with erased parameter types.
         const untyped: { body(row: object, context: object): void } = leaf;
         return {
             leaf, objects, starts, linear, layouts, constants, constantLayouts,
@@ -225,15 +225,15 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         };
     };
 
-    /** Records the finalizers the world places here; one this thread never imported fails each group of its stops. */
-    const setup = (placed: readonly { readonly index: number; readonly leaf: Leaf | null }[]): void => {
-        for (const { index, leaf } of placed) finalizers[index] = leaf === null ? null : create(leaf);
+    /** Records the removed systems the world places here; one this thread never imported fails each group of its stops. */
+    const setup = (placed: readonly { readonly index: number; readonly leaf: RemovedSystem | null }[]): void => {
+        for (const { index, leaf } of placed) syncSystems[index] = leaf === null ? null : create(leaf);
     };
 
     /** Runs a body, keeping what it throws. */
-    const guarded = (index: number, finalizer: ThreadFinalizer, row: Row): void => {
+    const guarded = (index: number, syncSystem: ThreadRemovedSystem, row: Row): void => {
         try {
-            finalizer.body(row.value, finalizer.context);
+            syncSystem.body(row.value, syncSystem.context);
         }
         catch (error) {
             errors.push([index, errorOf(error)]);
@@ -252,18 +252,18 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         return tag === ownTag ? previous : stagedValue(mirror, (tag - slotTags) >>> 0, previous);
     };
 
-    /** Whether every finalizer a block names was set up here, as null for one this thread never imported. */
+    /** Whether every removed system a block names was set up here, as null for one this thread never imported. */
     const known = (block: number): boolean => {
         const groups = u32[(block >> 2) + blockGroupsWord];
         let group = block + blockHeaderBytes;
         for (let g = 0; g < groups; g++) {
-            if (finalizers[u32[(group >> 2) + groupIndexWord]] === undefined) return false;
+            if (syncSystems[u32[(group >> 2) + groupIndexWord]] === undefined) return false;
             group += u32[(group >> 2) + groupBytesWord];
         }
         return true;
     };
 
-    /** Runs each group of a block: the bodies of its finalizer for its stops, over a row reading the block's columns. */
+    /** Runs each group of a block: the bodies of its removed system for its stops, over a row reading the block's columns. */
     const runBlock = (block: number, old: Previously | null): void => {
         const groups = u32[(block >> 2) + blockGroupsWord];
         let group = block + blockHeaderBytes;
@@ -271,18 +271,18 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
             const index = u32[(group >> 2) + groupIndexWord];
             const count = u32[(group >> 2) + groupCountWord];
             const bytes = u32[(group >> 2) + groupBytesWord];
-            const finalizer = finalizers[index];
-            if (finalizer === null || finalizer === undefined) {
+            const syncSystem = syncSystems[index];
+            if (syncSystem === null || syncSystem === undefined) {
                 // Set up, as null, for one this thread never imported.
-                errors.push([index, errorOf(new Error(`A finalizer the world placed on this thread isn't one this thread imported, so ${count === 1 ? "a stop" : `${count} stops`} didn't run.`))]);
+                errors.push([index, errorOf(new Error(`A removed system the world placed on this thread isn't one this thread imported, so ${count === 1 ? "a stop" : `${count} stops`} didn't run.`))]);
                 group += bytes;
                 continue;
             }
-            const storageById: FinalizedStorage[] = [];
+            const storageById: StopStorage[] = [];
             const entityWords = entitiesAt(group) >> 3;
             const archetypeWords = archetypesAt(group, count) >> 2;
             const rowWords = rowsAt(group, count) >> 2;
-            const { objects, starts, linear, layouts } = finalizer;
+            const { objects, starts, linear, layouts } = syncSystem;
             for (let k = 0; k < objects.length; k++) {
                 const tags = tagsAt(group, count, k) >> 2;
                 const values: unknown[] = new Array<unknown>(count);
@@ -300,19 +300,19 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
             }
             // A shared component's value is each stop's archetype's, bound a run of one archetype's stops at a time.
             const shared: number[] = [];
-            for (let k = 0; k < finalizer.constants.length; k++) {
-                const component = finalizer.constants[k];
-                const layout = finalizer.constantLayouts[k];
+            for (let k = 0; k < syncSystem.constants.length; k++) {
+                const component = syncSystem.constants[k];
+                const layout = syncSystem.constantLayouts[k];
                 if (layout.kind === "constant" && layout.shared === true) shared.push(component);
                 else storageById[component] = columnStorage(component, layout, emptyViews, [], null);
             }
             const entities = new Float64Array(buffer, entitiesAt(group), count);
-            finalizer.cells(column);
-            if (finalizer.optional.length === 0 && shared.length === 0) {
-                const row = finalizer.bind({ id: -1, entities, storageById });
+            syncSystem.cells(column);
+            if (syncSystem.optional.length === 0 && shared.length === 0) {
+                const row = syncSystem.bind({ id: -1, entities, storageById });
                 for (let i = 0; i < count; i++) {
                     row.index = i;
-                    guarded(index, finalizer, row);
+                    guarded(index, syncSystem, row);
                 }
             }
             else {
@@ -325,13 +325,13 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
                     while (end < count && u32[archetypeWords + end] === id) end++;
                     const components = host.archetypeAt(id)?.components ?? [];
                     let pattern = 0;
-                    finalizer.optional.forEach((component, k) => { if (components.includes(component)) pattern |= 1 << k; });
+                    syncSystem.optional.forEach((component, k) => { if (components.includes(component)) pattern |= 1 << k; });
                     // With shared components, each archetype has its own copy, holding its values.
                     const key = shared.length === 0 ? pattern : -1 - id;
                     let archetype = byPattern.get(key);
                     if (archetype === undefined) {
-                        const storages: (FinalizedStorage | undefined)[] = [...storageById];
-                        finalizer.optional.forEach((component, k) => { if ((pattern & (1 << k)) === 0) storages[component] = undefined; });
+                        const storages: (StopStorage | undefined)[] = [...storageById];
+                        syncSystem.optional.forEach((component, k) => { if ((pattern & (1 << k)) === 0) storages[component] = undefined; });
                         const viewed = shared.length === 0 ? undefined : host.archetypeAt(id);
                         for (const component of shared) {
                             const layout = viewed?.storageById[component]?.layout;
@@ -339,10 +339,10 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
                         }
                         byPattern.set(key, archetype = { id: -1, entities, storageById: storages });
                     }
-                    const row = finalizer.bind(archetype);
+                    const row = syncSystem.bind(archetype);
                     for (; i < end; i++) {
                         row.index = i;
-                        guarded(index, finalizer, row);
+                        guarded(index, syncSystem, row);
                     }
                 }
             }
@@ -355,17 +355,17 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         host.failed(errors.splice(0));
     };
 
-    /** Stores the sync finalized through, once it moved on. */
+    /** Stores the sync its stops ran through, once it moved on. */
     const acknowledge = (sync: number): void => {
-        if (((sync - finalized) | 0) <= 0) return;
-        finalized = sync >>> 0;
-        Atomics.store(mirror.header, logFinalizedWord, finalized);
+        if (((sync - ranThrough) | 0) <= 0) return;
+        ranThrough = sync >>> 0;
+        Atomics.store(mirror.header, logRanThroughWord, ranThrough);
     };
 
     /**
-     * Runs the stop lists of every sync through `sync` not run yet, in order, then stores it as finalized through: with
+     * Runs the stop lists of every sync through `sync` not run yet, in order, then stores it as ran through: with
      * `old`, after the log lapped, reading this thread's objects as they were before the rebuild. False, having stopped
-     * before it, at a block naming a finalizer whose setup hasn't arrived yet.
+     * before it, at a block naming a removed system whose setup hasn't arrived yet.
      */
     const through = (sync: number, old: Previously | null): boolean => {
         views();
@@ -396,38 +396,38 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         return Atomics.load(u32, (anchor >> 2) + blockNextWord) !== 0;
     };
 
-    /** Runs the finalizer at `index` for every row it matches, reading this thread's objects there. */
+    /** Runs the removed system at `index` for every row it matches, reading this thread's objects there. */
     const everyRow = (index: number): void => {
-        const finalizer = finalizers[index];
-        if (finalizer === null || finalizer === undefined) return;
-        finalizer.cells(-1);
+        const syncSystem = syncSystems[index];
+        if (syncSystem === null || syncSystem === undefined) return;
+        syncSystem.cells(-1);
         for (let id = 0; id < host.tableCount(); id++) {
             const archetype = host.archetypeAt(id);
             if (archetype === undefined || archetype.resource) continue;
             const { components } = archetype;
-            if (!finalizer.required.every(component => components.includes(component)) || finalizer.excluded.some(component => components.includes(component))) continue;
+            if (!syncSystem.required.every(component => components.includes(component)) || syncSystem.excluded.some(component => components.includes(component))) continue;
             const count = host.countOf(archetype);
             if (count === 0) continue;
-            const row = finalizer.bind(archetype);
+            const row = syncSystem.bind(archetype);
             for (let i = 0; i < count; i++) {
                 row.index = i;
-                guarded(index, finalizer, row);
+                guarded(index, syncSystem, row);
             }
         }
     };
 
-    /** Once the world is disposed: every finalizer runs for every row it matches. */
+    /** Once the world is disposed: every removed system runs for every row it matches. */
     const all = (): void => {
         views();
-        for (let index = 0; index < finalizers.length; index++) everyRow(index);
+        for (let index = 0; index < syncSystems.length; index++) everyRow(index);
         report();
     };
 
-    /** Once the world removed the finalizer at `index`, and the stops published before ran: it runs for every row it matches, then is dropped. */
+    /** Once the world removed the removed system at `index`, and the stops published before ran: it runs for every row it matches, then is dropped. */
     const release = (index: number): void => {
         views();
         everyRow(index);
-        finalizers[index] = null;
+        syncSystems[index] = null;
         report();
     };
 

@@ -43,7 +43,7 @@ type Rows<R> = {
     /**
      * Whether, since its system last ran, an entity entered or left it or moved within it, or a component in the
      * lookup's `changed` may have changed in one of its rows: conservative, as `changed` filters are, and true on a
-     * system's first run and in finalizers.
+     * system's first run and in sync systems.
      */
     readonly changed: boolean;
     /** The row at `index`, from 0 to `length - 1`. */
@@ -63,7 +63,7 @@ type IndexLookup<D> =
 /**
  * The row a lookup by entity gives: the values of its `with`, read-only, and with `changed` declared, whether a
  * component it names may have changed in the entity since its system last ran: conservative, as `changed` filters are,
- * and true on a system's first run and in finalizers. With `changed`, valid until the lookup is called again.
+ * and true on a system's first run and in sync systems. With `changed`, valid until the lookup is called again.
  */
 type EntityRow<L> = {
     readonly [K in (Listed<L, "with"> & Component.Key) | (Exclude<Listed<L, "optional">, Listed<L, "with">> & Component.Key) | (L extends { readonly changed: readonly Component.Key[] } ? "changed" : never)]:
